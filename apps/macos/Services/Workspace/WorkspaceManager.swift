@@ -124,6 +124,8 @@ final class WorkspaceManager: ObservableObject {
     var mcpAppContexts: [UUID: [String: String]] = [:]
     /// Codex reported new limits during a session: AppModel refreshes the usage shown.
     var onRateLimits: (() -> Void)?
+    /// Claude Code reported how full a subscription window is, for the account (`AgentProfile.id`) the session runs with.
+    var onPlanWindow: ((UsageLimits.PlanReading, String) -> Void)?
     @Published private(set) var git: [UUID: GitSnapshot] = [:]
     @Published private(set) var worktreeRows: [WorktreeRow] = []
     @Published private(set) var worktreesLoading = false
@@ -1238,6 +1240,8 @@ final class WorkspaceManager: ObservableObject {
         case .rateLimits(let event):
             onRateLimits?()
             if let event { noteClaudeLimit(id, event) }
+        case .planWindow(let reading):
+            if let run = run(id) { onPlanWindow?(reading, run.profileID) }
         }
     }
 

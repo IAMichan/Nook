@@ -58,6 +58,8 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     /// Claude Code reports a change in the subscription limits (`rate_limit_event`).
     /// A limit changed; with the details when Claude Code gave them (a blocked window and when it resets).
     case rateLimits(UsageLimits.ClaudeEvent?)
+    /// How full a subscription window is, as Claude Code reports it in the same `rate_limit_event`.
+    case planWindow(UsageLimits.PlanReading)
 }
 
 extension ClaudeStreamEvent {
@@ -175,7 +177,10 @@ enum ClaudeStreamParser {
             )]
 
         case "rate_limit_event":
-            return [.rateLimits((object["rate_limit_info"] as? [String: Any]).flatMap(UsageLimits.claudeEvent))]
+            let info = object["rate_limit_info"] as? [String: Any]
+            var events: [ClaudeStreamEvent] = [.rateLimits(info.flatMap(UsageLimits.claudeEvent))]
+            if let reading = info.flatMap(UsageLimits.planReading) { events.append(.planWindow(reading)) }
+            return events
 
         case "result":
             var usage = TurnUsage()

@@ -194,22 +194,19 @@ struct AgentsTab: View {
                              selection: Selection) -> some View {
         let current = selectedID(selection)
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
-        // A cloud session that works or waits for you (Claude app, claude.ai/code) is listed with the running ones.
-        let cloudActive = past.filter { $0.cloud?.isActive == true }
-        let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) } + cloudActive.map { item($0) })
+        let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
-        let earlier = past.filter { $0.cloud?.isActive != true }
 
         return VStack(alignment: .leading, spacing: 6) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                AgentInboxList(items: running, past: earlier.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
+                AgentInboxList(items: running, past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
                                current: current, now: context.date) { viewModel.selectedAgentID = $0 }
             }
-            if let note = cloudNote {
-                Text(note)
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if showsCloudLink {
+                SmallGhostButton(title: tr("agents.cloud.open")) {
+                    if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
+                }
+                .help(tr("agents.cloud.explain"))
             }
         }
         // The agent works in a chat you had marked as finished: it is not finished after all,
@@ -329,26 +326,19 @@ struct AgentsTab: View {
     }
 
     private func item(_ session: PastSession) -> AgentListItem {
-        var status = AgentListItem.Status.finished
-        switch session.cloud?.status {
-        case .running?: status = .working
-        case .needsYou?: status = .waiting
-        case .failed?: status = .failed
-        default: break
-        }
-        return AgentListItem(
+        AgentListItem(
             id: "past:" + session.id,
             folder: session.project,
             title: AgentFormat.title(session.title),
             branch: session.branch.isEmpty ? nil : session.branch,
-            agent: session.cloud == nil ? session.agent.name : AppModel.cloudAgentName,
+            agent: session.agent.name,
             account: account(app.profile(for: session)),
-            status: status,
-            started: session.cloud?.isActive == true ? session.started : session.ended,
+            status: .finished,
+            started: session.ended,
             path: session.cwd,
             finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id),
-            machine: session.cloud == nil ? MachineName.local : tr("agents.hover.cloud"),
-            model: session.cloud?.model ?? session.model,
+            machine: MachineName.local,
+            model: session.model,
             accountName: accountName(app.profile(for: session))
         )
     }
@@ -359,22 +349,10 @@ struct AgentsTab: View {
         return visits.isUnseen(id, finished: finished)
     }
 
-    /// Why the sessions in the Claude app's cloud are missing, for a connected Claude account whose list could not be read.
-    /// Being offline is not worth a line: the list is simply read again later.
-    private var cloudNote: String? {
-        guard !app.demoMode else { return nil }
-        let problems = app.profiles.all
-            .filter { $0.kind == .claude && !$0.usesAPIKey && app.isConnected($0) }
-            .compactMap { app.history.cloudProblems[$0.id] }
-        for problem in problems {
-            switch problem {
-            case .loginExpired: return tr("agents.cloud.loginExpired")
-            case .notSignedIn: return tr("agents.cloud.notSignedIn")
-            case .refused(let status): return String(format: tr("agents.cloud.refused"), String(status))
-            case .unreachable: continue
-            }
-        }
-        return nil
+    /// Sessions in Anthropic's cloud (Claude app, claude.ai/code) are not read with the Claude Code login: the link opens
+    /// them where they live, for anyone with a Claude subscription account in Nook.
+    private var showsCloudLink: Bool {
+        !app.demoMode && app.profiles.all.contains { $0.kind == .claude && !$0.usesAPIKey && app.isConnected($0) }
     }
 
     /// Sample data only: nothing to start.
@@ -624,7 +602,7 @@ struct AgentHoverCard: View {
         HoverCard(title: item.title) {
             HoverCardRow(symbol: "folder", text: item.folder, help: item.path.isEmpty ? nil : AgentPathFormat.tilde(item.path))
             if !item.machine.isEmpty {
-                HoverCardRow(symbol: item.agent == AppModel.cloudAgentName ? "cloud" : "laptopcomputer", text: item.machine)
+                HoverCardRow(symbol: "laptopcomputer", text: item.machine)
             }
             HoverCardRow(symbol: "arrow.triangle.branch", text: item.branch ?? tr("agents.noBranch"))
             HStack(spacing: 8) {

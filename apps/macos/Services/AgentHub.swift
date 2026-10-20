@@ -39,8 +39,13 @@ final class AgentHub: ObservableObject {
         return profilePlanUsage[AgentProfile.normalize(home)]
     }
 
-    /// Limits fetched from Anthropic directly. Empty home is the default account.
-    func applyFetchedUsage(_ usage: PlanUsage, home: String) {
+    /// One window as a session in Nook reported it (`rate_limit_event`); the other window keeps what it showed. Empty
+    /// home is the default account.
+    func applyPlanReading(_ reading: UsageLimits.PlanReading, home: String) {
+        var usage = (home.isEmpty ? planUsage : profilePlanUsage[home]) ?? PlanUsage(fiveHour: nil, sevenDay: nil, updated: Date())
+        let window = PlanWindow(usedPercent: reading.usedPercent, resetsAt: reading.resetsAt)
+        if reading.window == "seven_day" { usage.sevenDay = window } else { usage.fiveHour = window }
+        usage.updated = Date()
         if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
     }
 
