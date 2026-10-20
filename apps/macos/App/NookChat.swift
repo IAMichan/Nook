@@ -159,7 +159,9 @@ struct Conversation: Identifiable, ConversationListItem {
     /// Conversation status indicator.
     var status: Status {
         if busy { return .working }
-        let waiting = messages.contains { message in
+        // Only what Nook proposed since your last message: a plan or draft you moved past is not waiting for you anymore.
+        let lastAsked = messages.lastIndex { $0.role == .user } ?? -1
+        let waiting = messages[(lastAsked + 1)...].contains { message in
             (!message.actions.isEmpty && message.planState == .pending)
                 || message.mails.contains { $0.state == .draft }
         }

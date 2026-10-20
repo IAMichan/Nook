@@ -663,6 +663,7 @@ final class AgentHub: ObservableObject {
             recap?.toolUse(tool)
         case "PostToolUse":
             Self.complete(&record, as: .done)
+            Self.resume(&record, asking: isAsking(key))
             if let edit = Self.editDiff(tool: tool, input: input) {
                 record.linesAdded += edit.added
                 record.linesRemoved += edit.removed
@@ -670,12 +671,12 @@ final class AgentHub: ObservableObject {
             }
         case "PostToolUseFailure":
             Self.complete(&record, as: .failed)
+            Self.resume(&record, asking: isAsking(key))
         case "Notification":
             let message = (event["message"] as? String) ?? "waiting for you"
             record.lastMessage = message
             // If the question is already presented as a card in the notch, don't show another alert.
-            let asking = pendingApprovals.values.contains { $0.request.sessionKey == key }
-                || pendingQuestions.values.contains { $0.request.sessionKey == key }
+            let asking = isAsking(key)
             // "Claude is waiting for your input" is Claude Code's idle message after finishing a turn: not a prompt to you.
             let idle = message.lowercased().contains("waiting for your input")
             if idle && !asking {
@@ -958,6 +959,19 @@ final class AgentHub: ObservableObject {
             return
         }
         record.steps[record.steps.count - 1] = AgentStep(mark: mark, text: text)
+    }
+
+    /// A tool finished while the session read as waiting: you answered its prompt in the terminal, so it works again.
+    /// Without this it stayed amber ("waits for you") until the next tool started or the turn ended.
+    private static func resume(_ record: inout Record, asking: Bool) {
+        guard record.status == .waiting, !asking else { return }
+        record.status = .running
+    }
+
+    /// Is a card in the notch still asking you something for this session (an approval or a question)?
+    private func isAsking(_ key: String) -> Bool {
+        pendingApprovals.values.contains { $0.request.sessionKey == key }
+            || pendingQuestions.values.contains { $0.request.sessionKey == key }
     }
 
     /// Closes the last step that was running (or waiting for user input).

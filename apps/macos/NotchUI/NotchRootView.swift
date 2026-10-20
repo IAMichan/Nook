@@ -499,7 +499,7 @@ struct PanelOrb: View {
     /// In the main window: going home and opening a ring item stay in the window instead of opening the notch.
     var inWindow = false
     @EnvironmentObject private var app: AppModel
-    @State private var ringHovered: String?
+    @StateObject private var ringPointer = TaskRingPointer()
     // Redraws the ring when you mark a chat as finished.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
 
@@ -521,11 +521,13 @@ struct PanelOrb: View {
         .accessibilityLabel(tr("notch.goToHome"))
         .background {
             if ring {
-                NookTaskRing(items: items, orbSize: size, hovered: $ringHovered) { openRingItem($0) }
+                NookTaskRing(items: items, orbSize: size, hovered: ringPointer.hovered, pointer: ringPointer) { openRingItem($0) }
             }
         }
         .overlay {
-            if ring { NookTaskRingLabel(items: items, hovered: ringHovered, orbSize: size) }
+            if ring {
+                NookTaskRingLabel(items: items, hovered: ringPointer.hovered, orbSize: size, pointer: ringPointer) { openRingItem($0) }
+            }
         }
         .zIndex(1)
     }
