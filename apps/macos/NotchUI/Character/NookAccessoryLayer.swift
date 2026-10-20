@@ -311,13 +311,6 @@ enum NookAccessoryArt {
                                             startPoint: CGPoint(x: -R * 0.6, y: -R * 1.4), endPoint: CGPoint(x: R * 0.9, y: -R * 0.6)))
         var inside = ctx
         inside.clip(to: cap)
-        // The fold where the tip flops over: a dark crease and a lit ridge above it.
-        var crease = Path()
-        crease.move(to: CGPoint(x: R * 0.2, y: -R * 1.3))
-        crease.addQuadCurve(to: CGPoint(x: R * 0.62, y: -R * 0.98), control: CGPoint(x: R * 0.55, y: -R * 1.28))
-        inside.stroke(crease, with: .color(dark.opacity(0.7)), style: StrokeStyle(lineWidth: head.line(0.09), lineCap: .round))
-        inside.stroke(crease.offsetBy(dx: -R * 0.05, dy: -R * 0.06), with: .color(light.opacity(0.45)),
-                      style: StrokeStyle(lineWidth: head.line(0.04), lineCap: .round))
         switch style {
         case .nightcap:
             // Little stars on the cloth.
@@ -337,7 +330,7 @@ enum NookAccessoryArt {
         ctx.stroke(cap, with: .color(dark.opacity(0.55)), lineWidth: head.line(0.02, minimum: 0.35))
 
         // The fur band around the head.
-        fur(ctx, head, from: -R * 0.98, to: R * 0.98, y: -R * 0.62, height: R * 0.22)
+        fur(ctx, head, from: -R * 0.92, to: R * 0.92, y: -R * 0.64, height: R * 0.22)
         fuzzyBall(ctx, head, center: CGPoint(x: tip.x + R * 0.02, y: tip.y + R * 0.1), radius: R * 0.19,
                   light: Color.white, base: Color(hex: 0xF3F0EA), dark: Color(hex: 0xB8B2A8))
     }
@@ -360,7 +353,7 @@ enum NookAccessoryArt {
         for i in 0...tufts {
             let u = CGFloat(i) / CGFloat(tufts)
             let x = x0 + (x1 - x0) * u
-            let sag = R * 0.24 * (1 - pow(2 * u - 1, 2)) * 0.25
+            let sag = R * 0.24 * (1 - pow(2 * u - 1, 2)) * 0.4
             for edge in [-1, 1] as [CGFloat] {
                 let r = height * (0.24 + 0.06 * CGFloat(noise(i, edge > 0 ? 5 : 6)))
                 let c = CGPoint(x: x, y: y + edge * height * 0.36 + sag)
@@ -630,7 +623,7 @@ enum NookAccessoryArt {
         let felt = Color(hex: 0xB32B45), light = Color(hex: 0xE05A70), deep = Color(hex: 0x5E1020)
 
         // The headband where it meets his head.
-        let band = Path(ellipseIn: CGRect(x: -R * 0.84, y: R * 0.2, width: R * 1.68, height: R * 0.18))
+        let band = Path(ellipseIn: CGRect(x: -R * 0.7, y: R * 0.2, width: R * 1.4, height: R * 0.18))
         ctx.fill(band, with: .color(deep))
 
         let disc = Path(ellipseIn: CGRect(x: -R * 1.0, y: -R * 0.48, width: R * 2.0, height: R * 0.8))
@@ -791,13 +784,13 @@ enum NookAccessoryArt {
     /// The scarf's band under his head, from one side round the bottom to the other.
     private static func scarfBand(_ R: CGFloat, outset: CGFloat = 0) -> Path {
         var band = Path()
-        band.move(to: CGPoint(x: -R * (1.02 + outset), y: R * 0.55))
-        band.addCurve(to: CGPoint(x: R * (1.02 + outset), y: R * 0.55),
+        band.move(to: CGPoint(x: -R * (0.92 + outset), y: R * 0.55))
+        band.addCurve(to: CGPoint(x: R * (0.92 + outset), y: R * 0.55),
                       control1: CGPoint(x: -R * (0.98 + outset), y: R * (1.26 + outset)), control2: CGPoint(x: R * (0.98 + outset), y: R * (1.26 + outset)))
-        band.addQuadCurve(to: CGPoint(x: R * 0.86, y: R * 0.5), control: CGPoint(x: R * 0.96, y: R * 0.44))
-        band.addCurve(to: CGPoint(x: -R * 0.86, y: R * 0.5),
+        band.addQuadCurve(to: CGPoint(x: R * 0.8, y: R * 0.5), control: CGPoint(x: R * 0.88, y: R * 0.46))
+        band.addCurve(to: CGPoint(x: -R * 0.8, y: R * 0.5),
                       control1: CGPoint(x: R * 0.66, y: R * 0.92), control2: CGPoint(x: -R * 0.66, y: R * 0.92))
-        band.addQuadCurve(to: CGPoint(x: -R * (1.02 + outset), y: R * 0.55), control: CGPoint(x: -R * 0.96, y: R * 0.44))
+        band.addQuadCurve(to: CGPoint(x: -R * (0.92 + outset), y: R * 0.55), control: CGPoint(x: -R * 0.88, y: R * 0.46))
         band.closeSubpath()
         return band
     }
@@ -810,7 +803,7 @@ enum NookAccessoryArt {
                                              startPoint: CGPoint(x: 0, y: R * 0.3), endPoint: CGPoint(x: 0, y: R * 1.3)))
     }
 
-    /// A striped knitted scarf wrapped snugly under his face, knotted at the front with two fringed tails.
+    /// A knitted scarf wrapped snugly under his face, knotted at the front with two striped, fringed tails.
     private static func drawScarf(_ base: GraphicsContext, _ head: Head) {
         let R = head.R
         var ctx = base
@@ -823,14 +816,6 @@ enum NookAccessoryArt {
                                              startPoint: CGPoint(x: -R * 0.6, y: R * 0.35), endPoint: CGPoint(x: R * 0.7, y: R * 1.2)))
         var knit = ctx
         knit.clip(to: band)
-        // Stripes run across the scarf, so round the wrap they fan out like spokes.
-        for k in -3...3 {
-            let x = CGFloat(k) * R * 0.3 + turn
-            var stripe = Path()
-            stripe.move(to: CGPoint(x: x * 0.6, y: R * 0.4))
-            stripe.addLine(to: CGPoint(x: x * 1.3, y: R * 1.4))
-            knit.stroke(stripe, with: .color(scarfStripe.opacity(0.9)), style: StrokeStyle(lineWidth: R * 0.08))
-        }
         if head.detailed {
             // Knit rows: short slanted stitches across the band.
             for i in 0..<26 {
