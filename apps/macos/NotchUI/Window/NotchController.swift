@@ -431,7 +431,16 @@ final class NotchController {
             let window = event.windowNumber
             let eventWindow = event.window
             MainActor.assumeIsolated {
-                guard let self, NSApp.modalWindow == nil, window != self.panel?.windowNumber else { return }
+                guard let self, NSApp.modalWindow == nil else { return }
+                if let panel = self.panel, window == panel.windowNumber {
+                    // The panel window is far larger than the shape. When the pointer left the shape without a move
+                    // reaching us, the panel still catches clicks on its transparent rest: those are outside too.
+                    guard self.isOutsideShape(NSEvent.mouseLocation) else { return }
+                    panel.ignoresMouseEvents = true
+                    self.viewModel.pointerChanged(inside: false)
+                    self.viewModel.clickedOutside()
+                    return
+                }
                 // A dropdown (SwiftUI popover) or a confirmation (the sheet of a `.confirmationDialog`, e.g. "Merge pull
                 // request?") is a window of its own, but it belongs to the notch: a click in it is not outside.
                 if let eventWindow, self.belongsToNotch(eventWindow) { return }
@@ -452,6 +461,11 @@ final class NotchController {
         return false
     }
 
+    /// While you drag an edge to resize, the pointer can run a little ahead of it: it still counts as inside.
+    private func isOutsideShape(_ point: NSPoint) -> Bool {
+        !viewModel.resizing && !surfaceRect().insetBy(dx: -4, dy: -4).contains(point)
+    }
+
     private func pointerMoved(force: Bool = false) {
         // Hidden for a share or meeting: hovering the notch area opens nothing.
         guard let panel, panel.isVisible else { return }
@@ -463,8 +477,7 @@ final class NotchController {
         }
         lastCheckedMouseLocation = mouse
         followMouseIfNeeded()
-        // While you drag an edge to resize, the pointer can run a little ahead of it: it still counts as inside.
-        let inside = viewModel.resizing || surfaceRect().insetBy(dx: -4, dy: -4).contains(mouse)
+        let inside = !isOutsideShape(mouse)
         // Over a Mac app open next to the chat, the pointer falls through onto the real app window lying under it.
         let ignores = !inside || MacAppMirror.shared.passesThrough(at: mouse)
         if panel.ignoresMouseEvents != ignores {
