@@ -1,6 +1,222 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld files changed": {
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Datei geändert"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Dateien geändert"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file changed"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files changed"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld archivo cambiado"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld archivos cambiados"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fichier modifié"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fichiers modifiés"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld bestand gewijzigd"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld bestanden gewijzigd"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps": {
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Schritt"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Schritte"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld step"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld steps"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld paso"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld pasos"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld étape"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld étapes"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld stap"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld stappen"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Activity": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktivität"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actividad"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activité"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activiteit"
+          }
+        }
+      }
+    },
     "Agent": {
       "localizations": {
         "de": {
@@ -53,6 +269,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sta toe"
+          }
+        }
+      }
+    },
+    "Answer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antworten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Responder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répondre"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beantwoord"
           }
         }
       }
@@ -113,30 +357,30 @@
         }
       }
     },
-    "Ask Nook anything: your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.": {
+    "Ask Nook anything": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Frag Nook, was du willst: Kalender, Mail, Notizen oder das Web. Pläne und Entwürfe warten auf deinem Mac auf deine Freigabe."
+            "value": "Frag Nook, was du willst"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pregunta a Nook lo que quieras: tu calendario, correo, notas o la web. Los planes y borradores esperan tu aprobación en tu Mac."
+            "value": "Pregunta a Nook lo que quieras"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Demandez ce que vous voulez à Nook : agenda, mails, notes ou le web. Les plans et brouillons attendent votre accord sur votre Mac."
+            "value": "Demandez ce que vous voulez à Nook"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vraag Nook wat je wilt: je agenda, mail, notities of het web. Plannen en concepten wachten op je goedkeuring op je Mac."
+            "value": "Vraag Nook wat je wilt"
           }
         }
       }
@@ -197,6 +441,34 @@
         }
       }
     },
+    "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle ‚iPhone koppeln‘: Nook zeigt fünf Minuten lang einen Code."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige «Vincular un iPhone»: Nook muestra un código durante cinco minutos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez « Associer un iPhone » : Nook affiche un code pendant cinq minutes."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kies ‘Koppel een iPhone’: Nook toont vijf minuten een code."
+          }
+        }
+      }
+    },
     "Connect one in Nook › Settings › Agents.": {
       "localizations": {
         "de": {
@@ -249,6 +521,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Weiger"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminé"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klaar"
           }
         }
       }
@@ -337,6 +637,34 @@
         }
       }
     },
+    "Follow your agents, approve what they ask, start new work, and chat with Nook.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verfolge deine Agenten, gib frei, was sie fragen, starte neue Arbeit und chatte mit Nook."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sigue a tus agentes, aprueba lo que piden, inicia trabajo nuevo y chatea con Nook."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suivez vos agents, approuvez leurs demandes, lancez du travail et discutez avec Nook."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volg je agents, keur goed wat ze vragen, start nieuw werk en chat met Nook."
+          }
+        }
+      }
+    },
     "Has a question": {
       "localizations": {
         "de": {
@@ -389,6 +717,90 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rust"
+          }
+        }
+      }
+    },
+    "In a separate worktree": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In einem eigenen Worktree"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En un worktree aparte"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans un worktree séparé"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In een aparte worktree"
+          }
+        }
+      }
+    },
+    "Is the companion on, and are you on the same Wi‑Fi?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ist der Companion an, und bist du im selben WLAN?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Está activado el companion y estás en la misma Wi‑Fi?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compagnon est-il activé, et êtes-vous sur le même Wi‑Fi ?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staat de companion aan, en zit je op hetzelfde wifi?"
+          }
+        }
+      }
+    },
+    "It was closed or archived on your Mac.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sie wurde auf deinem Mac geschlossen oder archiviert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se cerró o archivó en tu Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elle a été fermée ou archivée sur votre Mac."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hij is op je Mac gesloten of gearchiveerd."
           }
         }
       }
@@ -505,6 +917,34 @@
         }
       }
     },
+    "Needs you": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Braucht dich"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Te necesita"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous attend"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wacht op jou"
+          }
+        }
+      }
+    },
     "New chat": {
       "localizations": {
         "de": {
@@ -589,34 +1029,6 @@
         }
       }
     },
-    "No chats yet. Start one with the pencil.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Noch keine Chats. Starte einen mit dem Stift."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aún no hay chats. Empieza uno con el lápiz."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pas encore de discussions. Commencez-en une avec le crayon."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nog geen chats. Start er een met het potlood."
-          }
-        }
-      }
-    },
     "No folders yet.": {
       "localizations": {
         "de": {
@@ -645,58 +1057,30 @@
         }
       }
     },
-    "No sessions.": {
+    "No sessions": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keine Sitzungen."
+            "value": "Keine Sitzungen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "No hay sesiones."
+            "value": "No hay sesiones"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aucune session."
+            "value": "Aucune session"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Geen sessies."
-          }
-        }
-      }
-    },
-    "No sessions. Start one with +.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keine Sitzungen. Starte eine mit +."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No hay sesiones. Inicia una con +."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune session. Lancez-en une avec +."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geen sessies. Start er een met +."
+            "value": "Geen sessies"
           }
         }
       }
@@ -785,6 +1169,34 @@
         }
       }
     },
+    "Nook on your iPhone": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook auf deinem iPhone"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook en tu iPhone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook sur votre iPhone"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook op je iPhone"
+          }
+        }
+      }
+    },
     "Nook uses your account, model and permissions for this agent. Anything risky still waits for your approval.": {
       "localizations": {
         "de": {
@@ -869,58 +1281,114 @@
         }
       }
     },
-    "On its own branch (worktree)": {
+    "On your Mac, open Nook › Settings › iPhone companion and turn it on.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Auf eigenem Branch (Worktree)"
+            "value": "Öffne auf deinem Mac Nook › Einstellungen › iPhone-Companion und schalte ihn ein."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "En su propia rama (worktree)"
+            "value": "En tu Mac, abre Nook › Ajustes › Companion de iPhone y actívalo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sur sa propre branche (worktree)"
+            "value": "Sur votre Mac, ouvrez Nook › Réglages › Compagnon iPhone et activez-le."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Op een eigen branch (worktree)"
+            "value": "Open op je Mac Nook › Instellingen › iPhone-companion en zet hem aan."
           }
         }
       }
     },
-    "On your Mac, turn on the iPhone companion in Nook › Settings and choose ‘Pair an iPhone’. Then scan the code, or paste the link. Your phone and Mac must be on the same Wi‑Fi.": {
+    "Only on your Mac: this one is risky or unknown.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Schalte auf deinem Mac in Nook › Einstellungen den iPhone-Begleiter ein und wähle „iPhone koppeln“. Scanne dann den Code oder füge den Link ein. Dein iPhone und dein Mac müssen im selben WLAN sein."
+            "value": "Nur auf deinem Mac: Das ist riskant oder unbekannt."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "En tu Mac, activa el acompañante para iPhone en Nook › Ajustes y elige “Vincular un iPhone”. Luego escanea el código o pega el enlace. Tu teléfono y tu Mac deben estar en la misma red Wi‑Fi."
+            "value": "Solo en tu Mac: es arriesgado o desconocido."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sur votre Mac, activez le compagnon iPhone dans Nook › Réglages et choisissez « Jumeler un iPhone ». Scannez ensuite le code, ou collez le lien. Votre téléphone et votre Mac doivent être sur le même Wi‑Fi."
+            "value": "Uniquement sur votre Mac : c’est risqué ou inconnu."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zet op je Mac in Nook › Instellingen de iPhone-metgezel aan en kies ‘Koppel een iPhone’. Scan dan de code, of plak de link. Je telefoon en Mac moeten op hetzelfde wifi zitten."
+            "value": "Alleen op je Mac: dit is riskant of onbekend."
+          }
+        }
+      }
+    },
+    "Options": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optionen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opciones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Options"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opties"
+          }
+        }
+      }
+    },
+    "Own branch": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigener Branch"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rama propia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Propre branche"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigen branch"
           }
         }
       }
@@ -981,30 +1449,58 @@
         }
       }
     },
-    "Plan first, without changing anything": {
+    "Paste the link instead": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Erst planen, ohne etwas zu ändern"
+            "value": "Stattdessen den Link einfügen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Planificar primero, sin cambiar nada"
+            "value": "Pegar el enlace en su lugar"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Planifier d’abord, sans rien modifier"
+            "value": "Coller le lien à la place"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eerst plannen, zonder iets te veranderen"
+            "value": "Plak liever de link"
+          }
+        }
+      }
+    },
+    "Plan first": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erst planen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planificar primero"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planifier d’abord"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eerst plannen"
           }
         }
       }
@@ -1121,6 +1617,62 @@
         }
       }
     },
+    "Recent": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuletzt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recientes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récentes"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent"
+          }
+        }
+      }
+    },
+    "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanne ihn hier. Telefon und Mac müssen im selben WLAN sein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escanéalo aquí. Tu teléfono y tu Mac deben estar en la misma Wi‑Fi."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scannez-le ici. Votre téléphone et votre Mac doivent être sur le même Wi‑Fi."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan hem hier. Je telefoon en Mac moeten op hetzelfde wifi zitten."
+          }
+        }
+      }
+    },
     "Scan the code": {
       "localizations": {
         "de": {
@@ -1201,6 +1753,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sessies"
+          }
+        }
+      }
+    },
+    "Sessions of your coding agents on your Mac show up here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sitzungen deiner Coding-Agenten auf dem Mac erscheinen hier."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las sesiones de tus agentes de código en tu Mac aparecen aquí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sessions de vos agents de code sur votre Mac apparaissent ici."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessies van je coding-agents op je Mac verschijnen hier."
           }
         }
       }
@@ -1317,6 +1897,34 @@
         }
       }
     },
+    "Start session": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sitzung starten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar sesión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer la session"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start sessie"
+          }
+        }
+      }
+    },
     "Stop": {
       "localizations": {
         "de": {
@@ -1397,6 +2005,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Deze sessie stoppen?"
+          }
+        }
+      }
+    },
+    "Summarize my unread mail.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fasse meine ungelesenen Mails zusammen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume mi correo sin leer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résume mes mails non lus."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vat mijn ongelezen mail samen."
           }
         }
       }
@@ -1765,6 +2401,34 @@
         }
       }
     },
+    "Update Nook on your Mac": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktualisiere Nook auf deinem Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualiza Nook en tu Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettez Nook à jour sur votre Mac"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werk Nook op je Mac bij"
+          }
+        }
+      }
+    },
     "Update Nook on your Mac to chat with Nook from your phone.": {
       "localizations": {
         "de": {
@@ -1849,6 +2513,34 @@
         }
       }
     },
+    "What did my agents do today?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was haben meine Agenten heute gemacht?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Qué hicieron mis agentes hoy?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qu’ont fait mes agents aujourd’hui ?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wat hebben mijn agents vandaag gedaan?"
+          }
+        }
+      }
+    },
     "What should the agent do?": {
       "localizations": {
         "de": {
@@ -1877,6 +2569,62 @@
         }
       }
     },
+    "What’s on my calendar today?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was steht heute in meinem Kalender?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Qué tengo hoy en el calendario?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qu’y a-t-il dans mon agenda aujourd’hui ?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wat staat er vandaag in mijn agenda?"
+          }
+        }
+      }
+    },
+    "Without changing anything": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ohne etwas zu ändern"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin cambiar nada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sans rien modifier"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zonder iets te veranderen"
+          }
+        }
+      }
+    },
     "Working": {
       "localizations": {
         "de": {
@@ -1901,6 +2649,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aan het werk"
+          }
+        }
+      }
+    },
+    "Writing…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schreibt…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribiendo…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rédaction…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aan het schrijven…"
           }
         }
       }
@@ -2069,6 +2845,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eigen antwoord"
+          }
+        }
+      }
+    },
+    "and %lld more": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "und %lld weitere"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "y %lld más"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "et %lld de plus"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en nog %lld"
           }
         }
       }

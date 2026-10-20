@@ -14,26 +14,26 @@ struct RootView: View {
         Group {
             switch client.phase {
             case .unpaired, .pairing:
-                NavigationStack { PairingView().navigationTitle("Nook") }
+                PairingView()
             case .connected, .offline:
                 TabView(selection: $tab) {
                     NavigationStack(path: $sessionPath) {
                         SessionListView(path: $sessionPath)
-                            .navigationTitle(client.macName.isEmpty ? "Nook" : client.macName)
                     }
-                    .tabItem { Label("Sessions", systemImage: "terminal") }
+                    .tabItem { Label("Sessions", systemImage: "square.stack.3d.up.fill") }
                     .badge(client.sessions.needingYou)
                     .tag(Tab.sessions)
                     NavigationStack(path: $chatPath) {
                         ChatListView(path: $chatPath)
-                            .navigationTitle("Nook")
                     }
-                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+                    .tabItem { Label("Chat", systemImage: "sparkles") }
                     .tag(Tab.nook)
                 }
             }
         }
-        .tint(Palette.iris)
+        .tint(Theme.iris)
+        .preferredColorScheme(.dark)
+        .background(Theme.canvas.ignoresSafeArea())
         .task { client.startPolling() }
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
@@ -51,67 +51,84 @@ struct RootView: View {
     }
 }
 
-enum Palette {
-    static let iris = Color(red: 0.55, green: 0.5, blue: 1.0)
-    static let amber = Color(red: 1.0, green: 0.72, blue: 0.3)
-    static let coral = Color(red: 1.0, green: 0.42, blue: 0.42)
-    static let mint = Color(red: 0.27, green: 0.88, blue: 0.65)
-
-    static func color(_ attention: String) -> Color {
-        switch attention {
-        case "approval", "input": return amber
-        case "failed": return coral
-        case "limited": return amber
-        case "working": return iris
-        case "ready": return mint
-        default: return .secondary
-        }
-    }
-
-    static func word(_ attention: String) -> String {
-        switch attention {
-        case "approval": return String(localized: "Waiting for approval")
-        case "input": return String(localized: "Has a question")
-        case "failed": return String(localized: "Failed")
-        case "limited": return String(localized: "Limit reached")
-        case "working": return String(localized: "Working")
-        case "ready": return String(localized: "Ready")
-        case "finished": return String(localized: "Finished")
-        default: return String(localized: "Idle")
-        }
-    }
-}
-
 // MARK: Pairing
 
+/// The welcome screen: what the app is, three steps, and one button.
 struct PairingView: View {
     @EnvironmentObject private var client: CompanionClient
     @State private var text = ""
     @State private var scanning = false
+    @State private var pasting = false
 
     var body: some View {
-        Form {
-            Section {
-                Text("On your Mac, turn on the iPhone companion in Nook › Settings and choose ‘Pair an iPhone’. Then scan the code, or paste the link. Your phone and Mac must be on the same Wi‑Fi.")
-                    .font(.callout)
-            }
-            Section {
-                if DataScannerViewController.isSupported {
-                    Button { scanning = true } label: { Label("Scan the code", systemImage: "qrcode.viewfinder") }
+        ScrollView {
+            VStack(spacing: Theme.Spacing.xl) {
+                VStack(spacing: Theme.Spacing.md) {
+                    NookMark(size: 76)
+                    Text("Nook on your iPhone")
+                        .font(.largeTitle.weight(.bold)).foregroundStyle(Theme.text)
+                    Text("Follow your agents, approve what they ask, start new work, and chat with Nook.")
+                        .font(.callout).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                 }
-                TextField("nook://pair?…", text: $text, axis: .vertical)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(1...4)
-                Button("Pair") { client.pair(link: text) }
-                    .disabled(text.isEmpty || client.phase == .pairing)
-                if client.phase == .pairing { ProgressView() }
+                .padding(.top, 56)
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    PairingStep(number: 1, text: "On your Mac, open Nook › Settings › iPhone companion and turn it on.")
+                    PairingStep(number: 2, text: "Choose ‘Pair an iPhone’: Nook shows a code for five minutes.")
+                    PairingStep(number: 3, text: "Scan it here. Your phone and Mac need to be on the same Wi‑Fi.")
+                }
+                .card()
+
+                VStack(spacing: Theme.Spacing.md) {
+                    if client.phase == .pairing {
+                        ProgressView().controlSize(.large).frame(minHeight: 50)
+                    } else if DataScannerViewController.isSupported {
+                        Button { scanning = true } label: { Label("Scan the code", systemImage: "qrcode.viewfinder") }
+                            .buttonStyle(PrimaryButtonStyle())
+                    }
+                    if pasting || !DataScannerViewController.isSupported {
+                        VStack(spacing: Theme.Spacing.sm) {
+                            TextField("nook://pair?…", text: $text, axis: .vertical)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(1...4)
+                                .font(.callout.monospaced())
+                                .padding(Theme.Spacing.md)
+                                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                            Button("Pair") { client.pair(link: text) }
+                                .buttonStyle(ActionButtonStyle(color: Theme.iris, filled: true))
+                                .disabled(text.isEmpty || client.phase == .pairing)
+                        }
+                        .card(padding: Theme.Spacing.md)
+                    } else {
+                        Button("Paste the link instead") { withAnimation { pasting = true } }
+                            .font(.subheadline.weight(.medium)).foregroundStyle(Theme.textSecondary)
+                    }
+                }
             }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.bottom, Theme.Spacing.xl)
         }
+        .screen()
         .sheet(isPresented: $scanning) {
             QRScanner { value in
                 scanning = false
                 client.pair(link: value)
             }
             .ignoresSafeArea()
+        }
+    }
+}
+
+private struct PairingStep: View {
+    let number: Int
+    let text: LocalizedStringKey
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Text(number, format: .number)
+                .font(.subheadline.weight(.bold)).foregroundStyle(Theme.iris)
+                .frame(width: 28, height: 28)
+                .background(Theme.iris.opacity(0.15), in: Circle())
+            Text(text).font(.callout).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -151,81 +168,209 @@ struct QRScanner: UIViewControllerRepresentable {
 
 // MARK: Sessions
 
+/// Everything on the Mac at a glance: a connection line, three counts, then the sessions grouped by what they need:
+/// you first, then what is working, then the rest.
 struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
     @Binding var path: [String]
     @State private var composing = false
 
-    private var sorted: [SessionDigest] {
-        let rank = ["approval": 0, "input": 1, "failed": 2, "limited": 3, "working": 4, "ready": 5, "idle": 6, "finished": 7]
-        return client.sessions.sorted {
-            let (a, b) = (rank[$0.attention] ?? 9, rank[$1.attention] ?? 9)
-            return a != b ? a < b : $0.updated > $1.updated
-        }
+    private var ordered: [SessionDigest] { client.sessions.sorted { $0.updated > $1.updated } }
+    private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
+    private var working: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention == "working" } }
+    private var rest: [SessionDigest] { ordered.filter { !Self.needsYou($0) && $0.attention != "working" } }
+
+    static func needsYou(_ session: SessionDigest) -> Bool {
+        !session.items.isEmpty || ["approval", "input", "failed", "limited"].contains(session.attention)
     }
 
     var body: some View {
-        List {
-            if case .offline(let reason) = client.phase {
-                Label(reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, systemImage: "wifi.slash").foregroundStyle(Palette.amber)
-            }
-            if client.macPushReady == false {
-                Label("Push notifications are not ready on your Mac yet (Settings › iPhone companion).", systemImage: "bell.slash")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            ForEach(sorted) { session in
-                NavigationLink(value: session.id) { SessionRow(session: session) }
-                    // The first thing that waits, one swipe away: deny always, allow when the Mac says it is low risk.
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if let item = session.items.first(where: { $0.kind == .approval }) {
-                            Button("Deny", role: .destructive) { Task { await client.decide(session, item: item, allow: false) } }
-                            if item.canAllow {
-                                Button("Allow") { Task { await client.decide(session, item: item, allow: true) } }.tint(Palette.mint)
-                            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                ConnectionLine()
+                if client.macPushReady == false {
+                    Banner(text: String(localized: "Push notifications are not ready on your Mac yet (Settings › iPhone companion)."),
+                           symbol: "bell.slash.fill", color: Theme.textSecondary)
+                }
+                if !client.sessions.isEmpty {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        OverviewTile(count: needsYou.count, title: "Needs you", symbol: "hand.raised.fill", color: Theme.amber, highlight: true)
+                        OverviewTile(count: working.count, title: "Working", symbol: "bolt.fill", color: Theme.iris)
+                        OverviewTile(count: rest.count, title: "Done", symbol: "checkmark", color: Theme.mint)
+                    }
+                }
+                group("Needs you", needsYou, color: Theme.amber)
+                group("Working", working, color: Theme.iris)
+                group("Recent", rest, color: Theme.textTertiary)
+                if client.sessions.isEmpty, client.phase == .connected {
+                    EmptyState(symbol: "square.stack.3d.up", title: "No sessions",
+                               message: "Sessions of your coding agents on your Mac show up here.") {
+                        if client.can(CompanionFeature.start) {
+                            Button { composing = true } label: { Label("New session", systemImage: "plus") }
+                                .buttonStyle(PrimaryButtonStyle())
                         }
                     }
-            }
-            if client.sessions.isEmpty, client.phase == .connected {
-                Group {
-                    if client.can(CompanionFeature.start) { Text("No sessions. Start one with +.") } else { Text("No sessions.") }
                 }
-                .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.xl)
         }
-        .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
         .refreshable { await client.refresh() }
+        .navigationTitle("Sessions")
+        .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if client.can(CompanionFeature.start) {
-                    Button { composing = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("New session")
-                }
+            ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button("Unpair from this Mac", role: .destructive) { client.unpair() }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(Theme.textSecondary) }
+            }
+            if client.can(CompanionFeature.start) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { composing = true } label: {
+                        Image(systemName: "plus").font(.body.weight(.bold)).foregroundStyle(.white)
+                            .frame(width: 32, height: 32).background(Theme.iris, in: Circle())
+                    }
+                    .accessibilityLabel("New session")
+                }
             }
         }
         .sheet(isPresented: $composing) {
             NewSessionView { id in path.append(id) }
         }
+        .screen()
+    }
+
+    @ViewBuilder
+    private func group(_ title: LocalizedStringKey, _ sessions: [SessionDigest], color: Color) -> some View {
+        if !sessions.isEmpty {
+            SectionHeader(title: title, count: sessions.count, color: color)
+            ForEach(sessions) { SessionCard(session: $0) }
+        }
     }
 }
 
-struct SessionRow: View {
+/// Which Mac this is and whether it answers.
+private struct ConnectionLine: View {
+    @EnvironmentObject private var client: CompanionClient
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            switch client.phase {
+            case .offline(let reason):
+                Image(systemName: "wifi.slash").foregroundStyle(Theme.amber)
+                Text(reason.isEmpty ? String(localized: "Looking for your Mac…") : reason)
+                    .foregroundStyle(Theme.amber).lineLimit(2)
+            default:
+                Circle().fill(Theme.mint).frame(width: 8, height: 8)
+                Image(systemName: "laptopcomputer").foregroundStyle(Theme.textSecondary)
+                Text(client.macName.isEmpty ? "Mac" : client.macName).foregroundStyle(Theme.textSecondary)
+            }
+            Spacer()
+        }
+        .font(.footnote.weight(.medium))
+        .padding(.horizontal, Theme.Spacing.xs)
+    }
+}
+
+private struct OverviewTile: View {
+    let count: Int
+    let title: LocalizedStringKey
+    let symbol: String
+    let color: Color
+    /// Tinted while the count is not zero: for what waits on you.
+    var highlight = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Image(systemName: symbol).font(.footnote.weight(.semibold)).foregroundStyle(count > 0 ? color : Theme.textTertiary)
+            Text(count, format: .number)
+                .font(.title2.weight(.bold)).monospacedDigit()
+                .foregroundStyle(count > 0 ? Theme.text : Theme.textTertiary)
+                .contentTransition(.numericText())
+            Text(title).font(.caption.weight(.medium)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+        }
+        .card(padding: Theme.Spacing.md, tint: highlight && count > 0 ? color : nil)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A session on the list: open it by tapping the top; what waits on you is answered right on the card.
+struct SessionCard: View {
+    @EnvironmentObject private var client: CompanionClient
     let session: SessionDigest
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Circle().fill(Palette.color(session.attention)).frame(width: 9, height: 9)
-                Text(session.title).font(.headline).lineLimit(1)
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            NavigationLink(value: session.id) {
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    AgentIcon(agent: session.agent)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(session.title).font(.headline).foregroundStyle(Theme.text).lineLimit(2)
+                            Spacer(minLength: Theme.Spacing.sm)
+                            Text(Date(timeIntervalSince1970: session.updated), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+                                .font(.caption2).foregroundStyle(Theme.textTertiary)
+                        }
+                        Text(meta).font(.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                        StatusPill(attention: session.attention).padding(.top, 2)
+                    }
+                }
+                .contentShape(Rectangle())
             }
-            Text("\(Palette.word(session.attention)) · \(session.agent) · \(session.folder)")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            if !session.items.isEmpty {
-                Text(session.items[0].title).font(.subheadline).foregroundStyle(Palette.amber).lineLimit(2)
+            .buttonStyle(.plain)
+
+            if let item = session.items.first {
+                WaitingItem(session: session, item: item, more: session.items.count - 1)
+            } else if !session.excerpt.isEmpty {
+                Text(session.excerpt)
+                    .font(.subheadline).foregroundStyle(Theme.textSecondary).lineLimit(3)
+                    .padding(.leading, 36 + Theme.Spacing.md)
             }
         }
-        .padding(.vertical, 2)
+        .card(tint: session.items.isEmpty ? nil : Theme.amber)
+    }
+
+    private var meta: String {
+        [session.agent, session.folder, session.branch].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// The first thing that waits in a session, with its buttons: allow or deny an approval, or go answer a question.
+private struct WaitingItem: View {
+    @EnvironmentObject private var client: CompanionClient
+    let session: SessionDigest
+    let item: SessionDigest.Item
+    let more: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text(item.title).font(.subheadline).foregroundStyle(Theme.text).lineLimit(3)
+            if !item.detail.isEmpty {
+                Text(item.detail).font(.caption.monospaced()).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+            switch item.kind {
+            case .approval:
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button("Deny") { Haptics.warning(); Task { await client.decide(session, item: item, allow: false) } }
+                        .buttonStyle(ActionButtonStyle(color: Theme.coral))
+                    if item.canAllow {
+                        Button("Allow") { Haptics.success(); Task { await client.decide(session, item: item, allow: true) } }
+                            .buttonStyle(ActionButtonStyle(color: Theme.mint, filled: true))
+                    }
+                }
+                if !item.canAllow {
+                    Label("Only on your Mac: this one is risky or unknown.", systemImage: "lock.fill")
+                        .font(.caption).foregroundStyle(Theme.amber)
+                }
+            case .question:
+                NavigationLink(value: session.id) { Text("Answer") }
+                    .buttonStyle(ActionButtonStyle(color: Theme.amber, filled: true))
+            }
+            if more > 0 {
+                Text("and \(more) more").font(.caption).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.canvas.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
     }
 }

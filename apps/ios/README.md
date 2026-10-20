@@ -17,7 +17,8 @@ Select an iPhone simulator (or configure your own Apple Developer Team in Xcode 
 
 ```text
 NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs push notifications
-  CompanionViews.swift   root tabs, pairing, session list
+  Theme.swift            the one design: colors, radii, spacing, cards, buttons, status pills, agent icons
+  CompanionViews.swift   root tabs, pairing, session overview
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer
 ```
