@@ -31,6 +31,29 @@ final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    // The notch has no menu bar of its own (see `DockPresence`), so the standard editing shortcuts go to the selected
+    // text or field from here: ⌘C copies what you selected in a chat card, ⌘V pastes into its reply field.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if super.performKeyEquivalent(with: event) { return true }
+        guard event.type == .keyDown, let action = Self.editAction(for: event) else { return false }
+        return NSApp.sendAction(action, to: nil, from: self)
+    }
+
+    private static func editAction(for event: NSEvent) -> Selector? {
+        guard let key = event.charactersIgnoringModifiers?.lowercased() else { return nil }
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if flags == [.command, .shift] { return key == "z" ? Selector(("redo:")) : nil }
+        guard flags == .command else { return nil }
+        switch key {
+        case "c": return #selector(NSText.copy(_:))
+        case "x": return #selector(NSText.cut(_:))
+        case "v": return #selector(NSText.paste(_:))
+        case "a": return #selector(NSText.selectAll(_:))
+        case "z": return Selector(("undo:"))
+        default: return nil
+        }
+    }
+
     // Typing in the notch: the emoji picker may open for its field, so watch for it (see `CharacterPaletteWatch`).
     override func becomeKey() {
         super.becomeKey()
