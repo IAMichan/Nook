@@ -16,15 +16,20 @@ enum CompletionPrivacy {
         (#"\b(?:ghp|gho|ghu|ghs|github_pat|glpat|xox[abprs]|AKIA|AIza|re_|whsec_)[A-Za-z0-9_\-]{12,}\b"#, Check.none),
         (#"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"#, Check.none),
         (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"#, Check.none),
-        (#"\b(?=[A-Za-z0-9+/_\-]*\d)(?=[A-Za-z0-9+/_\-]*[A-Za-z])[A-Za-z0-9+/_\-]{32,}={0,2}"#, Check.none),
         (#"(?i)\b(?:password|passwd|pwd|wachtwoord|secret|geheim|api[_-]?key|token|pincode|pin)\b\s*[:=]\s*\S+"#, Check.none),
     ]
 
-    private static let patterns: [(NSRegularExpression, Check)] = sources.map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
+    /// Any long run of letters and digits: catches keys without a known prefix, but also the identifiers tools hand back
+    /// (event ids, commit hashes), so only the writing samples use it (see `sanitize(_:generic:)`).
+    private static let genericSource = #"\b(?=[A-Za-z0-9+/_\-]*\d)(?=[A-Za-z0-9+/_\-]*[A-Za-z])[A-Za-z0-9+/_\-]{32,}={0,2}"#
 
-    static func sanitize(_ text: String) -> String {
+    private static let patterns: [(NSRegularExpression, Check)] = sources.map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
+    private static let genericPattern = try! NSRegularExpression(pattern: genericSource)
+
+    /// `generic: false` keeps long identifiers and hashes, for text a model still has to act on.
+    static func sanitize(_ text: String, generic: Bool = true) -> String {
         var result = text
-        for (pattern, check) in patterns {
+        for (pattern, check) in patterns + (generic ? [(genericPattern, Check.none)] : []) {
             let source = result as NSString
             var output = ""
             var cursor = 0

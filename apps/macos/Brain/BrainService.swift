@@ -106,13 +106,15 @@ final class BrainService {
         let request = "Request: \(userText)\n\n(\(language) Answer in plain sentences; never output JSON or code unless the request is about code.)"
         // A greeting needs no calendar, mail or screen: a small model would otherwise talk about those instead of answering.
         let lean = profile.isSmall && intent.isSmallTalk && history.isEmpty && untrusted == nil
-        let usedContext = lean ? (context.split(separator: "\n").first.map(String.init) ?? "") : context
+        // What Nook gathered goes to an external brain as the privacy level allows; the request itself is the user's own.
+        let usedContext = settings.shielded(lean ? (context.split(separator: "\n").first.map(String.init) ?? "") : context)
+        let screenText = untrusted.map { settings.shielded($0) }
         // Everything has to fit in the model's window: screen text gives way first, then context, never the request itself.
         let budget = profile.promptCharacterBudget - system.count - toolsText - request.count - (profile.isSmall ? userText.count + 40 : 0)
         let fitted = ContextBudget.fit([
             .init(text: historyText, priority: 2, minimum: min(historyText.count, 600)),
             .init(text: usedContext, priority: 3, minimum: min(usedContext.count, 1_500)),
-            .init(text: untrusted ?? "", priority: 1, minimum: min((untrusted ?? "").count, 800))
+            .init(text: screenText ?? "", priority: 1, minimum: min((screenText ?? "").count, 800))
         ], budget: max(budget, 3_000))
 
         // Small models lose the question under a long context: name it before the context as well as after it.
@@ -209,7 +211,7 @@ final class BrainService {
         for document in documents.prefix(3) {
             guard !Task.isCancelled else { break }
             let title = Evidence.title(of: document)
-            let prompt = Evidence.prompt(question: question, goal: goal, title: title, document: String(document.prefix(6_000)))
+            let prompt = Evidence.prompt(question: question, goal: goal, title: title, document: settings.shielded(String(document.prefix(6_000))))
             let reply = try? await RetrievalLedger.withTimeout(profile.isSmall ? 25 : 12) { [weak self] in
                 guard let self else { throw CancellationError() }
                 return try await self.complete(system: Evidence.system, prompt: prompt, profile: profile)
@@ -298,6 +300,8 @@ final class BrainService {
                          profile: ModelProfile, runner: ToolRunner, thinking: Bool, sending images: [ChatImage],
                          onText: ((String) -> Void)?) async throws -> BrainPlan {
         let selection = settings.selection
+        // Whatever a tool reads on the way is filtered like the context (only when the brain is not on this Mac).
+        runner.shield = { [settings] in settings.shielded($0) }
         if selection.runtime == .mlx, selection.model == AppleModel.id {
             return try await AppleIntelligence.run(system: system, prompt: fittedHistory + prompt, profile: profile, runner: runner, onText: onText)
         }

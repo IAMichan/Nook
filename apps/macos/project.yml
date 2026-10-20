@@ -154,6 +154,7 @@ targets:
       - path: Core/I18n+SettingsLayout.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
+      - path: Core/I18n+Privacy.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -286,6 +287,7 @@ targets:
       - path: Services/Autocomplete/CompletionPreferences.swift
       - path: Services/Autocomplete/CompletionEmoji.swift
       - path: Services/Autocomplete/CompletionPrivacy.swift
+      - path: Core/PrivacyLevel.swift
       - path: Services/Autocomplete/CompletionLearning.swift
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift

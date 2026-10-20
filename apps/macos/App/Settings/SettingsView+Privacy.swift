@@ -1,12 +1,14 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
-/// Settings › Privacy & security: permissions, log.
+/// Settings › Privacy & security: privacy level, permissions, apps Nook never reads, log.
 extension SettingsView {
     // MARK: Privacy and Access
 
     var privacySection: some View {
         Group {
+            privacyLevelSection
             Section {
                 ForEach(SystemPermission.allCases) { permission in
                     permissionRow(permission.title, detail: permission.detail, granted: permissions.isGranted(permission)) {
@@ -21,6 +23,7 @@ extension SettingsView {
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
             privateSourcesSection
+            neverReadAppsSection
             AuditLogSection()
             Section(tr("settings.privacy.whatLeavesMac")) {
                 promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
@@ -37,6 +40,74 @@ extension SettingsView {
                 }
             }
         }
+    }
+
+    /// How tightly Nook guards what an external brain sees: one choice, what it means, and whether it applies right now.
+    private var privacyLevelSection: some View {
+        Section {
+            Picker(selection: $settings.privacyLevel) {
+                ForEach(PrivacyLevel.allCases) { level in
+                    Text(tr(level.titleKey)).tag(level)
+                }
+            } label: {
+                SettingLabel(tr("settings.privacy.level"), detail: tr("settings.privacy.levelDetail"))
+            }
+            .pickerStyle(.segmented)
+            Text(tr(settings.privacyLevel.detailKey))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if settings.isLocalBrain {
+                Text(tr("settings.privacy.level.localBrain"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(tr("settings.privacy.levelTitle"))
+        } footer: {
+            Text(tr("settings.privacy.levelFooter"))
+        }
+    }
+
+    /// Apps Nook never reads: not the screen text, not through accessibility or scripting, and no suggestions while typing.
+    private var neverReadAppsSection: some View {
+        Section {
+            ForEach(settings.neverReadApps, id: \.self) { bundleID in
+                HStack {
+                    Label(Self.appName(bundleID), systemImage: "eye.slash")
+                    Spacer()
+                    Button(tr("settings.privacy.neverRead.remove")) {
+                        settings.neverReadApps.removeAll { $0 == bundleID }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            Button(tr("settings.privacy.neverRead.add")) { chooseNeverReadApp() }
+        } header: {
+            Text(tr("settings.privacy.neverRead.title"))
+        } footer: {
+            Text(tr("settings.privacy.neverRead.footer"))
+        }
+    }
+
+    private func chooseNeverReadApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK else { return }
+        let picked = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+            .filter { !ScreenReader.builtInExcluded.contains($0) && !settings.neverReadApps.contains($0) }
+        guard !picked.isEmpty else { return }
+        settings.neverReadApps += picked
+        // Text Nook already read from these apps is dropped at once, not at the next read.
+        app.screenContext.clear()
+    }
+
+    private static func appName(_ bundleID: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
+        return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
     }
 
     func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {

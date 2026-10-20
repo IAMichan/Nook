@@ -107,6 +107,16 @@ Work you ask for (a question, Screen Peek, dictation) never waits for the plan.
 
 `AppSettings.localOnlySources` tracks sources that external cloud providers are never allowed to see (**Settings › Privacy and access › Only on this Mac**). Whenever an external brain is active (`AppSettings.privateSources`), those sources are stripped from the scope via `SourceScope.keepingLocal` at the start of `prepareRun` and `answer`. Their context, tools, and search queries are completely excluded, and prior turns that used a local-only source are omitted from conversation history (`NookChat.withoutPrivate`). With a local brain (built-in MLX, Ollama, LM Studio), all enabled sources remain available.
 
+### Privacy Level & Apps Nook Never Reads
+
+`AppSettings.privacyLevel` (**Settings › Privacy and access › Privacy level**) sets how tightly Nook filters what it gathers before it goes to an external brain. `AppSettings.shielded` applies `PrivacyFilter` (`Core/PrivacyLevel.swift`, tested in `PrivacyFilterTests`) to the context and screen text in `BrainService.run`, to evidence documents, and to every read-tool result in `ToolRunner.shield`. What the user types is never changed, and with a brain on this Mac nothing is filtered because nothing leaves it.
+
+- **Open:** context goes as it is.
+- **Balanced** (default): secrets are replaced by `[redacted]`: passwords, API keys and tokens with a known prefix, JWTs, private keys, card numbers (Luhn), IBANs and BSNs (eleven test).
+- **Strict:** also e-mail addresses (`[email]`), phone numbers (`[phone]`) and long mixed-case random tokens; the screen and clipboard join the *Only on this Mac* sources (`PrivacyLevel.localOnlySources`), which also pauses thinking along with an external brain. Identifiers a model still acts on (UUIDs, commit hashes) stay.
+
+**Apps Nook never reads** (`AppSettings.neverReadApps`) adds bundle identifiers to `ScreenReader.excludedBundles`, next to the built-in password managers: screen OCR, `read_app` (accessibility and scripting), thinking along and autocomplete all skip them. The privacy level is deliberately not in `SettingsCatalog`, so the brain can never lower it.
+
 ### Local Brain Quality & Grounding
 
 4B–8B parameter local models benefit from structured assistance (`Brain/LocalQuality.swift`, tested in `LocalQualityTests`):
@@ -166,7 +176,7 @@ Clicking `ⓘ` reveals the exact context and every search query with its outcome
 
 ### Changing Settings from the Chat
 
-Ask Nook to change its own settings ("turn web search off", "answer in English", "open my connection settings"). The brain reads them with `get_settings` and proposes `change_setting`; every change waits for your click on the plan, is logged in the `audit` table, and can be undone ("undo that" restores the old value). `open_settings` only opens the window at a section, so it may run right away when you ask for it and **Perform small tasks immediately** is on. Which settings qualify is `Brain/SettingsCatalog.swift`: anything that would let Nook act without asking, or send more data off your Mac (the brain, its provider, **Only on this Mac**), is deliberately left out and stays a click in Settings.
+Ask Nook to change its own settings ("turn web search off", "answer in English", "open my connection settings"). The brain reads them with `get_settings` and proposes `change_setting`; every change waits for your click on the plan, is logged in the `audit` table, and can be undone ("undo that" restores the old value). `open_settings` only opens the window at a section, so it may run right away when you ask for it and **Perform small tasks immediately** is on. Which settings qualify is `Brain/SettingsCatalog.swift`: anything that would let Nook act without asking, or send more data off your Mac (the brain, its provider, **Only on this Mac**, the privacy level), is deliberately left out and stays a click in Settings.
 
 ## Integration Capabilities Matrix
 

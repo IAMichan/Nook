@@ -406,6 +406,16 @@ final class AppSettings: ObservableObject {
     @Published var localOnlySources: Set<String> {
         didSet { UserDefaults.standard.set(localOnlySources.sorted(), forKey: "localOnlySources") }
     }
+    /// Apps Nook never reads, on top of the password managers (`ScreenReader.builtInExcluded`): bundle identifiers.
+    @Published var neverReadApps: [String] {
+        didSet { UserDefaults.standard.set(neverReadApps, forKey: Self.neverReadAppsKey) }
+    }
+    nonisolated static let neverReadAppsKey = "neverReadApps"
+    /// How tightly Nook guards what an external brain sees (Settings › Privacy): secrets and, at the strictest level,
+    /// contact details are taken out of what Nook gathered, and the screen and clipboard stay on this Mac.
+    @Published var privacyLevel: PrivacyLevel {
+        didSet { UserDefaults.standard.set(privacyLevel.rawValue, forKey: "privacyLevel") }
+    }
     /// Local quality: a narrow first step copies the evidence out of each document, and the answer is written from those
     /// quotes (slower, more accurate). Only for small brains.
     @Published var evidenceFirst: Bool {
@@ -448,7 +458,14 @@ final class AppSettings: ObservableObject {
 
     /// The sources the active brain may not see: the "only on this Mac" sources while an external brain answers, none
     /// when the brain runs on this Mac.
-    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources }
+    /// The privacy level adds its own (the screen and clipboard when strict).
+    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources.union(privacyLevel.localOnlySources) }
+
+    /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged on this Mac,
+    /// filtered by the privacy level when it goes to an external brain.
+    func shielded(_ text: String) -> String {
+        isLocalBrain ? text : PrivacyFilter.apply(text, level: privacyLevel)
+    }
 
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
@@ -586,6 +603,8 @@ final class AppSettings: ObservableObject {
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
         energyMode = EnergyMode(rawValue: defaults.string(forKey: "energyMode") ?? "") ?? .automatic
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
+        neverReadApps = defaults.stringArray(forKey: Self.neverReadAppsKey) ?? []
+        privacyLevel = PrivacyLevel(rawValue: defaults.string(forKey: "privacyLevel") ?? "") ?? .balanced
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")
         checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true
         useMemory = defaults.object(forKey: "useMemory") as? Bool ?? true
