@@ -109,6 +109,10 @@ pub fn show_main(app: &AppHandle, route: &str) {
 
 /// Opent de balk en zet de cursor in het invoerveld.
 pub fn open_bar(app: &AppHandle, focus: &str) {
+    // While Nook hides for a share or meeting, agent prompts wait in the bar; a shortcut or the tray still opens it.
+    if focus == "agents" && crate::services::quiet::holds_cards(app) {
+        return;
+    }
     if let Some(bar) = app.get_webview_window(BAR) {
         place_bar(app, true);
         let _ = bar.show();

@@ -252,6 +252,38 @@ pub struct Capabilities {
     #[serde(default)]
     pub files: bool,
     /// Uitleg per mogelijkheid die er niet (helemaal) is, voor de instellingen.
+    /// Noticing a screen share or a call (window list, microphone use).
+    #[serde(default)]
+    pub share_detection: bool,
+    /// Leaving Nook's windows out of screen sharing and screenshots (Windows: `WDA_EXCLUDEFROMCAPTURE`).
+    #[serde(default)]
+    pub capture_exclusion: bool,
     #[serde(default)]
     pub notes: std::collections::BTreeMap<String, String>,
+}
+
+/// Reads whether you share your screen or sit in a call (`QuietWatch` on the Mac): the windows on screen (a sharing bar,
+/// a meeting site) and which programs have the microphone open. What it means is decided in
+/// [`crate::services::quiet`].
+pub trait QuietWatch: Send + Sync {
+    /// Whether this platform can see other programs' windows at all.
+    fn available(&self) -> bool {
+        false
+    }
+    /// Every top-level window on screen except Nook's own, small ones (sharing bars) included.
+    fn windows(&self) -> Vec<crate::services::quiet::Window> {
+        vec![]
+    }
+    /// Programs that have the microphone open right now, Nook itself left out.
+    fn microphone_apps(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+/// Reads the computer's power and load for the energy plan: battery, battery saver, a busy or hot processor. `away` is
+/// filled in by the caller from the screen reader's idle time.
+pub trait PowerMonitor: Send + Sync {
+    fn signals(&self) -> crate::services::energy::EnergySignals {
+        Default::default()
+    }
 }

@@ -1,8 +1,9 @@
 <script lang="ts">
-  // Stem en geluid: praten en voorlezen, de spraakherkenning, "Hé Nook", overal dicteren (Flow), de Notetaker en
-  // geluiden (ook je eigen).
+  // Stem en geluid: praten en voorlezen, de spraakherkenning, "Hé Nook", overal dicteren (Flow), de Notetaker,
+  // geluiden (ook je eigen) en hoe Nook zich gedraagt in meetings en als je je scherm deelt.
   import { nook } from "../../lib/state.svelte";
-  import { services, type FlowView, type ServicePrefs, type VoiceInfo, type SpeechEngine, type FlowSettings } from "../../lib/services";
+  import { services, type FlowView, type ServicePrefs, type VoiceInfo, type SpeechEngine, type FlowSettings, type QuietView } from "../../lib/services";
+  import type { QuietBehavior } from "../../lib/types";
   import { play, forgetCustomSounds } from "../../lib/sounds";
 
   const s = $derived(nook.settings!);
@@ -27,6 +28,23 @@
     prefs = await services.savePrefs({ ...prefs, ...patch });
     info = await services.voiceInfo();
   }
+
+  // Meetings and screen sharing. While this page is open Nook reads the situation, also with "change nothing" for both.
+  const behaviors: { id: QuietBehavior; title: string }[] = [
+    { id: "normal", title: "Niets veranderen" },
+    { id: "quiet", title: "Stil: geen meldingen of geluiden" },
+    { id: "hideFromShare", title: "Verbergen voor kijkers (jij ziet Nook nog)" },
+    { id: "hide", title: "Helemaal verbergen, ook voor jou" },
+  ];
+  const meetingBehaviors = behaviors.filter((b) => b.id !== "hideFromShare");
+  let quietNow = $state<QuietView | null>(null);
+  $effect(() => {
+    if (!caps?.desktop) return;
+    const read = () => services.quietStatus(true).then((v) => (quietNow = v)).catch(() => {});
+    read();
+    const timer = setInterval(read, 2000);
+    return () => clearInterval(timer);
+  });
 
   async function saveFlow(patch: Partial<FlowSettings>) {
     if (!flow) return;
@@ -213,6 +231,44 @@
     </div>
   {/if}
 </div>
+{#if caps?.desktop}
+  <h3>Meetings en scherm delen</h3>
+  <div class="group">
+    <label class="row">
+      <span>Als je je scherm deelt<br /><small class="faint">Bijvoorbeeld een presentatie in Zoom, Teams of Google Meet, of een schermopname.</small></span>
+      <select value={s.quietWhileSharing} onchange={(e) => nook.saveSettings({ quietWhileSharing: e.currentTarget.value as QuietBehavior })}>
+        {#each behaviors as b (b.id)}<option value={b.id}>{b.title}</option>{/each}
+      </select>
+    </label>
+    {#if s.quietWhileSharing === "hideFromShare" && !caps.captureExclusion}<p class="faint note">{caps.notes?.captureExclusion}</p>{/if}
+    <label class="row">
+      <span>Tijdens een meeting<br /><small class="faint">Een gesprek in Zoom, Teams of in je browser, of een afspraak die nu bezig is.</small></span>
+      <select value={s.quietInMeetings === "hideFromShare" ? "quiet" : s.quietInMeetings} onchange={(e) => nook.saveSettings({ quietInMeetings: e.currentTarget.value as QuietBehavior })}>
+        {#each meetingBehaviors as b (b.id)}<option value={b.id}>{b.title}</option>{/each}
+      </select>
+    </label>
+    <label class="row">
+      <span>Afspraken in je agenda tellen mee<br /><small class="faint">Een afspraak die nu bezig is geldt ook als meeting, niet alleen een gesprek. Afspraken van een hele dag tellen niet.</small></span>
+      <input type="checkbox" checked={s.quietUseCalendar} onchange={(e) => nook.saveSettings({ quietUseCalendar: e.currentTarget.checked })} />
+    </label>
+    {#if caps.captureExclusion}
+      <label class="row">
+        <span>Nook altijd buiten schermdelen houden<br /><small class="faint">Nook komt nooit in een gedeeld scherm, schermafbeelding of opname, ook niet in de eerste seconden voordat Nook het delen ziet. Jij ziet hem gewoon.</small></span>
+        <input type="checkbox" checked={s.hideFromCaptures} onchange={(e) => nook.saveSettings({ hideFromCaptures: e.currentTarget.checked })} />
+      </label>
+      <label class="row">
+        <span>Nook tonen in je schermafbeeldingen<br /><small class="faint">Het Knipprogramma van Windows telt niet als scherm delen, dus Nook staat op je schermafbeeldingen en op opnames die je daarmee maakt. Werkt niet als Nook altijd buiten schermdelen blijft.</small></span>
+        <input type="checkbox" checked={s.showInScreenshots} onchange={(e) => nook.saveSettings({ showInScreenshots: e.currentTarget.checked })} />
+      </label>
+    {/if}
+    <div class="row">
+      <span>Nu</span>
+      <span class="faint">{quietNow?.status ?? "…"}</span>
+    </div>
+    {#if !caps.shareDetection}<p class="faint note">{caps.notes?.shareDetection}</p>{/if}
+    <p class="faint note">Nook ziet dat je je scherm deelt aan de deelbalk van Zoom, Teams, Webex, Slack of je browser{caps.os === "windows" ? ", en aan het Knipprogramma van Windows" : ""}. Een meeting herkent hij aan een gespreks-app of meetingsite die je microfoon gebruikt, aan een gesprek dat de Notetaker opneemt en, als je dat wilt, aan je agenda. Helemaal verbergen haalt ook het hoofdvenster en de balk weg tot het voorbij is; toestemmingsvragen van agents wachten dan ook.</p>
+  </div>
+{/if}
 {#if message}<p class="err">{message}</p>{/if}
 
 <style>

@@ -15,6 +15,7 @@
   import { attachments } from "../lib/attachments.svelte";
   import { play } from "../lib/sounds";
   import { agents } from "../lib/agents.svelte";
+  import { quiet } from "../lib/quiet.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
   import AgentDots from "./agents/AgentDots.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
@@ -145,7 +146,8 @@
   // Detailed opens the panel with a card; compact widens the closed bar into one line.
   $effect(() => {
     const card = agents.attention;
-    if (!card) return;
+    // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, the bar does not pop open.
+    if (!card || untrack(() => quiet.silent)) return;
     untrack(() => {
       if (expanded) return;
       if (noticeCompact) {
@@ -197,7 +199,7 @@
     whatsapp.start();
   });
   $effect(() => {
-    if (whatsapp.chat && !untrack(() => expanded)) untrack(() => open());
+    if (whatsapp.chat && !untrack(() => expanded) && !untrack(() => quiet.silent)) untrack(() => open());
   });
 
   // Escape first shrinks an enlarged photo, then closes the WhatsApp card, then the bar.

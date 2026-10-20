@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths;
 use crate::provider::AIProvider;
+use crate::services::energy::EnergyMode;
+use crate::services::quiet::QuietBehavior;
 
 /// Waar het denken gebeurt. Op Windows, Linux en Android is er (nog) geen ingebouwd MLX-model:
 /// lokaal betekent Ollama of LM Studio.
@@ -89,6 +91,18 @@ pub struct Settings {
     /// GitHub organizations ("acme") and repositories ("acme/web") whose pull requests show under Agents › Pull
     /// requests as well (Settings › Accounts & connections). See `connectors::pulls::add_watched`.
     pub watched_pull_requests: Vec<String>,
+    /// What Nook does while you share your screen (Settings › Voice and sound › Meetings and screen sharing).
+    pub quiet_while_sharing: QuietBehavior,
+    /// What Nook does during a meeting; "hide from viewers" counts as quiet here.
+    pub quiet_in_meetings: QuietBehavior,
+    /// An event going on in your calendar counts as a meeting.
+    pub quiet_use_calendar: bool,
+    /// Nook's windows are always left out of screen sharing, screenshots and recordings (Windows).
+    pub hide_from_captures: bool,
+    /// The system's screenshot tool does not count as sharing your screen, so Nook appears in your screenshots.
+    pub show_in_screenshots: bool,
+    /// How much Nook does by himself on battery or a busy computer (Settings › General › Energy).
+    pub energy_mode: EnergyMode,
 }
 
 impl Default for Settings {
@@ -129,6 +143,12 @@ impl Default for Settings {
             demo_data: false,
             shortcuts,
             watched_pull_requests: vec![],
+            quiet_while_sharing: QuietBehavior::HideFromShare,
+            quiet_in_meetings: QuietBehavior::Quiet,
+            quiet_use_calendar: true,
+            hide_from_captures: false,
+            show_in_screenshots: false,
+            energy_mode: EnergyMode::Automatic,
         }
     }
 }
@@ -284,6 +304,18 @@ mod tests {
         assert_eq!(s.provider, AIProvider::Claude);
         assert!(s.use_memory);
         assert!(!s.is_local_brain());
+    }
+
+    #[test]
+    fn old_settings_files_get_the_quiet_and_energy_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"provider":"ollama"}"#).unwrap();
+        assert_eq!(s.quiet_while_sharing, QuietBehavior::HideFromShare);
+        assert_eq!(s.quiet_in_meetings, QuietBehavior::Quiet);
+        assert!(s.quiet_use_calendar && !s.hide_from_captures && !s.show_in_screenshots);
+        assert_eq!(s.energy_mode, EnergyMode::Automatic);
+        let s: Settings = serde_json::from_str(r#"{"quietWhileSharing":"hide","energyMode":"saver"}"#).unwrap();
+        assert_eq!(s.quiet_while_sharing, QuietBehavior::Hide);
+        assert_eq!(s.energy_mode, EnergyMode::Saver);
     }
 
     #[test]

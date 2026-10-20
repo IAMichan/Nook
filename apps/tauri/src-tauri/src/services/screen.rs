@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use nook_core::services::energy::EnergyPlan;
 use nook_core::services::screen::{self, ScreenSnapshot};
 use tauri::{AppHandle, Manager};
 
@@ -22,14 +23,18 @@ pub fn allowed(app: &AppHandle) -> bool {
     !app.state::<AppState>().settings().private_sources().contains("screen")
 }
 
-/// Leest de vensters die aan de beurt zijn en werkt het live beeld bij.
-fn refresh(services: &Services, front_only: bool) {
+/// Leest de vensters die aan de beurt zijn en werkt het live beeld bij. `plan`: the timer's own read does what the
+/// energy plan allows (fewer windows, older background windows); a read for a question or an app switch takes everything.
+fn refresh(services: &Services, front_only: bool, plan: Option<&EnergyPlan>) {
     let platform = &services.platform;
     let seen = platform.screen.windows();
     let now = services.now();
     let (due, olds): (Vec<String>, HashMap<String, String>) = {
         let live = services.live.lock().unwrap_or_else(|e| e.into_inner());
-        let due = live.due(&seen, front_only, now);
+        let due = match plan {
+            Some(plan) => live.due_within(&seen, front_only, now, plan.screen_window_limit(), plan.background_window_max_age()),
+            None => live.due(&seen, front_only, now),
+        };
         let olds = live.windows().into_iter().map(|w| (w.id.clone(), w.text.clone())).collect();
         (due, olds)
     };
@@ -51,7 +56,9 @@ fn refresh(services: &Services, front_only: bool) {
 }
 
 /// De draad die het scherm bijhoudt: elke 7 seconden alles wat aan de beurt is, en meteen het voorste venster als je
-/// van app wisselt. Rust als het uit staat of je weg bent.
+/// van app wisselt. Rust als het uit staat of je weg bent. On battery or in saver mode the timer's read comes less often
+/// and while the energy plan pauses it waits; switching apps still reads the new window, and a question still reads
+/// the screen.
 #[cfg(desktop)]
 pub fn start(app: &AppHandle) {
     let app = app.clone();
@@ -61,6 +68,7 @@ pub fn start(app: &AppHandle) {
             let services = app.state::<Services>();
             let mut last_front = String::new();
             let mut tick = 0u64;
+            let mut last_periodic: Option<std::time::Instant> = None;
             loop {
                 std::thread::sleep(Duration::from_secs(1));
                 tick += 1;
@@ -78,9 +86,15 @@ pub fn start(app: &AppHandle) {
                 if front != last_front {
                     last_front = front;
                     std::thread::sleep(Duration::from_millis(600));
-                    refresh(&services, true);
+                    refresh(&services, true, None);
                 } else if tick.is_multiple_of(screen::INTERVAL as u64) {
-                    refresh(&services, false);
+                    let plan = super::energy::plan(&app);
+                    // The loop wakes with a little slack; a tick just short of the stretched interval still counts.
+                    let wait = screen::INTERVAL * plan.slowdown() - screen::INTERVAL * 0.25;
+                    if plan.reads_screen() && last_periodic.is_none_or(|t| t.elapsed().as_secs_f64() >= wait) {
+                        last_periodic = Some(std::time::Instant::now());
+                        refresh(&services, false, Some(&plan));
+                    }
                 }
             }
         })
@@ -104,7 +118,7 @@ pub fn snapshot(app: &AppHandle, small: bool) -> Result<ScreenSnapshot, String> 
             live.front().map(|f| services.now() - f.captured > MAX_AGE).unwrap_or(true)
         };
         if stale {
-            refresh(&services, false);
+            refresh(&services, false, None);
         }
         let live = services.live.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(snap) = live.snapshot(limit, services.now()) {

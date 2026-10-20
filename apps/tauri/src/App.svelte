@@ -6,6 +6,7 @@
   import RecordingBadge from "./views/services/RecordingBadge.svelte";
   import ScreenPart from "./views/services/ScreenPart.svelte";
   import { nook, accentCss, onAccent } from "./lib/state.svelte";
+  import { quiet } from "./lib/quiet.svelte";
 
   // De balk bovenaan laadt index.html#bar; het hoofdvenster (en Android) de rest.
   const isBar = location.hash === "#bar";
@@ -13,6 +14,7 @@
   onMount(() => {
     if (isBar) document.body.classList.add("bar");
     nook.start();
+    quiet.start();
   });
 
   $effect(() => {

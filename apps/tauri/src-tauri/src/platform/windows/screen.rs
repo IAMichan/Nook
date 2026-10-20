@@ -54,7 +54,7 @@ unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1)
 }
 
-fn top_windows() -> Vec<HWND> {
+pub(super) fn top_windows() -> Vec<HWND> {
     let mut list: Vec<HWND> = Vec::new();
     unsafe {
         let _ = EnumWindows(Some(collect), LPARAM(&mut list as *mut Vec<HWND> as isize));
@@ -62,7 +62,7 @@ fn top_windows() -> Vec<HWND> {
     list
 }
 
-fn title(hwnd: HWND) -> String {
+pub(super) fn title(hwnd: HWND) -> String {
     unsafe {
         let len = GetWindowTextLengthW(hwnd);
         if len <= 0 {
@@ -74,7 +74,7 @@ fn title(hwnd: HWND) -> String {
     }
 }
 
-fn exe_path(pid: u32) -> Option<String> {
+pub(super) fn exe_path(pid: u32) -> Option<String> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = vec![0u16; 1024];
@@ -113,7 +113,7 @@ fn display_name(path: &str) -> Option<String> {
     }
 }
 
-fn cloaked(hwnd: HWND) -> bool {
+pub(super) fn cloaked(hwnd: HWND) -> bool {
     let mut value = 0u32;
     unsafe {
         DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &mut value as *mut u32 as *mut _, std::mem::size_of::<u32>() as u32).is_ok()

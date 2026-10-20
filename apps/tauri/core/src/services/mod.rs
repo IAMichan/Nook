@@ -3,11 +3,13 @@
 //! ruwe gegevens (vensters, audio, spelers); hier zitten de regels, met tests.
 
 pub mod audio;
+pub mod energy;
 pub mod files;
 pub mod flow;
 pub mod fuzzy;
 pub mod notes;
 pub mod prefs;
+pub mod quiet;
 pub mod recap;
 pub mod rewrite;
 pub mod screen;

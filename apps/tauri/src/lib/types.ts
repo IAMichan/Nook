@@ -48,7 +48,19 @@ export interface Settings {
   shortcuts: Record<string, string>;
   /// GitHub organizations ("acme") and repositories ("acme/web") whose pull requests show under Agents › Pull requests.
   watchedPullRequests: string[];
+  quietWhileSharing: QuietBehavior;
+  quietInMeetings: QuietBehavior;
+  quietUseCalendar: boolean;
+  hideFromCaptures: boolean;
+  showInScreenshots: boolean;
+  energyMode: EnergyMode;
 }
+
+/// What Nook does while you share your screen or sit in a meeting.
+export type QuietBehavior = "normal" | "quiet" | "hideFromShare" | "hide";
+
+/// How much Nook does by himself on battery or a busy computer.
+export type EnergyMode = "automatic" | "saver" | "full";
 
 export interface Capabilities {
   os: "windows" | "linux" | "android" | "macos";
@@ -71,6 +83,10 @@ export interface Capabilities {
   clipboard: boolean;
   notifications: boolean;
   files: boolean;
+  /// Noticing a screen share or a call.
+  shareDetection: boolean;
+  /// Leaving Nook's windows out of screen sharing and screenshots (Windows).
+  captureExclusion: boolean;
   /// Uitleg per mogelijkheid die er niet (helemaal) is.
   notes: Record<string, string>;
 }

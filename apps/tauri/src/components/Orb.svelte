@@ -251,6 +251,8 @@
   .cheek.right { right: 16%; }
   .working { animation: breathe 1.6s ease-in-out infinite; }
   .idle:not(.drowsy) { animation: rest 4.5s ease-in-out infinite; }
+  /* Taking it easy (battery, saver, paused): the idle float rests, so the webview stops drawing frames for it. */
+  :global(body.easy) .idle { animation: none; }
   .waiting { box-shadow: 0 0 calc(var(--s) * 0.6) color-mix(in srgb, var(--amber) 55%, transparent); }
   .listen { box-shadow: 0 0 calc(var(--s) * (0.5 + var(--level) * 1.2)) color-mix(in srgb, var(--mint) 60%, transparent); }
   .listen .eye { height: calc(var(--s) * (0.22 + var(--level) * 0.06)); }

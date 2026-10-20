@@ -96,16 +96,23 @@ impl X11 {
     /// De vensters van boven naar onder. Met een windowmanager uit `_NET_CLIENT_LIST_STACKING`; zonder (bv. Xvfb)
     /// de zichtbare kinderen van de root.
     pub fn windows(&self) -> Vec<XWindow> {
+        self.all_windows().into_iter().filter(|w| w.width > 200 && w.height > 100).collect()
+    }
+
+    /// Every viewable window with a title or class, small ones included (a sharing bar of a call app or browser).
+    pub fn all_windows(&self) -> Vec<XWindow> {
         let mut ids = self.property32(self.root, "_NET_CLIENT_LIST_STACKING", AtomEnum::WINDOW);
         if ids.is_empty() {
             ids = self.conn.query_tree(self.root).ok().and_then(|c| c.reply().ok()).map(|t| t.children).unwrap_or_default();
         }
         ids.reverse();
-        ids.into_iter()
-            .filter_map(|id| self.describe(id))
-            .filter(|w| w.width > 200 && w.height > 100)
-            .filter(|w| !(w.title.is_empty() && w.class.is_empty()))
-            .collect()
+        ids.into_iter().filter_map(|id| self.describe(id)).filter(|w| !(w.title.is_empty() && w.class.is_empty())).collect()
+    }
+
+    /// The screen saver is on (or the display blanked by it): nobody is looking at the screen.
+    pub fn screen_saver_on(&self) -> bool {
+        use x11rb::protocol::screensaver::{ConnectionExt as _, State};
+        self.conn.screensaver_query_info(self.root).ok().and_then(|c| c.reply().ok()).is_some_and(|info| info.state == u8::from(State::ON))
     }
 
     /// Het actieve venster: `_NET_ACTIVE_WINDOW`, anders het bovenste.

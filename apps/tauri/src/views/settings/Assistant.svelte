@@ -1,17 +1,22 @@
 <script lang="ts">
   // Assistent: wat Nook ziet (je schermen, het klembord, je bestanden, je gesprekken) en of hij meedenkt.
   import { nook } from "../../lib/state.svelte";
-  import { services, type ServicePrefs, type ScreenStatus } from "../../lib/services";
+  import { services, screenLine, type EnergyView, type ServicePrefs, type ScreenStatus } from "../../lib/services";
 
   const s = $derived(nook.settings!);
   const caps = $derived(nook.info?.capabilities);
   let prefs = $state<ServicePrefs | null>(null);
   let screen = $state<ScreenStatus | null>(null);
+  let energy = $state<EnergyView | null>(null);
 
   $effect(() => {
     services.prefs().then((p) => (prefs = p));
-    services.screenStatus().then((st) => (screen = st));
-    const timer = setInterval(() => services.screenStatus().then((st) => (screen = st)), 8000);
+    const read = () => {
+      services.screenStatus().then((st) => (screen = st));
+      services.energyStatus().then((v) => (energy = v)).catch(() => {});
+    };
+    read();
+    const timer = setInterval(read, 8000);
     return () => clearInterval(timer);
   });
 
@@ -43,7 +48,7 @@
     </label>
     <div class="row">
       <span>Nu in beeld</span>
-      <span class="faint now">{screen?.windows.length ? screen.windows.slice(0, 4).join(" · ") : "niets gelezen"}</span>
+      <span class="faint now">{screenLine(s.liveScreen || s.autoWatch, screen?.windows ?? [], energy)}</span>
     </div>
     {#if screen?.status}<p class="faint note">{screen.status}</p>{/if}
   {:else}

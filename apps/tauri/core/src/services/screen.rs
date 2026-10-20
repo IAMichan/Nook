@@ -190,9 +190,15 @@ pub const BACKGROUND_MAX_AGE: f64 = 30.0;
 impl LiveScreen {
     /// Welke vensters nu gelezen moeten worden. `front_only`: alleen het voorste (na het wisselen van app).
     pub fn due(&self, seen: &[SeenWindow], front_only: bool, now: f64) -> Vec<String> {
+        self.due_within(seen, front_only, now, MAX_WINDOWS, BACKGROUND_MAX_AGE)
+    }
+
+    /// Like [`due`](Self::due), within what the energy plan allows the timer: at most `limit` windows, and background
+    /// windows only once they are older than `max_age` seconds.
+    pub fn due_within(&self, seen: &[SeenWindow], front_only: bool, now: f64, limit: usize, max_age: f64) -> Vec<String> {
         seen.iter()
             .filter(|w| !is_excluded(&w.app))
-            .take(MAX_WINDOWS)
+            .take(limit.min(MAX_WINDOWS))
             .filter(|w| {
                 let old = self.cache.get(&w.id);
                 if w.frontmost {
@@ -201,7 +207,7 @@ impl LiveScreen {
                 match old {
                     None => true,
                     Some(_) if front_only => false,
-                    Some(old) => old.title != w.title || now - old.captured > BACKGROUND_MAX_AGE,
+                    Some(old) => old.title != w.title || now - old.captured > max_age,
                 }
             })
             .map(|w| w.id.clone())
@@ -356,6 +362,18 @@ mod tests {
         assert_eq!(snap.window_title, "2 windows");
         live.update(&first[..1], HashMap::new(), 3.0);
         assert_eq!(live.windows().len(), 1, "gesloten vensters vallen weg");
+    }
+
+    #[test]
+    fn taking_it_easy_reads_fewer_and_older_windows() {
+        let mut live = LiveScreen::default();
+        let first =
+            vec![seen("a", "Kladblok", "notities", true), seen("b", "Firefox", "Nieuws", false), seen("c", "Thunderbird", "Inbox", false)];
+        assert_eq!(live.due_within(&first, false, 0.0, 2, 90.0), vec!["a", "b"], "only the first few windows");
+        let read = HashMap::from([("a".to_string(), ("Bel Lisa".to_string(), 1)), ("b".to_string(), ("Kop".to_string(), 2))]);
+        live.update(&first, read, 0.0);
+        assert_eq!(live.due_within(&first, false, 40.0, 2, 90.0), vec!["a"], "background windows wait 90 s");
+        assert_eq!(live.due_within(&first, false, 100.0, 2, 90.0), vec!["a", "b"]);
     }
 
     #[test]

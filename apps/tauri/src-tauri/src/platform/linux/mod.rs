@@ -4,6 +4,7 @@
 mod apps;
 mod atspi;
 mod mpris;
+mod quiet;
 pub mod speech;
 mod x11;
 
@@ -18,6 +19,8 @@ use nook_core::services::{files, fuzzy, screen};
 use tauri::AppHandle;
 
 use super::{imaging, process};
+
+pub use quiet::{LinuxPower, LinuxQuiet};
 
 /// AT-SPI opnieuw proberen na een mislukte verbinding, hooguit zo vaak.
 const RETRY: Duration = Duration::from_secs(30);

@@ -2,11 +2,13 @@
 //! volume, het Startmenu voor apps, Windows Search voor bestanden, en de spraak van Windows.
 
 mod media;
+mod quiet;
 mod screen;
 mod speech;
 mod system;
 
 pub use media::WindowsMedia;
+pub use quiet::{WindowsPower, WindowsQuiet};
 pub use screen::WindowsScreen;
 pub use speech::{WindowsDictation, WindowsSpeech, WindowsWake};
 pub use system::WindowsSystem;

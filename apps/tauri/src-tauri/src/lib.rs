@@ -203,6 +203,8 @@ pub fn run() {
             commands::services::aside_hide,
             commands::services::aside_show,
             commands::services::screen_status,
+            commands::services::energy_status,
+            commands::services::quiet_status,
             commands::services::screen_part_begin,
             commands::services::screen_part_image,
             commands::services::screen_part_finish,

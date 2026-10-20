@@ -70,6 +70,8 @@ al is.
 | Notetaker | ◐ (geen sprekerherkenning) | `core/src/services/notes.rs` |
 | Vandaag, weekoverzicht (met agentcijfers per project) | ✓ | `core/src/services/recap.rs`, `views/Today.svelte` |
 | Nook zelf (bol, ring, geluiden) | ✓ | `components/Orb.svelte`, `lib/sounds.ts` |
+| Meetings en scherm delen (`QuietPolicy`, `QuietWatch`): stil, verbergen voor kijkers, helemaal verbergen, Nook in schermafbeeldingen | ◐ Windows (vensterlijst, microfoon via het privacyregister, `WDA_EXCLUDEFROMCAPTURE`; alleen gecompileerd) · ◐ Linux (X11 en `pactl`; buiten een share houden kan niet, dan alleen stil; niet in de app getest) · — Android | `core/src/services/quiet.rs`, `services/quiet.rs`, `platform/{windows,linux}/quiet.rs`, Instellingen › Stem en geluid |
+| Energieplan (`EnergyPolicy`, `EnergyMonitor`): Automatisch, Zuinig, Volle kracht; scherm lezen en meedenken volgen het, de bol rust | ◐ (Windows: accu, energiebesparing, processorlast; Linux: `/sys`, load average, screensaver; niet in de app getest) · — Android | `core/src/services/energy.rs`, `services/energy.rs`, Instellingen › Algemeen |
 
 ## Agents en werkruimte
 

@@ -73,5 +73,7 @@ pub fn services(app: &AppHandle) -> Platform {
         speech: Arc::new(Unavailable("Voorlezen kan Nook op Android (nog) niet.")),
         dictation: Arc::new(Unavailable("Spraakherkenning kan Nook op Android (nog) niet.")),
         wake: Arc::new(Unavailable("\"Hé Nook\" kan op Android niet.")),
+        quiet: Arc::new(Unavailable("Meetings en scherm delen herkent Nook op Android niet.")),
+        power: Arc::new(Unavailable("De accu leest Nook op Android niet.")),
     }
 }

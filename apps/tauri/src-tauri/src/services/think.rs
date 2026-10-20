@@ -122,6 +122,13 @@ pub fn start(app: &AppHandle) {
             if !services.platform.screen.available() || super::voice::is_listening(&app) {
                 continue;
             }
+            // Not while you share your screen or sit in a meeting and chose quiet for it, and never while the energy plan
+            // pauses optional work; on battery at most every ten minutes.
+            let plan = super::energy::plan(&app);
+            if super::quiet::silent(&app) || !plan.thinks_along() {
+                continue;
+            }
+            services.think.lock().unwrap_or_else(|e| e.into_inner()).set_extra_gap(plan.think_along_gap());
             // Een aanbod dat nog naast de balk staat: niet nog een.
             if services
                 .nudge
@@ -174,6 +181,10 @@ async fn look_and_offer(app: &AppHandle, app_id: &str, app_name: &str, window: &
     let earlier = services.think.lock().unwrap_or_else(|e| e.into_inner()).recent_offers(services.now());
     let request = think_along::request(app_name, window, &earlier);
     let Ok(Some((body, offers, plan))) = ask_brain(app, &request, &snapshot).await else { return };
+    // Thinking along started before a share or meeting began: the offer is not shown now.
+    if super::quiet::silent(app) {
+        return;
+    }
     let fallback = plan.actions.first().map(|a| format!("Zal ik dit doen? {}", tools::summarize(&a.tool, &a.input)));
     let line = think_along::nudge_line(&body, fallback.as_deref());
     if line.is_empty() || services.think.lock().unwrap_or_else(|e| e.into_inner()).already_offered(&line, services.now()) {
