@@ -270,10 +270,9 @@ struct EmbeddedSplitHandle: View {
         .frame(width: EmbeddedSplit.handle)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
-        .onHover { inside in
-            hovering = inside
-            if inside { NSCursor.resizeLeftRight.push() } else if !dragging { NSCursor.pop() }
-        }
+        // The system's split cursor: pushing NSCursor by hand gets reset by the panel's cursor rects, so the arrow won.
+        .pointerStyle(.columnResize)
+        .onHover { hovering = $0 }
         .gesture(
             // Global coordinates: the line itself moves while you drag it.
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
@@ -283,7 +282,6 @@ struct EmbeddedSplitHandle: View {
                 }
                 .onEnded { _ in
                     dragging = false
-                    if !hovering { NSCursor.pop() }
                     onEnd()
                 }
         )
