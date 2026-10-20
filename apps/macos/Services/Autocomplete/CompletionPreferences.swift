@@ -92,8 +92,9 @@ struct CompletionPreferences: Codable, Equatable {
     var pauseMinutes = 5
     /// Ghost text in the line or a small card below it.
     var inlineGhost = true
-    /// Wait this long after the last key, in milliseconds.
-    var delayMilliseconds = 40
+    /// Wait this long after the last key, in milliseconds. 0: the model starts on the key itself (see
+    /// `AutocompleteController.speculate`).
+    var delayMilliseconds = 0
     /// The words taken today, next to Nook's icon in the menu bar.
     var menuBarCount = false
 

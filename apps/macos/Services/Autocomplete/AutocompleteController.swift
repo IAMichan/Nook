@@ -111,6 +111,13 @@ final class AutocompleteController: ObservableObject {
     /// How the text goes on once the suggestion on screen is taken, written while it is on screen: taking the last word then
     /// shows the next suggestion at once, without waiting for the model.
     private var upcoming: Upcoming?
+    /// The focused field as last read, to tell its text after the next key before reading it again (see `speculate`).
+    private var lastRead: (pid: pid_t, snapshot: AutocompleteFieldSnapshot)?
+    /// The text before the cursor before and after the key the next read is for, when the key said what it would be: a read
+    /// that still shows `old` came before the app took in the key and is read again.
+    private var expected: (old: String, new: String)?
+    /// Suggestions made in the field being written in (see `CompletionMemo`).
+    private var memo = CompletionMemo()
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
     /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
@@ -154,6 +161,11 @@ final class AutocompleteController: ObservableObject {
     /// How often to re-read the field while the app takes in a key, and how many times.
     private let settleInterval: TimeInterval = 0.03
     private let settleAttempts = 12
+    /// The same after a key whose text was predicted (see `expected`): shorter, since the model is already writing. A read
+    /// that shows neither the text before the key nor the predicted text is read again only a few times.
+    private let expectInterval: TimeInterval = 0.01
+    private let expectAttempts = 15
+    private let unexpectedAttempts = 4
     /// The context around a field is gathered again after this long (and after a message is sent).
     private static let contextSeconds: TimeInterval = 180
     /// The clipboard goes into the prompt only this long after it was copied.
@@ -292,6 +304,8 @@ final class AutocompleteController: ObservableObject {
         fieldContext = nil
         windowText = nil
         upcoming = nil
+        lastRead = nil
+        memo.forget()
         commitSample()
         dismiss()
         scheduleWarm(after: 0.3)
@@ -371,6 +385,8 @@ final class AutocompleteController: ObservableObject {
                 swallowMouseUp = true
                 return true
             }
+            // The click may move the cursor: the text before it is no longer known.
+            lastRead = nil
             dismiss()
             return false
         case .leftMouseUp:
@@ -511,12 +527,14 @@ final class AutocompleteController: ObservableObject {
             }
             dismiss()
             if plainEscape {
+                // Sent away on purpose: not shown again from the memo either.
+                memo.forget()
                 escaped(in: bundleID)
                 return true
             }
         }
 
-        scheduleRefresh()
+        scheduleRefresh(after: key, in: app)
         if key.flags.contains(.maskShift) { scheduleSelectionCheck() }
         // Perhaps a message was sent: once new messages are on screen, read the new context before the next one is typed.
         if key.code == kVK_Return { scheduleWarm(after: 0.8) }
@@ -533,6 +551,8 @@ final class AutocompleteController: ObservableObject {
             text += mark
             ahead = next.isEmpty ? nil : next
         }
+        // The field changes without a key the tap sees: known again at the next read.
+        lastRead = nil
         AutocompleteTyper.type(text)
         store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
         if rest.suggestion.isEmpty {
@@ -625,6 +645,7 @@ final class AutocompleteController: ObservableObject {
         heldKey = nil
         holdWork?.cancel()
         refreshWork?.cancel()
+        expected = nil
         selectionWork?.cancel()
         completer?.cancel()
         proposal = nil
@@ -643,41 +664,109 @@ final class AutocompleteController: ObservableObject {
 
     // MARK: Proposals
 
-    private func scheduleRefresh() {
+    /// - Parameters:
+    ///   - key: the key just typed, when the text changed through it. When it says what the text becomes (a character, or
+    ///     Delete), the model starts on that text right away, while the field is read (see `speculate`).
+    private func scheduleRefresh(after key: Key? = nil, in app: NSRunningApplication? = nil) {
         // Reads still under way are for text that is no longer there.
         readToken += 1
         refreshWork?.cancel()
         warmWork?.cancel()
         completer?.cancel()
         upcoming = nil
+        expected = nil
+        if let key, let app, let last = lastRead, last.pid == app.processIdentifier, !last.snapshot.hasSelection,
+           let next = CompletionTyping.predicted(before: last.snapshot.before, characters: key.characters,
+                                                 delete: key.code == kVK_Delete && key.modifiers == 0,
+                                                 commandLike: !key.flags.intersection([.maskCommand, .maskControl]).isEmpty) {
+            expected = (last.snapshot.before, next)
+        } else {
+            // Nook typed something, or the key did something else: the field's text is unknown until it is read again.
+            lastRead = nil
+        }
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.refreshProposal() } }
         refreshWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(prefs.delayMilliseconds, 30)) / 1000, execute: work)
+        // With the text predicted, the read checks the app took in the key (see `refreshProposal`): no need to wait first.
+        let delay = expected == nil ? max(prefs.delayMilliseconds, 30) : prefs.delayMilliseconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(delay) / 1000, execute: work)
+        if let expected, let app, let last = lastRead { speculate(on: last.snapshot, before: expected.new, in: app) }
     }
 
     /// Reads the field on the reading queue; `done` runs on the main queue unless the user did something else meanwhile.
     private func read(in app: NSRunningApplication, done: @escaping (AutocompleteFieldSnapshot?) -> Void) {
         let token = readToken
         let height = NSScreen.screens.first?.frame.height ?? 0
+        let pid = app.processIdentifier
         readQueue.async {
             let snapshot = AutocompleteField.read(screenHeight: height)
             // Chromium and Electron build their tree on request: ask again so the next key finds the field.
             if snapshot == nil { AutocompleteField.wake(app) }
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { if token == self.readToken { done(snapshot) } }
+                MainActor.assumeIsolated {
+                    guard token == self.readToken else { return }
+                    self.lastRead = snapshot.map { (pid, $0) }
+                    done(snapshot)
+                }
             }
         }
     }
 
     /// - Parameter eager: asked for with an accept key after the model answered nothing (see `holdAcceptKey`).
-    private func refreshProposal(eager: Bool = false) {
+    private func refreshProposal(eager: Bool = false, attempt: Int = 0) {
         refreshWork = nil
         guard let app = frontApp, isActive(in: app) else { return releaseHeldKey() }
+        let expected = self.expected
         read(in: app) { [weak self] snapshot in
-            if let snapshot { self?.propose(for: snapshot, in: app, continuing: eager) }
+            guard let self else { return }
+            // Read before the app took in the key (it still shows the text before it), or something else changed the text:
+            // look again in a moment rather than suggest for text that is about to change.
+            if let snapshot, let expected, snapshot.before != expected.new,
+               attempt < (snapshot.before == expected.old ? self.expectAttempts : self.unexpectedAttempts) {
+                let token = self.readToken
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.expectInterval) {
+                    MainActor.assumeIsolated { if token == self.readToken { self.refreshProposal(eager: eager, attempt: attempt + 1) } }
+                }
+                return
+            }
+            if let snapshot { self.propose(for: snapshot, in: app, continuing: eager) }
             // No model request came of it (a selection, an emoji name, too little text): a held key goes on to the app.
-            self?.releaseHeldKey()
+            self.releaseHeldKey()
         }
+    }
+
+    /// Starts the model on the text the field will hold once the app has taken in the key just typed, while the field is
+    /// still being read: the read and the model's work overlap instead of following each other. Nothing shows until the read
+    /// confirms the text: `requestCompletion` takes the result from `upcoming` only when the field holds exactly `before`.
+    private func speculate(on last: AutocompleteFieldSnapshot, before: String, in app: NSRunningApplication) {
+        guard let model = activeModel, completer != nil, isActive(in: app), prefs.isEnabled(onSite: last.site) else { return }
+        var next = last
+        next.before = before
+        let bundleID = app.bundleIdentifier
+        let midLine = prefs.midLine(inApp: bundleID)
+        guard CompletionPolicy(midLine: midLine).shouldComplete(before: before, after: next.after, hasSelection: false),
+              !(prefs.emoji && CompletionEmojiCatalog.query(in: before) != nil),
+              // Shown from the memo, without the model.
+              memo.recall(before: before, field: fieldKey(for: next, in: app)) == nil else { return }
+        let options = completionOptions(before: before, continuing: false)
+        let prompt = self.prompt(for: next, in: app)
+        let task = Task { () -> CompletionResult? in
+            guard let completer = await loadedCompleter(for: model) else { return nil }
+            return await completer.complete(prompt: prompt, options: options, partial: nil)
+        }
+        upcoming = Upcoming(app: bundleID, before: before, task: task)
+    }
+
+    private func fieldKey(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> String {
+        CompletionFieldKey.make(app: app.bundleIdentifier, site: snapshot.site, placeholder: snapshot.placeholder, windowTitle: snapshot.windowTitle)
+    }
+
+    private func completionOptions(before: String, continuing: Bool) -> CompletionOptions {
+        var maxWords = prefs.maxWords
+        if prefs.shorterOnBattery, onBattery { maxWords = min(maxWords, 4) }
+        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
+        if continuing { options = options.continuing() }
+        options.heal = Self.midWord(before)
+        return options
     }
 
     /// Reads the prompt for the focused field into the model ahead of the next key. The context before the typed text
@@ -740,21 +829,31 @@ final class AutocompleteController: ObservableObject {
         let midLine = prefs.midLine(inApp: bundleID)
         let policy = CompletionPolicy(midLine: midLine)
         guard let model = activeModel, policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
-        var maxWords = prefs.maxWords
-        if prefs.shorterOnBattery, onBattery { maxWords = min(maxWords, 4) }
-        var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
-        if continuing { options = options.continuing() }
-        options.heal = Self.midWord(snapshot.before)
-        let prompt = self.prompt(for: snapshot, in: app)
+        let options = completionOptions(before: snapshot.before, continuing: continuing)
+        let maxWords = options.maxWords
         let token = readToken
         let after = midLine ? snapshot.after : ""
-        // Written ahead while the last suggestion was on screen: no need to ask the model again.
+        let field = fieldKey(for: snapshot, in: app)
+        // This text continues a suggestion made a moment ago in this field: show the rest of it at once.
+        if let recalled = memo.recall(before: snapshot.before, field: field) {
+            upcoming = nil
+            present(recalled.text, truncated: recalled.truncated, unfinished: recalled.unfinished, token: token, snapshot: snapshot,
+                    after: after, maxWords: maxWords, app: app)
+            if proposal != nil {
+                scheduleUnload()
+                return
+            }
+        }
+        let prompt = self.prompt(for: snapshot, in: app)
+        // Written ahead while the last suggestion was on screen, or started on the key just typed (see `speculate`): no need
+        // to ask the model again.
         let ahead = upcoming.flatMap { $0.app == bundleID && $0.before == snapshot.before ? $0.task : nil }
         upcoming = nil
         asking = (token, false, continuing)
         Task {
             defer { finishAsking(token) }
             if let ahead, let result = await ahead.value {
+                memo.remember(result, before: snapshot.before, field: field)
                 guard token == readToken else { return }
                 present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
                         after: after, maxWords: maxWords, app: app)
@@ -765,6 +864,7 @@ final class AutocompleteController: ObservableObject {
             let result = await completer.complete(prompt: prompt, options: options, partial: nil)
             scheduleUnload()
             if let result {
+                memo.remember(result, before: snapshot.before, field: field)
                 present(result.text, truncated: result.truncated, unfinished: result.unfinished, token: token, snapshot: snapshot,
                         after: after, maxWords: maxWords, app: app)
             }
@@ -803,9 +903,11 @@ final class AutocompleteController: ObservableObject {
         let prompt = self.prompt(for: next, in: completion.app)
         var options = CompletionOptions(maxWords: completion.maxWords, eagerness: prefs.eagerness).continuing()
         options.heal = Self.midWord(before)
+        let field = fieldKey(for: next, in: completion.app)
         let task = Task { () -> CompletionResult? in
             guard let completer = await loadedCompleter(for: model) else { return nil }
             let result = await completer.complete(prompt: prompt, options: options, partial: nil)
+            if let result { memo.remember(result, before: before, field: field) }
             if upcoming?.before == before {
                 upcoming?.done = true
                 upcoming?.result = result

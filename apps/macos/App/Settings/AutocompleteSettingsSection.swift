@@ -337,7 +337,7 @@ struct AutocompleteSettingsSection: View {
             LabeledContent(tr("autocomplete.delay")) {
                 HStack {
                     Slider(value: Binding(get: { Double(store.prefs.delayMilliseconds) }, set: { store.prefs.delayMilliseconds = Int($0) }),
-                           in: 40...600, step: 20).frame(width: 160)
+                           in: 0...600, step: 20).frame(width: 160)
                     Text("\(store.prefs.delayMilliseconds) ms").monospacedDigit().foregroundStyle(.secondary)
                 }
             }
