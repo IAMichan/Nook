@@ -111,7 +111,7 @@ final class WorkspaceManager: ObservableObject {
     /// ACP sessions (Gemini CLI, OpenCode, Cursor, Grok), kept alive between turns; their permission requests waiting
     /// for you; and Gemini executables that do not speak ACP (they use the headless mode).
     var acpClients: [UUID: AcpClient] = [:]
-    var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption])] = [:]
+    var acpRequests: [String: (rpcID: RPCID, options: [AcpPermissionOption], call: AcpToolCall)] = [:]
     var acpFallback: Set<String> = []
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
@@ -617,7 +617,8 @@ final class WorkspaceManager: ObservableObject {
 
     /// Changes how the next turn runs: mode, permissions, and model. Also while a turn runs (a session Nook took over as
     /// much as one it started): a running Claude Code takes them over at once (see `applyLive`), other agents from their
-    /// next turn, and rights Nook checks itself (ACP, Codex "for this session") count right away.
+    /// next turn. Rights count right away either way: Nook answers what they now cover itself (see `LiveRights`),
+    /// the requests already waiting included.
     func configure(_ id: UUID, mode: ExecutionMode? = nil, permission: PermissionPolicy? = nil, model: String? = nil) {
         guard let run = run(id) else { return }
         update(id) {
@@ -629,6 +630,23 @@ final class WorkspaceManager: ObservableObject {
             if let model { $0.model = model.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
         if run.status.isActive, let updated = self.run(id) { applyLive(id, from: run, to: updated) }
+        if let updated = self.run(id), updated.permission != run.permission || updated.mode != run.mode { allowCovered(id) }
+    }
+
+    /// Allows the waiting requests the session's current rights cover, as if you had pressed Allow on each.
+    func allowCovered(_ id: UUID) {
+        guard let run = run(id) else { return }
+        for pending in approvals[id] ?? [] where coveredByRights(pending, run) { decide(id, requestID: pending.id, .allow) }
+    }
+
+    private func coveredByRights(_ pending: PendingPermission, _ run: WorkspaceRun) -> Bool {
+        if let request = codexRequests[pending.id] {
+            return LiveRights.coversCodex(request.kind, permission: run.permission, mode: run.mode)
+        }
+        if let request = acpRequests[pending.id] {
+            return AcpRPC.autoAllows(request.call, permission: run.permission, mode: run.mode)
+        }
+        return run.provider == .claude && LiveRights.coversClaude(tool: pending.tool, permission: run.permission, mode: run.mode)
     }
 
     // MARK: Turns
@@ -1169,6 +1187,11 @@ final class WorkspaceManager: ObservableObject {
                 processes[id]?.send(ClaudeStreamParser.permissionResponse(
                     requestID: requestID, allow: false, input: input,
                     message: "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn."))
+                return
+            }
+            // Rights you raised after Claude Code started (or that it could not take over live) still count.
+            if let run = run(id), LiveRights.coversClaude(tool: tool, permission: run.permission, mode: run.mode) {
+                processes[id]?.send(ClaudeStreamParser.permissionResponse(requestID: requestID, allow: true, input: input))
                 return
             }
             let summary = ToolSummary.describe(tool: tool, input: input.dictionary)

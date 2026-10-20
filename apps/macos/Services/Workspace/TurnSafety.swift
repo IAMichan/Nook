@@ -164,6 +164,33 @@ struct SessionApprovals: Equatable, Sendable {
     }
 }
 
+// MARK: - Live rights
+
+/// What a session's current rights let through without asking. An agent keeps the rights it was started with (a flag,
+/// or Codex's policy for the turn), so after you change them Nook answers the requests they now cover itself: the
+/// change counts at once, not from the next turn. Plan mode, questions and MCP confirmations always ask.
+enum LiveRights {
+    static let claudeEditTools: Set<String> = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
+
+    static func coversClaude(tool: String, permission: PermissionPolicy, mode: ExecutionMode) -> Bool {
+        guard mode != .plan, tool != "AskUserQuestion", tool != "ExitPlanMode" else { return false }
+        switch permission {
+        case .bypass: return true
+        case .acceptEdits: return claudeEditTools.contains(tool)
+        case .ask: return false
+        }
+    }
+
+    static func coversCodex(_ kind: CodexApprovalRequest.Kind, permission: PermissionPolicy, mode: ExecutionMode) -> Bool {
+        guard mode != .plan else { return false }
+        switch kind {
+        case .fileChange, .legacyPatch: return permission != .ask
+        case .command, .legacyCommand: return permission == .bypass
+        case .mcpTool: return false
+        }
+    }
+}
+
 // MARK: - Background work
 
 /// Background work of one session (sub-agents, monitors, background commands). While any is running the session
