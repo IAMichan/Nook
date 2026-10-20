@@ -235,6 +235,16 @@ final class AppModel: ObservableObject {
             .throttle(for: .milliseconds(33), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
+        // Nook's task ring reads the sessions Nook runs itself. The workspace changes with every streamed token, so only a
+        // change in what a session asks of you (its status, an approval, a question) redraws the app.
+        Publishers.CombineLatest3(workspace.$runs, workspace.$approvals, workspace.$questions)
+            .map { runs, approvals, questions in
+                runs.map { "\($0.id)|\($0.status)|\($0.archived)|\(approvals[$0.id]?.count ?? 0)|\(questions[$0.id]?.count ?? 0)" }
+            }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in
             guard let self else { return }

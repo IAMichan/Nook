@@ -4,8 +4,9 @@ import SwiftUI
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @EnvironmentObject private var app: AppModel
-    // Redraws the closed notch's ring when you mark a chat as finished.
+    // Redraws the closed notch's ring when you mark a chat as finished or read a session.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var visits = SessionVisits.shared
     /// Nook's idle frame rate follows the energy plan: a little slower on battery.
     @ObservedObject private var energy = EnergyMonitor.shared
 
@@ -108,7 +109,7 @@ struct NotchRootView: View {
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
                        frameRate: viewModel.pointerInside ? 30 : energy.plan.idleOrbFrameRate)
             .background {
-                let ring = TaskRingItem.all(app: app)
+                let ring = TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)
                 if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side) }
             }
             .frame(width: side, height: side)
@@ -128,7 +129,7 @@ struct NotchRootView: View {
             if !active.isEmpty {
                 // An agent is working: Nook is thinking along inside a thin ring, one piece per session, like in the panel.
                 let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app)) {
+                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -136,7 +137,7 @@ struct NotchRootView: View {
                 .floatingDrag(viewModel)
             } else if app.chat.anyBusy {
                 // A Nook is working on something in the background: visibly thinking along.
-                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app)) {
+                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -145,7 +146,7 @@ struct NotchRootView: View {
             } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                 Color.clear
             } else {
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, ring: TaskRingItem.all(app: app)) {
+                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -500,8 +501,9 @@ struct PanelOrb: View {
     var inWindow = false
     @EnvironmentObject private var app: AppModel
     @StateObject private var ringPointer = TaskRingPointer()
-    // Redraws the ring when you mark a chat as finished.
+    // Redraws the ring when you mark a chat as finished or read a session.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
+    @ObservedObject private var visits = SessionVisits.shared
 
     var body: some View {
         // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
@@ -534,32 +536,60 @@ struct PanelOrb: View {
 }
 
 extension TaskRingItem {
-    /// What Nook's ring shows: every agent session that runs, waits or failed (and recently finished), and every Nook
-    /// that works, waits for you or has news.
+    /// What Nook's ring shows: the sessions in the Agents list that run, wait for you, failed or finished since you last
+    /// looked (the same answer the list gives), and every Nook that works, waits for you or has news. A session you
+    /// marked as finished, or already read, is not on it. `selected` is the session open in the Agents tab: what it
+    /// finished while you look at it is not news.
     @MainActor
-    static func all(app: AppModel) -> [TaskRingItem] {
+    static func all(app: AppModel, selected: String? = nil) -> [TaskRingItem] {
         var items: [TaskRingItem] = []
-        let recent = Date().addingTimeInterval(-20 * 60)
+        let finished = FinishedSessions.shared
+        func unseen(_ id: String, _ date: Date?) -> Bool {
+            if app.demoMode { return true }
+            guard let date, id != selected else { return false }
+            return SessionVisits.shared.isUnseen(id, finished: date)
+        }
+        func detail(_ project: String, _ status: AgentStatus) -> String {
+            project.isEmpty ? status.label : "\(project) · \(status.label)"
+        }
+        // Sessions Nook runs itself, as the Agents list reads them.
+        for run in app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace) {
+            let id = "run:" + run.id.uuidString
+            let key = FinishedSessions.key(run: run)
+            let attention = app.workspace.attention(run, unseen: run.status == .completed && unseen(id, run.updatedAt))
+            let kind: TaskRingItem.Kind
+            let status: AgentStatus
+            switch attention {
+            case .approval, .input: kind = .waiting; status = .waiting
+            case .failed, .limited: kind = .failed; status = .failed
+            case .working:
+                // Marked as finished during this busy spell (a turn that hangs): out of the way, like in the list.
+                if finished.isMarkedWhileBusy(key) { continue }
+                kind = .running; status = .running
+            case .ready:
+                if finished.isFinished(key: key, idle: true, lastActive: run.updatedAt, now: Date()) { continue }
+                kind = .done; status = .done
+            case .idle, .finished: continue
+            }
+            items.append(TaskRingItem(id: id, title: run.title, detail: detail(run.projectName, status), state: kind, target: .agent(id)))
+        }
         for session in app.agentSessions where !session.isDetected {
             let kind: TaskRingItem.Kind
-            var settled = false
+            let status: AgentStatus
             if session.status == .waiting || session.approvalID != nil {
-                kind = .waiting
+                kind = .waiting; status = .waiting
             } else if session.status == .running {
-                // Marked as finished by you: shown as done, drawn at once.
-                kind = app.isSettledWhileBusy(session) ? .done : .running
-                settled = kind == .done
+                if app.isSettledWhileBusy(session) { continue }
+                kind = .running; status = .running
             } else if session.status == .failed {
-                kind = .failed
-            } else if session.status == .done, app.demoMode || (session.updated ?? .distantPast) > recent {
-                kind = .done
-                settled = app.isMarkedFinished(session)
+                kind = .failed; status = .failed
+            } else if session.status == .done, unseen(session.id, session.updated), app.demoMode || !app.isMarkedFinished(session) {
+                kind = .done; status = .done
             } else {
                 continue
             }
-            let label = kind == .waiting ? AgentStatus.waiting.label : (settled ? AgentStatus.done.label : session.status.label)
-            let detail = session.project.isEmpty ? label : "\(session.project) · \(label)"
-            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail, state: kind, target: .agent(session.id), instant: settled))
+            items.append(TaskRingItem(id: "agent-\(session.id)", title: session.name, detail: detail(session.project, status),
+                                      state: kind, target: .agent(session.id)))
         }
         for conversation in app.chat.list(query: "", showArchived: false) {
             let kind: TaskRingItem.Kind
@@ -572,12 +602,15 @@ extension TaskRingItem {
             }
             items.append(TaskRingItem(id: "nook-\(conversation.id)", title: conversation.title, detail: detail, state: kind, target: .nook(conversation.id)))
         }
-        return Array(items.prefix(8))
+        // What asks for you first, then what works, then news: what does not fit on the ring is the least urgent.
+        let rank: [TaskRingItem.Kind: Int] = [.waiting: 0, .failed: 1, .running: 2, .done: 3]
+        let ordered = items.enumerated().sorted { (rank[$0.element.state] ?? 4, $0.offset) < (rank[$1.element.state] ?? 4, $1.offset) }
+        return Array(ordered.map(\.element).prefix(8))
     }
 }
 
 extension PanelOrb {
-    fileprivate var ringItems: [TaskRingItem] { TaskRingItem.all(app: app) }
+    fileprivate var ringItems: [TaskRingItem] { TaskRingItem.all(app: app, selected: viewModel.selectedAgentID) }
 
     /// A piece of the ring was clicked: go to that agent or that Nook.
     fileprivate func openRingItem(_ item: TaskRingItem) {
