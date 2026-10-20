@@ -15,13 +15,14 @@ struct WorkspaceView: View {
             PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
                 .offset(y: (PanelView.headerHeight - orb) / 2)
         }
-        // The notch's margins; on top, the title bar with the traffic lights takes the place of the camera's strip.
-        .padding(.top, WindowLayout.titleBar + 14)
+        // The notch's margins. On top, the title bar with the traffic lights takes the place of the camera's strip: the
+        // content stays in the safe area below it (whatever height the system gives the title bar), and only the black
+        // runs up under it. Adding the title bar's height by hand on top of the safe area left a wide empty band.
+        .padding(.top, WindowLayout.belowTitleBar)
         .padding(.horizontal, 28)
         .padding(.bottom, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(NookTheme.notch)
-        .ignoresSafeArea(.container, edges: .top)
+        .background(NookTheme.notch.ignoresSafeArea())
         .background {
             // ⌘1, ⌘2, ⌘3 switch tabs; ⌘N starts a session.
             Group {
@@ -66,8 +67,8 @@ struct WorkspaceView: View {
 }
 
 private enum WindowLayout {
-    /// The height of the transparent title bar the content runs under.
-    static let titleBar: CGFloat = 32
+    /// The room between the title bar and the header row: enough for Nook, who stands a little taller than the row.
+    static let belowTitleBar: CGFloat = 8
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".
