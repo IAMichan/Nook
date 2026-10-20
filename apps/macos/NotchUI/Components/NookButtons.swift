@@ -114,39 +114,50 @@ struct NookAcknowledgeButton: View {
 }
 
 /// A small ring that empties over `duration` seconds and holds while `paused`. Starts when it appears; give it a new
-/// `.id` to start over.
+/// `.id` to start over. The ring runs as one linear animation instead of a per-frame clock, so it keeps moving in the
+/// notch panel and costs nothing between frames; holding snaps it to where it is, resuming animates the rest.
 struct CountdownRing: View {
     let duration: TimeInterval
     var paused: Bool = false
     var size: CGFloat = 18
-    @State private var start = Date()
-    @State private var heldBefore: TimeInterval = 0
-    @State private var heldSince: Date?
+    /// The part of the ring still left, 1 = full.
+    @State private var left: CGFloat = 1
+    /// What was left when the ring last started running, and when that was; nil while held.
+    @State private var runFrom: CGFloat = 1
+    @State private var runningSince: Date?
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { context in
-            let held = heldBefore + (heldSince.map { context.date.timeIntervalSince($0) } ?? 0)
-            let left = max(0, 1 - (context.date.timeIntervalSince(start) - held) / max(duration, 0.1))
-            ZStack {
-                Circle().stroke(NookTheme.ink.opacity(0.14), lineWidth: 2.2)
-                Circle()
-                    .trim(from: 0, to: left)
-                    .stroke(NookTheme.ink, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-            }
-            .padding(1.5)
-            .frame(width: size, height: size)
+        ZStack {
+            Circle().stroke(NookTheme.ink.opacity(0.14), lineWidth: 2.2)
+            Circle()
+                .trim(from: 0, to: left)
+                .stroke(NookTheme.ink, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
         }
-        .onAppear { if paused { heldSince = Date() } }
-        .onChange(of: paused) { _, now in
-            if now {
-                heldSince = Date()
-            } else if let since = heldSince {
-                heldBefore += Date().timeIntervalSince(since)
-                heldSince = nil
-            }
+        .padding(1.5)
+        .frame(width: size, height: size)
+        .onAppear {
+            // A turn later, so the run does not merge into the notice's own opening animation.
+            DispatchQueue.main.async { if !paused { run() } }
         }
+        .onChange(of: paused) { _, now in now ? hold() : run() }
         .accessibilityHidden(true)
+    }
+
+    private func run() {
+        guard runningSince == nil, left > 0 else { return }
+        runFrom = left
+        runningSince = Date()
+        withAnimation(.linear(duration: max(duration, 0.1) * Double(left))) { left = 0 }
+    }
+
+    private func hold() {
+        guard let since = runningSince else { return }
+        runningSince = nil
+        let now = max(0, runFrom - CGFloat(Date().timeIntervalSince(since) / max(duration, 0.1)))
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { left = now }
     }
 }
 
