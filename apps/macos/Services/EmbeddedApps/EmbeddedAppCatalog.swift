@@ -225,6 +225,29 @@ enum EmbeddedAppCatalog {
         return !q.isEmpty && "open".hasPrefix(q) ? "" : q
     }
 
+    /// What is typed after "@open " while the name is on its way, for the `@` list: "@open " lists every app, "@open
+    /// whats" filters. Nil when the text is no "@open …", or once it is a whole command (a way after the name, a web
+    /// address, or a space after a name Nook knows), so Return sends it instead of choosing from the list.
+    static func openQuery(in text: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> String? {
+        guard let verb = text.range(of: #"^@(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+"#,
+                                    options: [.regularExpression, .caseInsensitive]) else { return nil }
+        let query = String(text[verb.upperBound...])
+        guard !query.contains(where: \.isNewline) else { return nil }
+        if case .open(let app, let mode)? = command(in: text, installed: installed),
+           mode != nil || app.id.hasPrefix("web:") || query.last?.isWhitespace == true {
+            return nil
+        }
+        return query.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The lines of the `@` list for what was typed: each matching app, and right after a Mac app its web version
+    /// ("@open WhatsApp web"), so the web app stays one choice away.
+    static func openSuggestions(for query: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> [(app: EmbeddedApp, mode: EmbeddedAppMode?)] {
+        matching(query, in: available(installed: installed)).flatMap { app -> [(app: EmbeddedApp, mode: EmbeddedAppMode?)] in
+            app.isMacApp && webVersion(of: app) != nil ? [(app, nil), (app, .web)] : [(app, nil)]
+        }
+    }
+
     /// "@open whatsapp", "@whatsapp", "@close", "open whatsapp in nook". Nil for everything else, so a normal question
     /// that happens to start with "@" still goes to the brain.
     static func command(in raw: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedAppCommand? {

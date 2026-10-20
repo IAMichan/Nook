@@ -94,6 +94,11 @@ final class ComposerModel: ObservableObject {
     /// Looks at the end of the text and fills the list.
     func update(for text: String, _ config: ComposerConfig) {
         search?.cancel()
+        // "@open whats": the app list stays open past the space after "@open" and filters by the name typed after it.
+        if !config.apps.isEmpty, let query = EmbeddedAppCatalog.openQuery(in: text) {
+            trigger = ComposerTrigger(kind: .mention, query: query, token: text)
+            return publish(appRows(query, config))
+        }
         guard let found = ComposerTrigger.detect(in: text) else { return close() }
         trigger = found
         switch found.kind {
@@ -105,13 +110,7 @@ final class ComposerModel: ObservableObject {
             })
         case .mention:
             if !config.apps.isEmpty {
-                // "@open WhatsApp" as a line to choose: Return puts it in the box, Return again opens it.
-                let matches = EmbeddedAppCatalog.matching(EmbeddedAppCatalog.mentionQuery(found.query), in: EmbeddedAppCatalog.available())
-                let rows = matches.compactMap { match in config.apps.first { $0.id == match.id } }
-                return publish(rows.prefix(10).map { app in
-                    ComposerSuggestion(id: "app:" + app.id, title: "@open " + app.title, detail: app.id.hasPrefix("mac:") ? tr("embedded.mentionDetailMac") : tr("embedded.mentionDetail"), symbol: app.symbol,
-                                       payload: .command(ComposerCommand(name: app.id, insertion: "@open " + app.title, action: .insert)))
-                })
+                return publish(appRows(EmbeddedAppCatalog.mentionQuery(found.query), config))
             }
             guard config.fileRoot != nil || !config.sessions().isEmpty else { return close() }
             let query = found.query
@@ -154,6 +153,21 @@ final class ComposerModel: ObservableObject {
                                    symbol: "wand.and.stars", payload: .ref(ContextRef(kind: .skill, id: skill.name, label: skill.name)))
             }
             publish(rows)
+        }
+    }
+
+    /// "@open WhatsApp" as a line to choose, and "@open WhatsApp web" under a Mac app: Return puts it in the box, Return
+    /// again opens it.
+    private func appRows(_ query: String, _ config: ComposerConfig) -> [ComposerSuggestion] {
+        let rows = EmbeddedAppCatalog.openSuggestions(for: query).compactMap { match in
+            config.apps.first { $0.id == match.app.id }.map { (app: $0, web: match.mode == .web) }
+        }
+        return rows.prefix(10).map { row -> ComposerSuggestion in
+            let insertion = "@open " + row.app.title + (row.web ? " web" : "")
+            let detail = row.web ? tr("embedded.mode.web") : row.app.id.hasPrefix("mac:") ? tr("embedded.mentionDetailMac") : tr("embedded.mentionDetail")
+            return ComposerSuggestion(id: "app:" + row.app.id + (row.web ? ":web" : ""), title: insertion, detail: detail,
+                                      symbol: row.web ? "globe" : row.app.symbol,
+                                      payload: .command(ComposerCommand(name: row.app.id, insertion: insertion, action: .insert)))
         }
     }
 
