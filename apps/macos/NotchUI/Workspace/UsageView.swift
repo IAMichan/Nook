@@ -33,7 +33,11 @@ struct UsageView: View {
                 accountRow(profile)
             }
         } header: {
-            Text(tr("settings.agents.subscriptions"))
+            HStack {
+                Text(tr("settings.agents.subscriptions"))
+                Spacer()
+                UsageRefreshButton()
+            }
         } footer: {
             Text(tr("ws.usage.quotaNote"))
         }

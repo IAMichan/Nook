@@ -28,6 +28,8 @@ final class ClaudeUsage {
     /// `refreshNow` asks again at most this often per account: it is called when a usage view opens, after a turn, on every
     /// rate limit event and while logging in.
     private static let minimumInterval: TimeInterval = 60
+    /// The refresh button asks again at most this often per account, however often it is clicked.
+    private static let manualInterval: TimeInterval = 10
 
     init(hub: AgentHub, profiles: @escaping () -> [AgentProfile], executable: @escaping () -> String?) {
         self.hub = hub
@@ -51,6 +53,13 @@ final class ClaudeUsage {
     /// Reads every signed-in subscription account that was not read in the last minute: after linking, logging in or a limit event.
     func refreshNow() {
         refresh(after: Self.minimumInterval)
+    }
+
+    /// The refresh button: reads every signed-in subscription account now (unless it was read seconds ago) and returns once
+    /// the readings are in, so the button can show it is busy.
+    func refreshManually() async {
+        refresh(after: Self.manualInterval)
+        while !busy.isEmpty { try? await Task.sleep(nanoseconds: 200_000_000) }
     }
 
     private func refresh(after interval: TimeInterval) {

@@ -46,6 +46,13 @@ final class AppModel: ObservableObject {
         antigravityUsage.refreshNow()
     }
 
+    /// The refresh button of a usage view: reads every account now and returns when Claude's readings are in.
+    func refreshQuotasManually() async {
+        codex.refreshNow()
+        antigravityUsage.refreshNow(force: true)
+        await claudeUsage.refreshManually()
+    }
+
     /// While a usage view is on screen: reads the limits when it opens and every two minutes after (slower when the energy
     /// plan takes it easy), so what you look at is current. Ends when the view goes away (its task is cancelled).
     func watchQuotas() async {
