@@ -121,6 +121,32 @@ final class CodexAppServerTests: XCTestCase {
                        "an unknown request is answered, so Codex never waits forever")
     }
 
+    func testMcpToolApprovalBecomesAnApproval() {
+        func events(_ line: String) -> [CodexStreamEvent] { CodexAppServerMapper.events(CodexRPC.parse(line)!) }
+        let tool = events(#"{"id":11,"method":"mcpServer/elicitation/request","params":{"threadId":"t","turnId":"u","serverName":"bestanden-mappen","mode":"form","message":"Allow the bestanden-mappen MCP server to run tool \"move_file\"?","requestedSchema":{"type":"object","properties":{}},"_meta":{"codex_approval_kind":"mcp_tool_call","persist":["session","always"],"tool_title":"move_file","tool_params_display":[{"name":"source","value":"/a.txt"},{"name":"destination","value":"/b.txt"}]}}}"#)
+        let expected = CodexApprovalRequest(rpcID: .int(11), kind: .mcpTool, itemID: "11", command: "", cwd: "",
+                                            reason: "Allow the bestanden-mappen MCP server to run tool \"move_file\"?",
+                                            server: "bestanden-mappen", tool: "move_file",
+                                            arguments: ["source": "/a.txt", "destination": "/b.txt"], canRemember: true)
+        XCTAssertEqual(tool, [.approval(expected)])
+        XCTAssertEqual(CodexRPC.decision(expected, allow: true, always: false)["action"] as? String, "accept")
+        XCTAssertNil(CodexRPC.decision(expected, allow: true, always: false)["_meta"])
+        XCTAssertEqual((CodexRPC.decision(expected, allow: true, always: true)["_meta"] as? [String: Any])?["persist"] as? String, "session")
+        XCTAssertEqual(CodexRPC.decision(expected, allow: false, always: false)["action"] as? String, "decline")
+
+        let confirm = events(#"{"id":12,"method":"mcpServer/elicitation/request","params":{"threadId":"t","serverName":"deploy","mode":"form","message":"Deploy to production?","requestedSchema":{"type":"object","properties":{}}}}"#)
+        XCTAssertEqual(confirm, [.approval(CodexApprovalRequest(rpcID: .int(12), kind: .mcpTool, itemID: "12", command: "", cwd: "",
+                                                                reason: "Deploy to production?", server: "deploy"))])
+        XCTAssertEqual(events(#"{"id":13,"method":"mcpServer/elicitation/request","params":{"threadId":"t","serverName":"x","mode":"form","message":"Name?","requestedSchema":{"type":"object","properties":{"name":{"type":"string"}}}}}"#),
+                       [.unsupportedRequest(.int(13))], "a form with fields to fill in is not a yes or no")
+        XCTAssertEqual(events(#"{"id":14,"method":"mcpServer/elicitation/request","params":{"threadId":"t","serverName":"x","mode":"url","message":"Sign in","url":"https://x","elicitationId":"e"}}"#),
+                       [.unsupportedRequest(.int(14))])
+        let untitled = events(#"{"id":15,"method":"mcpServer/elicitation/request","params":{"threadId":"t","serverName":"files","mode":"form","message":"Allow the files MCP server to run tool \"read_file\"?","requestedSchema":{"type":"object","properties":{}},"_meta":{"codex_approval_kind":"mcp_tool_call"}}}"#)
+        guard case .approval(let request)? = untitled.first else { return XCTFail("expected an approval") }
+        XCTAssertEqual(request.tool, "read_file", "without a title the tool comes from Codex's question")
+        XCTAssertFalse(request.canRemember)
+    }
+
     func testUnsupportedMeansFallBack() {
         XCTAssertTrue(CodexAppServerError.server("Method not found").meansUnsupported)
         XCTAssertTrue(CodexAppServerError.exited("error: unrecognized subcommand 'app-server'").meansUnsupported)

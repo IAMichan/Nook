@@ -221,4 +221,21 @@ enum TestData {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return WorkspacePathPolicy.normalize(url.path)
     }
+
+    // MARK: MCP tool names
+
+    func testMcpToolNamesReadAsWords() {
+        let move = McpToolName("mcp__bestanden-mappen__move_file")
+        XCTAssertEqual(move?.serverLabel, "Bestanden mappen")
+        XCTAssertEqual(move?.toolLabel, "Move file")
+        XCTAssertEqual(move?.label, "Bestanden mappen › Move file")
+        XCTAssertEqual(McpToolName("mcp__claude_ai_Google_Drive__searchFiles")?.label, "Google Drive › Search files")
+        XCTAssertEqual(McpToolName.readable("get_URL"), "Get URL")
+        XCTAssertEqual(McpToolName.readable("Move file"), "Move file", "a title stays as it is")
+        XCTAssertNil(McpToolName("Bash"))
+        XCTAssertNil(McpToolName("mcp__server"))
+        XCTAssertEqual(ToolSummary.describe(tool: "mcp__bestanden-mappen__move_file", input: ["source": "/a.txt", "destination": "/b.txt"]),
+                       "Bestanden mappen › Move file · Destination: /b.txt, Source: /a.txt")
+        XCTAssertEqual(McpToolName.arguments(["source": "/a.txt", "max_depth": 2]), "Max depth: 2\nSource: /a.txt")
+    }
 }

@@ -36,7 +36,7 @@ struct ApprovalRequest: Identifiable {
         case "WebSearch", "google_web_search":
             return "May \(agentName) search the web?"
         default:
-            if tool.hasPrefix("mcp__") { return "May \(agentName) use this integration?" }
+            if let mcp = McpToolName(tool) { return tr("ws.approval.mcpTitle", agentName, mcp.toolLabel, mcp.serverLabel) }
             return "May \(agentName) use \(tool)?"
         }
     }

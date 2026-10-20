@@ -258,7 +258,7 @@ struct ApprovalRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(tr("ws.approval.asks", event.tool ?? "tool"))
+                Text(tr("ws.approval.asks", McpToolName(event.tool ?? "")?.toolLabel ?? event.tool ?? "tool"))
                     .font(NookTheme.font(12.5, .medium))
                     .foregroundStyle(WS.text)
                 Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.secondary).lineLimit(1)

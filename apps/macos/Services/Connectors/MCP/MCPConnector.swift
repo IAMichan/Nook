@@ -121,7 +121,7 @@ final class MCPConnector: ContextSource, ObservableObject {
                 state: .ok,
                 headline: tr("mcp.status.tools", tools.count),
                 detail: tr("mcp.status.split", reads, tools.count - reads),
-                items: tools.prefix(12).map { ConnectorItem(id: $0.name, title: $0.name, subtitle: CloudHelp.short($0.description, 80),
+                items: tools.prefix(12).map { ConnectorItem(id: $0.name, title: $0.title, subtitle: CloudHelp.short($0.description, 80),
                                                             tone: $0.readOnly ? .neutral : .attention) },
                 updated: Date()
             )
@@ -134,6 +134,11 @@ final class MCPConnector: ContextSource, ObservableObject {
 
     func contextLines() -> [String] { [] }
 
+    /// The readable name of one of this server's tools, by the name Nook gave it ("mcp_files_move_file" is "Move file").
+    func title(ofTool name: String) -> String {
+        serverTools.first { MCPTool.nookName(server: config.id, tool: $0.name) == name }?.title ?? name
+    }
+
     var tools: [ToolSpec] {
         guard isActive else { return [] }
         let server = config.name
@@ -144,8 +149,9 @@ final class MCPConnector: ContextSource, ObservableObject {
                 schema: tool.inputSchema,
                 kind: tool.readOnly ? .read : .action,
                 summarize: { input in
-                    let detail = input.sorted { $0.key < $1.key }.prefix(2).map { "\($0.key): \(CloudHelp.short("\($0.value)", 30))" }
-                    return "\(server): \(tool.name)" + (detail.isEmpty ? "" : " · " + detail.joined(separator: ", "))
+                    let detail = input.sorted { $0.key < $1.key }.prefix(2)
+                        .map { "\(McpToolName.readable($0.key)): \(CloudHelp.short("\($0.value)", 30))" }
+                    return "\(server): \(tool.title)" + (detail.isEmpty ? "" : " · " + detail.joined(separator: ", "))
                 },
                 tag: { _ in tool.readOnly ? ("", .neutral) : ("MCP", .caution) },
                 run: { [weak self] input in
