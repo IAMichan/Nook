@@ -36,7 +36,7 @@ percent-encoding = "2"
 fancy-regex = "0.14"
 unicode-normalization = "0.1"
 quick-xml = "0.37"
-pdf-extract = "0.9"
+pdf-extract = "0.12"
 iana-time-zone = "0.1"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 
