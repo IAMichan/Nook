@@ -8,8 +8,8 @@ struct CompletionSuggestion: Equatable {
     struct AcceptOptions: Equatable {
         /// Taking a word also takes the space after it.
         var trailingSpace = false
-        /// Punctuation stuck to a word ("there,") comes with it.
-        var attachedPunctuation = true
+        /// Punctuation stuck to a word ("there,") comes with it. Off: the word first, its punctuation with the next press.
+        var attachedPunctuation = false
     }
 
     private(set) var remaining: String
@@ -69,16 +69,12 @@ struct CompletionSuggestion: Equatable {
         return text
     }
 
-    /// The next word with the whitespace before it.
+    /// The next word with the whitespace before it. Without attached punctuation only the marks at the end of a word wait
+    /// ("there" then ","); inside it ("3.5", "nook.app") they stay, and punctuation on its own ("...") is one chunk.
     func nextChunk(_ options: AcceptOptions = AcceptOptions()) -> String {
         guard var chunk = Self.chunks(of: Substring(remaining)).first else { return "" }
-        if !options.attachedPunctuation {
-            let word = chunk.drop(while: \.isWhitespace)
-            if let first = word.firstIndex(where: { $0.isLetter || $0.isNumber }) {
-                if let end = word[first...].firstIndex(where: { !($0.isLetter || $0.isNumber || "'’-".contains($0)) }) { chunk = chunk[..<end] }
-            } else if let first = word.indices.first {
-                chunk = chunk[...first]
-            }
+        if !options.attachedPunctuation, let last = chunk.lastIndex(where: { $0.isLetter || $0.isNumber }) {
+            chunk = chunk[...last]
         }
         var result = String(chunk)
         if options.trailingSpace, remaining.dropFirst(result.count).first == " " { result += " " }
