@@ -64,6 +64,8 @@ struct ChatIntent: Equatable {
             || has(#"(stuur|verstuur|beantwoord|antwoord|schrijf|send|reply|write|schick|sende|schreib)\b[^.?!]{0,60}\b(whats-?app|appje|app-?bericht)"#)
             || has(#"\b(via|over|per|on|through|in|über|bei) whats-?app\b"#) && has(#"\b(stuur|verstuur|zeg|laat \p{L}+ weten|vraag|send|tell|ask|let \p{L}+ know|schick|sag|frag)"#)
             || has(#"\b(app|whatsapp) (hem|haar|ze|him|her|them|ihm|ihr)\b"#)
+            // "Verstuur een bericht naar de Doorsturen groep": a message to a group is a chat message, unless it says mail.
+            || !has(#"e-?mail|\bmail"#) && has(#"(stuur|verstuur|schrijf|send|write|schick|sende|schreib)\b[^.?!]{0,60}\b(groep|group|gruppe|app-?groep|groepsapp|groeps-?chat|group ?chat|gruppenchat)\b"#)
         let writesMail = !writesChat && (has(#"(schrijf|stuur|verstuur|beantwoord|antwoord|maak|write|send|draft|reply|answer|schreib|sende|beantworte)\b[^.?!]{0,40}\b(e-?mail|mail|mailtje|bericht)"#)
             || has(#"\b(e-?mail|mail)(tje)? (naar|aan|to|an)\b"#) || has(#"^(mail|e-?mail) \p{L}+"#) || has(#"\b(reply to|antwoord op|reageer op)\b"#))
         // Remembering something lasting is memory; "onthoud dat ik morgen moet bellen" is a task and stays a reminder.
