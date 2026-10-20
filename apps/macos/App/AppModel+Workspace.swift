@@ -294,7 +294,7 @@ extension AppModel {
             try runVisibly(intro + " && " + command, in: FileManager.default.homeDirectoryForCurrentUser.path,
                            name: "nook-login-\(profile.id)", title: tr("accounts.terminalTitle.login", profile.kind.name))
         } catch {
-            viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
         Task { [weak self] in
@@ -323,7 +323,7 @@ extension AppModel {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
                            name: "nook-logout-\(profile.id)", title: tr("accounts.terminalTitle.logout", profile.kind.name))
         } catch {
-            viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
         Task { [weak self] in

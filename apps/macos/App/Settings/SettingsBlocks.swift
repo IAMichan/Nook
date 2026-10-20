@@ -371,7 +371,7 @@ struct WorkspaceSettingsSection: View {
                                in: FileManager.default.homeDirectoryForCurrentUser.path,
                                name: "nook-bridge-\(provider.rawValue)", title: tr("settings.bridge.terminalTitle", provider.displayName))
         } catch {
-            app.viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
         }
     }
 }

@@ -53,7 +53,27 @@ The checklist for a new or changed view:
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
+- The result of an action is a `ToastCenter` toast, never a local notice string, banner or alert (see *Toasts*).
 - Every string through `tr("key")` in all five languages, and a `.help` or accessibility label on a symbol-only control.
+
+## Toasts — the result of what you did
+
+`ToastCenter.shared` is the one way to report a short result, on the Mac and (as `toast` in `src/lib/toast.svelte.ts`) in
+the Tauri app. Use it whenever an action ends and its own view does not stay to show how it went.
+
+- **Where it shows:** on one surface with `.nookToastHost()` (the panel in the notch and the main window, Settings): the
+  key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
+  (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
+  `.nookToastHost()` once, at its root.
+- **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
+  every toast stays while hovered, and an error with a detail can be copied in one click.
+- **Words:** the title says what happened in a few words ("Pushed", "Couldn't remove the worktree", `toast.failed` for
+  "%@ failed"); the error's own text goes in `detail`, never glued into the title.
+- **Not a toast:** a decision Nook waits for (a card or an approval with `NookNoticeActions`), a problem with a form you
+  are filling in (it stays next to that form), a load error that replaces the content (`WSEmptyState`), something
+  that stays true (a status row or banner), and the checkmark a copy button shows on itself. No `.alert` for an
+  error after an action, and no local `notice`/`status` strings that do a toast's job.
+- **The notch's own flows** keep `viewModel.finish`: a card's outcome, a quick command, and an agent that finished.
 
 ## Components — `apps/macos/NotchUI/Components`
 
@@ -63,7 +83,7 @@ The checklist for a new or changed view:
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
-| `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one global toast for a short result (saved, approved, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`), `.warning(…)`, `.info(…)`. Mint, coral, amber, iris by kind; queued, closes by itself, stays while hovered. The panel (notch and main window) and Settings host it; never build a local toast or banner for a one-off result |
+| `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header or under a message |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
