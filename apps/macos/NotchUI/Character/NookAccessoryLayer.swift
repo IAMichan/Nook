@@ -102,10 +102,11 @@ enum NookAccessoryArt {
             return CGPoint(x: x * cos(yaw) + z1 * sin(yaw), y: y1)
         }
 
-        /// Where the top of the head moved to, relative to where it is when Nook looks straight ahead.
+        /// Where a hat moves to, relative to where it sits when Nook looks straight ahead. The top of a sphere hardly
+        /// moves when it turns, so a hat would look glued in place: it slides a little with the turn, as the face does.
         var hatShift: CGSize {
             let top = rotate(0, -R, 0)
-            return CGSize(width: top.x, height: top.y + R)
+            return CGSize(width: top.x + sin(yaw) * R * 0.15, height: top.y + R)
         }
 
         /// The middle of the head's front at height `y` (in hat space): where a gem or a stripe centered on the front sits.
@@ -294,13 +295,14 @@ enum NookAccessoryArt {
             ? (Color(hex: 0x4A4FC4), Color(hex: 0x7C82F0), Color(hex: 0x23256B))
             : (Color(hex: 0xC8102E), Color(hex: 0xF0434F), Color(hex: 0x6E0717))
         let (cloth, light, dark) = colors
-        let tip = CGPoint(x: R * 1.18 + swing, y: -R * 0.72)
+        // The long tip flops over to his right and hangs down beside his face.
+        let tip = CGPoint(x: R * 1.3 + swing, y: -R * 0.3)
 
         var cap = Path()
         cap.move(to: CGPoint(x: -R * 0.94, y: -R * 0.55))
         cap.addCurve(to: CGPoint(x: R * 0.05, y: -R * 1.42), control1: CGPoint(x: -R * 1.0, y: -R * 1.1), control2: CGPoint(x: -R * 0.55, y: -R * 1.45))
-        cap.addCurve(to: tip, control1: CGPoint(x: R * 0.7, y: -R * 1.4), control2: CGPoint(x: R * 1.12 + swing, y: -R * 1.18))
-        cap.addCurve(to: CGPoint(x: R * 0.58, y: -R * 1.0), control1: CGPoint(x: R * 1.02 + swing, y: -R * 0.98), control2: CGPoint(x: R * 0.8, y: -R * 0.98))
+        cap.addCurve(to: tip, control1: CGPoint(x: R * 0.75, y: -R * 1.45), control2: CGPoint(x: R * 1.4 + swing, y: -R * 0.95))
+        cap.addCurve(to: CGPoint(x: R * 0.62, y: -R * 0.95), control1: CGPoint(x: R * 1.12 + swing, y: -R * 0.4), control2: CGPoint(x: R * 0.82, y: -R * 0.78))
         cap.addQuadCurve(to: CGPoint(x: R * 0.94, y: -R * 0.55), control: CGPoint(x: R * 0.9, y: -R * 0.82))
         rimCurve(&cap, from: R * 0.94, to: -R * 0.94, y: -R * 0.55, sag: R * 0.05)
         cap.closeSubpath()
@@ -335,8 +337,8 @@ enum NookAccessoryArt {
         ctx.stroke(cap, with: .color(dark.opacity(0.55)), lineWidth: head.line(0.02, minimum: 0.35))
 
         // The fur band around the head.
-        fur(ctx, head, from: -R * 1.02, to: R * 1.02, y: -R * 0.5, height: R * 0.26)
-        fuzzyBall(ctx, head, center: CGPoint(x: tip.x + R * 0.04, y: tip.y + R * 0.12), radius: R * 0.19,
+        fur(ctx, head, from: -R * 0.98, to: R * 0.98, y: -R * 0.62, height: R * 0.22)
+        fuzzyBall(ctx, head, center: CGPoint(x: tip.x + R * 0.02, y: tip.y + R * 0.1), radius: R * 0.19,
                   light: Color.white, base: Color(hex: 0xF3F0EA), dark: Color(hex: 0xB8B2A8))
     }
 
@@ -358,7 +360,7 @@ enum NookAccessoryArt {
         for i in 0...tufts {
             let u = CGFloat(i) / CGFloat(tufts)
             let x = x0 + (x1 - x0) * u
-            let sag = R * 0.24 * (1 - pow(2 * u - 1, 2)) * 0.5
+            let sag = R * 0.24 * (1 - pow(2 * u - 1, 2)) * 0.25
             for edge in [-1, 1] as [CGFloat] {
                 let r = height * (0.24 + 0.06 * CGFloat(noise(i, edge > 0 ? 5 : 6)))
                 let c = CGPoint(x: x, y: y + edge * height * 0.36 + sag)
@@ -622,21 +624,22 @@ enum NookAccessoryArt {
         castShadow(base, head, shadowPath, opacity: 0.4, blur: 0.08)
 
         var ctx = base
-        ctx.translateBy(x: shift.width + R * 0.1, y: shift.height - R * 0.8)
-        ctx.rotate(by: .radians(-0.2 + Double(head.yaw) * 0.12))
+        ctx.translateBy(x: shift.width - R * 0.02, y: shift.height - R * 0.8)
+        // Slouched: the right side droops.
+        ctx.rotate(by: .radians(0.16 + Double(head.yaw) * 0.12))
         let felt = Color(hex: 0xB32B45), light = Color(hex: 0xE05A70), deep = Color(hex: 0x5E1020)
 
         // The headband where it meets his head.
-        let band = Path(ellipseIn: CGRect(x: -R * 0.82, y: R * 0.12, width: R * 1.64, height: R * 0.2))
+        let band = Path(ellipseIn: CGRect(x: -R * 0.84, y: R * 0.2, width: R * 1.68, height: R * 0.18))
         ctx.fill(band, with: .color(deep))
 
-        let disc = Path(ellipseIn: CGRect(x: -R * 1.08, y: -R * 0.38, width: R * 2.16, height: R * 0.66))
+        let disc = Path(ellipseIn: CGRect(x: -R * 1.0, y: -R * 0.48, width: R * 2.0, height: R * 0.8))
         ctx.fill(disc, with: .radialGradient(Gradient(colors: [light, felt, deep]),
                                              center: CGPoint(x: -R * 0.45, y: -R * 0.25), startRadius: 0, endRadius: R * 1.5))
         var cloth = ctx
         cloth.clip(to: disc)
         // The underside curling in at the bottom edge.
-        cloth.fill(Path(ellipseIn: CGRect(x: -R * 1.0, y: R * 0.02, width: R * 2.0, height: R * 0.46)), with: .color(deep.opacity(0.55)))
+        cloth.fill(Path(ellipseIn: CGRect(x: -R * 0.95, y: R * 0.05, width: R * 1.9, height: R * 0.46)), with: .color(deep.opacity(0.55)))
         // Felt: fine speckle on larger orbs.
         if head.detailed {
             for i in 0..<40 {
@@ -650,8 +653,8 @@ enum NookAccessoryArt {
         ctx.stroke(disc, with: .color(deep.opacity(0.6)), lineWidth: head.line(0.02, minimum: 0.35))
 
         var stalk = Path()
-        stalk.move(to: CGPoint(x: -R * 0.02, y: -R * 0.3))
-        stalk.addQuadCurve(to: CGPoint(x: R * 0.08, y: -R * 0.5), control: CGPoint(x: -R * 0.04, y: -R * 0.45))
+        stalk.move(to: CGPoint(x: -R * 0.02, y: -R * 0.44))
+        stalk.addQuadCurve(to: CGPoint(x: R * 0.08, y: -R * 0.62), control: CGPoint(x: -R * 0.04, y: -R * 0.58))
         ctx.stroke(stalk, with: .color(deep), style: StrokeStyle(lineWidth: head.line(0.07), lineCap: .round))
     }
 
@@ -660,11 +663,12 @@ enum NookAccessoryArt {
     /// Thin gold round glasses: lenses with a faint reflection, a keyhole bridge, and a shadow of the frame on his face.
     private static func drawRoundGlasses(_ ctx: GraphicsContext, _ head: Head) {
         let R = head.R
-        let r = head.size * 0.135
+        // Slightly taller than wide, so even the tall bar eyes fit inside, with room for the bridge between them.
+        let r = head.size * 0.118, tall: CGFloat = 1.34
         let squeeze = 1 - 0.28 * abs(head.gaze.x)
         let left = head.eye(-1), right = head.eye(1)
         func lens(_ c: CGPoint) -> Path {
-            Path(ellipseIn: CGRect(x: c.x - r * squeeze, y: c.y - r, width: 2 * r * squeeze, height: 2 * r))
+            Path(ellipseIn: CGRect(x: c.x - r * squeeze, y: c.y - r * tall, width: 2 * r * squeeze, height: 2 * r * tall))
         }
         var frame = Path()
         frame.addPath(lens(left))
@@ -676,7 +680,8 @@ enum NookAccessoryArt {
         frame.addPath(bridge)
         // Temples running back towards his ears, to the edge of his head.
         var temples = Path()
-        for (c, side) in [(left, CGFloat(-1)), (right, CGFloat(1))] {
+        // The temple on the side turning away goes behind his head.
+        for (c, side) in [(left, CGFloat(-1)), (right, CGFloat(1))] where side * head.gaze.x < 0.35 {
             temples.move(to: CGPoint(x: c.x + side * r * squeeze, y: c.y - r * 0.2))
             temples.addLine(to: CGPoint(x: side * R * 0.97 * head.foreshortening + head.gaze.x * R * 0.1, y: c.y - r * 0.35))
         }
@@ -696,8 +701,8 @@ enum NookAccessoryArt {
             // Two slanted streaks of light across each lens.
             for (offset, w) in [(-0.35, 0.28), (0.12, 0.12)] as [(CGFloat, CGFloat)] {
                 var streak = Path()
-                streak.move(to: CGPoint(x: c.x + (offset - 0.6) * r, y: c.y + r))
-                streak.addLine(to: CGPoint(x: c.x + (offset + 0.6) * r, y: c.y - r))
+                streak.move(to: CGPoint(x: c.x + (offset - 0.6) * r, y: c.y + r * tall))
+                streak.addLine(to: CGPoint(x: c.x + (offset + 0.6) * r, y: c.y - r * tall))
                 reflect.stroke(streak, with: .color(Color.white.opacity(0.16)), style: StrokeStyle(lineWidth: w * r))
             }
         }
@@ -709,8 +714,8 @@ enum NookAccessoryArt {
         if head.detailed {
             // A thin dark inner edge gives the frame its thickness.
             for c in [left, right] {
-                glass.stroke(Path(ellipseIn: CGRect(x: c.x - (r - width * 0.6) * squeeze, y: c.y - r + width * 0.6,
-                                                    width: 2 * (r - width * 0.6) * squeeze, height: 2 * (r - width * 0.6))),
+                glass.stroke(Path(ellipseIn: CGRect(x: c.x - (r - width * 0.6) * squeeze, y: c.y - r * tall + width * 0.6,
+                                                    width: 2 * (r - width * 0.6) * squeeze, height: 2 * (r * tall - width * 0.6))),
                              with: .color(Color(hex: 0x5A3A08).opacity(0.5)), lineWidth: width * 0.3)
             }
         }
@@ -720,18 +725,19 @@ enum NookAccessoryArt {
     private static func drawSunglasses(_ ctx: GraphicsContext, _ head: Head) {
         let R = head.R
         let squeeze = 1 - 0.28 * abs(head.gaze.x)
-        let w = head.size * 0.16 * squeeze, h = head.size * 0.13
+        // Narrow enough to leave room for the bridge, tall enough to cover the eyes.
+        let w = head.size * 0.12 * squeeze, h = head.size * 0.165
         let left = head.eye(-1), right = head.eye(1)
         /// A teardrop lens, the low point towards the outside.
         func lens(_ c: CGPoint, side: CGFloat) -> Path {
             var p = Path()
-            p.move(to: CGPoint(x: c.x - side * w, y: c.y - h * 0.75))
-            p.addCurve(to: CGPoint(x: c.x + side * w * 1.02, y: c.y - h * 0.55),
-                       control1: CGPoint(x: c.x - side * w * 0.2, y: c.y - h * 0.95), control2: CGPoint(x: c.x + side * w * 0.8, y: c.y - h * 0.95))
-            p.addCurve(to: CGPoint(x: c.x + side * w * 0.2, y: c.y + h * 0.95),
-                       control1: CGPoint(x: c.x + side * w * 1.2, y: c.y + h * 0.2), control2: CGPoint(x: c.x + side * w * 0.85, y: c.y + h * 0.95))
-            p.addCurve(to: CGPoint(x: c.x - side * w, y: c.y - h * 0.75),
-                       control1: CGPoint(x: c.x - side * w * 0.6, y: c.y + h * 0.95), control2: CGPoint(x: c.x - side * w * 1.05, y: c.y + h * 0.1))
+            p.move(to: CGPoint(x: c.x - side * w, y: c.y - h * 0.9))
+            p.addCurve(to: CGPoint(x: c.x + side * w * 1.05, y: c.y - h * 0.72),
+                       control1: CGPoint(x: c.x - side * w * 0.2, y: c.y - h * 1.08), control2: CGPoint(x: c.x + side * w * 0.8, y: c.y - h * 1.08))
+            p.addCurve(to: CGPoint(x: c.x + side * w * 0.45, y: c.y + h * 0.98),
+                       control1: CGPoint(x: c.x + side * w * 1.3, y: c.y + h * 0.15), control2: CGPoint(x: c.x + side * w * 1.1, y: c.y + h * 0.98))
+            p.addCurve(to: CGPoint(x: c.x - side * w, y: c.y - h * 0.9),
+                       control1: CGPoint(x: c.x - side * w * 0.5, y: c.y + h * 0.98), control2: CGPoint(x: c.x - side * w * 1.1, y: c.y + h * 0.05))
             p.closeSubpath()
             return p
         }
@@ -761,15 +767,15 @@ enum NookAccessoryArt {
         let line = head.line(0.035, minimum: 0.55)
         for l in lenses { glass.stroke(l, with: metal, lineWidth: line) }
         var bridge = Path()
-        for dy in [-0.62, -0.3] as [CGFloat] {
-            bridge.move(to: CGPoint(x: left.x + w * 0.95, y: left.y + h * dy))
-            bridge.addQuadCurve(to: CGPoint(x: right.x - w * 0.95, y: right.y + h * dy),
+        for dy in [-0.78, -0.5] as [CGFloat] {
+            bridge.move(to: CGPoint(x: left.x + w * 0.98, y: left.y + h * dy))
+            bridge.addQuadCurve(to: CGPoint(x: right.x - w * 0.98, y: right.y + h * dy),
                                 control: CGPoint(x: (left.x + right.x) / 2, y: left.y + h * (dy - 0.2)))
         }
         glass.stroke(bridge, with: metal, style: StrokeStyle(lineWidth: line, lineCap: .round))
         var temples = Path()
-        for (c, side) in [(left, CGFloat(-1)), (right, CGFloat(1))] {
-            temples.move(to: CGPoint(x: c.x + side * w, y: c.y - h * 0.65))
+        for (c, side) in [(left, CGFloat(-1)), (right, CGFloat(1))] where side * head.gaze.x < 0.35 {
+            temples.move(to: CGPoint(x: c.x + side * w, y: c.y - h * 0.8))
             temples.addLine(to: CGPoint(x: side * R * 0.97 * head.foreshortening + head.gaze.x * R * 0.1, y: c.y - h * 0.75))
         }
         glass.stroke(temples, with: metal, style: StrokeStyle(lineWidth: line * 0.9, lineCap: .round))
@@ -785,13 +791,13 @@ enum NookAccessoryArt {
     /// The scarf's band under his head, from one side round the bottom to the other.
     private static func scarfBand(_ R: CGFloat, outset: CGFloat = 0) -> Path {
         var band = Path()
-        band.move(to: CGPoint(x: -R * (1.04 + outset), y: R * 0.36))
-        band.addCurve(to: CGPoint(x: R * (1.04 + outset), y: R * 0.36),
-                      control1: CGPoint(x: -R * (1.0 + outset), y: R * (1.24 + outset)), control2: CGPoint(x: R * (1.0 + outset), y: R * (1.24 + outset)))
-        band.addQuadCurve(to: CGPoint(x: R * 0.9, y: R * 0.32), control: CGPoint(x: R * 0.98, y: R * 0.26))
-        band.addCurve(to: CGPoint(x: -R * 0.9, y: R * 0.32),
-                      control1: CGPoint(x: R * 0.72, y: R * 0.86), control2: CGPoint(x: -R * 0.72, y: R * 0.86))
-        band.addQuadCurve(to: CGPoint(x: -R * (1.04 + outset), y: R * 0.36), control: CGPoint(x: -R * 0.98, y: R * 0.26))
+        band.move(to: CGPoint(x: -R * (1.02 + outset), y: R * 0.55))
+        band.addCurve(to: CGPoint(x: R * (1.02 + outset), y: R * 0.55),
+                      control1: CGPoint(x: -R * (0.98 + outset), y: R * (1.26 + outset)), control2: CGPoint(x: R * (0.98 + outset), y: R * (1.26 + outset)))
+        band.addQuadCurve(to: CGPoint(x: R * 0.86, y: R * 0.5), control: CGPoint(x: R * 0.96, y: R * 0.44))
+        band.addCurve(to: CGPoint(x: -R * 0.86, y: R * 0.5),
+                      control1: CGPoint(x: R * 0.66, y: R * 0.92), control2: CGPoint(x: -R * 0.66, y: R * 0.92))
+        band.addQuadCurve(to: CGPoint(x: -R * (1.02 + outset), y: R * 0.55), control: CGPoint(x: -R * 0.96, y: R * 0.44))
         band.closeSubpath()
         return band
     }
@@ -817,13 +823,13 @@ enum NookAccessoryArt {
                                              startPoint: CGPoint(x: -R * 0.6, y: R * 0.35), endPoint: CGPoint(x: R * 0.7, y: R * 1.2)))
         var knit = ctx
         knit.clip(to: band)
-        // Stripes that follow the curve of the wrap.
-        for (offset, width) in [(0.0, 0.07), (0.22, 0.07)] as [(CGFloat, CGFloat)] {
+        // Stripes run across the scarf, so round the wrap they fan out like spokes.
+        for k in -3...3 {
+            let x = CGFloat(k) * R * 0.3 + turn
             var stripe = Path()
-            stripe.move(to: CGPoint(x: -R * 1.1, y: R * (0.44 + offset)))
-            stripe.addCurve(to: CGPoint(x: R * 1.1, y: R * (0.44 + offset)),
-                            control1: CGPoint(x: -R * 0.9 + turn, y: R * (1.02 + offset)), control2: CGPoint(x: R * 0.9 + turn, y: R * (1.02 + offset)))
-            knit.stroke(stripe, with: .color(scarfStripe.opacity(0.92)), style: StrokeStyle(lineWidth: R * width))
+            stripe.move(to: CGPoint(x: x * 0.6, y: R * 0.4))
+            stripe.addLine(to: CGPoint(x: x * 1.3, y: R * 1.4))
+            knit.stroke(stripe, with: .color(scarfStripe.opacity(0.9)), style: StrokeStyle(lineWidth: R * 0.08))
         }
         if head.detailed {
             // Knit rows: short slanted stitches across the band.
@@ -839,14 +845,14 @@ enum NookAccessoryArt {
         }
         knit.drawLayer { shade in
             shade.addFilter(.blur(radius: max(0.4, R * 0.06)))
-            shade.fill(Path(ellipseIn: CGRect(x: -R * 0.7, y: R * 0.5, width: R * 1.4, height: R * 0.3)), with: .color(Color.black.opacity(0.28)))
+            shade.fill(Path(ellipseIn: CGRect(x: -R * 0.65, y: R * 0.7, width: R * 1.3, height: R * 0.24)), with: .color(Color.black.opacity(0.28)))
         }
         roundShading(&knit, band, in: CGRect(x: -R * 1.05, y: R * 0.3, width: R * 2.1, height: R * 0.95), sheen: 0.12, shade: 0.4)
         ctx.stroke(band, with: .color(scarfDeep.opacity(0.6)), lineWidth: head.line(0.02, minimum: 0.35))
 
         // The knot and the two tails hanging from it, on his left.
         let knot = CGPoint(x: -R * 0.42 + turn, y: R * 0.93)
-        for (angle, length, delay) in [(0.18, 0.62, 0.0), (-0.08, 0.5, 0.1)] as [(Double, CGFloat, CGFloat)] {
+        for (angle, length, delay) in [(0.28, 0.62, 0.0), (-0.14, 0.5, 0.18)] as [(Double, CGFloat, CGFloat)] {
             var tail = ctx
             tail.translateBy(x: knot.x + R * delay, y: knot.y)
             tail.rotate(by: .radians(angle + Double(head.gaze.x) * -0.1))
