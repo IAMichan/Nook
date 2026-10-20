@@ -1,7 +1,8 @@
 import Foundation
 
 /// What the Pull requests list under Agents shows: a search over title, repository, number and author, and the choices
-/// in the Filters dropdown: the state (open by default, closed, merged or all), which group (for your review, or yours),
+/// in the Filters dropdown: the state (open by default, closed, merged or all), which group (for your review, yours, or
+/// from the watched organizations and repositories),
 /// the author, drafts, and CI. Foundation only, so tests can use it.
 struct PullRequestFilter: Equatable, Sendable {
     enum State: String, CaseIterable, Identifiable, Sendable {
@@ -10,7 +11,7 @@ struct PullRequestFilter: Equatable, Sendable {
     }
 
     enum Scope: String, CaseIterable, Identifiable, Sendable {
-        case all, reviews, mine
+        case all, reviews, mine, watched
         var id: String { rawValue }
     }
 
@@ -79,8 +80,9 @@ struct PullRequestFilter: Equatable, Sendable {
     /// The account with only the pull requests that match. An error stays, so a failing account never disappears.
     func apply(_ account: AccountPullRequests) -> AccountPullRequests {
         var result = account
-        result.reviews = scope == .mine ? [] : account.reviews.filter(matches)
-        result.mine = scope == .reviews ? [] : account.mine.filter(matches)
+        result.reviews = scope == .all || scope == .reviews ? account.reviews.filter(matches) : []
+        result.mine = scope == .all || scope == .mine ? account.mine.filter(matches) : []
+        result.watched = scope == .all || scope == .watched ? account.watched.filter(matches) : []
         return result
     }
 
@@ -88,7 +90,7 @@ struct PullRequestFilter: Equatable, Sendable {
     static func authors(in accounts: [AccountPullRequests]) -> [String] {
         var counts: [String: Int] = [:]
         for account in accounts {
-            for item in account.mine + account.reviews where !item.author.isEmpty { counts[item.author, default: 0] += 1 }
+            for item in account.mine + account.reviews + account.watched where !item.author.isEmpty { counts[item.author, default: 0] += 1 }
         }
         return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.lowercased() < $1.key.lowercased() }.map(\.key)
     }

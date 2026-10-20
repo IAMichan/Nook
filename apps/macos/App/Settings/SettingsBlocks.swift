@@ -214,6 +214,7 @@ struct WorkspaceSettingsSection: View {
             openIn
             behavior
             scheduled
+            WatchedPullRequestsSection()
             bridge
         }
     }
@@ -373,6 +374,58 @@ struct WorkspaceSettingsSection: View {
         } catch {
             app.viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
         }
+    }
+}
+
+/// The organizations and repositories whose open pull requests show under Agents › Pull requests, beside your own and
+/// your reviews. Searched with every connected GitHub account.
+private struct WatchedPullRequestsSection: View {
+    @ObservedObject private var watching = PullRequestWatchSettings.shared
+    @State private var text = ""
+    @State private var invalid = false
+
+    var body: some View {
+        Section {
+            ForEach(watching.entries, id: \.self) { entry in
+                HStack(spacing: 8) {
+                    Image(systemName: PullRequestWatchList.isRepository(entry) ? "book.closed" : "building.2")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry)
+                        Text(tr(PullRequestWatchList.isRepository(entry) ? "settings.pulls.repository" : "settings.pulls.organization"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(role: .destructive) { watching.remove(entry) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                        .help(tr("settings.pulls.remove"))
+                }
+            }
+            HStack {
+                TextField(tr("settings.pulls.add"), text: $text, prompt: Text(tr("settings.pulls.placeholder")))
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(add)
+                    .onChange(of: text) { _, _ in invalid = false }
+                Button(tr("settings.pulls.addButton"), action: add)
+                    .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || watching.entries.count >= PullRequestWatchList.limit)
+            }
+            if invalid {
+                Text(tr("settings.pulls.invalid")).font(.caption).foregroundStyle(.orange)
+            } else if watching.entries.count >= PullRequestWatchList.limit {
+                Text(tr("settings.pulls.full", PullRequestWatchList.limit)).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(tr("settings.pulls.title"))
+        } footer: {
+            Text(tr("settings.pulls.footer"))
+        }
+    }
+
+    private func add() {
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        if watching.add(text) { text = "" } else { invalid = true }
     }
 }
 
