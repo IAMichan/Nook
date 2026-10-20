@@ -230,6 +230,39 @@ struct NookIconButton: View {
     }
 }
 
+/// A round "…" next to the mic that opens a card's less common actions as a menu, each with its symbol.
+struct NookMoreMenu: View {
+    let actions: [CardAction]
+    var size: CGFloat = 34
+    let onAction: (CardAction) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                Button { onAction(action) } label: {
+                    if let symbol = action.symbol { Label(action.label, systemImage: symbol) } else { Text(action.label) }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(NookTheme.font(size * 0.42, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: size, height: size)
+                .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
+                .contentShape(Circle())
+                .hoverLift(hovering, scale: 1.06)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(tr("card.more"))
+        .accessibilityLabel(tr("card.more"))
+    }
+}
+
 /// A small borderless symbol button for a panel header or a message's actions (copy, retry, close). The label is the
 /// tooltip and what VoiceOver reads.
 struct ToolbarIconButton: View {

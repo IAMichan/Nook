@@ -109,6 +109,7 @@ struct CardView: View {
                 NookGhostButton(title: action.label, symbol: action.symbol, compact: compact) { onAction(action) }
             }
             Spacer(minLength: 4)
+            if !card.more.isEmpty { NookMoreMenu(actions: card.more, onAction: onAction) }
             NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice)
         }
     }
@@ -116,7 +117,7 @@ struct CardView: View {
     /// A notice (a card with an OK): its actions in one bar that takes the room, and OK as the white main button with
     /// the countdown of the card closing by itself.
     private func noticeRow(compact: Bool) -> some View {
-        let actions = ([card.primary, card.secondary] + card.extra).filter { !$0.label.isEmpty }
+        let actions = ([card.primary, card.secondary] + card.extra + card.more).filter { !$0.label.isEmpty }
         return HStack(spacing: compact ? 8 : 10) {
             NookActionBar(actions: actions, compact: compact, onAction: onAction)
             if let acknowledge = card.acknowledge {
