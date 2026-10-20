@@ -8,7 +8,7 @@ import SwiftUI
 /// far half of the band slip behind his head; the rest is drawn in the `.front` layer. Near the edge a part fades
 /// between the two layers instead of popping.
 ///
-/// The orb draws both layers inside its own stack, so the headphones also hop, squash and tilt with him.
+/// The orb draws both layers behind and over itself before its hop and tilt, so the headphones also hop, squash and tilt with him.
 struct NookHeadphones: View {
     enum Layer { case back, front }
 

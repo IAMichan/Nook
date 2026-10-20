@@ -82,11 +82,6 @@ struct NookOrb: View {
         let turn = min(abs(p.gaze.x), 1)
         let worn = self.worn
         return ZStack {
-            // Inside the orb's stack, so the headphones hop, squash and tilt with Nook; what turns away goes behind him.
-            if wearsHeadphones { NookHeadphones(size: size, gaze: p.gaze, layer: .back) }
-            if !worn.isEmpty {
-                NookAccessoryLayer(items: worn, size: size, gaze: p.gaze, eyeY: -eyeLift, eyeReach: eyeReach, layer: .back)
-            }
             let glowing = glow && style.glow
             Circle()
                 .fill(mood.color)
@@ -105,12 +100,23 @@ struct NookOrb: View {
                 .opacity(p.cheeks)
             }
             if style.mouth != .none { mouthLayer(p.mouth, gaze: p.gaze, turn: turn) }
+        }
+        .frame(width: size, height: size)
+        // What he wears is drawn behind and over the orb, never in its stack: the accessory canvas is larger than the
+        // orb (room for a party hat), and in the stack it made the orb and its shading grow to the canvas size.
+        // Before the scale and tilt, so headphones and hats hop, squash and tilt with Nook.
+        .background {
+            if wearsHeadphones { NookHeadphones(size: size, gaze: p.gaze, layer: .back) }
+            if !worn.isEmpty {
+                NookAccessoryLayer(items: worn, size: size, gaze: p.gaze, eyeY: -eyeLift, eyeReach: eyeReach, layer: .back)
+            }
+        }
+        .overlay {
             if !worn.isEmpty {
                 NookAccessoryLayer(items: worn, size: size, gaze: p.gaze, eyeY: -eyeLift, eyeReach: eyeReach, layer: .front)
             }
             if wearsHeadphones { NookHeadphones(size: size, gaze: p.gaze, layer: .front) }
         }
-        .frame(width: size, height: size)
         .scaleEffect(x: p.scale * p.stretch.width, y: p.scale * p.stretch.height)
         .rotationEffect(.degrees(p.rotation))
         .offset(p.offset)
