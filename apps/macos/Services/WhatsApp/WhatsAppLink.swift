@@ -3,6 +3,8 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 import ImageIO
+import AVFoundation
+import QuickLookThumbnailing
 
 // MARK: - Settings
 
@@ -92,6 +94,13 @@ enum WhatsAppSettings {
 /// user typed the answer or approved Nook's plan.
 ///
 /// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
+/// A message's file as the notch card shows it: saved in Nook's own temporary folder (emptied when Nook starts and
+/// quits), with a small picture of it when there is one.
+struct WAPreview {
+    let file: URL
+    let image: NSImage?
+}
+
 @MainActor
 final class WhatsAppLink: ObservableObject {
     static let shared = WhatsAppLink()
@@ -144,9 +153,12 @@ final class WhatsAppLink: ObservableObject {
     private var namingGroups: Set<String> = []
     /// Chats whose older messages were fetched for the notch card: once per chat while linked.
     private var historyLoaded: Set<String> = []
-    /// Photos shown in the notch card, downscaled and kept in memory only (by message id), and those asked for.
-    private var photos: [String: NSImage] = [:]
-    private var photosAsked: Set<String> = []
+    /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
+    private var previews: [String: WAPreview] = [:]
+    private var previewOrder: [String] = []
+    private var previewsLoading: Set<String> = []
+    /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
+    private var previewFailed: [String: Date] = [:]
     private var rateLimit = WARateLimit(limit: 6, window: 60)
     private var failures = 0
     /// Bumped at each start and stop: an answer from before a restart is dropped.
@@ -211,8 +223,10 @@ final class WhatsAppLink: ObservableObject {
     private func stop(forget: Bool) {
         generation += 1
         historyLoaded = []
-        photos = [:]
-        photosAsked = []
+        previews = [:]
+        previewOrder = []
+        previewsLoading = []
+        previewFailed = [:]
         refreshing = false
         polling = false
         timer?.invalidate()
@@ -459,14 +473,11 @@ final class WhatsAppLink: ObservableObject {
         try? FileManager.default.removeItem(at: openedFilesFolder)
     }
 
-    /// Fetches a message's file from the gateway (only now, because you clicked it) and returns where it was saved.
+    /// A message's file on this Mac, fetched from the gateway only when the card shows it or you open it.
     func download(message id: String, chat: String) async throws -> URL {
+        if let saved = previews[id]?.file, FileManager.default.fileExists(atPath: saved.path) { return saved }
         let (message, file) = try await fetchFile(message: id, chat: chat)
-        let name = Self.fileName(for: message.media, given: file.name, mimeType: file.mimeType)
-        let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(name)
-        try file.data.write(to: url, options: .atomic)
+        let url = try Self.save(file, media: message.media)
         Log.connectors.info("WhatsApp: opened a file")
         return url
     }
@@ -494,27 +505,74 @@ final class WhatsAppLink: ObservableObject {
         return (message, file)
     }
 
-    /// A photo already fetched for the notch card.
-    func photo(_ id: String) -> NSImage? { photos[id] }
+    /// Saves a fetched file in its own folder under Nook's temporary one, under a name the Mac recognizes.
+    private static func save(_ file: WAFile, media: WAMedia) throws -> URL {
+        let name = fileName(for: media, given: file.name, mimeType: file.mimeType)
+        let folder = openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(name)
+        try file.data.write(to: url, options: .atomic)
+        return url
+    }
 
-    /// Fetches the photos of these messages that were never asked for (each once while linked), so the card can show
-    /// them. Kept in memory only, downscaled. True when at least one new photo came in.
-    func loadPhotos(_ ids: [String], chat: String) async -> Bool {
+    /// How many fetched files stay at most; the oldest go first, from memory and from disk.
+    static let previewLimit = 48
+    /// How long a preview that failed waits before it is tried again.
+    static let previewRetry: TimeInterval = 60
+
+    /// A file already fetched for the notch card.
+    func preview(_ id: String) -> WAPreview? { previews[id] }
+
+    /// Fetches these messages' files for the card (a photo, a video, a document) with a picture of each: the photo
+    /// itself, the video's first frame, the document's first page. One that failed is tried again after a minute.
+    /// True when at least one new preview came in while the link stayed the same.
+    func loadPreviews(_ ids: [String], chat: String) async -> Bool {
         let gen = generation
         var loaded = false
-        // Memory stays small: past a few dozen photos the oldest cards start over.
-        if photos.count > 48 {
-            photos = [:]
-            photosAsked = []
-        }
-        for id in ids where !photosAsked.contains(id) {
-            photosAsked.insert(id)
-            guard let fetched = try? await fetchFile(message: id, chat: chat), gen == generation,
-                  let image = Self.thumbnail(fetched.1.data) else { continue }
-            photos[id] = image
+        for id in ids where previews[id] == nil && !previewsLoading.contains(id) {
+            if let failed = previewFailed[id], Date().timeIntervalSince(failed) < Self.previewRetry { continue }
+            previewsLoading.insert(id)
+            let fetched = try? await fetchFile(message: id, chat: chat)
+            previewsLoading.remove(id)
+            guard gen == generation else { return false }
+            guard let fetched, let url = try? Self.save(fetched.1, media: fetched.0.media) else {
+                previewFailed[id] = Date()
+                continue
+            }
+            let image = await Self.picture(of: url, data: fetched.1.data, media: fetched.0.media)
+            guard gen == generation else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return false }
+            previewFailed[id] = nil
+            previews[id] = WAPreview(file: url, image: image)
+            previewOrder.append(id)
             loaded = true
         }
+        while previewOrder.count > Self.previewLimit {
+            let old = previewOrder.removeFirst()
+            if let file = previews.removeValue(forKey: old)?.file {
+                try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+            }
+        }
         return loaded
+    }
+
+    /// A small picture of a file: the photo, a video's first frame or a document's first page.
+    private static func picture(of url: URL, data: Data, media: WAMedia) async -> NSImage? {
+        switch media {
+        case .image:
+            return thumbnail(data)
+        case .video:
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 480, height: 480)
+            guard let frame = try? await generator.image(at: .zero).image else { return nil }
+            return NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
+        case .document:
+            let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 96, height: 128), scale: 2,
+                                                       representationTypes: .thumbnail)
+            return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
+        default:
+            return nil
+        }
     }
 
     /// The photo at most `side` pixels on its longest side, decoded straight to that size so a large photo costs little.

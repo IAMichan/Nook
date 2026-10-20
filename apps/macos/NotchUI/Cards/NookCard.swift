@@ -62,8 +62,17 @@ struct ChatBubble: Equatable, Identifiable {
     var fromMe: Bool = false
     /// A file that came with the message (a document's name, "photo"…): the bubble shows it as a button that opens it.
     var attachment: String? = nil
-    /// A photo that came with the message, shown in the bubble; a click opens it in full.
+    /// How the file shows once Nook has it: a photo as itself, a video that plays in the bubble, any other file as a row.
+    var media: BubbleMedia = .file
+    /// A picture of the file: the photo, the video's first frame or the document's first page.
     var image: NSImage? = nil
+}
+
+enum BubbleMedia: Equatable {
+    case file
+    case photo
+    /// The video saved on this Mac, played in the bubble.
+    case video(URL)
 }
 
 enum CardDetail: Equatable {
