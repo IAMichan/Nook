@@ -11,13 +11,22 @@ protocol CompletionEngine: AnyObject, Sendable {
     /// Continues the text of `prompt`; nil when superseded, not sure enough, busy, or failed. `partial` gets the text so far
     /// each time another word is finished, so the suggestion can show before the model is done. A chat model reads the prompt
     /// as a request with its answer already begun (`CompletionChat`), a base model as a document.
-    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult?
+    /// `branches` gets the other ways the text could go on (other first words), when the engine writes them, after the
+    /// suggestion and only while no newer request came.
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
+                  branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult?
     /// Reads `prompt` into the model's cache ahead of the next key, without writing anything or stopping the running request.
     func warm(prompt: CompletionPrompt)
     /// Words that could come next, most likely first, each with the space before it when the model would put one there.
     func alternatives(prompt: CompletionPrompt, excluding: String, count: Int) async -> [String]
     /// Leans generation toward words the user writes often. Strength 0 turns it off.
     func setPersonalization(words: [String: Double], strength: Double)
+}
+
+extension CompletionEngine {
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
+        await complete(prompt: prompt, options: options, partial: partial, branches: nil)
+    }
 }
 
 enum CompletionWords {

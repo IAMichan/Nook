@@ -64,7 +64,9 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
+    /// Writes no branches: MLX runs one sequence at a time here.
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
+                  branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
         guard let container = try? await EmbeddedModel.shared.completionContainer(modelID) else {
             // The model left memory (or the chat is busy with it): the checkpoint belongs to a model that may be gone.

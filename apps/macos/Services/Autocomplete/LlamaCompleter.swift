@@ -51,6 +51,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// One batch for every decode, at most `readChunk` tokens.
     private var batch: llama_batch
     private var sampler: CompletionSampler
+    /// Where the last suggestion started: the prompt's length and the most likely first tokens there (see `branch`).
+    private var branchPoint: (length: Int, choices: [(token: llama_token, probability: Float)])?
     /// For models whose cache cannot be cut back (recurrent and hybrid ones): a saved copy of sequence 0 at a point in the
     /// prompt, to go on from instead of reading the whole prompt again.
     private var checkpoint: (tokens: [llama_token], data: [UInt8])?
@@ -72,6 +74,10 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// The cache the slots share: about two full prompts, or more shorter ones.
     static let cacheLength: UInt32 = 8_192
     static let fieldSlots: UInt32 = 4
+    /// Other ways the text could go on, written after each suggestion (see `branch`), in sequences after the field slots.
+    static let branchCount: UInt32 = 2
+    /// A branch starts with a token at least this likely where the suggestion starts.
+    private static let minBranchProbability: Float = 0.03
 
     private static let backendReady: Void = {
         // Metal lets the model's buffers leave GPU residency after 180 s without work by default, and the first suggestion
@@ -135,7 +141,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 params.n_ctx = cacheLength
                 params.n_batch = contextLength
                 // One sequence per field slot, in one cache: a field's slot only takes the room its prompt needs.
-                params.n_seq_max = fieldSlots
+                params.n_seq_max = fieldSlots + branchCount
                 params.kv_unified = true
                 params.no_perf = true
                 // Sliding-window models (Gemma 3 and 4) keep a full cache: otherwise llama.cpp cannot cut it back, and every
@@ -159,12 +165,19 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private func begin() -> Int { lock.withLock { latest += 1; return latest } }
     private func superseded(_ id: Int) -> Bool { lock.withLock { latest != id } }
 
-    /// Continues `prompt`; nil when superseded, not sure enough, or the model failed.
-    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?) async -> CompletionResult? {
+    /// Continues `prompt`; nil when superseded, not sure enough, or the model failed. Then, unless a newer request came,
+    /// writes the other ways the text could go on and hands them to `branches` (see `branch`).
+    func complete(prompt: CompletionPrompt, options: CompletionOptions, partial: (@Sendable (String) -> Void)?,
+                  branches: (@Sendable ([CompletionResult]) -> Void)?) async -> CompletionResult? {
         let id = begin()
         return await withCheckedContinuation { continuation in
             queue.async {
-                continuation.resume(returning: self.generate(prompt: prompt, options: options, partial: partial) { self.superseded(id) })
+                let isCancelled = { self.superseded(id) }
+                let result = self.generate(prompt: prompt, options: options, partial: partial, isCancelled: isCancelled)
+                continuation.resume(returning: result)
+                guard let branches, let point = self.branchPoint, !isCancelled() else { return }
+                let found = self.branch(from: point, besides: result, options: options, isCancelled: isCancelled)
+                if !found.isEmpty, !isCancelled() { branches(found) }
             }
         }
     }
@@ -362,16 +375,19 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // the rest of that word the prompt stays the same, so the cache has nothing new to read.
         let healing = options.heal ? prompt.healed() : (prompt: prompt, pending: "")
         var required = Array(healing.pending.utf8)
-        guard !isCancelled(), prime(healing.prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled) != nil else { return nil }
+        branchPoint = nil
+        guard !isCancelled(), let length = prime(healing.prompt, reserve: options.maxTokens + 8, isCancelled: isCancelled) else { return nil }
         var bytes: [UInt8] = []
         var truncated = true
         var unfinished = false
         var started = false
         var sure: Float = 1
         var reported = 0
-        for _ in 0..<(options.maxTokens + (required.isEmpty ? 0 : 6)) {
+        for step in 0..<(options.maxTokens + (required.isEmpty ? 0 : 6)) {
             if isCancelled() { return nil }
             guard let logits = llama_get_logits_ith(context, -1) else { return nil }
+            // Mid-word the first tokens only spell the word already typed: no other way to go on from there.
+            if step == 0, required.isEmpty { branchPoint = (length, firstChoices(logits)) }
             let choice: (llama_token, Float)? = required.isEmpty ? mostLikely(logits) : healed(logits, required: required)
             guard let choice else { return nil }
             let (token, probability) = choice
@@ -435,6 +451,92 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return (best.0, 1 / sum)
     }
 
+    /// The most likely tokens to start with, with their probabilities (softmax over all tokens).
+    private func firstChoices(_ logits: UnsafeMutablePointer<Float>) -> [(token: llama_token, probability: Float)] {
+        let (_, maximum, sum) = sampler.maximum(logits)
+        return topTokens(logits, count: Int(Self.branchCount) + 2).compactMap { token in
+            let probability = exp(logits[Int(token)] - maximum) / sum
+            guard probability >= Self.minBranchProbability, !llama_vocab_is_eog(vocab, token), !llama_vocab_is_control(vocab, token) else { return nil }
+            return (token, probability)
+        }
+    }
+
+    /// The other ways the text could go on where the last suggestion started: from each of the next most likely first tokens,
+    /// written greedily side by side in one batch (one sequence each, sharing the prompt in the cache), with the same bars as
+    /// a suggestion after its first token. When the user starts typing one of those words, its branch is shown at once (see
+    /// `CompletionMemo`) instead of waiting for the model.
+    private func branch(from point: (length: Int, choices: [(token: llama_token, probability: Float)]), besides main: CompletionResult?,
+                        options: CompletionOptions, isCancelled: () -> Bool) -> [CompletionResult] {
+        struct Branch {
+            var seq: llama_seq_id
+            var token: llama_token
+            var bytes: [UInt8]
+            var sure: Float = 1
+            var done = false
+            var truncated = true
+            var unfinished = false
+        }
+        let starts = point.choices.filter { choice in
+            let text = String(decoding: piece(choice.token), as: UTF8.self)
+            return text.contains { !$0.isWhitespace } && !(main?.text.hasPrefix(text) ?? false)
+        }.prefix(Int(Self.branchCount))
+        guard !starts.isEmpty, !needsCheckpoints, cached.count >= point.length else { return [] }
+        let memory = llama_get_memory(context)
+        let first = llama_seq_id(Self.fieldSlots)
+        var branches = starts.enumerated().map { index, start in
+            Branch(seq: first + llama_seq_id(index), token: start.token, bytes: piece(start.token))
+        }
+        makeRoom(for: branches.count * (options.maxTokens + 1))
+        for branch in branches {
+            _ = llama_memory_seq_rm(memory, branch.seq, -1, -1)
+            llama_memory_seq_cp(memory, seq, branch.seq, 0, llama_pos(point.length))
+        }
+        defer { for branch in branches { _ = llama_memory_seq_rm(memory, branch.seq, -1, -1) } }
+        var position = point.length
+        for _ in 0..<options.maxTokens {
+            if isCancelled() { return [] }
+            let running = branches.indices.filter { !branches[$0].done }
+            guard !running.isEmpty, decode(running.map { (branches[$0].token, branches[$0].seq) }, at: position) else { break }
+            position += 1
+            for (row, index) in running.enumerated() {
+                guard let logits = llama_get_logits_ith(context, Int32(row)) else {
+                    branches[index].done = true
+                    continue
+                }
+                let (token, probability) = mostLikely(logits)
+                if llama_vocab_is_eog(vocab, token) || llama_vocab_is_control(vocab, token) {
+                    branches[index].truncated = false
+                    branches[index].done = true
+                    continue
+                }
+                let piece = self.piece(token)
+                branches[index].sure *= probability
+                if probability < options.minProbability || branches[index].sure < options.minSequenceProbability {
+                    branches[index].unfinished = CompletionHealing.continuesWord(String(decoding: piece, as: UTF8.self))
+                    branches[index].truncated = false
+                    branches[index].done = true
+                    continue
+                }
+                if let newline = piece.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
+                    branches[index].bytes += piece[..<newline]
+                    branches[index].truncated = false
+                    branches[index].done = true
+                    continue
+                }
+                branches[index].bytes += piece
+                branches[index].token = token
+                if String(decoding: branches[index].bytes, as: UTF8.self).completionWordCount > options.maxWords {
+                    branches[index].truncated = false
+                    branches[index].done = true
+                }
+            }
+        }
+        return branches.map {
+            CompletionResult(text: String(decoding: $0.bytes, as: UTF8.self).replacingOccurrences(of: "\u{FFFD}", with: ""),
+                             truncated: $0.truncated, unfinished: $0.unfinished)
+        }
+    }
+
     private func rankedWords(prompt: CompletionPrompt, excluding: String, count: Int, isCancelled: () -> Bool) -> [String] {
         var text = prompt
         while text.text.last == " " { text.text.removeLast() }
@@ -484,6 +586,21 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         }
         cached += tokens
         return true
+    }
+
+    /// Reads one token for each of several sequences, all at `position`, with logits for each (in this order). The slots'
+    /// bookkeeping is left alone: these are the branches' own sequences.
+    private func decode(_ items: [(token: llama_token, seq: llama_seq_id)], at position: Int) -> Bool {
+        guard !items.isEmpty, items.count <= Self.readChunk else { return false }
+        for (index, item) in items.enumerated() {
+            batch.token[index] = item.token
+            batch.pos[index] = llama_pos(position)
+            batch.n_seq_id[index] = 1
+            batch.seq_id[index]![0] = item.seq
+            batch.logits[index] = 1
+        }
+        batch.n_tokens = Int32(items.count)
+        return llama_decode(context, batch) == 0
     }
 
     /// - Parameters:
