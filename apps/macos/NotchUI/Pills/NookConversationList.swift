@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 
 /// All your Nooks, listed the way the Agents tab lists sessions: a header with the new-Nook button, a search, pinned
-/// conversations first, then the rest, and the archive folded away at the bottom. Each row is a card with the title,
-/// the status as the same badge the agents use (working, needs you, new answer) or how long ago, and the last answer
-/// underneath. Pin and archive appear on hover, in the badge's place, so nothing shifts; right-click for the rest.
+/// conversations first, then the rest, and the archive docked at the foot of the list, opening upwards, as the settled
+/// sessions are. Each row is a card with the title, the status as the same badge the agents use (working, needs you,
+/// new answer) or how long ago, and the last answer underneath. Pin and archive appear on hover, in the badge's place,
+/// so nothing shifts; right-click for the rest.
 struct NookList: View {
     @ObservedObject var chat: NookChat
     @EnvironmentObject private var app: AppModel
@@ -32,26 +33,30 @@ struct NookList: View {
                 }
             }
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                ScrollView(showsIndicators: false) {
-                    // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        if items.isEmpty && (archived.isEmpty || !showArchived) {
-                            Text(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"))
-                                .font(NookTheme.font(12.5))
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .padding(12)
-                        }
-                        if !pinned.isEmpty {
-                            sectionLabel(tr("nooks.section.pinned"))
-                            rows(pinned, now: context.date, shown: shown)
-                            if !rest.isEmpty {
-                                sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    ScrollView(showsIndicators: false) {
+                        // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            if items.isEmpty && (archived.isEmpty || !showArchived) {
+                                Text(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"))
+                                    .font(NookTheme.font(12.5))
+                                    .foregroundStyle(NookTheme.textTertiary)
+                                    .padding(12)
                             }
+                            if !pinned.isEmpty {
+                                sectionLabel(tr("nooks.section.pinned"))
+                                rows(pinned, now: context.date, shown: shown)
+                                if !rest.isEmpty {
+                                    sectionLabel(tr("nooks.section.recent")).padding(.top, 8)
+                                }
+                            }
+                            rows(rest, now: context.date, shown: shown)
                         }
-                        rows(rest, now: context.date, shown: shown)
-                        if !archived.isEmpty {
-                            archiveShelf(archived, now: context.date, shown: shown)
-                        }
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
+                    if !archived.isEmpty {
+                        archiveShelf(archived, now: context.date, shown: shown)
                     }
                 }
             }
@@ -161,9 +166,17 @@ struct NookList: View {
             .padding(.bottom, 2)
     }
 
-    /// The archive as a shelf, like the settled sessions: a line with its count, opened with a click.
+    /// The archive as a shelf docked at the foot of the list, like the settled sessions: a line with its count, opened
+    /// with a click. Its header stays put and its rows open above it, scrolling on their own once they no longer fit.
     private func archiveShelf(_ archived: [Conversation], now: Date, shown: [UUID]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
+            if showArchived {
+                ViewThatFits(in: .vertical) {
+                    archivedRows(archived, now: now, shown: shown)
+                    ScrollView(showsIndicators: false) { archivedRows(archived, now: now, shown: shown) }
+                }
+                .frame(maxHeight: 280)
+            }
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showArchived.toggle() }
             } label: {
@@ -173,9 +186,10 @@ struct NookList: View {
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize()
                     Rectangle().fill(NookTheme.line2).frame(height: 1)
+                    // The shelf opens upwards: its chevron points up while closed, down while open.
                     Image(systemName: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(showArchived ? 0 : -90))
+                        .rotationEffect(.degrees(showArchived ? 0 : 180))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
                 .padding(.horizontal, 12)
@@ -184,11 +198,11 @@ struct NookList: View {
             }
             .buttonStyle(.plain)
             .accessibilityValue(showArchived ? tr("compose.queue.expanded") : "")
-            if showArchived {
-                rows(archived, now: now, shown: shown)
-            }
         }
-        .padding(.top, 6)
+    }
+
+    private func archivedRows(_ archived: [Conversation], now: Date, shown: [UUID]) -> some View {
+        VStack(alignment: .leading, spacing: 2) { rows(archived, now: now, shown: shown) }
     }
 
     @ViewBuilder
