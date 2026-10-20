@@ -30,10 +30,11 @@ extension AppModel {
     }
 
     /// A new message (or new ticks) in `chat`: its card, or the card on screen redrawn. Nothing is marked read by showing it.
-    func presentWhatsApp(_ chat: String) {
+    /// `asked`: you opened the chat yourself ("@open chat Jan"), so the card comes up now, even with notifications off.
+    func presentWhatsApp(_ chat: String, asked opened: Bool = false) {
         let link = WhatsAppLink.shared
         let token = Self.whatsAppCardPrefix + chat
-        let asked = viewModel.hasCard(id: token)
+        let asked = opened || viewModel.hasCard(id: token)
         guard asked || WhatsAppSettings.notify, let conversation = link.inbox.conversations[chat],
               asked ? !conversation.messages.isEmpty : conversation.messages.contains(where: { !$0.fromMe }) else { return }
         viewModel.register("\(token)#read") { link.markRead(chat) }
@@ -88,7 +89,11 @@ extension AppModel {
             escape: CardAction(label: "", outcome: .dismiss)
         )
         // A hidden notch (a full-screen app) keeps it in line until it shows again.
-        if viewModel.hasCard(id: token) {
+        if opened, !viewModel.isShowing(card: token) {
+            // Asked for: in front now, ahead of the queue, instead of waiting behind the chat.
+            viewModel.removePending(id: token)
+            viewModel.presentUrgent(card)
+        } else if viewModel.hasCard(id: token) {
             viewModel.updateCard(card)
         } else {
             viewModel.present(card)

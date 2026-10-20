@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Apps inside Nook: "@open whatsapp" shows WhatsApp Web next to the chat, so you chat in the app itself and with Nook
-/// about it side by side; "@open chat Jan" does the same and opens Jan's chat in it. "@close" puts it away again (it
-/// stays signed in).
+/// about it side by side; "@open chat Jan" shows Jan's chat the way a new message from Jan shows (with a linked phone),
+/// else opens it in WhatsApp beside the chat. "@close" puts it away again (it stays signed in).
 extension AppModel {
     /// Handles "@open …", "@whatsapp", "@open chat Jan" and "@close" from the chat. False when the text is no such command.
     func handleEmbeddedAppCommand(_ text: String) -> Bool {
@@ -49,13 +49,18 @@ extension AppModel {
         return (target, way, wanted != nil)
     }
 
-    /// "@open chat Jan": WhatsApp opens next to the chat, the way you open it ("@open whatsapp"), with Jan's chat in it.
-    /// In WhatsApp Web Nook searches the chat and clicks it; the Mac app opens a person's chat by their number (known
-    /// from a linked phone), and otherwise you pick the chat there yourself. Nothing is typed or marked read.
+    /// "@open chat Jan": with a linked phone, Jan's chat shows as the card a new message from Jan brings up (the chat so
+    /// far and a field to answer). Without one WhatsApp opens next to the chat, the way you open it ("@open whatsapp"),
+    /// with Jan's chat in it: in WhatsApp Web Nook searches the chat and clicks it, and in the Mac app you pick it there
+    /// yourself. Nothing is typed or marked read.
     func openWhatsAppChat(_ name: String) {
-        guard let whatsApp = EmbeddedAppCatalog.find("whatsapp") else { return }
         // A linked phone knows the chat's exact name and number; without one the name goes as typed.
         let target = WhatsAppLink.shared.resolve(name)
+        if let target, WhatsAppLink.shared.isConnected {
+            openWhatsAppCard(target.jid, name: target.name)
+            return
+        }
+        guard let whatsApp = EmbeddedAppCatalog.find("whatsapp") else { return }
         let shown = target?.name ?? name
         let opened = openEmbeddedApp(whatsApp)
         switch opened.mode {
@@ -80,6 +85,26 @@ extension AppModel {
             configuration.activates = opened.mode == .window
             NSWorkspace.shared.open([link], withApplicationAt: opened.app.url, configuration: configuration) { _, _ in }
             chat.append(ChatMessage(role: .nook, text: tr(opened.mode == .window ? "whatsapp.open.window" : "whatsapp.open.opened", shown)))
+        }
+    }
+
+    /// The card for one chat, asked for: its messages from the phone first (a chat that never wrote since Nook started
+    /// has none here yet), then the card in front of the chat.
+    private func openWhatsAppCard(_ jid: String, name: String) {
+        let chat = WAJID.normalized(jid)
+        self.chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.card", name)))
+        Task { @MainActor [weak self] in
+            let link = WhatsAppLink.shared
+            _ = await link.loadHistory(chat)
+            if link.inbox.conversations[chat]?.messages.isEmpty ?? true {
+                _ = try? await link.messages(of: chat, limit: WAInbox.keep)
+            }
+            guard let self else { return }
+            guard link.inbox.conversations[chat]?.messages.isEmpty == false else {
+                self.chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.empty", name)))
+                return
+            }
+            self.presentWhatsApp(chat, asked: true)
         }
     }
 
