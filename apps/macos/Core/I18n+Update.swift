@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts for updating Nook from main: the button in the Agents footer, its panel, the menu bar and Settings › Overview.
+// Texts for updating Nook from main: the button in the panel footer, its panel, the menu bar and Settings › Overview.
 
 let updateTranslations: [AppLanguage: [String: String]] = [
     .nl: [
@@ -69,7 +69,7 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.settings.checkNow": "Nu controleren",
         "update.settings.build": "Deze build",
         "update.settings.auto": "Automatisch op updates controleren",
-        "update.settings.autoDetail": "Elk half uur en na het ontwaken haalt Nook main op en toont een updateknop onderaan Agents als er een pull request is gemerged.",
+        "update.settings.autoDetail": "Elk half uur en na het ontwaken haalt Nook main op en toont een updateknop onderaan het paneel als er een pull request is gemerged.",
         "update.settings.footer": "Bijwerken gebruikt je eigen checkout, git, XcodeGen en Xcode, net als ./update.sh. Er wordt niets geïnstalleerd zonder jouw klik; elke installatie komt in het actielogboek en de build-uitvoer in ~/Library/Logs/Nook.",
         "update.settings.lastChecked": "Gecontroleerd %@",
         "update.settings.status.available": "Update beschikbaar: %ld nieuw",
@@ -149,7 +149,7 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.settings.checkNow": "Check now",
         "update.settings.build": "This build",
         "update.settings.auto": "Check for updates automatically",
-        "update.settings.autoDetail": "Every half hour and after waking, Nook fetches main and shows an update button in the Agents footer when a pull request was merged.",
+        "update.settings.autoDetail": "Every half hour and after waking, Nook fetches main and shows an update button at the bottom of the panel when a pull request was merged.",
         "update.settings.footer": "Updating uses your own checkout, git, XcodeGen and Xcode, just like ./update.sh. Nothing installs without your click; every install is written to the action log, and the build output to ~/Library/Logs/Nook.",
         "update.settings.lastChecked": "Checked %@",
         "update.settings.status.available": "Update available: %ld new",
@@ -229,7 +229,7 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.settings.checkNow": "Jetzt prüfen",
         "update.settings.build": "Dieser Build",
         "update.settings.auto": "Automatisch nach Updates suchen",
-        "update.settings.autoDetail": "Jede halbe Stunde und nach dem Aufwachen ruft Nook main ab und zeigt unten in Agents einen Update-Knopf, wenn ein Pull Request gemergt wurde.",
+        "update.settings.autoDetail": "Jede halbe Stunde und nach dem Aufwachen ruft Nook main ab und zeigt unten im Panel einen Update-Knopf, wenn ein Pull Request gemergt wurde.",
         "update.settings.footer": "Das Update nutzt deinen eigenen Checkout, git, XcodeGen und Xcode, genau wie ./update.sh. Ohne deinen Klick wird nichts installiert; jede Installation landet im Aktionsprotokoll und die Build-Ausgabe in ~/Library/Logs/Nook.",
         "update.settings.lastChecked": "Geprüft %@",
         "update.settings.status.available": "Update verfügbar: %ld neu",
@@ -309,7 +309,7 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.settings.checkNow": "Vérifier maintenant",
         "update.settings.build": "Ce build",
         "update.settings.auto": "Rechercher les mises à jour automatiquement",
-        "update.settings.autoDetail": "Toutes les demi-heures et après la sortie de veille, Nook récupère main et affiche un bouton de mise à jour en bas d'Agents lorsqu'une pull request a été fusionnée.",
+        "update.settings.autoDetail": "Toutes les demi-heures et après la sortie de veille, Nook récupère main et affiche un bouton de mise à jour en bas du panneau lorsqu'une pull request a été fusionnée.",
         "update.settings.footer": "La mise à jour utilise votre propre checkout, git, XcodeGen et Xcode, comme ./update.sh. Rien ne s'installe sans votre clic ; chaque installation est inscrite dans le journal des actions et la sortie de compilation dans ~/Library/Logs/Nook.",
         "update.settings.lastChecked": "Vérifié %@",
         "update.settings.status.available": "Mise à jour disponible : %ld nouveautés",
@@ -389,7 +389,7 @@ let updateTranslations: [AppLanguage: [String: String]] = [
         "update.settings.checkNow": "Comprobar ahora",
         "update.settings.build": "Esta compilación",
         "update.settings.auto": "Buscar actualizaciones automáticamente",
-        "update.settings.autoDetail": "Cada media hora y al reactivarse, Nook obtiene main y muestra un botón de actualización al pie de Agentes cuando se ha fusionado una pull request.",
+        "update.settings.autoDetail": "Cada media hora y al reactivarse, Nook obtiene main y muestra un botón de actualización al pie del panel cuando se ha fusionado una pull request.",
         "update.settings.footer": "La actualización usa tu propio checkout, git, XcodeGen y Xcode, igual que ./update.sh. Nada se instala sin tu clic; cada instalación queda en el registro de acciones y la salida de compilación en ~/Library/Logs/Nook.",
         "update.settings.lastChecked": "Comprobado %@",
         "update.settings.status.available": "Actualización disponible: %ld novedades",
