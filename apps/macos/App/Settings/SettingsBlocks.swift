@@ -214,7 +214,6 @@ struct WorkspaceSettingsSection: View {
             openIn
             behavior
             scheduled
-            WatchedPullRequestsSection()
             bridge
         }
     }
@@ -378,8 +377,8 @@ struct WorkspaceSettingsSection: View {
 }
 
 /// The organizations and repositories whose open pull requests show under Agents › Pull requests, beside your own and
-/// your reviews. Searched with every connected GitHub account.
-private struct WatchedPullRequestsSection: View {
+/// your reviews. Searched with every connected GitHub account; shown under Settings › Apps & accounts.
+struct WatchedPullRequestsSection: View {
     @ObservedObject private var watching = PullRequestWatchSettings.shared
     @State private var text = ""
     @State private var invalid = false

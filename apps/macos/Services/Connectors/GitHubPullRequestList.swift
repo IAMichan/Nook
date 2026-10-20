@@ -103,7 +103,7 @@ enum GitHubPullRequestList {
     }
 }
 
-/// The watched organizations and repositories, as set in Settings › Agents (see PullRequestWatchList).
+/// The watched organizations and repositories, as set in Settings › Apps & accounts (see PullRequestWatchList).
 @MainActor
 final class PullRequestWatchSettings: ObservableObject {
     static let shared = PullRequestWatchSettings()

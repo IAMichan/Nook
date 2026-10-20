@@ -30,6 +30,8 @@ extension SettingsView {
         let ownServers = mcpStore.servers.filter { $0.serviceID == nil && matchesSearch(title: $0.name) && inCategory(.automation) }
         let gitLabHosts = inCategory(.development) && matchesSearch(title: "GitLab") ? GitLabCredentials.hosts : []
         let hasYours = !connectedCloud.isEmpty || !linkedRemote.isEmpty || !ownServers.isEmpty || !gitLabHosts.isEmpty
+        // Watched pull requests are searched with your GitHub accounts, so they sit with them once GitHub is connected.
+        let showWatchedPulls = keyed("github") && inCategory(.development) && matchesSearch(title: "GitHub " + tr("settings.pulls.title"))
 
         // The catalogue: everything you can add, sign-in first because that is the easiest.
         let oneClick = MCPRemoteService.all.filter {
@@ -100,6 +102,10 @@ extension SettingsView {
                 }
             }
 
+            if showWatchedPulls {
+                WatchedPullRequestsSection()
+            }
+
             if !local.isEmpty {
                 Section {
                     ForEach(local.indices, id: \.self) { index in
@@ -149,7 +155,7 @@ extension SettingsView {
                 .sheet(item: $mcpAdd) { request in
                     AddMCPServerWizardSheet(preset: request.preset) { mcpAdd = nil }
                 }
-            } else if !hasYours && local.isEmpty && !whatsApp {
+            } else if !hasYours && !showWatchedPulls && local.isEmpty && !whatsApp {
                 Section {
                     Text(tr("settings.connections.noMatch", connectionSearch))
                         .font(.callout)

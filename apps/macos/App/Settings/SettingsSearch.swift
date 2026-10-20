@@ -97,7 +97,7 @@ enum SettingsSearch {
         ("settings.private.title", .privacy),
         ("settings.privacy.whatLeavesMac", .privacy),
         ("settings.privacy.forgetScreenText", .privacy),
-        ("settings.pulls.title", .agents),
+        ("settings.pulls.title", .connections),
     ]
 
     /// Matches on a setting's name, its section and the section's subtitle; sections themselves come first.
