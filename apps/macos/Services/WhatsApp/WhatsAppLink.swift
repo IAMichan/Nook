@@ -563,7 +563,7 @@ final class WhatsAppLink: ObservableObject {
         case .video:
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 480, height: 480)
+            generator.maximumSize = CGSize(width: 960, height: 960)
             guard let frame = try? await generator.image(at: .zero).image else { return nil }
             return NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
         case .document:
