@@ -16,6 +16,8 @@ struct PullRequestsPanel: View {
     /// Search and filters; kept while a pull request is open, so going back shows the same list.
     @State private var filter = PullRequestFilter()
     @FocusState private var searching: Bool
+    /// Repository groups folded shut, as "account repo" lines; kept across refreshes and launches.
+    @AppStorage("nook.pulls.collapsedRepos") private var collapsedRepos = ""
     /// The accounts with only the pull requests that match the filter.
     private var shown: [AccountPullRequests] { accounts.map(filter.apply) }
     /// Watched entries that no account could search, still in the watch list.
@@ -207,18 +209,41 @@ struct PullRequestsPanel: View {
     }
 
     private func repoGroup(_ group: PullRequestRepoGroup, account: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Image(systemName: "folder").font(NookTheme.font(11))
-                Text(group.repo).font(NookTheme.font(11.5, .semibold)).lineLimit(1).truncationMode(.middle)
-                Text("\(group.rows.count)").font(NookTheme.font(11.5))
+        let key = account + " " + group.repo
+        let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
+        return VStack(alignment: .leading, spacing: 2) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { toggleRepo(key, open: open) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.down")
+                        .font(NookTheme.font(8.5, .bold))
+                        .rotationEffect(.degrees(open ? 0 : -90))
+                        .frame(width: 10)
+                    Image(systemName: "folder").font(NookTheme.font(11))
+                    Text(group.repo).font(NookTheme.font(11.5, .semibold)).lineLimit(1).truncationMode(.middle)
+                    Text("\(group.rows.count)").font(NookTheme.font(11.5))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(NookTheme.textTertiary)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(NookTheme.textTertiary)
+            .buttonStyle(.plain)
+            .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
+            .accessibilityValue(open ? tr("compose.queue.expanded") : "")
             .padding(.bottom, 3)
-            ForEach(group.rows) { row in
-                PullRequestRow(item: row.item, role: row.role) { opened = (account, row.item) }
+            if open {
+                ForEach(group.rows) { row in
+                    PullRequestRow(item: row.item, role: row.role) { opened = (account, row.item) }
+                }
             }
         }
+    }
+
+    private func toggleRepo(_ key: String, open: Bool) {
+        var keys = collapsedRepos.split(separator: "\n").map(String.init)
+        if open { keys.append(key) } else { keys.removeAll { $0 == key } }
+        collapsedRepos = keys.joined(separator: "\n")
     }
 }
 
