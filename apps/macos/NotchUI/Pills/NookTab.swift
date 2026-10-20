@@ -37,11 +37,14 @@ struct NookChatView: View {
     @AppStorage("nook.chat.listWidth") private var listWidth = PanelLayout.chatList
     @AppStorage("nook.chat.windowListWidth") private var windowListWidth = PanelLayout.chatListWindow
 
+    /// An app or Nook's browser is open next to the chat.
+    private var sideOpen: Bool { embedded.current != nil || viewModel.browserBesideChat }
+
     var body: some View {
         // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
         // open ("@open whatsapp") the app takes the list's place on the right, and the chat narrows beside it.
         HStack(alignment: .top, spacing: 0) {
-            if (!chat.history.isEmpty || !compact) && embedded.current == nil {
+            if (!chat.history.isEmpty || !compact) && !sideOpen {
                 NookList(chat: chat)
                     .padding(.trailing, compact ? 4 : 8)
                     .resizablePanel(width: compact ? $listWidth : $windowListWidth,
@@ -61,8 +64,8 @@ struct NookChatView: View {
                 inputBar
                     .padding(.top, 10)
             }
-            .frame(width: embedded.current == nil ? nil : EmbeddedSplit.chatWidth(chatWidth, total: totalWidth))
-            if embedded.current != nil {
+            .frame(width: sideOpen ? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth) : nil)
+            if sideOpen {
                 EmbeddedSplitHandle(
                     onDrag: { offset in
                         let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)
@@ -72,8 +75,16 @@ struct NookChatView: View {
                     onEnd: { dragStartWidth = nil },
                     onReset: { chatWidth = EmbeddedSplit.defaultChatWidth }
                 )
-                EmbeddedAppPane()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if embedded.current != nil {
+                    EmbeddedAppPane()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    BrowserView(onClose: { viewModel.browserBesideChat = false })
+                        .background(NookTheme.field)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }

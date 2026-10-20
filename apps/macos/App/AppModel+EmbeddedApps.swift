@@ -39,6 +39,8 @@ extension AppModel {
             NSWorkspace.shared.openApplication(at: target.url, configuration: configuration) { _, _ in }
         } else {
             EmbeddedAppStore.shared.open(target)
+            // One thing beside the chat at a time: the app takes the browser's place.
+            viewModel.browserBesideChat = false
             viewModel.embeddedAppOpen = true
         }
         return (target, way, wanted != nil)
