@@ -475,7 +475,7 @@ final class AutocompleteController: ObservableObject {
             switch proposal {
             case .completion(var completion):
                 if acceptWord || acceptAll {
-                    let options = CompletionSuggestion.AcceptOptions(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.attachedPunctuation)
+                    let options = CompletionSuggestion.AcceptOptions(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.punctuationWithWord)
                     let text = acceptAll ? completion.suggestion.acceptAll() : completion.suggestion.acceptNextChunk(options)
                     accept(text, leaving: completion)
                     return true
@@ -565,7 +565,7 @@ final class AutocompleteController: ObservableObject {
         var text = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(raw, after: rest.anchor.last) : raw
         var ahead = rest.suggestion.isEmpty ? writtenAhead(after: rest.anchor + text, from: rest) : nil
         // The model ends the sentence right after the last word: its period comes along with the same key, not with another.
-        if prefs.attachedPunctuation, var next = ahead, let mark = next.takeAttachedPunctuation() {
+        if prefs.punctuationWithWord, var next = ahead, let mark = next.takeAttachedPunctuation() {
             text += mark
             ahead = next.isEmpty ? nil : next
         }

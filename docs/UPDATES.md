@@ -1,8 +1,8 @@
 # Updating Nook from `main`
 
 Nook is built from its own git checkout, so "a new version" means a pull request that was merged into `main` after the
-build you are running. Nook notices that by itself and shows an **Update** button in the footer of the Agents tab, next
-to Settings. Installing is always your click.
+build you are running. Nook notices that by itself and shows an **Update** button in the panel footer, next to
+Settings, on every tab. Installing is always your click.
 
 ## How Nook knows which build it is
 
@@ -16,7 +16,7 @@ to Settings. Installing is always your click.
 ## Checking
 
 `AppUpdater` (`apps/macos/Services/Updates/AppUpdater.swift`) checks 20 seconds after launch, every 30 minutes, after
-the Mac wakes, and when the Agents footer appears and the last check is over 10 minutes old. A check runs
+the Mac wakes, and when the panel footer appears and the last check is over 10 minutes old. A check runs
 `git fetch --no-tags origin main` in the checkout (the default branch comes from `origin/HEAD`) and counts the
 first-parent commits between the build's commit and `origin/main`. Merge commits and squash merges are read as pull
 requests (number and title) for the list in the panel. A failed check (offline, no remote) stays quiet and is only

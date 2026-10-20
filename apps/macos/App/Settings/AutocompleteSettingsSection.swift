@@ -345,7 +345,7 @@ struct AutocompleteSettingsSection: View {
             SettingToggle(tr("autocomplete.midLine"), detail: tr("autocomplete.midLineDetail"), isOn: $store.prefs.midLine)
             SettingToggle(tr("autocomplete.smallFields"), detail: tr("autocomplete.smallFieldsDetail"), isOn: $store.prefs.smallFields)
             Toggle(tr("autocomplete.trailingSpace"), isOn: $store.prefs.trailingSpace)
-            Toggle(tr("autocomplete.punctuation"), isOn: $store.prefs.attachedPunctuation)
+            Toggle(tr("autocomplete.punctuation"), isOn: $store.prefs.punctuationWithWord)
         }
     }
 

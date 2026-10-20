@@ -383,6 +383,15 @@ private final class ConfidenceSampler: LogitSampler {
             fitting.append(id)
             if fitting.count == 8 { break }
         }
+        // A name or a rare word: none of the likely tokens spells it. Look through the rest of the vocabulary rather than give
+        // up (rare: the likely tokens nearly always include a piece of the word).
+        if fitting.isEmpty, count < raw.dim(-1) {
+            let rest = argSort(-scores, axis: -1)[0, count ..< raw.dim(-1)].asType(.int32).asArray(Int32.self).map(Int.init)
+            for id in rest where CompletionHealing.fits(Array(reads(id, previous).utf8), required) {
+                fitting.append(id)
+                if fitting.count == 8 { break }
+            }
+        }
         guard let best = fitting.first else {
             lost = true
             probabilities.append(0)

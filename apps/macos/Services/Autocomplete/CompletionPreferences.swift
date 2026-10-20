@@ -88,7 +88,9 @@ struct CompletionPreferences: Codable, Equatable {
     /// 0 only very sure suggestions … 1 eager.
     var eagerness = 0.5
     var trailingSpace = false
-    var attachedPunctuation = true
+    /// Off: punctuation after a word ("there," or a closing period) waits for its own press of the accept key. A new name
+    /// for the old `attachedPunctuation` (on by default and stored in every saved setting), so everyone starts with it off.
+    var punctuationWithWord = false
     var escape = CompletionEscape.dismiss
     var pauseMinutes = 5
     /// Ghost text in the line or a small card below it.

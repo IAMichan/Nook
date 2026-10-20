@@ -2,10 +2,16 @@ import SwiftUI
 
 /// The usage of every connected account at once, grouped per AI: one section for all Claude accounts, one for
 /// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), and what was used in
-/// tokens today and this week with a small chart of the last seven days. Tokens per model and costs live in
-/// Settings › Usage.
+/// tokens today and this week with a small chart of the last seven days. Agents that report a limit per model
+/// (Antigravity) get a compact table with only the busiest models; the rest folds away. Tokens per model and costs live
+/// in Settings › Usage.
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
+    /// Accounts whose full model list is unfolded.
+    @State private var expanded: Set<String> = []
+
+    /// How many models an account shows while folded; a model close to its limit always shows.
+    private static let featuredModels = 3
 
     /// Only accounts that are signed in on an installed agent: no cards for services you did not connect.
     private var profiles: [AgentProfile] { app.connectedProfiles }
@@ -43,7 +49,7 @@ struct AgentsUsagePanel: View {
                     ForEach(groups, id: \.kind) { group in
                         section(group.kind, group.profiles)
                     }
-                    if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.elapsed() != nil } }) {
+                    if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.group == nil && $0.elapsed() != nil } }) {
                         HStack(spacing: 7) {
                             Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
                             Text(tr("agents.usage.paceLegend"))
@@ -81,12 +87,7 @@ struct AgentsUsagePanel: View {
                 }
                 Spacer(minLength: 0)
                 if let peak {
-                    Text(tr("agents.usage.peak", Int(peak.rounded())))
-                        .font(NookTheme.font(11, .semibold).monospacedDigit())
-                        .foregroundStyle(UsageTone.text(peak))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(UsageTone.fill(peak, accent: kind.color).opacity(0.14)))
+                    peakPill(peak, accent: kind.color)
                 }
             }
             .padding(.horizontal, 4)
@@ -124,6 +125,9 @@ struct AgentsUsagePanel: View {
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
+                if limits.count > 2, let peak = limits.map(\.percent).max() {
+                    peakPill(peak, accent: accent)
+                }
             }
 
             if limits.isEmpty {
@@ -134,21 +138,20 @@ struct AgentsUsagePanel: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
+                let groups = limitGroups(limits)
+                let plain = groups.first { $0.name.isEmpty }?.limits ?? []
+                let models = groups.filter { !$0.name.isEmpty }
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(limitGroups(limits), id: \.name) { group in
-                        VStack(alignment: .leading, spacing: 8) {
-                            if !group.name.isEmpty {
-                                Text(group.name)
-                                    .font(NookTheme.font(11, .semibold))
-                                    .foregroundStyle(NookTheme.paper.opacity(0.75))
-                            }
-                            ForEach(group.limits) { limit in
-                                limitRow(limit, title: group.name.isEmpty ? limit.label : limit.window, accent: accent)
-                            }
-                        }
+                    ForEach(plain) { limit in
+                        limitRow(limit, title: limit.label, accent: accent)
+                    }
+                    if !models.isEmpty {
+                        modelTable(models, profile: profile, accent: accent)
                     }
                 }
             }
+
+            Rectangle().fill(NookTheme.line2.opacity(0.35)).frame(height: 1)
 
             if let usage {
                 HStack(alignment: .bottom, spacing: 14) {
@@ -213,6 +216,110 @@ struct AgentsUsagePanel: View {
             }
         }
         return result
+    }
+
+    /// "peak 82%", tinted like the limit it names.
+    private func peakPill(_ peak: Double, accent: Color) -> some View {
+        Text(tr("agents.usage.peak", Int(peak.rounded())))
+            .font(NookTheme.font(11, .semibold).monospacedDigit())
+            .foregroundStyle(UsageTone.text(peak))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(UsageTone.fill(peak, accent: accent).opacity(0.14)))
+    }
+
+    /// Limits per model as one table: a row per model, a column per window ("5 hours", "Week"), each cell a slim bar
+    /// with its percentage; the reset time is in the cell's tooltip. The busiest models come first and only a few show
+    /// until the account is unfolded, so an agent with a long model list stays readable.
+    private func modelTable(_ models: [(name: String, limits: [QuotaLimit])], profile: AgentProfile, accent: Color) -> some View {
+        let sorted = models.enumerated()
+            .sorted { lhs, rhs in
+                let a = lhs.element.limits.map(\.percent).max() ?? 0, b = rhs.element.limits.map(\.percent).max() ?? 0
+                return a != b ? a > b : lhs.offset < rhs.offset
+            }
+            .map(\.element)
+        let folded = sorted.enumerated()
+            .filter { $0.offset < Self.featuredModels || ($0.element.limits.map(\.percent).max() ?? 0) >= 75 }
+            .map(\.element)
+        let isExpanded = expanded.contains(profile.id)
+        let shown = isExpanded ? sorted : folded
+        var windows: [String] = []
+        for model in sorted {
+            for limit in model.limits where !windows.contains(limit.window) { windows.append(limit.window) }
+        }
+        let hidden = sorted.count - folded.count
+        return VStack(alignment: .leading, spacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 9) {
+                GridRow {
+                    Text(tr("agents.usage.model"))
+                    ForEach(windows, id: \.self) { Text($0) }
+                }
+                .font(NookTheme.font(11, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                ForEach(shown, id: \.name) { model in
+                    GridRow {
+                        Text(model.name)
+                            .font(NookTheme.font(12.5, .medium))
+                            .foregroundStyle(NookTheme.paper)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(minWidth: 70, maxWidth: .infinity, alignment: .leading)
+                            .help(model.name)
+                        ForEach(windows, id: \.self) { window in
+                            if let limit = model.limits.first(where: { $0.window == window }) {
+                                modelCell(limit, accent: accent)
+                            } else {
+                                Text("—")
+                                    .font(NookTheme.font(12))
+                                    .foregroundStyle(NookTheme.textTertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            if hidden > 0 {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if isExpanded { expanded.remove(profile.id) } else { expanded.insert(profile.id) }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(isExpanded ? tr("agents.usage.fewerModels") : tr("agents.usage.moreModels", hidden))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    }
+                    .font(NookTheme.font(11.5, .medium))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// One window of one model: a slim bar in the limit's tone with the percentage beside it.
+    private func modelCell(_ limit: QuotaLimit, accent: Color) -> some View {
+        HStack(spacing: 7) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.08))
+                    if limit.percent > 0 {
+                        Capsule()
+                            .fill(UsageTone.fill(limit.percent, accent: accent))
+                            .frame(width: max(5, geo.size.width * CGFloat(min(1, limit.percent / 100))))
+                    }
+                }
+            }
+            .frame(minWidth: 34, maxWidth: 90)
+            .frame(height: 5)
+            Text("\(Int(limit.percent.rounded()))%")
+                .font(NookTheme.font(12, .semibold).monospacedDigit())
+                .foregroundStyle(UsageTone.text(limit.percent))
+                .frame(width: 36, alignment: .trailing)
+        }
+        .help(limit.note ?? AgentFormat.reset(limit.resetsAt) ?? "")
     }
 
     /// "Today 1.2M": the label quiet, the number plain, on one line.

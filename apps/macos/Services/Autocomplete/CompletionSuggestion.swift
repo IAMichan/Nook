@@ -8,8 +8,8 @@ struct CompletionSuggestion: Equatable {
     struct AcceptOptions: Equatable {
         /// Taking a word also takes the space after it.
         var trailingSpace = false
-        /// Punctuation stuck to a word ("there,") comes with it.
-        var attachedPunctuation = true
+        /// Punctuation stuck to a word ("there,") comes with it. Off: the word first, its punctuation with the next press.
+        var attachedPunctuation = false
     }
 
     private(set) var remaining: String
@@ -76,21 +76,27 @@ struct CompletionSuggestion: Equatable {
         let rest = after.prefix { !$0.isNewline }.trimmingCharacters(in: .whitespaces)
         guard let first = rest.first, CompletionPolicy.closing.contains(first) else { return text }
         // An apostrophe in the line after is no reason to cut "it's" short.
-        let stops = ".!?;:…" + ("'’".contains(first) ? "" : String(first))
-        guard let stop = text.firstIndex(where: { stops.contains($0) }) else { return text }
-        return String(text[..<stop])
+        let closer: Character? = "'’".contains(first) || Self.sentenceMarks.contains(first) ? nil : first
+        // A mark ends the sentence only before a space or at the end: "10.30", "e.g." and "nook.app" stay whole.
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            let next = text.index(after: index)
+            if character == closer { return String(text[..<index]) }
+            if Self.sentenceMarks.contains(character), next == text.endIndex || text[next].isWhitespace { return String(text[..<index]) }
+            index = next
+        }
+        return text
     }
 
-    /// The next word with the whitespace before it.
+    private static let sentenceMarks = ".!?;:…"
+
+    /// The next word with the whitespace before it. Without attached punctuation only the marks at the end of a word wait
+    /// ("there" then ","); inside it ("3.5", "nook.app") they stay, and punctuation on its own ("...") is one chunk.
     func nextChunk(_ options: AcceptOptions = AcceptOptions()) -> String {
         guard var chunk = Self.chunks(of: Substring(remaining)).first else { return "" }
-        if !options.attachedPunctuation {
-            let word = chunk.drop(while: \.isWhitespace)
-            if let first = word.firstIndex(where: { $0.isLetter || $0.isNumber }) {
-                if let end = word[first...].firstIndex(where: { !($0.isLetter || $0.isNumber || "'’-".contains($0)) }) { chunk = chunk[..<end] }
-            } else if let first = word.indices.first {
-                chunk = chunk[...first]
-            }
+        if !options.attachedPunctuation, let last = chunk.lastIndex(where: { $0.isLetter || $0.isNumber }) {
+            chunk = chunk[...last]
         }
         var result = String(chunk)
         if options.trailingSpace, remaining.dropFirst(result.count).first == " " { result += " " }
