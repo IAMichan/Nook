@@ -197,10 +197,7 @@ struct AutocompleteSettingsSection: View {
         let inUse = autocomplete.activeModel?.identity == file.url.path
         return HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green).font(.system(size: 16))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(file.title)
-                Text("\(file.sizeText) · \(sourceLabel(file.source))").font(.caption).foregroundStyle(.secondary)
-            }
+            SettingLabel(file.title, detail: "\(file.sizeText) · \(sourceLabel(file.source))")
             Spacer()
             if inUse {
                 Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)

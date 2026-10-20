@@ -201,8 +201,7 @@ struct NookList: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 12)
                     .frame(height: 36)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: 0x17171A)))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.iris.opacity(0.5), lineWidth: 1))
+                    .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.5), radius: 12, style: .continuous)
                     .onSubmit {
                         chat.rename(conversation.id, to: nameDraft)
                         renaming = nil
@@ -232,8 +231,7 @@ struct NookList: View {
             Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
         }
         Button(tr("ws.export.copy")) {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(ChatExport.markdown(conversation), forType: .string)
+            Pasteboard.copy(ChatExport.markdown(conversation))
         }
         Button(tr(conversation.archived ? "nooks.unarchive" : "nooks.archive")) {
             chat.setArchived(!conversation.archived, conversation.id)
@@ -256,7 +254,7 @@ private struct NookRow: View {
     let action: () -> Void
     @State private var hovering = false
 
-    private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
+    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering) }
     private var receded: Bool { conversation.status == .idle && !selected }
 
     var body: some View {

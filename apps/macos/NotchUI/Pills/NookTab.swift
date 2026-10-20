@@ -234,8 +234,7 @@ struct NookChatView: View {
             Button(tr("nooks.rename")) { startRenaming(conversation) }
             Button(tr(conversation.pinned ? "nooks.unpin" : "nooks.pin")) { chat.togglePin(conversation.id) }
             Button(tr("ws.export.copy")) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(ChatExport.markdown(conversation), forType: .string)
+                Pasteboard.copy(ChatExport.markdown(conversation))
             }
             Divider()
             Button(tr("nooks.archive")) { chat.setArchived(true, conversation.id) }

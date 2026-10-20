@@ -100,8 +100,7 @@ struct AgentsUsagePanel: View {
                 }
             }
             // The same surface the terminals, the browser and the worktrees sit on.
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+            .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: 12, style: .continuous)
         }
     }
 

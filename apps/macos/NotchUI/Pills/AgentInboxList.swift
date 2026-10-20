@@ -356,9 +356,9 @@ struct AgentInboxList: View {
         Button(tr("inbox.markUnread")) { visits.markUnread(item.id) }
         Divider()
         Menu(tr("inbox.copy")) {
-            Button(tr("inbox.copy.path")) { copy(item.path) }
-            if let branch = item.branch { Button(tr("inbox.copy.branch")) { copy(branch) } }
-            Button(tr("inbox.copy.id")) { copy(item.id) }
+            Button(tr("inbox.copy.path")) { Pasteboard.copy(item.path) }
+            if let branch = item.branch { Button(tr("inbox.copy.branch")) { Pasteboard.copy(branch) } }
+            Button(tr("inbox.copy.id")) { Pasteboard.copy(item.id) }
         }
         if let id = runID(item) {
             Button(tr("agents.run.archive")) {
@@ -405,11 +405,6 @@ struct AgentInboxList: View {
                             actions: actions,
                             toggleAll: { selection.toggleAll(shown) },
                             done: { withAnimation(.easeOut(duration: 0.15)) { selection.clear() } })
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: Drops

@@ -35,6 +35,7 @@ scripts/       # CI test runner (core-tests.sh) and fine-tuning scripts
 
 ## 3. Architecture & Security Invariants
 
+- **Shared UI first:** Reuse the components listed in [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) instead of rebuilding them inline; add new shared views to `apps/macos/NotchUI/Components`.
 - **`AppModel` is composition-only:** Put feature logic in dedicated services/types or modular `AppModel+….swift` extensions, never directly inside `AppModel.swift`.
 - **Single Brain Pipeline:** Chat, notch cards, and proactive suggestions (*Think Along*) must all route through `prepareRun`. Do not create separate LLM execution paths.
 - **Self-Describing Connectors:** Register new connectors with `SourceCatalog.register` (source metadata, tools, aliases, intents) instead of hardcoding central switch statements.

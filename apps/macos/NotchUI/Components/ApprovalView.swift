@@ -43,8 +43,7 @@ struct ApprovalView: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 12)
     }
 
     @ViewBuilder

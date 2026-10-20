@@ -139,10 +139,7 @@ extension SettingsView {
     /// A switch with, under its name, the section it belongs to.
     func quickToggle(_ title: String, _ section: SettingsSection, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(section.title).font(.caption).foregroundStyle(.secondary)
-            }
+            SettingLabel(title, detail: section.title)
         }
     }
 

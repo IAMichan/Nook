@@ -238,7 +238,7 @@ private struct PullRequestRow: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? Color(hex: 0x111113) : Color.clear))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

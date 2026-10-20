@@ -151,8 +151,7 @@ private struct TaskRow: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(NookTheme.smoke.opacity(0.6)))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(NookTheme.line2, lineWidth: 1))
+        .cardBackground(NookTheme.smoke.opacity(0.6), stroke: NookTheme.line2, radius: 10)
     }
 
     private var effectiveStatus: ScheduledRunStatus? { running ? .running : task.lastStatus }
@@ -446,7 +445,7 @@ private struct ScheduledTaskEditor: View {
                             Text(url).font(NookTheme.mono(11)).foregroundStyle(NookTheme.paper)
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading).modifier(FieldBox())
-                            SmallGhostButton(title: tr("sched.webhook.copy")) { copy(url) }
+                            SmallGhostButton(title: tr("sched.webhook.copy")) { Pasteboard.copy(url) }
                         }
                     }
                 } else {
@@ -454,10 +453,10 @@ private struct ScheduledTaskEditor: View {
                 }
                 HStack(spacing: 8) {
                     SmallGhostButton(title: secretCopied ? tr("sched.webhook.copied") : tr("sched.webhook.copySecret")) {
-                        if let secret = store.webhookSecret(for: existing.id, create: true) { copy(secret); secretCopied = true }
+                        if let secret = store.webhookSecret(for: existing.id, create: true) { Pasteboard.copy(secret); secretCopied = true }
                     }
                     SmallGhostButton(title: tr("sched.webhook.rotate")) {
-                        if let secret = store.rotateWebhookSecret(existing.id) { copy(secret); secretCopied = true }
+                        if let secret = store.rotateWebhookSecret(existing.id) { Pasteboard.copy(secret); secretCopied = true }
                     }
                 }
             } else {
@@ -484,11 +483,6 @@ private struct ScheduledTaskEditor: View {
         if path.isEmpty || !FileManager.default.fileExists(atPath: path) { return tr("sched.invalid.project") }
         if kind == .interval, minutes < 1 { return tr("sched.invalid.interval") }
         return nil
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func chooseFolder() {

@@ -161,8 +161,7 @@ struct CommitSheet: View {
                 .frame(height: 90)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(RoundedRectangle(cornerRadius: 7).fill(WS.surface))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(WS.border, lineWidth: 1))
+                .cardBackground(WS.surface, stroke: WS.border, radius: 7)
             if let run = workspace.run(runID), message.isEmpty {
                 Button(tr("ws.commit.useTitle")) { message = run.title }
                     .buttonStyle(.link)

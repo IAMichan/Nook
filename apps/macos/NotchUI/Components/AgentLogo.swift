@@ -104,7 +104,7 @@ struct AccountBadge: View {
     let kind: AccountKind
     var size: CGFloat = 10
     /// The color behind the badge, drawn as a thin ring so it stands free of the logo.
-    var ring: Color = Color(hex: 0x09090A)
+    var ring: Color = NookTheme.rowRest
 
     var body: some View {
         Circle()
@@ -127,7 +127,7 @@ struct AgentMark: View {
     var account: AccountKind?
     var size: CGFloat = 16
     var dimmed = false
-    var ring: Color = Color(hex: 0x09090A)
+    var ring: Color = NookTheme.rowRest
 
     var body: some View {
         AgentLogo(agent: agent, size: size)

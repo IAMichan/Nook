@@ -67,8 +67,7 @@ struct ConversationMessage: View {
     @ViewBuilder
     private var copyButton: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            Pasteboard.copy(text)
             copied = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
         } label: {

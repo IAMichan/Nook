@@ -48,7 +48,7 @@ private struct FooterIcon<Glyph: View>: View {
             glyph()
                 .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
                 .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(active ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color.clear)))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

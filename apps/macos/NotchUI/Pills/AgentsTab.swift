@@ -462,7 +462,7 @@ struct AgentListRow: View {
     let action: () -> Void
     @State private var hovering = false
 
-    private var background: Color { selected ? Color(hex: 0x17171A) : (hovering ? Color(hex: 0x111113) : Color(hex: 0x09090A)) }
+    private var background: Color { NookTheme.rowFill(selected: selected, hovering: hovering) }
     private var dimmed: Bool { item.status == .finished || slim }
     private var restOpacity: Double { receded && item.status == .working && !hovering && !selected ? 0.7 : 1 }
 

@@ -97,14 +97,13 @@ struct ChatMessageView: View, Equatable {
     /// its place when hidden, so nothing jumps when the pointer moves over the thread.
     private var actionRow: some View {
         HStack(spacing: 2) {
-            messageAction(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy")) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(message.text, forType: .string)
+            ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy"), height: 22) {
+                Pasteboard.copy(message.text)
                 copied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
             }
             if isLast {
-                messageAction("arrow.clockwise", tr("chat.retry")) { app.retryLast() }
+                ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
             }
             Text(message.date.formatted(date: .omitted, time: .shortened))
                 .font(NookTheme.font(11))
@@ -114,19 +113,6 @@ struct ChatMessageView: View, Equatable {
         .opacity(hovering || copied ? 1 : 0)
         .animation(.easeOut(duration: 0.12), value: hovering)
         .padding(.top, -4)
-    }
-
-    private func messageAction(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 24, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 
     static func == (a: ChatMessageView, b: ChatMessageView) -> Bool {
@@ -214,8 +200,7 @@ private struct ChatErrorCard: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NookTheme.coral.opacity(0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NookTheme.coral.opacity(0.22), lineWidth: 1))
+        .cardBackground(NookTheme.coral.opacity(0.06), stroke: NookTheme.coral.opacity(0.22), radius: 14, style: .continuous)
     }
 }
 
