@@ -44,6 +44,20 @@ enum UsageLimits {
         return PlanReading(window: window, usedPercent: min(100, max(0, percent)), resetsAt: Date(timeIntervalSince1970: reset))
     }
 
+    /// The `get_usage` control reply of Claude Code: both windows as claude.ai reports them (`utilization` 0–100,
+    /// `resets_at` ISO 8601). A window that is missing has not started. Nil when the account has no plan limits (API key,
+    /// or Claude Code could not read them).
+    static func claudeUsageReply(_ response: [String: Any]) -> [PlanReading]? {
+        guard let limits = response["rate_limits"] as? [String: Any] else { return nil }
+        return ["five_hour", "seven_day"].compactMap { key in
+            guard let raw = limits[key] as? [String: Any],
+                  let percent = ClaudeStreamParser.number(raw["utilization"]),
+                  let text = raw["resets_at"] as? String,
+                  let reset = NookDates.isoFractional.date(from: text) ?? NookDates.isoPlain.date(from: text) else { return nil }
+            return PlanReading(window: key, usedPercent: min(100, max(0, percent)), resetsAt: reset)
+        }
+    }
+
     /// The latest reset of the blocked windows; nil when one of them did not say when.
     static func latestReset(_ windows: [String: Date?]) -> Date? {
         guard !windows.isEmpty, !windows.values.contains(where: { $0 == nil }) else { return nil }

@@ -49,6 +49,17 @@ final class AgentHub: ObservableObject {
         if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
     }
 
+    /// Both windows as Claude Code's `get_usage` reported them: they replace what was shown, and a window it left out has
+    /// not started. Empty home is the default account.
+    func applyPlanReadings(_ readings: [UsageLimits.PlanReading], home: String) {
+        var usage = PlanUsage(fiveHour: nil, sevenDay: nil, updated: Date())
+        for reading in readings {
+            let window = PlanWindow(usedPercent: reading.usedPercent, resetsAt: reading.resetsAt)
+            if reading.window == "seven_day" { usage.sevenDay = window } else { usage.fiveHour = window }
+        }
+        if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
+    }
+
     /// Account directory from hook environment; empty if standard directory.
     private static func accountHome(_ env: [String: Any], agentID: String) -> String {
         let kind: AgentKind = agentID == "codex" ? .codex : .claude

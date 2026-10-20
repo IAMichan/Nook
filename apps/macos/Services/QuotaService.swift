@@ -34,8 +34,8 @@ struct QuotaLimit: Identifiable, Equatable {
 /// The subscription limits of every agent account, from one place. The Agents list, the account details, Settings › Usage
 /// and Nook's own context all read them here, so they can no longer disagree.
 ///
-/// Claude reports its limits through its status line (only while a session runs); Codex reports them itself, per
-/// account directory.
+/// Claude Code reports its limits through its status line and sessions in Nook, and `ClaudeUsage` asks the `claude` CLI
+/// for them every few minutes; Codex reports them itself, per account directory.
 @MainActor
 struct QuotaService {
     let hub: AgentHub

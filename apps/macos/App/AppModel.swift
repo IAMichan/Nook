@@ -29,9 +29,16 @@ final class AppModel: ObservableObject {
     let codex = CodexUsage()
     /// Antigravity's quota windows, read from Google.
     let antigravityUsage = AntigravityUsage()
-    /// Reads the limits of all linked accounts right away (Codex and Antigravity). Claude's limits come from Claude Code
-    /// itself: its status line and the `rate_limit_event` of sessions in Nook (`AgentHub.planUsage`).
+    /// Claude's subscription limits, asked of the `claude` CLI for every Claude account.
+    private(set) lazy var claudeUsage = ClaudeUsage(
+        hub: hub,
+        profiles: { [weak self] in self?.profiles.profiles(for: .claude) ?? [] },
+        executable: { [weak self] in self?.history.executables[.claude] }
+    )
+
+    /// Reads the limits of all linked accounts right away (Claude, Codex and Antigravity).
     func refreshQuotas() {
+        claudeUsage.refreshNow()
         codex.refreshNow()
         antigravityUsage.refreshNow()
     }
@@ -419,6 +426,7 @@ final class AppModel: ObservableObject {
             return (self?.profiles.profiles(for: .antigravity) ?? []).map { paths.profile($0.id) }
         }
         antigravityUsage.start()
+        claudeUsage.start()
 
         // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › General › Energy.
         EnergyMonitor.shared.start(settings: settings)
