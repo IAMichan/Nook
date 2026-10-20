@@ -155,6 +155,7 @@ final class AutocompleteController: ObservableObject {
     private var tap: CFMachPort?
     private var tapSource: CFRunLoopSource?
     private var appObserver: NSObjectProtocol?
+    private var wakeObservers: [NSObjectProtocol] = []
     private var pressure: DispatchSourceMemoryPressure?
     private var trustTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
@@ -277,6 +278,13 @@ final class AutocompleteController: ObservableObject {
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.appChanged(app) }
         }
+        // After sleep the GPU has let the model's buffers go: read the field's prompt in again before the first key.
+        let center = NSWorkspace.shared.notificationCenter
+        wakeObservers = [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification].map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleWarm(after: 1) }
+            }
+        }
         let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         pressure.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.unload() } }
         pressure.resume()
@@ -295,6 +303,8 @@ final class AutocompleteController: ObservableObject {
         if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
         if let tap { CFMachPortInvalidate(tap) }
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
+        wakeObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        wakeObservers = []
         pressure?.cancel()
         fieldObserver.stop()
         tap = nil

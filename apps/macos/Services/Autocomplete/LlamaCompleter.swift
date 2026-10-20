@@ -4,7 +4,8 @@ import LlamaSwift
 /// Runs a GGUF model through llama.cpp (Metal on Apple Silicon) and continues text a few words at a time.
 ///
 /// - Every llama call runs on one serial queue; a new request makes the one before it stop at its next token.
-/// - The model's cache keeps the prompt of the last request: one more letter only has to read one more token.
+/// - The model's cache keeps the prompt of the last request: one more letter only has to read one more token. It has a slot
+///   (a sequence) per field for the last few fields, so going back to one does not read its whole context again.
 /// - Greedy, with a certainty threshold: when the model is not sure, nothing is shown, and a suggestion ends where its
 ///   certainty drops.
 /// - Words the user writes often get a small bonus, so suggestions lean toward their own phrasing.
@@ -24,10 +25,31 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     private let vocabSize: Int
     /// The chat template's text before and after the user's turn, with the model's turn opened; nil for a base model.
     private let chat: (head: String, tail: String)?
-    /// The user's turn for the last context, in tokens (the context stays the same for every key in a field).
+    /// What comes before the text for the last context, in tokens: the user's turn for a chat model, the header for a base
+    /// model (the context stays the same for every key in a field).
     private var request: (context: String, tokens: [llama_token])?
-    /// What sequence 0 of the cache holds now.
-    private var cached: [llama_token] = []
+
+    /// One field's prompt in the cache: the sequence with the slot's index holds `tokens`.
+    private struct Slot {
+        var key = ""
+        var tokens: [llama_token] = []
+        var used = 0
+        /// The first tokens of the text left out since the window last moved (see `shifted`): left out again while the
+        /// prompt still starts with them, or the cache would not match.
+        var skipped: [llama_token] = []
+    }
+
+    private var slots = Array(repeating: Slot(), count: Int(fieldSlots))
+    private var active = 0
+    private var clock = 0
+    private var seq: llama_seq_id { llama_seq_id(active) }
+    /// What the active slot's sequence of the cache holds now.
+    private var cached: [llama_token] {
+        get { slots[active].tokens }
+        set { slots[active].tokens = newValue }
+    }
+    /// One batch for every decode, at most `readChunk` tokens.
+    private var batch: llama_batch
     /// For models whose cache cannot be cut back (recurrent and hybrid ones): a saved copy of sequence 0 at a point in the
     /// prompt, to go on from instead of reading the whole prompt again.
     private var checkpoint: (tokens: [llama_token], data: [UInt8])?
@@ -38,11 +60,17 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// A long prompt is read in pieces of this many tokens: between pieces a newer request can stop it, and what was read
     /// stays in the cache for that request.
     private static let readChunk = 256
+    /// Tokens at the end that may differ after a window move (see `shifted`): the last letters typed, and what the model wrote.
+    private static let shiftSlack = 64
     private var favored: [String: Double] = [:]
     private var strength: Float = 0
     private var bias: [llama_token: Float] = [:]
 
+    /// The longest prompt, in tokens.
     static let contextLength: UInt32 = 4_096
+    /// The cache the slots share: about two full prompts, or more shorter ones.
+    static let cacheLength: UInt32 = 8_192
+    static let fieldSlots: UInt32 = 4
 
     private static let backendReady: Void = {
         // Metal lets the model's buffers leave GPU residency after 180 s without work by default, and the first suggestion
@@ -60,6 +88,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         vocab = llama_model_get_vocab(model)
         vocabSize = Int(llama_vocab_n_tokens(vocab))
         chat = Self.chatFrame(model)
+        batch = llama_batch_init(Int32(Self.readChunk), 0, 1)
     }
 
     /// The model's chat template around one user message, split where the message goes, or nil when the model has no template
@@ -85,6 +114,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     }
 
     deinit {
+        llama_batch_free(batch)
         llama_free(context)
         llama_model_free(model)
     }
@@ -100,8 +130,11 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                     return continuation.resume(throwing: NookError(tr("autocomplete.error.load")))
                 }
                 var params = llama_context_default_params()
-                params.n_ctx = contextLength
+                params.n_ctx = cacheLength
                 params.n_batch = contextLength
+                // One sequence per field slot, in one cache: a field's slot only takes the room its prompt needs.
+                params.n_seq_max = fieldSlots
+                params.kv_unified = true
                 params.no_perf = true
                 // Sliding-window models (Gemma 3 and 4) keep a full cache: otherwise llama.cpp cannot cut it back, and every
                 // key would read the whole prompt again.
@@ -175,54 +208,134 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         }
     }
 
-    /// The prompt in tokens, laid out for this model. The template's own markers are read as control tokens; the context and
-    /// the text never are, so they cannot open or close a turn. Too long, the text is cut from the front, the request kept.
-    private func tokens(for prompt: CompletionPrompt, limit: Int) -> [llama_token] {
-        guard let chat else {
-            var tokens = tokenize(prompt.document, special: true)
+    /// The prompt in tokens, laid out for this model, and how many of them come before the text (the frame). The template's
+    /// own markers are read as control tokens; the context and the text never are, so they cannot open or close a turn. Too
+    /// long, the text is cut from the front, the frame kept.
+    private func tokens(for prompt: CompletionPrompt, limit: Int) -> (tokens: [llama_token], frame: Int) {
+        if chat == nil, prompt.context.isEmpty {
+            var tokens = tokenize(prompt.text, special: true)
             if tokens.count > limit { tokens.removeFirst(tokens.count - limit) }
-            return tokens
+            return (tokens, 0)
         }
         if request?.context != prompt.context {
-            var head = tokenize(chat.head, special: true, parse: true)
-            // A template that writes its own <bos> after the one the tokenizer adds would give two.
-            if head.count >= 2, head[0] == head[1], head[0] == llama_vocab_bos(vocab) { head.removeFirst() }
-            request = (prompt.context, head + tokenize(CompletionChat.request(context: prompt.context), special: false)
-                + tokenize(chat.tail, special: false, parse: true))
+            if let chat {
+                var head = tokenize(chat.head, special: true, parse: true)
+                // A template that writes its own <bos> after the one the tokenizer adds would give two.
+                if head.count >= 2, head[0] == head[1], head[0] == llama_vocab_bos(vocab) { head.removeFirst() }
+                request = (prompt.context, head + tokenize(CompletionChat.request(context: prompt.context), special: false)
+                    + tokenize(chat.tail, special: false, parse: true))
+            } else {
+                // A base model reads a document: the context as its header (see `CompletionPrompt.document`).
+                request = (prompt.context, tokenize(prompt.context + "\n\n", special: true))
+            }
         }
         let frame = request?.tokens ?? []
         var text = tokenize(prompt.text, special: false)
         if frame.count + text.count > limit { text.removeFirst(min(text.count, frame.count + text.count - limit)) }
-        return frame + text
+        return (frame + text, frame.count)
+    }
+
+    /// Makes the slot for the field whose context is `key` the active one: the slot it had, else an empty one, else the one
+    /// used longest ago. A model whose cache cannot be cut back keeps one slot (see `checkpoint`).
+    private func select(_ key: String) {
+        clock += 1
+        if needsCheckpoints {
+            active = 0
+        } else if let index = slots.firstIndex(where: { $0.key == key }) {
+            active = index
+        } else {
+            active = slots.firstIndex { $0.tokens.isEmpty } ?? slots.indices.min { slots[$0].used < slots[$1].used } ?? 0
+            slots[active].skipped = []
+        }
+        slots[active].key = key
+        slots[active].used = clock
+    }
+
+    /// The slots share one cache: before `count` more tokens go into the active one, empties the others used longest ago
+    /// until they fit.
+    private func makeRoom(for count: Int) {
+        let memory = llama_get_memory(context)
+        while slots.reduce(0, { $0 + $1.tokens.count }) + count > Int(Self.cacheLength),
+              let oldest = slots.indices.filter({ $0 != active && !slots[$0].tokens.isEmpty }).min(by: { slots[$0].used < slots[$1].used }) {
+            _ = llama_memory_seq_rm(memory, llama_seq_id(oldest), -1, -1)
+            slots[oldest] = Slot()
+        }
+    }
+
+    /// The window over the text moved on (see `PromptBuilder.window`): the active slot holds the old window, whose start the
+    /// prompt no longer has, so after the frame hardly anything matches. Rather than read the whole text again, the old start
+    /// is dropped from the cache and the rest moved back to follow the frame (a RoPE shift). The first few tokens of the new
+    /// window may be cut from the text differently than before; they are left out of the prompt (the far start of a long
+    /// text). Returns the prompt to read instead, or nil when the cache cannot be reused this way.
+    private func shifted(_ tokens: [llama_token], frame: Int) -> [llama_token]? {
+        let old = cached
+        let probe = 16
+        let memory = llama_get_memory(context)
+        guard !needsCheckpoints, frame > 0, old.count >= frame + 300, tokens.count > frame + probe + 8,
+              old[..<frame] == tokens[..<frame], zip(tokens[frame...], old[frame...]).prefix(while: { $0 == $1 }).count < 8,
+              llama_memory_can_shift(memory) else { return nil }
+        for skip in 0..<8 {
+            let start = frame + skip
+            let wanted = tokens[start ..< start + probe]
+            var position = start + 1
+            while position + probe <= old.count {
+                // The rest must line up to the end (the suggestion the model wrote last may follow), not only the probe:
+                // text that repeats itself would otherwise match a few tokens off.
+                if old[position ..< position + probe] == wanted,
+                   zip(tokens[start...], old[position...]).prefix(while: { $0 == $1 }).count
+                    >= min(tokens.count - start, old.count - position) - Self.shiftSlack {
+                    guard llama_memory_seq_rm(memory, seq, llama_pos(frame), llama_pos(position)) else { return nil }
+                    llama_memory_seq_add(memory, seq, llama_pos(position), -1, llama_pos(frame - position))
+                    cached = Array(old[..<frame]) + Array(old[position...])
+                    slots[active].skipped = Array(tokens[frame ..< start])
+                    return Array(tokens[..<frame]) + Array(tokens[start...])
+                }
+                position += 1
+            }
+        }
+        return nil
     }
 
     /// Reads `prompt` into the cache, reusing what it shares with the last one. Returns the prompt's length in tokens.
     private func prime(_ prompt: CompletionPrompt, reserve: Int, isCancelled: () -> Bool) -> Int? {
-        let tokens = self.tokens(for: prompt, limit: Int(Self.contextLength) - reserve - 1)
+        let laidOut = self.tokens(for: prompt, limit: Int(Self.contextLength) - reserve - 1)
+        var tokens = laidOut.tokens
         guard !tokens.isEmpty else { return nil }
+        select(prompt.context)
+        let frame = laidOut.frame
+        let skipped = slots[active].skipped
+        if !skipped.isEmpty, tokens.count > frame + skipped.count, tokens[frame ..< frame + skipped.count].elementsEqual(skipped) {
+            tokens.removeSubrange(frame ..< frame + skipped.count)
+        } else if let moved = shifted(tokens, frame: frame) {
+            tokens = moved
+        }
         // Read at least the last token again, for fresh logits.
         var shared = min(zip(tokens, cached).prefix { $0 == $1 }.count, tokens.count - 1)
         let memory = llama_get_memory(context)
-        if !llama_memory_seq_rm(memory, 0, llama_pos(shared), -1) {
-            // This cache cannot be cut back: go on from the checkpoint when the prompt still starts with it.
+        if !llama_memory_seq_rm(memory, seq, llama_pos(shared), -1) {
+            // This cache cannot be cut back: one slot from now on, and go on from the checkpoint when the prompt still starts
+            // with it.
             llama_memory_clear(memory, true)
-            shared = 0
+            slots = Array(repeating: Slot(), count: slots.count)
             needsCheckpoints = true
+            select(prompt.context)
+            shared = 0
             if let saved = checkpoint, saved.tokens.count < tokens.count, tokens.starts(with: saved.tokens),
-               saved.data.withUnsafeBufferPointer({ llama_state_seq_set_data(context, $0.baseAddress, $0.count, 0) }) > 0 {
+               saved.data.withUnsafeBufferPointer({ llama_state_seq_set_data(context, $0.baseAddress, $0.count, seq) }) > 0 {
                 shared = saved.tokens.count
             } else {
                 llama_memory_clear(memory, true)
             }
         }
         cached = Array(tokens[..<shared])
+        makeRoom(for: tokens.count - shared + reserve)
         // Read up to a new checkpoint first and save it, when this model needs them and the prompt has grown a step.
         let target = max(0, ((tokens.count - Self.checkpointTail) / Self.checkpointStep) * Self.checkpointStep)
         if needsCheckpoints, target - shared >= Self.checkpointStep {
             guard read(Array(tokens[shared ..< target]), isCancelled: isCancelled) else { return nil }
-            let size = llama_state_seq_get_size(context, 0)
+            let size = llama_state_seq_get_size(context, seq)
             var data = [UInt8](repeating: 0, count: size)
-            let written = data.withUnsafeMutableBufferPointer { llama_state_seq_get_data(context, $0.baseAddress, size, 0) }
+            let written = data.withUnsafeMutableBufferPointer { llama_state_seq_get_data(context, $0.baseAddress, size, seq) }
             checkpoint = written > 0 ? (Array(tokens[..<target]), Array(data.prefix(written))) : nil
             shared = target
         }
@@ -234,8 +347,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         var start = 0
         while start < tokens.count {
             if start > 0, isCancelled() { return false }
-            var piece = Array(tokens[start ..< min(start + Self.readChunk, tokens.count)])
-            guard decode(&piece) else { return false }
+            let piece = Array(tokens[start ..< min(start + Self.readChunk, tokens.count)])
+            guard decode(piece) else { return false }
             start += piece.count
         }
         return true
@@ -301,8 +414,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 reported = finished
                 partial(text.replacingOccurrences(of: "\u{FFFD}", with: ""))
             }
-            var next = [token]
-            guard decode(&next) else { break }
+            guard decode([token]) else { break }
         }
         guard started else { return nil }
         // The generated tokens stay in the cache; the shared-prefix check trims them on the next request.
@@ -332,12 +444,12 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
             if results.count == count { break }
             if llama_vocab_is_eog(vocab, candidate) || llama_vocab_is_control(vocab, candidate) { continue }
             // Back to the end of the prompt, then spell out the rest of the word.
-            guard llama_memory_seq_rm(llama_get_memory(context), 0, llama_pos(length), -1) else { break }
+            guard llama_memory_seq_rm(llama_get_memory(context), seq, llama_pos(length), -1) else { break }
             cached = Array(cached.prefix(length))
             var bytes = piece(candidate)
             var next = [candidate]
             for _ in 0..<4 {
-                guard decode(&next), let logits = llama_get_logits_ith(context, -1) else { break }
+                guard decode(next), let logits = llama_get_logits_ith(context, -1) else { break }
                 let token = mostLikely(logits).0
                 let piece = self.piece(token)
                 guard let first = piece.first, Character(UnicodeScalar(first)).isLetter || first >= 0x80 || first == UInt8(ascii: "'") else { break }
@@ -351,12 +463,21 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         return results
     }
 
-    private func decode(_ tokens: inout [llama_token]) -> Bool {
-        let count = Int32(tokens.count)
-        let status = tokens.withUnsafeMutableBufferPointer { llama_decode(context, llama_batch_get_one($0.baseAddress, count)) }
-        guard status == 0 else {
+    /// Reads `tokens` (at most `readChunk`) into the active slot's sequence, after what it holds; logits for the last one.
+    private func decode(_ tokens: [llama_token]) -> Bool {
+        guard !tokens.isEmpty, tokens.count <= Self.readChunk else { return false }
+        let start = cached.count
+        for (index, token) in tokens.enumerated() {
+            batch.token[index] = token
+            batch.pos[index] = llama_pos(start + index)
+            batch.n_seq_id[index] = 1
+            batch.seq_id[index]![0] = seq
+            batch.logits[index] = index == tokens.count - 1 ? 1 : 0
+        }
+        batch.n_tokens = Int32(tokens.count)
+        guard llama_decode(context, batch) == 0 else {
             llama_memory_clear(llama_get_memory(context), true)
-            cached = []
+            slots = Array(repeating: Slot(), count: slots.count)
             return false
         }
         cached += tokens
