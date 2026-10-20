@@ -794,11 +794,22 @@ final class AutocompleteController: ObservableObject {
               memo.recall(before: before, field: fieldKey(for: next, in: app)) == nil else { return }
         let options = completionOptions(before: before, continuing: false)
         let prompt = self.prompt(for: next, in: app)
+        let branches = rememberBranches(before: before, field: fieldKey(for: next, in: app))
         let task = Task { () -> CompletionResult? in
             guard let completer = await loadedCompleter(for: model) else { return nil }
-            return await completer.complete(prompt: prompt, options: options, partial: nil)
+            return await completer.complete(prompt: prompt, options: options, partial: nil, branches: branches)
         }
         upcoming = Upcoming(app: bundleID, before: before, task: task)
+    }
+
+    /// Keeps the other ways the text could go on (see `LlamaCompleter.branch`): when the user types into one of them instead
+    /// of the suggestion, it shows at once.
+    private func rememberBranches(before: String, field: String) -> @Sendable ([CompletionResult]) -> Void {
+        { [weak self] results in
+            Task { @MainActor in
+                for result in results { self?.memo.remember(result, before: before, field: field, branch: true) }
+            }
+        }
     }
 
     private func fieldKey(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> String {
@@ -906,7 +917,8 @@ final class AutocompleteController: ObservableObject {
             }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
             // The whole suggestion at once, never word by word as the model writes it.
-            let result = await completer.complete(prompt: prompt, options: options, partial: nil)
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil,
+                                                  branches: rememberBranches(before: snapshot.before, field: field))
             scheduleUnload()
             if let result {
                 memo.remember(result, before: snapshot.before, field: field)

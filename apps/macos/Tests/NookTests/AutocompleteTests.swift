@@ -629,6 +629,26 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertNil(memo.recall(before: "Thanks, I wil", field: "mail"))
     }
 
+    func testMemoShowsBranchesOnlyOnceTypedInto() {
+        var memo = CompletionMemo()
+        memo.remember(CompletionResult(text: " the reminder", truncated: false), before: "Thanks for", field: "mail")
+        memo.remember(CompletionResult(text: " a quick reply", truncated: false), before: "Thanks for", field: "mail", branch: true)
+        memo.remember(CompletionResult(text: " your help", truncated: false), before: "Thanks for", field: "mail", branch: true)
+        // In place: the suggestion itself, never a branch.
+        XCTAssertEqual(memo.recall(before: "Thanks for", field: "mail")?.text, " the reminder")
+        XCTAssertEqual(memo.recall(before: "Thanks for a", field: "mail")?.text, " quick reply")
+        XCTAssertEqual(memo.recall(before: "Thanks for yo", field: "mail")?.text, "ur help")
+        XCTAssertEqual(memo.recall(before: "Thanks for th", field: "mail")?.text, "e reminder")
+        // A new suggestion for the same text replaces the old one, not the branches.
+        memo.remember(CompletionResult(text: " the update", truncated: false), before: "Thanks for", field: "mail")
+        XCTAssertEqual(memo.recall(before: "Thanks for", field: "mail")?.text, " the update")
+        XCTAssertEqual(memo.recall(before: "Thanks for a", field: "mail")?.text, " quick reply")
+        // Branches alone show nothing in place.
+        var branches = CompletionMemo()
+        branches.remember(CompletionResult(text: " a walk", truncated: false), before: "Let's go for", field: "chat", branch: true)
+        XCTAssertNil(branches.recall(before: "Let's go for", field: "chat"))
+    }
+
     func testMemoPrefersTheNewestSuggestionAndKeepsOneField() {
         var memo = CompletionMemo()
         memo.remember(CompletionResult(text: " a walk", truncated: false), before: "Let's go for", field: "chat")

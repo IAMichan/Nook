@@ -420,35 +420,44 @@ enum CompletionTyping {
 
 /// Suggestions made recently in one field, kept by the text they continue. When the text comes back to one of them (Delete
 /// after a wrong letter, or typing on in the words it suggested after it was sent away), it is shown again at once, without
-/// asking the model.
+/// asking the model. Also the other ways the text could have gone on (branches, see `LlamaCompleter`): those only once the
+/// user has typed into them, never in place of the suggestion itself.
 struct CompletionMemo {
     private struct Entry {
         var field: String
         var before: String
         var result: CompletionResult
+        var branch: Bool
     }
 
     private var entries: [Entry] = []
     static let limit = 32
 
-    mutating func remember(_ result: CompletionResult, before: String, field: String) {
+    /// - Parameter branch: one of the other ways the text could go on, not the model's suggestion for `before`.
+    mutating func remember(_ result: CompletionResult, before: String, field: String, branch: Bool = false) {
         guard result.text.contains(where: { !$0.isWhitespace }) else { return }
-        // One field at a time: another field's suggestions do not fit this one.
-        entries.removeAll { $0.field != field || $0.before == before }
-        entries.append(Entry(field: field, before: before, result: result))
+        // One field at a time: another field's suggestions do not fit this one. A suggestion for the same text replaces the
+        // one before it; branches are kept next to it.
+        entries.removeAll { $0.field != field || ($0.before == before && ($0.result.text == result.text || (!branch && !$0.branch))) }
+        entries.append(Entry(field: field, before: before, result: result, branch: branch))
         if entries.count > Self.limit { entries.removeFirst(entries.count - Self.limit) }
     }
 
     mutating func forget() { entries.removeAll() }
 
-    /// What a remembered suggestion still adds after `before` (the newest that fits), or nil when none continues this text.
+    /// What a remembered suggestion still adds after `before` (the newest that fits, suggestions before branches), or nil when
+    /// none continues this text.
     func recall(before: String, field: String) -> CompletionResult? {
-        for entry in entries.reversed() where entry.field == field && before.hasPrefix(entry.before) {
-            let whole = entry.before + entry.result.text
-            guard whole.hasPrefix(before) else { continue }
-            let rest = String(whole.dropFirst(before.count))
-            guard rest.contains(where: { !$0.isWhitespace }) else { continue }
-            return CompletionResult(text: rest, truncated: entry.result.truncated, unfinished: entry.result.unfinished)
+        for branch in [false, true] {
+            for entry in entries.reversed() where entry.field == field && entry.branch == branch && before.hasPrefix(entry.before) {
+                // A branch starts with a word the model thought less likely: only once the user typed into it.
+                if branch, before.count == entry.before.count { continue }
+                let whole = entry.before + entry.result.text
+                guard whole.hasPrefix(before) else { continue }
+                let rest = String(whole.dropFirst(before.count))
+                guard rest.contains(where: { !$0.isWhitespace }) else { continue }
+                return CompletionResult(text: rest, truncated: entry.result.truncated, unfinished: entry.result.unfinished)
+            }
         }
         return nil
     }
