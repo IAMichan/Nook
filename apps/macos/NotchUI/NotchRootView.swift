@@ -67,6 +67,7 @@ struct NotchRootView: View {
         case .done: return "done"
         case .card(let card): return "card-\(card.id)"
         case .nudge(_, let card): return "nudge-\(card.id)"
+        case .moment(let moment): return "moment-\(moment.id)"
         case .panel: return "panel"   // tab switching happens within the panel, without replacing everything
         }
     }
@@ -172,6 +173,8 @@ struct NotchRootView: View {
             doneStrip(message: message, nh: nh)
         case .nudge(let line, _):
             nudgeStrip(line: line, nh: nh)
+        case .moment(let moment):
+            momentStrip(moment, nh: nh)
         case .card(let card):
             expanded(nh: nh, mood: card.mood) {
                 CardView(
@@ -344,6 +347,61 @@ struct NotchRootView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("notch.nudgeProposal", line))
         .accessibilityAddTraits(.isButton)
+    }
+
+    // MARK: Nook's own moments
+
+    /// A friendly moment below the notch: Nook in the moment's mood, the line, and at most one button. Clicking the
+    /// line puts it away; the button does what it says.
+    private func momentStrip(_ moment: NookMoment, nh: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                NookOrb(mood: moment.mood, size: 24, animated: true, glow: viewModel.geometry.isFloating, outfit: moment.outfit)
+                    .padding(.leading, 18)
+                Spacer()
+            }
+            .frame(height: nh)
+            .floatingDrag(viewModel)
+
+            HStack(spacing: 10) {
+                Group {
+                    if moment.mood == .breathe {
+                        // The line follows the breath: in, hold, out.
+                        TimelineView(.periodic(from: moment.started, by: 0.5)) { context in
+                            Text(tr(NookMoment.breathPhaseKey(context.date.timeIntervalSince(moment.started))))
+                                .contentTransition(.opacity)
+                                .animation(.easeInOut(duration: 0.4), value: NookMoment.breathPhaseKey(context.date.timeIntervalSince(moment.started)))
+                        }
+                    } else {
+                        Text(moment.line)
+                    }
+                }
+                .font(NookTheme.font(13.5, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .contentShape(Rectangle())
+                .onTapGesture { viewModel.show(.idle) }
+                Spacer(minLength: 8)
+                if moment.action != nil, !moment.actionTitle.isEmpty {
+                    NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }
+                }
+                Button { viewModel.show(.idle) } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("button.close"))
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 14)
+            .frame(height: 40)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(tr("buddy.accessibility", moment.mood.label, moment.line))
     }
 
     // MARK: Expanded: Nook on the left, content on the right

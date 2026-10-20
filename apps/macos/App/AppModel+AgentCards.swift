@@ -129,10 +129,12 @@ extension AppModel {
         NookSound.play(session.status == .done ? .done : .attention)
         // The last agent finished: a small celebration.
         if session.status == .done {
-            if activeAgents.contains(where: { $0.id != session.id }) { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
+            let others = activeAgents.contains { $0.id != session.id }
+            if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
+            buddyAgentFinished(last: !others)
         }
         switch viewModel.state {
-        case .idle, .music, .track, .done, .nudge: break
+        case .idle, .music, .track, .done, .nudge, .moment: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
         default: return
         }

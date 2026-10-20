@@ -46,6 +46,8 @@ final class AppModel: ObservableObject {
     let web = WebTools()
     /// Proactive assistance: evaluates screen context and offers assistance when appropriate.
     let thinkAlong = ThinkAlong()
+    /// Nook as a friend: what he wears and the small moments he shares by himself (`AppModel+Buddy`).
+    let buddy = BuddyService()
     /// Conversation state and history in chat.
     let chat = NookChat()
     /// Coding agents spawned and tracked by Nook in dedicated terminal windows.
@@ -437,6 +439,8 @@ final class AppModel: ObservableObject {
         watchTimer = Timer.scheduledCoalesced(withTimeInterval: 10) { [weak self] _ in
             Task { @MainActor in self?.thinkAlongTick() }
         }
+
+        startBuddy()
     }
 
     // MARK: Stored state used by the extensions

@@ -30,10 +30,11 @@ extension NookOrb {
     /// A faint glow inside the eyes, in a darker shade of the mood's color.
     static func eyeTint(for mood: NookMood) -> Color {
         switch mood {
-        case .rest, .seen, .think: return Color(hex: 0x6C63FF)
-        case .listen, .done: return Color(hex: 0x14B37D)
-        case .waiting, .remind: return Color(hex: 0xE08A2C)
+        case .rest, .seen, .think, .curious, .focus, .surprised, .sleepy: return Color(hex: 0x6C63FF)
+        case .listen, .done, .proud, .celebrate, .breathe: return Color(hex: 0x14B37D)
+        case .waiting, .remind, .cozy: return Color(hex: 0xE08A2C)
         case .worry: return Color(hex: 0xE0475A)
+        case .caring: return Color(hex: 0xE05A7A)
         }
     }
 

@@ -264,7 +264,7 @@ final class NotchViewModel: ObservableObject {
     /// Displays a card immediately if Nook is idle, otherwise enqueues it.
     func present(_ card: NookCard) {
         switch state {
-        case .idle, .music, .track, .done, .nudge:
+        case .idle, .music, .track, .done, .nudge, .moment:
             show(.card(card))
         default:
             pending.append(card)
@@ -377,6 +377,33 @@ final class NotchViewModel: ObservableObject {
         return true
     }
 
+    /// A moment Nook shares by himself, below the notch. Like a nudge: only while resting, never over a card, a panel
+    /// or something waiting in line; it goes away by itself.
+    @discardableResult
+    func offerMoment(_ moment: NookMoment) -> Bool {
+        guard state.isResting, pending.isEmpty else { return false }
+        show(.moment(moment))
+        dismissMoment(moment.id, after: moment.seconds)
+        return true
+    }
+
+    /// Shows another moment in place of the one showing now (the next step of the same moment, like breathing along).
+    func replaceMoment(_ moment: NookMoment) {
+        guard case .moment = state else { return }
+        show(.moment(moment))
+        dismissMoment(moment.id, after: moment.seconds)
+    }
+
+    /// Back to idle after `seconds`, if this moment is still showing.
+    func dismissMoment(_ id: String, after seconds: Double) {
+        doneTask?.cancel()
+        doneTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+            guard !Task.isCancelled, let self, case .moment(let shown) = self.state, shown.id == id else { return }
+            self.show(.idle)
+        }
+    }
+
     /// Expands the short summary into the full card.
     func openNudge() {
         guard case .nudge(_, let card) = state else { return }
@@ -401,6 +428,13 @@ final class NotchViewModel: ObservableObject {
         hoverTask?.cancel()
         if inside, state.isResting { NookPresence.shared.pointerEntered() } else { NookPresence.shared.noteActivity() }
         scheduleAutoClose()
+        // A moment stays while you read it, and leaves a little after you move away.
+        if case .moment(let moment) = state {
+            // Breathing along keeps going for its full minute, wherever the pointer is.
+            let left = moment.mood == .breathe ? max(3, moment.seconds - Date().timeIntervalSince(moment.started)) : 3
+            if inside { doneTask?.cancel() } else { dismissMoment(moment.id, after: left) }
+            return
+        }
         // Nook made an offer: hovering reveals the full proposal even if hover-to-open is disabled.
         if inside, case .nudge = state {
             hoverTask = Task { [weak self] in
@@ -485,6 +519,8 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: max(440, nw + 240), height: nh + 40)
         case .nudge:
             return CGSize(width: max(460, nw + 280), height: nh + 34)
+        case .moment:
+            return CGSize(width: max(500, nw + 300), height: nh + 40)
         case .card(let card):
             return CGSize(width: 600, height: chrome + card.contentHeight)
         case .panel(let tab):
@@ -568,7 +604,7 @@ final class NotchViewModel: ObservableObject {
         switch state {
         case .idle: return geometry.isFloating ? Self.floatingOrbSide / 2 : 14
         case .music, .track: return geometry.isFloating ? Self.floatingOrbSide / 2 : 16
-        case .done, .nudge: return 16
+        case .done, .nudge, .moment: return 16
         case .card: return 30
         case .panel: return 32
         }

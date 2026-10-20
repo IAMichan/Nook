@@ -131,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(to: menu, title: tr("menu.talk"), action: #selector(talk), shortcut: .talk)
         add(to: menu, title: tr("menu.screen"), action: #selector(lookAtScreen), shortcut: .lookAtScreen)
         add(to: menu, title: NoteTaker.shared.isRecording ? tr("notes.menu.stop") : tr("notes.menu.start"), action: #selector(recordCall), shortcut: .recordCall)
+        add(to: menu, title: tr("buddy.menu.breathe"), action: #selector(breatheAlong))
         let workspace = add(to: menu, title: tr("menu.window"), action: #selector(openWorkspace), key: "w")
         workspace.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(.separator())
@@ -232,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func talk() { model.toggleVoice() }
     @objc private func lookAtScreen() { model.lookAtScreen(manual: true) }
     @objc private func recordCall() { NoteTaker.shared.toggle() }
+    @objc private func breatheAlong() { model.breatheAlong() }
     @objc private func openSettings() { model.openSettings() }
     @objc private func openWorkspace() { model.openWindow() }
     @objc private func quit() { NSApp.terminate(nil) }
