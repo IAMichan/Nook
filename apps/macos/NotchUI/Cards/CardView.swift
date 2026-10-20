@@ -158,17 +158,20 @@ struct CardView: View {
         }
     }
 
-    /// Follow-up questions via text: always ready to type, Enter sends.
+    /// Follow-up questions via text: always ready to type. Return starts a new line and the field grows with it;
+    /// Cmd+Return sends. Wrapping instead of scrolling sideways keeps the text still while a long sentence is typed.
     private var replyField: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .bottom, spacing: 10) {
             TextField(
                 "",
                 text: $reply,
-                prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary)
+                prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
+                axis: .vertical
             )
             .textFieldStyle(.plain)
             .font(NookTheme.font(14))
             .foregroundStyle(NookTheme.paper)
+            .lineLimit(1...6)
             .focused($replyFocused)
             .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
             // In the non-activating notch panel the binding can lag behind the field until Return commits it,
@@ -178,24 +181,26 @@ struct CardView: View {
                       field.stringValue != reply else { return }
                 reply = field.stringValue
             }
-            .onSubmit(submitReply)
-            // Return sends, and so does a click on the arrow; an empty field sends nothing.
+            .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in replyReturn(press) }
+            .padding(.vertical, 10)
+            // Cmd+Return sends, and so does a click on the arrow; an empty field sends nothing.
             let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             Button(action: submitReply) {
-                Image(systemName: ready ? "arrow.up.circle.fill" : "return")
+                Image(systemName: ready ? "arrow.up.circle.fill" : "command")
                     .font(NookTheme.font(ready ? 18 : 11, .medium))
                     .foregroundStyle(ready ? NookTheme.mint : NookTheme.textTertiary)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tr("card.send"))
+            .padding(.bottom, 8)
+            .help(tr("card.sendShortcut"))
             .accessibilityLabel(tr("card.send"))
         }
         .padding(.leading, 16)
         .padding(.trailing, 10)
-        .frame(height: 38)
-        .background(Capsule().fill(NookTheme.field))
+        .frame(minHeight: 38)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(NookTheme.field))
         .onAppear {
             if let draft = card.draft { reply = draft }
             // Wait briefly for the panel to acquire keyboard focus.
@@ -206,6 +211,16 @@ struct CardView: View {
             reply = draft
             replyFocused = true
         }
+    }
+
+    /// Return adds a line where the cursor is; with Cmd it sends.
+    private func replyReturn(_ press: KeyPress) -> KeyPress.Result {
+        if press.modifiers.contains(.command) {
+            submitReply()
+        } else {
+            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+        }
+        return .handled
     }
 
     private func submitReply() {
