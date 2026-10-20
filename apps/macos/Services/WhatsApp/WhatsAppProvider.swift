@@ -3,9 +3,10 @@
 import Foundation
 
 // The two local WhatsApp gateways Nook can talk to. Each call goes to the URL set in
-// Settings (127.0.0.1 by default) and nowhere else: no photo, no media, nothing from
-// WhatsApp's own servers. Endpoints, headers and bodies follow each gateway's docs (see
-// WhatsAppGateway.swift for the references).
+// Settings (127.0.0.1 by default) and nowhere else: nothing from WhatsApp's own servers. A
+// photo or document is only fetched when you click it in a chat, and then from the gateway.
+// Endpoints, headers and bodies follow each gateway's docs (see WhatsAppGateway.swift for the
+// references).
 
 enum WAError: Error, Equatable {
     /// Nothing answers at that URL.
@@ -39,6 +40,20 @@ protocol WhatsAppProvider: Sendable {
     func groupName(_ chat: String) async -> String?
     /// The chats on the phone, newest first: who Nook may send to, by name.
     func chats(limit: Int) async throws -> [WAChatInfo]
+    /// The file of one message (a document, photo, video or voice note), only when you open it.
+    func media(chat: String, message: String) async throws -> WAFile
+}
+
+/// A message's file as the gateway hands it over.
+struct WAFile: Sendable {
+    var data: Data
+    /// The name the gateway gives it, if any.
+    var name: String?
+    /// Its MIME type, if the gateway says.
+    var mimeType: String?
+
+    /// Larger files are refused: the same cap both gateways use by default.
+    static let maxBytes = 50 * 1024 * 1024
 }
 
 /// One chat as the gateway lists it.
@@ -79,6 +94,18 @@ final class WAHTTP: Sendable {
     /// `path` is appended to the base URL as given (already percent-encoded where needed).
     func call(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil,
               timeout: TimeInterval = 10) async throws -> (Data, Int) {
+        let (data, response) = try await perform(method, path, query: query, json: json, timeout: timeout, accept: "application/json")
+        return (data, response.statusCode)
+    }
+
+    /// A file from the gateway: its bytes, status code and MIME type.
+    func download(_ path: String, query: [URLQueryItem] = [], timeout: TimeInterval = 60) async throws -> (Data, Int, String?) {
+        let (data, response) = try await perform("GET", path, query: query, json: nil, timeout: timeout, accept: "*/*")
+        return (data, response.statusCode, response.mimeType)
+    }
+
+    private func perform(_ method: String, _ path: String, query: [URLQueryItem], json: [String: any Sendable]?,
+                         timeout: TimeInterval, accept: String) async throws -> (Data, HTTPURLResponse) {
         guard var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { throw WAError.unreachable }
         comps.percentEncodedPath = comps.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty
             ? path : "/" + comps.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path
@@ -87,7 +114,7 @@ final class WAHTTP: Sendable {
         var req = URLRequest(url: url, timeoutInterval: timeout)
         req.httpMethod = method
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(accept, forHTTPHeaderField: "Accept")
         if let json {
             req.httpBody = try JSONSerialization.data(withJSONObject: json)
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -96,8 +123,8 @@ final class WAHTTP: Sendable {
             let (data, response) = try await session.data(for: req)
             // Second lock: an answer from anywhere but the gateway is not one.
             if let final = response.url, final.host != url.host || final.port != url.port { throw WAError.unreachable }
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            return (data, code)
+            guard let http = response as? HTTPURLResponse else { throw WAError.unreachable }
+            return (data, http)
         } catch {
             throw WAError.unreachable
         }
@@ -148,12 +175,13 @@ actor GOWAProvider: WhatsAppProvider {
         return ("nook", WAStatus(link: .needsQR, me: nil))
     }
 
-    private func scoped(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil) async throws -> Data {
+    private func scoped(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil,
+                        timeout: TimeInterval = 10) async throws -> Data {
         let id: String
         if let deviceId { id = deviceId } else { id = try await device().id }
         var q = query
         q.append(URLQueryItem(name: "device_id", value: id))
-        let (data, code) = try await http.call(method, path, query: q, json: json)
+        let (data, code) = try await http.call(method, path, query: q, json: json, timeout: timeout)
         try check(data, code)
         return data
     }
@@ -233,6 +261,17 @@ actor GOWAProvider: WhatsAppProvider {
     func chats(limit: Int) async throws -> [WAChatInfo] {
         WAGOWA.chats(try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(limit))]))
             .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
+    }
+
+    /// GOWA saves the file under its own /statics first and says where; Nook then fetches it from the configured URL,
+    /// whatever host the link names.
+    func media(chat: String, message: String) async throws -> WAFile {
+        let data = try await scoped("GET", "/message/\(WAHTTP.pathComponent(message))/download",
+                                    query: [URLQueryItem(name: "phone", value: chat)], timeout: 60)
+        guard let saved = WAGOWA.download(data) else { throw WAError.refused("media") }
+        let (bytes, code, mime) = try await http.download(saved.path)
+        guard code == 200 else { throw WAError.refused("HTTP \(code)") }
+        return WAFile(data: bytes, name: saved.name, mimeType: mime)
     }
 }
 
@@ -367,6 +406,15 @@ actor OpenWAProvider: WhatsAppProvider {
     func chats(limit: Int) async throws -> [WAChatInfo] {
         WAOpenWA.chats(try await scoped("GET", "/chats")).prefix(limit)
             .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last) }
+    }
+
+    func media(chat: String, message: String) async throws -> WAFile {
+        let id = try await sid()
+        let path = "/api/sessions/\(id)/messages/\(WAHTTP.pathComponent(Self.openwaId(chat)))/\(WAHTTP.pathComponent(message))/media"
+        let (bytes, code, mime) = try await http.download(path)
+        if code == 401 || code == 403 { throw WAError.unauthorized }
+        guard code == 200 else { throw WAError.refused(WAOpenWA.errorMessage(bytes) ?? "HTTP \(code)") }
+        return WAFile(data: bytes, name: nil, mimeType: mime)
     }
 
     /// OpenWA names people `<number>@c.us` (Nook keeps the @s.whatsapp.net form inside).

@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Combine
+import UniformTypeIdentifiers
 
 // MARK: - Settings
 
@@ -140,6 +141,8 @@ final class WhatsAppLink: ObservableObject {
     private var lastPoll = Date()
     private var lastChatList: Date = .distantPast
     private var namingGroups: Set<String> = []
+    /// Chats whose older messages were fetched for the notch card: once per chat while linked.
+    private var historyLoaded: Set<String> = []
     private var rateLimit = WARateLimit(limit: 6, window: 60)
     private var failures = 0
     /// Bumped at each start and stop: an answer from before a restart is dropped.
@@ -151,12 +154,18 @@ final class WhatsAppLink: ObservableObject {
             .sink { [weak self] _ in DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.wake() } }
             .store(in: &bag)
         NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
-            .sink { _ in MainActor.assumeIsolated { WhatsAppGOWAProcess.shared.stopNow() } }
+            .sink { _ in MainActor.assumeIsolated {
+                WhatsAppGOWAProcess.shared.stopNow()
+                WhatsAppLink.clearOpenedFiles()
+            } }
             .store(in: &bag)
     }
 
     /// Called once at launch.
-    func start() { update() }
+    func start() {
+        Self.clearOpenedFiles()
+        update()
+    }
 
     /// Settings changed (on/off, gateway, address, password, port): start over.
     func settingsChanged() {
@@ -197,6 +206,7 @@ final class WhatsAppLink: ObservableObject {
 
     private func stop(forget: Bool) {
         generation += 1
+        historyLoaded = []
         refreshing = false
         polling = false
         timer?.invalidate()
@@ -419,6 +429,78 @@ final class WhatsAppLink: ObservableObject {
             return fetched
         }
         return inbox.conversations[key]?.messages ?? []
+    }
+
+    /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
+    func loadHistory(_ chat: String) async -> Bool {
+        let key = WAJID.normalized(chat)
+        guard isConnected, !historyLoaded.contains(key) else { return false }
+        historyLoaded.insert(key)
+        let before = inbox.conversations[key]?.messages.count ?? 0
+        _ = try? await messages(of: key, limit: WAInbox.keep)
+        return (inbox.conversations[key]?.messages.count ?? 0) != before
+    }
+
+    // MARK: Files
+
+    /// Where opened files wait for the app that shows them: a folder of Nook's own in the temporary folder,
+    /// emptied when Nook starts and quits.
+    nonisolated static var openedFilesFolder: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Nook WhatsApp", isDirectory: true)
+    }
+
+    nonisolated static func clearOpenedFiles() {
+        try? FileManager.default.removeItem(at: openedFilesFolder)
+    }
+
+    /// Fetches a message's file from the gateway (only now, because you clicked it) and returns where it was saved.
+    func download(message id: String, chat: String) async throws -> URL {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        let key = WAJID.normalized(chat)
+        guard let message = inbox.conversations[key]?.messages.first(where: { $0.id == id }), message.media.isOpenable else {
+            throw NookError(tr("whatsapp.file.missing"))
+        }
+        let file: WAFile
+        do {
+            file = try await provider.media(chat: key, message: id)
+        } catch let error as WAError {
+            switch error {
+            case .unreachable: throw NookError(tr("whatsapp.status.unreachable"))
+            case .unauthorized: throw NookError(tr("whatsapp.status.unauthorized"))
+            case .notLoggedIn: throw NookError(tr("whatsapp.status.needsQR"))
+            case .refused: throw NookError(tr("whatsapp.file.failed"))
+            }
+        }
+        guard !file.data.isEmpty else { throw NookError(tr("whatsapp.file.failed")) }
+        guard file.data.count <= WAFile.maxBytes else { throw NookError(tr("whatsapp.file.tooLarge")) }
+        let name = Self.fileName(for: message.media, given: file.name, mimeType: file.mimeType)
+        let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(name)
+        try file.data.write(to: url, options: .atomic)
+        Log.connectors.info("WhatsApp: opened a file")
+        return url
+    }
+
+    /// A safe file name: the document's own name when there is one, else one after its kind, with an extension the
+    /// Mac recognizes.
+    nonisolated static func fileName(for media: WAMedia, given: String?, mimeType: String?) -> String {
+        var name: String
+        switch media {
+        case .document(let own): name = own ?? given ?? "document"
+        case .image: name = given ?? "photo"
+        case .video: name = given ?? "video"
+        case .audio, .voice: name = given ?? "voice message"
+        default: name = given ?? "attachment"
+        }
+        name = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        if name.isEmpty { name = "attachment" }
+        if (name as NSString).pathExtension.isEmpty, let mimeType,
+           let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension {
+            name += "." + ext
+        }
+        return String(name.suffix(120))
     }
 
     /// Marks the chat read here and on WhatsApp (up to its newest received message).
