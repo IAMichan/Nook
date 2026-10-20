@@ -411,6 +411,20 @@ final class AgentHub: ObservableObject {
         if changed { rebuild() }
     }
 
+    /// You settled a session that still reads as busy: its turn hangs (a `Stop` that never came, a turn that stays open in
+    /// the transcript), so Nook believes you and shows it as done, in the conversation and the notch alike. A question or
+    /// approval still open in the notch keeps it waiting; the next prompt or tool call makes it work again.
+    func settleByUser(_ key: String) {
+        guard var record = records[key], record.status == .running || record.status == .waiting, !isAsking(key) else { return }
+        record.status = .done
+        record.turnStarted = nil
+        Self.complete(&record, as: .done)
+        Self.push(&record, .done, "settled by you")
+        records[key] = record
+        missingScans[key] = nil
+        rebuild()
+    }
+
     // MARK: Answers from Nook
 
     func approval(id: String) -> ApprovalRequest? {
