@@ -3,15 +3,19 @@ name: Packages
 on:
   push:
     branches: [main]
-    paths: ['packages/**', '.github/workflows/packages.yml']
+    paths: &paths
+      - 'packages/core/**'
+      - '.github/workflows/packages.yml'
+      - '.github/actions/**'
   pull_request:
     # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
     types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: ['packages/**', '.github/workflows/packages.yml']
+    paths: *paths
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read # verified-check looks up the markers of earlier runs
 
 # One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
 # On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
@@ -20,19 +24,45 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+defaults:
+  run:
+    working-directory: packages/core
+
+# packages/core is Foundation-only and not built by the apps (packages/protocol is, and is covered by build.yml and
+# ios.yml). Linux runs first; the macOS runner only starts once Linux passed.
 jobs:
-  core:
-    name: core (${{ matrix.os }})
+  linux:
+    name: core (ubuntu-latest)
     if: github.event.action != 'closed' && !github.event.pull_request.draft
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: packages/core
+    outputs:
+      fingerprint: ${{ steps.verified.outputs.fingerprint }}
+      verified: ${{ steps.verified.outputs.verified }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Keep this list in sync with the paths filter above.
+      - name: Already verified on these inputs?
+        id: verified
+        uses: ./.github/actions/verified-check
+        with:
+          name: packages
+          paths: packages/core .github/workflows/packages.yml .github/actions
+      - name: Test
+        if: steps.verified.outputs.verified != 'true'
+        run: swift test
+
+  macos:
+    name: core (macos-15)
+    needs: linux
+    if: needs.linux.outputs.verified != 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test
         run: swift test
+      - uses: ./.github/actions/verified-mark
+        with:
+          name: packages
+          fingerprint: ${{ needs.linux.outputs.fingerprint }}

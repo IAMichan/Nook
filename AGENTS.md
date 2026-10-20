@@ -59,6 +59,8 @@ After touching anything under `apps/macos/NotchUI` or `apps/macos/App`, also run
 ./scripts/ui-lint.sh
 ```
 
+How the CI workflows are organized, and how they avoid spending runner minutes on work that cannot tell us anything new, is described in [`docs/CI.md`](docs/CI.md).
+
 To build and test the full macOS app with Xcode:
 
 ```sh

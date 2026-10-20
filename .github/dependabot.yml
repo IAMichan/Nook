@@ -1,6 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # The root workflows and the composite actions in .github/actions.
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: monthly
+    # One pull request (and one CI run) per month instead of one per action.
+    groups:
+      actions:
+        patterns: ["*"]

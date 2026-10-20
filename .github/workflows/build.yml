@@ -3,15 +3,21 @@ name: Build
 on:
   push:
     branches: [main]
-    paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
+    paths: &paths
+      - 'apps/macos/**'
+      - 'packages/protocol/**'
+      - 'scripts/ui-lint.sh'
+      - '.github/workflows/build.yml'
+      - '.github/actions/**'
   pull_request:
     # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
     types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: ['apps/macos/**', 'packages/protocol/**', 'scripts/**', '.github/workflows/build.yml']
+    paths: *paths
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read # verified-check looks up the markers of earlier runs
 
 # One run per PR: a new push, or merging/closing the PR, cancels the run that is still queued or running.
 # On main, a running build is allowed to finish and only the newest push waits behind it, so a burst
@@ -26,43 +32,109 @@ jobs:
     if: github.event.action != 'closed' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      fingerprint: ${{ steps.verified.outputs.fingerprint }}
+      verified: ${{ steps.verified.outputs.verified }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Colors, type, and radii come from NookTheme
         run: scripts/ui-lint.sh
+      # Keep this list in sync with the paths filter above.
+      - name: Already verified on these inputs?
+        id: verified
+        uses: ./.github/actions/verified-check
+        with:
+          name: macos
+          paths: apps/macos packages/protocol scripts/ui-lint.sh .github/workflows/build.yml .github/actions
 
   build:
-    # The macOS runner is the scarce one: only start it once the quick lint has passed.
+    # The macOS runner is the scarce one: only start it once the quick lint has passed, and not at all when a run of
+    # this repository already built and tested exactly these inputs (usually the PR this push to main merged).
     needs: ui-lint
+    if: needs.ui-lint.outputs.verified != 'true'
     runs-on: macos-15
     timeout-minutes: 60
+    env:
+      DERIVED_DATA: ${{ github.workspace }}/.derived-data
+      # Shared by every xcodebuild call. No index store: CI never reads it, and it costs build time and cache space.
+      XCODEBUILD_FLAGS: >-
+        -project Nook.xcodeproj -scheme Nook -configuration Debug -destination platform=macOS
+        -skipMacroValidation -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
     defaults:
       run:
         working-directory: apps/macos
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select newest Xcode (the MLX packages need Xcode 26)
+        id: xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
           if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
           xcodebuild -version
+          echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+      # The Swift packages (MLX, FluidAudio, llama.cpp, …) are most of a cold build. Their checkouts and build products
+      # are cached per Xcode build and project.yml (where their versions are pinned); Nook's own sources always rebuild.
+      # Only main saves the cache, so pull requests cannot push each other's entries out of the repository's quota.
+      - name: Restore Swift package build cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &cache-paths |
+            .derived-data
+            !.derived-data/Logs
+            !.derived-data/Build/Intermediates.noindex/Nook.build
+          key: macos-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
+          restore-keys: macos-dd-${{ steps.xcode.outputs.build }}-
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen
+      - name: Resolve Swift packages
+        run: |
+          # GitHub and the package hosts occasionally drop a clone; retry before failing the build on it.
+          for attempt in 1 2 3; do
+            xcodebuild -resolvePackageDependencies -project Nook.xcodeproj -scheme Nook -derivedDataPath "$DERIVED_DATA" && exit 0
+            echo "::warning::Package resolution failed (attempt $attempt); retrying."
+            sleep $((attempt * 20))
+          done
+          exit 1
+      # One compile for the app and its tests: build-for-testing builds the Nook target (the scheme builds it for
+      # testing too) and NookTests, and the test step runs them without building again.
       - name: Build
         run: |
           set -o pipefail
-          xcodebuild -project Nook.xcodeproj -scheme Nook -configuration Debug \
-            -destination 'platform=macOS' -skipMacroValidation CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+          # shellcheck disable=SC2086 # the flags are meant to split into words
+          xcodebuild build-for-testing $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" 2>&1 | tee build.log
       - name: Unit tests
         run: |
           set -o pipefail
-          xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' \
-            -skipMacroValidation CODE_SIGNING_ALLOWED=NO -only-testing:NookTests test 2>&1 | tee test.log
+          # shellcheck disable=SC2086 # the flags are meant to split into words
+          xcodebuild test-without-building $XCODEBUILD_FLAGS -derivedDataPath "$DERIVED_DATA" -only-testing:NookTests \
+            -resultBundlePath "$RUNNER_TEMP/NookTests.xcresult" 2>&1 | tee test.log
       - name: Errors and warnings
         if: always()
         run: grep -E "error:|warning:" build.log | sort -u || true
       - name: Test failures
         if: failure()
         run: grep -E "error:|failed|XCTAssert" test.log | sort -u | head -100 || true
+      - name: Keep the logs of a failed build
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: macos-logs-${{ github.run_attempt }}
+          path: |
+            apps/macos/build.log
+            apps/macos/test.log
+            ${{ runner.temp }}/NookTests.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Save Swift package build cache
+        if: success() && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *cache-paths
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - uses: ./.github/actions/verified-mark
+        with:
+          name: macos
+          fingerprint: ${{ needs.ui-lint.outputs.fingerprint }}

@@ -3,11 +3,13 @@ name: Tauri (Windows, Linux, Android)
 on:
   push:
     branches: [main]
-    paths: ['apps/tauri/**', '.github/workflows/tauri.yml']
+    paths: &paths
+      - 'apps/tauri/**'
+      - '.github/workflows/tauri.yml'
   pull_request:
     # `closed` is listed only so that merging or closing a PR cancels its queued run (see concurrency).
     types: [opened, synchronize, reopened, ready_for_review, closed]
-    paths: ['apps/tauri/**', '.github/workflows/tauri.yml']
+    paths: *paths
   workflow_dispatch:
 
 permissions:
@@ -24,46 +26,88 @@ defaults:
   run:
     working-directory: apps/tauri
 
+env:
+  CARGO_TERM_COLOR: always
+  # Debug info is never read in CI; leaving it out makes builds and the Rust cache smaller.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_INCREMENTAL: 0
+  LINUX_PACKAGES: >-
+    libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libasound2-dev
+
+# Pull requests run the checks on Linux and Windows. The installers and the APK are built on main (and by hand), where
+# they are worth downloading; a pull request only needs to know that the code compiles and the tests pass.
+#
+# The Rust version comes from apps/tauri/rust-toolchain.toml (rustup installs it on first use). Only main saves the
+# Rust cache, so pull requests cannot push each other's entries out of the repository's cache quota.
 jobs:
   checks:
-    name: Kern en interface
+    name: Core and interface
     if: github.event.action != 'closed' && !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/tauri/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/tauri
-      - name: Linux-pakketten voor Tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Linux packages for Tauri
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libasound2-dev
+          sudo apt-get -o Acquire::Retries=3 update
+          # shellcheck disable=SC2086 # the flags are meant to split into words
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends $LINUX_PACKAGES
       - run: npm ci
-      - name: Svelte-typecheck
+      - name: Svelte typecheck
         run: npm run check
-      - name: Interface-tests
+      - name: Interface tests
         run: npm test
-      - name: Interface bouwen
+      - name: Build the interface
         run: npm run build
-      - name: Rust-opmaak
+      - name: Rust formatting
         run: cargo fmt --all --check
-      - name: Rust-tests
-        run: cargo test --workspace
+      # Clippy first: it fails fastest, and the tests reuse what it already compiled of the dependencies.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --workspace
+
+  windows:
+    name: Windows checks
+    needs: checks
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/tauri/package-lock.json
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The Tauri crate embeds the built interface (frontendDist), so it has to exist before Rust compiles.
+      - run: npm ci
+      - run: npm run build
+      - name: Clippy (Windows code)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests on Windows
+        run: cargo test --workspace
 
   desktop:
-    name: Bouwen voor ${{ matrix.name }}
-    needs: checks
+    name: Package for ${{ matrix.name }}
+    needs: [checks, windows]
+    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -72,32 +116,35 @@ jobs:
             os: windows-latest
             bundles: nsis,msi
           - name: Linux
+            # The oldest supported Ubuntu, so the .deb and AppImage run on older glibc versions too.
             os: ubuntu-22.04
             bundles: deb,appimage
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/tauri/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/tauri
-      - name: Linux-pakketten voor Tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Linux packages for Tauri
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libasound2-dev
+          sudo apt-get -o Acquire::Retries=3 update
+          # shellcheck disable=SC2086 # the flags are meant to split into words
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends $LINUX_PACKAGES
       - run: npm ci
-      - name: Rust-tests op dit platform
-        run: cargo test --workspace
-      - name: App bouwen en verpakken
+      # The tests already ran in the checks and windows jobs; this job only builds and packages.
+      - name: Build and package the app
         run: npx tauri build --bundles ${{ matrix.bundles }}
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: nook-${{ matrix.name }}
           path: |
@@ -105,46 +152,52 @@ jobs:
             apps/tauri/target/release/bundle/**/*.msi
             apps/tauri/target/release/bundle/**/*.deb
             apps/tauri/target/release/bundle/**/*.AppImage
+          retention-days: 14
           if-no-files-found: warn
 
   android:
     name: Android
     needs: checks
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       NDK_VERSION: 27.2.12479018
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/tauri/package-lock.json
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
       - name: Android NDK
         run: |
           sdkmanager --install "ndk;${NDK_VERSION}"
           echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
-      - uses: Swatinem/rust-cache@v2
+      # 64-bit ARM only: every current Android phone, at a quarter of the compile time of all four ABIs.
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: apps/tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      # Het Android-project staat in de repo (src-tauri/gen/android, met eigen MainActivity); alleen als het
-      # ontbreekt maakt de CLI het opnieuw.
-      - name: Android-project
+      # The Android project is in the repository (src-tauri/gen/android, with its own MainActivity); the CLI only
+      # recreates it when it is missing.
+      - name: Android project
         run: test -d src-tauri/gen/android || npx tauri android init --ci
-      - name: APK bouwen (ongetekend)
-        run: npx tauri android build --apk --ci
-      - uses: actions/upload-artifact@v5
+      - name: Build the APK (unsigned)
+        run: npx tauri android build --apk --target aarch64 --ci
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: nook-Android
           path: apps/tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 14
           if-no-files-found: error
