@@ -93,6 +93,10 @@ final class AgentHub: ObservableObject {
         var started = Date()
         /// When the current turn began (your last prompt); nil between turns.
         var turnStarted: Date? = nil
+        /// The processes the latest hook came from, nearest first (see `HookConnection.lineage`).
+        var lineage: [Int32] = []
+        /// The agent process among them, once the process scan has seen it.
+        var pid: Int32? = nil
     }
 
     private enum PendingKind {
@@ -332,17 +336,25 @@ final class AgentHub: ObservableObject {
     /// Scans in a row each busy session's process was missing from the process list.
     private var missingScans: [String: Int] = [:]
 
+    private static func scanned(_ found: [DetectedAgent]) -> [(pid: Int32, name: String, cwd: String)] {
+        found.map { (pid: $0.pid, name: $0.name, cwd: $0.cwd) }
+    }
+
     /// Settles sessions that still read as busy while their turn has ended or their agent has quit, when the hook that
     /// should have said so never came (see `SessionLiveness`).
     private func settleStale(_ found: [DetectedAgent]) async {
         let scannable = Set(LocalAgentScanner.agentNames)
         let busy = records.filter { $0.value.status == .running || $0.value.status == .waiting }
         missingScans = missingScans.filter { busy[$0.key] != nil }
+        let running = Self.scanned(found)
+        for (key, record) in records where record.pid == nil && !record.lineage.isEmpty {
+            records[key]?.pid = SessionLiveness.agentProcess(agent: record.agent, lineage: record.lineage, in: running)
+        }
         guard !busy.isEmpty else { return }
-        let running = found.map { (name: $0.name, cwd: $0.cwd) }
-        for (key, record) in busy {
+        for key in busy.keys {
+            guard let record = records[key] else { continue }
             let gone = scannable.contains(record.agent)
-                && !SessionLiveness.isRunning(agent: record.agent, cwd: record.cwd, in: running)
+                && !SessionLiveness.isRunning(agent: record.agent, cwd: record.cwd, pid: record.pid, in: running)
             missingScans[key] = gone ? (missingScans[key] ?? 0) + 1 : 0
         }
         let paths = busy.filter { $0.value.status == .running }.mapValues(\.transcriptPath)
@@ -539,6 +551,12 @@ final class AgentHub: ObservableObject {
         }
         record.home = Self.accountHome(env, agentID: agentID)
         record.updated = Date()
+        // Which process this session runs in; the same session resumed in a new process starts over.
+        let sameProcess = record.pid.map { connection.lineage.contains($0) } ?? false
+        if !connection.lineage.isEmpty, !sameProcess {
+            record.lineage = connection.lineage
+            record.pid = SessionLiveness.agentProcess(agent: name, lineage: connection.lineage, in: Self.scanned(processes))
+        }
         if let id = event["session_id"] as? String, !id.isEmpty { record.sessionID = id }
         if let path = event["transcript_path"] as? String, !path.isEmpty { record.transcriptPath = path }
         if record.transcriptPath.isEmpty && name == "Antigravity" {
