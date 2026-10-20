@@ -141,10 +141,29 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(suggestion.consume(typed: " "))
         XCTAssertFalse(suggestion.consume(typed: "x"))
         XCTAssertEqual(suggestion.acceptNextChunk(), "you")
-        XCTAssertEqual(suggestion.nextChunk(.init(trailingSpace: false, attachedPunctuation: false)), " there")
-        XCTAssertEqual(suggestion.acceptNextChunk(), " there,")
-        XCTAssertEqual(suggestion.acceptAll(), " Anna")
+        XCTAssertEqual(suggestion.nextChunk(.init(trailingSpace: false, attachedPunctuation: true)), " there,")
+        XCTAssertEqual(suggestion.acceptNextChunk(), " there")
+        XCTAssertEqual(suggestion.acceptAll(), ", Anna")
         XCTAssertTrue(suggestion.isEmpty)
+    }
+
+    func testPunctuationWaitsForItsOwnAcceptKey() {
+        var suggestion = CompletionSuggestion(" there, Anna...")
+        XCTAssertEqual(suggestion.acceptNextChunk(.init(trailingSpace: true)), " there")
+        XCTAssertEqual(suggestion.acceptNextChunk(.init(trailingSpace: true)), ", ")
+        XCTAssertEqual(suggestion.acceptNextChunk(.init(trailingSpace: true)), "Anna")
+        XCTAssertEqual(suggestion.acceptNextChunk(.init(trailingSpace: true)), "...")
+        XCTAssertTrue(suggestion.isEmpty)
+        var inside = CompletionSuggestion(" (version 3.5) on nook.app.")
+        XCTAssertEqual(inside.acceptNextChunk(), " (version")
+        XCTAssertEqual(inside.acceptNextChunk(), " 3.5")
+        XCTAssertEqual(inside.acceptNextChunk(), ")")
+        XCTAssertEqual(inside.acceptNextChunk(), " on")
+        XCTAssertEqual(inside.acceptNextChunk(), " nook.app")
+        XCTAssertEqual(inside.acceptNextChunk(), ".")
+        XCTAssertFalse(CompletionPreferences().punctuationWithWord)
+        XCTAssertFalse(CompletionPreferences.decode(Data(#"{"attachedPunctuation": true}"#.utf8)).punctuationWithWord,
+                       "the old setting, on in every saved preference, no longer counts")
     }
 
     func testAttachedPunctuationComesWithTheLastWord() {

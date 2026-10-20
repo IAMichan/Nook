@@ -127,7 +127,7 @@ final class CompletionPlayground: ObservableObject {
     /// The next word to type, or nil when there is no suggestion.
     func takeWord() -> String? {
         guard var shown = suggestion else { return nil }
-        let word = shown.acceptNextChunk(CompletionSuggestion.AcceptOptions(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.attachedPunctuation))
+        let word = shown.acceptNextChunk(CompletionSuggestion.AcceptOptions(trailingSpace: prefs.trailingSpace, attachedPunctuation: prefs.punctuationWithWord))
         return take(word, leaving: shown)
     }
 
