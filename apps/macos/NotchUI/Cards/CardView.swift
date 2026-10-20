@@ -131,8 +131,15 @@ struct CardView: View {
             .foregroundStyle(NookTheme.paper)
             .focused($replyFocused)
             .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
+            // In the non-activating notch panel the binding can lag behind the field until Return commits it,
+            // which left the send arrow looking disabled; take every keystroke straight from the field itself.
+            .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
+                guard replyFocused, let field = note.object as? NSTextField, field.window is NotchPanel,
+                      field.stringValue != reply else { return }
+                reply = field.stringValue
+            }
             .onSubmit(submitReply)
-            // Return sends, and so does a click on the arrow once there is something to send.
+            // Return sends, and so does a click on the arrow; an empty field sends nothing.
             let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             Button(action: submitReply) {
                 Image(systemName: ready ? "arrow.up.circle.fill" : "return")
@@ -142,7 +149,6 @@ struct CardView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!ready)
             .help(tr("card.send"))
             .accessibilityLabel(tr("card.send"))
         }
