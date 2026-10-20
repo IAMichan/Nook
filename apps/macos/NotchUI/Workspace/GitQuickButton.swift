@@ -35,7 +35,7 @@ struct GitQuickButton: View {
                     EmptyView()
                 }
                 if let link = workspace.openPullRequests[runID] {
-                    Button(tr("ws.quick.viewPR")) { NSWorkspace.shared.open(link) }
+                    Button(tr("ws.quick.viewPR")) { BrowserStore.show(link) }
                 }
             }
             if let error {
@@ -83,10 +83,8 @@ struct GitQuickButton: View {
         progress = tr(action.labelKey)
         Task {
             do {
-                if let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 }),
-                   link.host == "github.com", link.path.contains("/pull/") {
-                    NSWorkspace.shared.open(link)
-                }
+                // A pull request it made stays put: "View PR" opens it in Nook's browser when you want it.
+                _ = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
             } catch {
                 self.error = error.localizedDescription
             }
