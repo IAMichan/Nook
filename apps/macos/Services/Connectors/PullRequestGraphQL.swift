@@ -51,6 +51,8 @@ struct AccountPullRequests: Identifiable, Equatable, Codable, Sendable {
     var watched: [PullRequestItem] = []
     /// Watched entries this account could not search (a typo, or no access with this account).
     var unreadable: [String] = []
+    /// The watched search could not get through this time; the list keeps the watched rows it had. Not saved.
+    var watchedFailed = false
 }
 
 extension AccountPullRequests {
@@ -157,10 +159,7 @@ enum PullRequestGraphQL {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw NookError("GitHub returned an unexpected response.")
         }
-        guard let payload = root["data"] as? [String: Any] else {
-            let message = ((root["errors"] as? [[String: Any]])?.first?["message"] as? String) ?? "GitHub returned no data."
-            throw NookError("GitHub: \(message)")
-        }
+        guard let payload = root["data"] as? [String: Any] else { throw failure(root) }
         let login = ((payload["viewer"] as? [String: Any])?["login"] as? String) ?? ""
         return (login, rows(payload["mine"]) + rows(payload["mineClosed"]), rows(payload["reviews"]) + rows(payload["reviewsClosed"]))
     }
@@ -189,10 +188,7 @@ enum PullRequestGraphQL {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw NookError("GitHub returned an unexpected response.")
         }
-        guard let payload = root["data"] as? [String: Any] else {
-            let message = ((root["errors"] as? [[String: Any]])?.first?["message"] as? String) ?? "GitHub returned no data."
-            throw NookError("GitHub: \(message)")
-        }
+        guard let payload = root["data"] as? [String: Any] else { throw failure(root) }
         var open: [PullRequestItem] = []
         var closed: [PullRequestItem] = []
         var unreadable: [String] = []
@@ -205,6 +201,13 @@ enum PullRequestGraphQL {
         var seen = Set<String>()
         let items = (open.sorted(by: newest) + closed.sorted(by: newest)).filter { seen.insert($0.id).inserted }
         return (items, unreadable)
+    }
+
+    /// GitHub's own message for a query that failed as a whole. One that ran out of time is worth asking again.
+    static func failure(_ root: [String: Any]) -> NookError {
+        let message = ((root["errors"] as? [[String: Any]])?.first?["message"] as? String) ?? "GitHub returned no data."
+        let timedOut = message.localizedCaseInsensitiveContains("timeout") || message.localizedCaseInsensitiveContains("something went wrong")
+        return NookError("GitHub: \(message)", kind: timedOut ? .network : .other)
     }
 
     private static func alias(_ index: Int, closed: Bool) -> String { "w\(index)" + (closed ? "Closed" : "") }

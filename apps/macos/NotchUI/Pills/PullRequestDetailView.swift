@@ -66,6 +66,11 @@ struct PullRequestDetailView: View {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 if !Task.isCancelled { await load() }
             }
+            // New commits, checks and comments come in while it is open: look again every half minute.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                if !Task.isCancelled, !merging { await load() }
+            }
         }
     }
 
@@ -542,13 +547,15 @@ struct PullRequestDetailView: View {
         loading = true
         defer { loading = false }
         do {
-            let fresh = try await GitHubPullRequestDetail.load(repo: item.repo, number: item.number, token: token)
+            // Not tied to the view: leaving the pull request halfway must not end the load as a failed one.
+            let repo = item.repo, number = item.number
+            let fresh = try await Task { try await GitHubPullRequestDetail.load(repo: repo, number: number, token: token) }.value
             detail = fresh
             error = nil
             if let path = openFile, !fresh.files.contains(where: { $0.path == path }) { openFile = nil }
         } catch {
-            // A failed refresh keeps what was shown.
-            if detail == nil { self.error = error.localizedDescription } else { mergeError = error.localizedDescription }
+            // A failed refresh keeps what was shown, quietly: the next one is half a minute away.
+            if detail == nil { self.error = error.localizedDescription }
         }
     }
 

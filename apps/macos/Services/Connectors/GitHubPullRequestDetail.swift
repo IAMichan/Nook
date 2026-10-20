@@ -25,7 +25,7 @@ enum GitHubPullRequestDetail {
         let base = "https://api.github.com/repos/\(repo)"
         @Sendable func get(_ path: String) async throws -> Any {
             guard let url = URL(string: base + path) else { throw NookError("Invalid GitHub address.") }
-            return try await ConnectorHTTP.json(url, headers: auth)
+            return try await ConnectorRetry.run { try await ConnectorHTTP.json(url, headers: auth) }
         }
         @Sendable func list(_ path: String) async -> [[String: Any]] { ((try? await get(path)) as? [[String: Any]]) ?? [] }
         /// Every page of a list (100 per page), up to `pages` pages.

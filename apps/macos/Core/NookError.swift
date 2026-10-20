@@ -24,6 +24,8 @@ enum ConnectorErrorKind: String, Equatable, Codable, Sendable {
         case 401, 403: return .auth
         case 404: return .config
         case 429: return .rateLimited
+        // A gateway that gave up or a service that is briefly down: the next try usually works.
+        case 502, 503, 504: return .network
         default: return .other
         }
     }
@@ -33,6 +35,30 @@ enum ConnectorErrorKind: String, Equatable, Codable, Sendable {
         if let nook = error as? NookError { return nook.kind }
         if error is URLError { return .network }
         return .other
+    }
+}
+
+/// Asks again when a request failed on something that passes by itself (a dropped connection, a timeout, a gateway
+/// error), so a short hiccup does not show up as an error. Rejected credentials or a wrong address fail at once.
+enum ConnectorRetry {
+    static func isTransient(_ error: Error) -> Bool {
+        if error is CancellationError { return false }
+        if let url = error as? URLError { return url.code != .cancelled }
+        return ConnectorErrorKind.classify(error) == .network
+    }
+
+    /// Runs `body` up to `attempts` times, waiting `delay` seconds before the second try and twice as long each time after.
+    static func run<T>(attempts: Int = 3, delay: TimeInterval = 1, _ body: () async throws -> T) async throws -> T {
+        var wait = delay
+        for _ in 1..<max(attempts, 1) {
+            do {
+                return try await body()
+            } catch where isTransient(error) && !Task.isCancelled {
+                try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                wait *= 2
+            }
+        }
+        return try await body()
     }
 }
 
