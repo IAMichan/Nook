@@ -69,6 +69,7 @@ The checklist for a new or changed view:
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
+| `CheckOutcomeGlyph` | `AgentIndicators.swift` | The outcome of a CI check or step (passing, failing, running, skipped); the pull request page and the CI popover of a watched pull request |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |
