@@ -113,6 +113,15 @@ enum ConnectorHTTP {
         return URLSession(configuration: configuration)
     }()
 
+    /// For requests GitHub can take a while to answer (a search over many pull requests with their checks).
+    static let patientSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 45
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
     /// Fetches JSON. `headers` typically includes Authorization header.
     static func json(_ url: URL, headers: [String: String] = [:], method: String = "GET", body: Data? = nil) async throws -> Any {
         var request = URLRequest(url: url)
@@ -129,7 +138,7 @@ enum ConnectorHTTP {
             case 401, 403: throw NookError("The credentials were rejected (\(status)). Check them in Settings › Integrations.", kind: .auth)
             case 404: throw NookError("Not found (404). Is the URL correct?", kind: .config)
             case 429: throw NookError("Too many requests. Nook will retry shortly.", kind: .rateLimited)
-            default: throw NookError("The service returned an error (\(status)).", kind: .other)
+            default: throw NookError("The service returned an error (\(status)).", kind: ConnectorErrorKind.forHTTP(status: status))
             }
         }
         return try JSONSerialization.jsonObject(with: data)

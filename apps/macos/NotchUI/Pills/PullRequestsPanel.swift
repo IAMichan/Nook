@@ -81,11 +81,11 @@ struct PullRequestsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The last list shows at once; a stale one refreshes in the background, and again every minute while open.
+        // The last list shows at once; a stale one refreshes in the background, and again every half minute while open.
         .task {
             while !Task.isCancelled {
                 await store.refresh()
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
         .onChange(of: gitHubSignIn.phase) { _, phase in

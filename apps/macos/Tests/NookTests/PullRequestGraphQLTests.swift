@@ -48,6 +48,12 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertThrowsError(try PullRequestGraphQL.parse(Data(#"{"errors":[{"message":"Bad credentials"}]}"#.utf8))) { error in
             XCTAssertEqual((error as? NookError)?.message, "GitHub: Bad credentials")
         }
+        // GitHub's answer to a query that ran out of time is worth asking again; other refusals are not.
+        let timeout = #"{"data":null,"errors":[{"message":"Something went wrong while executing your query. This may be the result of a timeout."}]}"#
+        XCTAssertThrowsError(try PullRequestGraphQL.parse(Data(timeout.utf8))) { error in
+            XCTAssertEqual((error as? NookError)?.kind, .network)
+        }
+        XCTAssertEqual(PullRequestGraphQL.failure(["errors": [["message": "Bad credentials"]]]).kind, .other)
         XCTAssertEqual(PullRequestGraphQL.ci("SUCCESS"), .passing)
         XCTAssertEqual(PullRequestGraphQL.ci("ERROR"), .failing)
         XCTAssertEqual(PullRequestGraphQL.ci("EXPECTED"), .pending)
