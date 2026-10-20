@@ -726,14 +726,18 @@ enum AgentFormat {
         return cachedDayFormatter.string(from: date)
     }
 
-    /// "< 1 min", "12 min", "1h 20m", "3 days".
+    /// "< 1 min", "12 min", "1 h 20 m", "3 d".
     static func duration(_ interval: TimeInterval) -> String {
         let minutes = Int(interval / 60)
-        if minutes < 1 { return "< 1 min" }
-        if minutes < 60 { return "\(minutes) min" }
+        if minutes < 1 { return tr("agents.duration.lessThanMinute") }
+        if minutes < 60 { return tr("agents.duration.minutes", minutes) }
         let hours = minutes / 60
-        if hours < 48 { return minutes % 60 == 0 ? "\(hours)u" : "\(hours)u \(minutes % 60)m" }
-        return "\(hours / 24) d"
+        if hours < 48 {
+            return minutes % 60 == 0
+                ? tr("agents.duration.hours", hours)
+                : tr("agents.duration.hoursMinutes", hours, minutes % 60)
+        }
+        return tr("agents.duration.days", hours / 24)
     }
 
     /// Short, for lists: "now", "12 min", "3 h", "2 d".
