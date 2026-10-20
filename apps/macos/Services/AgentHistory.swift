@@ -416,7 +416,7 @@ final class AgentHistory: ObservableObject {
                 case .failure(let problem): problems[account.id] = problem
                 }
             }
-            await MainActor.run {
+            await MainActor.run { [weak self, found, problems] in
                 guard let self else { return }
                 self.cloudLoading = false
                 // An account that could not be read (offline, token just expired) keeps what it had, so rows don't flicker away.

@@ -23,13 +23,13 @@ enum GitHubPullRequestDetail {
     static func load(repo: String, number: Int, token: String) async throws -> PullRequestDetail {
         let auth = headers(token)
         let base = "https://api.github.com/repos/\(repo)"
-        func get(_ path: String) async throws -> Any {
+        @Sendable func get(_ path: String) async throws -> Any {
             guard let url = URL(string: base + path) else { throw NookError("Invalid GitHub address.") }
             return try await ConnectorHTTP.json(url, headers: auth)
         }
-        func list(_ path: String) async -> [[String: Any]] { ((try? await get(path)) as? [[String: Any]]) ?? [] }
+        @Sendable func list(_ path: String) async -> [[String: Any]] { ((try? await get(path)) as? [[String: Any]]) ?? [] }
         /// Every page of a list (100 per page), up to `pages` pages.
-        func all(_ path: String, pages: Int) async -> [[String: Any]] {
+        @Sendable func all(_ path: String, pages: Int) async -> [[String: Any]] {
             var result: [[String: Any]] = []
             for page in 1...pages {
                 let chunk = await list(path + (path.contains("?") ? "&" : "?") + "per_page=100&page=\(page)")
@@ -52,9 +52,10 @@ enum GitHubPullRequestDetail {
         guard var detail = PullRequestDetailParser.detail(pull: pull, repository: await repository) else {
             throw NookError("GitHub returned an unexpected response.")
         }
-        if !detail.headSHA.isEmpty {
-            async let runs = (try? await get("/commits/\(detail.headSHA)/check-runs?per_page=100")) as? [String: Any]
-            async let status = (try? await get("/commits/\(detail.headSHA)/status?per_page=100")) as? [String: Any]
+        let sha = detail.headSHA
+        if !sha.isEmpty {
+            async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
+            async let status = (try? await get("/commits/\(sha)/status?per_page=100")) as? [String: Any]
             detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }

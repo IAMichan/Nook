@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 import Combine
-import Speech
+@preconcurrency import Speech
 import os
 
 /// The Notetaker: records a call (your microphone, and what the Mac plays for the other people), writes the transcript

@@ -72,7 +72,7 @@ extension AppModel {
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         // -i: macOS's own selection, -x: no shutter sound, -o: no window shadow.
         task.arguments = ["-i", "-x", "-o", file.path]
-        task.terminationHandler = { _ in
+        task.terminationHandler = { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.capturingScreenPart = false
