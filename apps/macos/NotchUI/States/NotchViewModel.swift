@@ -78,11 +78,22 @@ final class NotchViewModel: ObservableObject {
     /// An app is open next to the chat ("@open whatsapp"): the chat gets the room for it, and does not close by itself
     /// while you work in the app.
     @Published var embeddedAppOpen = false {
-        didSet {
-            guard embeddedAppOpen != oldValue, case .panel(let tab) = state, tab == .chat || tab == .nook, sheet == nil else { return }
-            withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
-            scheduleAutoClose()
-        }
+        didSet { if embeddedAppOpen != oldValue { resizeForChatSide() } }
+    }
+
+    /// Nook's browser is open next to the chat ("Ask Nook" in the browser): the page you asked about stays in sight
+    /// beside the answer. An app opened next to the chat takes its place.
+    @Published var browserBesideChat = false {
+        didSet { if browserBesideChat != oldValue { resizeForChatSide() } }
+    }
+
+    /// Something is open next to the chat (an app or the browser): the chat gets the room for it.
+    var chatSideOpen: Bool { embeddedAppOpen || browserBesideChat }
+
+    private func resizeForChatSide() {
+        guard case .panel(let tab) = state, tab == .chat || tab == .nook, sheet == nil else { return }
+        withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
+        scheduleAutoClose()
     }
 
     private func resizeForWorkbench() {
@@ -239,7 +250,7 @@ final class NotchViewModel: ObservableObject {
     private func scheduleAutoClose() {
         autoCloseTask?.cancel()
         guard case .panel(let openTab) = state, !pointerInside, sheet == nil, !(openTab == .agents && workbenchOpen),
-              !((openTab == .chat || openTab == .nook) && embeddedAppOpen) else { return }
+              !((openTab == .chat || openTab == .nook) && chatSideOpen) else { return }
         autoCloseTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             guard !Task.isCancelled, let self, !self.pointerInside, self.sheet == nil, case .panel(let tab) = self.state else { return }
@@ -597,7 +608,7 @@ final class NotchViewModel: ObservableObject {
             return CGSize(width: 1040, height: min(chrome + 640, NotchController.panelSize.height))
         }
         switch tab {
-        case .nook where embeddedAppOpen, .chat where embeddedAppOpen:
+        case .nook where chatSideOpen, .chat where chatSideOpen:
             return CGSize(width: 1240, height: min(chrome + 680, NotchController.panelSize.height))
         case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
         case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))

@@ -288,6 +288,8 @@ struct BrowserView: View {
     @ObservedObject private var store = BrowserStore.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @State private var asking = false
+    /// Shown beside the chat: a button that puts the browser away again.
+    var onClose: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -318,6 +320,10 @@ struct BrowserView: View {
                     Label(tr("workbench.browser.ask"), systemImage: "sparkles")
                 }
                 .disabled(store.webView.url == nil || asking)
+                if let onClose {
+                    Button(action: onClose) { Image(systemName: "xmark") }
+                        .help(tr("embedded.close"))
+                }
             }
             .buttonStyle(.borderless)
             .foregroundStyle(NookTheme.textSecondary)
@@ -362,6 +368,8 @@ struct BrowserView: View {
             do {
                 let page = try await store.pageText()
                 app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
+                // The page stays in sight next to the chat, unless an app is open there already.
+                if EmbeddedAppStore.shared.current == nil { app.viewModel.browserBesideChat = true }
                 app.showChat()
             } catch {
                 app.viewModel.present(app.errorCard(error.localizedDescription))
