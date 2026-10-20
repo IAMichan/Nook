@@ -318,7 +318,10 @@ final class AppModel: ObservableObject {
         if settings.noticeDelivery == .system { SystemNotifier.shared.requestAccess() }
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
-        hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }
+        hub.onQuestion = { [weak self] request in
+            CompanionNotifier.shared.question(request)
+            self?.presentQuestion(request)
+        }
         hub.onQuestionGone = { [weak self] id, message in self?.cardGone("question-" + id, message: message) }
         hub.onAttention = { [weak self] session in self?.agentNeedsAttention(session) }
         hub.start()

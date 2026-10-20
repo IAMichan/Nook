@@ -9,6 +9,7 @@ extension AppModel {
     // MARK: Agents
 
     func presentApproval(_ request: ApprovalRequest) {
+        CompanionNotifier.shared.approval(ApprovalCenter.make(request))
         var context = "\(request.agentName) · \(request.project)"
         let others = hub.approvals.count - 1
         if others > 0 { context += " · nog \(others) wachtend" }
@@ -153,6 +154,7 @@ extension AppModel {
     /// Agent finished, failed, or awaiting input: dedicated notification card with agent message.
     /// Displayed unless user is active in notch; auto-dismisses after a short timeout.
     func agentNeedsAttention(_ session: AgentSession) {
+        CompanionNotifier.shared.attention(session)
         NookSound.play(session.status == .done ? .done : .attention)
         // The last agent finished: a small celebration.
         if session.status == .done {

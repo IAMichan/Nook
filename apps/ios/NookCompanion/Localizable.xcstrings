@@ -953,6 +953,34 @@
         }
       }
     },
+    "This agent runs in a terminal on your Mac; answer it there.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Agent läuft in einem Terminal auf deinem Mac; antworte ihm dort."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este agente se ejecuta en un terminal de tu Mac; respóndele allí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet agent tourne dans un terminal sur ton Mac ; réponds-lui là-bas."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze agent draait in een terminal op je Mac; beantwoord hem daar."
+          }
+        }
+      }
+    },
     "This is risky or unknown: it can only be allowed on your Mac.": {
       "localizations": {
         "de": {

@@ -154,6 +154,7 @@ extension AppModel {
     }
 
     private func presentBridgeApproval(_ request: BridgeRequest) {
+        CompanionNotifier.shared.approval(ApprovalCenter.make(request))
         var open: (label: String, action: () -> Void)?
         switch request.caller.kind {
         case .run(let runID):
