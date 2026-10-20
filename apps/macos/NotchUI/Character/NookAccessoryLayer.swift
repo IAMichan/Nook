@@ -6,7 +6,7 @@ import SwiftUI
 /// Like the headphones, his gaze becomes a head turn (yaw) and a nod (pitch). A hat rides on the top of his head and
 /// its decorations (stripes, gems, ribs) slide around the front as he turns; glasses sit on his eyes and follow them.
 /// The `.back` layer is drawn behind the orb (the back rim of a crown, the far side of a scarf), the `.front` layer on
-/// top of his face. The orb draws both inside its own stack, so everything hops, squashes and tilts with him.
+/// top of his face. The orb draws both behind and over itself before its hop and tilt, so everything hops, squashes and tilts with him.
 ///
 /// Sizes are fractions of the head's radius `R`, so the same drawing works from the 20-point orb in the notch to the
 /// 88-point preview in Settings; fine detail (knit, stitches, fuzz) fades out on small orbs where it would only blur.
