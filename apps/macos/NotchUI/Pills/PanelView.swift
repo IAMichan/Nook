@@ -87,9 +87,9 @@ struct PanelView: View {
     }
 }
 
-/// A permission request that comes in while the panel (or the main window) is open: one compact bar under the tabs
-/// instead of a card over the whole notch. Hidden while the session that asks is on screen, which shows the whole
-/// request itself.
+/// A permission request or multiple-choice question that comes in while the panel (or the main window) is open: one
+/// compact bar under the tabs instead of a card over the whole notch. Hidden while the session that asks is on screen,
+/// which shows the whole request itself.
 struct PanelApprovalBar: View {
     @ObservedObject var viewModel: NotchViewModel
     let tab: PanelTab
@@ -130,7 +130,82 @@ struct PanelApprovalBar: View {
             .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 10)
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
+        } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
+            questionBar(question, more: hub.questions.count - 1)
+        } else if let notice = viewModel.panelNotice {
+            noticeBar(notice)
         }
+    }
+
+    /// A short notice (a session Nook runs asks something, a note is ready), with its one action.
+    private func noticeBar(_ notice: PanelNotice) -> some View {
+        HStack(spacing: 8) {
+            Text(notice.message)
+                .font(NookTheme.font(12.5, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .help(notice.message)
+            Spacer(minLength: 6)
+            if let action = notice.action {
+                NookPrimaryButton(title: notice.button) {
+                    viewModel.dismissPanelNotice()
+                    action()
+                }
+            }
+            NookIconButton(systemName: "xmark", label: tr("button.close"), size: 24) { viewModel.dismissPanelNotice() }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .padding(.top, 10)
+        .transition(.opacity.combined(with: .offset(y: -4)))
+    }
+
+    /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).
+    private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "questionmark.bubble.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(NookTheme.amber)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(request.items.first?.question ?? "")
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                Text(subtitle(request, more: more))
+                    .font(NookTheme.font(11))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
+            .help(request.items.first?.question ?? "")
+            Spacer(minLength: 6)
+            NookGhostButton(title: tr("approval.inTerminal")) { answerInTerminal(request) }
+            NookPrimaryButton(title: tr("button.view")) {
+                viewModel.selectedAgentID = request.sessionKey
+                viewModel.show(.panel(.agents))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .padding(.top, 10)
+        .transition(.opacity.combined(with: .offset(y: -4)))
+    }
+
+    private func subtitle(_ request: AgentQuestionRequest, more: Int) -> String {
+        let line = tr("agents.question.asks", request.agentName) + " · " + request.project
+        return more > 0 ? line + " · " + tr("ws.approval.more", more) : line
+    }
+
+    private func answerInTerminal(_ request: AgentQuestionRequest) {
+        let host = hub.sessions.first { $0.id == request.sessionKey }?.hostBundleID
+        hub.answerQuestionInTerminal(request.id)
+        TerminalLauncher.activate(sessionBundleID: host)
+    }
+
+    /// The session's own view shows the whole question, with its options.
+    private func onScreen(_ request: AgentQuestionRequest) -> Bool {
+        tab == .agents && sheet == nil && viewModel.selectedAgentID == request.sessionKey
     }
 
     private func subtitle(_ approval: AgentApproval, more: Int) -> String {
