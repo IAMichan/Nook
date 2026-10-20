@@ -126,4 +126,24 @@ final class WhatsAppTests: XCTestCase {
         voice.media = .voice(seconds: 12)
         XCTAssertTrue(WhatsAppRecipients.lines([voice], chatName: "Lisa", calendar: calendar).hasSuffix("Lisa: [voice message]"))
     }
+
+    func testGOWADownloadIsFetchedFromTheGatewayItself() {
+        let answer = #"{"code":"SUCCESS","results":{"filename":"offerte.pdf","file_path":"statics/media/31612345678/2026-10-20/offerte.pdf","file_url":"http://localhost:3000/statics/media/31612345678/2026-10-20/offerte.pdf"}}"#
+        let saved = WAGOWA.download(Data(answer.utf8))
+        XCTAssertEqual(saved?.path, "/statics/media/31612345678/2026-10-20/offerte.pdf")
+        XCTAssertEqual(saved?.name, "offerte.pdf")
+        // Without a link, only a path under /statics counts.
+        let pathOnly = #"{"results":{"file_path":"statics/media/a b.pdf"}}"#
+        XCTAssertEqual(WAGOWA.download(Data(pathOnly.utf8))?.path, "/statics/media/a%20b.pdf")
+        XCTAssertNil(WAGOWA.download(Data(#"{"results":{"file_path":"/etc/passwd"}}"#.utf8)))
+    }
+
+    func testOpenedFilesGetASafeName() {
+        XCTAssertEqual(WhatsAppLink.fileName(for: .document(name: "Guard-meting (1).pdf"), given: nil, mimeType: nil),
+                       "Guard-meting (1).pdf")
+        XCTAssertEqual(WhatsAppLink.fileName(for: .document(name: "../../evil/x.pdf"), given: nil, mimeType: nil), "-..-evil-x.pdf")
+        XCTAssertEqual(WhatsAppLink.fileName(for: .image, given: nil, mimeType: "image/jpeg"), "photo.jpeg")
+        XCTAssertTrue(WAMedia.document(name: nil).isOpenable)
+        XCTAssertFalse(WAMedia.location.isOpenable)
+    }
 }

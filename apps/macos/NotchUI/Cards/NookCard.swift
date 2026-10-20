@@ -59,6 +59,8 @@ struct ChatBubble: Equatable, Identifiable {
     /// In a group: who wrote it. Empty in a private chat, where the card's title already says who.
     var sender: String = ""
     var fromMe: Bool = false
+    /// A file that came with the message (a document's name, "photo"…): the bubble shows it as a button that opens it.
+    var attachment: String? = nil
 }
 
 enum CardDetail: Equatable {
@@ -99,4 +101,8 @@ struct NookCard: Equatable, Identifiable {
     var offers: [String] = []
     /// Behavior for Esc. Defaults to primary action if nil.
     var escape: CardAction? = nil
+    /// A short line above the text field: what is happening with what you typed ("Sending…") or why it did not work.
+    var notice: String? = nil
+    /// Text put back into the field, e.g. a reply that could not be sent, so nothing typed is lost.
+    var draft: String? = nil
 }
