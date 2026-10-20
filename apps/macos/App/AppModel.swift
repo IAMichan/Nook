@@ -465,4 +465,6 @@ final class AppModel: ObservableObject {
     var editOrigins: [String: String] = [:]
     /// How the notch behaves right now while you share your screen or sit in a meeting (`AppModel+Quiet`).
     @Published var quiet = QuietState.normal
+    /// Nook's windows put away while it hides for a share or meeting, to bring back afterwards.
+    var quietHiddenWindows: [NSWindow] = []
 }

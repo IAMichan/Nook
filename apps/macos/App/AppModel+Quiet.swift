@@ -26,9 +26,29 @@ extension AppModel {
             ? QuietSituation()
             : QuietWatch.situation(events: upcoming, useCalendar: settings.quietUseCalendar, recording: NoteTaker.shared.isRecording)
         let state = QuietPolicy.state(for: situation, sharing: settings.quietWhileSharing, meeting: settings.quietInMeetings)
+        let wasHidden = quiet.hidden
         if state != quiet { quiet = state }
         notch.applyQuiet(state, alwaysExcluded: settings.hideFromCaptures)
         NookSound.muted = state.silent
+        // Viewers see no Nook at all: also not the main window or Settings, nor a window opened during the share.
+        let sharing: NSWindow.SharingType = settings.hideFromCaptures || state.excludedFromCapture ? .none : .readOnly
+        for window in NSApp.windows where window.sharingType != sharing { window.sharingType = sharing }
+        if state.hidden != wasHidden { hideOtherWindows(state.hidden) }
+    }
+
+    /// Hidden for a share or meeting: Nook's other windows (the main window, Settings) go too, and come back when it is
+    /// over. A window you open yourself in the meantime stays.
+    private func hideOtherWindows(_ hide: Bool) {
+        if hide {
+            // Titled windows only: the menu bar icon and the notch's own popovers stay where they are.
+            quietHiddenWindows = NSApp.windows.filter {
+                $0.isVisible && $0.styleMask.contains(.titled) && !($0 is NotchPanel) && $0.parent == nil && $0.sheetParent == nil
+            }
+            quietHiddenWindows.forEach { $0.orderOut(nil) }
+        } else {
+            quietHiddenWindows.forEach { $0.orderFront(nil) }
+            quietHiddenWindows = []
+        }
     }
 
     /// The line in Settings that says what Nook notices right now.

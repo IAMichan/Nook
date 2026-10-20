@@ -8,9 +8,10 @@ enum QuietBehavior: String, CaseIterable, Codable, Identifiable {
     /// No pop-ups of his own: no notices, suggestions, moments, track announcements or sounds. What you open yourself
     /// still works.
     case quiet
-    /// Quiet, and the notch is left out of what you share: you still see Nook, the people watching do not.
+    /// Quiet, and Nook is left out of what you share: you still see him, the people watching do not.
     case hideFromShare
-    /// Quiet, and the notch hides until it is over. A shortcut or the menu bar still opens it.
+    /// Quiet, and Nook is gone for you too until it is over: the notch, the main window and Settings. A shortcut or the
+    /// menu bar still opens it.
     case hide
 
     var id: String { rawValue }
