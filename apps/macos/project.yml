@@ -170,6 +170,7 @@ targets:
       - path: Brain/ChatIntent.swift
       - path: Services/EmbeddedApps/EmbeddedAppCatalog.swift
       - path: Services/EmbeddedApps/WhatsAppWeb.swift
+      - path: Services/Messages/ChatInbox.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift

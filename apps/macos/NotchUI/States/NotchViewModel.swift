@@ -136,6 +136,7 @@ final class NotchViewModel: ObservableObject {
     private nonisolated static var savedWindowTab: PanelTab {
         switch PanelTab(rawValue: UserDefaults.standard.string(forKey: "window.lastTab") ?? "") {
         case .agents: return .agents
+        case .inbox: return .inbox
         case .music: return .music
         default: return .chat
         }
@@ -245,7 +246,7 @@ final class NotchViewModel: ObservableObject {
         if case .panel(let tab) = target, state.kind != "panel", tab == .chat || tab == .nook { app?.warmUp() }
         if case .panel(let tab) = target {
             switch tab {
-            case .chat, .agents, .music: lastTab = tab
+            case .chat, .agents, .inbox, .music: lastTab = tab
             default: break
             }
             // Tasks belong to Agents; another tab means you moved on.
@@ -662,6 +663,7 @@ final class NotchViewModel: ObservableObject {
         case .agents where workbenchOpen:
             return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
         case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
+        case .inbox: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 460), NotchController.panelSize.height))
         case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), NotchController.panelSize.height))
         case .shelf: return CGSize(width: 640, height: chrome + 180)
         case .connect: return CGSize(width: 820, height: chrome + 330)
@@ -770,6 +772,7 @@ final class NotchViewModel: ObservableObject {
         case .connect:
             return (app?.connectors.needingAttention.isEmpty ?? true) ? .rest : .waiting
         case .nook, .chat: return (app?.chat.anyBusy ?? false) ? .think : .rest
+        case .inbox: return ChatsTab.unread > 0 ? .remind : .rest
         case .music, .shelf: return .rest
         }
     }
