@@ -474,7 +474,7 @@ final class WorkspaceManager: ObservableObject {
 
         let now = Date()
         let title = config.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let run = WorkspaceRun(
+        var run = WorkspaceRun(
             id: id,
             title: title.isEmpty ? WorktreeNaming.title(from: config.task) : title,
             task: ContextRefs.visible(config.task),
@@ -504,6 +504,7 @@ final class WorkspaceManager: ObservableObject {
             changedFiles: nil,
             delegation: config.delegation
         )
+        run.effort = config.effort
         runs.insert(run, at: 0)
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
@@ -904,7 +905,8 @@ final class WorkspaceManager: ObservableObject {
             accountEnvironment: accountEnvironment(run.profileID),
             runID: id,
             bridge: bridge(for: id),
-            thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true
+            thinkingDisplay: run.provider == .claude && claudeThinkingDisplay[executable] == true,
+            effort: run.provider == .claude ? run.effort : nil
         )
         // The flag probe runs Claude Code on this Mac: not for a session on another machine.
         if run.provider == .claude, !run.isRemote, claudeThinkingDisplay[executable] == nil { probeClaudeFlags(executable) }
@@ -957,7 +959,7 @@ final class WorkspaceManager: ObservableObject {
                 provider: .claude, executable: executable, prompt: "", model: run.model, mode: run.mode, permission: run.permission,
                 instructions: run.instructions, workingDirectory: run.workingDirectory, resumeSessionID: run.providerSessionID,
                 accountEnvironment: accountEnvironment(run.profileID), runID: id, bridge: bridge(for: id),
-                thinkingDisplay: claudeThinkingDisplay[executable] == true)), for: run)
+                thinkingDisplay: claudeThinkingDisplay[executable] == true, effort: run.effort)), for: run)
             spec.initialInput = []
             let process = AgentProcess(spec: spec)
             process.onLines = { [weak self, weak process] lines in
@@ -1713,7 +1715,7 @@ final class WorkspaceManager: ObservableObject {
                     rows.append(row)
                 }
             }
-            await MainActor.run { [weak self] in
+            await MainActor.run { [weak self, rows] in
                 self?.worktreeRows = rows
                 self?.worktreesLoading = false
             }

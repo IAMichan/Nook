@@ -76,6 +76,7 @@ extension WorkspaceManager {
         var target = remote
         target.directory = workingDirectory
         run.remote = target
+        run.effort = config.effort
         runs.insert(run, at: 0)
         events[id] = []
         selectedRunID = id

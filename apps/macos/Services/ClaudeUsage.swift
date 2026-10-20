@@ -60,7 +60,7 @@ final class ClaudeUsage {
         let isDefault = profile.isDefault
         Task.detached(priority: .utility) { [weak self] in
             let usage = ClaudeUsage.read(home: home, isDefault: isDefault)
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.busy.remove(id)
                 if let usage {

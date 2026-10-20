@@ -59,7 +59,8 @@ extension AppModel {
 
     /// Shown when the local brain has no model yet: proposes the best one for this Mac and installs it on one click.
     func presentLocalSetupCard() {
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             let options = await brainRecommendations()
             guard let best = options.first else { return }
             let token = "setup-local-" + UUID().uuidString

@@ -76,7 +76,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         guard !superseded(id) else { return nil }
         let owner = ObjectIdentifier(container)
         let stopStrings = ModelAdvisor.catalog.first { $0.id == modelID }?.family.stopTokens ?? []
-        return try? await container.perform { context -> CompletionResult? in
+        return await container.perform { context -> CompletionResult? in
             self.work.withLock {
                 self.generate(context: context, owner: owner, prompt: prompt, options: options, stops: stopStrings, partial: partial) {
                     self.superseded(id)
@@ -92,7 +92,7 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         Task {
             guard let container = try? await EmbeddedModel.shared.completionContainer(self.modelID), !self.superseded(id) else { return }
             let owner = ObjectIdentifier(container)
-            _ = try? await container.perform { context -> Bool in
+            _ = await container.perform { context -> Bool in
                 self.work.withLock { (try? self.prime(context, owner: owner, prompt: prompt) { self.superseded(id) }) != nil }
             }
         }
@@ -102,11 +102,11 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
         let id = begin()
         guard let container = try? await EmbeddedModel.shared.completionContainer(modelID), !superseded(id) else { return [] }
         let owner = ObjectIdentifier(container)
-        return (try? await container.perform { context -> [String] in
+        return await container.perform { context -> [String] in
             self.work.withLock {
                 self.rankedWords(context: context, owner: owner, prompt: prompt, excluding: excluding, count: count) { self.superseded(id) }
             }
-        }) ?? []
+        }
     }
 
     // MARK: Under the work lock

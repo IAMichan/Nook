@@ -276,7 +276,7 @@ final class ScreenReader {
             ($0.localizedName ?? "").lowercased().contains(wanted) || ($0.bundleIdentifier ?? "").lowercased().contains(wanted)
                 || wanted.contains(($0.localizedName ?? "").lowercased())
         }
-        var app = exact.first ?? loose.first
+        let app = exact.first ?? loose.first
         let canRead = AppTextReader.hasPermission
 
         // 2. Closed app handling

@@ -54,7 +54,7 @@ final class AntigravityUsage: ObservableObject {
             // A sign-in file counts as a login; a token borrowed from the Antigravity editor only when it still works.
             let hasLogin = AntigravityUsage.credentials(homes: directories, includeApp: false) != nil
             let windows = AntigravityUsage.read(homes: directories)
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.busy = false
                 if let windows, !windows.isEmpty {

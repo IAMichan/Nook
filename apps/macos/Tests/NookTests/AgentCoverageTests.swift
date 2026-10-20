@@ -201,6 +201,10 @@ final class AgentCoverageTests: XCTestCase {
         let args = AgentCommand.spec(input).arguments
         XCTAssertEqual(value(after: "--settings", in: args), #"{"showThinkingSummaries":true}"#)
         XCTAssertEqual(value(after: "--thinking-display", in: args), "summarized")
+        XCTAssertNil(value(after: "--effort", in: args), "no effort leaves the agent's default")
+        var withEffort = input
+        withEffort.effort = "high"
+        XCTAssertEqual(value(after: "--effort", in: AgentCommand.spec(withEffort).arguments), "high")
     }
 
     private func value(after flag: String, in arguments: [String]) -> String? {

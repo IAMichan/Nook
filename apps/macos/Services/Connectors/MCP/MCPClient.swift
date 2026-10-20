@@ -358,16 +358,12 @@ final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
         request.setValue(MCPClient.protocolVersion, forHTTPHeaderField: "MCP-Protocol-Version")
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         if let token { request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization") }
-        lock.lock()
-        let session = sessionID
-        lock.unlock()
+        let session = lock.withLock { sessionID }
         if let session { request.setValue(session, forHTTPHeaderField: "Mcp-Session-Id") }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw NookError("No answer from the MCP server.") }
         if let id = http.value(forHTTPHeaderField: "Mcp-Session-Id") {
-            lock.lock()
-            sessionID = id
-            lock.unlock()
+            lock.withLock { sessionID = id }
         }
         guard (200..<300).contains(http.statusCode) else {
             switch http.statusCode {

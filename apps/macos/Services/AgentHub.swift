@@ -25,8 +25,8 @@ final class AgentHub: ObservableObject {
         }
     }
 
-    private static let planUsageKey = "planUsage"
-    private static let profilePlanUsageKey = "profilePlanUsage"
+    private nonisolated static let planUsageKey = "planUsage"
+    private nonisolated static let profilePlanUsageKey = "profilePlanUsage"
 
     private nonisolated static func loadProfilePlanUsage() -> [String: PlanUsage] {
         guard let data = UserDefaults.standard.data(forKey: profilePlanUsageKey) else { return [:] }
