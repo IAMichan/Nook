@@ -151,6 +151,30 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(opened("@open word web", installed: macApps), "word")
     }
 
+    func testListStaysOpenAfterOpen() {
+        XCTAssertEqual(EmbeddedAppCatalog.openQuery(in: "@open ", installed: macApps), "", "every app after the space")
+        XCTAssertEqual(EmbeddedAppCatalog.openQuery(in: "@open whats", installed: macApps), "whats")
+        XCTAssertEqual(EmbeddedAppCatalog.openQuery(in: "@openen gm", installed: macApps), "gm")
+        XCTAssertEqual(EmbeddedAppCatalog.openQuery(in: "@open whats ", installed: macApps), "whats", "not a name yet: keep filtering")
+        XCTAssertEqual(EmbeddedAppCatalog.openQuery(in: "@open whatsapp", installed: macApps), "whatsapp")
+        XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "@open WhatsApp ", installed: macApps), "a whole name: Return sends it")
+        XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "@open whatsapp web", installed: macApps), "a way asked for: Return sends it")
+        XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "@open notion.so/my-page", installed: macApps), "a web address: Return sends it")
+        XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "@open", installed: macApps))
+        XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "what does @open do", installed: macApps))
+    }
+
+    func testListOffersTheWebVersion() {
+        let rows = EmbeddedAppCatalog.openSuggestions(for: "whatsapp", installed: macApps)
+        XCTAssertEqual(rows.map { $0.app.id }, ["mac:whatsapp", "mac:whatsapp"])
+        XCTAssertEqual(rows.map { $0.mode }, [nil, .web])
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open WhatsApp web", installed: macApps),
+                       .open(EmbeddedAppCatalog.find("whatsapp", installed: [])!, .web), "what the web line puts in the box")
+        XCTAssertFalse(EmbeddedAppCatalog.openSuggestions(for: "calendar", installed: macApps).contains { $0.app.id == "mac:calendar" && $0.mode == .web },
+                       "Apple's Calendar has no web version")
+        XCTAssertEqual(EmbeddedAppCatalog.openSuggestions(for: "gmail", installed: macApps).map { $0.mode }, [nil], "a web app needs no second line")
+    }
+
     func testOtherWaysToOpen() {
         let mac = macApps[0], word = macApps[2]
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp web", installed: macApps),
