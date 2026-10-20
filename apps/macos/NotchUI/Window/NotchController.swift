@@ -423,7 +423,7 @@ final class NotchController {
             MainActor.assumeIsolated {
                 // A click in the Mac app under the chat's pane is a click in Nook, not outside it.
                 guard !MacAppMirror.shared.holds(NSEvent.mouseLocation) else { return }
-                self?.viewModel.clickedOutside()
+                self?.dismissForOutsideClick()
             }
         }) { monitors.append(m) }
         // A click in another Nook window (Settings) is not treated as a global click by macOS.
@@ -444,10 +444,20 @@ final class NotchController {
                 // A dropdown (SwiftUI popover) or a confirmation (the sheet of a `.confirmationDialog`, e.g. "Merge pull
                 // request?") is a window of its own, but it belongs to the notch: a click in it is not outside.
                 if let eventWindow, self.belongsToNotch(eventWindow) { return }
-                self.viewModel.clickedOutside()
+                self.dismissForOutsideClick()
             }
             return event
         }) { monitors.append(m) }
+    }
+
+    /// A click outside closes the panel. A click on another screen only closes it: Nook then follows the pointer to
+    /// that screen, but does not open there until the pointer has left the notch.
+    private func dismissForOutsideClick() {
+        let wasOpen = !viewModel.state.isResting
+        viewModel.clickedOutside()
+        guard wasOpen, viewModel.state.isResting,
+              let screen = NotchGeometry.screenWithMouse(), screen.frame != geometry.screenFrame else { return }
+        viewModel.holdsHoverOpen = true
     }
 
     /// True for a popover, sheet or other child window that hangs off a notch panel (the real one or a mirror).
@@ -478,6 +488,7 @@ final class NotchController {
         lastCheckedMouseLocation = mouse
         followMouseIfNeeded()
         let inside = !isOutsideShape(mouse)
+        if !inside { viewModel.holdsHoverOpen = false }
         // Over a Mac app open next to the chat, the pointer falls through onto the real app window lying under it.
         let ignores = !inside || MacAppMirror.shared.passesThrough(at: mouse)
         if panel.ignoresMouseEvents != ignores {
