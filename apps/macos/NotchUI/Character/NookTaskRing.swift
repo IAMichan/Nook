@@ -23,8 +23,8 @@ struct TaskRingItem: Identifiable, Equatable {
     }
 }
 
-/// The ring around Nook in the open panel: one piece for everything he and your agents are working on. It is never shown
-/// in the closed notch; it draws itself in, piece by piece, when the panel opens.
+/// The ring around Nook in the open panel: one piece for everything he and your agents are working on. It draws itself
+/// in, piece by piece, when the panel opens. The closed notch shows a thin, quiet version: `NookTaskRingCompact`.
 ///
 /// Running work is a faint piece with a light running through it, something that waits for you pulses amber, a failure
 /// is coral and what is finished is mint. Point at a piece and Nook looks at it, with its name beside the ring; click it
@@ -123,8 +123,10 @@ struct NookTaskRing: View {
     }
 
     /// Where piece `i` starts and ends, as fractions of the circle measured clockwise from the top.
-    private func span(_ i: Int) -> (start: CGFloat, end: CGFloat) {
-        let slot = 1 / CGFloat(max(items.count, 1))
+    private func span(_ i: Int) -> (start: CGFloat, end: CGFloat) { Self.span(i, count: items.count, gap: gap) }
+
+    static func span(_ i: Int, count: Int, gap: CGFloat) -> (start: CGFloat, end: CGFloat) {
+        let slot = 1 / CGFloat(max(count, 1))
         let start = CGFloat(i) * slot + gap / 2
         return (start, start + max(0.001, slot - gap))
     }
@@ -156,6 +158,59 @@ struct NookTaskRing: View {
         hovered = id
         NookPresence.shared.lookAngle = index.map { angle($0) }
         NookPresence.shared.noteActivity()
+    }
+}
+
+/// The task ring in the closed notch: the same pieces and colors as in the open panel, thin and close around Nook, so
+/// what is running or waiting reads the same whether the notch is open or closed. It only shows; a click on the notch
+/// opens the panel, where the full ring can be pointed at and clicked.
+struct NookTaskRingCompact: View {
+    let items: [TaskRingItem]
+    var orbSize: CGFloat = 20
+    /// The room the ring may take; the closed notch is not much taller than Nook.
+    var maxSide: CGFloat = .infinity
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var lineWidth: CGFloat { 2 }
+    private var radius: CGFloat { min(orbSize / 2 + 3.5, (maxSide - lineWidth) / 2 - 1) }
+    private var gap: CGFloat { items.count > 1 ? 4 / (2 * .pi * radius) : 0 }
+
+    var body: some View {
+        let moving = !reduceMotion && items.contains { $0.state == .running || $0.state == .waiting }
+        // Possibly for hours in the closed notch: fifteen frames a second keep the light smooth enough.
+        TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !moving)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            ZStack {
+                ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                    piece(item, span: NookTaskRing.span(i, count: items.count, gap: gap), t: t)
+                }
+            }
+            .rotationEffect(.degrees(-90))
+        }
+        .frame(width: radius * 2, height: radius * 2)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tr("notch.taskRing"))
+        .accessibilityValue(items.map { "\($0.title), \($0.detail)" }.joined(separator: "; "))
+    }
+
+    private func piece(_ item: TaskRingItem, span: (start: CGFloat, end: CGFloat), t: Double) -> some View {
+        let pulse = item.state == .waiting && !reduceMotion ? 0.5 + 0.5 * abs(cos(t * 2)) : 1
+        let style = StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+        return ZStack {
+            Circle()
+                .trim(from: span.start, to: span.end)
+                .stroke(item.color.opacity(item.state == .running ? 0.3 : pulse), style: style)
+            if item.state == .running {
+                let length = min(7 / (2 * .pi * radius), (span.end - span.start) * 0.35)
+                let phase = reduceMotion ? 0.5 : (1 - cos((t * 0.45 + Double(span.start)) * 2 * .pi)) / 2
+                let start = span.start + (span.end - span.start - length) * CGFloat(phase)
+                Circle()
+                    .trim(from: start, to: start + length)
+                    .stroke(item.color, style: style)
+            }
+        }
     }
 }
 
