@@ -66,18 +66,38 @@ struct SourcesDisclosure: View {
         groups.filter { if case .failed = $0.status { return true }; return false }.count
     }
 
+    /// Sources that need attention first, then what was used, then the rest.
+    private static func rank(_ status: Status) -> Int {
+        switch status {
+        case .failed: return 0
+        case .running: return 1
+        case .found: return 2
+        case .context: return 3
+        case .empty: return 4
+        }
+    }
+
     var body: some View {
-        let list = groups
+        let list = groups.enumerated().sorted { (Self.rank($0.element.status), $0.offset) < (Self.rank($1.element.status), $1.offset) }.map(\.element)
         if !list.isEmpty {
             let used = list.filter { if case .found = $0.status { return true }; if case .context = $0.status { return true }; return false }.count
             let failed = failedCount
             let running = list.contains { if case .running = $0.status { return true }; return false }
             VStack(alignment: .leading, spacing: 6) {
                 Button { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 7) {
+                        iconStack(list)
                         Text(summary(used: used, failed: failed, running: running))
                             .font(NookTheme.font(12, .medium))
-                            .foregroundStyle(failed > 0 ? NookTheme.amber : NookTheme.textSecondary)
+                            .foregroundStyle(NookTheme.textSecondary)
+                        if failed > 0 && !(running && message.streaming) {
+                            Text(tr("chat.sources.unread", failed))
+                                .font(NookTheme.font(10.5, .semibold))
+                                .foregroundStyle(NookTheme.amber)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(NookTheme.amber.opacity(0.12)))
+                        }
                         Image(systemName: "chevron.down")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(NookTheme.textTertiary)
@@ -88,15 +108,25 @@ struct SourcesDisclosure: View {
                 }
                 .buttonStyle(.plain)
                 .help(message.scopeLabel.isEmpty ? tr("chat.sources.detailsHelp") : tr("chat.sources.scope", message.scopeLabel))
-                .accessibilityLabel(summary(used: used, failed: failed, running: running))
+                .accessibilityLabel(summary(used: used, failed: failed, running: running)
+                                    + (failed > 0 ? ", " + tr("chat.sources.unread", failed) : ""))
 
                 if expanded {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(list) { group in groupView(group) }
+                        ForEach(Array(list.enumerated()), id: \.element.id) { index, group in
+                            if index > 0 {
+                                Rectangle().fill(NookTheme.line2.opacity(0.6)).frame(height: 1).padding(.horizontal, 8)
+                            }
+                            groupView(group)
+                        }
                     }
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(NookTheme.field))
-                    .transition(.opacity)
+                    .padding(4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(NookTheme.field)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(NookTheme.line2.opacity(0.7), lineWidth: 1))
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
             .onAppear { if failed > 0 { expanded = true } }
@@ -106,53 +136,83 @@ struct SourcesDisclosure: View {
 
     private func summary(used: Int, failed: Int, running: Bool) -> String {
         if running && message.streaming { return tr("chat.sources.searchingShort") }
-        var text = used == 1 ? tr("chat.sources.usedOne") : tr("chat.sources.used", used)
-        if used == 0 && failed == 0 { text = tr("chat.sources.nothing").capitalizedFirst }
-        if failed > 0 { text += tr("chat.sources.unread", failed) }
-        return text
+        if used == 0 { return tr("chat.sources.nothing").capitalizedFirst }
+        return used == 1 ? tr("chat.sources.usedOne") : tr("chat.sources.used", used)
+    }
+
+    /// The first few sources' icons, slightly overlapping, so you see at a glance where Nook looked.
+    private func iconStack(_ list: [SourceGroup]) -> some View {
+        HStack(spacing: -4) {
+            ForEach(list.prefix(4)) { group in
+                plainIcon(group)
+                    .padding(1.5)
+                    .background(Circle().fill(NookTheme.graphite))
+                    .overlay(Circle().stroke(NookTheme.ink, lineWidth: 1))
+            }
+        }
+        .accessibilityHidden(true)
     }
 
     private func groupView(_ group: SourceGroup) -> some View {
         let cited = Citations.used(in: message.text)
-        return VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 7) {
+        let failure: String? = { if case .failed(let reason) = group.status { return Self.readable(reason) }; return nil }()
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
                 sourceIcon(group)
                 Text(group.title)
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(NookTheme.textSecondary)
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(failure == nil ? NookTheme.paper.opacity(0.88) : NookTheme.paper)
                 Spacer(minLength: 6)
-                if case .running = group.status {
-                    ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
-                }
-                Text(statusText(group))
-                    .font(NookTheme.font(11, .medium))
-                    .foregroundStyle(statusColor(group.status))
-                    .lineLimit(1)
+                statusChip(group)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
             .help(helpText(group))
-            if case .failed(let reason) = group.status {
-                failureView(reason)
+            if let failure {
+                failureView(failure)
             }
-            if !message.streaming {
-                ForEach(group.references) { reference in
-                    ReferenceRow(reference: reference, cited: cited.contains(reference.number)) { app.openReference(reference) }
+            if !message.streaming && !group.references.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(group.references) { reference in
+                        ReferenceRow(reference: reference, cited: cited.contains(reference.number)) { app.openReference(reference) }
+                    }
                 }
+                .padding(.leading, 20)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06))
+        )
+    }
+
+    /// The status of a source as a small chip: green when it was used, red when it could not be read.
+    @ViewBuilder
+    private func statusChip(_ group: SourceGroup) -> some View {
+        HStack(spacing: 4) {
+            if case .running = group.status {
+                ProgressView().controlSize(.mini).scaleEffect(0.6).frame(width: 9, height: 9)
+            }
+            Text(statusText(group))
+                .font(NookTheme.font(10.5, .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(statusColor(group.status))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(chipFill(group.status)))
     }
 
     /// Why a source could not be read, with what fixes it: the permission it misses, or trying again.
     private func failureView(_ reason: String) -> some View {
         let needed = NoticePermission.needed(by: reason)
-        return VStack(alignment: .leading, spacing: 5) {
+        return HStack(alignment: .center, spacing: 10) {
             Text(reason)
-                .font(NookTheme.font(11))
-                .foregroundStyle(NookTheme.textTertiary)
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if let needed, !needed.isGranted(permissions) {
                 SourceFixButton(title: tr("chat.notice.allow"), symbol: "lock.open", prominent: true) { needed.grant(app: app) }
                     .help(tr("chat.notice.allowHelp"))
@@ -160,16 +220,33 @@ struct SourcesDisclosure: View {
                 SourceFixButton(title: tr("chat.retry"), symbol: "arrow.clockwise", prominent: false, action: onRetry)
             }
         }
-        .padding(.leading, 27)
-        .padding(.trailing, 6)
-        .padding(.bottom, 3)
+        .padding(.leading, 22)
+    }
+
+    /// Older answers stored the raw system error; show those the way new answers do.
+    static func readable(_ reason: String) -> String {
+        if reason.contains("CancellationError") { return tr("chat.sources.interrupted") }
+        if reason.isEmpty || reason.contains("couldn’t be completed") || reason.contains("couldn't be completed") {
+            return tr("chat.sources.unknownError")
+        }
+        return reason
+    }
+
+    private func iconSource(_ group: SourceGroup) -> (id: String?, source: ContextSource?) {
+        let id = SourceCatalog.all.first { $0.title == group.title }?.id
+            ?? app.connectors.sources.first { $0.title == group.title }?.id
+        return (id, id.flatMap { app.connectors.source(id: $0) })
+    }
+
+    private func plainIcon(_ group: SourceGroup) -> some View {
+        let (id, source) = iconSource(group)
+        return SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? Self.symbol(id), tint: NookTheme.textSecondary,
+                        size: 12, source: id)
     }
 
     /// The source's own icon, with its status as a small dot on the corner.
     private func sourceIcon(_ group: SourceGroup) -> some View {
-        let id = SourceCatalog.all.first { $0.title == group.title }?.id
-            ?? app.connectors.sources.first { $0.title == group.title }?.id
-        let source = id.flatMap { app.connectors.source(id: $0) }
+        let (id, source) = iconSource(group)
         return SiteIcon(domain: source?.iconDomain, fallback: source?.symbol ?? Self.symbol(id), tint: NookTheme.textSecondary,
                         size: 14, source: id)
             .overlay(alignment: .bottomTrailing) {
@@ -199,9 +276,18 @@ struct SourcesDisclosure: View {
         }
     }
 
+    private func chipFill(_ status: Status) -> Color {
+        switch status {
+        case .found: return NookTheme.mint.opacity(0.1)
+        case .failed: return NookTheme.coral.opacity(0.12)
+        case .running: return NookTheme.iris.opacity(0.12)
+        case .empty, .context: return NookTheme.smoke
+        }
+    }
+
     private func statusColor(_ status: Status) -> Color {
         switch status {
-        case .found: return NookTheme.mint.opacity(0.85)
+        case .found: return NookTheme.mint
         case .failed: return NookTheme.coralSoft
         case .running: return NookTheme.iris
         case .empty, .context: return NookTheme.textTertiary
@@ -290,6 +376,29 @@ enum NoticePermission: Hashable {
             }
         }
     }
+}
+
+extension ChatMessage {
+    /// The warnings to show under the answer. Older answers also repeated every unreadable source as a warning
+    /// ("Mail could not be searched: …", "This answer may therefore be incomplete."); the sources card shows those now.
+    var visibleNotices: [String] {
+        let failures = retrieval.compactMap { step -> String? in
+            if case .failed(let error) = step.outcome, !error.isEmpty { return error }
+            return nil
+        }
+        guard !failures.isEmpty else { return notices }
+        return notices.filter { notice in
+            !Self.legacyIncomplete.contains(notice) && !failures.contains { notice.contains($0) }
+        }
+    }
+
+    private static let legacyIncomplete: Set<String> = [
+        "Dit antwoord is daardoor mogelijk onvolledig.",
+        "This answer may therefore be incomplete.",
+        "Diese Antwort ist daher möglicherweise unvollständig.",
+        "Cette réponse peut donc être incomplète.",
+        "Por eso esta respuesta puede estar incompleta.",
+    ]
 }
 
 /// Warnings for an answer, such as a source that could not be read. A warning about a missing permission gets the button
