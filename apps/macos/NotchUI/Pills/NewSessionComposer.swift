@@ -10,6 +10,10 @@ struct NewSessionComposer: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @EnvironmentObject private var settings: WorkspaceSettings
     @ObservedObject private var antigravity = AntigravityInstaller.shared
+    /// The panels' icons (terminal, browser, bottom and side panel) at the top right, as in a running session.
+    var headerAccessory: AnyView? = nil
+    /// Called with the folder the new session will work in, so its panels open there; empty on another machine.
+    var onDirectory: (String) -> Void = { _ in }
     /// Called with the new session once it runs.
     let onStarted: (UUID) -> Void
 
@@ -33,6 +37,28 @@ struct NewSessionComposer: View {
     @FocusState private var focused: Bool
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let headerAccessory {
+                HStack(spacing: 8) {
+                    Spacer(minLength: 8)
+                    headerAccessory
+                }
+                .frame(height: 30)
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { prepare(); app.refreshAgentModels(); applyPromptLink() }
+        .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
+        .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
+    }
+
+    /// The folder the panels open in: none for a session on another machine.
+    private var workingDirectory: String {
+        remoteMachine == nil ? config.projectPath : ""
+    }
+
+    private var content: some View {
         VStack(spacing: 18) {
             Spacer(minLength: 0)
             heading
@@ -50,8 +76,6 @@ struct NewSessionComposer: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { prepare(); app.refreshAgentModels(); applyPromptLink() }
-        .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
     }
 
     // MARK: Heading
