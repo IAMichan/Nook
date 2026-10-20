@@ -184,6 +184,11 @@ pub fn stats_file() -> PathBuf {
     folder().join("stats.json")
 }
 
+/// The emoji taken from the picker and how often (emoji only).
+pub fn emoji_file() -> PathBuf {
+    folder().join("emoji.json")
+}
+
 pub fn apps_file() -> PathBuf {
     folder().join("apps.json")
 }

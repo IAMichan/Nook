@@ -39,6 +39,8 @@ pub struct Accepted {
     /// Nothing is left of it.
     pub finished: bool,
     pub app: String,
+    /// The text before the cursor once the app shows what was typed.
+    pub anchor: String,
 }
 
 #[derive(Debug, Default)]
@@ -103,11 +105,12 @@ impl Session {
         proposal.fresh = false;
         proposal.anchor.push_str(&text);
         let app = proposal.app.clone();
+        let anchor = proposal.anchor.clone();
         let finished = proposal.suggestion.is_empty();
         if finished {
             self.proposal = None;
         }
-        Some(Accepted { text, first, finished, app })
+        Some(Accepted { text, first, finished, app, anchor })
     }
 }
 
@@ -129,6 +132,7 @@ mod tests {
         assert_eq!(s.proposal().unwrap().anchor, "I will see");
         let a = s.accept(true, AcceptOptions::default()).unwrap();
         assert_eq!((a.text.as_str(), a.first, a.finished), (" you tomorrow.", false, true));
+        assert_eq!(a.anchor, "I will see you tomorrow.");
         assert!(!s.is_showing());
         assert!(s.accept(false, AcceptOptions::default()).is_none());
     }

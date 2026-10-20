@@ -121,6 +121,11 @@ pub struct AutocompleteSettings {
     pub apps: BTreeMap<String, AppRule>,
     pub sites: BTreeMap<String, SiteRule>,
 
+    /// Typing `:` at the start of a word opens the emoji picker.
+    pub emoji: bool,
+    /// 0 yellow, 1…5 light to dark.
+    pub skin_tone: u8,
+
     /// Accelerator-style names ("Tab", "Shift+Tab", "Alt+Right"); empty turns the key off.
     pub accept_word: String,
     pub accept_all: String,
@@ -147,6 +152,8 @@ impl Default for AutocompleteSettings {
             instructions: String::new(),
             apps: BTreeMap::new(),
             sites: BTreeMap::new(),
+            emoji: true,
+            skin_tone: 0,
             accept_word: "Tab".into(),
             accept_all: "Shift+Tab".into(),
         }

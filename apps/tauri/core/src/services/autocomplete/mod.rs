@@ -8,11 +8,13 @@
 //! - [`prefs`]: settings, per-app and per-site rules, and the apps that are off by default.
 //! - [`stats`]: aggregate counts only, never text.
 //! - [`session`]: the suggestion on screen and what keys and reads do to it.
+//! - [`emoji`]: the emoji picker (names in Dutch and English, emoji that fit the text, usage counts).
 //! - [`engine`]: the local server (Ollama, LM Studio) or, when explicitly chosen, the external brain.
 //!
 //! The platform layer (`src-tauri/src/platform`) watches keys, reads the focused field, draws the ghost text and types
 //! accepted words. Nothing here writes typed text to disk or logs.
 
+pub mod emoji;
 pub mod engine;
 pub mod prefs;
 pub mod privacy;
