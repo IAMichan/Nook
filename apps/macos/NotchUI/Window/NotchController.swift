@@ -97,6 +97,12 @@ final class NotchController {
             }
             .store(in: &cancellables)
 
+        // The copies on the other screens follow in the same transaction as the real notch (no hop to the next run
+        // loop pass), so every screen starts the same animation on the same frame.
+        viewModel.$state
+            .sink { [weak self] state in self?.syncMirrors(to: state) }
+            .store(in: &cancellables)
+
         // A card with text input immediately requests keyboard focus so typing works without clicking.
         viewModel.$state
             .receive(on: RunLoop.main)
@@ -104,11 +110,7 @@ final class NotchController {
                 // Shown first: a hidden notch cannot take the keyboard.
                 self?.updateVisibility()
                 self?.stateChanged(state)
-                if state.isResting {
-                    self?.refreshMirrorContent()
-                } else {
-                    self?.cancelAnnouncement()
-                }
+                if !state.isResting { self?.cancelAnnouncement() }
             }
             .store(in: &cancellables)
 
@@ -282,24 +284,12 @@ final class NotchController {
 
     private var announceTask: Task<Void, Never>?
 
-    private var allViewModels: [NotchViewModel] {
-        if showsOnAllScreens {
-            return [viewModel] + mirrors.values.map(\.viewModel)
-        } else {
-            return [viewModel]
-        }
-    }
-
-    /// A new track: notch expands briefly showing current playback synchronously on all screens.
+    /// A new track: the notch expands briefly showing current playback; the copies on the other screens follow it in
+    /// the same transaction (`syncMirrors`).
     func announce(_ info: NowPlayingInfo) {
         guard viewModel.state.isResting, !viewModel.silenced else { return }
         announceTask?.cancel()
-
-        withAnimation(NookTheme.open) {
-            for vm in allViewModels {
-                vm.show(.track(title: info.title, artist: info.artist))
-            }
-        }
+        viewModel.show(.track(title: info.title, artist: info.artist))
 
         announceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -308,28 +298,28 @@ final class NotchController {
         }
     }
 
-    /// Dismisses the track announcement across all notches synchronously.
+    /// Closes the track announcement on every notch at once.
     func dismissTrackAnnouncement() {
         announceTask?.cancel()
         announceTask = nil
-        withAnimation(NookTheme.close) {
-            for vm in allViewModels {
-                if case .track = vm.state {
-                    vm.show(.idle)
-                }
-            }
-        }
+        if case .track = viewModel.state { viewModel.show(.idle) }
     }
 
-    /// Cancels any running announcement immediately (e.g. playback stopped or panel/card opened).
+    /// Stops a running announcement without closing it (playback stopped, or a panel or card opened over it).
     func cancelAnnouncement() {
         announceTask?.cancel()
         announceTask = nil
-        withAnimation(NookTheme.close) {
-            for vm in allViewModels {
-                if case .track = vm.state {
-                    vm.show(.idle)
-                }
+    }
+
+    /// Called as the real notch's state is about to change: the copies show the same resting notch (idle, music or a
+    /// track announcement). While the real notch is open they rest, without the announcement.
+    private func syncMirrors(to state: NotchState) {
+        for mirror in mirrors.values {
+            let current = mirror.viewModel.state
+            if state.isResting {
+                if current != state { mirror.viewModel.show(state) }
+            } else if case .track = current {
+                mirror.viewModel.show(.idle)
             }
         }
     }
@@ -340,27 +330,33 @@ final class NotchController {
             ? NSScreen.screens.filter { $0.frame != geometry.screenFrame }
             : []
         let wantedKeys = Set(wanted.map { NSStringFromRect($0.frame) })
+        // When Nook follows the mouse to another screen, the copy that stood there moves to the screen Nook left
+        // instead of being torn down and built again: no new window has to render its first frame, and what it shows
+        // keeps running without a hitch.
+        var spare: [(panel: NotchPanel, viewModel: NotchViewModel)] = []
         for (key, mirror) in mirrors where !wantedKeys.contains(key) {
-            mirror.panel.orderOut(nil)
+            spare.append(mirror)
             mirrors[key] = nil
         }
+        defer {
+            for mirror in spare { mirror.panel.orderOut(nil) }
+        }
         guard let app else { return }
+        let resting: NotchState = viewModel.state.isResting ? viewModel.state : .idle
         for screen in wanted {
             let mirrorGeometry = NotchGeometry.make(for: screen)
             let key = NSStringFromRect(screen.frame)
-            if let existing = mirrors[key] {
+            if let existing = mirrors[key] ?? spare.popLast() {
                 existing.viewModel.geometry = mirrorGeometry
                 placeMirror(existing.panel, on: screen.frame)
+                if existing.viewModel.state != resting { existing.viewModel.show(resting) }
+                mirrors[key] = existing
                 continue
             }
             let mirrorModel = NotchViewModel()
             mirrorModel.app = app
             mirrorModel.geometry = mirrorGeometry
-            if case .track(let title, let artist) = viewModel.state {
-                mirrorModel.show(.track(title: title, artist: artist))
-            } else {
-                mirrorModel.show(.idle)
-            }
+            mirrorModel.show(resting)
             let panel = NotchPanel()
             let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel)
                 .environmentObject(app)
@@ -386,17 +382,10 @@ final class NotchController {
         )
     }
 
-    /// Keeps the copies in sync with the idle state (music, hide when idle, agents).
+    /// Lays the copies out again for the resting notch (after "hide when idle" changed their size).
     private func refreshMirrorContent() {
-        if case .track(let title, let artist) = viewModel.state {
-            for mirror in mirrors.values {
-                if mirror.viewModel.state != viewModel.state {
-                    mirror.viewModel.show(.track(title: title, artist: artist))
-                }
-            }
-            return
-        }
-        for mirror in mirrors.values { mirror.viewModel.show(.idle) }
+        let resting: NotchState = viewModel.state.isResting ? viewModel.state : .idle
+        for mirror in mirrors.values { mirror.viewModel.show(resting) }
     }
 
     /// Notch shape in screen coordinates (origin bottom-left).
