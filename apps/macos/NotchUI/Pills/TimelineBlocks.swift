@@ -194,7 +194,7 @@ struct LiveActivityRow: View {
     }
 }
 
-/// Messages waiting for the turn to end, above the composer: each can be taken back before it goes out.
+/// Messages waiting for the turn to end, in the tray above the composer: each can be taken back before it goes out.
 struct QueuedMessagesStrip: View {
     let queue: MessageQueue
     /// The message that is being edited in the composer.
@@ -224,7 +224,8 @@ struct QueuedMessagesStrip: View {
                         .truncationMode(.tail)
                 }
                 .foregroundStyle(NookTheme.textSecondary)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -255,9 +256,10 @@ struct QueuedMessagesStrip: View {
         }
         .font(NookTheme.font(12))
         .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(isEditing ? NookTheme.smoke : NookTheme.field))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        // The tray above the composer is the card; only the message open in the box stands out of it.
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(isEditing ? NookTheme.smoke : Color.clear))
     }
 
     private func iconButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {

@@ -187,45 +187,47 @@ struct SubagentBar: View {
     }
 }
 
-/// "Watching PR · CI passed · 2 reviews" with a way to stop.
+/// "Watching PR [#12 · Open] CI passed · 2 reviews" with a way to open it and to stop: a row of the tray above the composer,
+/// in the same pills as the tray under a new session's box.
 struct PullRequestWatchStrip: View {
     let watch: PullRequestWatch
     let stop: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "eye").font(NookTheme.font(10.5, .semibold))
-            Text(tr("ws.prwatch.watching")).foregroundStyle(NookTheme.textTertiary)
-            Text(summary).lineLimit(1)
+        HStack(spacing: 6) {
+            ComposerPill(symbol: "eye", dot: nil, text: tr("ws.prwatch.watching"), showsChevron: false)
+            // The state in the same badge as on the pull request page; CI and reviews after it.
+            PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch.state) ?? .open, number: number)
+            if !summary.isEmpty {
+                Text(summary)
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             Spacer(minLength: 6)
             if let url = URL(string: watch.url) {
-                Button { NSWorkspace.shared.open(url) } label: {
-                    Image(systemName: "arrow.up.right.square").font(NookTheme.font(10.5, .semibold))
-                }
-                .buttonStyle(.plain)
-                .help(tr("ws.prwatch.open"))
+                trayButton("arrow.up.right.square", tr("ws.prwatch.open")) { NSWorkspace.shared.open(url) }
             }
-            Button(action: stop) {
-                Image(systemName: "xmark").font(NookTheme.font(9, .bold))
-            }
-            .buttonStyle(.plain)
-            .help(tr("ws.prwatch.stop"))
-            .accessibilityLabel(tr("ws.prwatch.stop"))
+            trayButton("xmark", tr("ws.prwatch.stop"), action: stop)
         }
-        .font(NookTheme.font(12))
         .foregroundStyle(NookTheme.textSecondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
+
+    private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(NookTheme.font(10.5, .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    /// "…/pull/12" or "…/-/merge_requests/12".
+    private var number: Int? { URL(string: watch.url).flatMap { Int($0.lastPathComponent) } }
 
     private var summary: String {
         var parts: [String] = []
-        switch watch.state {
-        case "merged": parts.append(tr("ws.prwatch.merged"))
-        case "closed": parts.append(tr("ws.prwatch.closed"))
-        default: break
-        }
         switch watch.checks {
         case "success": parts.append(tr("ws.prwatch.ciPassed"))
         case "failure": parts.append(tr("ws.prwatch.ciFailed"))

@@ -67,10 +67,12 @@ The checklist for a new or changed view:
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header or under a message |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
-| `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state |
+| `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
+| `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |
+| `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip |
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |
 | `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`) |
 

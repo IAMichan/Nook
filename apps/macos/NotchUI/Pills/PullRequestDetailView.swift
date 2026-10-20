@@ -110,7 +110,7 @@ struct PullRequestDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             HStack(spacing: 6) {
-                stateBadge(detail.state)
+                PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: detail.state.rawValue) ?? .open)
                 Text("@" + detail.author)
                 Text("·")
                 Text(detail.headBranch + " → " + detail.baseBranch).font(NookTheme.mono(11.5)).lineLimit(1).truncationMode(.middle)
@@ -121,28 +121,6 @@ struct PullRequestDetailView: View {
             .font(NookTheme.font(11.5))
             .foregroundStyle(NookTheme.textTertiary)
         }
-    }
-
-    /// The state with the same GitHub mark the agent row's pull request pill uses.
-    private func stateBadge(_ state: PullRequestDetail.State) -> some View {
-        let color: Color
-        let glyph: PullRequestBadge.Glyph
-        switch state {
-        case .open: (color, glyph) = (NookTheme.mint, .open)
-        case .draft: (color, glyph) = (NookTheme.textSecondary, .draft)
-        case .merged: (color, glyph) = (NookTheme.violet, .merged)
-        case .closed: (color, glyph) = (NookTheme.coral, .closed)
-        }
-        return HStack(spacing: 3) {
-            PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
-            Text(tr("agents.pr.state." + state.rawValue))
-        }
-        .font(NookTheme.font(11, .semibold))
-        .foregroundStyle(color)
-        .padding(.leading, 5)
-        .padding(.trailing, 7)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(color.opacity(0.14)))
     }
 
     private func tabs(_ detail: PullRequestDetail) -> some View {
