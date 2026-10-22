@@ -424,6 +424,7 @@ final class AppModel: ObservableObject {
             BrowserConnector(),
             FilesConnector(),
             ClipboardConnector(),
+            ChatInboxConnector(),
             // Apps without an API: their local database, read-only (Messages and WhatsApp need Full Disk Access).
             MessagesConnector(),
             WhatsAppConnector(),
@@ -445,6 +446,7 @@ final class AppModel: ObservableObject {
             .store(in: &bag)
         connectors.start()
         startWhatsApp()
+        startChats()
         startFlow()
         startNotes()
         startWindowAttach()

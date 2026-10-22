@@ -48,28 +48,8 @@ extension AppModel {
         viewModel.register("\(token)#quiet") { link.mute(chat) }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
-        // The chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows
-        // as itself, a video plays in its bubble and a document shows its first page; until then a file is a button.
-        let time = DateFormatter()
-        time.dateFormat = "HH:mm"
         let messages = conversation.messages.suffix(WAInbox.keep)
-        let bubbles = messages.map { message in
-            let file = Self.whatsAppFileLabel(message.media)
-            var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
-                                    time: time.string(from: message.date),
-                                    sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
-                                    fromMe: message.fromMe, attachment: file,
-                                    ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
-            if let preview = link.preview(message.id) {
-                bubble.image = preview.image
-                switch message.media {
-                case .image: bubble.media = .photo(preview.file)
-                case .video: bubble.media = .video(preview.file)
-                default: break
-                }
-            }
-            return bubble
-        }
+        let bubbles = Self.whatsAppBubbles(conversation)
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
         let card = NookCard(
             id: token,
@@ -113,6 +93,31 @@ extension AppModel {
                 guard await link.loadPreviews(wanted, chat: chat), let self, self.viewModel.hasCard(id: token) else { return }
                 self.presentWhatsApp(chat)
             }
+        }
+    }
+
+    /// A chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows as
+    /// itself, a video plays in its bubble and a document shows its first page; until then a file is a button.
+    static func whatsAppBubbles(_ conversation: WAConversation) -> [ChatBubble] {
+        let link = WhatsAppLink.shared
+        let time = DateFormatter()
+        time.dateFormat = "HH:mm"
+        return conversation.messages.suffix(WAInbox.keep).map { message in
+            let file = Self.whatsAppFileLabel(message.media)
+            var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
+                                    time: time.string(from: message.date), date: message.date,
+                                    sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
+                                    fromMe: message.fromMe, attachment: file,
+                                    ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
+            if let preview = link.preview(message.id) {
+                bubble.image = preview.image
+                switch message.media {
+                case .image: bubble.media = .photo(preview.file)
+                case .video: bubble.media = .video(preview.file)
+                default: break
+                }
+            }
+            return bubble
         }
     }
 
@@ -171,12 +176,12 @@ extension AppModel {
     }
 
     /// Room for the context, the name, the bubbles, the answer field and the buttons. A bubble holds about 48
-    /// characters per line and at most 5 lines, a file adds a row. The bubbles always get room for a few messages, and
-    /// what does not fit in their maximum height scrolls.
+    /// characters per line and at most 12 lines (a longer one folds), a file adds a row. The bubbles always get room for
+    /// a few messages, and what does not fit in their maximum height scrolls.
     static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
         let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
         let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
-            let lines = bubble.text.isEmpty ? 0 : min(5, max(1, (bubble.text.count + 47) / 48))
+            let lines = bubble.text.isEmpty ? 0 : min(12, max(1, (bubble.text.count + 47) / 48))
             let file: CGFloat
             switch bubble.media {
             case .photo, .video: file = (bubble.image.map(Self.photoHeight) ?? 135) + 4
