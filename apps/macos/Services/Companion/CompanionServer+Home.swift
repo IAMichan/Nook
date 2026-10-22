@@ -74,7 +74,7 @@ extension CompanionServer {
             days: report.days.map { .init(day: $0.day.timeIntervalSince1970, agent: $0.provider.displayName, tokens: $0.tokens) },
             models: report.rows.prefix(20).map { row in
                 .init(agent: row.provider.displayName, model: CompanionPolicy.clip(row.model, limit: 120), sessions: row.sessions,
-                      tokens: row.inputTokens + row.outputTokens + row.cacheReadTokens, cost: row.reportedCostUSD)
+                      tokens: row.inputTokens + row.outputTokens, cost: row.reportedCostUSD)
             })
         return CompanionResponse(id: request.id, ok: true, usage: digest)
     }

@@ -37,7 +37,7 @@ struct UsageScreen: View {
                     if let usage {
                         HStack(spacing: Theme.Spacing.sm) {
                             StatTile(title: "Sessions", value: usage.sessions.formatted(), symbol: "square.stack.3d.up.fill")
-                            StatTile(title: "Tokens", value: Tokens.format(usage.inputTokens + usage.outputTokens + usage.cacheTokens),
+                            StatTile(title: "Tokens", value: Tokens.format(usage.inputTokens + usage.outputTokens),
                                      symbol: "text.word.spacing")
                             StatTile(title: "Cost", value: usage.cost.map { $0.formatted(.currency(code: "USD")) } ?? "—",
                                      symbol: "dollarsign.circle.fill")
