@@ -309,8 +309,16 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     /// Your own message: only a bridge (`ChatBridge`) knows those, a notification is always someone else's. Optional so
     /// an inbox saved before bridges still loads.
     var fromMe: Bool? = nil
+    /// A photo, video, GIF, sticker, audio message or file that came with it; `text` is then its caption, if any.
+    var media: ChatMedia? = nil
 
     var isMine: Bool { fromMe == true }
+
+    /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
+    var summary: String {
+        guard let media else { return text }
+        return text.isEmpty ? media.label : "\(media.label): \(text)"
+    }
 }
 
 /// One chat as a bridge reads it from its app, with its newest messages (yours included), oldest first.
@@ -322,6 +330,8 @@ struct BridgedChat: Equatable, Sendable {
     /// How many messages wait for you, when the app keeps track of it (Messages does); nil counts the new messages
     /// from others that come in after the first look.
     var unread: Int?
+    /// The chat's picture on this Mac (a person's profile photo, a group's or a channel's), when the app has one.
+    var avatar: String? = nil
 }
 
 /// One chat in one app, with its newest messages.
@@ -337,6 +347,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// The unread count the app itself gave last time (a bridge that knows it): only a change in it overrides what you
     /// read in Nook.
     var appUnread: Int? = nil
+    /// The chat's picture on this Mac, as its app shows it (a person, a group, a channel); nil when it has none.
+    var avatar: String? = nil
 
     var last: Date { messages.last?.date ?? .distantPast }
     /// Someone else than the chat itself wrote in it: a group.
@@ -464,13 +476,21 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let gone = removed?[key]
         let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
         // Without new messages a bridge can still bring the app's unread count for a chat Nook shows.
-        guard !messages.isEmpty || (known != nil && chat.unread != nil) else { return false }
+        guard !messages.isEmpty || (known != nil && (chat.unread != nil || (chat.avatar != nil && chat.avatar != known?.avatar)))
+        else { return false }
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
         let before = thread
         let newestBefore = known?.last
+        // A file a bridge fetched since it last brought this message: the chat shows it now.
+        for message in messages where message.media != nil {
+            if let index = thread.messages.firstIndex(where: { $0.id == message.id }), thread.messages[index].media != message.media {
+                thread.messages[index].media = message.media
+            }
+        }
         for message in messages where !thread.messages.contains(where: {
             $0.id == message.id
-                || ($0.isMine == message.isMine && $0.text == message.text
+                // Two photos sent in a row are two messages, even without a caption.
+                || (message.media == nil && $0.media == nil && $0.isMine == message.isMine && $0.text == message.text
                     && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
         }) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
@@ -483,6 +503,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             thread.appUnread = unread
         }
         thread.name = chat.name
+        if let avatar = chat.avatar { thread.avatar = avatar }
         guard thread != before else { return false }
         threads[key] = thread
         dropQuietest()
@@ -664,7 +685,7 @@ extension ChatInbox {
     }
 
     private static func line(_ message: InboxMessage, in thread: InboxThread) -> String {
-        let text = message.text.count > 300 ? String(message.text.prefix(300)) + "…" : message.text
+        let text = message.summary.count > 300 ? String(message.summary.prefix(300)) + "…" : message.summary
         return "\(message.sender.isEmpty ? thread.name : message.sender): \(text)"
     }
 

@@ -51,6 +51,18 @@ enum SlackData {
         return names
     }
 
+    /// Each person's profile picture (users.list, `profile.image_72`): a public address, fetched without the token.
+    static func avatars(_ json: [String: Any]) -> [String: String] {
+        var pictures: [String: String] = [:]
+        for member in json["members"] as? [[String: Any]] ?? [] {
+            guard let id = member["id"] as? String, let profile = member["profile"] as? [String: Any],
+                  let image = (profile["image_72"] as? String) ?? (profile["image_48"] as? String),
+                  image.hasPrefix("https://") else { continue }
+            pictures[id] = image
+        }
+        return pictures
+    }
+
     /// The direct and group messages from conversations.list, without the ones that were closed or belong to a user
     /// that was deleted.
     static func conversations(_ json: [String: Any]) -> [Conversation] {
@@ -90,18 +102,36 @@ enum SlackData {
         let messages: [InboxMessage] = (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
             guard let ts = message["ts"] as? String, let seconds = Double(ts) else { return nil }
             if let subtype = message["subtype"] as? String, skipped.contains(subtype) { return nil }
-            var text = clean((message["text"] as? String) ?? "", users: users)
-            if text.isEmpty, let files = message["files"] as? [[String: Any]] {
-                text = files.compactMap { ($0["name"] as? String) ?? ($0["title"] as? String) }.joined(separator: ", ")
-            }
-            guard !text.isEmpty else { return nil }
+            let text = clean((message["text"] as? String) ?? "", users: users)
+            let media = (message["files"] as? [[String: Any]])?.first.flatMap(Self.file)
+            guard !text.isEmpty || media != nil else { return nil }
             let user = (message["user"] as? String) ?? (message["bot_id"] as? String) ?? ""
             let mine = me != nil && user == me
             let sender = mine || !conversation.isGroup ? "" : (users[user] ?? (message["username"] as? String) ?? user)
             return InboxMessage(id: "slack-\(conversation.id)-\(ts)", sender: sender, text: text,
-                                date: Date(timeIntervalSince1970: seconds), fromMe: mine)
+                                date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// A file in a message (`files[]`): what it is, its name, and Slack's address to fetch it with the token. A clip
+    /// recorded in Slack is a voice message.
+    static func file(_ file: [String: Any]) -> ChatMedia? {
+        let name = (file["name"] as? String) ?? (file["title"] as? String)
+        let size = (file["size"] as? Int) ?? 0
+        // A file too large to fetch for a chat opens in Slack instead.
+        let source = size > ChatMedia.maxBytes ? nil : (file["url_private_download"] as? String) ?? (file["url_private"] as? String)
+        guard name != nil || source != nil else { return nil }
+        let voice = (file["subtype"] as? String) == "slack_audio"
+        let milliseconds = (file["duration_ms"] as? Double) ?? (file["duration_ms"] as? Int).map(Double.init)
+        return ChatMedia(kind: ChatMedia.kind(mimeType: file["mimetype"] as? String, name: name, voice: voice), name: name,
+                         seconds: milliseconds.map { $0 / 1000 }, source: source)
+    }
+
+    /// Whether an address is Slack's own, the only place the token may go.
+    static func isSlack(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return host == "slack.com" || host.hasSuffix(".slack.com") || host.hasSuffix(".slack-edge.com")
     }
 
     /// Slack's markup as plain text: `<@U1>` → "@Anna", `<#C1|general>` → "#general", `<https://x|label>` → "label",

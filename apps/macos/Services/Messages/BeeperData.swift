@@ -12,6 +12,9 @@ enum BeeperData {
         var isGroup: Bool
         var unread: Int
         var last: Date?
+        /// The chat's picture as Beeper gives it (a file on this Mac or an `mxc://` address): the group's own, or the
+        /// other person's in a private chat.
+        var picture: String? = nil
     }
 
     /// Beeper's networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"),
@@ -50,8 +53,16 @@ enum BeeperData {
             guard !title.isEmpty else { return nil }
             let unread = (chat["unreadCount"] as? Int) ?? Int((chat["unreadCount"] as? Double) ?? 0)
             return Chat(id: id, app: source, title: title, isGroup: chat["type"] as? String == "group", unread: unread,
-                        last: date(chat["lastActivity"]))
+                        last: date(chat["lastActivity"]), picture: picture(chat))
         }
+    }
+
+    /// A chat's picture: its own, else (in a private chat) the other person's.
+    static func picture(_ chat: [String: Any]) -> String? {
+        if let own = chat["imgURL"] as? String, !own.isEmpty { return own }
+        guard chat["type"] as? String != "group" else { return nil }
+        let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
+        return people.first { $0["isSelf"] as? Bool != true }.flatMap { $0["imgURL"] as? String }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// The messages of /v1/chats/{id}/messages, oldest first, without reactions, hidden and deleted ones.
@@ -61,13 +72,43 @@ enum BeeperData {
                   message["isHidden"] as? Bool != true, message["isDeleted"] as? Bool != true,
                   let sent = date(message["timestamp"]) else { return nil }
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty { text = label(message) }
-            guard !text.isEmpty else { return nil }
+            let media = (message["attachments"] as? [[String: Any]])?.first.flatMap(Self.file)
+            if text.isEmpty, media == nil { text = label(message) }
+            // Beeper writes a file's name as the text of a message with only that file.
+            if let name = media?.name, text == name { text = "" }
+            guard !text.isEmpty || media != nil else { return nil }
             let mine = message["isSender"] as? Bool == true
             let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
-            return InboxMessage(id: "beeper-\(chat.id)-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
+            return InboxMessage(id: "beeper-\(chat.id)-\(id)", sender: sender, text: text, date: sent, fromMe: mine,
+                                media: media)
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// An attachment: what it is (Beeper says whether it is a GIF, a sticker or a voice message), and where it is:
+    /// a file on this Mac once Beeper has it, else Beeper's own address for it, fetched through its API.
+    static func file(_ attachment: [String: Any]) -> ChatMedia? {
+        let name = (attachment["fileName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let source = (attachment["srcURL"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        guard name != nil || source != nil else { return nil }
+        var kind = ChatMedia.kind(mimeType: attachment["mimeType"] as? String, name: name,
+                                  sticker: attachment["isSticker"] as? Bool == true, gif: attachment["isGif"] as? Bool == true,
+                                  voice: attachment["isVoiceNote"] as? Bool == true)
+        if kind == .file {
+            switch attachment["type"] as? String {
+            case "img": kind = .photo
+            case "video": kind = .video
+            case "audio": kind = .audio
+            default: break
+            }
+        }
+        var media = ChatMedia(kind: kind, name: name, seconds: attachment["duration"] as? Double)
+        if let source, let url = URL(string: source), url.isFileURL {
+            media.path = url.path
+        } else {
+            media.source = source
+        }
+        return media
     }
 
     /// What a message without text holds: its file's name, else its kind.

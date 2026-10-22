@@ -111,6 +111,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |
 | `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`) |
 | `ChatTranscript` | `ChatTranscript.swift` | A conversation as bubbles (a WhatsApp card, the Chats tab): day lines, runs per person, colored names in a group, links, media, copy menu. Never draw chat bubbles by hand |
+| `ChatBubble(_:time:)` | `ChatMediaViews.swift` | Any chat app's message (`InboxMessage`) as a bubble, its file included. A bridge only fills `InboxMessage.media` (`ChatMedia`); every chat then shows photos, videos, GIFs, stickers and audio the same way |
+| `ChatStickerView`, `ChatGIFView`, `ChatAudioView` | `ChatMediaViews.swift` | A sticker on its own (no bubble), a GIF that loops silently (a real GIF or a short video), an audio or voice message with play, progress and length. Drawn by `ChatTranscript`; never draw chat media by hand |
 | `TicksView` | `ChatTranscript.swift` | How far your own message got (clock, one grey tick, two grey, two blue, failed): after a bubble's time and in front of a chat's newest message in the Chats list. Never draw ticks by hand |
 | `ChatReplyField` | `ChatReplyField.swift` | The answer field under a chat (the Chats tab, a WhatsApp card in the notch): Return sends, "@" opens the menu with "@nook" and ready-made requests, "@nook …" lets Nook write the message into the field first. Never build a chat's answer field by hand |
 

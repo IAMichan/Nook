@@ -72,6 +72,8 @@ struct ChatBubble: Equatable, Identifiable {
     var image: NSImage? = nil
     /// Your own message's ticks next to its time; nil shows none (their message, or a status that isn't known).
     var ticks: BubbleTicks? = nil
+    /// The file on this Mac, when Nook already has it: a click opens it from there.
+    var file: URL? = nil
 }
 
 extension ChatBubble {
@@ -113,6 +115,12 @@ enum BubbleMedia: Equatable {
     case photo(URL)
     /// The video saved on this Mac, played in the bubble.
     case video(URL)
+    /// A GIF (a real one, or a short video the app loops), playing by itself without sound.
+    case gif(URL)
+    /// A sticker, on its own without a bubble.
+    case sticker(URL)
+    /// An audio or voice message, played in the bubble; `seconds` is how long it lasts when the app says so.
+    case audio(URL, seconds: Double?)
 }
 
 enum CardDetail: Equatable {

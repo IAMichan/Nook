@@ -407,6 +407,106 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(MessagingApps.app(mentionedIn: ["teams.live.com", "Anna", "hoi"])?.id, "teams")
     }
 
+    // MARK: Files in chats
+
+    func testWhatAFileIs() {
+        XCTAssertEqual(ChatMedia.kind(mimeType: "image/jpeg"), .photo)
+        XCTAssertEqual(ChatMedia.kind(mimeType: "image/gif"), .gif)
+        XCTAssertEqual(ChatMedia.kind(mimeType: "video/mp4", gif: true), .gif, "a GIF that came as a video is a GIF")
+        XCTAssertEqual(ChatMedia.kind(mimeType: "image/webp", sticker: true), .sticker)
+        XCTAssertEqual(ChatMedia.kind(mimeType: "audio/ogg", voice: true), .voice)
+        XCTAssertEqual(ChatMedia.kind(mimeType: nil, name: "song.mp3"), .audio)
+        XCTAssertEqual(ChatMedia.kind(mimeType: nil, name: "IMG_0001.HEIC"), .photo)
+        XCTAssertEqual(ChatMedia.kind(mimeType: "application/pdf", name: "plan.pdf"), .file)
+        XCTAssertEqual(ChatMedia(kind: .file, name: "plan.pdf").label, "plan.pdf")
+        XCTAssertEqual(ChatMedia(kind: .sticker).label, tr("chat.media.sticker"))
+    }
+
+    func testAFetchedFileStaysInItsFolder() {
+        let url = ChatMedia.destination(key: "slack-C1-17.1", name: "../../evil/x.png")
+        XCTAssertEqual(url.deletingLastPathComponent().deletingLastPathComponent().path, ChatMedia.folder.path)
+        XCTAssertFalse(url.lastPathComponent.contains("/"))
+    }
+
+    func testAFileLaterFetchedShowsInItsMessage() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Anna")
+        var photo = InboxMessage(id: "t1", text: "", date: now, media: ChatMedia(kind: .photo))
+        inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [photo], unread: 0))
+        photo.media?.path = "/tmp/photo.jpg"
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [photo], unread: 0)))
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.media?.path, "/tmp/photo.jpg")
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.summary, tr("whatsapp.file.photo"))
+    }
+
+    func testTwoPhotosInARowAreTwoMessages() {
+        var inbox = ChatInbox()
+        let photos = [InboxMessage(id: "a", text: "", date: now, media: ChatMedia(kind: .photo)),
+                      InboxMessage(id: "b", text: "", date: now.addingTimeInterval(2), media: ChatMedia(kind: .photo))]
+        inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: photos, unread: 0))
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "messages", chat: "Anna")]?.messages.count, 2)
+    }
+
+    func testAChatKeepsItsPicture() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Family")
+        inbox.merge(BridgedChat(app: "telegram", name: "Family", messages: [message("a", "hi")], unread: 0))
+        XCTAssertNil(inbox.threads[key]?.avatar)
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "telegram", name: "Family", messages: [], unread: nil, avatar: "/tmp/family.jpg")),
+                      "a picture alone changes the chat")
+        XCTAssertEqual(inbox.threads[key]?.avatar, "/tmp/family.jpg")
+        inbox.merge(BridgedChat(app: "telegram", name: "Family", messages: [message("b", "again", at: 5)], unread: 0))
+        XCTAssertEqual(inbox.threads[key]?.avatar, "/tmp/family.jpg", "a read without a picture keeps the one it has")
+    }
+
+    func testTelegramFiles() {
+        let sticker: [String: Any] = ["@type": "messageSticker", "sticker": [
+            "emoji": "😀", "format": ["@type": "stickerFormatWebp"],
+            "sticker": ["@type": "file", "id": 7, "size": 20_000, "local": ["path": "", "is_downloading_completed": false]]]]
+        let file = TelegramData.file(sticker)
+        XCTAssertEqual(file?.id, 7)
+        XCTAssertEqual(file?.media.kind, .sticker)
+        XCTAssertNil(file?.media.path)
+        let voice: [String: Any] = ["@type": "messageVoiceNote", "voice_note": [
+            "duration": 4, "voice": ["@type": "file", "id": 8, "size": 9_000,
+                                     "local": ["path": "/tmp/v.oga", "is_downloading_completed": true]]]]
+        XCTAssertEqual(TelegramData.file(voice)?.media, ChatMedia(kind: .voice, path: "/tmp/v.oga", seconds: 4))
+        let gif: [String: Any] = ["@type": "messageAnimation", "caption": ["text": "lol"],
+                                  "animation": ["animation": ["@type": "file", "id": 9, "size": 1]]]
+        XCTAssertEqual(TelegramData.file(gif)?.media.kind, .gif)
+        let chat = TelegramData.Chat(id: -5, title: "Family", isGroup: true, unread: 0, order: 0)
+        let message = TelegramData.message(["@type": "message", "id": 3, "date": 1_700_000_000, "content": gif], chat: chat, users: [:])
+        XCTAssertEqual(message?.text, "lol", "a file's caption is its text")
+        XCTAssertEqual(message?.media?.kind, .gif)
+        let group = TelegramData.chat(["@type": "chat", "id": -7, "title": "Club", "type": ["@type": "chatTypeBasicGroup"],
+                                       "photo": ["small": ["@type": "file", "id": 11, "local": ["path": "/tmp/club.jpg", "is_downloading_completed": true]]]])
+        XCTAssertEqual(group?.photo, 11)
+        XCTAssertEqual(group?.avatar, "/tmp/club.jpg")
+    }
+
+    func testSlackAndBeeperFiles() {
+        let clip = SlackData.file(["name": "clip.m4a", "mimetype": "audio/mp4", "subtype": "slack_audio", "duration_ms": 3500,
+                                   "url_private_download": "https://files.slack.com/files-pri/T1-F1/download/clip.m4a"])
+        XCTAssertEqual(clip?.kind, .voice)
+        XCTAssertEqual(clip?.seconds, 3.5)
+        XCTAssertTrue(SlackData.isSlack(URL(string: "https://files.slack.com/x")!))
+        XCTAssertFalse(SlackData.isSlack(URL(string: "https://files.slack.com.evil.com/x")!), "the token never leaves Slack")
+        XCTAssertFalse(SlackData.isSlack(URL(string: "http://files.slack.com/x")!))
+        XCTAssertNil(SlackData.file(["name": "big.mov", "size": 900_000_000, "url_private": "https://files.slack.com/big"])?.source)
+        XCTAssertEqual(SlackData.avatars(["members": [["id": "U1", "profile": ["image_72": "https://avatars.slack-edge.com/a.png"]]]]),
+                       ["U1": "https://avatars.slack-edge.com/a.png"])
+
+        let gif = BeeperData.file(["type": "img", "mimeType": "video/mp4", "isGif": true, "srcURL": "file:///tmp/a.mp4"])
+        XCTAssertEqual(gif?.kind, .gif)
+        XCTAssertEqual(gif?.path, "/tmp/a.mp4")
+        let photo = BeeperData.file(["type": "img", "srcURL": "mxc://beeper.com/abc", "fileName": "a"])
+        XCTAssertEqual(photo?.kind, .photo)
+        XCTAssertEqual(photo?.source, "mxc://beeper.com/abc")
+        XCTAssertEqual(BeeperData.picture(["type": "single", "participants": ["items": [
+            ["isSelf": true, "imgURL": "file:///me.jpg"], ["imgURL": "file:///anna.jpg"]]]]), "file:///anna.jpg")
+        XCTAssertNil(BeeperData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
+    }
+
     // MARK: Slack
 
     func testSlackMarkup() {
@@ -444,7 +544,9 @@ final class ChatInboxTests: XCTestCase {
             ["ts": "1700000001.000100", "user": "U1", "text": "", "files": [["name": "plan.pdf"]]]
         ]]
         let messages = SlackData.messages(history, conversation: group, users: ["U1": "Anna"], me: "U2")
-        XCTAssertEqual(messages.map(\.text), ["plan.pdf", "hello", "mine"])
+        XCTAssertEqual(messages.map(\.summary), ["plan.pdf", "hello", "mine"])
+        XCTAssertEqual(messages[0].text, "", "a file without a message has no text of its own")
+        XCTAssertEqual(messages[0].media?.kind, .file)
         XCTAssertEqual(messages[1].sender, "Anna")
         XCTAssertTrue(messages[2].isMine)
         XCTAssertEqual(messages[2].sender, "")

@@ -67,16 +67,21 @@ final class MessagesBridge: ChatBridge {
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
         let unnamed = try await groupNames(rows, contacts: contacts)
+        let files = try await attachments(rows)
         for row in rows {
             let id = NotificationRecord.integer(row["id"]) ?? 0
             newest = max(newest, id)
-            guard let message = AppData.messages([row], names: contacts).first else { continue }
+            let media = files[id]
+            // A photo without a caption has no text to read: it is read as one with a placeholder, then left without.
+            var readable = row
+            if media != nil, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
+            guard let message = AppData.messages([readable], names: contacts).first else { continue }
             let chat = message.chat
             names[chat] = unnamed[chat] ?? names[chat] ?? message.chatName
             let group = (AppData.number(row["grp"]) ?? 0) != 0
             messages[chat, default: []].append(InboxMessage(
-                id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender, text: message.text,
-                date: message.date, fromMe: message.fromMe))
+                id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
+                text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media))
         }
         // Messages' own unread count of every chat Nook shows: reading it on the Mac or the phone clears it here too.
         let unreadRows = try await query("""
@@ -125,6 +130,42 @@ final class MessagesBridge: ChatBridge {
         return handles.mapValues { $0.sorted().joined(separator: ", ") }
     }
 
+    /// The text a message with only a file is read with, so it is not skipped as empty.
+    private static let placeholder = "\u{1}"
+
+    /// The first file of each of these messages, where Messages keeps it on this Mac (`~/Library/Messages/Attachments`):
+    /// a photo, a sticker, a GIF, a video or an audio message, shown as itself.
+    private func attachments(_ rows: [[String: Any]]) async throws -> [Int64: ChatMedia] {
+        let ids = rows.compactMap { NotificationRecord.integer($0["id"]) }
+        guard !ids.isEmpty else { return [:] }
+        let found: [[String: Any]]
+        do {
+            found = try await query("""
+            SELECT maj.message_id AS id, a.filename AS file, a.mime_type AS type, a.transfer_name AS name,
+                   COALESCE(a.is_sticker, 0) AS sticker, a.uti AS uti
+            FROM message_attachment_join maj JOIN attachment a ON a.ROWID = maj.attachment_id
+            WHERE maj.message_id IN (\(ids.map(String.init).joined(separator: ","))) ORDER BY maj.attachment_id
+            """)
+        } catch where error.localizedDescription.contains("no such") {
+            // An older Messages database without these columns: the messages still come, without their files.
+            return [:]
+        }
+        var media: [Int64: ChatMedia] = [:]
+        for row in found {
+            guard let id = NotificationRecord.integer(row["id"]), media[id] == nil else { continue }
+            var path = AppData.string(row["file"])
+            if path.hasPrefix("~") { path = AppDatabase.home + path.dropFirst() }
+            let name = AppData.string(row["name"])
+            let uti = AppData.string(row["uti"])
+            var kind = ChatMedia.kind(mimeType: AppData.string(row["type"]), name: name.isEmpty ? path : name,
+                                      sticker: (AppData.number(row["sticker"]) ?? 0) != 0)
+            // An audio message recorded in Messages is a .caf file.
+            if kind == .audio, uti == "com.apple.coreaudio-format" { kind = .voice }
+            media[id] = ChatMedia(kind: kind, name: name.isEmpty ? nil : name, path: path.isEmpty ? nil : path)
+        }
+        return media
+    }
+
     private static let select = """
     SELECT m.ROWID AS id, cmj.chat_id AS chat, COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, '') AS chatname,
            COALESCE(h.id, '') AS handle, m.is_from_me AS me, m.date AS date, m.text AS text, hex(m.attributedBody) AS body,
@@ -169,6 +210,12 @@ final class WhatsAppDesktopBridge: ChatBridge {
     private var names: [String: String] = [:]
     /// Whether the group member table can be joined (it is not in every version of the app).
     private var members = true
+    /// Whether the media table can be joined, for the photos, stickers, videos and voice messages the app keeps.
+    private var mediaItems = true
+    /// Where the app keeps the files of its chats; a media item's path is relative to it.
+    private static var mediaRoot: String {
+        AppDatabase.home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/"
+    }
 
     var isReady: Bool { !WhatsAppLink.shared.isConnected && FileManager.default.fileExists(atPath: Self.path) }
 
@@ -201,8 +248,9 @@ final class WhatsAppDesktopBridge: ChatBridge {
             names[chat] = name
             let mine = (AppData.number(row["me"]) ?? 0) != 0
             var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty { text = Self.label(Int(AppData.number(row["type"]) ?? 0)) }
-            guard !text.isEmpty else { continue }
+            let media = Self.media(row)
+            if text.isEmpty, media == nil { text = Self.label(Int(AppData.number(row["type"]) ?? 0)) }
+            guard !text.isEmpty || media != nil else { continue }
             var sender = ""
             if group, !mine {
                 sender = AppData.string(row["sender"])
@@ -210,7 +258,7 @@ final class WhatsAppDesktopBridge: ChatBridge {
             }
             messages[chat, default: []].append(InboxMessage(
                 id: "wadesktop-\(id)", sender: sender, text: text,
-                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine))
+                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media))
         }
         let known = names.keys.compactMap(Int.init).map(String.init).joined(separator: ",")
         var unread: [String: Int] = [:]
@@ -227,30 +275,53 @@ final class WhatsAppDesktopBridge: ChatBridge {
         }
     }
 
-    /// The messages with their chat; `window` keeps only the newest of each chat. Without the group member table the
-    /// same query runs again without the senders' names.
+    /// The file of a photo, video, voice message, sticker or document, where the app keeps it on this Mac.
+    private static func media(_ row: [String: Any]) -> ChatMedia? {
+        let file = AppData.string(row["file"])
+        guard !file.isEmpty, !file.contains("..") else { return nil }
+        let type = Int(AppData.number(row["type"]) ?? 0)
+        guard [1, 2, 3, 8, 15].contains(type) else { return nil }
+        var kind = ChatMedia.kind(mimeType: nil, name: file, sticker: type == 15, voice: type == 3)
+        if type == 8 { kind = .file }
+        let title = AppData.string(row["title"])
+        let seconds = AppData.number(row["seconds"]) ?? 0
+        return ChatMedia(kind: kind, name: type == 8 && !title.isEmpty ? title : nil, path: mediaRoot + file,
+                         seconds: seconds > 0 ? seconds : nil)
+    }
+
+    /// The messages with their chat; `window` keeps only the newest of each chat. Without the group member table (or
+    /// the media table) the same query runs again without the senders' names (or the files).
     private func select(_ filter: String, window: Int? = nil) async throws -> [[String: Any]] {
-        func sql(_ members: Bool) -> String {
+        func sql(_ members: Bool, _ media: Bool) -> String {
             let base = """
             SELECT m.Z_PK AS id, m.ZCHATSESSION AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname,
                    COALESCE(s.ZCONTACTJID, '') AS jid, s.ZSESSIONTYPE AS kind, m.ZISFROMME AS me, m.ZMESSAGEDATE AS date,
                    m.ZTEXT AS text, m.ZMESSAGETYPE AS type,
-                   \(members ? "COALESCE(g.ZCONTACTNAME, '') AS sender, COALESCE(g.ZMEMBERJID, '') AS member" : "'' AS sender, '' AS member")
+                   \(members ? "COALESCE(g.ZCONTACTNAME, '') AS sender, COALESCE(g.ZMEMBERJID, '') AS member" : "'' AS sender, '' AS member"),
+                   \(media ? "COALESCE(mi.ZMEDIALOCALPATH, '') AS file, COALESCE(mi.ZMOVIEDURATION, 0) AS seconds, COALESCE(mi.ZTITLE, '') AS title" : "'' AS file, 0 AS seconds, '' AS title")
             FROM ZWAMESSAGE m JOIN ZWACHATSESSION s ON s.Z_PK = m.ZCHATSESSION
             \(members ? "LEFT JOIN ZWAGROUPMEMBER g ON g.Z_PK = m.ZGROUPMEMBER" : "")
+            \(media ? "LEFT JOIN ZWAMEDIAITEM mi ON mi.Z_PK = m.ZMEDIAITEM" : "")
             \(filter)
             """
             guard let window else { return base }
             return "SELECT * FROM (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x.chat ORDER BY x.date DESC) AS position FROM (\(base)) x) WHERE position <= \(window)"
         }
+        if mediaItems {
+            do {
+                return try await query(sql(members, true))
+            } catch where error.localizedDescription.contains("no such") {
+                mediaItems = false
+            }
+        }
         if members {
             do {
-                return try await query(sql(true))
+                return try await query(sql(true, false))
             } catch where error.localizedDescription.contains("no such") {
                 members = false
             }
         }
-        return try await query(sql(false))
+        return try await query(sql(false, false))
     }
 
     /// What a message without text holds, by WhatsApp's message type.
@@ -301,6 +372,8 @@ final class BeeperBridge: ChatBridge {
 
     /// The newest activity per chat at the last read: only chats that moved are read again.
     private var seen: [String: Date] = [:]
+    /// Files Beeper downloaded for Nook, by their `mxc://` address.
+    private var downloaded: [String: String] = [:]
 
     static var token: String? { CloudHelp.secret(tokenAccount) }
 
@@ -322,11 +395,13 @@ final class BeeperBridge: ChatBridge {
             var result: [BridgedChat] = []
             for chat in chats where chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil) {
                 let path = "/v1/chats/" + (chat.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? chat.id) + "/messages"
-                let messages = BeeperData.messages(try await get(path, ["limit": String(Self.history)], token: token), chat: chat)
+                let history = BeeperData.messages(try await get(path, ["limit": String(Self.history)], token: token), chat: chat)
+                let messages = await withFiles(history, token: token)
                 seen[chat.id] = chat.last ?? .distantPast
                 covered.insert(chat.app)
                 guard !messages.isEmpty else { continue }
-                result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread))
+                let picture = await local(chat.picture, token: token)
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture))
             }
             isWorking = true
             return result
@@ -334,6 +409,36 @@ final class BeeperBridge: ChatBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// The messages with their files on this Mac (see `local`).
+    private func withFiles(_ messages: [InboxMessage], token: String) async -> [InboxMessage] {
+        var result = messages
+        for index in result.indices {
+            guard var media = result[index].media, media.path == nil, let path = await local(media.source, token: token) else { continue }
+            media.path = path
+            result[index].media = media
+        }
+        return result
+    }
+
+    /// Where a file Beeper names is on this Mac: a `file://` one as it is, an `mxc://` one once Beeper downloaded it
+    /// through its own API (it says where it put it). Nothing is fetched from anywhere but Beeper on this Mac.
+    private func local(_ source: String?, token: String) async -> String? {
+        guard let source else { return nil }
+        if let url = URL(string: source), url.isFileURL { return url.path }
+        guard source.hasPrefix("mxc://") || source.hasPrefix("localmxc://") else { return nil }
+        if let known = downloaded[source], FileManager.default.fileExists(atPath: known) { return known }
+        var request = URLRequest(url: Self.base.appendingPathComponent("v1/assets/download"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["url": source])
+        guard let answer = try? await ConnectorHTTP.session.data(for: request),
+              (answer.1 as? HTTPURLResponse)?.statusCode == 200,
+              let local = (BeeperData.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
+        downloaded[source] = local.path
+        return local.path
     }
 
     private func get(_ path: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
@@ -361,7 +466,8 @@ final class BeeperBridge: ChatBridge {
 
 /// Your Slack direct messages and group messages, with their history, through Slack's Web API and a user token you set
 /// in Settings › Chats (kept in the Keychain). Read-only scopes are enough: im:history, mpim:history, im:read,
-/// mpim:read and users:read. Only slack.com is asked, and only for your own conversations.
+/// mpim:read, users:read and files:read (for the photos, GIFs and voice clips in them). Only Slack is asked, and only
+/// for your own conversations.
 @MainActor
 final class SlackBridge: ChatBridge {
     let app = "slack"
@@ -384,6 +490,9 @@ final class SlackBridge: ChatBridge {
 
     private var me: String?
     private var users: [String: String] = [:]
+    /// Each person's profile picture address, and where it is on this Mac once fetched.
+    private var avatars: [String: String] = [:]
+    private var avatarFiles: [String: String] = [:]
     private var usersAt: Date?
     private var conversations: [SlackData.Conversation] = []
     private var conversationsAt: Date?
@@ -399,6 +508,8 @@ final class SlackBridge: ChatBridge {
     func reset() {
         me = nil
         users = [:]
+        avatars = [:]
+        avatarFiles = [:]
         usersAt = nil
         conversations = []
         conversationsAt = nil
@@ -412,7 +523,9 @@ final class SlackBridge: ChatBridge {
         do {
             if me == nil { me = SlackData.me(try await call("auth.test", [:], token: token)) }
             if usersAt.map({ Date().timeIntervalSince($0) > 3600 }) ?? true {
-                users = try await pages("users.list", ["limit": "200"], token: token, maxPages: 5).reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
+                let members = try await pages("users.list", ["limit": "200"], token: token, maxPages: 5)
+                users = members.reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
+                avatars = members.reduce(into: [:]) { $0.merge(SlackData.avatars($1)) { a, _ in a } }
                 usersAt = Date()
             }
             if conversationsAt.map({ Date().timeIntervalSince($0) > 600 }) ?? true {
@@ -426,7 +539,8 @@ final class SlackBridge: ChatBridge {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
                 let json = try await call("conversations.history", parameters, token: token)
-                let messages = SlackData.messages(json, conversation: conversation, users: users, me: me)
+                let read = SlackData.messages(json, conversation: conversation, users: users, me: me)
+                let messages = await withFiles(read, token: token)
                 if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
@@ -435,8 +549,9 @@ final class SlackBridge: ChatBridge {
                     newest[conversation.id] = "0"
                 }
                 guard !messages.isEmpty else { continue }
+                let picture = await avatar(of: conversation.user)
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
-                                         messages: messages, unread: nil))
+                                         messages: messages, unread: nil, avatar: picture))
             }
             isWorking = true
             return chats
@@ -444,6 +559,46 @@ final class SlackBridge: ChatBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// A direct message's picture: the other person's profile photo, fetched once (a public address, no token sent).
+    private func avatar(of user: String?) async -> String? {
+        guard let user else { return nil }
+        if let file = avatarFiles[user], FileManager.default.fileExists(atPath: file) { return file }
+        guard let address = avatars[user], let url = URL(string: address), url.scheme == "https",
+              let answer = try? await ConnectorHTTP.session.data(from: url),
+              (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000 else { return nil }
+        let target = ChatMedia.destination(key: "slack-avatar-" + user, name: "avatar." + (url.pathExtension.isEmpty ? "png" : url.pathExtension))
+        try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? answer.0.write(to: target, options: .atomic)) != nil else { return nil }
+        avatarFiles[user] = target.path
+        return target.path
+    }
+
+    /// The messages with their files fetched from Slack (with the token, only from Slack's own addresses), so a photo,
+    /// GIF or voice clip shows as itself. One that cannot be fetched (the token lacks files:read) stays a file to open
+    /// in Slack.
+    private func withFiles(_ messages: [InboxMessage], token: String) async -> [InboxMessage] {
+        var result = messages
+        for index in result.indices {
+            guard var media = result[index].media, media.path == nil, let source = media.source,
+                  let url = URL(string: source), SlackData.isSlack(url) else { continue }
+            let target = ChatMedia.destination(key: result[index].id, name: media.name ?? url.lastPathComponent)
+            if !FileManager.default.fileExists(atPath: target.path) {
+                var request = URLRequest(url: url)
+                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                guard let answer = try? await ConnectorHTTP.session.data(for: request),
+                      let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
+                      answer.0.count <= ChatMedia.maxBytes,
+                      // Without the right scope Slack answers with its sign-in page instead of the file.
+                      !(response.mimeType ?? "").contains("html") else { continue }
+                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                guard (try? answer.0.write(to: target, options: .atomic)) != nil else { continue }
+            }
+            media.path = target.path
+            result[index].media = media
+        }
+        return result
     }
 
     /// The conversations to read now: never read ones and the busiest, then a few others in turn.
