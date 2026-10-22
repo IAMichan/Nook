@@ -218,46 +218,31 @@ struct NookRowSeparator: View {
     }
 }
 
-/// A notice that comes in while the panel is open (a permission request, an agent's question, a short note): one quiet
-/// bar under the tabs with an optional symbol, a title and a line under it, and its actions on the right. `tone` tints
-/// the edge for something risky.
+/// A notice that comes in while the panel is open (a permission request, an agent's question, a short note): the
+/// shared `NookNotice` in one quiet bar under the tabs, with its actions on the right. `tone` tints the mark and the
+/// edge for something risky. With `countdown` the notice closes by itself and ends in the OK with its ring; a request
+/// that waits for you has none.
 struct PanelNoticeBar<Actions: View>: View {
     let title: String
     var detail: String? = nil
     var symbol: String? = nil
     var tone: Color? = nil
     var help: String? = nil
+    var countdown: TimeInterval? = nil
+    var paused: Bool = false
+    var onOK: () -> Void = {}
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            if let symbol {
-                Image(systemName: symbol)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(tone ?? NookTheme.textSecondary)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                if let detail {
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                }
-            }
+        NookNotice(title: title, detail: detail, symbol: symbol, tone: tone ?? NookTheme.textSecondary,
+                   countdown: countdown, paused: paused, onOK: onOK, actions: actions)
             .help(help ?? title)
-            Spacer(minLength: NookTheme.Spacing.sm)
-            actions()
-        }
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .cardBackground(NookTheme.surface, stroke: (tone ?? NookTheme.line2).opacity(tone == nil ? 1 : 0.35),
-                        radius: NookTheme.Radius.panel, style: .continuous)
-        .padding(.top, NookTheme.Spacing.md)
-        .transition(.opacity.combined(with: .offset(y: -4)))
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .cardBackground(NookTheme.surface, stroke: (tone ?? NookTheme.line2).opacity(tone == nil ? 1 : 0.35),
+                            radius: NookTheme.Radius.panel, style: .continuous)
+            .padding(.top, NookTheme.Spacing.md)
+            .transition(.opacity.combined(with: .offset(y: -4)))
     }
 }
 

@@ -162,7 +162,7 @@ struct NotchRootView: View {
             .floatingDrag(viewModel)
         case .track(let title, let artist):
             trackStrip(title: title, artist: artist, nh: nh, nw: nw)
-        case .done(let message) where viewModel.doneAcknowledge && viewModel.geometry.hasNotch && !viewModel.geometry.isFloating:
+        case .done(let message) where viewModel.doneInline && viewModel.geometry.hasNotch && !viewModel.geometry.isFloating:
             inlineDoneStrip(message: message, nh: nh, nw: nw)
         case .done(let message):
             doneStrip(message: message, nh: nh)
@@ -277,7 +277,7 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: tone.symbol)
-                    .font(NookTheme.font(tone == .waiting ? 13 : 11, .bold))
+                    .font(NookTheme.font(13, .bold))
                     .foregroundStyle(tone.color)
                     .frame(width: 16)
                 Text(message)
@@ -295,14 +295,18 @@ struct NotchRootView: View {
 
             HStack(spacing: NookTheme.Spacing.xs) {
                 Spacer(minLength: 0)
-                NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
-                    viewModel.doneButtonPressed()
+                if viewModel.doneHasAction {
+                    NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
+                        viewModel.doneButtonPressed()
+                    }
                 }
-                NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: NotchViewModel.doneSeconds,
-                                      height: button) {
-                    viewModel.show(.idle)
+                if let seconds = viewModel.noticeSeconds {
+                    NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: seconds,
+                                          paused: noticePaused, height: button) {
+                        viewModel.acknowledgeNotice()
+                    }
+                    .id(viewModel.noticeStamp)
                 }
-                .id(viewModel.doneStamp)
             }
             .padding(.trailing, 10)
             .frame(width: wing, height: nh)
@@ -312,6 +316,10 @@ struct NotchRootView: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// The ring on a strip's OK holds while the pointer is on the notch, as the strip's clock does.
+    private var noticePaused: Bool { viewModel.pointerInside && viewModel.noticeHolds }
+
+    /// A result under the notch (or the step of a task Nook works on, with Stop): the same notice as every other.
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             stripOrb(nh: nh) {
@@ -321,24 +329,14 @@ struct NotchRootView: View {
             .floatingDrag(viewModel)
 
             StripLine {
-                Image(systemName: viewModel.doneTone.symbol)
-                    .font(NookTheme.font(viewModel.doneTone == .waiting ? 14 : 12, .bold))
-                    .foregroundStyle(viewModel.doneTone.color)
-                Text(message)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: NookTheme.Spacing.md)
-                NookGhostButton(title: viewModel.doneButtonTitle, compact: viewModel.doneAcknowledge) {
-                    viewModel.doneButtonPressed()
-                }
-                if viewModel.doneAcknowledge {
-                    NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: NotchViewModel.doneSeconds) {
-                        viewModel.show(.idle)
+                NookNotice(title: message, symbol: viewModel.doneTone.symbol, tone: viewModel.doneTone.color,
+                           countdown: viewModel.noticeSeconds, paused: noticePaused,
+                           onOK: { viewModel.acknowledgeNotice() }) {
+                    if viewModel.doneHasAction {
+                        NookGhostButton(title: viewModel.doneButtonTitle, compact: true) { viewModel.doneButtonPressed() }
                     }
-                    .id(viewModel.doneStamp)
                 }
+                .id(viewModel.noticeStamp)
             }
         }
     }
@@ -355,40 +353,33 @@ struct NotchRootView: View {
 
     // MARK: Nook thinking along
 
-    /// A short sentence below the notch, like "Shall I add this to your calendar?". Hover or click for the full proposal.
+    /// A short sentence below the notch, like "Shall I add this to your calendar?". View or a click on it opens the
+    /// full proposal; OK lets it go.
     private func nudgeStrip(line: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             stripOrb(nh: nh) {
                 NookOrb(mood: .seen, size: 24, animated: true, curious: true, glow: viewModel.geometry.isFloating)
             }
 
-            StripLine(height: 34) {
-                Image(systemName: "sparkles")
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.iris)
-                Text(line)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: NookTheme.Spacing.md)
-                Image(systemName: "chevron.down")
-                    .font(NookTheme.font(10, .bold))
-                    .foregroundStyle(NookTheme.textTertiary)
+            StripLine {
+                NookNotice(title: line, symbol: "sparkles", tone: NookTheme.iris,
+                           countdown: viewModel.noticeSeconds, paused: noticePaused,
+                           onOK: { viewModel.acknowledgeNotice() }) {
+                    NookGhostButton(title: tr("button.view"), compact: true) { viewModel.openNudge() }
+                }
+                .id(viewModel.noticeStamp)
+                .accessibilityLabel(tr("notch.nudgeProposal", line))
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { viewModel.openNudge() }
         .floatingDrag(viewModel)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(tr("notch.nudgeProposal", line))
-        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Nook's own moments
 
-    /// A friendly moment below the notch: Nook in the moment's mood, the line, and at most one button. Clicking the
-    /// line does what the button says (the good morning shows today's events), or puts it away otherwise.
+    /// A friendly moment below the notch: Nook in the moment's mood, the line, at most one button and the OK. Clicking
+    /// the line does what the button says (the good morning shows today's events), or puts it away otherwise.
     private func momentStrip(_ moment: NookMoment, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
             stripOrb(nh: nh) {
@@ -396,37 +387,34 @@ struct NotchRootView: View {
             }
             .floatingDrag(viewModel)
 
-            StripLine(trailing: NookTheme.Spacing.lg) {
-                Group {
-                    if moment.mood == .breathe {
-                        // The line follows the breath: in, hold, out.
-                        TimelineView(.periodic(from: moment.started, by: 0.5)) { context in
-                            Text(tr(NookMoment.breathPhaseKey(context.date.timeIntervalSince(moment.started))))
-                                .contentTransition(.opacity)
-                                .animation(.easeInOut(duration: 0.4), value: NookMoment.breathPhaseKey(context.date.timeIntervalSince(moment.started)))
-                        }
-                    } else {
-                        Text(moment.line)
+            StripLine {
+                if moment.mood == .breathe {
+                    // The line follows the breath: in, hold, out.
+                    TimelineView(.periodic(from: moment.started, by: 0.5)) { context in
+                        momentNotice(moment, line: tr(NookMoment.breathPhaseKey(context.date.timeIntervalSince(moment.started))))
                     }
+                } else {
+                    momentNotice(moment, line: moment.line)
                 }
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    // Breathing along is only started with the button: a click on the line never surprises you with it.
-                    if let action = moment.action, action != .breathe { app.performMomentAction(moment) } else { viewModel.show(.idle) }
-                }
-                Spacer(minLength: NookTheme.Spacing.md)
-                if moment.action != nil, !moment.actionTitle.isEmpty {
-                    NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }
-                }
-                ToolbarIconButton("xmark", tr("button.close")) { viewModel.show(.idle) }
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("buddy.accessibility", moment.mood.label, moment.line))
+    }
+
+    private func momentNotice(_ moment: NookMoment, line: String) -> some View {
+        NookNotice(title: line, countdown: viewModel.noticeSeconds, paused: noticePaused,
+                   onOK: { viewModel.acknowledgeNotice() }) {
+            if moment.action != nil, !moment.actionTitle.isEmpty {
+                NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }
+            }
+        }
+        .id(viewModel.noticeStamp)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Breathing along is only started with the button: a click on the line never surprises you with it.
+            if let action = moment.action, action != .breathe { app.performMomentAction(moment) } else { viewModel.show(.idle) }
+        }
     }
 
     // MARK: Expanded: Nook on the left, content on the right
@@ -759,10 +747,10 @@ private struct TrackCover: View {
     }
 }
 
-/// The one line of a strip under the notch (a result, a nudge, a moment): its mark, the words and its buttons, at the
-/// same height and margins in every strip, so they read as one kind of thing.
+/// The line of a strip under the notch (a result, a nudge, a moment) that holds its `NookNotice`, at the same height
+/// and margins in every strip, so they read as one kind of thing.
 private struct StripLine<Content: View>: View {
-    var trailing: CGFloat = NookTheme.Spacing.xl + NookTheme.Spacing.xs
+    var trailing: CGFloat = NookTheme.Spacing.xl
     /// The height the notch makes room for under itself (see `NotchViewModel`'s size for each strip).
     var height: CGFloat = 40
     @ViewBuilder var content: () -> Content

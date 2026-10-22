@@ -228,7 +228,7 @@ extension AppModel {
         if compact {
             let who = tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name)
             let message = session.project.isEmpty ? who : who + " · " + session.project
-            viewModel.finish(message, button: tr("button.view"), tone: Self.doneTone(session.status), acknowledge: true) { [weak self] in
+            viewModel.finish(message, button: tr("button.view"), tone: Self.doneTone(session.status), inline: true) { [weak self] in
                 self?.viewModel.selectedAgentID = session.id
                 self?.viewModel.show(.panel(.agents))
             }

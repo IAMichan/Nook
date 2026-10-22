@@ -111,12 +111,23 @@ final class NotchViewModel: ObservableObject {
     private var doneButtonAction: (() -> Void)?
     /// What the confirmation strip says it is about: done (a check), waiting on you, or failed.
     @Published private(set) var doneTone: DoneTone = .done
-    /// The strip also shows an "OK" that closes it at once, next to its button.
-    @Published private(set) var doneAcknowledge = false
-    /// New for every strip, so its countdown starts over.
-    @Published private(set) var doneStamp = UUID()
+    /// An agent notice in compact size: it stays in the notch's own row instead of a strip under it.
+    @Published private(set) var doneInline = false
+    /// The strip's own button does something (View, Open, Stop); without one the strip only has its OK.
+    var doneHasAction: Bool { doneButtonAction != nil }
+    /// New for every strip under the notch (a result, a suggestion, a moment), so its countdown starts over.
+    @Published private(set) var noticeStamp = UUID()
+    /// How long the strip showing now stays by itself, shown as the ring on its OK; nil while it waits for you (a
+    /// task's step with Stop).
+    @Published private(set) var noticeSeconds: TimeInterval?
     /// How long the confirmation strip stays.
     static let doneSeconds: TimeInterval = 4.2
+    /// The clock of the strip showing now: it holds while the pointer is on the notch, like the ring on its OK.
+    private let noticeClock = NoticeClock()
+    /// The clock of the notice in the open panel's bar: it holds while the pointer is on the bar.
+    private let panelNoticeClock = NoticeClock()
+    /// The pointer is on the panel's notice bar: its ring holds.
+    @Published private(set) var panelNoticeHeld = false
 
     /// Width of each side of the notch for a compact agent notice: the left holds the mark and the message, the right
     /// View and OK. Both sides are as wide, so the notch stays centered.
@@ -218,6 +229,7 @@ final class NotchViewModel: ObservableObject {
     ///   window is in front. Anything else that asks for a tab goes to the main window while that is in front.
     func show(_ new: NotchState, inNotch: Bool = false) {
         doneTask?.cancel()
+        noticeClock.cancel()
         NookPresence.shared.noteActivity()
         var target = new
         // The notch has one Nook tab (home and chat in one), Agents, and Music while something plays. Older routes
@@ -421,20 +433,32 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Displays a brief confirmation and returns to idle after a few seconds.
-    func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, acknowledge: Bool = false,
-                action: (() -> Void)? = nil) {
+    /// Displays a brief confirmation and returns to idle after `seconds` with the pointer off the notch; its OK closes
+    /// it at once. `button` and `action` add the strip's own button next to the OK (View, Open). `inline`: an agent
+    /// notice that stays in the notch's own row when compact.
+    func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, inline: Bool = false,
+                seconds: TimeInterval = NotchViewModel.doneSeconds, action: (() -> Void)? = nil) {
         doneButtonTitle = button
         doneButtonAction = action
         doneTone = tone
-        doneAcknowledge = acknowledge
-        doneStamp = UUID()
+        doneInline = inline
         show(.done(message))
-        doneTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.doneSeconds * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            self?.show(.idle)
+        runNotice(seconds) { [weak self] in
+            guard let self, case .done(let shown) = self.state, shown == message else { return }
+            self.show(.idle)
         }
+    }
+
+    /// Starts the strip's clock (and with a new stamp, the ring on its OK): it holds while the pointer is on the notch.
+    private func runNotice(_ seconds: TimeInterval, holds: Bool = true, expire: @escaping () -> Void) {
+        noticeSeconds = seconds
+        noticeStamp = UUID()
+        noticeClock.start(seconds, held: holds && pointerInside, expire: expire)
+    }
+
+    /// The strip's OK: it goes at once, as it would have when its countdown ran out.
+    func acknowledgeNotice() {
+        show(.idle)
     }
 
     /// A task Nook works on by itself (`AppModel+Takeover`): its current step in the slim strip under the notch, with
@@ -447,9 +471,12 @@ final class NotchViewModel: ObservableObject {
         doneButtonTitle = tr("takeover.stop")
         doneButtonAction = stop
         doneTone = .waiting
-        doneAcknowledge = false
+        doneInline = false
         if case .done(let shown) = state, shown == line { return }
         show(.done(line))
+        // The step stays until the next one or `endWork`: no countdown, Stop decides.
+        noticeSeconds = nil
+        noticeStamp = UUID()
     }
 
     /// The task is over: the strip goes (a card or the panel that is open stays).
@@ -467,12 +494,12 @@ final class NotchViewModel: ObservableObject {
         default: return false
         }
         if let action = toast.action {
-            finish(toast.title, button: action.title, tone: toast.kind.doneTone) { [weak self] in
+            finish(toast.title, button: action.title, tone: toast.kind.doneTone, seconds: toast.duration) { [weak self] in
                 self?.show(.idle)
                 action.perform()
             }
         } else {
-            finish(toast.title, tone: toast.kind.doneTone)
+            finish(toast.title, tone: toast.kind.doneTone, seconds: toast.duration)
         }
         return true
     }
@@ -486,14 +513,23 @@ final class NotchViewModel: ObservableObject {
         }
         let notice = PanelNotice(message: message, button: button, action: action)
         panelNotice = notice
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+        panelNoticeHeld = false
+        panelNoticeClock.start(notice.seconds) { [weak self] in
             if self?.panelNotice?.id == notice.id { self?.panelNotice = nil }
         }
     }
 
     func dismissPanelNotice() {
+        panelNoticeClock.cancel()
+        panelNoticeHeld = false
         panelNotice = nil
+    }
+
+    /// The pointer is on the panel's notice bar: its clock and ring hold, and run out the rest once it leaves.
+    func holdPanelNotice(_ held: Bool) {
+        guard panelNotice != nil, held != panelNoticeHeld else { return }
+        panelNoticeHeld = held
+        if held { panelNoticeClock.hold() } else { panelNoticeClock.resume() }
     }
 
     /// A new track: notch expands briefly showing current playback. Only when idle, never over a card or panel.
@@ -522,9 +558,8 @@ final class NotchViewModel: ObservableObject {
     func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
         guard nudgeFits else { return false }
         show(.nudge(line, card))
-        doneTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard !Task.isCancelled, let self, case .nudge(_, let shown) = self.state, shown.id == card.id else { return }
+        runNotice(seconds) { [weak self] in
+            guard let self, case .nudge(_, let shown) = self.state, shown.id == card.id else { return }
             self.show(.idle)
         }
         return true
@@ -547,14 +582,21 @@ final class NotchViewModel: ObservableObject {
         dismissMoment(moment.id, after: moment.seconds)
     }
 
-    /// Back to idle after `seconds`, if this moment is still showing.
+    /// Back to idle after `seconds` with the pointer off the notch, if this moment is still showing. Breathing along
+    /// keeps going for its full length, wherever the pointer is.
     func dismissMoment(_ id: String, after seconds: Double) {
-        doneTask?.cancel()
-        doneTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-            guard !Task.isCancelled, let self, case .moment(let shown) = self.state, shown.id == id else { return }
+        let breathing: Bool
+        if case .moment(let shown) = state { breathing = shown.mood == .breathe } else { breathing = false }
+        runNotice(max(0, seconds), holds: !breathing) { [weak self] in
+            guard let self, case .moment(let shown) = self.state, shown.id == id else { return }
             self.show(.idle)
         }
+    }
+
+    /// Whether the strip's clock holds while the pointer is on the notch (not while breathing along).
+    var noticeHolds: Bool {
+        if case .moment(let moment) = state { return moment.mood != .breathe }
+        return true
     }
 
     /// The pointer is on the notch: you are about to open it. A nudge or moment showing up now would take the place of
@@ -586,21 +628,15 @@ final class NotchViewModel: ObservableObject {
         hoverTask?.cancel()
         if inside, state.isResting { NookPresence.shared.pointerEntered() } else { NookPresence.shared.noteActivity() }
         scheduleAutoClose()
-        // A moment stays while you read it, and leaves a little after you move away.
-        if case .moment(let moment) = state {
-            // Breathing along keeps going for its full minute, wherever the pointer is.
-            let left = moment.mood == .breathe ? max(3, moment.seconds - Date().timeIntervalSince(moment.started)) : 3
-            if inside { doneTask?.cancel() } else { dismissMoment(moment.id, after: left) }
+        // A strip under the notch (a result, a suggestion, a moment) stays while you read it: its clock and the ring
+        // on its OK hold, and run out the rest once you move away.
+        switch state {
+        case .done, .nudge, .moment:
+            guard noticeHolds else { return }
+            if inside { noticeClock.hold() } else { noticeClock.resume() }
             return
-        }
-        // Nook made an offer: hovering reveals the full proposal even if hover-to-open is disabled.
-        if inside, case .nudge = state {
-            hoverTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 180_000_000)
-                guard !Task.isCancelled, let self, self.pointerInside else { return }
-                self.openNudge()
-            }
-            return
+        default:
+            break
         }
         guard openOnHover, inside, state.isResting, !holdsHoverOpen else { return }
         // If an agent is running, hover opens a little faster.
@@ -685,13 +721,13 @@ final class NotchViewModel: ObservableObject {
             let textLen = max(CGFloat(title.count) * 6.2, CGFloat(artist.count) * 5.4)
             let wing = min(175, max(115, textLen + 46))
             return CGSize(width: nw + 2 * wing, height: nh)
-        case .done(let message) where doneAcknowledge && geometry.hasNotch && !geometry.isFloating:
+        case .done(let message) where doneInline && geometry.hasNotch && !geometry.isFloating:
             // An agent notice in compact size stays in the notch's own row: the notch only grows wider.
             return CGSize(width: nw + 2 * Self.inlineDoneWing(message), height: nh)
         case .done:
             return CGSize(width: max(440, nw + 240), height: nh + 40)
         case .nudge:
-            return CGSize(width: max(460, nw + 280), height: nh + 34)
+            return CGSize(width: max(500, nw + 300), height: nh + 40)
         case .moment:
             return CGSize(width: max(500, nw + 300), height: nh + 40)
         case .card(let card) where card.resizable:
@@ -846,6 +882,8 @@ struct PanelNotice: Identifiable {
     let message: String
     let button: String
     let action: (() -> Void)?
+    /// How long it stays while the pointer is off it, shown as the ring on its OK.
+    var seconds: TimeInterval = 8
 }
 
 /// The mark before a confirmation strip's message.
