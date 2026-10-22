@@ -359,18 +359,52 @@ private struct BubbleActionButton: View {
     }
 }
 
-/// The emoji to react with, in a row; the one you already put there is marked, and choosing it again takes it back.
+/// The emoji to react with, in a row, and "+" for every other emoji; the one you already put there is marked, and
+/// choosing it again takes it back.
 private struct ReactionPicker: View {
     let mine: String?
     let choose: (String) -> Void
+    /// "+" was clicked: every emoji, with a search.
+    @State private var browsing = false
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            ForEach(ChatReactions.quick, id: \.self) { emoji in
-                ReactionPickerButton(emoji: emoji, chosen: emoji == mine) { choose(emoji) }
+        if browsing {
+            EmojiBrowser(chosen: mine, choose: choose)
+        } else {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(ChatReactions.quick, id: \.self) { emoji in
+                    ReactionPickerButton(emoji: emoji, chosen: emoji == mine) { choose(emoji) }
+                }
+                // A reaction outside the quick row is marked here too, so it can be taken back.
+                if let mine, !ChatReactions.quick.contains(mine) {
+                    ReactionPickerButton(emoji: mine, chosen: true) { choose(mine) }
+                }
+                MoreEmojiButton { browsing = true }
             }
+            .padding(NookTheme.Spacing.sm)
         }
-        .padding(NookTheme.Spacing.sm)
+    }
+}
+
+/// "+" after the quick row: opens every emoji.
+private struct MoreEmojiButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(NookTheme.font(14, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(NookTheme.smoke))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .hoverLift(hovering, scale: 1.08)
+        .help(tr("chat.react.more"))
+        .accessibilityLabel(tr("chat.react.more"))
     }
 }
 
