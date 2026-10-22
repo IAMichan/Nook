@@ -167,20 +167,27 @@ enum TranscriptPresentation {
         return rows
     }
 
-    /// Steps in a row (also across lists the agent's thinking split) become one row; everything else stands on its own.
+    /// Steps in a row become one row, also across the agent's thinking between them: a thought that is followed by more
+    /// steps is part of that work, not a line of its own, so a busy turn reads as one list instead of a zigzag. A thought
+    /// that opens the work or ends it stands on its own, as do answers.
     static func group(_ messages: [AgentChatMessage], finalID: String?) -> [TranscriptRow] {
         var rows: [TranscriptRow] = []
         var steps: [AgentToolStep] = []
         var groupID = ""
+        // Thinking after the steps so far: absorbed when more steps follow, else shown after the group.
+        var pending: [AgentChatMessage] = []
         func flush() {
             if steps.count == 1 { rows.append(.step(steps[0])) }
             if steps.count > 1 { rows.append(.group(id: groupID, steps: steps)) }
             steps = []
+            rows += pending.map { TranscriptRow.thinking($0) }
+            pending = []
         }
         for message in messages {
             switch message.kind {
             case .tools:
                 if steps.isEmpty { groupID = message.id }
+                pending = []
                 steps += message.steps
             case .user:
                 flush()
@@ -189,8 +196,7 @@ enum TranscriptPresentation {
                 flush()
                 rows.append(.assistant(message, isFinal: message.id == finalID))
             case .thinking:
-                flush()
-                rows.append(.thinking(message))
+                if steps.isEmpty { rows.append(.thinking(message)) } else { pending.append(message) }
             }
         }
         flush()

@@ -96,6 +96,19 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id), ["u1", "group:s1"], "steps split only by silent thinking are one group")
     }
 
+    func testThinkingBetweenStepsJoinsTheGroup() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Hoi"),
+            message("t0", .thinking, "Eerst kijken."),
+            message("s1", .tools, steps: [step("a", "Read", "a.swift")]),
+            message("t1", .thinking, "Nu de tests."),
+            message("s2", .tools, steps: [step("b", "Bash", "ls")]),
+            message("t2", .thinking, "Klaar met werken.")
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "t0", "group:s1", "t2"],
+                       "a thought before more steps joins their group; one that opens or ends the work stays")
+    }
+
     func testTallyCountsEditedFilesOnce() {
         let tally = ToolTally(steps: [step("a", "Edit", "App.swift"), step("b", "MultiEdit", "App.swift"),
                                       step("c", "Bash", "ls"), step("d", "Shell", "pwd", .failed), step("e", "Read", "x")])
