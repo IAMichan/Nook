@@ -55,6 +55,16 @@ extension AppModel {
         viewModel.register("\(token)#quiet") { link.mute(chat) }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
+        // In the notice history: the newest message from them, once (the card also updates for your own replies and ticks).
+        if !opened, let last = conversation.messages.last(where: { !$0.fromMe }) {
+            let file = Self.whatsAppFileLabel(last.media)
+            let text = file == nil ? Self.whatsAppText(last) : (last.text.isEmpty ? file ?? "" : last.text)
+            let sender = conversation.isGroup && !last.senderName.isEmpty ? last.senderName + ": " : ""
+            if NoticeHistory.shared.entries.first(where: { $0.key == token })?.detail != NoticeLog.detail(sender + text) {
+                logNotice(.info, title: conversation.name, detail: sender + text, context: "WhatsApp",
+                          target: .whatsApp(chat), key: token)
+            }
+        }
         let messages = conversation.messages.suffix(WAInbox.keep)
         let bubbles = Self.whatsAppBubbles(conversation)
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
@@ -338,6 +348,7 @@ extension AppModel {
             if !note.todos.isEmpty { message.offers = [tr("notes.offer.reminders"), tr("notes.offer.mail")] }
         }
         chat.append(message, to: conversation)
+        logNotice(note.status == .failed ? .failed : .done, title: tr("notes.ready", note.title), target: .conversation(conversation))
         viewModel.notify(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
     }
 }

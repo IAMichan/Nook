@@ -124,6 +124,12 @@ window layout. In the window the header's empty space moves the window, the traf
 button, the window remembers its tab (and opens at an agent that waits for you), and the chat keeps a readable width
 (`PanelLayout.readableChat`). In the notch, the window button continues on the same tab in the window.
 
+The bell in the header (`NoticeBellButton` in `NotchUI/Pills/NoticeCenter.swift`) lists what Nook told you since he
+started, so a card that closed before you looked can still be read and opened. A new notice Nook gives by himself (an
+agent that finished, a request, a message) is kept with `AppModel.logNotice` where it is decided, before the card, strip
+or banner shows, so one held back by quiet mode or a busy notch is kept as well. Toasts, the results of what you did,
+are not kept there.
+
 ## Settings — `apps/macos/App/Settings`
 
 | Component | File | Use |

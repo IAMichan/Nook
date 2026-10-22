@@ -160,6 +160,7 @@ targets:
       - path: Core/I18n+Buddy.swift
       - path: Core/I18n+Quiet.swift
       - path: Core/I18n+Update.swift
+      - path: Core/I18n+Notices.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -200,6 +201,7 @@ targets:
       - path: Services/FinishedSessions.swift
       - path: Services/SessionLiveness.swift
       - path: Services/NudgeFilter.swift
+      - path: Services/NoticeLog.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
