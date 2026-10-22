@@ -358,7 +358,8 @@ final class WorkspaceManager: ObservableObject {
         }
         .sorted { (timelineUse[$0] ?? .distantPast) < (timelineUse[$1] ?? .distantPast) }
         for id in idle.prefix(events.count - Self.timelineLimit) {
-            evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant })?.text
+            // Only the start: a summary shows a short excerpt of it, and a long answer need not stay in memory whole.
+            evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant }).map { String($0.text.prefix(2_000)) }
             events[id] = nil
             timelineUse[id] = nil
             evictedTimelines.insert(id)

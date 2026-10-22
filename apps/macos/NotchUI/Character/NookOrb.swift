@@ -41,7 +41,7 @@ struct NookOrb: View {
         // need only a few frames a second, and it can doze for hours. While you are away or the display sleeps (the
         // energy plan pauses) nobody sees it breathe, so it holds still instead of drawing all night.
         TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, frameRate) : 1.0 / Self.dozingFrameRate,
-                                paused: !(animated || (dozing && energy.plan.pace != .paused)))) { context in
+                                paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
             orb(pose(at: context.date))
         }
         .frame(width: size, height: size)

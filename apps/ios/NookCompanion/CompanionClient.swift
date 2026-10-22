@@ -50,6 +50,7 @@ final class CompanionClient: ObservableObject {
                 link = parsed
                 macName = response.macName ?? parsed.macName
                 sessions = response.sessions ?? []
+                Notifications.setBadge(sessions.needingYou)
                 phase = .connected
                 startPolling()
                 await Notifications.requestAndRegister()

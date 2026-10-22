@@ -425,17 +425,20 @@ final class MacAppMirror: ObservableObject {
     func passesThrough(at mouse: NSPoint) -> Bool {
         guard status == .showing, underPane, let pid, let hole, hole.contains(mouse), let main = NSScreen.screens.first else { return false }
         // This runs for every mouse move over the picture (60–120 times a second), and reading the whole window list
-        // each time is not free: the answer is kept for a moment, as windows hardly move between two pointer events.
-        if let front = lastFront, front.pid == pid, Date().timeIntervalSince(front.at) < 0.15 { return front.passes }
-        let passes = Self.isFront(pid, at: CGPoint(x: mouse.x, y: main.frame.height - mouse.y))
-        lastFront = (pid, passes, Date())
-        if passes { return true }
+        // each time is not free: the list is kept for a moment (windows hardly move between two pointer events), and
+        // every position is still tested against it.
+        if Date().timeIntervalSince(windowsReadAt) >= 0.15 {
+            windows = Self.onScreenWindows()
+            windowsReadAt = Date()
+        }
+        if Self.isFront(pid, at: CGPoint(x: mouse.x, y: main.frame.height - mouse.y), in: windows) { return true }
         raise(activating: false)
         return false
     }
 
-    /// The last answer of `passesThrough`, for the app it was about.
-    private var lastFront: (pid: pid_t, passes: Bool, at: Date)?
+    /// The windows on screen as `passesThrough` last read them, front to back.
+    private var windows: [(owner: pid_t, frame: CGRect, layer: Int)] = []
+    private var windowsReadAt = Date.distantPast
 
     /// True when `mouse` (Cocoa coordinates) is over the picture: a click there is in the app, not outside Nook.
     func holds(_ mouse: NSPoint) -> Bool {
@@ -444,18 +447,24 @@ final class MacAppMirror: ObservableObject {
 
     /// Whether the front-most window at the point (top-left coordinates) is the app's: a normal window, or a menu or
     /// popover of the app itself. Nook's own windows and other apps' overlays (above normal windows) are looked past.
-    private static func isFront(_ pid: pid_t, at point: CGPoint) -> Bool {
-        let own = ProcessInfo.processInfo.processIdentifier
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
-        for info in list {
-            guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != own,
-                  owner == pid || (info[kCGWindowLayer as String] as? Int) == 0,
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
-            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-            if frame.contains(point) { return owner == pid }
+    private static func isFront(_ pid: pid_t, at point: CGPoint, in windows: [(owner: pid_t, frame: CGRect, layer: Int)]) -> Bool {
+        for window in windows where window.owner == pid || window.layer == 0 {
+            if window.frame.contains(point) { return window.owner == pid }
         }
         return false
+    }
+
+    /// Other apps' visible windows on screen, front to back (Nook's own are left out).
+    private static func onScreenWindows() -> [(owner: pid_t, frame: CGRect, layer: Int)] {
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return list.compactMap { info in
+            guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != own,
+                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { return nil }
+            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            return (owner: owner, frame: frame, layer: info[kCGWindowLayer as String] as? Int ?? -1)
+        }
     }
 
     /// The accessibility element of the shown window: the one at its position, kept once found.
