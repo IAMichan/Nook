@@ -309,7 +309,7 @@ final class AppModel: ObservableObject {
         reloadLoops()
 
         // Always install newest hook script version so existing integrations stay up to date.
-        try? HookScript.install()
+        _ = try? HookScript.install()
         hub.recap = recap
         workspace.recap = recap
         startWorkspace()
