@@ -78,7 +78,7 @@ enum ChatReceipts {
         }
     }
 
-    /// Your message in Messages' own database: an error is a failure, a read date (or `is_read`) is read, `is_delivered`
+    /// Your message in Messages' own database: an error is a failure, a read date is read, `is_delivered`
     /// delivered, `is_sent` sent, anything else still on its way.
     static func messages(sent: Bool, delivered: Bool, read: Bool, failed: Bool) -> ChatReceipt {
         if failed { return .failed }
