@@ -59,7 +59,9 @@ enum TeamsData {
 
     static func token(_ json: [String: Any], now: Date = Date()) -> TokenResult {
         if let access = json["access_token"] as? String {
-            let expires = (json["expires_in"] as? Double) ?? 3600
+            // A number, whole or not (Microsoft sends a whole one), or a numeral; an hour when it says nothing.
+            let value = json["expires_in"]
+            let expires = (value as? Double) ?? (value as? Int).map(Double.init) ?? (value as? String).flatMap(Double.init) ?? 3600
             return .token(access: access, refresh: json["refresh_token"] as? String, expires: now.addingTimeInterval(expires))
         }
         switch json["error"] as? String {

@@ -45,6 +45,13 @@ protocol WhatsAppProvider: Sendable {
     func chats(limit: Int) async throws -> [WAChatInfo]
     /// The file of one message (a document, photo, video or voice note), only when you open it.
     func media(chat: String, message: String) async throws -> WAFile
+    /// Where a chat's picture is (a person's profile photo, a group's), on WhatsApp's own picture server; nil when it
+    /// has none, hides it, or the gateway cannot say.
+    func avatar(_ chat: String) async -> URL?
+}
+
+extension WhatsAppProvider {
+    func avatar(_ chat: String) async -> URL? { nil }
 }
 
 /// A message's file as the gateway hands it over.
@@ -265,6 +272,14 @@ actor GOWAProvider: WhatsAppProvider {
             .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
     }
 
+    func avatar(_ chat: String) async -> URL? {
+        guard let data = try? await scoped("GET", "/user/avatar", query: [
+            URLQueryItem(name: "phone", value: chat), URLQueryItem(name: "is_preview", value: "true"),
+            URLQueryItem(name: "is_community", value: "false"),
+        ]) else { return nil }
+        return WAAvatar.url(data)
+    }
+
     /// GOWA saves the file under its own /statics first and says where; Nook then fetches it from the configured URL,
     /// whatever host the link names.
     func media(chat: String, message: String) async throws -> WAFile {
@@ -411,6 +426,13 @@ actor OpenWAProvider: WhatsAppProvider {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let name = obj["name"] as? String, !name.isEmpty else { return nil }
         return name
+    }
+
+    func avatar(_ chat: String) async -> URL? {
+        let path = WAJID.isGroup(chat) ? "/groups/\(WAHTTP.pathComponent(chat))/picture"
+            : "/contacts/\(WAHTTP.pathComponent(Self.openwaId(chat)))/profile-picture"
+        guard let data = try? await scoped("GET", path) else { return nil }
+        return WAAvatar.url(data)
     }
 
     func chats(limit: Int) async throws -> [WAChatInfo] {

@@ -86,9 +86,31 @@ final class WhatsAppTests: XCTestCase {
         var inbox = WAInbox()
         XCTAssertEqual(inbox.add(message("h1", chat: "1@s.whatsapp.net"), filters: WAFilters(), history: true), .quiet)
         XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.unread, 0)
-        for index in 0..<30 { inbox.add(message("m\(index)", chat: "1@s.whatsapp.net", at: Double(index + 1)), filters: WAFilters()) }
+        // More than a chat keeps: the oldest go, the newest stay.
+        let count = WAInbox.keep + 5
+        for index in 0..<count { inbox.add(message("m\(index)", chat: "1@s.whatsapp.net", at: Double(index + 1)), filters: WAFilters()) }
         XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.count, WAInbox.keep)
-        XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.last?.id, "m29")
+        XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.last?.id, "m\(count - 1)")
+    }
+
+    func testAGroupKnownOnlyByItsIdIsAskedItsName() {
+        let old = "31622360496-1542111077@g.us"
+        XCTAssertTrue(WAJID.isPlaceholderName("Group 31622360496-1542111077", for: old), "the gateway's stand-in")
+        XCTAssertTrue(WAJID.isPlaceholderName("", for: old))
+        XCTAssertTrue(WAJID.isPlaceholderName(WAJID.displayNumber(old), for: old))
+        XCTAssertTrue(WAJID.isPlaceholderName("120363000000000001@g.us", for: "120363000000000001@g.us"))
+        XCTAssertFalse(WAJID.isPlaceholderName("Familie", for: old))
+    }
+
+    func testChatPicturesOnlyFromWhatsApp() {
+        let gowa = Data(#"{"code":"SUCCESS","results":{"url":"https://pps.whatsapp.net/v/t61/abc.jpg?oh=1","type":"preview"}}"#.utf8)
+        XCTAssertEqual(WAAvatar.url(gowa)?.host, "pps.whatsapp.net")
+        let openwa = Data(#"{"url":"https://pps.whatsapp.net/v/x.jpg"}"#.utf8)
+        XCTAssertNotNil(WAAvatar.url(openwa))
+        XCTAssertNil(WAAvatar.url(Data(#"{"url":null}"#.utf8)), "no picture, or hidden")
+        XCTAssertNil(WAAvatar.url(Data(#"{"url":"https://evil.example/x.jpg"}"#.utf8)), "never another host")
+        XCTAssertNil(WAAvatar.url(Data(#"{"url":"https://pps.whatsapp.net.evil.example/x.jpg"}"#.utf8)))
+        XCTAssertNil(WAAvatar.url(Data(#"{"url":"http://pps.whatsapp.net/x.jpg"}"#.utf8)))
     }
 
     func testCatchUpAfterSleepIsKeptButNeverNew() {

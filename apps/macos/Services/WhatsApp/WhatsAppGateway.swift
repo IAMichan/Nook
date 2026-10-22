@@ -254,6 +254,14 @@ enum WAJID {
         return digits.allSatisfy(\.isNumber) && !digits.isEmpty ? "+" + digits : digits
     }
 
+    /// Whether a group's name is only a stand-in for its id: empty, the id itself, or what a gateway makes of it
+    /// ("Group 31622360496-1542111077"). Such a group is asked for its real name.
+    static func isPlaceholderName(_ name: String, for jid: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        let user = jid.split(separator: "@").first.map(String.init) ?? jid
+        return trimmed.isEmpty || trimmed == jid || trimmed == displayNumber(jid) || (!user.isEmpty && trimmed.contains(user))
+    }
+
     /// Two letters for the avatar: "Marie Dupont" → "MD", "+33 6…" → "#".
     static func initials(_ name: String) -> String {
         let words = name.split { $0 == " " || $0 == "-" }.filter { $0.first?.isLetter == true }
@@ -786,6 +794,25 @@ struct WAStatus: Equatable, Sendable {
     var link: Link
     /// This account's JID or number, once logged in.
     var me: String?
+}
+
+/// A chat's picture (a person's profile photo, a group's) as the gateways name it: an address on WhatsApp's own picture
+/// server. Nook fetches it from there only, never with the gateway's credentials.
+enum WAAvatar {
+    /// The picture's address in a gateway's answer: GOWA's `{"results": {"url"}}`, OpenWA's `{"url"}`. Nil when the
+    /// chat has no picture (or hides it), and for any address that is not WhatsApp's own picture server.
+    static func url(_ data: Data) -> URL? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let raw = ((json["results"] as? [String: Any])?["url"] as? String) ?? (json["url"] as? String)
+        guard let raw, let url = URL(string: raw), isWhatsApp(url) else { return nil }
+        return url
+    }
+
+    /// `https://pps.whatsapp.net/…` (and WhatsApp's other picture hosts), nothing else.
+    static func isWhatsApp(_ url: URL) -> Bool {
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return host == "whatsapp.net" || host.hasSuffix(".whatsapp.net")
+    }
 }
 
 enum WAGOWA {

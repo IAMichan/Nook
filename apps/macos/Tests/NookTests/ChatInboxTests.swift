@@ -392,19 +392,69 @@ final class ChatInboxTests: XCTestCase {
 
     func testSlackAndTeamsNotificationsFromTheirMacApps() {
         let slack = ChatCapture.notice(notification("com.tinyspeck.slackmacgap", title: "New message in #github-updates",
-                                                    body: "GitHub: 1 new commit pushed"))
+                                                    body: "GitHub: [acme/app] Workflow triggered by <https://github.com/ada|ada>"))
         XCTAssertEqual(slack?.app, "slack")
-        XCTAssertEqual(slack?.chat, "New message in #github-updates")
+        XCTAssertEqual(slack?.chat, "#github-updates", "the channel, not Slack's sentence around it")
+        XCTAssertEqual(slack?.sender, "GitHub")
+        XCTAssertEqual(slack?.text, "[acme/app] Workflow triggered by ada", "Slack's link markup as its label")
+        let direct = ChatCapture.notice(notification("com.tinyspeck.slackmacgap", title: "New message from Anna", body: "Note: lunch?"))
+        XCTAssertEqual(direct?.chat, "Anna")
+        XCTAssertEqual(direct?.sender, "", "a direct message has no sender of its own")
+        XCTAssertEqual(direct?.text, "Note: lunch?")
         let teams = ChatCapture.notice(notification("com.microsoft.teams2", title: "Mindlinq Business & Dev",
                                                     body: "Aron: Ter info"))
         XCTAssertEqual(teams?.app, "teams")
         XCTAssertEqual(teams?.chat, "Mindlinq Business & Dev")
-        XCTAssertEqual(teams?.text, "Aron: Ter info")
+        XCTAssertEqual(teams?.sender, "Aron")
+        XCTAssertEqual(teams?.text, "Ter info")
     }
 
     func testTeamsOnItsNewerWebAddresses() {
         XCTAssertEqual(MessagingApps.app(mentionedIn: ["teams.cloud.microsoft", "Anna", "hoi"])?.id, "teams")
         XCTAssertEqual(MessagingApps.app(mentionedIn: ["teams.live.com", "Anna", "hoi"])?.id, "teams")
+    }
+
+    // MARK: Markup
+
+    func testChatMarkup() {
+        typealias Span = ChatFormat.Span
+        XCTAssertEqual(ChatFormat.spans("a *bold* and _soft_ ~gone~ `x = 1`"), [
+            Span(text: "a "), Span(text: "bold", bold: true), Span(text: " and "), Span(text: "soft", italic: true),
+            Span(text: " "), Span(text: "gone", strike: true), Span(text: " "), Span(text: "x = 1", code: true)
+        ])
+        XCTAssertEqual(ChatFormat.spans("**strong** __em__"), [Span(text: "strong", bold: true), Span(text: " "), Span(text: "em", italic: true)])
+        XCTAssertEqual(ChatFormat.spans("5 * 3 * 2"), [Span(text: "5 * 3 * 2")], "a marker needs a word right inside it")
+        XCTAssertEqual(ChatFormat.spans("file_name_here"), [Span(text: "file_name_here")], "never inside a word")
+        XCTAssertEqual(ChatFormat.spans("see https://x.com/_a_b_ now"), [Span(text: "see https://x.com/_a_b_ now")],
+                       "a web address stays whole")
+        XCTAssertEqual(ChatFormat.spans("*_both_*"), [Span(text: "both", bold: true, italic: true)])
+        XCTAssertEqual(ChatFormat.spans("*open"), [Span(text: "*open")], "an unclosed marker stays")
+    }
+
+    func testChatBlocks() {
+        let text = "Release notes:\n• faster sync\n- fewer crashes\n2. done\n> quoted line\n> and more\n```\nlet x = 1\n```\nThanks"
+        XCTAssertEqual(ChatFormat.blocks(text), [
+            .paragraph([.init(text: "Release notes:")]),
+            .item("•", [.init(text: "faster sync")]),
+            .item("•", [.init(text: "fewer crashes")]),
+            .item("2.", [.init(text: "done")]),
+            .quote([.init(text: "quoted line\nand more")]),
+            .code("let x = 1"),
+            .paragraph([.init(text: "Thanks")])
+        ])
+        XCTAssertEqual(ChatFormat.blocks("```inline code``` after"), [.code("inline code"), .paragraph([.init(text: "after")])])
+        XCTAssertEqual(ChatFormat.plain("*Hi* _there_\n• one"), "Hi there\n• one")
+        XCTAssertEqual(InboxMessage(id: "a", text: "*Done*", date: now).summary, "Done", "a list line shows no markup")
+    }
+
+    func testSlackAppMessagesShowTheirAttachments() {
+        let conversation = SlackData.Conversation(id: "D1", user: "U1", name: "", isGroup: false, updated: 0)
+        let history: [String: Any] = ["messages": [["ts": "1700000001.000100", "bot_id": "B1", "text": "", "attachments": [
+            ["pretext": "New push to <https://github.com/acme/app|acme/app>", "title": "main", "text": "Fix the build"],
+            ["fallback": "Workflow passed"]
+        ]]]]
+        let messages = SlackData.messages(history, conversation: conversation, users: [:], me: "U2")
+        XCTAssertEqual(messages.first?.text, "New push to acme/app\nmain\nFix the build\n\nWorkflow passed")
     }
 
     // MARK: Files in chats
@@ -700,9 +750,9 @@ final class ChatInboxTests: XCTestCase {
             ChatTimeline.Item(id: "b", author: "Jan", date: now)
         ]
         XCTAssertEqual(ChatTimeline.entries(items, now: now, calendar: calendar), [
-            .day(id: "day-a", label: "chat.day.yesterday"),
+            .day(id: "day-a", label: tr("chat.day.yesterday")),
             .message(id: "a", first: true, last: true),
-            .day(id: "day-b", label: "chat.day.today"),
+            .day(id: "day-b", label: tr("chat.day.today")),
             .message(id: "b", first: true, last: true)
         ])
     }
@@ -717,9 +767,9 @@ final class ChatInboxTests: XCTestCase {
 
     func testDayLabels() {
         let locale = Locale(identifier: "en_US")
-        XCTAssertEqual(ChatTimeline.dayLabel(now, now: now, calendar: calendar, locale: locale), "chat.day.today")
+        XCTAssertEqual(ChatTimeline.dayLabel(now, now: now, calendar: calendar, locale: locale), tr("chat.day.today"))
         XCTAssertEqual(ChatTimeline.dayLabel(now.addingTimeInterval(-86_400), now: now, calendar: calendar, locale: locale),
-                       "chat.day.yesterday")
+                       tr("chat.day.yesterday"))
         let threeDaysAgo = ChatTimeline.dayLabel(now.addingTimeInterval(-3 * 86_400), now: now, calendar: calendar, locale: locale)
         XCTAssertFalse(threeDaysAgo.contains(where: \.isNumber), "a weekday: \(threeDaysAgo)")
         let longAgo = ChatTimeline.dayLabel(now.addingTimeInterval(-400 * 86_400), now: now, calendar: calendar, locale: locale)

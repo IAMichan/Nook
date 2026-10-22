@@ -316,8 +316,9 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
 
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
-        guard let media else { return text }
-        return text.isEmpty ? media.label : "\(media.label): \(text)"
+        let plain = ChatFormat.plain(text)
+        guard let media else { return plain }
+        return plain.isEmpty ? media.label : "\(media.label): \(plain)"
     }
 }
 
@@ -393,6 +394,17 @@ enum ChatCapture {
             title = name
             text = rest
         }
+        // Slack calls a channel's message "New message in #general" and writes its markup into the text; the chat is the
+        // channel and the one who wrote is in front of the text ("GitHub: …"), as in a group.
+        if app.id == "slack" {
+            title = slackChat(title)
+            text = SlackData.clean(text, users: [:])
+        }
+        if (app.id == "slack" && title.hasPrefix("#")) || app.id == "teams", subtitle.isEmpty, let (name, rest) = speaker(text),
+           name.lowercased() != title.lowercased() {
+            subtitle = name
+            text = rest
+        }
         // WhatsApp writes a group's message as "Anna @ Family".
         if subtitle.isEmpty, app.id == "whatsapp", let range = title.range(of: " @ ") {
             subtitle = String(title[..<range.lowerBound])
@@ -400,6 +412,19 @@ enum ChatCapture {
         }
         if subtitle.lowercased() == title.lowercased() { subtitle = "" }
         return ChatNotice(app: app.id, chat: title, sender: subtitle, text: text, date: notification.date)
+    }
+
+    /// The chat in a Slack notification's title: "#general" for "New message in #general", "Anna" for "New message from
+    /// Anna", in the languages Slack writes them in.
+    static func slackChat(_ title: String) -> String {
+        let prefixes = ["New message in ", "New message from ", "Nieuw bericht in ", "Nieuw bericht van ",
+                        "Neue Nachricht in ", "Neue Nachricht von ", "Nouveau message dans ", "Nouveau message de ",
+                        "Nuevo mensaje en ", "Nuevo mensaje de "]
+        for prefix in prefixes where title.lowercased().hasPrefix(prefix.lowercased()) {
+            let chat = title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+            return chat.isEmpty ? title : chat
+        }
+        return title
     }
 
     /// "anna: see you" as ("anna", "see you"): a short name without a line break before the colon.

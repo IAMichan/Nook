@@ -102,7 +102,9 @@ enum SlackData {
         let messages: [InboxMessage] = (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
             guard let ts = message["ts"] as? String, let seconds = Double(ts) else { return nil }
             if let subtype = message["subtype"] as? String, skipped.contains(subtype) { return nil }
-            let text = clean((message["text"] as? String) ?? "", users: users)
+            var text = clean((message["text"] as? String) ?? "", users: users)
+            // An app (GitHub, Jira…) often writes nothing itself and puts everything in its attachments.
+            if text.isEmpty { text = clean(attachmentText(message), users: users) }
             let media = (message["files"] as? [[String: Any]])?.first.flatMap(Self.file)
             guard !text.isEmpty || media != nil else { return nil }
             let user = (message["user"] as? String) ?? (message["bot_id"] as? String) ?? ""
@@ -112,6 +114,17 @@ enum SlackData {
                                 date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// What an app's message holds in its attachments: per attachment its lead line, its title and its text (else its
+    /// fallback), one under the other.
+    static func attachmentText(_ message: [String: Any]) -> String {
+        (message["attachments"] as? [[String: Any]] ?? []).map { attachment in
+            let lines = ["pretext", "title", "text"].compactMap { (attachment[$0] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !lines.isEmpty { return lines.joined(separator: "\n") }
+            return (attachment["fallback"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
     /// A file in a message (`files[]`): what it is, its name, and Slack's address to fetch it with the token. A clip

@@ -151,6 +151,40 @@ private struct ChatBubbleView: View {
         return emojiOnly
     }
     private var long: Bool { bubble.text.count > 700 || bubble.text.filter { $0 == "\n" }.count >= Self.foldedLines }
+    /// The start of a long message while it is folded: its first lines, its first 700 characters.
+    private var folded: String {
+        String(bubble.text.components(separatedBy: "\n").prefix(Self.foldedLines).joined(separator: "\n").prefix(700))
+    }
+
+    /// When it was sent, and for your own how far it got.
+    private var stamp: some View {
+        HStack(spacing: 3) {
+            Text(bubble.time)
+                .font(NookTheme.font(10.5))
+                .foregroundStyle(NookTheme.textTertiary)
+            if let ticks = bubble.ticks { TicksView(ticks: ticks) }
+        }
+        .fixedSize()
+    }
+
+    /// The file that came with the message, as itself once Nook has it, else a button that opens it.
+    @ViewBuilder
+    private func media(_ attachment: String) -> some View {
+        switch bubble.media {
+        case .photo where bubble.image != nil:
+            PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
+        case .video(let url):
+            VideoTile(url: url, poster: bubble.image, name: attachment)
+        case .gif(let url):
+            ChatGIFView(url: url, name: attachment)
+        case .sticker(let url):
+            ChatStickerView(url: url, name: attachment)
+        case .audio(let url, let seconds):
+            ChatAudioView(url: url, seconds: seconds, name: attachment, fromMe: bubble.fromMe)
+        default:
+            AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
+        }
+    }
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
@@ -211,31 +245,27 @@ private struct ChatBubbleView: View {
                     .padding(.bottom, NookTheme.Spacing.xxs)
             }
             if let attachment = bubble.attachment {
-                switch bubble.media {
-                case .photo where bubble.image != nil:
-                    PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
-                case .video(let url):
-                    VideoTile(url: url, poster: bubble.image, name: attachment)
-                case .gif(let url):
-                    ChatGIFView(url: url, name: attachment)
-                case .sticker(let url):
-                    ChatStickerView(url: url, name: attachment)
-                case .audio(let url, let seconds):
-                    ChatAudioView(url: url, seconds: seconds, name: attachment, fromMe: bubble.fromMe)
-                default:
-                    AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
+                if bubble.text.isEmpty {
+                    // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
+                    VStack(alignment: .trailing, spacing: 3) {
+                        media(attachment)
+                        stamp
+                    }
+                } else {
+                    media(attachment)
                 }
             }
-            HStack(alignment: .lastTextBaseline, spacing: 8) {
-                if !bubble.text.isEmpty {
+            if !bubble.text.isEmpty {
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                        Text(ChatLinks.attributed(bubble.text))
-                            .font(emojiOnly ? NookTheme.font(34) : NookTheme.font(14, newest ? .medium : .regular))
-                            .foregroundStyle(NookTheme.paper)
-                            .tint(NookTheme.blue)
-                            .lineLimit(long && !expanded ? Self.foldedLines : nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
+                        if emojiOnly {
+                            Text(bubble.text)
+                                .font(NookTheme.font(34))
+                                .textSelection(.enabled)
+                        } else {
+                            ChatMessageText(text: long && !expanded ? folded : bubble.text, weight: newest ? .medium : .regular,
+                                            lineLimit: long && !expanded ? Self.foldedLines : nil)
+                        }
                         if long {
                             Button(expanded ? tr("chat.showLess") : tr("chat.readMore")) {
                                 withAnimation(NookTheme.swap) { expanded.toggle() }
@@ -245,16 +275,10 @@ private struct ChatBubbleView: View {
                             .foregroundStyle(NookTheme.blue)
                         }
                     }
-                } else {
-                    Spacer(minLength: 0)
+                    stamp
                 }
-                HStack(spacing: 3) {
-                    Text(bubble.time)
-                        .font(NookTheme.font(10.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                    if let ticks = bubble.ticks { TicksView(ticks: ticks) }
-                }
-                .fixedSize()
+            } else if bubble.attachment == nil {
+                stamp
             }
         }
         .padding(.horizontal, bare ? NookTheme.Spacing.xs : 12)
@@ -681,12 +705,19 @@ private struct PhotoButton: View {
     let action: () -> Void
     @State private var hovering = false
 
+    /// The photo whole, fitted in 240 × 180: exactly its own size, so the bubble is no wider than the photo.
+    private var size: CGSize {
+        guard image.size.width > 0, image.size.height > 0 else { return CGSize(width: Self.maxWidth, height: Self.maxHeight) }
+        let scale = min(Self.maxWidth / image.size.width, Self.maxHeight / image.size.height)
+        return CGSize(width: image.size.width * scale, height: image.size.height * scale)
+    }
+
     var body: some View {
         Button(action: action) {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: Self.maxWidth, maxHeight: Self.maxHeight, alignment: .leading)
+                .frame(width: size.width, height: size.height)
                 .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
                 .opacity(hovering ? 0.85 : 1)
                 .contentShape(Rectangle())
@@ -726,7 +757,6 @@ private struct AttachmentButton: View {
                     .truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
-                Spacer(minLength: 6)
                 Text(tr("card.attachment.view"))
                     .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)

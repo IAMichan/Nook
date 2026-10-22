@@ -43,8 +43,9 @@ enum CompletionEmojiCatalog {
     static func choices(for query: String, recent: [String], limit: Int, context: String = "") -> [CompletionEmoji] {
         let fitting = contextual(for: context)
         guard query.isEmpty else {
-            let matches = search(query, limit: limit)
-            return matches.filter { fitting.contains($0) } + matches.filter { !fitting.contains($0) }
+            // Every match first, then the cut: a fitting emoji further down the list by name still comes first.
+            let matches = search(query, limit: .max)
+            return Array((matches.filter { fitting.contains($0) } + matches.filter { !fitting.contains($0) }).prefix(limit))
         }
         let used = recent.compactMap { character in all.first { $0.character == character } }
         var result: [CompletionEmoji] = []
