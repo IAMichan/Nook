@@ -176,7 +176,7 @@ struct NookDivider: View {
     }
 }
 
-/// The line between two items of a list (a Nook chat, an agent session, a chat): clearer than a `NookDivider`, inset
+/// The line between two items of a list (a chat in the Chats tab): clearer than a `NookDivider`, inset
 /// to the rows' text, with a little room above and below. Put it before every item but the first.
 struct NookRowSeparator: View {
     var body: some View {

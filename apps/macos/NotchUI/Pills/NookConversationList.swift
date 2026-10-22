@@ -172,7 +172,6 @@ struct NookList: View {
     @ViewBuilder
     private func rows(_ conversations: [Conversation], now: Date, shown: [UUID]) -> some View {
         ForEach(conversations) { conversation in
-            if conversation.id != conversations.first?.id { NookRowSeparator() }
             if renaming == conversation.id {
                 TextField("", text: $nameDraft)
                     .textFieldStyle(.plain)
