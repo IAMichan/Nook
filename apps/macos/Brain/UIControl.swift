@@ -323,7 +323,7 @@ enum UIControl {
         case "AXLink": return "link"
         case "AXRow": return "row"
         case "AXCell": return "cell"
-        case "AXMenuItem": return "menuitem"
+        case "AXMenuItem", "AXMenuBarItem": return "menuitem"
         case "AXDisclosureTriangle": return "disclosure"
         case "AXTab": return "tab"
         case "AXColorWell": return "color"

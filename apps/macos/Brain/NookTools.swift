@@ -375,7 +375,7 @@ final class NookTools {
                     guard let self, let name = self.text(input, "app") else { throw NookError("App name is missing.") }
                     let app = try await Self.menuTarget(name)
                     let process = app.localizedName ?? name
-                    let result = await ScriptText.run(AppMenu.listScript(process: process), timeout: 12)
+                    let result = await ScriptText.run(AppMenu.listScript(process: process, pid: app.processIdentifier), timeout: 12)
                     try Self.checkMenuAccess(result.errorNumber)
                     guard let raw = result.text else { throw NookError("\(process) did not show its menus.") }
                     return AppMenu.describe(raw, app: process, filter: self.text(input, "filter"))
@@ -401,7 +401,7 @@ final class NookTools {
                     let app = try await Self.menuTarget(name)
                     app.activate()
                     let process = app.localizedName ?? name
-                    let result = await ScriptText.run(AppMenu.clickScript(process: process, path: path), timeout: 10)
+                    let result = await ScriptText.run(AppMenu.clickScript(process: process, path: path, pid: app.processIdentifier), timeout: 10)
                     try Self.checkMenuAccess(result.errorNumber)
                     if result.text == "DISABLED" {
                         throw NookError("\(path.joined(separator: " › ")) is not available in \(process) right now (nothing selected?).")
@@ -520,21 +520,31 @@ final class NookTools {
         ]
     }
 
-    /// The running app a menu tool is meant for (by name, also roughly), started first when it is closed.
+    /// The running app a menu tool is meant for (by any name it goes by, in any language, also roughly), started first
+    /// when it is closed. Apps with a Dock icon, and the system agents of `AppNames.systemAgents` (Control Center).
     static func menuTarget(_ name: String) async throws -> NSRunningApplication {
-        func find() -> NSRunningApplication? {
-            let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-            if let exact = apps.first(where: { $0.localizedName?.caseInsensitiveCompare(name) == .orderedSame }) { return exact }
-            guard let match = Fuzzy.best(name, in: apps.compactMap(\.localizedName)) else { return nil }
-            return apps.first { $0.localizedName == match }
-        }
-        if let app = find() { return app }
+        if let app = runningApp(named: name) { return app }
         try SystemControl.openApp(name)
         for _ in 0..<50 {
             try? await Task.sleep(nanoseconds: 100_000_000)
-            if let app = find() { return app }
+            if let app = runningApp(named: name) { return app }
         }
         throw NookError("\(name) did not start.")
+    }
+
+    /// The running app meant by `name`: "System Settings" is also "Systeeminstellingen" on a Dutch Mac (see `AppNames`).
+    static func runningApp(named name: String) -> NSRunningApplication? {
+        let apps = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular || AppNames.systemAgents.contains($0.bundleIdentifier ?? "")
+        }
+        let candidates = apps.map { app in
+            let info = app.bundleURL.flatMap { Bundle(url: $0)?.infoDictionary }
+            return AppNames.Candidate(
+                names: AppNames.names(shown: app.localizedName, bundlePath: app.bundleURL?.path,
+                                      plistNames: [info?["CFBundleDisplayName"] as? String, info?["CFBundleName"] as? String]),
+                bundleID: app.bundleIdentifier)
+        }
+        return AppNames.index(of: name, in: candidates).map { apps[$0] }
     }
 
     /// Menus are read and clicked through System Events, which needs Accessibility (and Automation) for Nook.
