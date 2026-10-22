@@ -11,8 +11,8 @@ final class NotchPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        level = Self.notchLevel
+        collectionBehavior = Self.notchBehavior
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
@@ -26,6 +26,10 @@ final class NotchPanel: NSPanel {
         // The notch is always dark: system controls inside it (menus, pickers, text fields) follow.
         appearance = NSAppearance(named: .darkAqua)
     }
+
+    /// Above the menu bar and the notch.
+    static let notchLevel = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+    static let notchBehavior: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
     // Required to allow typing in text fields.
     override var canBecomeKey: Bool { true }
@@ -90,6 +94,8 @@ final class CharacterPaletteWatch {
     private var timer: Timer?
     /// The notch's own levels while they are lowered for the picker.
     private var saved: [(NotchPanel, NSWindow.Level)] = []
+    /// The notch sits lower on purpose right now: the picker is up.
+    var lowersNotch: Bool { !saved.isEmpty }
 
     func start() {
         guard timer == nil else { return }
@@ -115,7 +121,9 @@ final class CharacterPaletteWatch {
         }
     }
 
-    /// The window level of the emoji picker when it is on screen. Owner and layer are readable without screen recording.
+    /// The window level of the emoji picker when it is on screen. Owner, layer, bounds and alpha are readable without
+    /// screen recording. The input method keeps small or transparent helper windows on screen when no picker is open;
+    /// counting those dropped the notch below the menu bar for as long as they stayed, so the notch seemed to vanish.
     private static func pickerLayer() -> Int? {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
@@ -123,10 +131,17 @@ final class CharacterPaletteWatch {
             guard let pid = window[kCGWindowOwnerPID as String] as? pid_t,
                   let layer = window[kCGWindowLayer as String] as? Int else { continue }
             let owner = window[kCGWindowOwnerName as String] as? String ?? ""
-            if NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == bundleID || owner == "CharacterPalette" {
-                return layer
-            }
+            guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == bundleID || owner == "CharacterPalette"
+            else { continue }
+            let alpha = window[kCGWindowAlpha as String] as? Double ?? 1
+            guard alpha > 0, let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                  rect.width >= minPickerSide, rect.height >= minPickerSide else { continue }
+            return layer
         }
         return nil
     }
+
+    /// Smaller than the picker can be: anything below this is a helper window, not Emoji & Symbols.
+    private static let minPickerSide: CGFloat = 120
 }
