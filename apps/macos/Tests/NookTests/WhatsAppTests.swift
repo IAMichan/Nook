@@ -183,10 +183,10 @@ final class WhatsAppTests: XCTestCase {
     }
 
     func testOpenedFilesGetASafeName() {
-        XCTAssertEqual(WhatsAppLink.fileName(for: .document(name: "Guard-meting (1).pdf"), given: nil, mimeType: nil),
+        XCTAssertEqual(WAMedia.document(name: "Guard-meting (1).pdf").safeFileName(given: nil, mimeType: nil),
                        "Guard-meting (1).pdf")
-        XCTAssertEqual(WhatsAppLink.fileName(for: .document(name: "../../evil/x.pdf"), given: nil, mimeType: nil), "-..-evil-x.pdf")
-        XCTAssertEqual(WhatsAppLink.fileName(for: .image, given: nil, mimeType: "image/jpeg"), "photo.jpeg")
+        XCTAssertEqual(WAMedia.document(name: "../../evil/x.pdf").safeFileName(given: nil, mimeType: nil), "-..-evil-x.pdf")
+        XCTAssertEqual(WAMedia.image.safeFileName(given: nil, mimeType: "image/jpeg"), "photo.jpeg")
         XCTAssertTrue(WAMedia.document(name: nil).isOpenable)
         XCTAssertFalse(WAMedia.location.isOpenable)
     }

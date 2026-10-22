@@ -57,12 +57,32 @@ The checklist for a new or changed view:
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
+- The result of an action is a `ToastCenter` toast, never a local notice string, banner or alert (see *Toasts*).
 - Every string through `tr("key")` in all five languages, and a `.help` and accessibility label on a symbol-only control
   or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a coral-tinted `.cardBackground` notice with a retry.
+
+## Toasts — the result of what you did
+
+`ToastCenter.shared` is the one way to report a short result, on the Mac and (as `toast` in `src/lib/toast.svelte.ts`) in
+the Tauri app. Use it whenever an action ends and its own view does not stay to show how it went.
+
+- **Where it shows:** on one surface with `.nookToastHost()` (the panel in the notch and the main window, Settings): the
+  key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
+  (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
+  `.nookToastHost()` once, at its root.
+- **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
+  every toast stays while hovered, and an error with a detail can be copied in one click.
+- **Words:** the title says what happened in a few words ("Pushed", "Couldn't remove the worktree", `toast.failed` for
+  "%@ failed"); the error's own text goes in `detail`, never glued into the title.
+- **Not a toast:** a decision Nook waits for (a card or an approval with `NookNoticeActions`), a problem with a form you
+  are filling in (it stays next to that form), a load error that replaces the content (`WSEmptyState`), something
+  that stays true (a status row or banner), and the checkmark a copy button shows on itself. No `.alert` for an
+  error after an action, and no local `notice`/`status` strings that do a toast's job.
+- **The notch's own flows** keep `viewModel.finish`: a card's outcome, a quick command, and an agent that finished.
 
 ## Components — `apps/macos/NotchUI/Components`
 
@@ -72,6 +92,7 @@ The checklist for a new or changed view:
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
+| `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |
 | `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
@@ -80,6 +101,7 @@ The checklist for a new or changed view:
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
+| `CheckOutcomeGlyph` | `AgentIndicators.swift` | The outcome of a CI check or step (passing, failing, running, skipped); the pull request page and the CI popover of a watched pull request |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |

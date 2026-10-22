@@ -22,6 +22,8 @@ enum TranscriptRow: Identifiable, Equatable {
     case working(since: Date?)
     /// At the end of the turn that runs: the step that runs now, or nil while the agent thinks.
     case live(AgentToolStep?)
+    /// At the end of a turn you stopped: "Interrupted", after the message `id` it stopped at.
+    case interrupted(id: String)
 
     var id: String {
         switch self {
@@ -32,6 +34,7 @@ enum TranscriptRow: Identifiable, Equatable {
         case .fold(let id, _, _): return "fold:" + id
         case .working: return "working"
         case .live: return "live"
+        case .interrupted(let id): return "interrupted:" + id
         }
     }
 }
@@ -114,8 +117,15 @@ enum TranscriptPresentation {
     }
 
     private static func present(_ turn: [AgentChatMessage], open: Bool) -> [TranscriptRow] {
-        guard let first = turn.first else { return [] }
+        guard turn.first != nil else { return [] }
         if open { return presentOpen(turn) }
+        // A turn you stopped says so at its end, so it does not read as if the agent finished.
+        guard let stop = turn.last(where: \.interrupted) else { return presentClosed(turn) }
+        return presentClosed(turn) + [.interrupted(id: stop.id)]
+    }
+
+    private static func presentClosed(_ turn: [AgentChatMessage]) -> [TranscriptRow] {
+        guard let first = turn.first else { return [] }
         let answer = turn.lastIndex { $0.kind == .assistant }
         // Fold a finished turn: your message, "Worked for …", and its final answer; the rest a click away.
         guard first.fromUser, let answer else { return group(turn, finalID: answer.map { turn[$0].id }) }

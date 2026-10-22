@@ -28,11 +28,13 @@ extension SettingsView {
     var notificationsSection: some View {
         Group {
             Section {
+                NoticeDeliveryPicker(settings: settings)
                 Picker(selection: $settings.agentNotice) {
                     ForEach(AgentNoticeStyle.allCases) { Text(tr($0.titleKey)).tag($0) }
                 } label: {
                     SettingLabel(tr("agentNotice.style"), detail: tr("agentNotice.styleDetail"))
                 }
+                .disabled(settings.noticeDelivery == .system)
             } header: {
                 Text(tr("agentNotice.title"))
             } footer: {
@@ -100,6 +102,31 @@ extension SettingsView {
             Text(tr("quiet.title"))
         } footer: {
             Text(tr("quiet.footer"))
+        }
+    }
+}
+
+/// Settings › Notifications: notch cards or macOS notifications, with a way to System Settings when macOS blocks Nook's.
+private struct NoticeDeliveryPicker: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject private var notifier = SystemNotifier.shared
+
+    var body: some View {
+        Picker(selection: $settings.noticeDelivery) {
+            ForEach(NoticeDelivery.allCases) { Text(tr($0.titleKey)).tag($0) }
+        } label: {
+            SettingLabel(tr("noticeDelivery.title"), detail: tr("noticeDelivery.detail"))
+        }
+        .onChange(of: settings.noticeDelivery) { _, delivery in
+            if delivery == .system { notifier.requestAccess() }
+        }
+        .onAppear {
+            if settings.noticeDelivery == .system { notifier.requestAccess() }
+        }
+        if notifier.blocked, settings.noticeDelivery == .system {
+            LabeledContent(tr("noticeDelivery.blocked")) {
+                Button(tr("noticeDelivery.openSettings")) { SystemNotifier.openSystemSettings() }
+            }
         }
     }
 }

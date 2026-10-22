@@ -154,6 +154,7 @@ targets:
       - path: Core/I18n+SettingsLayout.swift
       - path: Core/I18n+Workspace.swift
       - path: Core/I18n+Energy.swift
+      - path: Core/I18n+Toast.swift
       - path: Core/I18n+Confirm.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
@@ -201,6 +202,7 @@ targets:
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
       - path: Services/Connectors/GitHubMarkdown.swift
       - path: Services/Connectors/PullRequestFilter.swift

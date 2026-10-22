@@ -101,12 +101,12 @@ struct SessionPanel: View {
                 changesRow
             }
             if let confirmDefault { defaultBranchConfirmation(confirmDefault) }
-            if let message = error ?? model.error {
+            // A failed action shows as a toast; this is only the script form's own problem.
+            if let message = error {
                 Text(message)
                     .font(NookTheme.font(11.5))
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
                     .textSelection(.enabled)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -348,14 +348,14 @@ struct SessionPanel: View {
     private func perform(_ action: GitQuickAction) {
         guard let runID else { return }
         confirmDefault = nil
-        error = nil
         progress = tr(action.labelKey)
         Task {
             do {
                 // A pull request it made stays put: "View PR" in the menu opens it in Nook's browser when you want it.
-                _ = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch let failure {
-                error = failure.localizedDescription
+                ToastCenter.shared.gitQuick(action, result: .failure(failure))
             }
             progress = nil
             quick = await workspace.quickGitState(runID)
@@ -364,10 +364,14 @@ struct SessionPanel: View {
     }
 
     private func push(_ runID: UUID) {
-        error = nil
         progress = tr("ws.quick.pushing")
         Task {
-            do { try await workspace.push(runID) } catch let failure { error = failure.localizedDescription }
+            do {
+                try await workspace.push(runID)
+                ToastCenter.shared.gitQuick(.push, result: .success(nil))
+            } catch let failure {
+                ToastCenter.shared.gitQuick(.push, result: .failure(failure))
+            }
             progress = nil
             quick = await workspace.quickGitState(runID)
             await model.refresh()

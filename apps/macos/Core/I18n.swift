@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with

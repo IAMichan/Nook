@@ -32,7 +32,7 @@ extension SettingsView {
                 LabeledContent(tr("settings.privacy.screenText")) {
                     Button(tr("settings.privacy.forgetScreenText"), role: .destructive) {
                         app.screenContext.clear()
-                        status = tr("settings.privacy.screenTextForgotten")
+                        ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
                     }
                 }
             }

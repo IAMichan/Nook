@@ -212,7 +212,7 @@ struct PullRequestDetailView: View {
             if let url = check.url { NSWorkspace.shared.open(url) }
         } label: {
             HStack(spacing: 8) {
-                checkGlyph(check.outcome).frame(width: 16)
+                CheckOutcomeGlyph(outcome: check.outcome).frame(width: 16)
                 Text(check.name).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Text(check.detail).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 Spacer(minLength: 4)
@@ -225,16 +225,6 @@ struct PullRequestDetailView: View {
         }
         .buttonStyle(.plain)
         .disabled(check.url == nil)
-    }
-
-    @ViewBuilder
-    private func checkGlyph(_ outcome: PullRequestCheck.Outcome) -> some View {
-        switch outcome {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
-        case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
-        case .skipped: Image(systemName: "minus.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
-        }
     }
 
     /// Commits and events such as a label or the merge take one quiet line; reviews and comments get a card.

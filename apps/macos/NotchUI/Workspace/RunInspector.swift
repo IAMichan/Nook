@@ -11,7 +11,6 @@ struct RunInspector: View {
     @State private var showCommit = false
     @State private var showPullRequest = false
     @State private var confirmRemove = false
-    @State private var actionError: String?
     @State private var busy = false
 
     var body: some View {
@@ -30,11 +29,6 @@ struct RunInspector: View {
             .sheet(item: $changes) { file in ChangesSheet(runID: runID, initialFile: file) }
             .sheet(isPresented: $showCommit) { CommitSheet(runID: runID) }
             .sheet(isPresented: $showPullRequest) { PullRequestSheet(runID: runID) }
-            .alert(tr("ws.git.errorTitle"), isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
-                Button(tr("button.close"), role: .cancel) {}
-            } message: {
-                Text(actionError ?? "")
-            }
             .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: $confirmRemove) {
                 let dirty = (workspace.git[runID]?.status?.files.count ?? 0) > 0
                 if dirty {
@@ -239,14 +233,24 @@ struct RunInspector: View {
     private func push() {
         busy = true
         Task {
-            do { try await workspace.push(runID) } catch { actionError = error.localizedDescription }
+            do {
+                try await workspace.push(runID)
+                ToastCenter.shared.gitQuick(.push, result: .success(nil))
+            } catch {
+                ToastCenter.shared.gitQuick(.push, result: .failure(error))
+            }
             busy = false
         }
     }
 
     private func remove(force: Bool) {
         Task {
-            do { try await workspace.removeWorktree(runID, force: force) } catch { actionError = error.localizedDescription }
+            do {
+                try await workspace.removeWorktree(runID, force: force)
+                ToastCenter.shared.success(tr("ws.worktree.removed"))
+            } catch {
+                ToastCenter.shared.error(error, title: tr("ws.worktree.removeFailed"))
+            }
         }
     }
 }

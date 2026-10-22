@@ -492,6 +492,8 @@ struct AgentRunPanel: View {
                                     if let turn = turnFiles[event.id] {
                                         TurnChangesChip(turn: turn, directory: run.workingDirectory) { path in
                                             try await workspace.turnDiff(runID, path: path, start: turn.start, end: turn.end)
+                                        } lines: {
+                                            try await workspace.turnLines(runID, paths: turn.files, start: turn.start, end: turn.end)
                                         }
                                     }
                                 }

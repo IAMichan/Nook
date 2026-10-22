@@ -71,6 +71,8 @@ final class NotchController {
         viewModel.onDragMoved = { [weak self] in self?.dragMoved() }
         viewModel.onDragEnded = { [weak self] in self?.dragStart = nil }
         viewModel.onAnnounce = { [weak self] info in self?.announce(info) }
+        // With no panel or window open, a toast shows in the notch's confirmation strip.
+        ToastCenter.shared.notchFallback = { [weak model = viewModel] toast in model?.showToast(toast) ?? false }
 
         let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)

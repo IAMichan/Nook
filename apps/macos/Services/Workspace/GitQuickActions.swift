@@ -22,6 +22,16 @@ enum GitQuickAction: Equatable, Sendable {
         case .pull: return "ws.quick.pull"
         }
     }
+
+    /// The localization key of what the toast says once the action is done.
+    var doneKey: String {
+        switch self {
+        case .commit: return "ws.quick.done.commit"
+        case .commitPush, .push: return "ws.quick.done.push"
+        case .commitPushPR, .pushPR, .createPR: return "ws.quick.done.pr"
+        case .pull: return "ws.quick.done.pull"
+        }
+    }
 }
 
 /// What the button needs to know about the branch.

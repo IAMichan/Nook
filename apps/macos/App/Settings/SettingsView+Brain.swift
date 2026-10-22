@@ -285,9 +285,13 @@ extension SettingsView {
         do {
             let key = settings.provider == .claude ? settings.apiKey : settings.providerKey
             fetchedModels = try await settings.provider.listModels(key: key)
-            status = fetchedModels.isEmpty ? tr("settings.brain.noModelsFound") : tr("settings.brain.modelsFound", fetchedModels.count)
+            if fetchedModels.isEmpty {
+                ToastCenter.shared.warning(tr("settings.brain.noModelsFound"))
+            } else {
+                ToastCenter.shared.success(tr("settings.brain.modelsFound", fetchedModels.count))
+            }
         } catch {
-            status = error.localizedDescription
+            ToastCenter.shared.error(error, title: tr("settings.brain.modelsFailed"))
         }
     }
 
@@ -357,7 +361,7 @@ extension SettingsView {
             settings.useLocal = true
             settings.localModel = id
             recommendations = await app.brainRecommendations()
-            status = tr("brain.status.ready", local.title(for: id))
+            ToastCenter.shared.success(tr("settings.brain.localReady", local.title(for: id)))
             await testConnection()
         } catch {
             testResult = (false, error.localizedDescription)
@@ -373,18 +377,26 @@ extension SettingsView {
                 if !saved.looksValid {
                     testResult = (false, tr("brain.key.invalid"))
                 }
-                status = saved.keychainError.map { tr("brain.key.keychainRejected", $0) } ?? tr("brain.key.saved")
+                if let keychainError = saved.keychainError {
+                    ToastCenter.shared.warning(tr("settings.brain.keychainRejected"), detail: keychainError)
+                } else {
+                    ToastCenter.shared.success(tr("settings.brain.keySaved"))
+                }
             } else {
                 settings.saveAPIKey("")
                 testResult = nil
-                status = tr("brain.key.removed")
+                ToastCenter.shared.success(tr("settings.brain.keyRemoved"))
                 return
             }
         } else {
             let error = settings.saveProviderKey(keyDraft, for: provider)
             let removed = keyDraft.isEmpty
             keyDraft = ""
-            status = error ?? (removed ? tr("brain.key.removed") : tr("brain.key.saved"))
+            if let error {
+                ToastCenter.shared.error(tr("settings.brain.keyNotSaved"), detail: error)
+            } else {
+                ToastCenter.shared.success(removed ? tr("settings.brain.keyRemoved") : tr("settings.brain.keySaved"))
+            }
             if removed { return }
         }
         Task { await testConnection() }

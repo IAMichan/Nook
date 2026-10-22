@@ -147,3 +147,18 @@ struct PullRequestStateBadge: View {
         .accessibilityLabel(label)
     }
 }
+
+/// The outcome of a CI check or one of its steps: a mint tick, a coral cross, an amber dot while it runs, a grey dash
+/// when skipped. The pull request page and the CI of a watched pull request both use it.
+struct CheckOutcomeGlyph: View {
+    let outcome: PullRequestCheck.Outcome
+
+    var body: some View {
+        switch outcome {
+        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
+        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
+        case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
+        case .skipped: Image(systemName: "minus.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+        }
+    }
+}

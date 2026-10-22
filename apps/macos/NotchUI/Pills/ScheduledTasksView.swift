@@ -13,7 +13,6 @@ struct ScheduledTasksView: View {
 
     @State private var editing: EditorTarget?
     @State private var deleting: ScheduledTask?
-    @State private var notice: String?
 
     private struct EditorTarget: Identifiable {
         let id = UUID()
@@ -25,7 +24,6 @@ struct ScheduledTasksView: View {
             header
             if !settings.scheduledTasksEnabled { banner(tr("sched.disabledGlobal"), color: NookTheme.amber) }
             if case .failed(let message) = listener.state { banner(tr("sched.webhook.failed", message), color: NookTheme.coralSoft) }
-            if let notice { banner(notice, color: NookTheme.textSecondary) }
             if store.tasks.isEmpty {
                 Spacer(minLength: 0)
                 Text(tr("sched.empty"))
@@ -93,9 +91,9 @@ struct ScheduledTasksView: View {
 
     private func run(_ task: ScheduledTask) {
         switch store.runNow(task.id) {
-        case .started: notice = nil
-        case .busy: notice = tr("sched.busy", task.title)
-        case .notAvailable: notice = tr("sched.disabledGlobal")
+        case .started: ToastCenter.shared.success(tr("sched.started", task.title))
+        case .busy: ToastCenter.shared.warning(tr("sched.busy", task.title))
+        case .notAvailable: ToastCenter.shared.warning(tr("sched.disabledGlobal"))
         }
     }
 }
