@@ -74,6 +74,8 @@ final class WhatsAppGOWAProcess {
         // GOWA's own web dashboard is not needed (Nook is the interface): it would fetch
         // itself from GitHub at each start.
         env["APP_UI_ENABLED"] = "false"
+        // GOWA finds ffmpeg (for videos and GIFs) where Homebrew puts it too.
+        env["PATH"] = WAGOWA.searchPath(env["PATH"])
         p.environment = env
         // GOWA's own output may name contacts or quote messages: it goes nowhere.
         p.standardOutput = FileHandle.nullDevice
