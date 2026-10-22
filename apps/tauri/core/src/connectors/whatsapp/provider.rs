@@ -1,4 +1,4 @@
-//! De twee lokale WhatsApp-koppelingen waar Nook mee praat. Elk verzoek gaat naar het adres uit de instellingen
+//! De drie lokale koppelingen (GOWA, OpenWA en Beeper Desktop) waar Nook mee praat. Elk verzoek gaat naar het adres uit de instellingen
 //! (standaard 127.0.0.1) en nergens anders heen: niets van WhatsApps eigen servers. A photo or document is only
 //! fetched when the card shows it or the user opens it, and then from the gateway.
 
@@ -23,6 +23,9 @@ pub enum WaError {
 }
 
 pub type WaResult<T> = Result<T, WaError>;
+
+/// Beeper answers, but no chat network is signed in to it yet.
+pub const BEEPER_NO_ACCOUNTS: &str = "Beeper draait, maar er is nog geen chatnetwerk gekoppeld. Voeg er een toe in Beeper Desktop.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkState {
@@ -89,7 +92,11 @@ impl WaHttp {
 
     /// A file from the gateway: its bytes, status code and MIME type. Refused past [`files::MAX_BYTES`].
     async fn download(&self, path: &str) -> WaResult<(Vec<u8>, u16, Option<String>)> {
-        let mut response = self.send("GET", path, &[], None, 60, "*/*").await?;
+        self.download_query(path, &[]).await
+    }
+
+    async fn download_query(&self, path: &str, query: &[(&str, String)]) -> WaResult<(Vec<u8>, u16, Option<String>)> {
+        let mut response = self.send("GET", path, query, None, 60, "*/*").await?;
         let code = response.status().as_u16();
         let mime = response.headers().get("content-type").and_then(|v| v.to_str().ok()).map(str::to_string);
         if response.content_length().is_some_and(|n| n as usize > files::MAX_BYTES) {
@@ -361,12 +368,121 @@ pub mod openwa {
     }
 }
 
-/// Eén van de twee koppelingen.
+// Beeper
+
+/// Beeper Desktop's local API (Settings › Developers in Beeper, port 23373). Auth: `Authorization: Bearer <token>`.
+/// Every chat network the user linked in Beeper (WhatsApp, Telegram, Signal, Instagram, …) arrives as one list of chats;
+/// Nook names them `<chat id>@beeper` or `<chat id>@beeper.group` (see [`jid::beeper`]).
+pub mod beeper {
+    use super::*;
+
+    /// `GET /v1/accounts` → `[{accountID, status, user: {id}}]`: whether one is connected, and the user ids that are
+    /// this account (to tell a mention of you). `None` when there is no account at all.
+    pub fn accounts(data: &[u8]) -> Option<(LinkState, Vec<String>)> {
+        let v = parse(data);
+        let list = crate::connectors::list(if v.is_array() { &v } else { &v["items"] });
+        if list.is_empty() {
+            return None;
+        }
+        let connected = list.iter().any(|a| a["status"].as_str().is_none_or(|s| s == "connected" || s == "backfilling"));
+        let me = list.iter().filter_map(|a| non_empty(&a["user"]["id"])).collect();
+        Some((if connected { LinkState::Connected } else { LinkState::Connecting }, me))
+    }
+
+    /// One chat: Nook's id for it, its title, when it last moved. Archived chats, merged chats (they hold no messages
+    /// of their own) and those Beeper folded into a merged one are left out.
+    pub fn chat(c: &Value) -> Option<ChatInfo> {
+        if c["isArchived"] == true || c["merge"].is_object() || non_empty(&c["mergedIntoChatID"]).is_some() {
+            return None;
+        }
+        Some(ChatInfo {
+            jid: jid::beeper(&non_empty(&c["id"])?, c["type"] == "group"),
+            name: c["title"].as_str().unwrap_or("").to_string(),
+            last: rfc3339(&c["lastActivity"]).unwrap_or(DateTime::<Utc>::MIN_UTC),
+        })
+    }
+
+    /// `GET /v1/chats` → `{items: [Chat]}`, newest first.
+    pub fn chats(data: &[u8]) -> Vec<ChatInfo> {
+        crate::connectors::list(&parse(data)["items"]).iter().filter_map(chat).collect()
+    }
+
+    /// `GET /v1/chats/{chatID}/messages` → `{items: [Message]}`. `chat` is Nook's id for the chat, `name` its title;
+    /// `me` the user ids of this account. Reactions, hidden and deleted messages are left out.
+    pub fn messages(data: &[u8], chat: &str, name: Option<&str>, me: &[String]) -> Vec<Message> {
+        crate::connectors::list(&parse(data)["items"]).iter().filter_map(|m| message(m, chat, name, me)).collect()
+    }
+
+    pub fn message(m: &Value, chat: &str, name: Option<&str>, me: &[String]) -> Option<Message> {
+        let id = non_empty(&m["id"])?;
+        if m["type"] == "REACTION" || m["isHidden"] == true || m["isDeleted"] == true {
+            return None;
+        }
+        let from_me = m["isSender"].as_bool().unwrap_or(false);
+        let sender = non_empty(&m["senderID"]).unwrap_or_else(|| chat.to_string());
+        let mut msg = Message::new(
+            &id,
+            chat,
+            &sender,
+            &non_empty(&m["senderName"]).unwrap_or_default(),
+            m["text"].as_str().unwrap_or(""),
+            rfc3339(&m["timestamp"]).unwrap_or(DateTime::<Utc>::MIN_UTC),
+            from_me,
+        );
+        let attachment = &crate::connectors::list(&m["attachments"]).first().cloned().unwrap_or(Value::Null);
+        msg.media = media(m["type"].as_str().unwrap_or(""), attachment);
+        msg.chat_name = name.filter(|n| !n.is_empty()).map(str::to_string);
+        msg.mentions_me = jid::is_group(chat)
+            && crate::connectors::list(&m["mentions"]).iter().filter_map(Value::as_str).any(|who| who == "@room" || me.iter().any(|id| id == who));
+        Some(msg)
+    }
+
+    /// The message's `type`, and its first attachment for what the type leaves open.
+    pub fn media(kind: &str, attachment: &Value) -> Media {
+        match kind {
+            "IMAGE" if attachment["isSticker"] == true => Media::Sticker,
+            "IMAGE" => Media::Image,
+            "VIDEO" => Media::Video,
+            "VOICE" => Media::Voice,
+            "AUDIO" if attachment["isVoiceNote"] == true => Media::Voice,
+            "AUDIO" => Media::Audio,
+            "FILE" => Media::Document { name: non_empty(&attachment["fileName"]) },
+            "STICKER" => Media::Sticker,
+            "LOCATION" => Media::Location,
+            "TEXT" | "NOTICE" | "" if attachment.is_null() => Media::None,
+            _ => match attachment["type"].as_str() {
+                Some("img") => Media::Image,
+                Some("video") => Media::Video,
+                Some("audio") => Media::Voice,
+                Some(_) => Media::Document { name: non_empty(&attachment["fileName"]) },
+                None => Media::None,
+            },
+        }
+    }
+
+    /// `GET /v1/chats/{chatID}/messages/{messageID}`: where its first attachment lives (`mxc://`, `localmxc://` or
+    /// `file://`), to hand back to Beeper's own `/v1/assets/serve`, and the file's name.
+    pub fn attachment(data: &[u8]) -> Option<(String, Option<String>)> {
+        let v = parse(data);
+        let first = crate::connectors::list(&v["attachments"]).first()?.clone();
+        Some((non_empty(&first["srcURL"])?, non_empty(&first["fileName"])))
+    }
+
+    /// `{code, message}` on an error.
+    pub fn error_message(data: &[u8]) -> Option<String> {
+        let v = parse(data);
+        non_empty(&v["message"]).or_else(|| non_empty(&v["code"]))
+    }
+}
+
+/// Eén van de drie koppelingen.
 pub struct Provider {
     pub kind: GatewayKind,
     http: WaHttp,
     /// GOWA: het apparaat; OpenWA: de sessie.
     scope: tokio::sync::Mutex<Option<String>>,
+    /// Beeper: the user ids of this account, from its last status (to tell a mention of you).
+    selves: std::sync::Mutex<Vec<String>>,
 }
 
 impl Provider {
@@ -379,9 +495,10 @@ impl Provider {
                 headers.push(("Authorization".into(), format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(auth))));
             }
             (GatewayKind::Openwa, Some(key)) => headers.push(("X-API-Key".into(), key.to_string())),
+            (GatewayKind::Beeper, Some(token)) => headers.push(("Authorization".into(), format!("Bearer {}", token.trim()))),
             _ => {}
         }
-        Some(Self { kind, http: WaHttp::new(url, headers), scope: Default::default() })
+        Some(Self { kind, http: WaHttp::new(url, headers), scope: Default::default(), selves: Default::default() })
     }
 
     fn check(&self, data: &[u8], code: u16) -> WaResult<()> {
@@ -403,6 +520,14 @@ impl Provider {
                 }
                 if !(200..300).contains(&code) {
                     return Err(WaError::Refused(openwa::error_message(data).unwrap_or(format!("HTTP {code}"))));
+                }
+            }
+            GatewayKind::Beeper => {
+                if code == 401 || code == 403 {
+                    return Err(WaError::Unauthorized);
+                }
+                if !(200..300).contains(&code) {
+                    return Err(WaError::Refused(beeper::error_message(data).unwrap_or(format!("HTTP {code}"))));
                 }
             }
         }
@@ -435,7 +560,18 @@ impl Provider {
         Ok(match self.kind {
             GatewayKind::Gowa => self.gowa_device().await?.0,
             GatewayKind::Openwa => self.openwa_session().await?.0,
+            GatewayKind::Beeper => String::new(),
         })
+    }
+
+    fn selves(&self) -> Vec<String> {
+        self.selves.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Beeper: one chat's newest messages under Nook's id for it, with its title.
+    async fn beeper_messages(&self, chat: &str, name: Option<&str>) -> WaResult<Vec<Message>> {
+        let data = self.call("GET", &format!("/v1/chats/{}/messages", path_component(jid::beeper_chat(chat))), &[], None).await?;
+        Ok(beeper::messages(&data, chat, name, &self.selves()))
     }
 
     async fn gowa_scoped(&self, method: &str, path: &str, query: &[(&str, String)], body: Option<Value>) -> WaResult<Vec<u8>> {
@@ -485,11 +621,23 @@ impl Provider {
         match self.kind {
             GatewayKind::Gowa => Ok(self.gowa_device().await?.1),
             GatewayKind::Openwa => Ok(openwa::status(&self.openwa_session().await?)),
+            GatewayKind::Beeper => {
+                let data = self.call("GET", "/v1/accounts", &[], None).await?;
+                let Some((link, me)) = beeper::accounts(&data) else {
+                    return Err(WaError::Refused(BEEPER_NO_ACCOUNTS.into()));
+                };
+                *self.selves.lock().unwrap_or_else(|e| e.into_inner()) = me;
+                Ok(Status { link, me: None })
+            }
         }
     }
 
     /// De QR om te scannen (PNG) en hoe lang hij geldig is; `None` als er niets te tonen is.
     pub async fn qr_code(&self) -> WaResult<Option<(Vec<u8>, u64)>> {
+        if self.kind == GatewayKind::Beeper {
+            // Signing in happens in Beeper Desktop itself.
+            return Ok(None);
+        }
         let id = self.scope_id().await?;
         match self.kind {
             GatewayKind::Gowa => {
@@ -516,11 +664,15 @@ impl Provider {
                 self.check(&data, code)?;
                 Ok(openwa::qr_png(&data).map(|p| (p, 15)))
             }
+            GatewayKind::Beeper => Ok(None),
         }
     }
 
     /// Laat de koppeling nieuwe berichten naar Nooks webhook sturen, ondertekend met `secret`.
     pub async fn register_webhook(&self, url: &str, secret: &str) -> WaResult<()> {
+        if !self.kind.has_webhook() {
+            return Ok(());
+        }
         let id = self.scope_id().await?;
         match self.kind {
             GatewayKind::Gowa => {
@@ -541,6 +693,7 @@ impl Provider {
                     None => self.call("POST", &format!("/api/sessions/{id}/webhooks"), &[], Some(body)).await?,
                 };
             }
+            GatewayKind::Beeper => {}
         }
         Ok(())
     }
@@ -579,6 +732,15 @@ impl Provider {
                     .await?;
                 out = openwa::messages(&data, me);
             }
+            GatewayKind::Beeper => {
+                // Only the chats that moved since `since` (Beeper lists them newest first); it is all local, so asking
+                // every few seconds costs nothing.
+                let chats = beeper::chats(&self.call("GET", "/v1/chats", &[("limit", "25".into())], None).await?);
+                for chat in chats.iter().take(8).filter(|c| c.last > since) {
+                    let name = Some(chat.name.as_str());
+                    out.extend(self.beeper_messages(&chat.jid, name).await?.into_iter().filter(|m| m.date > since));
+                }
+            }
         }
         out.sort_by_key(|m| m.date);
         Ok(out)
@@ -604,6 +766,12 @@ impl Provider {
                     .await?,
                 me,
             ),
+            GatewayKind::Beeper => {
+                let mut all = self.beeper_messages(chat, None).await?;
+                all.sort_by_key(|m| std::cmp::Reverse(m.date));
+                all.truncate(limit);
+                all
+            }
         };
         out.sort_by_key(|m| m.date);
         Ok(out)
@@ -621,6 +789,11 @@ impl Provider {
                     self.openwa_scoped("POST", "/messages/send-text", &[], Some(json!({"chatId": openwa::id(chat), "text": text}))).await?;
                 non_empty(&parse(&data)["messageId"])
             }
+            GatewayKind::Beeper => {
+                let path = format!("/v1/chats/{}/messages", path_component(jid::beeper_chat(chat)));
+                let data = self.call("POST", &path, &[], Some(json!({"text": text}))).await?;
+                non_empty(&parse(&data)["pendingMessageID"])
+            }
         })
     }
 
@@ -633,6 +806,10 @@ impl Provider {
             }
             GatewayKind::Openwa => {
                 self.openwa_scoped("POST", "/chats/read", &[], Some(json!({"chatId": openwa::id(chat)}))).await?;
+            }
+            GatewayKind::Beeper => {
+                let body = last_incoming.map(|id| json!({"messageID": id})).unwrap_or_else(|| json!({}));
+                self.call("POST", &format!("/v1/chats/{}/read", path_component(jid::beeper_chat(chat))), &[], Some(body)).await?;
             }
         }
         Ok(())
@@ -649,6 +826,10 @@ impl Provider {
             }
             GatewayKind::Openwa => {
                 non_empty(&parse(&self.openwa_scoped("GET", &format!("/groups/{}", path_component(chat)), &[], None).await.ok()?)["name"])
+            }
+            GatewayKind::Beeper => {
+                let path = format!("/v1/chats/{}", path_component(jid::beeper_chat(chat)));
+                non_empty(&parse(&self.call("GET", &path, &[], None).await.ok()?)["title"])
             }
         }
     }
@@ -682,6 +863,24 @@ impl Provider {
                 }
                 Ok(WaFile { data: bytes, name: None, mime })
             }
+            GatewayKind::Beeper => {
+                // Where Beeper keeps the file, then the file itself from Beeper's own server: never another host.
+                let path = format!(
+                    "/v1/chats/{}/messages/{}",
+                    path_component(jid::beeper_chat(chat)),
+                    path_component(message)
+                );
+                let (src, name) = beeper::attachment(&self.call("GET", &path, &[], None).await?)
+                    .ok_or_else(|| WaError::Refused("media".into()))?;
+                let (bytes, code, mime) = self.http.download_query("/v1/assets/serve", &[("url", src)]).await?;
+                if code == 401 || code == 403 {
+                    return Err(WaError::Unauthorized);
+                }
+                if code != 200 {
+                    return Err(WaError::Refused(beeper::error_message(&bytes).unwrap_or(format!("HTTP {code}"))));
+                }
+                Ok(WaFile { data: bytes, name, mime })
+            }
         }
     }
 
@@ -697,6 +896,9 @@ impl Provider {
                     c
                 })
                 .collect(),
+            GatewayKind::Beeper => {
+                beeper::chats(&self.call("GET", "/v1/chats", &[("limit", limit.clamp(1, 200).to_string())], None).await?)
+            }
         })
     }
 }
@@ -781,5 +983,77 @@ mod tests {
         assert!(sent[1].body.contains("\"phone\":\"31622222222@s.whatsapp.net\""));
         let down = Provider::new(GatewayKind::Gowa, "http://127.0.0.1:9", None).unwrap();
         assert_eq!(down.status().await, Err(WaError::Unreachable));
+    }
+
+    #[test]
+    fn beeper_answers() {
+        let accounts = br#"[{"accountID":"wa","status":"connected","user":{"id":"@me:beeper.com"}},{"accountID":"tg","status":"connecting","user":{"id":"@tg_me:beeper.local"}}]"#;
+        let (link, me) = beeper::accounts(accounts).unwrap();
+        assert_eq!(link, LinkState::Connected);
+        assert_eq!(me, ["@me:beeper.com", "@tg_me:beeper.local"]);
+        assert_eq!(beeper::accounts(br#"[{"status":"connecting","user":{"id":"x"}}]"#).unwrap().0, LinkState::Connecting);
+        assert_eq!(beeper::accounts(b"[]"), None);
+
+        let chats = beeper::chats(br#"{"items":[
+            {"id":"!a:beeper.com","title":"Jan","type":"single","lastActivity":"2026-10-20T10:00:00.000Z"},
+            {"id":"!b:beeper.com","title":"Familie","type":"group","lastActivity":"2026-10-20T09:00:00.000Z"},
+            {"id":"!c:beeper.com","title":"Oud","type":"single","isArchived":true},
+            {"id":"!d:beeper.com","title":"Jan (alles)","type":"single","merge":{}},
+            {"id":"!e:beeper.com","title":"Jan op Telegram","type":"single","mergedIntoChatID":"!d:beeper.com"}
+        ],"hasMore":false}"#);
+        assert_eq!(chats.iter().map(|c| c.jid.as_str()).collect::<Vec<_>>(), ["!a:beeper.com@beeper", "!b:beeper.com@beeper.group"]);
+        assert_eq!(chats[0].name, "Jan");
+        assert!(jid::is_group(&chats[1].jid));
+        assert_eq!(jid::kind(&chats[0].jid), super::super::ChatKind::Person);
+        // The ':' of a Beeper id is no device number.
+        assert_eq!(jid::normalized(&chats[0].jid), "!a:beeper.com@beeper");
+        assert_eq!(jid::beeper_chat(&chats[1].jid), "!b:beeper.com");
+
+        let me = vec!["@me:beeper.com".to_string()];
+        let group = "!b:beeper.com@beeper.group";
+        let messages = beeper::messages(br#"{"items":[
+            {"id":"m1","chatID":"!b:beeper.com","senderID":"@piet:beeper.com","senderName":"Piet","text":"hoi","timestamp":"2026-10-20T09:00:00.000Z","mentions":["@me:beeper.com"]},
+            {"id":"m2","chatID":"!b:beeper.com","senderID":"@me:beeper.com","isSender":true,"type":"FILE","attachments":[{"type":"unknown","fileName":"offerte.pdf"}],"timestamp":"2026-10-20T09:01:00.000Z"},
+            {"id":"m3","chatID":"!b:beeper.com","senderID":"@piet:beeper.com","type":"REACTION","timestamp":"2026-10-20T09:02:00.000Z"},
+            {"id":"m4","chatID":"!b:beeper.com","senderID":"@piet:beeper.com","type":"AUDIO","attachments":[{"type":"audio","isVoiceNote":true}],"timestamp":"2026-10-20T09:03:00.000Z"}
+        ]}"#, group, Some("Familie"), &me);
+        assert_eq!(messages.len(), 3);
+        assert!(messages[0].mentions_me);
+        assert_eq!(messages[0].sender_name, "Piet");
+        assert_eq!(messages[0].chat_name.as_deref(), Some("Familie"));
+        assert!(messages[1].from_me);
+        assert_eq!(messages[1].media, Media::Document { name: Some("offerte.pdf".into()) });
+        assert_eq!(messages[2].media, Media::Voice);
+        assert_eq!(beeper::attachment(br#"{"attachments":[{"srcURL":"mxc://beeper.com/x","fileName":"a.jpg"}]}"#),
+                   Some(("mxc://beeper.com/x".into(), Some("a.jpg".into()))));
+    }
+
+    #[tokio::test]
+    async fn beeper_status_messages_send_and_media() {
+        let server = TestServer::start(vec![
+            ("GET /v1/accounts", 200, r#"[{"accountID":"wa","status":"connected","user":{"id":"@me:beeper.com"}}]"#.into()),
+            ("GET /v1/chats", 200, r#"{"items":[{"id":"!a:beeper.com","title":"Jan","type":"single","lastActivity":"2099-01-01T00:00:00Z"}]}"#.into()),
+            ("GET /v1/chats/%21a%3Abeeper.com/messages/*", 200, r#"{"id":"m1","attachments":[{"srcURL":"mxc://beeper.com/x","fileName":"a.pdf"}]}"#.into()),
+            ("GET /v1/chats/%21a%3Abeeper.com/messages", 200, r#"{"items":[{"id":"m1","senderID":"@jan:beeper.com","senderName":"Jan","text":"Hoi","timestamp":"2099-01-01T00:00:00Z"}]}"#.into()),
+            ("POST /v1/chats/%21a%3Abeeper.com/messages", 200, r#"{"chatID":"!a:beeper.com","pendingMessageID":"P1"}"#.into()),
+            ("GET /v1/assets/serve*", 200, "%PDF-1.4".into()),
+        ])
+        .await;
+        let provider = Provider::new(GatewayKind::Beeper, &server.url(""), Some("token")).unwrap();
+        assert_eq!(provider.status().await.unwrap(), Status { link: LinkState::Connected, me: None });
+        assert_eq!(provider.qr_code().await.unwrap(), None);
+        provider.register_webhook("http://127.0.0.1:1/whatsapp", "geheim").await.unwrap();
+        let recent = provider.recent_messages(Utc::now(), None).await.unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].chat, "!a:beeper.com@beeper");
+        assert_eq!(recent[0].chat_name.as_deref(), Some("Jan"));
+        assert_eq!(provider.send("Hallo", "!a:beeper.com@beeper").await.unwrap().as_deref(), Some("P1"));
+        let file = provider.media("!a:beeper.com@beeper", "m1").await.unwrap();
+        assert_eq!(file.data, b"%PDF-1.4");
+        assert_eq!(file.name.as_deref(), Some("a.pdf"));
+        let asked = server.requests();
+        assert_eq!(asked[0].header("authorization"), Some("Bearer token"));
+        assert!(asked.iter().any(|r| r.body.contains("\"text\":\"Hallo\"")));
+        assert!(asked.last().unwrap().path.starts_with("/v1/assets/serve?url=mxc%3A%2F%2Fbeeper.com%2Fx"), "{}", asked.last().unwrap().path);
     }
 }
