@@ -82,6 +82,67 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var quotedText: String? = nil
     /// The emoji people put on it, one per person.
     var reactions: [WAReaction] = []
+    /// A poll this message asks, with everyone's votes so far.
+    var poll: WAPoll? = nil
+    /// A vote on a poll: not shown as a message of its own, it moves that poll's counts.
+    var pollVote: WAPollVote? = nil
+}
+
+/// A WhatsApp poll: its question and options, and who chose what (one choice per person; a new vote replaces theirs).
+struct WAPoll: Equatable, Sendable {
+    var question: String
+    var options: [String]
+    var multiple: Bool = false
+    /// Each voter's choice, by their JID; your own under `WAPoll.me`.
+    var votes: [String: [String]] = [:]
+
+    static let me = "\u{1}me"
+
+    /// The poll as every chat shows it: each option with how many chose it and whether you did.
+    var chatPoll: ChatPoll {
+        let mine = votes[Self.me] ?? []
+        return ChatPoll(question: question, options: options.map { option in
+            ChatPoll.Option(text: option, votes: votes.values.filter { $0.contains(option) }.count, chosen: mine.contains(option))
+        }, multiple: multiple)
+    }
+}
+
+/// Someone's vote on a poll: which poll, and what they chose now (empty: they took their vote back).
+struct WAPollVote: Equatable, Sendable {
+    var poll: String
+    var choice: [String]
+}
+
+/// Polls as the gateways describe them. GOWA: `poll: {type: "creation"|"vote", poll_id, question, options: [{name}],
+/// selectable_options_count, selected_options}`; OpenWA: `poll: {name, options, allowMultipleAnswers}` on the poll.
+enum WAPollData {
+    static func gowa(_ value: Any?) -> (poll: WAPoll?, vote: WAPollVote?) {
+        guard let p = value as? [String: Any] else { return (nil, nil) }
+        let options = (p["options"] as? [Any] ?? []).compactMap { option -> String? in
+            ((option as? [String: Any])?["name"] as? String) ?? (option as? String)
+        }
+        if p["type"] as? String == "vote" {
+            guard let id = p["poll_id"] as? String, !id.isEmpty else { return (nil, nil) }
+            return (nil, WAPollVote(poll: id, choice: p["selected_options"] as? [String] ?? []))
+        }
+        guard let question = (p["question"] as? String) ?? (p["name"] as? String) else { return (nil, nil) }
+        // 0 is "any number", 1 is one answer.
+        let count = (p["selectable_options_count"] as? Int) ?? 1
+        return (WAPoll(question: question, options: options, multiple: count != 1), nil)
+    }
+
+    static func openwa(_ value: Any?) -> WAPoll? {
+        guard let p = value as? [String: Any], let question = p["name"] as? String else { return nil }
+        let options = (p["options"] as? [Any] ?? []).compactMap { option -> String? in
+            (option as? String) ?? ((option as? [String: Any])?["name"] as? String)
+        }
+        return WAPoll(question: question, options: options, multiple: p["allowMultipleAnswers"] as? Bool == true)
+    }
+
+    /// GOWA's own text of a vote kept in a chat's history ("Poll vote: Sushi", "Poll vote cleared"): it is no message.
+    static func isVoteText(_ text: String) -> Bool {
+        text.hasPrefix("Poll vote: ") || text == "Poll vote cleared"
+    }
 }
 
 /// One person's emoji on a message. WhatsApp keeps one per person: a new one replaces theirs, an empty one removes it.
@@ -339,6 +400,11 @@ struct WAInbox: Equatable, Sendable {
             seenOrder.removeFirst(1_000)
             for id in dropped { seenIds.remove(id) }
         }
+        // A vote is no message of its own: it moves the counts of the poll it is on.
+        if let vote = message.pollVote {
+            applyVote(vote, chat: chat, voter: message.fromMe ? WAPoll.me : message.sender)
+            return .quiet
+        }
 
         let kind = WAJID.kind(chat)
         let isGroup = kind == .group
@@ -416,9 +482,26 @@ struct WAInbox: Equatable, Sendable {
         if !message.reactions.isEmpty { kept.reactions = message.reactions }
         if kept.replyTo == nil { kept.replyTo = message.replyTo }
         if kept.quotedText == nil { kept.quotedText = message.quotedText }
+        if kept.poll == nil { kept.poll = message.poll }
         guard kept != conversation.messages[index] else { return }
         conversation.messages[index] = kept
         conversations[chat] = conversation
+    }
+
+    /// Someone voted on a poll (an empty choice takes their vote back). The chat that changed, nil when Nook does not
+    /// keep that poll.
+    @discardableResult
+    mutating func applyVote(_ vote: WAPollVote, chat: String, voter: String) -> String? {
+        let key = WAJID.normalized(chat)
+        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        for chatKey in keys {
+            guard var conversation = conversations[chatKey],
+                  let index = conversation.messages.firstIndex(where: { $0.id == vote.poll && $0.poll != nil }) else { continue }
+            conversation.messages[index].poll?.votes[voter] = vote.choice.isEmpty ? nil : vote.choice
+            conversations[chatKey] = conversation
+            return chatKey
+        }
+        return nil
     }
 
     /// Someone put `emoji` on a message (an empty one takes theirs back). The chat that changed, nil when Nook does not
@@ -462,6 +545,13 @@ struct WAInbox: Equatable, Sendable {
 
     mutating func markRead(_ chat: String) {
         conversations[WAJID.normalized(chat)]?.unread = 0
+    }
+
+    /// "Mark as unread", in Nook only: the chat shows a badge again, until it is read.
+    mutating func markUnread(_ chat: String) {
+        let key = WAJID.normalized(chat)
+        guard let unread = conversations[key]?.unread, unread == 0 else { return }
+        conversations[key]?.unread = 1
     }
 
     /// History loaded at connection: whether it was read is unknown, so nothing counts as new.
@@ -663,6 +753,14 @@ enum WAWebhook {
             text: text, media: gowaMedia(p),
             date: WADate.rfc3339(p["timestamp"] as? String) ?? Date(),
             fromMe: p["is_from_me"] as? Bool ?? false)
+        let poll = WAPollData.gowa(p["poll"])
+        if poll.poll != nil || poll.vote != nil {
+            // The poll shows as itself, a vote moves its counts: neither is a text or an attachment.
+            message.poll = poll.poll
+            message.pollVote = poll.vote
+            message.media = .none
+            message.text = ""
+        }
         message.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: mine)
         message.replyTo = nonEmpty(p["replied_to_id"])
         message.quotedText = nonEmpty(p["quoted_body"])
@@ -733,6 +831,11 @@ enum WAWebhook {
             media: openwaMedia(type, filename: nonEmpty(media?["filename"])),
             date: WADate.epoch(d["timestamp"]) ?? Date(),
             fromMe: fromMe)
+        if let poll = WAPollData.openwa(d["poll"]) {
+            message.poll = poll
+            message.media = .none
+            message.text = ""
+        }
         let isGroup = (d["isGroup"] as? Bool) ?? WAJID.isGroup(chat)
         if isGroup, let mine = me {
             let ids = (d["mentionedIds"] as? [String]) ?? []
@@ -796,6 +899,13 @@ struct WAStatus: Equatable, Sendable {
     var me: String?
 }
 
+/// A WhatsApp channel you follow (a newsletter, `…@newsletter`): its name and, when the gateway says, where its picture is.
+struct WAChannel: Equatable, Sendable {
+    var jid: String
+    var name: String
+    var picture: URL?
+}
+
 /// A chat's picture (a person's profile photo, a group's) as the gateways name it: an address on WhatsApp's own picture
 /// server. Nook fetches it from there only, never with the gateway's credentials.
 enum WAAvatar {
@@ -806,6 +916,32 @@ enum WAAvatar {
         let raw = ((json["results"] as? [String: Any])?["url"] as? String) ?? (json["url"] as? String)
         guard let raw, let url = URL(string: raw), isWhatsApp(url) else { return nil }
         return url
+    }
+
+    /// GOWA's `/user/my/newsletters`: `{"results": {"data": [{id, thread_metadata: {name: {text}, preview|picture:
+    /// {url, direct_path}}}]}}`. A picture named only by its path is on WhatsApp's media server.
+    static func gowaChannels(_ data: Data) -> [WAChannel] {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let list = (json["results"] as? [String: Any])?["data"] as? [[String: Any]] else { return [] }
+        return list.compactMap { channel in
+            guard let id = channel["id"] as? String, !id.isEmpty else { return nil }
+            let meta = channel["thread_metadata"] as? [String: Any] ?? [:]
+            let name = ((meta["name"] as? [String: Any])?["text"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            let picture = [meta["preview"], meta["picture"]].compactMap { $0 as? [String: Any] }.lazy.compactMap { picture -> URL? in
+                if let url = (picture["url"] as? String).flatMap(URL.init(string:)), isWhatsApp(url) { return url }
+                guard let path = picture["direct_path"] as? String, path.hasPrefix("/") else { return nil }
+                return URL(string: "https://mmg.whatsapp.net" + path)
+            }.first
+            return WAChannel(jid: id, name: name, picture: picture)
+        }
+    }
+
+    /// OpenWA's `/channels`: a bare array of `{id, name}` (it gives no picture).
+    static func openwaChannels(_ data: Data) -> [WAChannel] {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []).compactMap { channel in
+            guard let id = channel["id"] as? String, !id.isEmpty else { return nil }
+            return WAChannel(jid: id, name: ((channel["name"] as? String) ?? "").trimmingCharacters(in: .whitespaces), picture: nil)
+        }
     }
 
     /// `https://pps.whatsapp.net/…` (and WhatsApp's other picture hosts), nothing else.
@@ -874,6 +1010,8 @@ enum WAGOWA {
         return list.compactMap { m in
             guard let id = m["id"] as? String, let chat = m["chat_jid"] as? String else { return nil }
             let text = (m["content"] as? String) ?? ""
+            // A vote kept in the history names no poll: it cannot move one, and is no message either.
+            if WAPollData.isVoteText(text) { return nil }
             var msg = WAMessage(
                 id: id, chat: chat, sender: (m["sender_jid"] as? String) ?? chat,
                 senderName: nonEmpty(m["sender_display_name"]) ?? "",
@@ -886,6 +1024,11 @@ enum WAGOWA {
             msg.reactions = ((m["reactions"] as? [[String: Any]]) ?? []).compactMap { r in
                 guard let emoji = nonEmpty(r["emoji"]) else { return nil }
                 return WAReaction(emoji: emoji, sender: (r["sender_jid"] as? String) ?? "", fromMe: r["is_from_me"] as? Bool ?? false)
+            }
+            if let poll = WAPollData.gowa(m["poll"]).poll {
+                msg.poll = poll
+                msg.media = .none
+                msg.text = ""
             }
             return msg
         }
@@ -1052,6 +1195,11 @@ enum WAOpenWA {
             let quoted = metadata?["quotedMessage"] as? [String: Any]
             msg.replyTo = nonEmpty(quoted?["id"])
             msg.quotedText = nonEmpty(quoted?["body"])
+            if let poll = WAPollData.openwa(metadata?["poll"] ?? m["poll"]) {
+                msg.poll = poll
+                msg.media = .none
+                msg.text = ""
+            }
             return msg
         }
     }
@@ -1276,7 +1424,10 @@ enum WhatsAppRecipients {
         format.dateFormat = "yyyy-MM-dd HH:mm"
         return messages.sorted { $0.date < $1.date }.map { message in
             let who = message.fromMe ? "Me" : (message.senderName.isEmpty ? chatName : message.senderName)
-            let text = [label(message.media), message.text.isEmpty ? nil : message.text].compactMap { $0 }.joined(separator: " ")
+            let poll = message.poll.map { poll in
+                "[poll] \(poll.question): " + poll.chatPoll.options.map { "\($0.text) (\($0.votes))" }.joined(separator: ", ")
+            }
+            let text = [label(message.media), poll, message.text.isEmpty ? nil : message.text].compactMap { $0 }.joined(separator: " ")
             return "\(format.string(from: message.date)) \(who): \(text)"
         }.joined(separator: "\n")
     }

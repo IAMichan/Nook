@@ -22,6 +22,9 @@ struct ChatTranscript: View {
     var onReply: ((ChatBubble) -> Void)? = nil
     /// Putting an emoji on a message; the one you already put there takes it back. Nil where the chat cannot be answered.
     var onReact: ((ChatBubble, String) -> Void)? = nil
+    /// Voting on a poll with your new choice. Nil where the chat's app cannot take a vote from Nook: the poll then
+    /// shows its counts and says to vote in the app.
+    var onVote: ((ChatBubble, [String]) -> Void)? = nil
 
     var body: some View {
         if fills {
@@ -64,7 +67,8 @@ struct ChatTranscript: View {
                     if let bubble = byID[row.id] {
                         ChatBubbleView(bubble: bubble, first: first, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
-                                       onReply: replyAction(bubble), onReact: reactAction(bubble))
+                                       onReply: replyAction(bubble), onReact: reactAction(bubble),
+                                       onVote: voteAction(bubble))
                             .contextMenu {
                                 if let onReply {
                                     Button(tr("chat.reply")) { onReply(bubble) }
@@ -94,6 +98,11 @@ struct ChatTranscript: View {
     private func replyAction(_ bubble: ChatBubble) -> (() -> Void)? {
         guard let onReply else { return nil }
         return { onReply(bubble) }
+    }
+
+    private func voteAction(_ bubble: ChatBubble) -> (([String]) -> Void)? {
+        guard let onVote, bubble.poll != nil else { return nil }
+        return { onVote(bubble, $0) }
     }
 
     private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
@@ -134,6 +143,7 @@ private struct ChatBubbleView: View {
     let onZoom: () -> Void
     let onReply: (() -> Void)?
     let onReact: ((String) -> Void)?
+    let onVote: (([String]) -> Void)?
     @State private var expanded = false
     @State private var hovering = false
     /// The emoji to react with are open beside the bubble.
@@ -244,6 +254,9 @@ private struct ChatBubbleView: View {
                 QuotedMessage(quote: quote)
                     .padding(.bottom, NookTheme.Spacing.xxs)
             }
+            if let poll = bubble.poll {
+                ChatPollView(poll: poll, onVote: onVote)
+            }
             if let attachment = bubble.attachment {
                 if bubble.text.isEmpty {
                     // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
@@ -278,7 +291,8 @@ private struct ChatBubbleView: View {
                     stamp
                 }
             } else if bubble.attachment == nil {
-                stamp
+                // A poll or an empty message: the time under it, on the right.
+                stamp.frame(maxWidth: bubble.poll == nil ? nil : CGFloat.infinity, alignment: .trailing)
             }
         }
         .padding(.horizontal, bare ? NookTheme.Spacing.xs : 12)

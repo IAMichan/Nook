@@ -97,7 +97,8 @@ struct ChatsTab: View {
                                     edge: .trailing, divider: true)
                     Group {
                         if let current {
-                            ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp)
+                            ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
+                                        onMarkUnread: { markUnread(current) })
                                 .id(current.id)
                         } else {
                             // No chat open (none picked yet, closed with Escape, or not in what the list shows).
@@ -129,7 +130,8 @@ struct ChatsTab: View {
             photos.refresh()
         }
         // The pictures of the WhatsApp chats in the list, newest first, as their app shows them.
-        .task(id: whatsApp.isConnected) {
+        // Again once the list of chats on the phone (and its channels) came in.
+        .task(id: "\(whatsApp.isConnected) \(whatsApp.knownChats.count)") {
             await whatsApp.loadAvatars(all.filter { $0.app == "whatsapp" }.prefix(60).compactMap { entry in
                 if case .whatsApp(let jid) = entry.origin { return jid }
                 return nil
@@ -143,9 +145,14 @@ struct ChatsTab: View {
         }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
-            // Reading a collected chat here is reading it; a WhatsApp chat is only read by what you do with it.
-            guard let id, let entry = all.first(where: { $0.id == id }), case .captured(let thread) = entry.origin else { return }
-            capture.markRead(thread)
+        }
+        // A chat you open is read, and so is what comes in while it is open: its badge goes.
+        .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in
+            guard let entry = current, entry.unread > 0 else { return }
+            switch entry.origin {
+            case .captured(let thread): capture.markRead(thread)
+            case .whatsApp(let jid): whatsApp.markRead(jid)
+            }
         }
     }
 
@@ -155,6 +162,23 @@ struct ChatsTab: View {
     private var footer: some View {
         if let openOnAgents, showsFooter {
             PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
+        }
+    }
+
+    /// "Mark as read", by hand: its badge goes.
+    private func markRead(_ entry: ChatsEntry) {
+        switch entry.origin {
+        case .captured(let thread): capture.markRead(thread)
+        case .whatsApp(let jid): whatsApp.markRead(jid)
+        }
+    }
+
+    /// "Mark as unread", by hand: the badge comes back, and an open chat closes so that opening it again reads it.
+    private func markUnread(_ entry: ChatsEntry) {
+        if selection == entry.id { withAnimation(NookTheme.reveal) { selection = nil } }
+        switch entry.origin {
+        case .captured(let thread): capture.markUnread(thread)
+        case .whatsApp(let jid): whatsApp.markUnread(jid)
         }
     }
 
@@ -412,6 +436,13 @@ struct ChatsTab: View {
                         if open {
                             ForEach(section.entries) { entry in
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected) { selection = entry.id }
+                                    .contextMenu {
+                                        if entry.unread > 0 {
+                                            Button(tr("chats.markRead")) { markRead(entry) }
+                                        } else {
+                                            Button(tr("chats.markUnread")) { markUnread(entry) }
+                                        }
+                                    }
                             }
                         }
                     }
@@ -855,6 +886,8 @@ private struct ChatsDetail: View {
     let photo: NSImage?
     @ObservedObject var capture: ChatCaptureService
     @ObservedObject var whatsApp: WhatsAppLink
+    /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
+    var onMarkUnread: () -> Void = {}
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
@@ -894,7 +927,8 @@ private struct ChatsDetail: View {
             Rectangle().fill(NookTheme.hairline).frame(height: 1)
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { zoom($0) },
-                           onReply: whatsAppChat == nil ? nil : quote, onReact: whatsAppChat == nil ? nil : react)
+                           onReply: whatsAppChat == nil ? nil : quote, onReact: whatsAppChat == nil ? nil : react,
+                           onVote: canVote ? vote : nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
                 .padding(.top, NookTheme.Spacing.md)
@@ -914,6 +948,27 @@ private struct ChatsDetail: View {
     private func zoom(_ bubble: ChatBubble) {
         guard case .photo = bubble.media, bubble.image != nil else { return open(bubble) }
         withAnimation(NookTheme.reveal) { zoomed = bubble }
+    }
+
+    /// Whether a poll in this chat can be voted on from here: WhatsApp through a gateway that can, Telegram once linked.
+    private var canVote: Bool {
+        if whatsAppChat != nil { return whatsApp.canVote }
+        return entry.app == capture.telegramBridge.app && capture.bridged.contains(entry.app)
+    }
+
+    /// Your vote on a poll, after your own click; when it cannot go, the chat says so and the poll shows the old count.
+    private func vote(_ bubble: ChatBubble, _ choice: [String]) {
+        guard let chat = whatsAppChat else {
+            capture.telegramBridge.vote(choice, message: bubble.id)
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await whatsApp.vote(choice, poll: bubble.id, chat: chat)
+            } catch {
+                notice = error.localizedDescription
+            }
+        }
     }
 
     /// The field answers this message: it shows above the field until the answer goes.
@@ -951,11 +1006,19 @@ private struct ChatsDetail: View {
             Spacer(minLength: NookTheme.Spacing.sm)
             if let chat = whatsAppChat {
                 ToolbarIconButton("sparkles", tr("whatsapp.card.nook")) { app.askNookAboutWhatsApp(chat, name: entry.name) }
-                if entry.unread > 0 {
-                    ToolbarIconButton("checkmark.circle", tr("whatsapp.card.read")) { whatsApp.markRead(chat) }
-                }
             } else if case .captured(let id) = entry.origin {
                 ToolbarIconButton("trash", tr("chats.remove")) { capture.remove(id) }
+            }
+            // Read or unread by hand, for every chat.
+            if entry.unread > 0 {
+                ToolbarIconButton("checkmark.circle", tr("chats.markRead")) {
+                    switch entry.origin {
+                    case .captured(let id): capture.markRead(id)
+                    case .whatsApp(let jid): whatsApp.markRead(jid)
+                    }
+                }
+            } else {
+                ToolbarIconButton("circle.badge", tr("chats.markUnread"), action: onMarkUnread)
             }
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
         }

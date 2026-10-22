@@ -15,6 +15,7 @@ extension ChatBubble {
     init(_ message: InboxMessage, time: String) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)
+        poll = message.poll
         guard let file = message.media else { return }
         attachment = file.label
         guard let url = file.url else { return }

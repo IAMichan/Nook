@@ -311,11 +311,14 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var fromMe: Bool? = nil
     /// A photo, video, GIF, sticker, audio message or file that came with it; `text` is then its caption, if any.
     var media: ChatMedia? = nil
+    /// A poll it asks, with the votes so far.
+    var poll: ChatPoll? = nil
 
     var isMine: Bool { fromMe == true }
 
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
+        if let poll { return poll.line }
         let plain = ChatFormat.plain(text)
         guard let media else { return plain }
         return plain.isEmpty ? media.label : "\(media.label): \(plain)"
@@ -506,16 +509,16 @@ struct ChatInbox: Codable, Equatable, Sendable {
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
         let before = thread
         let newestBefore = known?.last
-        // A file a bridge fetched since it last brought this message: the chat shows it now.
-        for message in messages where message.media != nil {
-            if let index = thread.messages.firstIndex(where: { $0.id == message.id }), thread.messages[index].media != message.media {
-                thread.messages[index].media = message.media
-            }
+        // A file a bridge fetched since it last brought this message, or new votes on a poll: the chat shows them now.
+        for message in messages where message.media != nil || message.poll != nil {
+            guard let index = thread.messages.firstIndex(where: { $0.id == message.id }) else { continue }
+            if thread.messages[index].media != message.media { thread.messages[index].media = message.media }
+            if thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
         }
         for message in messages where !thread.messages.contains(where: {
             $0.id == message.id
                 // Two photos sent in a row are two messages, even without a caption.
-                || (message.media == nil && $0.media == nil && $0.isMine == message.isMine && $0.text == message.text
+                || (message.media == nil && $0.media == nil && message.poll == nil && $0.isMine == message.isMine && $0.text == message.text
                     && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
         }) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
@@ -537,6 +540,12 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     mutating func markRead(_ id: String) {
         threads[id]?.unread = 0
+    }
+
+    /// "Mark as unread": the chat shows a badge again, until it is read.
+    mutating func markUnread(_ id: String) {
+        guard let unread = threads[id]?.unread, unread == 0 else { return }
+        threads[id]?.unread = 1
     }
 
     mutating func markAllRead() {
