@@ -377,6 +377,34 @@
         }
       }
     },
+    "%lld unread": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ungelesen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sin leer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld non lus"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ongelezen"
+          }
+        }
+      }
+    },
     "Activity": {
       "localizations": {
         "de": {
@@ -485,6 +513,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agents"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle"
           }
         }
       }
@@ -741,30 +797,86 @@
         }
       }
     },
-    "Chat": {
+    "Cancel reply": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chat"
+            "value": "Antwort abbrechen"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chat"
+            "value": "Cancelar respuesta"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Discussion"
+            "value": "Annuler la réponse"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chat"
+            "value": "Annuleer antwoord"
+          }
+        }
+      }
+    },
+    "Chats": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discussions"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats"
+          }
+        }
+      }
+    },
+    "Chats are off on your Mac": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats sind auf deinem Mac aus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los chats están desactivados en tu Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les discussions sont désactivées sur votre Mac"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats staan uit op je Mac"
           }
         }
       }
@@ -821,6 +933,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Koppel er een in Nook › Instellingen › Agents."
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopieer"
           }
         }
       }
@@ -905,6 +1045,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Standaardmodel"
+          }
+        }
+      }
+    },
+    "Delivered": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugestellt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entregado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Distribué"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afgeleverd"
           }
         }
       }
@@ -1469,6 +1637,34 @@
         }
       }
     },
+    "Link WhatsApp or turn on Chats in Nook › Settings › Chats to see every chat here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinde WhatsApp oder schalte Chats in Nook › Einstellungen › Chats ein, um hier alle Chats zu sehen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vincula WhatsApp o activa los chats en Nook › Ajustes › Chats para ver aquí todos tus chats."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Associez WhatsApp ou activez les discussions dans Nook › Réglages › Discussions pour voir toutes vos discussions ici."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Koppel WhatsApp of zet Chats aan in Nook › Instellingen › Chats om hier al je chats te zien."
+          }
+        }
+      }
+    },
     "Looking for your Mac…": {
       "localizations": {
         "de": {
@@ -1493,6 +1689,90 @@
           "stringUnit": {
             "state": "translated",
             "value": "Zoeken naar je Mac…"
+          }
+        }
+      }
+    },
+    "Mark as read": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als gelesen markieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como leído"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquer comme lu"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markeer als gelezen"
+          }
+        }
+      }
+    },
+    "Mark as unread": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als ungelesen markieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marcar como no leído"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquer comme non lu"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Markeer als ongelezen"
+          }
+        }
+      }
+    },
+    "Message": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nachricht"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mensaje"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bericht"
           }
         }
       }
@@ -1553,6 +1833,34 @@
         }
       }
     },
+    "More": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mehr"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meer"
+          }
+        }
+      }
+    },
     "Needs you": {
       "localizations": {
         "de": {
@@ -1605,6 +1913,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nieuwe chat"
+          }
+        }
+      }
+    },
+    "New messages from WhatsApp and your other chat apps on your Mac show up here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Nachrichten aus WhatsApp und deinen anderen Chat-Apps auf deinem Mac erscheinen hier."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los mensajes nuevos de WhatsApp y de tus otras apps de chat en tu Mac aparecen aquí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux messages de WhatsApp et de vos autres apps de discussion sur votre Mac apparaissent ici."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nieuwe berichten uit WhatsApp en je andere chatapps op je Mac verschijnen hier."
           }
         }
       }
@@ -1721,6 +2057,62 @@
         }
       }
     },
+    "No chat matches.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Chat passt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ningún chat coincide."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune discussion ne correspond."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen chat gevonden."
+          }
+        }
+      }
+    },
+    "No chats yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Chats"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay chats"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de discussions"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nog geen chats"
+          }
+        }
+      }
+    },
     "No folders yet.": {
       "localizations": {
         "de": {
@@ -1829,6 +2221,90 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nook"
+          }
+        }
+      }
+    },
+    "Nook can only read this chat. Answer it in %@.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook kann diesen Chat nur lesen. Antworte in %@."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook solo puede leer este chat. Respóndelo en %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook peut seulement lire cette discussion. Répondez dans %@."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook kan deze chat alleen lezen. Beantwoord hem in %@."
+          }
+        }
+      }
+    },
+    "Nook can only read this chat: answer it in its own app.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook kann diesen Chat nur lesen: Antworte in seiner eigenen App."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook solo puede leer este chat: respóndelo en su propia app."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook peut seulement lire cette discussion : répondez dans son app."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook kan deze chat alleen lezen: beantwoord hem in de app zelf."
+          }
+        }
+      }
+    },
+    "Nook cannot read the notifications on your Mac: give it Full Disk Access in System Settings.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook kann die Mitteilungen auf deinem Mac nicht lesen: Gib ihm in den Systemeinstellungen Festplattenvollzugriff."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook no puede leer las notificaciones de tu Mac: dale acceso total al disco en Ajustes del Sistema."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook ne peut pas lire les notifications de votre Mac : accordez-lui l’accès complet au disque dans Réglages Système."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nook kan de meldingen op je Mac niet lezen: geef het Volledige schijftoegang in Systeeminstellingen."
           }
         }
       }
@@ -1969,6 +2445,62 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dat kan niet vanaf je telefoon: open het op je Mac."
+          }
+        }
+      }
+    },
+    "Not sent": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht gesendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No enviado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non envoyé"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niet verstuurd"
+          }
+        }
+      }
+    },
+    "Nothing unread.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts ungelesen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada sin leer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien de non lu."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niets ongelezen."
           }
         }
       }
@@ -2505,6 +3037,34 @@
         }
       }
     },
+    "Read": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelesen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leído"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lu"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelezen"
+          }
+        }
+      }
+    },
     "Ready": {
       "localizations": {
         "de": {
@@ -2557,6 +3117,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recent"
+          }
+        }
+      }
+    },
+    "Reply": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antworten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Responder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répondre"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beantwoord"
           }
         }
       }
@@ -2645,6 +3233,34 @@
         }
       }
     },
+    "Search chats": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats durchsuchen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar chats"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher des discussions"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoek in chats"
+          }
+        }
+      }
+    },
     "Send": {
       "localizations": {
         "de": {
@@ -2669,6 +3285,62 @@
           "stringUnit": {
             "state": "translated",
             "value": "Verstuur"
+          }
+        }
+      }
+    },
+    "Sending": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird gesendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviando"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi en cours"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wordt verstuurd"
+          }
+        }
+      }
+    },
+    "Sent": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesendet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verstuurd"
           }
         }
       }
@@ -2781,6 +3453,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Meerdere vragen tegelijk: beantwoord ze op je Mac."
+          }
+        }
+      }
+    },
+    "Show": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toon"
           }
         }
       }
@@ -3513,6 +4213,34 @@
         }
       }
     },
+    "Unread": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ungelesen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No leídos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non lues"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ongelezen"
+          }
+        }
+      }
+    },
     "Unreadable reply from your Mac.": {
       "localizations": {
         "de": {
@@ -3593,6 +4321,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Werk Nook op je Mac bij om vanaf je telefoon met Nook te chatten."
+          }
+        }
+      }
+    },
+    "Update Nook on your Mac to read and answer your chats from your phone.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktualisiere Nook auf deinem Mac, um deine Chats auf dem iPhone zu lesen und zu beantworten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualiza Nook en tu Mac para leer y responder tus chats desde el teléfono."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettez Nook à jour sur votre Mac pour lire vos discussions et y répondre depuis votre téléphone."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werk Nook op je Mac bij om je chats op je telefoon te lezen en te beantwoorden."
           }
         }
       }
@@ -3929,6 +4685,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aan het schrijven…"
+          }
+        }
+      }
+    },
+    "You": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tú"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jij"
           }
         }
       }

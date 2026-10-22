@@ -130,6 +130,20 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
     }
 
+    func testInboxCodable() throws {
+        let request = CompanionRequest(op: .inboxSend, item: "wa|31600000000@s.whatsapp.net", text: "On my way", replyTo: "m1")
+        XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)
+        let chat = InboxChatDigest(id: "wa|x", app: "whatsapp", appName: "WhatsApp", name: "Anna", preview: "You: see you",
+                                   last: 10, unread: 2, canSend: true, ticks: "read", waitsInApp: false)
+        let line = InboxLine(id: "m1", text: "Dinner?", date: 9, sender: "", fromMe: false, attachment: "Photo", ticks: nil,
+                             quoteSender: "You", quoteText: "Hi", reactions: ["👍 2"])
+        let response = CompanionResponse(id: "x", ok: true, message: "chatsaccess", inbox: [chat], inboxLines: [line])
+        XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
+        XCTAssertTrue(CompanionFeature.all.contains(CompanionFeature.inbox))
+        // A phone from before the Chats tab sends no `replyTo`.
+        XCTAssertNil(try JSONDecoder().decode(CompanionRequest.self, from: Data(#"{"id":"a","sent":1,"op":"inbox"}"#.utf8)).replyTo)
+    }
+
     func testOldMessagesStillDecode() throws {
         // A Mac or phone of the first version sends none of the new fields.
         let request = #"{"id":"a","sent":1,"op":"list"}"#
