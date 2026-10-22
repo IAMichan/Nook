@@ -36,7 +36,7 @@ struct ChatMessageText: View {
                     }
                 case .code(let code):
                     Text(code)
-                        .font(NookTheme.mono(12.5))
+                        .font(NookTheme.TextStyle.code)
                         .lineLimit(lineLimit)
                         .padding(.horizontal, NookTheme.Spacing.sm)
                         .padding(.vertical, NookTheme.Spacing.xs)
@@ -46,7 +46,9 @@ struct ChatMessageText: View {
                 }
             }
         }
-        .font(NookTheme.font(14, weight))
+        // Body size with a little air between lines: a chat is read in long runs.
+        .font(weight == .regular ? NookTheme.TextStyle.body : NookTheme.font(13.5, weight))
+        .lineSpacing(NookTheme.Spacing.xxs)
         .foregroundStyle(NookTheme.paper)
         .tint(NookTheme.blue)
         .fixedSize(horizontal: false, vertical: true)

@@ -118,7 +118,7 @@ private struct LyricRow: View {
                 .frame(maxWidth: 520)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.white.opacity(hovering && state != .current ? 0.04 : 0)))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.paper.opacity(hovering && state != .current ? 0.04 : 0)))
                 .scaleEffect(state == .current ? 1.24 : 1)
                 .padding(.vertical, state == .current ? 5 : 0)
                 .contentShape(Rectangle())
@@ -145,7 +145,7 @@ private struct PlainLyrics: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
-            VStack(spacing: 7) {
+            VStack(spacing: NookTheme.Spacing.sm) {
                 ForEach(lines) { line in
                     Text(line.text.isEmpty ? " " : line.text)
                         .font(NookTheme.font(15, .medium))
@@ -157,7 +157,7 @@ private struct PlainLyrics: View {
             }
             .frame(maxWidth: .infinity)
             .textSelection(.enabled)
-            .padding(.vertical, 12)
+            .padding(.vertical, NookTheme.Spacing.lg)
         }
     }
 }
@@ -271,26 +271,27 @@ private struct MusicShelf: View {
     let items: [MusicCoverItem]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 if let noteSymbol {
                     Image(systemName: noteSymbol).font(NookTheme.font(10.5, .semibold))
                 }
                 Text(note).lineLimit(1).truncationMode(.tail)
             }
-            .font(NookTheme.TextStyle.label)
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .help(note)
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 136), spacing: 16, alignment: .top)], alignment: .leading, spacing: 18) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 136), spacing: NookTheme.Spacing.xl, alignment: .top)],
+                          alignment: .leading, spacing: NookTheme.Spacing.xl + NookTheme.Spacing.xs) {
                     ForEach(items) { MusicCoverCard(item: $0) }
                 }
-                .padding(.top, 4)
-                .padding(.bottom, 14)
+                .padding(.top, NookTheme.Spacing.xs)
+                .padding(.bottom, NookTheme.Spacing.xl)
             }
             .mask(LinearGradient(stops: [.init(color: .black, location: 0.86), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, NookTheme.Spacing.xs)
     }
 }
 
@@ -300,7 +301,7 @@ private struct MusicCoverCard: View {
 
     var body: some View {
         Button(action: item.action) {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .overlay {
@@ -327,11 +328,12 @@ private struct MusicCoverCard: View {
                         }
                         .opacity(hovering ? 1 : 0)
                     }
-                    .shadow(color: .black.opacity(0.45), radius: 12, y: 6)
-                    .offset(y: hovering ? -3 : 0)
-                VStack(alignment: .leading, spacing: 2) {
+                    // A soft shadow and a small lift: the cover reads as something to press, without jumping.
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    .offset(y: hovering ? -2 : 0)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
-                        .font(NookTheme.font(12.5, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     if !item.subtitle.isEmpty {
@@ -362,21 +364,21 @@ struct MusicPlaceholder<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: NookTheme.Spacing.md) {
             if loading {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: symbol)
-                    .font(NookTheme.font(22, .medium))
+                    .font(NookTheme.font(22, .light))
                     .foregroundStyle(NookTheme.textTertiary)
             }
             Text(title)
-                .font(NookTheme.font(13.5, .semibold))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.textSecondary)
                 .multilineTextAlignment(.center)
             if let detail {
                 Text(detail)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
