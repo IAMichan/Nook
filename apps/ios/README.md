@@ -21,6 +21,7 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   CompanionViews.swift   root tabs, pairing, session overview
   SessionViews.swift     a session as a conversation, starting a new session
   ChatViews.swift        Nook's own chats, shared bubble and composer
+  InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
   HomeViews.swift        Today: greeting, what needs you, For you, agenda, now playing, limits, starters
   UsageViews.swift       plan limits, tokens and costs, tokens per day, usage per model
 ```

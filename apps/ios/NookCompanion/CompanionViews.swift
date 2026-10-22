@@ -8,8 +8,9 @@ struct RootView: View {
     @State private var todayPath: [String] = []
     @State private var sessionPath: [String] = []
     @State private var chatPath: [ChatRoute] = []
+    @State private var inboxPath: [String] = []
 
-    enum Tab { case today, sessions, nook, usage }
+    enum Tab { case today, sessions, chats, nook, usage }
 
     var body: some View {
         Group {
@@ -32,10 +33,17 @@ struct RootView: View {
                     .tabItem { Label("Agents", systemImage: "square.stack.3d.up.fill") }
                     .badge(client.sessions.needingYou)
                     .tag(Tab.sessions)
+                    NavigationStack(path: $inboxPath) {
+                        InboxListView(path: $inboxPath)
+                    }
+                    .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+                    .badge(client.inboxUnread)
+                    .tag(Tab.chats)
                     NavigationStack(path: $chatPath) {
                         ChatListView(path: $chatPath)
                     }
-                    .tabItem { Label("Chat", systemImage: "sparkles") }
+                    // Nook's own chats; "Chats" are your chat apps.
+                    .tabItem { Label("Nook", systemImage: "sparkles") }
                     .tag(Tab.nook)
                     NavigationStack {
                         UsageScreen()

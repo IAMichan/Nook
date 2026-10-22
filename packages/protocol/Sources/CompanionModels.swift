@@ -93,6 +93,10 @@ enum CompanionOp: String, Codable, Sendable {
     case usage
     /// Play/pause, next or previous track (`text`: "playpause", "next", "previous"); answered with `home`.
     case music
+    /// The Chats tab: every chat app in one inbox (`inbox` in the answer); one chat's messages (`item`: the chat's id,
+    /// `inboxLines` in the answer); your own words to a chat that can be answered from Nook (`item`, `text`, and
+    /// `replyTo` when it answers one of its messages); and read or unread by hand (`item`, `allow`: true is read).
+    case inbox, inboxChat, inboxSend, inboxMark
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -104,7 +108,8 @@ enum CompanionFeature {
     static let home = "home"
     static let usage = "usage"
     static let music = "music"
-    static let all = [start, timeline, chat, home, usage, music]
+    static let inbox = "inbox"
+    static let all = [start, timeline, chat, home, usage, music, inbox]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -159,11 +164,14 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     /// A Nook chat, for `chat`, `ask` and `chatStop`.
     var conversation: String?
     var launch: LaunchRequest?
+    /// The message of a chat that `inboxSend` answers.
+    var replyTo: String?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
-         item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil) {
+         item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
+         replyTo: String? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
-        self.conversation = conversation; self.launch = launch
+        self.conversation = conversation; self.launch = launch; self.replyTo = replyTo
     }
 }
 
@@ -188,6 +196,9 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var created: String?
     var home: HomeDigest?
     var usage: UsageDigest?
+    /// The chats of the Chats tab, newest first, and the messages of the one asked for (oldest first).
+    var inbox: [InboxChatDigest]?
+    var inboxLines: [InboxLine]?
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -259,6 +270,46 @@ struct ChatLine: Codable, Equatable, Identifiable, Sendable {
     var failed: Bool
     /// The answer carries a plan, a mail draft or a chart: those are handled on the Mac.
     var onMac: Bool
+}
+
+/// One chat of the Chats tab on the Mac: a WhatsApp chat through the linked phone, or a chat collected from another chat
+/// app's notifications (Telegram, Messages, Slack…).
+struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    /// The app's source id ("whatsapp", "telegram").
+    var app: String
+    /// The app's name ("Telegram").
+    var appName: String
+    var name: String
+    /// The newest message, with who wrote it in a group ("Jan: dinner?").
+    var preview: String
+    var last: Double
+    var unread: Int
+    /// Your own words can go to this chat from the phone (a WhatsApp chat); any other is answered in its own app.
+    var canSend: Bool
+    /// The newest message is yours: how far it got ("pending", "sent", "delivered", "read", "failed"); nil for theirs.
+    var ticks: String?
+    /// Read in Nook but still unread in the app itself (WhatsApp): "Mark as read" can still tell the app.
+    var waitsInApp: Bool
+}
+
+/// One message of a chat in the Chats tab, oldest first.
+struct InboxLine: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var text: String
+    var date: Double
+    /// In a group: who wrote it. Empty in a private chat and for your own.
+    var sender: String
+    var fromMe: Bool
+    /// A file that came with it, by its name or kind ("Photo"); it opens on the Mac.
+    var attachment: String?
+    /// Your own message's ticks, as in `InboxChatDigest.ticks`.
+    var ticks: String?
+    /// The message it answers: who wrote it and the start of its text.
+    var quoteSender: String?
+    var quoteText: String?
+    /// The emoji on it, the most used first ("👍 2").
+    var reactions: [String]
 }
 
 /// Nook's home on the phone, as the notch shows it on the Mac.
