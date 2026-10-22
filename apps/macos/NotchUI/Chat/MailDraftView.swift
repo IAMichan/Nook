@@ -12,6 +12,8 @@ struct MailDraftView: View {
     @State private var subject: String
     @State private var body_: String
     @State private var copied = false
+    /// `@` in the body: people from your chats by name.
+    @StateObject private var mentionModel = ComposerModel()
 
     init(draft: MailDraft, onSend: @escaping (MailDraft) -> Void, onOpen: @escaping (MailDraft) -> Void) {
         self.draft = draft
@@ -52,7 +54,10 @@ struct MailDraftView: View {
             if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
             field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"))
 
+            MentionSuggestions(model: mentionModel, text: $body_, config: .mentions())
+                .padding(.top, mentionModel.isOpen ? NookTheme.Spacing.md : 0)
             TextEditor(text: $body_)
+                .mentions(mentionModel, text: $body_, config: .mentions())
                 .font(NookTheme.TextStyle.body)
                 .lineSpacing(3)
                 .foregroundStyle(NookTheme.paper)

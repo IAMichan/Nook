@@ -257,6 +257,9 @@ private struct ScheduledTaskEditor: View {
     @State private var title: String
     @State private var prompt: String
     @State private var path: String
+    /// `@` in the prompt: people from your chats, and the files of the chosen project.
+    @StateObject private var mentionModel = ComposerModel()
+    private var mentionConfig: ComposerConfig { .mentions(folder: path) }
     @State private var provider: RunProvider
     @State private var kind: Kind
     @State private var minutes: Int
@@ -304,9 +307,11 @@ private struct ScheduledTaskEditor: View {
                 VStack(alignment: .leading, spacing: 14) {
                     field(tr("sched.field.name")) { TextField(tr("sched.field.namePlaceholder"), text: $title).textFieldStyle(.plain).modifier(FieldBox()) }
                     field(tr("sched.field.prompt")) {
+                        MentionSuggestions(model: mentionModel, text: $prompt, config: mentionConfig)
                         TextEditor(text: $prompt)
                             .font(NookTheme.TextStyle.body)
                             .scrollContentBackground(.hidden)
+                            .mentions(mentionModel, text: $prompt, config: mentionConfig)
                             .frame(minHeight: 90)
                             .padding(NookTheme.Spacing.sm)
                             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
