@@ -499,6 +499,8 @@ final class BeeperBridge: ChatBridge {
     private var seen: [String: Date] = [:]
     /// Files Beeper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
+    /// Beeper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
+    private var chatIDs: [String: String] = [:]
 
     static var token: String? { CloudHelp.secret(tokenAccount) }
 
@@ -524,6 +526,7 @@ final class BeeperBridge: ChatBridge {
                 let messages = await withFiles(history, token: token)
                 seen[chat.id] = chat.last ?? .distantPast
                 covered.insert(chat.app)
+                chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty else { continue }
                 let picture = await local(chat.picture, token: token)
                 result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
@@ -565,6 +568,74 @@ final class BeeperBridge: ChatBridge {
               let local = (BeeperData.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
         downloaded[source] = local.path
         return local.path
+    }
+
+    // MARK: Sending
+
+    /// Beeper's id of the chat Nook shows as `name` in `app`, once Beeper brought it in.
+    func chatID(app: String, name: String) -> String? {
+        isReady ? chatIDs[app + "|" + name] : nil
+    }
+
+    /// What every network Beeper bridges can take from Nook: text and files; a place or a contact goes as text.
+    var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
+
+    /// Sends what you typed, or a file, a place or a contact card, to a chat Beeper brought in (Instagram, Signal,
+    /// Messenger…), as an answer to `replyTo` (a message's id in Nook) when set. Beeper hands it to the network; the
+    /// chat shows it at Beeper's next read. Throws with a sentence you can act on.
+    func send(text: String? = nil, _ outgoing: ChatOutgoing? = nil, to chat: String, replyTo: String? = nil) async throws {
+        guard let token = Self.token else { throw NookError(tr("chats.beeper.unauthorized")) }
+        let messages = "/v1/chats/" + (chat.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? chat) + "/messages"
+        let prefix = "beeper-\(chat)-"
+        let answered = replyTo.flatMap { $0.hasPrefix(prefix) ? String($0.dropFirst(prefix.count)) : nil }
+        var request: WASendRequest
+        if let outgoing {
+            if case .poll = outgoing { throw NookError(tr("chat.compose.unsupported")) }
+            var uploadID: String?
+            if case .file(let file) = outgoing {
+                guard !file.tooLarge, let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) else {
+                    throw NookError(tr("chat.compose.tooLarge", file.name))
+                }
+                let upload = WASend.beeperUpload(file, data: data)
+                guard let id = WASend.beeperUploadID(try await post(upload.path, upload.json ?? [:], token: token, timeout: 120)) else {
+                    throw NookError(tr("chat.compose.notSent"))
+                }
+                uploadID = id
+            }
+            request = WASend.beeperMessage(outgoing, path: messages, uploadID: uploadID, replyTo: answered)
+        } else {
+            let body = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+            request = WASendRequest(path: messages, json: ["text": body])
+            if let answered { request.json?["replyToMessageID"] = answered }
+        }
+        _ = try await post(request.path, request.json ?? [:], token: token, timeout: 30)
+        // The chat is read again at the next turn, with the message just sent.
+        seen[chat] = nil
+    }
+
+    private func post(_ path: String, _ json: [String: any Sendable], token: String, timeout: TimeInterval) async throws -> Data {
+        var components = URLComponents(url: Self.base, resolvingAgainstBaseURL: false)!
+        components.percentEncodedPath = path
+        guard let url = components.url else { throw NookError("Beeper: \(path)") }
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await ConnectorHTTP.session.data(for: request)
+        } catch {
+            throw NookError(tr("chats.beeper.unreachable"))
+        }
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 || code == 403 { throw NookError(tr("chats.beeper.unauthorized")) }
+        guard (200..<300).contains(code) else {
+            throw NookError(tr("chat.compose.notSent") + " " + (WABeeper.errorMessage(data) ?? "HTTP \(code)"))
+        }
+        return data
     }
 
     private func get(_ path: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
