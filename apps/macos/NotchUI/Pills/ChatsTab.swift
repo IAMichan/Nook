@@ -192,7 +192,7 @@ struct ChatsTab: View {
         }
     }
 
-    /// Shows what "@chats …" or "@open chat …" asked for.
+    /// Shows what "@chat …" asked for.
     private func takeFocus() {
         guard let focus = viewModel.chatsFocus else { return }
         viewModel.chatsFocus = nil

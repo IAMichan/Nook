@@ -695,7 +695,7 @@ enum WAGatewayKind: String, CaseIterable, Sendable {
     }
     /// Whether the gateway posts new messages to Nook's webhook. Beeper does not: Nook asks its local API instead.
     var hasWebhook: Bool { self != .beeper }
-    /// What a chat is listed under in "@open chat …": the network for WhatsApp's own gateways, Beeper for Beeper's.
+    /// What a chat is listed under in "@chat …": the network for WhatsApp's own gateways, Beeper for Beeper's.
     var chatLabel: String { self == .beeper ? "Beeper" : "WhatsApp" }
 }
 
@@ -1022,6 +1022,18 @@ enum WAGOWA {
             names[jid] = name
         }
         return names
+    }
+
+    /// `GET /group/info` → `results: {JID, Name, LinkedParentJID, …}` (whatsmeow's GroupInfo), or the same under
+    /// `results.data` in newer versions. The group's own name, and the community it belongs to (whose name a group
+    /// without one of its own takes).
+    static func groupInfo(_ data: Data) -> (name: String?, parent: String?) {
+        guard var info = results(data) as? [String: Any] else { return (nil, nil) }
+        if let inner = info["data"] as? [String: Any] { info = inner }
+        func field(_ key: String) -> String? { nonEmpty(info[key]) ?? nonEmpty(info[key.lowercased()]) }
+        let name = (field("Name") ?? nonEmpty((info["GroupName"] as? [String: Any])?["Name"]))?
+            .trimmingCharacters(in: .whitespaces)
+        return (name?.isEmpty == false ? name : nil, field("LinkedParentJID").map(WAJID.normalized))
     }
 
     /// `GET /chat/{jid}/messages` → `results: {data: [{id, chat_jid, sender_jid, sender_display_name,

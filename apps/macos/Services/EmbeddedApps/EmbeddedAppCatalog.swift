@@ -53,12 +53,9 @@ enum EmbeddedAppCommand: Equatable, Sendable {
     /// The way asked for after the name, if any ("@open whatsapp web").
     case open(EmbeddedApp, EmbeddedAppMode?)
     case close
-    /// "@open chat Jan", "@open whatsapp Jan": one chat by its name, from any chat app. A WhatsApp chat shows as its card
-    /// in the notch (with a linked phone); a chat collected from another app opens in the Chats tab; any other name
-    /// opens in WhatsApp next to the chat.
+    /// "@chat Jan": one chat by its name, from any chat app. A WhatsApp chat shows as its card in the notch (with a linked
+    /// phone); a chat collected from another app opens in the Chats tab; any other name opens in WhatsApp next to the chat.
     case chat(String)
-    /// "@chats", "@chats telegram", "@chats anna": the Chats tab, on one app, one chat or a search when a word follows.
-    case chats(String)
     /// "@open something" that is no known app and no web address.
     case unknown(String)
 }
@@ -254,8 +251,12 @@ enum EmbeddedAppCatalog {
         }
     }
 
-    /// "@open whatsapp", "@whatsapp", "@close", "open whatsapp in nook". Nil for everything else, so a normal question
-    /// that happens to start with "@" still goes to the brain.
+    /// The commands, one job each:
+    /// - "@open whatsapp" (or "@whatsapp", "open whatsapp in nook"): an app or web address next to the chat, with an
+    ///   optional way after it ("@open whatsapp web").
+    /// - "@chat Jan": one chat by its name ("@open chat Jan" reads the same).
+    /// - "@close": puts the app next to the chat away.
+    /// Nil for everything else, so a normal question that happens to start with "@" still goes to the brain.
     static func command(in raw: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> EmbeddedAppCommand? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()
@@ -269,10 +270,8 @@ enum EmbeddedAppCatalog {
         if lower.range(of: #"^@(close|sluit|schließe|schliesse|ferme|fermer|cierra|cerrar)\b"#, options: .regularExpression) != nil {
             return .close
         }
-        // "@chats" and "@open chats", with what to show after it.
-        if let rest = groups(#"^@(?:(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+)?chats(?:\s+(.*?))?[.!]?$"#)?.first {
-            return .chats(rest.trimmingCharacters(in: .whitespaces))
-        }
+        // "@chat Jan" is always a chat, so the list of chats under it and what Return does agree.
+        if let name = groups(#"^@chat\s+(.+?)[.!]?$"#)?.first, let chat = chatName("chat " + name) { return .chat(chat) }
         // The app for a name, with a way to open it when the name ends in one ("whatsapp web", "whatsapp venster").
         func app(_ raw: String) -> (EmbeddedApp, EmbeddedAppMode?)? {
             var words = raw.split(whereSeparator: { $0.isWhitespace })
@@ -296,8 +295,6 @@ enum EmbeddedAppCatalog {
         if let name = groups(#"^@([\p{L}\p{N}][\p{L}\p{N} .-]{0,30})$"#)?.first, case let (found, mode)? = app(name) {
             return .open(found, mode)
         }
-        // "@chat Jan" (after the apps, so "@chat gpt" stays ChatGPT).
-        if let name = groups(#"^@chat\s+(.+?)[.!]?$"#)?.first, let chat = chatName("chat " + name) { return .chat(chat) }
         if let name = groups(#"^(?:open|start|toon|show|öffne|ouvre|abre)\s+(.+?)\s+(?:in|bij|im|dans|en)\s+nook[.!]?$"#)?.first {
             if case let (found, mode)? = app(name) { return .open(found, mode) }
             if let web = webApp(name) { return .open(web, nil) }
@@ -305,21 +302,21 @@ enum EmbeddedAppCatalog {
         return nil
     }
 
-    /// The chat asked for after "@open": "chat Jan", "chat whatsapp Jan", "whatsapp chat Jan", "whatsapp Jan", with an
-    /// optional "with"/"met" before the name. Nil when the words name no chat ("chat" or "whatsapp" alone).
+    /// The chat asked for in "chat Jan", with an optional "with"/"met" before the name. Nil when the words name no chat
+    /// ("chat" alone).
     static func chatName(_ raw: String) -> String? {
-        let pattern = #"^(?:(?:chat|whatsapp|wa|whatsapp-chat)\s+)+(?:(?:met|with|mit|avec|con)\s+)?(.+)$"#
+        let pattern = #"^chat\s+(?:(?:met|with|mit|avec|con)\s+)?(.+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
               let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
               let range = Range(match.range(at: 1), in: raw) else { return nil }
         let name = raw[range].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        return name.isEmpty || ["chat", "whatsapp", "wa"].contains(name.lowercased()) ? nil : name
+        return name.isEmpty || name.lowercased() == "chat" ? nil : name
     }
 
-    /// What is typed after "@open chat " (or "@chat ", "@open whatsapp "), for the list of chats under the text; nil
-    /// when the text is no such command. Empty right after the space, so the list shows every chat.
+    /// What is typed after "@chat " (or "@open chat "), for the list of chats under the text; nil when the text is no
+    /// such command. Empty right after the space, so the list shows every chat.
     static func chatQuery(in text: String) -> String? {
-        let pattern = #"^@(?:open\s+(?:chat|whatsapp)|chat)\s+(?:(?:chat|whatsapp)\s+)?(?:(?:met|with|mit|avec|con)\s+)?(.*)$"#
+        let pattern = #"^@(?:open\s+)?chat\s+(?:(?:met|with|mit|avec|con)\s+)?(.*)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }

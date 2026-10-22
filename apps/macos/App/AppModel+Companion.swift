@@ -38,7 +38,7 @@ extension AppModel {
     }
 
     /// A new message (or new ticks) in `chat`: its card, or the card on screen redrawn. Nothing is marked read by showing it.
-    /// `asked`: you opened the chat yourself ("@open chat Jan"), so the card comes up now, even with notifications off.
+    /// `asked`: you opened the chat yourself ("@chat Jan"), so the card comes up now, even with notifications off.
     func presentWhatsApp(_ chat: String, asked opened: Bool = false) {
         let link = WhatsAppLink.shared
         let token = Self.whatsAppCardPrefix + chat

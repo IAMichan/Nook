@@ -72,15 +72,6 @@ extension AppModel {
         viewModel.show(.panel(.inbox))
     }
 
-    /// What "@chats …" asks for: nothing (all chats), an app ("telegram"), a chat by its name, else a search.
-    func chatsFocus(for words: String) -> ChatsFocus {
-        let text = words.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return ChatsFocus() }
-        if let app = MessagingApps.app(named: text) { return ChatsFocus(app: app.id) }
-        if let chat = chatsEntryID(named: text) { return ChatsFocus(chat: chat) }
-        return ChatsFocus(query: text)
-    }
-
     /// The Chats tab's id of the chat with this name: a WhatsApp chat of the linked phone, else a collected one.
     func chatsEntryID(named name: String) -> String? {
         let link = WhatsAppLink.shared
@@ -92,7 +83,7 @@ extension AppModel {
         return thread.id
     }
 
-    /// The chats "@open chat …" offers, newest first: WhatsApp's (with a linked phone or not), then the ones collected
+    /// The chats "@chat …" offers, newest first: WhatsApp's (with a linked phone or not), then the ones collected
     /// from the other apps, each with its app and how many are new.
     func chatChoices() -> [(name: String, detail: String)] {
         var choices = WhatsAppLink.shared.chatChoices()
