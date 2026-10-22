@@ -151,7 +151,7 @@ struct NookChatView: View {
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
-                        .font(NookTheme.font(20, .semibold))
+                        .font(NookTheme.TextStyle.display)
                         .foregroundStyle(NookTheme.paper)
                 }
                 .padding(.horizontal, NookTheme.Spacing.xxs)

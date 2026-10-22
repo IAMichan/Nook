@@ -67,7 +67,7 @@ struct SettingsHeader: View {
                     .frame(width: 36, height: 36)
             }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(section.title).font(NookTheme.font(20, .semibold)).foregroundStyle(NookTheme.paper)
+                Text(section.title).font(NookTheme.TextStyle.display).foregroundStyle(NookTheme.paper)
                 Text(section.subtitle).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 0)
