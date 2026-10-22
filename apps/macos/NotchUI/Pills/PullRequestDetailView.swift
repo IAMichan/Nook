@@ -33,7 +33,7 @@ struct PullRequestDetailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header
             if let detail {
                 summary(detail)
@@ -44,22 +44,22 @@ struct PullRequestDetailView: View {
                 }
                 mergeBar(detail)
             } else if let error {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     Text(tr("agents.pr.loadFailed")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
                     Text(error)
-                        .font(NookTheme.font(12.5))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.coralSoft)
                         .fixedSize(horizontal: false, vertical: true)
-                    NookPrimaryButton(title: tr("agents.pr.retry")) { Task { await load() } }.padding(.top, 4)
+                    NookPrimaryButton(title: tr("agents.pr.retry")) { Task { await load() } }.padding(.top, NookTheme.Spacing.xs)
                 }
-                .padding(.top, 8)
+                .padding(.top, NookTheme.Spacing.md)
                 Spacer(minLength: 0)
             } else {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     ProgressView().controlSize(.small)
-                    Text(tr("agents.pr.loading")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
+                    Text(tr("agents.pr.loading")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                 }
-                .padding(.top, 8)
+                .padding(.top, NookTheme.Spacing.md)
                 Spacer(minLength: 0)
             }
         }
@@ -83,7 +83,7 @@ struct PullRequestDetailView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
                 .help(tr("agents.pr.back"))
             Text(item.id)
@@ -103,13 +103,13 @@ struct PullRequestDetailView: View {
     }
 
     private func summary(_ detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Text(detail.title)
                 .font(NookTheme.TextStyle.title)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: detail.state.rawValue) ?? .open)
                 Text("@" + detail.author)
                 Text("·")
@@ -118,7 +118,7 @@ struct PullRequestDetailView: View {
                 Text("+\(detail.additions)").foregroundStyle(NookTheme.mint)
                 Text("−\(detail.deletions)").foregroundStyle(NookTheme.coral)
             }
-            .font(NookTheme.font(11.5))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
         }
     }
@@ -169,18 +169,18 @@ struct PullRequestDetailView: View {
     private func description(_ detail: PullRequestDetail) -> some View {
         card {
             if detail.body.isEmpty {
-                Text(tr("agents.pr.noDescription")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
+                Text(tr("agents.pr.noDescription")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
             } else {
-                MarkdownView(text: detail.body, size: 13)
+                MarkdownView(text: detail.body, size: 13.5)
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     // MARK: Timeline
 
     private func timeline(_ detail: PullRequestDetail, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if let created = detail.created {
                 activityRow(symbol: "arrow.triangle.pull", color: NookTheme.mint, author: detail.author,
                             sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
@@ -191,30 +191,30 @@ struct PullRequestDetailView: View {
                 ForEach(detail.events) { event in timelineRow(event, detail: detail, now: now) }
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     // MARK: Checks
 
     private func checks(_ detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if detail.checks.isEmpty {
                 ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
                 ForEach(Array(detail.checks.enumerated()), id: \.offset) { _, check in checkRow(check) }
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     private func checkRow(_ check: PullRequestCheck) -> some View {
         Button {
             if let url = check.url { NSWorkspace.shared.open(url) }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 CheckOutcomeGlyph(outcome: check.outcome).frame(width: 16)
-                Text(check.name).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
-                Text(check.detail).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
+                Text(check.detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 Spacer(minLength: 4)
                 if check.url != nil {
                     Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
@@ -235,18 +235,18 @@ struct PullRequestDetailView: View {
             Button {
                 if let url = detail.url?.appendingPathComponent("commits/" + sha) { NSWorkspace.shared.open(url) }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "smallcircle.filled.circle").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
                     Text(String(sha.prefix(7))).font(NookTheme.mono(11.5)).foregroundStyle(NookTheme.textSecondary)
-                    Text(event.body).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.paper).lineLimit(1)
+                    Text(event.body).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
                     Spacer(minLength: 4)
-                    Text("@" + event.author).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                    Text("@" + event.author).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                     if let date = event.date {
-                        Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                        Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
+                .padding(.horizontal, NookTheme.Spacing.xs)
+                .padding(.vertical, NookTheme.Spacing.xxs)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -260,19 +260,19 @@ struct PullRequestDetailView: View {
     }
 
     private func activityRow(symbol: String, color: Color, author: String, sentence: String, date: Date?, now: Date) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
             Image(systemName: symbol).font(NookTheme.TextStyle.detail).foregroundStyle(color).frame(width: 16)
-            (Text("@" + author + " ").font(NookTheme.font(12.5, .semibold)).foregroundStyle(NookTheme.paper)
-                + Text(sentence).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary))
+            (Text("@" + author + " ").font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                + Text(sentence).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             if let date {
-                Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .padding(.horizontal, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xxs)
     }
 
     private func activityLook(_ type: String) -> (symbol: String, color: Color) {
@@ -297,13 +297,13 @@ struct PullRequestDetailView: View {
 
     private func eventRow(_ event: PullRequestEvent, now: Date) -> some View {
         let (label, color) = eventLabel(event.kind)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text("@" + event.author).font(NookTheme.font(12.5, .semibold)).foregroundStyle(NookTheme.paper)
-                Text(label).font(NookTheme.font(12)).foregroundStyle(color).lineLimit(1).truncationMode(.middle)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text("@" + event.author).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                Text(label).font(NookTheme.TextStyle.detail).foregroundStyle(color).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
                 if let date = event.date {
-                    Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                    Text(AgentFormat.short(now.timeIntervalSince(date))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                 }
                 if let url = event.url {
                     ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
@@ -312,10 +312,10 @@ struct PullRequestDetailView: View {
                 }
             }
             if !event.body.isEmpty {
-                MarkdownView(text: event.body, size: 12.5)
+                MarkdownView(text: event.body, size: 13.5)
             }
         }
-        .padding(12)
+        .padding(NookTheme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.rowHover))
     }
@@ -339,7 +339,7 @@ struct PullRequestDetailView: View {
     // MARK: Commits
 
     private func commits(_ detail: PullRequestDetail, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             if detail.commits.isEmpty {
                 ListEmptyNote(tr("agents.pr.commits.none"))
             }
@@ -347,13 +347,13 @@ struct PullRequestDetailView: View {
                 HoverRow(action: { if let url = detail.url?.appendingPathComponent("commits/" + commit.sha) { NSWorkspace.shared.open(url) } }) {
                     HStack(spacing: 10) {
                         Text(commit.shortSHA).font(NookTheme.mono(11.5)).foregroundStyle(NookTheme.textSecondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(commit.subject).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
-                            HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            Text(commit.subject).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
+                            HStack(spacing: NookTheme.Spacing.xs) {
                                 Text("@" + commit.author)
                                 if let date = commit.date { Text("· " + AgentFormat.short(now.timeIntervalSince(date))) }
                             }
-                            .font(NookTheme.font(11.5))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                         }
                         Spacer(minLength: 4)
@@ -361,13 +361,13 @@ struct PullRequestDetailView: View {
                 }
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     // MARK: Files
 
     private func files(_ detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             if detail.files.isEmpty {
                 ListEmptyNote(tr("agents.pr.files.none"))
             }
@@ -381,13 +381,13 @@ struct PullRequestDetailView: View {
                             .lineLimit(1)
                             .truncationMode(.head)
                         Spacer(minLength: 6)
-                        Text("+\(file.additions)").font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint)
-                        Text("−\(file.deletions)").font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coral)
+                        Text("+\(file.additions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
+                        Text("−\(file.deletions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
                     }
                 }
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     private func fileGlyph(_ status: String) -> some View {
@@ -403,8 +403,8 @@ struct PullRequestDetailView: View {
     }
 
     private func fileDiff(_ file: PullRequestFile, detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24) { openFile = nil }
                 fileGlyph(file.status)
                 VStack(alignment: .leading, spacing: 1) {
@@ -414,8 +414,8 @@ struct PullRequestDetailView: View {
                     }
                 }
                 Spacer(minLength: 6)
-                Text("+\(file.additions)").font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint)
-                Text("−\(file.deletions)").font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coral)
+                Text("+\(file.additions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
+                Text("−\(file.deletions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
                 if let index = detail.files.firstIndex(of: file) {
                     NookIconButton(systemName: "chevron.up", label: tr("agents.pr.files.previous"), size: 24) {
                         openFile = detail.files[index - 1].path
@@ -445,7 +445,7 @@ struct PullRequestDetailView: View {
     private func mergeBar(_ detail: PullRequestDetail) -> some View {
         let note = detail.mergeNote
         let ready = detail.canMerge && note == nil
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if confirmMerge {
                 confirmation(detail)
             } else {
@@ -453,13 +453,13 @@ struct PullRequestDetailView: View {
             }
             if let mergeError {
                 Text(mergeError)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
         }
-        .padding(12)
+        .padding(NookTheme.Spacing.lg)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.rowHover))
     }
 
@@ -470,12 +470,12 @@ struct PullRequestDetailView: View {
             Image(systemName: "arrow.triangle.merge")
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.amber)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("agents.pr.confirmTitle", "#\(detail.number)", detail.baseBranch))
-                    .font(NookTheme.font(12.5, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 Text(confirmMessage)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -494,7 +494,7 @@ struct PullRequestDetailView: View {
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
             Text(tr(note ?? "agents.pr.note.ready"))
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
@@ -504,7 +504,7 @@ struct PullRequestDetailView: View {
                         Button(tr(option.titleKey)) { methodRaw = option.rawValue }
                     }
                 } label: {
-                    Text(tr(method.titleKey)).font(NookTheme.font(12))
+                    Text(tr(method.titleKey)).font(NookTheme.TextStyle.detail)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -604,7 +604,7 @@ struct PullRequestDetailView: View {
 
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
-            .padding(12)
+            .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.rowHover))
     }

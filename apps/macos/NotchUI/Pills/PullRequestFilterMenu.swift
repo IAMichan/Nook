@@ -54,7 +54,7 @@ struct PullRequestFilterMenu: View {
                     }
                 }
                 .frame(width: 200)
-                NookDivider(vertical: true).padding(.horizontal, 4)
+                NookDivider(vertical: true).padding(.horizontal, NookTheme.Spacing.xs)
                 VStack(alignment: .leading, spacing: 0) {
                     DropdownHeader(title: kind.title)
                     choices
@@ -69,10 +69,10 @@ struct PullRequestFilterMenu: View {
     private var trigger: some View {
         HStack(spacing: 5) {
             Image(systemName: "line.3.horizontal.decrease").font(NookTheme.font(11, .semibold))
-            Text(tr("agents.pulls.filters")).font(NookTheme.font(12.5, .medium))
+            Text(tr("agents.pulls.filters")).font(NookTheme.TextStyle.body)
             if filter.activeCount > 0 {
                 Text("\(filter.activeCount)")
-                    .font(NookTheme.font(10.5, .semibold))
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.ink)
                     .frame(minWidth: 15, minHeight: 15)
                     .background(Circle().fill(NookTheme.paper))
@@ -88,12 +88,12 @@ struct PullRequestFilterMenu: View {
 
     private func kindRow(_ row: Kind) -> some View {
         Button { kind = row } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: row.symbol)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 15)
-                Text(row.title).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
+                Text(row.title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 6)
                 Text(value(of: row))
                     .font(NookTheme.TextStyle.detail)
@@ -101,7 +101,7 @@ struct PullRequestFilterMenu: View {
                     .lineLimit(1)
                 Image(systemName: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(row == kind ? DropdownStyle.chosen : .clear))
             .contentShape(Rectangle())
@@ -221,18 +221,18 @@ private struct FilterChoiceRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: symbol)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(tint ?? NookTheme.textSecondary)
                     .frame(width: 15)
-                Text(title).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
+                Text(title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 6)
                 if chosen {
                     Image(systemName: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear)))

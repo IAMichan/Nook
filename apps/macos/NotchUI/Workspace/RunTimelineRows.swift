@@ -18,19 +18,19 @@ struct EventRow: View {
         switch event.kind {
         case .user:
             ConversationMessage(fromUser: true, text: event.text)
-                .padding(.top, 6)
+                .padding(.top, NookTheme.Spacing.sm)
 
         case .assistant:
             ConversationMessage(fromUser: false, text: event.text)
-                .padding(.horizontal, 2)
+                .padding(.horizontal, NookTheme.Spacing.xxs)
 
         case .thinking:
             // The agent's reasoning in the chat itself: muted, live while it is written, the first
             // lines at once and the rest a click away.
             Button(action: toggle) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "brain").font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.iris)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        Image(systemName: "brain").font(NookTheme.TextStyle.caption).foregroundStyle(WS.tertiary)
                         Text(event.state == .running ? tr("ws.event.thinkingLive") : tr("ws.event.thinking"))
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(WS.tertiary)
@@ -43,15 +43,15 @@ struct EventRow: View {
                         Spacer(minLength: 0)
                     }
                     Text(event.text)
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(WS.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineLimit(expanded || event.state == .running ? nil : 4)
                         .opacity(0.85)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.leading, 10)
-                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.iris.opacity(0.35)).frame(width: 2) }
+                .padding(.leading, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 2) }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -67,7 +67,7 @@ struct EventRow: View {
             Button { openFile(event.detail ?? event.text) } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "doc.badge.ellipsis")
-                        .foregroundStyle(NookTheme.iris)
+                        .foregroundStyle(WS.tertiary)
                     Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.text)
                     Text(tr("ws.change." + (event.tool ?? "modified"))).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                     Image(systemName: "arrow.up.right.square").font(NookTheme.font(10)).foregroundStyle(WS.tertiary)
@@ -80,62 +80,62 @@ struct EventRow: View {
             ApprovalRow(event: event, expanded: expanded, toggle: toggle, decide: decide)
 
         case .error:
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                 Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(NookTheme.coral)
                 Text(event.text)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.coralSoft)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(10)
+            .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.coral.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
 
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
             DisclosureGroup(isExpanded: Binding(get: { expanded }, set: { _ in toggle() })) {
                 Text(event.detail ?? "")
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(WS.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
+                    .padding(.top, NookTheme.Spacing.xs)
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Image(systemName: "arrow.triangle.swap").font(NookTheme.font(10))
-                    Text(event.text).font(NookTheme.font(11.5)).lineLimit(2)
+                    Text(event.text).font(NookTheme.TextStyle.detail).lineLimit(2)
                     Spacer(minLength: 0)
-                    Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
+                    Text(WSFormat.time(event.date)).font(NookTheme.TextStyle.caption)
                 }
                 .foregroundStyle(WS.tertiary)
             }
 
         case .system:
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(systemName: event.tool == "launch" ? "terminal" : "info.circle").font(NookTheme.font(10))
                 Text(event.text)
-                    .font(event.tool == "launch" ? NookTheme.mono(11) : NookTheme.font(11.5))
+                    .font(event.tool == "launch" ? NookTheme.mono(11) : NookTheme.TextStyle.detail)
                     .lineLimit(event.tool == "launch" ? 1 : 3)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
                 Spacer(minLength: 0)
-                Text(WSFormat.time(event.date)).font(NookTheme.font(10.5))
+                Text(WSFormat.time(event.date)).font(NookTheme.TextStyle.caption)
             }
             .foregroundStyle(WS.tertiary)
 
         case .result:
-            HStack(spacing: 8) {
-                Rectangle().fill(WS.border).frame(height: 1)
+            HStack(spacing: NookTheme.Spacing.md) {
+                NookDivider()
                 Image(systemName: event.state == .failed ? "xmark.circle" : "checkmark.circle")
                     .foregroundStyle(event.state == .failed ? NookTheme.coral : NookTheme.mint)
                 Text(event.text.isEmpty ? tr("ws.event.turnDone") : tr("ws.event.turnDoneWith", event.text))
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(WS.tertiary)
                     .fixedSize()
-                Rectangle().fill(WS.border).frame(height: 1)
+                NookDivider()
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, NookTheme.Spacing.sm)
         }
     }
 }
@@ -161,9 +161,9 @@ struct ToolRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button(action: toggle) {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     stateIcon
                         .frame(width: 14)
                     Image(systemName: Self.symbol(event.tool ?? ""))
@@ -195,26 +195,26 @@ struct ToolRow: View {
                 McpAppBlock(resource: app, event: event).padding(.leading, 22)
             }
             if expanded {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     // A task list (TodoWrite, update_plan) reads as the list, not as its JSON.
                     if let steps = SessionOutputs.taskList(tool: event.tool ?? "", input: AgentActivity.input(event.detail) ?? [:]),
                        !steps.isEmpty {
                         TaskListRows(steps: steps)
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+                            .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
                     } else if let detail = event.detail, !detail.isEmpty, detail != "{}" {
                         CodeBlock(title: tr("ws.tool.input"), text: detail)
                     }
                     if let output = event.output.map(McpUI.stripped), !output.isEmpty {
                         CodeBlock(title: tr("ws.tool.output"), text: output, failed: event.state == .failed)
                     } else if event.state == .running {
-                        Text(tr("ws.tool.running")).font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)
+                        Text(tr("ws.tool.running")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                     }
                 }
                 .padding(.leading, 22)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
     }
 
     @ViewBuilder
@@ -222,7 +222,8 @@ struct ToolRow: View {
         switch event.state {
         case .running: ProgressView().controlSize(.mini)
         case .failed: Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral)
-        default: Image(systemName: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.mint.opacity(0.8))
+        // A step that went fine needs no color: only a failure stands out in a long run of steps.
+        default: Image(systemName: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(WS.tertiary)
         }
     }
 
@@ -249,9 +250,9 @@ struct CodeBlock: View {
     private let maxHeight: CGFloat = 260
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             HStack {
-                Text(title).font(NookTheme.font(10.5, .semibold)).foregroundStyle(WS.tertiary)
+                Text(title).font(NookTheme.TextStyle.caption).foregroundStyle(WS.tertiary)
                 Spacer()
                 Button {
                     Pasteboard.copy(text)
@@ -288,22 +289,22 @@ struct ApprovalRow: View {
     let decide: (WorkspaceManager.Decision) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Text(tr("ws.approval.asks", McpToolName(event.tool ?? "")?.toolLabel ?? event.tool ?? "tool"))
-                    .font(NookTheme.font(12.5, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(WS.text)
                 Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.secondary).lineLimit(1)
                 Spacer(minLength: 0)
-                Text(stateLabel).font(NookTheme.font(11.5, .semibold)).foregroundStyle(color)
+                Text(stateLabel).font(NookTheme.TextStyle.label).foregroundStyle(color)
             }
             if expanded, let detail = event.detail {
                 CodeBlock(title: tr("ws.tool.input"), text: detail)
             }
         }
-        .padding(10)
+        .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .cardBackground(Color.white.opacity(0.03), stroke: Color.white.opacity(0.08), radius: NookTheme.Radius.control)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
         .onTapGesture { toggle() }
     }
 

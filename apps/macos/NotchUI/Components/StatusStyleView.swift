@@ -39,7 +39,7 @@ struct AgentStatusBadge: View {
 
     var body: some View {
         let tint = state.tone.color
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             Group {
                 if AgentStatusStyle.pulses(state) {
                     SteppedPulseDot(color: tint, size: 6)
@@ -50,12 +50,12 @@ struct AgentStatusBadge: View {
             .foregroundStyle(tint)
             .frame(width: 10, height: 10)
             Text(long ? state.longWord : state.word)
-                .font(NookTheme.font(11, .medium))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(needsYou ? NookTheme.paper : NookTheme.textSecondary)
                 .lineLimit(1)
             if let detail {
                 Text("· \(detail)")
-                    .font(NookTheme.font(11).monospacedDigit())
+                    .font(NookTheme.TextStyle.caption.monospacedDigit())
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
             }
@@ -66,18 +66,17 @@ struct AgentStatusBadge: View {
     }
 }
 
-/// The ground every small badge in a row stands on (status, pull request): the app's own subtle fill and hairline,
-/// in the same 5pt corner as `Chip`, 16pt high so it fits a 12pt text line without making the row taller.
+/// The ground every small badge in a row stands on (status, pull request): the app's own subtle fill, no edge, in the
+/// chip corner, 18pt high so it fits a 12pt text line without making the row taller.
 struct RowBadgeBackground: ViewModifier {
-    var horizontal: CGFloat = 6
+    var horizontal: CGFloat = NookTheme.Spacing.sm
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
         content
             .padding(.horizontal, horizontal)
-            .frame(height: 16)
+            .frame(height: 18)
             .background(shape.fill(WS.subtle))
-            .overlay(shape.strokeBorder(WS.border, lineWidth: 0.5))
             .fixedSize()
     }
 }

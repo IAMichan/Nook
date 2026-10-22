@@ -94,7 +94,7 @@ struct StatusBadge: View {
                 .symbolEffect(.pulse, options: .repeating, isActive: status == .running)
             if !compact {
                 Text(status.label)
-                    .font(NookTheme.font(11.5, .semibold))
+                    .font(NookTheme.TextStyle.label)
             }
         }
         .foregroundStyle(status.color)
@@ -116,7 +116,7 @@ struct WSSectionTitle: View {
     var body: some View {
         HStack {
             Text(title.uppercased())
-                .font(NookTheme.font(10.5, .semibold))
+                .font(NookTheme.TextStyle.caption)
                 .tracking(0.6)
                 .foregroundStyle(WS.tertiary)
             Spacer()
@@ -135,9 +135,9 @@ struct InfoRow: View {
     var help: String?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
             Text(label)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.tertiary)
                 .frame(width: 104, alignment: .leading)
             Text(value ?? tr("ws.unavailable"))
@@ -169,14 +169,14 @@ struct WSEmptyState: View {
                 .font(NookTheme.TextStyle.title)
                 .foregroundStyle(WS.text)
             Text(message)
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(WS.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
                 .fixedSize(horizontal: false, vertical: true)
             if let action {
                 NookPrimaryButton(title: action.title, action: action.run)
-                    .padding(.top, 4)
+                    .padding(.top, NookTheme.Spacing.xs)
             }
         }
         .padding(30)
@@ -235,7 +235,7 @@ struct DiffText: View {
                     }
                 }
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, NookTheme.Spacing.md)
         }
         .background(WS.code)
     }
@@ -275,7 +275,7 @@ struct DiffText: View {
                         .font(NookTheme.font(11, .semibold))
                         .foregroundStyle(NookTheme.paper)
                         .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
+                        .padding(.vertical, NookTheme.Spacing.xxs)
                 }
                 .buttonStyle(.plain)
                 .help(tr("ws.review.add"))
@@ -331,7 +331,7 @@ struct DiffText: View {
                     .foregroundStyle(WS.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.leading, 8)
+                    .padding(.leading, NookTheme.Spacing.md)
             }
             Spacer(minLength: 0)
         }
@@ -339,7 +339,7 @@ struct DiffText: View {
         .background(Self.hunkColor.opacity(0.07))
         .overlay(alignment: .top) { Rectangle().fill(WS.border).frame(height: 1) }
         .overlay(alignment: .bottom) { Rectangle().fill(WS.border).frame(height: 1) }
-        .padding(.top, 6)
+        .padding(.top, NookTheme.Spacing.sm)
     }
 
     private func fileRow(_ row: UnifiedDiff.Row, first: Bool) -> some View {
@@ -354,8 +354,8 @@ struct DiffText: View {
                 .truncationMode(.middle)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.md)
         .background(WS.raised)
         .overlay(alignment: .bottom) { Rectangle().fill(WS.border).frame(height: 1) }
         .padding(.top, first ? 0 : 14)
@@ -372,10 +372,10 @@ struct DiffText: View {
     }
 
     private func commentRow(_ comment: ReviewComment) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             Image(systemName: "text.bubble.fill").font(NookTheme.font(10)).foregroundStyle(NookTheme.amber)
             Text(comment.text)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
@@ -383,20 +383,20 @@ struct DiffText: View {
                 ToolbarIconButton("xmark", tr("ws.review.remove"), height: 20, width: 20) { onRemoveComment(comment.id) }
             }
         }
-        .padding(8)
+        .padding(NookTheme.Spacing.md)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.amber.opacity(0.08)))
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.leading, gutterWidth)
         .padding(.trailing, 10)
-        .padding(.vertical, 4)
+        .padding(.vertical, NookTheme.Spacing.xs)
     }
 
     private func editor(line: Int?, code: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             TextField("", text: $commentDraft, prompt: Text(tr("ws.review.placeholder")).foregroundStyle(NookTheme.textTertiary),
                       axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...4)
                 .onSubmit { save(line: line, code: code) }
@@ -404,12 +404,12 @@ struct DiffText: View {
             SmallGhostButton(title: tr("button.cancel")) { editing = nil }
             SmallGhostButton(title: tr("ws.review.save")) { save(line: line, code: code) }
         }
-        .padding(8)
+        .padding(NookTheme.Spacing.md)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.leading, gutterWidth)
         .padding(.trailing, 10)
-        .padding(.vertical, 4)
+        .padding(.vertical, NookTheme.Spacing.xs)
     }
 
     private func save(line: Int?, code: String) {

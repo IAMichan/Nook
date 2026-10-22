@@ -39,7 +39,7 @@ struct NewSessionComposer: View {
     var body: some View {
         VStack(spacing: 0) {
             if let headerAccessory {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Spacer(minLength: 8)
                     headerAccessory
                 }
@@ -59,12 +59,12 @@ struct NewSessionComposer: View {
     }
 
     private var content: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: NookTheme.Spacing.xl) {
             Spacer(minLength: 0)
             heading
             if showClone { cloneRow }
             if remoteMachine != nil { remoteRow }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 // Where it works and the branch it starts from sit in a tray tucked under the box.
                 VStack(spacing: 0) {
                     box.zIndex(1)
@@ -113,20 +113,20 @@ struct NewSessionComposer: View {
             .help(project.map { AgentPathFormat.tilde($0.path) } ?? tr("ws.new.pickWorkspace"))
             Text("?").foregroundStyle(NookTheme.paper)
             if inspecting {
-                ProgressView().controlSize(.small).padding(.leading, 8)
+                ProgressView().controlSize(.small).padding(.leading, NookTheme.Spacing.md)
             }
         }
-        .font(NookTheme.font(22, .regular))
+        .font(NookTheme.TextStyle.display)
     }
 
     private var cloneRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             TextField(tr("ws.new.clonePlaceholder"), text: $cloneURL)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.code)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
                 .onSubmit(clone)
             SmallGhostButton(title: cloning ? tr("ws.new.cloning") : tr("ws.new.cloneAction"), action: clone)
                 .disabled(cloning || !GitService.isCloneURL(cloneURL))
@@ -146,18 +146,18 @@ struct NewSessionComposer: View {
 
     /// The folder on the remote machine, typed: there is no folder panel for another machine.
     private var remoteRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "server.rack").foregroundStyle(NookTheme.textTertiary)
             Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary).fixedSize()
             TextField("~/code/app", text: $remoteFolder)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.code)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
             NookIconButton(systemName: "xmark", label: tr("button.cancel"), size: 26) { remoteMachine = nil }
         }
-        .font(NookTheme.font(12.5))
+        .font(NookTheme.TextStyle.body)
         .frame(maxWidth: 640)
     }
 
@@ -298,7 +298,7 @@ struct NewSessionComposer: View {
     }
 
     private var belowBoxRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             if let remoteMachine {
                 // On another machine: its folder, or a new worktree there (~/.nook/worktrees); git runs there over ssh.
                 ComposerPill(symbol: "network", dot: nil, text: tr("ws.remote.via", remoteMachine.host), showsChevron: false)
@@ -309,7 +309,7 @@ struct NewSessionComposer: View {
                     Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textTertiary)
                     TextField("", text: $config.baseBranch, prompt: Text(tr("ws.remote.baseCurrent")))
                         .textFieldStyle(.plain)
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .frame(width: 150)
                         .help(tr("ws.remote.baseHelp"))
                 }
@@ -357,46 +357,46 @@ struct NewSessionComposer: View {
     private var notice: some View {
         if let error {
             Text(error)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coralSoft)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, NookTheme.Spacing.md)
         } else if let linkNotice {
             Text(linkNotice)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.amber)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, NookTheme.Spacing.md)
         } else if let remoteMachine {
             // On another machine the agent uses that machine's own login; what needs this Mac stays off.
             Text(tr("ws.remote.notice", remoteMachine.name))
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, NookTheme.Spacing.md)
         } else if config.provider == .antigravity, antigravity.installed == nil {
-            AntigravitySetupRow().padding(.horizontal, 8)
+            AntigravitySetupRow().padding(.horizontal, NookTheme.Spacing.md)
         } else if let profile = app.profiles.profile(id: config.profileID), app.history.profileAccounts[profile.id] == nil {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Text(tr("ws.new.accountNotLoggedIn")).foregroundStyle(NookTheme.amber)
                 SmallGhostButton(title: tr("agents.login")) { app.connect(profile) }
             }
-            .font(NookTheme.font(12))
-            .padding(.horizontal, 8)
+            .font(NookTheme.TextStyle.detail)
+            .padding(.horizontal, NookTheme.Spacing.md)
         } else if !sharing.isEmpty, config.isolation == .folder {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Text(tr("ws.new.sharedWarning", sharing.map(\.title).joined(separator: ", ")))
                     .foregroundStyle(NookTheme.amber)
                     .lineLimit(2)
                 Toggle(tr("ws.new.sharedAllow"), isOn: $allowShared).toggleStyle(.checkbox)
             }
-            .font(NookTheme.font(12))
-            .padding(.horizontal, 8)
+            .font(NookTheme.TextStyle.detail)
+            .padding(.horizontal, NookTheme.Spacing.md)
         } else if let reason = blockingReason, project != nil, !config.task.isEmpty {
             Text(reason)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, NookTheme.Spacing.md)
         }
     }
 

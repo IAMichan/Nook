@@ -67,7 +67,7 @@ struct VerificationChips: View {
     let checks: [VerificationCheck]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             ForEach(checks, id: \.kind) { check in
                 HStack(spacing: 3) {
                     Image(systemName: Self.symbol(check.outcome)).font(NookTheme.font(8.5, .bold))
@@ -75,8 +75,8 @@ struct VerificationChips: View {
                 }
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(Self.color(check.outcome))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .padding(.vertical, NookTheme.Spacing.xxs)
                 .background(Capsule().fill(Self.color(check.outcome).opacity(0.12)))
                 .help(check.command)
                 .accessibilityElement(children: .combine)
@@ -124,9 +124,9 @@ struct TaskChecklistCard: View {
             Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "checklist").font(NookTheme.font(10.5, .semibold))
-                    Text(tr("ws.tasks.title")).font(NookTheme.font(11.5, .semibold))
+                    Text(tr("ws.tasks.title")).font(NookTheme.TextStyle.label)
                     Text(tr("ws.checklist.progress", progress.done, progress.total))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .monospacedDigit()
                     Spacer(minLength: 0)
@@ -145,10 +145,10 @@ struct TaskChecklistCard: View {
                 TaskListRows(steps: steps).transition(.opacity)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.panel, style: .continuous)
+        .panelCard()
         .animation(NookTheme.reveal, value: steps)
     }
 }
@@ -158,10 +158,10 @@ struct TaskStepRow: View {
     let step: RunTaskStep
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
             mark.frame(width: 13, height: 13).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
             Text(step.text)
-                .font(NookTheme.font(12.5, step.status == .active ? .medium : .regular))
+                .font(step.status == .active ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
                 .foregroundStyle(step.status == .active ? NookTheme.paper : step.status == .done ? NookTheme.textTertiary : NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

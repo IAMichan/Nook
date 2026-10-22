@@ -32,8 +32,8 @@ struct CIChecksPopover: View {
                     HStack(spacing: NookTheme.Spacing.sm) {
                         CheckOutcomeGlyph(outcome: check.outcome).frame(width: 14)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(check.name).font(NookTheme.font(12, .medium)).lineLimit(1)
-                            Text(check.detail).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
+                            Text(check.name).font(NookTheme.TextStyle.label).lineLimit(1)
+                            Text(check.detail).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
                         }
                     }
                     .tag(check.id)
@@ -110,7 +110,7 @@ struct CIChecksPopover: View {
                 ForEach(steps, id: \.number) { step in
                     HStack(spacing: NookTheme.Spacing.sm) {
                         CheckOutcomeGlyph(outcome: step.outcome).frame(width: 14)
-                        Text(step.name).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
+                        Text(step.name).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
                     }
                 }
             }
@@ -125,7 +125,7 @@ struct CIChecksPopover: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if log.omittedLines > 0 {
                             Text(tr("ws.ci.omitted", log.omittedLines))
-                                .font(NookTheme.font(10.5))
+                                .font(NookTheme.TextStyle.caption)
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.bottom, NookTheme.Spacing.xs)
                         }
@@ -168,7 +168,7 @@ struct CIChecksPopover: View {
 
     private func message(_ text: String) -> some View {
         Text(text)
-            .font(NookTheme.font(12))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .multilineTextAlignment(.center)
             .padding(NookTheme.Spacing.md)

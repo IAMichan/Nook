@@ -139,11 +139,11 @@ struct PullRequestStateBadge: View {
             PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
             Text(label).lineLimit(1)
         }
-        .font(NookTheme.font(11, .semibold).monospacedDigit())
+        .font(NookTheme.TextStyle.label.monospacedDigit())
         .foregroundStyle(tint)
         .padding(.leading, 5)
         .padding(.trailing, 7)
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
         .background(Capsule().fill(tint.opacity(0.14)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)

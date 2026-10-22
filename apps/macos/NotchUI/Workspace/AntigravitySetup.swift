@@ -9,8 +9,8 @@ struct AntigravitySetupRow: View {
 
     var body: some View {
         let installed = installer.installed != nil
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Text(installed ? tr("ws.antigravity.installed", AntigravityRelease.version) : tr("ws.antigravity.needed",
                      ByteCountFormatter.string(fromByteCount: Int64(AntigravityRelease.current?.archiveBytes ?? 0), countStyle: .file)))
                     .foregroundStyle(installed ? NookTheme.textTertiary : NookTheme.amber)
@@ -38,7 +38,7 @@ struct AntigravitySetupRow: View {
                 Text(tr("ws.antigravity.note")).foregroundStyle(NookTheme.textTertiary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(NookTheme.font(12))
+        .font(NookTheme.TextStyle.detail)
     }
 
     private var phaseText: String {

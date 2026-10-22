@@ -15,7 +15,7 @@ struct SimulatorSnapshotView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 if devices.count > 1 {
                     Picker("", selection: Binding<String?>(get: { chosen }, set: { chosen = $0; image = nil })) {
                         ForEach(devices) { Text("\($0.name) · \($0.runtime)").tag(Optional($0.udid)) }
@@ -23,7 +23,7 @@ struct SimulatorSnapshotView: View {
                     .labelsHidden()
                     .frame(maxWidth: 280)
                 } else if let device = devices.first {
-                    Text("\(device.name) · \(device.runtime)").font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.textSecondary)
+                    Text("\(device.name) · \(device.runtime)").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                 }
                 Spacer()
                 if png != nil {
@@ -42,10 +42,10 @@ struct SimulatorSnapshotView: View {
                     Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if devices.isEmpty {
-                    VStack(spacing: 8) {
+                    VStack(spacing: NookTheme.Spacing.md) {
                         Image(systemName: "iphone").font(NookTheme.font(28)).foregroundStyle(NookTheme.textTertiary)
                         Text(looked ? tr("sim.none") : tr("sim.looking"))
-                            .font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)
+                            .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {

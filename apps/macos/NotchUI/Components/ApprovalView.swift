@@ -11,11 +11,12 @@ struct ApprovalView: View {
     let onDecide: (ApprovalDecision) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Calm by default: no icon, no colored card. Only a risky request gets a quiet coral accent.
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            // Calm by default: no icon, no colored fill. The edge says it waits on you (amber), or that it looks risky
+            // (coral), as a question from the agent does.
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(approval.title)
-                    .font(NookTheme.font(12.5, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                 if more > 0 {
@@ -25,7 +26,7 @@ struct ApprovalView: View {
             }
             if !approval.note.isEmpty {
                 Text(approval.note)
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(approval.danger ? NookTheme.coralSoft : NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -40,8 +41,9 @@ struct ApprovalView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(12)
-        .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.panel)
+        .padding(NookTheme.Spacing.lg)
+        .cardBackground(NookTheme.surface, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.amber.opacity(0.25),
+                        radius: NookTheme.Radius.panel, style: .continuous)
     }
 
     @ViewBuilder
@@ -68,9 +70,9 @@ struct ApprovalView: View {
                 .textSelection(.enabled)
             }
         }
-        .padding(8)
+        .padding(NookTheme.Spacing.md)
         .frame(maxHeight: maxHeight)
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.white.opacity(0.03)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
     }
 }

@@ -218,9 +218,9 @@ struct TerminalsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
                         ForEach(store.sessions) { session in
                             TerminalTab(session: session, selected: store.selected == session.id) {
                                 store.selected = session.id
@@ -283,7 +283,7 @@ struct SessionTerminalsView: View {
         VStack(spacing: 0) {
             if mine.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         ForEach(mine) { session in
                             TerminalTab(session: session, selected: shown?.id == session.id) {
                                 store.selected = session.id
@@ -292,9 +292,9 @@ struct SessionTerminalsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, NookTheme.Spacing.md)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, NookTheme.Spacing.xs)
                 Divider()
             }
             if let shown {
@@ -324,7 +324,7 @@ struct SessionTerminalActions: View {
     @State private var scripts: [ProjectScript] = []
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             if !scripts.isEmpty {
                 Menu {
                     ForEach(scripts) { script in
@@ -394,7 +394,7 @@ private struct TerminalTab: View {
             }
             Text(session.title)
                 .lineLimit(1)
-                .font(NookTheme.font(11.5, selected ? .medium : .regular))
+                .font(selected ? NookTheme.TextStyle.label : NookTheme.TextStyle.detail)
                 .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
             if !session.running, let code = session.exitCode, code != 0 {
                 Text(tr("workbench.terminal.exit", code)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
@@ -409,7 +409,7 @@ private struct TerminalTab: View {
             .help(tr("workbench.terminal.close"))
             .accessibilityLabel(tr("workbench.terminal.close"))
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(selected ? Color.white.opacity(0.10) : Color.clear))
         .contentShape(Rectangle())

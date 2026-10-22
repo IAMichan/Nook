@@ -20,7 +20,7 @@ struct ScheduledTasksView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
             header
             if !settings.scheduledTasksEnabled { banner(tr("sched.disabledGlobal"), color: NookTheme.amber) }
             if case .failed(let message) = listener.state { banner(tr("sched.webhook.failed", message), color: NookTheme.coralSoft) }
@@ -33,7 +33,7 @@ struct ScheduledTasksView: View {
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: NookTheme.Spacing.md) {
                         ForEach(store.tasks) { task in
                             TaskRow(task: task,
                                     running: store.isRunning(task.id),
@@ -47,9 +47,9 @@ struct ScheduledTasksView: View {
                 }
             }
         }
-        .padding(20)
+        .padding(NookTheme.Spacing.xxl)
         .frame(minWidth: 560, idealWidth: 620, minHeight: 420, idealHeight: 520)
-        .background(NookTheme.graphite)
+        .background(NookTheme.canvas)
         .preferredColorScheme(.dark)
         .sheet(item: $editing) { target in
             ScheduledTaskEditor(existing: target.existing) { editing = nil }
@@ -69,7 +69,7 @@ struct ScheduledTasksView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Text(tr("sched.title"))
-                .font(NookTheme.font(18, .semibold))
+                .font(NookTheme.TextStyle.heading)
                 .foregroundStyle(NookTheme.paper)
             Spacer()
             SmallGhostButton(title: tr("sched.new")) { editing = EditorTarget(existing: nil) }
@@ -80,13 +80,13 @@ struct ScheduledTasksView: View {
 
     private func banner(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(NookTheme.font(12))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
     private func run(_ task: ScheduledTask) {
@@ -110,16 +110,16 @@ private struct TaskRow: View {
     let delete: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 Text(task.title.isEmpty ? tr("sched.untitled") : task.title)
-                    .font(NookTheme.font(14, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(task.enabled ? NookTheme.paper : NookTheme.textSecondary)
                     .lineLimit(1)
                 Text(ScheduledTaskText.summary(task.rule))
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     statusChip
                     Text(timing)
                         .font(NookTheme.TextStyle.detail)
@@ -134,7 +134,7 @@ private struct TaskRow: View {
                 }
             }
             Spacer(minLength: 8)
-            HStack(spacing: 2) {
+            HStack(spacing: NookTheme.Spacing.xxs) {
                 NookIconButton(systemName: "play.fill", label: tr("sched.runNow"), size: 28, action: runNow)
                     .disabled(running || !canRun)
                     .help(tr("sched.runNow"))
@@ -146,11 +146,11 @@ private struct TaskRow: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .padding(.leading, 6)
+                    .padding(.leading, NookTheme.Spacing.sm)
             }
         }
-        .padding(12)
-        .cardBackground(NookTheme.smoke.opacity(0.6), stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+        .padding(NookTheme.Spacing.lg)
+        .panelCard()
     }
 
     private var effectiveStatus: ScheduledRunStatus? { running ? .running : task.lastStatus }
@@ -162,10 +162,10 @@ private struct TaskRow: View {
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 6, height: 6)
                 Text(tr("sched.status." + status.rawValue))
-                    .font(NookTheme.font(11, .semibold))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(color)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, 3)
             .background(Capsule().fill(color.opacity(0.12)))
         } else {
@@ -298,7 +298,7 @@ private struct ScheduledTaskEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(existing == nil ? tr("sched.new") : tr("sched.edit"))
-                .font(NookTheme.font(18, .semibold))
+                .font(NookTheme.TextStyle.heading)
                 .foregroundStyle(NookTheme.paper)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -308,11 +308,11 @@ private struct ScheduledTaskEditor: View {
                             .font(NookTheme.TextStyle.body)
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 90)
-                            .padding(6)
+                            .padding(NookTheme.Spacing.sm)
                             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
                     }
                     field(tr("sched.field.project")) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: NookTheme.Spacing.md) {
                             Text(path.isEmpty ? tr("sched.field.noProject") : AgentPathFormat.tilde(path))
                                 .font(NookTheme.TextStyle.code)
                                 .foregroundStyle(path.isEmpty ? NookTheme.textTertiary : NookTheme.paper)
@@ -343,7 +343,7 @@ private struct ScheduledTaskEditor: View {
             }
             HStack {
                 Text(problem ?? "")
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
                 Spacer()
                 NookGhostButton(title: tr("button.cancel"), action: onDone)
@@ -382,7 +382,7 @@ private struct ScheduledTaskEditor: View {
             .labelsHidden()
             switch kind {
             case .interval:
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Text(tr("sched.interval.every")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     TextField("", value: $minutes, format: .number)
                         .textFieldStyle(.plain)
@@ -394,18 +394,18 @@ private struct ScheduledTaskEditor: View {
                 }
                 Text(tr("sched.interval.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             case .time:
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Text(tr("sched.time.at")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden()
                 }
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     ForEach(ScheduledTaskText.orderedWeekdays(), id: \.self) { day in
                         let on = weekdays.contains(day)
                         Button {
                             if on { weekdays.remove(day) } else { weekdays.insert(day) }
                         } label: {
                             Text(ScheduledTaskText.weekdayName(day))
-                                .font(NookTheme.font(12, .semibold))
+                                .font(NookTheme.TextStyle.strong)
                                 .foregroundStyle(on ? NookTheme.ink : NookTheme.textSecondary)
                                 .padding(.horizontal, 10)
                                 .frame(height: 26)
@@ -422,7 +422,7 @@ private struct ScheduledTaskEditor: View {
     }
 
     private var permissionPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Picker("", selection: $permission) {
                 ForEach(provider.capabilities.policies.filter { $0 != .bypass }) { Text($0.label).tag($0) }
             }
@@ -437,11 +437,11 @@ private struct ScheduledTaskEditor: View {
 
     @ViewBuilder
     private var webhookInfo: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let existing, existing.rule.isWebhook {
                 if let url = store.webhookURL(for: existing.id) {
                     field(tr("sched.webhook.url")) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: NookTheme.Spacing.md) {
                             Text(url).font(NookTheme.mono(11)).foregroundStyle(NookTheme.paper)
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading).modifier(FieldBox())
@@ -449,9 +449,9 @@ private struct ScheduledTaskEditor: View {
                         }
                     }
                 } else {
-                    Text(tr("sched.webhook.noPort")).font(NookTheme.font(12)).foregroundStyle(NookTheme.amber)
+                    Text(tr("sched.webhook.noPort")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     SmallGhostButton(title: secretCopied ? tr("sched.webhook.copied") : tr("sched.webhook.copySecret")) {
                         if let secret = store.webhookSecret(for: existing.id, create: true) { Pasteboard.copy(secret); secretCopied = true }
                     }
@@ -460,7 +460,7 @@ private struct ScheduledTaskEditor: View {
                     }
                 }
             } else {
-                Text(tr("sched.webhook.afterSave")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary)
+                Text(tr("sched.webhook.afterSave")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
             Text(tr("sched.webhook.hint"))
                 .font(NookTheme.TextStyle.detail)
@@ -470,8 +470,8 @@ private struct ScheduledTaskEditor: View {
     }
 
     private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(NookTheme.font(12, .semibold)).foregroundStyle(NookTheme.textTertiary)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(label).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textTertiary)
             content()
         }
     }
