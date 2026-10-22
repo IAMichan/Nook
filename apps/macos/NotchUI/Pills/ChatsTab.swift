@@ -61,7 +61,11 @@ struct ChatsTab: View {
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
+    /// Settings › Chats: opening a chat marks it read, in Nook only. On by default; WhatsApp keeps it unread either way.
+    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
+
+    static let readOnOpenKey = "nook.chats.readOnOpen"
 
     /// The chat you opened last, kept for the next time the tab opens.
     static var lastOpened: String? {
@@ -146,12 +150,13 @@ struct ChatsTab: View {
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
-        // A chat you open is read, and so is what comes in while it is open: its badge goes.
+        // With "Mark as read when opened" on, a chat you open is read, and so is what comes in while it is open: its
+        // badge goes. In Nook only: WhatsApp keeps it unread and the sender sees no blue ticks.
         .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in
-            guard let entry = current, entry.unread > 0 else { return }
+            guard readOnOpen, let entry = current, entry.unread > 0 else { return }
             switch entry.origin {
             case .captured(let thread): capture.markRead(thread)
-            case .whatsApp(let jid): whatsApp.markRead(jid)
+            case .whatsApp(let jid): whatsApp.markReadInNook(jid)
             }
         }
     }
@@ -209,7 +214,7 @@ struct ChatsTab: View {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: conversation.unread, ticks: ticks, handle: Self.handle(conversation.id),
+                                          unread: whatsApp.unread(conversation.id), ticks: ticks, handle: Self.handle(conversation.id),
                                           avatar: whatsApp.avatars[conversation.id]))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
@@ -221,7 +226,7 @@ struct ChatsTab: View {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, unread: 0, handle: Self.handle(chat.jid),
+                                          preview: "", last: chat.last, unread: whatsApp.unread(chat.jid), handle: Self.handle(chat.jid),
                                           avatar: whatsApp.avatars[chat.jid]))
             }
         }
@@ -406,7 +411,8 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
-                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected) { selection = entry.id }
+                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
+                                         onToggleRead: { entry.unread > 0 ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
                                     .contextMenu {
                                         if entry.unread > 0 {
                                             Button(tr("chats.markRead")) { markRead(entry) }
@@ -723,6 +729,8 @@ private struct ChatsRow: View {
     let entry: ChatsEntry
     let photo: NSImage?
     let selected: Bool
+    /// Read or unread by hand, from the button that shows while the pointer is on the row.
+    var onToggleRead: (() -> Void)? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -740,6 +748,26 @@ private struct ChatsRow: View {
     }
 
     var body: some View {
+        ZStack(alignment: .topTrailing) {
+            // VoiceOver reaches the row itself, so the action is named there; the hover button would only repeat it.
+            row.accessibilityAction(named: Text(tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
+            // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
+            if let onToggleRead {
+                ToolbarIconButton(entry.unread > 0 ? "checkmark.circle" : "circle.badge",
+                                  tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
+                    .pointerStyle(.link)
+                    .padding(.top, NookTheme.Spacing.sm)
+                    .padding(.trailing, NookTheme.Spacing.sm)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
+                    .accessibilityHidden(true)
+            }
+        }
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+    }
+
+    private var row: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 34)
@@ -757,6 +785,7 @@ private struct ChatsRow: View {
                             .monospacedDigit()
                             .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize()
+                            .opacity(hovering && onToggleRead != nil ? 0 : 1)
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
                         if let ticks = entry.ticks { TicksView(ticks: ticks) }
@@ -779,7 +808,6 @@ private struct ChatsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .accessibilityLabel(entry.unread > 0
             ? "\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name), \(tr("chats.group.unread")): \(entry.unread): \(entry.preview)"
             : "\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name): \(entry.preview)")

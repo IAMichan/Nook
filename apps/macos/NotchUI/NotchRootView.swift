@@ -9,6 +9,8 @@ struct NotchRootView: View {
     @ObservedObject private var visits = SessionVisits.shared
     /// Nook's idle frame rate follows the energy plan: a little slower on battery.
     @ObservedObject private var energy = EnergyMonitor.shared
+    /// Lets the closed notch's ring follow Nook. Held, not observed: only the ring redraws when he moves.
+    @State private var orbMotion = NookMotion()
 
     var body: some View {
         let size = viewModel.size
@@ -114,10 +116,11 @@ struct NotchRootView: View {
         }
         let side = NotchViewModel.floatingOrbSide
         return NookOrb(mood: mood, size: 28, animated: viewModel.pointerInside || !active.isEmpty || app.chat.anyBusy,
-                       frameRate: viewModel.pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate)
+                       frameRate: viewModel.pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
+                       motion: orbMotion)
             .background {
                 let ring = TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)
-                if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side) }
+                if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: 28, maxSide: side, motion: orbMotion) }
             }
             .frame(width: side, height: side)
             .contentShape(Circle())
@@ -204,9 +207,10 @@ struct NotchRootView: View {
         return HStack(spacing: 0) {
             // Full rate while the pointer is on the notch (Nook follows it); slower while it only thinks along.
             NookOrb(mood: mood, size: orbSize, animated: animated, glow: viewModel.geometry.isFloating,
-                    frameRate: viewModel.pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate)
+                    frameRate: viewModel.pointerInside ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
+                    motion: orbMotion)
                 .background {
-                    if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: nh) }
+                    if !ring.isEmpty { NookTaskRing(items: ring, style: .compact, orbSize: orbSize, maxSide: nh, motion: orbMotion) }
                 }
                 .frame(width: wing, height: nh)
             Spacer(minLength: 0)
@@ -488,6 +492,8 @@ struct PanelOrb: View {
     var inWindow = false
     @EnvironmentObject private var app: AppModel
     @StateObject private var ringPointer = TaskRingPointer()
+    /// Lets the ring follow Nook. Held, not observed: only the ring redraws when he moves, not this whole view.
+    @State private var motion = NookMotion()
     // Redraws the ring when you mark a chat as finished or read a session.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
@@ -504,13 +510,13 @@ struct PanelOrb: View {
                 viewModel.show(.panel(.nook), inNotch: true)
             }
         } label: {
-            NookOrb(mood: mood, size: size, glow: glow)
+            NookOrb(mood: mood, size: size, glow: glow, motion: motion)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tr("notch.goToHome"))
         .background {
             if ring {
-                NookTaskRing(items: items, orbSize: size, hovered: ringPointer.hovered, pointer: ringPointer) { openRingItem($0) }
+                NookTaskRing(items: items, orbSize: size, hovered: ringPointer.hovered, pointer: ringPointer, motion: motion) { openRingItem($0) }
             }
         }
         .overlay {

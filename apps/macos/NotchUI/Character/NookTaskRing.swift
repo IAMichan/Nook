@@ -28,6 +28,9 @@ struct TaskRingItem: Identifiable, Equatable {
 /// is coral and what is finished is mint. In the panel it draws itself in, piece by piece, when it appears; point at a
 /// piece and Nook looks at it, with its name beside the ring; click it to go there. In the closed notch it is thin and
 /// close around Nook and only shows: a click on the notch opens the panel.
+///
+/// Given Nook's `motion`, the ring follows him like elastic, closed or open: when he hops, nods or leans towards you
+/// it trails behind on a spring, stretches towards him while he pulls away and overshoots a little before it settles.
 struct NookTaskRing: View {
     enum Style { case panel, compact }
 
@@ -42,20 +45,25 @@ struct NookTaskRing: View {
     /// Where the pointer is, shared with `NookTaskRingLabel`; nil where the ring only shows.
     var pointer: TaskRingPointer?
     let onOpen: (TaskRingItem) -> Void
+    /// Where Nook is pushed from his place, written by his `NookOrb`; the ring follows it.
+    @ObservedObject private var motion: NookMotion
 
     init(items: [TaskRingItem], style: Style = .panel, orbSize: CGFloat = 46, maxSide: CGFloat = .infinity,
-         hovered: String? = nil, pointer: TaskRingPointer? = nil, onOpen: @escaping (TaskRingItem) -> Void = { _ in }) {
+         hovered: String? = nil, pointer: TaskRingPointer? = nil, motion: NookMotion? = nil,
+         onOpen: @escaping (TaskRingItem) -> Void = { _ in }) {
         self.items = items
         self.style = style
         self.orbSize = orbSize
         self.maxSide = maxSide
         self.hovered = hovered
         self.pointer = pointer
+        _motion = ObservedObject(wrappedValue: motion ?? NookMotion())
         self.onOpen = onOpen
     }
 
     @State private var shown = false
     @State private var appeared = Date()
+    @StateObject private var spring = RingSpring()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Published only when the plan changes: sets how often the ring redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
@@ -71,10 +79,13 @@ struct NookTaskRing: View {
 
     var body: some View {
         let moving = !reduceMotion && items.contains { $0.state == .running || $0.state == .waiting }
+        // Keeps drawing while the ring still catches up with Nook; once it rests, the spring asks for one more redraw
+        // so the timeline can pause again.
+        let following = !reduceMotion && !spring.settled(at: motion.offset)
         // Possibly for hours in the closed notch: the ambient rate keeps the light fluid there at a fraction of the
         // redraws; in the open panel, where you look at it and point at it, it runs at the interactive rate.
         let rate = compact ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
-        TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving && !following)) { context in
             ring(at: context.date)
         }
         .frame(width: side, height: side)
@@ -106,6 +117,7 @@ struct NookTaskRing: View {
         let t = date.timeIntervalSinceReferenceDate
         // The closed notch comes and goes all day: there the ring is simply there, without drawing itself in.
         let settled = compact || date.timeIntervalSince(appeared) > 0.9
+        let stretch = elastic()
         return ZStack {
             Circle()
                 .stroke(Color(hex: 0x141419), lineWidth: lineWidth + 0.9)
@@ -117,7 +129,24 @@ struct NookTaskRing: View {
         }
         .frame(width: radius * 2, height: radius * 2)
         .rotationEffect(.degrees(-90))
+        // Stretched along the line towards Nook, a little narrower across it, like a band that is pulled.
+        .rotationEffect(.radians(-stretch.direction))
+        .scaleEffect(x: 1 + stretch.amount, y: 1 - stretch.amount * 0.6)
+        .rotationEffect(.radians(stretch.direction))
+        .offset(spring.position)
         .frame(width: side, height: side)
+    }
+
+    /// Moves the ring on towards Nook and says how far, and in which direction, it is pulled out of round.
+    private func elastic() -> (amount: CGFloat, direction: Double) {
+        guard !reduceMotion else { return (0, 0) }
+        let target = motion.offset
+        spring.advance(towards: target, at: Date().timeIntervalSinceReferenceDate)
+        let dx = target.width - spring.position.width
+        let dy = target.height - spring.position.height
+        let pull = hypot(dx, dy)
+        guard pull > 0.05 else { return (0, 0) }
+        return (min(pull / radius * 0.9, 0.12), atan2(dy, dx))
     }
 
     private func piece(_ item: TaskRingItem, index i: Int, t: Double, settled: Bool) -> some View {
@@ -169,8 +198,8 @@ struct NookTaskRing: View {
 
     private func index(at point: CGPoint) -> Int? {
         guard !items.isEmpty else { return nil }
-        let dx = point.x - side / 2
-        let dy = point.y - side / 2
+        let dx = point.x - side / 2 - spring.position.width
+        let dy = point.y - side / 2 - spring.position.height
         guard abs(hypot(dx, dy) - radius) < 9 else { return nil }
         var fraction = (atan2(dy, dx) + .pi / 2) / (2 * .pi)
         if fraction < 0 { fraction += 1 }
@@ -179,6 +208,59 @@ struct NookTaskRing: View {
 
     private func hover(_ index: Int?) {
         pointer?.onRing(index.map { items[$0].id }, angle: index.map { angle($0) })
+    }
+}
+
+/// Where Nook is pushed from his place right now (hops, nods, leaning towards you), shared by his orb and the task ring
+/// around him. It only publishes moves of more than a hair, so a Nook that holds still does not redraw the ring.
+@MainActor
+final class NookMotion: ObservableObject {
+    @Published private(set) var offset = CGSize.zero
+
+    func follow(_ new: CGSize) {
+        guard abs(new.width - offset.width) > 0.05 || abs(new.height - offset.height) > 0.05 else { return }
+        offset = new
+    }
+}
+
+/// The ring's own place: a soft, slightly bouncy spring pulled towards Nook, so it trails behind him, overshoots a
+/// little and settles. Advanced while the ring draws; publishes only once it comes to rest, to let the ring pause.
+@MainActor
+private final class RingSpring: ObservableObject {
+    private(set) var position = CGSize.zero
+    private var velocity = CGSize.zero
+    private var lastTime: TimeInterval = 0
+    private var resting = true
+
+    private static let stiffness: CGFloat = 180
+    private static let damping: CGFloat = 13
+
+    func settled(at target: CGSize) -> Bool {
+        abs(target.width - position.width) < 0.05 && abs(target.height - position.height) < 0.05
+            && abs(velocity.width) < 0.5 && abs(velocity.height) < 0.5
+    }
+
+    func advance(towards target: CGSize, at t: TimeInterval) {
+        // Capped, so a ring that waited does not leap when it wakes.
+        var left = lastTime > 0 ? CGFloat(min(max(t - lastTime, 0), 0.1)) : 0
+        lastTime = t
+        while left > 0 {
+            let dt = min(left, 1.0 / 120)
+            velocity.width += (Self.stiffness * (target.width - position.width) - Self.damping * velocity.width) * dt
+            velocity.height += (Self.stiffness * (target.height - position.height) - Self.damping * velocity.height) * dt
+            position.width += velocity.width * dt
+            position.height += velocity.height * dt
+            left -= dt
+        }
+        let rests = settled(at: target)
+        if rests {
+            position = target
+            velocity = .zero
+        }
+        guard rests != resting else { return }
+        resting = rests
+        // Coming to rest: one redraw after this frame lets the ring's timeline pause. Not from inside the draw itself.
+        if rests { Task { @MainActor [weak self] in self?.objectWillChange.send() } }
     }
 }
 

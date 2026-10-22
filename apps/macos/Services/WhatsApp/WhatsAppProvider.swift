@@ -462,7 +462,7 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func chats(limit: Int) async throws -> [WAChatInfo] {
         WAOpenWA.chats(try await scoped("GET", "/chats")).prefix(limit)
-            .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last) }
+            .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread) }
     }
 
     func media(chat: String, message: String) async throws -> WAFile {

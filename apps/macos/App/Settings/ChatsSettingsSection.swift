@@ -15,6 +15,7 @@ struct ChatsSettingsSection: View {
     @State private var noticeIsProblem = false
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
+    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
 
     var body: some View {
         // WhatsApp first, the app most chats come from; then the other apps and the list of them; then the bridges
@@ -30,6 +31,12 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.otherApps"))
             } footer: {
                 Text(tr("chats.settings.privacy"))
+            }
+
+            Section {
+                SettingToggle(tr("chats.settings.readOnOpen"), detail: tr("chats.settings.readOnOpenDetail"), isOn: $readOnOpen)
+            } header: {
+                Text(tr("chats.settings.reading"))
             }
 
             Section {
