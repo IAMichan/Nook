@@ -129,4 +129,34 @@ final class TranscriptPresentationTests: XCTestCase {
         // A file it only read is not one of its outputs.
         XCTAssertEqual(steps.map(\.path), [nil, "/p/App.swift", nil])
     }
+
+    func testFailedStepKeepsWhyItFailed() {
+        let lines = [
+            #"{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"swift test"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/p/A.swift"}}]}}"#,
+            #"{"type":"user","uuid":"r1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"<tool_use_error>\nerror: no such module 'Foo'\nmore</tool_use_error>"},{"type":"tool_result","tool_use_id":"t2","content":[{"type":"text","text":"fine"}]}]}}"#
+        ]
+        let steps = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8)).flatMap(\.steps)
+        XCTAssertEqual(steps.map(\.state), [.failed, .done])
+        XCTAssertEqual(steps.map(\.error), ["error: no such module 'Foo'", nil], "only a failed step carries a reason")
+    }
+
+    func testInterruptedTurnSaysSoAtItsEnd() {
+        let lines = [
+            #"{"type":"user","uuid":"u1","message":{"role":"user","content":"Fix the test"}}"#,
+            #"{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"swift test"}}]}}"#,
+            #"{"type":"user","uuid":"r1","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#,
+            #"{"type":"user","uuid":"u2","message":{"role":"user","content":"Stop, do this instead"}}"#
+        ]
+        let messages = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.map(\.kind), [.user, .tools, .user], "the interruption is no prompt of yours")
+        XCTAssertTrue(messages[1].interrupted)
+        let rows = TranscriptPresentation.rows(messages, working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "step:t1", "interrupted:t1-steps", "u2"])
+    }
+
+    func testCodexCommandWithAnExitCodeFails() {
+        XCTAssertEqual(AgentTranscript.codexExitCode(#"{"output":"boom","metadata":{"exit_code":2}}"#), 2)
+        XCTAssertEqual(AgentTranscript.codexExitCode("Exit code: 1\nWall time: 0.2 seconds\nOutput:\n"), 1)
+        XCTAssertNil(AgentTranscript.codexExitCode("plain output"))
+    }
 }

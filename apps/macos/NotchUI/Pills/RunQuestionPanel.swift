@@ -59,7 +59,7 @@ struct RunQuestionPanel: View {
                     HStack(spacing: 8) {
                         TextField(tr("ws.question.own"), text: $own)
                             .textFieldStyle(.plain)
-                            .font(NookTheme.font(13))
+                            .font(NookTheme.TextStyle.body)
                             .focused($ownFocused)
                             .onSubmit { submitOwn(item) }
                         if !own.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -80,7 +80,7 @@ struct RunQuestionPanel: View {
                 }
             }
             .padding(12)
-            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.25), radius: 12, style: .continuous)
+            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
             // Keys 1–9 pick an option, except while you type your own answer.
             .background { if !ownFocused { digitShortcuts(item) } }
         }
@@ -153,7 +153,7 @@ struct RunQuestionPanel: View {
         if isLast {
             onAnswer(answers)
         } else {
-            withAnimation(.easeInOut(duration: 0.15)) { index += 1 }
+            withAnimation(NookTheme.reveal) { index += 1 }
         }
     }
 }

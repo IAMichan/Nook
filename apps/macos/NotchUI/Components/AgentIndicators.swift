@@ -23,10 +23,11 @@ struct PulseDot: View {
     let color: Color
     let animated: Bool
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            if animated {
+            if animated && !reduceMotion {
                 Circle()
                     .stroke(color.opacity(pulse ? 0 : 0.7), lineWidth: 1.5)
                     .frame(width: 8, height: 8)
@@ -36,7 +37,7 @@ struct PulseDot: View {
         }
         .frame(width: 16, height: 16)
         .onAppear {
-            guard animated else { return }
+            guard animated, !reduceMotion else { return }
             withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
         }
     }
@@ -144,5 +145,20 @@ struct PullRequestStateBadge: View {
         .background(Capsule().fill(tint.opacity(0.14)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+    }
+}
+
+/// The outcome of a CI check or one of its steps: a mint tick, a coral cross, an amber dot while it runs, a grey dash
+/// when skipped. The pull request page and the CI of a watched pull request both use it.
+struct CheckOutcomeGlyph: View {
+    let outcome: PullRequestCheck.Outcome
+
+    var body: some View {
+        switch outcome {
+        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
+        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
+        case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
+        case .skipped: Image(systemName: "minus.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
+        }
     }
 }

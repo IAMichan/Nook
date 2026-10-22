@@ -8,7 +8,6 @@ struct GitQuickButton: View {
     let runID: UUID
     @State private var state: GitQuickState?
     @State private var progress: String?
-    @State private var error: String?
     @State private var confirmDefault: GitQuickAction?
 
     var body: some View {
@@ -37,13 +36,6 @@ struct GitQuickButton: View {
                 if let link = workspace.openPullRequests[runID] {
                     Button(tr("ws.quick.viewPR")) { BrowserStore.show(link) }
                 }
-            }
-            if let error {
-                Text(error)
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
             }
         }
         .controlSize(.small)
@@ -79,17 +71,31 @@ struct GitQuickButton: View {
     }
 
     private func perform(_ action: GitQuickAction) {
-        error = nil
         progress = tr(action.labelKey)
         Task {
             do {
                 // A pull request it made stays put: "View PR" opens it in Nook's browser when you want it.
-                _ = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch {
-                self.error = error.localizedDescription
+                ToastCenter.shared.gitQuick(action, result: .failure(error))
             }
             progress = nil
             state = await workspace.quickGitState(runID)
+        }
+    }
+}
+
+extension ToastCenter {
+    /// The result of a git quick action: what it did (with "View PR" when it opened one), or why it failed.
+    func gitQuick(_ action: GitQuickAction, result: Result<URL?, Error>) {
+        switch result {
+        case .success(let link):
+            success(tr(action.doneKey), action: link.map { url in
+                NookToastAction(title: tr("ws.quick.viewPR")) { BrowserStore.show(url) }
+            })
+        case .failure(let failure):
+            error(failure, title: tr("toast.failed", tr(action.labelKey)))
         }
     }
 }

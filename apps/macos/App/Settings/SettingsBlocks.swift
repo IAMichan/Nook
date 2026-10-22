@@ -10,14 +10,14 @@ struct ConfigPreview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(change.install ? "\(change.target.title) \(tr("button.link"))" : "\(change.target.title) \(tr("button.unlink"))")
-                .font(.headline)
+                .font(NookTheme.TextStyle.strong)
             Text(tr("settings.agents.changeNotice", change.target.displayPath))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if change.preview.isEmpty {
-                        Text(tr("settings.agents.noChange")).foregroundStyle(.secondary)
+                        Text(tr("settings.agents.noChange")).foregroundStyle(NookTheme.textSecondary)
                     }
                     ForEach(change.preview) { line in
                         Text(line.text)
@@ -29,7 +29,7 @@ struct ConfigPreview: View {
                 .textSelection(.enabled)
                 .padding(8)
             }
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(Color(nsColor: .textBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
             HStack {
                 Spacer()
                 Button(tr("button.cancel"), action: onCancel)
@@ -46,7 +46,7 @@ struct ConfigPreview: View {
         switch kind {
         case .add: return NookTheme.mint
         case .remove: return NookTheme.coral
-        case .context: return .secondary
+        case .context: return NookTheme.textSecondary
         }
     }
 }
@@ -68,8 +68,8 @@ struct SettingsHeader: View {
                 SettingsTile(section, size: 44)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(section.title).font(.title.weight(.semibold))
-                Text(section.subtitle).foregroundStyle(.secondary)
+                Text(section.title).font(NookTheme.font(22, .semibold))
+                Text(section.subtitle).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 0)
         }
@@ -92,7 +92,7 @@ enum StatusState {
     var color: Color {
         switch self {
         case .done: return NookTheme.mint
-        case .todo: return Color.secondary.opacity(0.55)
+        case .todo: return NookTheme.textSecondary.opacity(0.55)
         case .warning: return NookTheme.amber
         case .error: return NookTheme.coral
         }
@@ -129,8 +129,8 @@ struct StatusRow<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                 Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(state == .warning || state == .error ? state.color : Color.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(state == .warning || state == .error ? state.color : NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
@@ -172,8 +172,8 @@ struct SettingLabel: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
             Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -186,13 +186,13 @@ struct Keycap: View {
     var body: some View {
         Text(label)
             .font(NookTheme.rounded(12, .medium))
-            .foregroundStyle(.primary.opacity(0.85))
+            .foregroundStyle(NookTheme.textStrong)
             .padding(.horizontal, label.count > 1 ? 9 : 0)
             .frame(minWidth: 24, minHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(Color.primary.opacity(0.14)))
+                    .fill(NookTheme.smoke)
+                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).strokeBorder(NookTheme.line2))
                     .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
             )
     }
@@ -225,11 +225,11 @@ struct WorkspaceSettingsSection: View {
             if ws.scheduledTasksEnabled {
                 TextField(tr("sched.settings.port"), value: $ws.scheduledWebhookPort, format: .number.grouping(.never))
                 if ws.scheduledWebhookPort != 0, !(1024...65535).contains(ws.scheduledWebhookPort) {
-                    Text(tr("sched.settings.portInvalid")).font(.caption).foregroundStyle(.orange)
+                    Text(tr("sched.settings.portInvalid")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                 } else if case .listening(let port) = webhook.state {
-                    Text(tr("sched.settings.listening", Int(port))).font(.caption).foregroundStyle(.secondary)
+                    Text(tr("sched.settings.listening", Int(port))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 } else if case .failed(let message) = webhook.state {
-                    Text(tr("sched.webhook.failed", message)).font(.caption).foregroundStyle(.orange)
+                    Text(tr("sched.webhook.failed", message)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                 }
                 Button(tr("sched.settings.open")) { showScheduled = true }
             }
@@ -272,7 +272,7 @@ struct WorkspaceSettingsSection: View {
             }
             LabeledContent(tr("settings.ws.worktreeRoot")) {
                 HStack {
-                    Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
                     Button(tr("ws.new.change")) {
                         let panel = NSOpenPanel()
                         panel.canChooseDirectories = true
@@ -290,7 +290,7 @@ struct WorkspaceSettingsSection: View {
                         .frame(width: 160)
                         .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
                     Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
-                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
                 }
             }
         } header: {
@@ -371,7 +371,7 @@ struct WorkspaceSettingsSection: View {
                                in: FileManager.default.homeDirectoryForCurrentUser.path,
                                name: "nook-bridge-\(provider.rawValue)", title: tr("settings.bridge.terminalTitle", provider.displayName))
         } catch {
-            app.viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
         }
     }
 }
@@ -388,13 +388,13 @@ struct WatchedPullRequestsSection: View {
             ForEach(watching.entries, id: \.self) { entry in
                 HStack(spacing: 8) {
                     Image(systemName: PullRequestWatchList.isRepository(entry) ? "book.closed" : "building.2")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(entry)
                         Text(tr(PullRequestWatchList.isRepository(entry) ? "settings.pulls.repository" : "settings.pulls.organization"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
                     Button(role: .destructive) { watching.remove(entry) } label: { Image(systemName: "trash") }
@@ -411,9 +411,9 @@ struct WatchedPullRequestsSection: View {
                     .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || watching.entries.count >= PullRequestWatchList.limit)
             }
             if invalid {
-                Text(tr("settings.pulls.invalid")).font(.caption).foregroundStyle(.orange)
+                Text(tr("settings.pulls.invalid")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
             } else if watching.entries.count >= PullRequestWatchList.limit {
-                Text(tr("settings.pulls.full", PullRequestWatchList.limit)).font(.caption).foregroundStyle(.secondary)
+                Text(tr("settings.pulls.full", PullRequestWatchList.limit)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
         } header: {
             Text(tr("settings.pulls.title"))

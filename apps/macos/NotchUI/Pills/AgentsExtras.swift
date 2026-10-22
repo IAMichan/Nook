@@ -164,7 +164,7 @@ private struct ToolGlyph: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(NookTheme.font(13))
+            .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
     }
 }

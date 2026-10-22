@@ -42,9 +42,15 @@ class NookState {
     this.nooks = await api.nooks(false);
   }
 
+  /// Counts `load` calls, so an answer that arrives after a newer one (a click on another Nook while an update for the
+  /// old one was still loading) is dropped instead of switching the chat back.
+  private loadSeq = 0;
+
   async load(id: string | null) {
     if (!id) return;
+    const seq = ++this.loadSeq;
     const conv = await api.nook(id);
+    if (seq !== this.loadSeq) return;
     this.activeId = id;
     this.active = conv;
     // Klaar met streamen: de opgeslagen tekst is leidend.

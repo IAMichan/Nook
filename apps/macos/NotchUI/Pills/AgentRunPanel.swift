@@ -60,7 +60,7 @@ struct AgentRunPanel: View {
             HStack(alignment: .top, spacing: 0) {
                 if let consoleEventID, let event = workspace.timeline(runID).first(where: { $0.id == consoleEventID }) {
                     CommandConsolePanel(event: event) {
-                        withAnimation(.easeInOut(duration: 0.2)) { self.consoleEventID = nil }
+                        withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
                     .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
                                     available: PanelLayout.room(totalWidth, besides: outputsOpen || filePreview != nil ? outputsWidth : nil),
@@ -95,7 +95,7 @@ struct AgentRunPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if let filePreview {
                     FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
-                        withAnimation(.easeInOut(duration: 0.2)) { self.filePreview = nil }
+                        withAnimation(NookTheme.reveal) { self.filePreview = nil }
                     }
                     .id(filePreview)
                     .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
@@ -104,7 +104,7 @@ struct AgentRunPanel: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else if outputsOpen {
                     SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                        withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = false }
+                        withAnimation(NookTheme.reveal) { outputsOpen = false }
                     }
                     .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
                                     available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
@@ -120,7 +120,7 @@ struct AgentRunPanel: View {
             }
             // The outputs button asks for the outputs, also while a file is open.
             .onChange(of: outputsOpen) { _, isOpen in
-                if isOpen { withAnimation(.easeInOut(duration: 0.2)) { filePreview = nil } }
+                if isOpen { withAnimation(NookTheme.reveal) { filePreview = nil } }
             }
             .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
@@ -159,7 +159,7 @@ struct AgentRunPanel: View {
             }
         } else {
             Text(tr("agents.run.gone"))
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -182,7 +182,7 @@ struct AgentRunPanel: View {
             return output.date >= (turnStart ?? .distantFuture)
         }) {
             outputSelection = shown.id
-            withAnimation(.easeInOut(duration: 0.2)) { outputsOpen = true }
+            withAnimation(NookTheme.reveal) { outputsOpen = true }
         }
         if outputsOpen { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
     }
@@ -481,9 +481,7 @@ struct AgentRunPanel: View {
             ScrollView(showsIndicators: true) {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if events.isEmpty {
-                        Text(tr("agents.run.empty"))
-                            .font(NookTheme.font(12.5))
-                            .foregroundStyle(NookTheme.textTertiary)
+                        ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
@@ -494,6 +492,8 @@ struct AgentRunPanel: View {
                                     if let turn = turnFiles[event.id] {
                                         TurnChangesChip(turn: turn, directory: run.workingDirectory) { path in
                                             try await workspace.turnDiff(runID, path: path, start: turn.start, end: turn.end)
+                                        } lines: {
+                                            try await workspace.turnLines(runID, paths: turn.files, start: turn.start, end: turn.end)
                                         }
                                     }
                                 }
@@ -514,7 +514,7 @@ struct AgentRunPanel: View {
                                         waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
                                         accent: run.provider.color,
                                         openConsole: CommandConsole.running(events).map { command -> () -> Void in
-                                            { withAnimation(.easeInOut(duration: 0.2)) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                            { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
                                         })
                     }
                     if run.status == .failed || run.status == .stopped {
@@ -540,7 +540,7 @@ struct AgentRunPanel: View {
                 if scroll.mode == .free, !atEnd, !finding {
                     TimelineToEndPill {
                         scroll.jumpedToEnd()
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
                     .padding(.bottom, 8)
                 }
@@ -561,7 +561,7 @@ struct AgentRunPanel: View {
                 if turns.count >= 4, !finding {
                     TurnMinimap(turns: turns) { id in
                         scroll.userScrolled()
-                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .top) }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
                     }
                     .padding(.top, 8)
                 }
@@ -576,7 +576,7 @@ struct AgentRunPanel: View {
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: events.count) { _, _ in
-                if scroll.shouldFollowEnd { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: events.last?.text.count ?? 0) { _, _ in
                 if run.status.isActive, scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -614,7 +614,7 @@ struct AgentRunPanel: View {
         guard found.matches.indices.contains(index) else { return }
         let id = found.matches[index].eventID
         for key in TimelineContainers.keys(blocks)[id] ?? [] { openBlocks.insert(key) }
-        DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) } }
+        DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .center) } }
     }
 
     private func recovery(_ run: WorkspaceRun, events: [RunEvent], blocks: [TimelineBlock], proxy: ScrollViewProxy) -> some View {
@@ -636,7 +636,7 @@ struct AgentRunPanel: View {
                 NookGhostButton(title: tr("timeline.goToFailure")) {
                     scroll.userScrolled()
                     for key in TimelineContainers.keys(blocks)[failure] ?? [] { openBlocks.insert(key) }
-                    DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(failure, anchor: .center) } }
+                    DispatchQueue.main.async { withAnimation(NookTheme.scroll) { proxy.scrollTo(failure, anchor: .center) } }
                 }
             }
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
@@ -709,7 +709,7 @@ struct AgentRunPanel: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("ws.revert.confirm"))
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 Text(revertError ?? tr("ws.revert.detail", ToolSummary.oneLine(target.text, 60)))
                     .font(NookTheme.font(11.5))
@@ -754,14 +754,14 @@ struct AgentRunPanel: View {
 
     /// Opens a file in the side panel; the file that is open already closes again.
     private func showFile(_ file: String) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(NookTheme.reveal) {
             filePreview = filePreview == file ? nil : file
             if filePreview != nil { outputsOpen = false }
         }
     }
 
     private func toggleBlock(_ key: String) {
-        withAnimation(.easeInOut(duration: 0.18)) {
+        withAnimation(NookTheme.reveal) {
             if openBlocks.contains(key) { openBlocks.remove(key) } else { openBlocks.insert(key) }
         }
     }
@@ -782,7 +782,7 @@ struct AgentRunPanel: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("agents.run.deleteConfirm", run.title))
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Text(tr("agents.run.deleteDetail"))
@@ -878,7 +878,7 @@ struct AgentRunPanel: View {
             }
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
             }
         }

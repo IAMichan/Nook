@@ -14,7 +14,7 @@ struct TasksStrip: View {
         let finished = progress.done >= progress.total
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
+                withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "checklist").font(NookTheme.font(11, .semibold))
@@ -109,7 +109,7 @@ struct SubagentBar: View {
         let done = agents.filter { !$0.isRunning }.count
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
+                withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
@@ -192,12 +192,30 @@ struct SubagentBar: View {
 struct PullRequestWatchStrip: View {
     let watch: PullRequestWatch
     let stop: () -> Void
+    @State private var showsCI = false
 
     var body: some View {
         HStack(spacing: 6) {
             ComposerPill(symbol: "eye", dot: nil, text: tr("ws.prwatch.watching"), showsChevron: false)
             // The state in the same badge as on the pull request page; CI and reviews after it.
             PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch.state) ?? .open, number: number)
+            if let ci {
+                // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
+                Button(action: openCI) {
+                    HStack(spacing: 4) {
+                        Text(ci)
+                        Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
+                    }
+                    .font(NookTheme.font(12))
+                    .foregroundStyle(watch.checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(tr("ws.prwatch.ciHelp"))
+                .popover(isPresented: $showsCI, arrowEdge: .top) {
+                    if let url = URL(string: watch.url) { CIChecksPopover(pullRequest: url).frame(width: 680, height: 440) }
+                }
+            }
             if !summary.isEmpty {
                 Text(summary)
                     .font(NookTheme.font(12))
@@ -215,25 +233,33 @@ struct PullRequestWatchStrip: View {
     }
 
     private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(NookTheme.font(10.5, .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
     }
 
     /// "…/pull/12" or "…/-/merge_requests/12".
     private var number: Int? { URL(string: watch.url).flatMap { Int($0.lastPathComponent) } }
 
+    private var ci: String? {
+        switch watch.checks {
+        case "success": return tr("ws.prwatch.ciPassed")
+        case "failure": return tr("ws.prwatch.ciFailed")
+        case "pending": return tr("ws.prwatch.ciPending")
+        default: return nil
+        }
+    }
+
+    private func openCI() {
+        guard let url = URL(string: watch.url) else { return }
+        if GitHubPullRequests.parse(url) != nil {
+            showsCI.toggle()
+        } else {
+            // A GitLab merge request: its pipelines have their own page.
+            NSWorkspace.shared.open(url.appendingPathComponent("pipelines"))
+        }
+    }
+
     private var summary: String {
         var parts: [String] = []
-        switch watch.checks {
-        case "success": parts.append(tr("ws.prwatch.ciPassed"))
-        case "failure": parts.append(tr("ws.prwatch.ciFailed"))
-        case "pending": parts.append(tr("ws.prwatch.ciPending"))
-        default: break
-        }
         if watch.reviewCount > 0 { parts.append(tr("ws.prwatch.reviews", watch.reviewCount)) }
         if watch.checkedAt == nil { parts.append(tr("ws.prwatch.loading")) }
         return parts.joined(separator: " · ")
@@ -264,24 +290,28 @@ struct TurnMinimap: View {
     }
 }
 
-/// "3 files changed" under a finished turn: opens the files, each with what this turn
+/// "3 files changed +42 −7" under a finished turn: opens the files, each with what this turn
 /// did to it.
 struct TurnChangesChip: View {
     let turn: TurnChanges.Turn
     let directory: String
     let diff: (String) async throws -> String
+    /// Lines added and removed per file by this turn, keyed by the path relative to `directory`.
+    let lines: () async throws -> [String: EditLines]
     @State private var open = false
     @State private var chosen: String?
     @State private var text: String?
     @State private var failure: String?
+    @State private var counts: [String: EditLines]?
 
     var body: some View {
         Button { open.toggle() } label: {
             HStack(spacing: 6) {
                 Image(systemName: "doc.badge.ellipsis").font(NookTheme.font(10.5, .semibold))
                 Text(tr("ws.turnChanges.count", turn.files.count))
+                if let total, total != EditLines() { EditLinesLabel(lines: total) }
             }
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textSecondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
@@ -292,14 +322,28 @@ struct TurnChangesChip: View {
         .buttonStyle(.plain)
         .help(tr("ws.turnChanges.help"))
         .popover(isPresented: $open, arrowEdge: .bottom) { content.frame(width: 620, height: 420) }
+        .task(id: turn) { await loadCounts() }
+        .onChange(of: open) { _, isOpen in if isOpen { Task { await loadCounts() } } }
+    }
+
+    private var total: EditLines? { counts.map { $0.values.reduce(EditLines(), +) } }
+
+    /// Without a snapshot after the turn the numbers compare with the files as they are now, so they are read again
+    /// when the list opens.
+    private func loadCounts() async {
+        if let fresh = try? await lines() { counts = fresh }
     }
 
     private var content: some View {
         HStack(spacing: 0) {
             List(turn.files, id: \.self, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { path in
                 VStack(alignment: .leading, spacing: 1) {
-                    Text((path as NSString).lastPathComponent).font(NookTheme.font(12, .medium)).lineLimit(1)
-                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    HStack(spacing: 6) {
+                        Text((path as NSString).lastPathComponent).font(NookTheme.font(12, .medium)).lineLimit(1)
+                        Spacer(minLength: 0)
+                        if let count = counts?[relative(path)] { EditLinesLabel(lines: count, size: 10) }
+                    }
+                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.head)
                 }
                 .tag(path)
             }
@@ -307,17 +351,17 @@ struct TurnChangesChip: View {
             Divider()
             Group {
                 if let failure {
-                    Text(failure).font(.callout).foregroundStyle(.secondary).padding()
+                    Text(failure).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coralSoft).padding()
                 } else if let text {
                     if text.isEmpty {
-                        Text(tr("ws.turnChanges.none")).font(.callout).foregroundStyle(.secondary).padding()
+                        ListEmptyNote(tr("ws.turnChanges.none"), padding: NookTheme.Spacing.xl)
                     } else {
                         DiffText(text: text)
                     }
                 } else if chosen != nil {
-                    ProgressView()
+                    ProgressView().controlSize(.small)
                 } else {
-                    Text(tr("ws.turnChanges.pick")).font(.callout).foregroundStyle(.secondary)
+                    ListEmptyNote(tr("ws.turnChanges.pick"))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

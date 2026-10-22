@@ -103,8 +103,8 @@ extension SettingsView {
                 }
                 if let result = testResult {
                     Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(result.ok ? Color.green : Color.red)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(result.ok ? NookTheme.mint : NookTheme.coral)
                         .textSelection(.enabled)
                 }
             }
@@ -122,7 +122,7 @@ extension SettingsView {
     var adviceRows: some View {
         Group {
             Text(tr("brain.advice.memory", EmbeddedModel.memoryGB))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             ForEach(Array(recommendations.prefix(3).enumerated()), id: \.offset) { index, recommendation in
                 HStack(alignment: .firstTextBaseline) {
                     ModelLogo(name: AppModel.title(of: recommendation))
@@ -131,10 +131,10 @@ extension SettingsView {
                         HStack(spacing: 6) {
                             Text(AppModel.title(of: recommendation)).fontWeight(index == 0 ? .semibold : .regular)
                             if index == 0, recommendation.choice != .unavailable {
-                                Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                                Image(systemName: "star.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                             }
                         }
-                        Text(recommendation.reason).font(.caption).foregroundStyle(.secondary)
+                        Text(recommendation.reason).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
                     adviceButton(recommendation)
@@ -151,10 +151,10 @@ extension SettingsView {
         case .mlx(let option) where installing == option.id:
             ProgressView(value: installFraction).frame(width: 90)
         case .mlx(let option) where settings.useLocal && settings.localModel == option.id:
-            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
         case .server(let model) where !settings.useLocal && settings.activeProviderModel == model.name
                 && settings.provider == (model.server == .ollama ? .ollama : .lmstudio):
-            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
         case .mlx(let option) where !recommendation.ready:
             Button(tr("brain.advice.install")) { Task { await install(option.id) } }
                 .disabled(installing != nil)
@@ -210,21 +210,21 @@ extension SettingsView {
                 HStack {
                     if settings.hasKey(for: settings.provider) {
                         Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
                     } else {
-                        Text(tr("settings.brain.keyStaysInKeychain")).font(.caption).foregroundStyle(.secondary)
+                        Text(tr("settings.brain.keyStaysInKeychain")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
                     if let url = settings.provider.keyURL {
-                        Link(tr("settings.brain.createKey"), destination: url).font(.caption)
+                        Link(tr("settings.brain.createKey"), destination: url).font(NookTheme.TextStyle.detail)
                     }
                 }
             } else if let url = settings.provider.keyURL {
                 HStack {
-                    Text(tr("settings.brain.providerMustRun", settings.provider.title)).font(.caption).foregroundStyle(.secondary)
+                    Text(tr("settings.brain.providerMustRun", settings.provider.title)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     Spacer()
-                    Link(tr("button.download"), destination: url).font(.caption)
+                    Link(tr("button.download"), destination: url).font(NookTheme.TextStyle.detail)
                 }
             }
 
@@ -249,8 +249,8 @@ extension SettingsView {
             }
             if settings.provider == .claude {
                 Text(tr("settings.brain.haikuHint"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
         }
     }
@@ -262,14 +262,14 @@ extension SettingsView {
         return VStack(alignment: .leading, spacing: 6) {
             if let path {
                 Label(tr("settings.brain.claudeFound", path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")), systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(NookTheme.mint)
                 Text(tr("settings.brain.claudeLoginHint"))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             } else {
                 Label(tr("settings.brain.claudeNotFound"), systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(NookTheme.amber)
                 Text(tr("settings.brain.claudeInstallHint"))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     .textSelection(.enabled)
                 HStack {
                     Button(tr("button.searchAgain")) { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
@@ -285,9 +285,13 @@ extension SettingsView {
         do {
             let key = settings.provider == .claude ? settings.apiKey : settings.providerKey
             fetchedModels = try await settings.provider.listModels(key: key)
-            status = fetchedModels.isEmpty ? tr("settings.brain.noModelsFound") : tr("settings.brain.modelsFound", fetchedModels.count)
+            if fetchedModels.isEmpty {
+                ToastCenter.shared.warning(tr("settings.brain.noModelsFound"))
+            } else {
+                ToastCenter.shared.success(tr("settings.brain.modelsFound", fetchedModels.count))
+            }
         } catch {
-            status = error.localizedDescription
+            ToastCenter.shared.error(error, title: tr("settings.brain.modelsFailed"))
         }
     }
 
@@ -300,11 +304,11 @@ extension SettingsView {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(AppleModel.title)
                         Text(AppleIntelligence.isAvailable ? tr("brain.apple.detail") : AppleIntelligence.unavailableReason)
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
                     if settings.localModel == AppleModel.id {
-                        Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                     } else if AppleIntelligence.isAvailable {
                         Button(tr("settings.brain.use")) { settings.localModel = AppleModel.id; testResult = nil }
                     }
@@ -318,20 +322,20 @@ extension SettingsView {
                             Text(option.title)
                             if !option.seesImages { NoImagesBadge() }
                         }
-                        Text(option.detail).font(.caption).foregroundStyle(.secondary)
+                        Text(option.detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
                     if installing == option.id {
                         ProgressView(value: installFraction).frame(width: 90)
-                        Text("\(Int(installFraction * 100))%").font(.caption.monospacedDigit())
+                        Text("\(Int(installFraction * 100))%").font(NookTheme.TextStyle.detail.monospacedDigit())
                     } else if local.installed.contains(option.id) {
                         if settings.localModel == option.id {
-                            Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                         } else {
                             Button(tr("settings.brain.use")) { settings.localModel = option.id; testResult = nil }
                         }
                     } else if !option.fits {
-                        Text(tr("settings.brain.tooHeavyForMemory", EmbeddedModel.memoryGB)).font(.caption).foregroundStyle(.orange)
+                        Text(tr("settings.brain.tooHeavyForMemory", EmbeddedModel.memoryGB)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                     } else {
                         Button(tr("button.download")) { Task { await install(option.id) } }
                             .disabled(installing != nil)
@@ -339,8 +343,8 @@ extension SettingsView {
                 }
             }
             Text(tr("settings.brain.localModelDownloadHint", EmbeddedModel.memoryGB))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
         }
     }
 
@@ -357,7 +361,7 @@ extension SettingsView {
             settings.useLocal = true
             settings.localModel = id
             recommendations = await app.brainRecommendations()
-            status = "\(local.title(for: id)) is ready and currently active."
+            ToastCenter.shared.success(tr("settings.brain.localReady", local.title(for: id)))
             await testConnection()
         } catch {
             testResult = (false, error.localizedDescription)
@@ -371,20 +375,28 @@ extension SettingsView {
                 let saved = settings.saveAPIKey(keyDraft)
                 keyDraft = ""
                 if !saved.looksValid {
-                    testResult = (false, "This does not look like an Anthropic key: it should start with sk-ant-. Testing anyway.")
+                    testResult = (false, tr("brain.key.invalid"))
                 }
-                status = saved.keychainError.map { "Keychain rejected the key (\($0)). It will only work until Nook quits." } ?? "Key saved in Keychain."
+                if let keychainError = saved.keychainError {
+                    ToastCenter.shared.warning(tr("settings.brain.keychainRejected"), detail: keychainError)
+                } else {
+                    ToastCenter.shared.success(tr("settings.brain.keySaved"))
+                }
             } else {
                 settings.saveAPIKey("")
                 testResult = nil
-                status = "Key removed."
+                ToastCenter.shared.success(tr("settings.brain.keyRemoved"))
                 return
             }
         } else {
             let error = settings.saveProviderKey(keyDraft, for: provider)
             let removed = keyDraft.isEmpty
             keyDraft = ""
-            status = error ?? (removed ? "Key removed." : "Key saved in Keychain.")
+            if let error {
+                ToastCenter.shared.error(tr("settings.brain.keyNotSaved"), detail: error)
+            } else {
+                ToastCenter.shared.success(removed ? tr("settings.brain.keyRemoved") : tr("settings.brain.keySaved"))
+            }
             if removed { return }
         }
         Task { await testConnection() }
@@ -395,7 +407,7 @@ extension SettingsView {
         defer { testing = false }
         do {
             let reply = try await app.brain.test()
-            testResult = (true, "Verbonden met \(settings.activeModelName). Antwoord: “\(reply)”")
+            testResult = (true, tr("brain.test.connected", settings.activeModelName, reply))
         } catch {
             testResult = (false, error.localizedDescription)
         }
@@ -411,7 +423,7 @@ private struct ModelLogo: View {
             if let logo = BrandLogo.forName(name) {
                 BrandMark(logo: logo, size: 18)
             } else {
-                Image(systemName: "cpu").font(NookTheme.font(14)).foregroundStyle(.secondary)
+                Image(systemName: "cpu").font(NookTheme.font(14)).foregroundStyle(NookTheme.textSecondary)
             }
         }
         .frame(width: 22)
@@ -422,8 +434,8 @@ private struct ModelLogo: View {
 struct NoImagesBadge: View {
     var body: some View {
         Image(systemName: "eye.slash")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
             .help(tr("brain.noImages.help"))
             .accessibilityLabel(tr("brain.noImages.help"))
     }

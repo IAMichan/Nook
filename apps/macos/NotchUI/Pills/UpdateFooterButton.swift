@@ -111,7 +111,7 @@ struct UpdateFooterButton<Idle: View>: View {
         .padding(.leading, 8)
         .padding(.trailing, look.count == nil ? 9 : 5)
         .frame(height: 26)
-        .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: 13,
+        .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel,
                         style: .continuous)
         .overlay(alignment: .topTrailing) {
             // A new update pulses once in a while until you have looked at it.

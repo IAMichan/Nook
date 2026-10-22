@@ -70,7 +70,7 @@ struct AgentCommandPalette: View {
             .frame(height: 44)
             Rectangle().fill(NookTheme.line2).frame(height: 1)
             if list.isEmpty {
-                Text(tr("palette.none")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary).padding(16)
+                ListEmptyNote(tr("palette.none"), padding: NookTheme.Spacing.xl)
             } else {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 2) {
@@ -85,7 +85,7 @@ struct AgentCommandPalette: View {
             }
         }
         .frame(width: 480)
-        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: 14, style: .continuous)
+        .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
         .onAppear { focused = true }
         .onChange(of: query) { _, _ in index = 0 }

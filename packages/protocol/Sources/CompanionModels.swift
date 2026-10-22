@@ -135,6 +135,9 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var updated: Double
     var excerpt: String
     var items: [Item]
+    /// The phone can send this session a message or stop it. False for an agent running in a terminal on the Mac: the phone
+    /// sees it and decides its approvals, but the conversation stays in the terminal. nil (an older Mac) means yes.
+    var canSend: Bool? = nil
 }
 
 // MARK: Framing

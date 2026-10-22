@@ -43,7 +43,6 @@ struct SettingsView: View {
     @ObservedObject var settings = AppSettings.shared
 
     @State var keyDraft = ""
-    @State var status = ""
     @State var refreshTick = 0
     @State var connectionSearch = ""
     /// The category chip under the connections search field; nil is All.
@@ -110,21 +109,6 @@ struct SettingsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
-                // What the last action did, right under the title: never out of sight at the bottom of a long page.
-                if !status.isEmpty {
-                    Section {
-                        HStack(alignment: .top, spacing: 8) {
-                            Label(status, systemImage: "info.circle")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                            Spacer(minLength: 8)
-                            Button { status = "" } label: { Image(systemName: "xmark") }
-                                .buttonStyle(.borderless)
-                                .help(tr("button.close"))
-                        }
-                    }
-                }
                 detail(for: app.settingsSection)
             }
             .formStyle(.grouped)
@@ -141,7 +125,6 @@ struct SettingsView: View {
             app.history.refresh()
         }
         .onChange(of: app.settingsSection) { _, _ in
-            status = ""
             refreshTick += 1
             if app.settingsSection == .agents || app.settingsSection == .usage {
                 app.adoptAccounts()
@@ -202,8 +185,8 @@ struct SettingsView: View {
         return Section(tr("settings.search.results")) {
             if hits.isEmpty {
                 Text(tr("settings.search.none"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(hits) { hit in
                 Button {
@@ -213,7 +196,7 @@ struct SettingsView: View {
                     Label {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(hit.title).lineLimit(1)
-                            Text(hit.section.title).font(.caption).foregroundStyle(.secondary)
+                            Text(hit.section.title).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         }
                     } icon: {
                         SettingsTile(hit.section, size: 20)

@@ -17,8 +17,8 @@ struct GitLabHostRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("GitLab")
                     Text(GitLabStatus.detail(host: host, check: check))
-                        .font(.caption)
-                        .foregroundStyle(check == .rejected ? ConnectionHealth.needsYou.color : Color.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(check == .rejected ? ConnectionHealth.needsYou.color : NookTheme.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -122,9 +122,10 @@ struct GitLabSetupSheet: View {
             if let managing {
                 if confirmDisconnect {
                     Text(tr("settings2.service.disconnectConfirm"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmDisconnect = false }
+                        .keyboardShortcut(.cancelAction)
                     Button(tr("settings2.disconnect"), role: .destructive) {
                         GitLabCredentials.remove(host: managing)
                         dismiss()
@@ -152,8 +153,8 @@ struct GitLabSetupSheet: View {
     private var connectContent: some View {
         SetupStep(number: 1, title: tr("gitlab.step.token"), done: saved) {
             Text(tr("gitlab.step.tokenDetail"))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             DisclosureGroup(isExpanded: $showSelfHosted) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -161,13 +162,13 @@ struct GitLabSetupSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
                     Text(tr("gitlab.selfHostedDetail"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 6)
             } label: {
-                Text(tr("gitlab.selfHosted")).font(.callout)
+                Text(tr("gitlab.selfHosted")).font(NookTheme.TextStyle.body)
             }
             Button {
                 if let tokenPage { NSWorkspace.shared.open(tokenPage) }
@@ -199,13 +200,13 @@ struct GitLabSetupSheet: View {
         Divider()
 
         VStack(alignment: .leading, spacing: 10) {
-            Text(tr("settings2.service.keyTitle")).font(.headline)
+            Text(tr("settings2.service.keyTitle")).font(NookTheme.TextStyle.strong)
             if replacing || check == .rejected {
                 tokenField
             } else {
                 HStack {
                     Label(tr("settings2.service.keySafe"), systemImage: "lock.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     Button(tr("settings2.service.replaceKey")) { withAnimation { replacing = true } }
                 }
@@ -230,7 +231,7 @@ struct GitLabSetupSheet: View {
                 Spacer()
             }
             if let note {
-                Text(note).font(.caption).foregroundStyle(NookTheme.coral)
+                Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
             }
         }
     }
@@ -240,28 +241,28 @@ struct GitLabSetupSheet: View {
         if checking {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text(tr("settings2.step.checkBusy")).font(.callout)
+                Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
             }
         } else {
             switch check {
             case .valid(let username):
                 Label(tr("gitlab.checkOK", username, normalizedHost), systemImage: "checkmark.seal.fill")
-                    .font(.callout.weight(.medium))
+                    .font(NookTheme.font(13, .medium))
                     .foregroundStyle(ConnectionHealth.working.color)
             case .rejected:
                 Label(tr("gitlab.rejected"), systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(ConnectionHealth.needsYou.color)
                     .fixedSize(horizontal: false, vertical: true)
             case .unreachable:
                 Label(tr("gitlab.unreachable", normalizedHost), systemImage: "wifi.exclamationmark")
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(ConnectionHealth.broken.color)
                     .fixedSize(horizontal: false, vertical: true)
             case nil:
                 Text(tr("settings2.step.checkWaiting"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
         }
     }
