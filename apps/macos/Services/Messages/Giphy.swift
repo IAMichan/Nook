@@ -1,8 +1,8 @@
 import Foundation
 
 // GIFs to send from a chat without a file of your own, as WhatsApp offers them: GIPHY's trending ones when the panel opens,
-// and a search. GIPHY needs an API key of your own (developers.giphy.com), kept in the Keychain; only the search words and
-// that key go to api.giphy.com. Foundation only and without the network, so every request and answer can be tested
+// and a search. Nook ships with its own GIPHY API key; one of your own (developers.giphy.com), kept in the Keychain, takes
+// its place. Only the search words and the key go to api.giphy.com. Foundation only and without the network, so every request and answer can be tested
 // anywhere; `ChatComposerModel` fetches them.
 
 /// One GIF from GIPHY: a small moving preview for the grid, and the file that goes when you pick it.
@@ -17,8 +17,17 @@ struct GiphyGIF: Identifiable, Equatable, Sendable {
 }
 
 enum Giphy {
-    /// The Keychain account of your GIPHY API key.
+    /// The Keychain account of your own GIPHY API key.
     static let keyAccount = "chats.giphy.key"
+    /// Nook's own GIPHY API key, used until you add one of your own. It is public in this repository; GIPHY limits it per
+    /// hour for everyone together, which a key of your own avoids.
+    static let builtInKey = "xyhdXQHlDecswVxeKnPnt7Rlvh67lWSD"
+
+    /// Your own key when you added one, else Nook's.
+    static func key(own: String?) -> String? {
+        if let own, !own.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return own }
+        return builtInKey.isEmpty ? nil : builtInKey
+    }
     static let host = "api.giphy.com"
     /// How many GIFs one page holds.
     static let pageSize = 30
