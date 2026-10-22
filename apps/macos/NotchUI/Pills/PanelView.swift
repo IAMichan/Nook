@@ -45,7 +45,7 @@ struct PanelView: View {
                     PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() },
                                 history: app.history)
                         .frame(width: agentsListWidth)
-                        .padding(.top, 8)
+                        .padding(.top, NookTheme.Spacing.md)
                 }
             }
         }
@@ -282,29 +282,25 @@ struct NotchSheetView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: headerInset > 0 ? 20 : 14) {
-            HStack(spacing: 10) {
-                Button(action: close) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.left").font(NookTheme.font(11, .semibold))
-                        Text(tr("notch.back")).font(NookTheme.font(13, .medium))
-                    }
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
+        VStack(alignment: .leading, spacing: headerInset > 0 ? NookTheme.Spacing.xl + NookTheme.Spacing.xs : NookTheme.Spacing.lg) {
+            // Back, a thin line, then what this task is about: the title, and in quieter text whose it is.
+            HStack(spacing: NookTheme.Spacing.md) {
+                SheetBackButton(action: close)
+                NookDivider(vertical: true).frame(height: 14)
                 Text(sheet.title)
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .layoutPriority(1)
                 if let subtitle {
                     Text(subtitle)
-                        .font(NookTheme.font(12.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(subtitle)
                 }
-                Spacer()
+                Spacer(minLength: NookTheme.Spacing.md)
                 NookIconButton(systemName: "xmark", label: tr("button.close"), size: 30, action: dismiss)
             }
             .frame(minHeight: PanelView.headerHeight)
@@ -343,5 +339,30 @@ struct NotchSheetView: View {
         case .folderChanges(let path):
             FolderChangesSheet(directory: path).id(path)
         }
+    }
+}
+
+/// "‹ Back" at the start of a task's title row: quiet until the pointer is on it. Escape does the same.
+private struct SheetBackButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(systemName: "chevron.left").font(NookTheme.font(11, .semibold))
+                Text(tr("notch.back")).font(NookTheme.TextStyle.label)
+            }
+            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(height: 28)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .padding(.leading, -NookTheme.Spacing.md)
     }
 }

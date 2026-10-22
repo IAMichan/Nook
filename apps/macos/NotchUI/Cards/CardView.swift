@@ -70,23 +70,23 @@ struct CardView: View {
             }
 
             detail
-                .padding(.top, Self.isChat(card.detail) ? 10 : 14)
+                .padding(.top, Self.isChat(card.detail) ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: NookTheme.Spacing.lg)
 
-            if !card.offers.isEmpty { offerChips.padding(.bottom, 10) }
+            if !card.offers.isEmpty { offerChips.padding(.bottom, NookTheme.Spacing.md) }
 
             if let notice = card.notice, !notice.isEmpty {
                 Text(notice)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .padding(.bottom, NookTheme.Spacing.sm)
             }
 
-            if card.input { inputField.padding(.bottom, 10) }
+            if card.input { inputField.padding(.bottom, NookTheme.Spacing.md) }
 
             // Buttons stay on one line each; when they do not fit side by side, they tighten up instead of wrapping.
             if card.acknowledge != nil {
@@ -101,7 +101,8 @@ struct CardView: View {
     }
 
     /// Who and where on the left, the card's state on the right: the context gives way first, so the state is always
-    /// readable at a glance instead of trailing off at the end of one long line.
+    /// readable at a glance instead of trailing off at the end of one long line. What Nook looked at follows the
+    /// context as one quiet line ("· Calendar, GitHub"), not a row of chips that competes with the status.
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if let source = card.appIcon { CardAppIcon(source: source) }
@@ -110,14 +111,14 @@ struct CardView: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            ForEach(card.sources.prefix(5), id: \.self) { source in
-                Text(source)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    .padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.smoke))
+            if !card.sources.isEmpty {
+                Text("· " + card.sources.prefix(5).joined(separator: ", "))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
+                    .help(card.sources.joined(separator: ", "))
             }
             Spacer(minLength: NookTheme.Spacing.md)
             if let changes = card.changes { CardLineChanges(changes: changes) }
@@ -139,7 +140,7 @@ struct CardView: View {
     /// the countdown of the card closing by itself.
     private func noticeRow(compact: Bool) -> some View {
         let actions = ([card.primary, card.secondary] + card.extra + card.more).filter { !$0.label.isEmpty }
-        return HStack(spacing: compact ? 8 : 10) {
+        return HStack(spacing: compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg) {
             NookActionBar(actions: actions, compact: compact, onAction: onAction)
             if let acknowledge = card.acknowledge {
                 NookAcknowledgeButton(title: acknowledge.label, compact: compact, countdown: card.countdown, paused: paused) {
@@ -155,12 +156,13 @@ struct CardView: View {
         return false
     }
 
-    /// Short sentences large; longer answers in readable text, with **bold**, *italic*, and links.
+    /// Short sentences as the card's heading; longer answers in reading text with room between the lines, with
+    /// **bold**, *italic*, and links.
     private var titleText: some View {
         let long = card.title.count > 140
         return Text(Self.rich(card.title))
-            .font(long ? NookTheme.font(15, .regular) : NookTheme.font(18, .semibold))
-            .lineSpacing(long ? 3 : 0)
+            .font(long ? NookTheme.TextStyle.body : NookTheme.TextStyle.heading)
+            .lineSpacing(long ? 4 : 1)
             .foregroundStyle(NookTheme.paper)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
@@ -172,7 +174,7 @@ struct CardView: View {
 
     /// What Nook can do next: one click and it gets to work.
     private var offerChips: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             ForEach(card.offers, id: \.self) { offer in
                 OfferChip(title: offer) { onReply(offer) }
             }
@@ -218,7 +220,7 @@ struct CardView: View {
     /// Follow-up questions via text: always ready to type. Return starts a new line and the field grows with it;
     /// Cmd+Return sends. Wrapping instead of scrolling sideways keeps the text still while a long sentence is typed.
     private var replyField: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(alignment: .bottom, spacing: NookTheme.Spacing.md) {
             TextField(
                 "",
                 text: $reply,
@@ -226,7 +228,7 @@ struct CardView: View {
                 axis: .vertical
             )
             .textFieldStyle(.plain)
-            .font(NookTheme.font(14))
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .lineLimit(1...6)
             .focused($replyFocused)
@@ -239,7 +241,7 @@ struct CardView: View {
                 reply = field.stringValue
             }
             .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in replyReturn(press) }
-            .padding(.vertical, 10)
+            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             // Cmd+Return sends, and so does a click on the arrow; an empty field sends nothing.
             let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             Button(action: submitReply) {
@@ -250,12 +252,12 @@ struct CardView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 8)
+            .padding(.bottom, NookTheme.Spacing.md)
             .help(tr("card.sendShortcut"))
             .accessibilityLabel(tr("card.send"))
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
+        .padding(.leading, NookTheme.Spacing.xl)
+        .padding(.trailing, NookTheme.Spacing.md)
         .frame(minHeight: 38)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(NookTheme.field))
     }
@@ -361,15 +363,15 @@ private struct CardStatusPill: View {
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             Image(systemName: status.tone.symbol)
-                .font(NookTheme.font(9, .bold))
+                .font(NookTheme.font(9.5, .bold))
             Text(status.text)
-                .font(NookTheme.font(11, .semibold))
+                .font(NookTheme.TextStyle.label)
                 .lineLimit(1)
         }
         .foregroundStyle(status.tone.color)
         .padding(.horizontal, NookTheme.Spacing.md)
-        .frame(height: 18)
-        .background(Capsule().fill(status.tone.color.opacity(0.14)))
+        .frame(height: 20)
+        .background(Capsule().fill(status.tone.color.opacity(0.12)))
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(status.text)
@@ -426,19 +428,18 @@ private struct OfferChip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(systemName: "sparkles")
                     .font(NookTheme.font(10.5, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(title)
-                    .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 30)
             .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
-            .overlay(Capsule().stroke(hovering ? NookTheme.iris.opacity(0.3) : NookTheme.line2, lineWidth: 1))
             .contentShape(Capsule())
             .hoverLift(hovering)
         }
@@ -455,25 +456,28 @@ private struct EventDetail: View {
     let subline: String
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(spacing: 2) {
+        // A calendar leaf (month over day) on a soft tile, then what and when.
+        HStack(spacing: NookTheme.Spacing.lg) {
+            VStack(spacing: 0) {
                 Text(top)
                     .font(NookTheme.font(9, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
+                    .foregroundStyle(NookTheme.coralSoft)
                 Text(big)
-                    .font(NookTheme.font(14, .bold))
+                    .font(NookTheme.rounded(15, .semibold))
                     .foregroundStyle(NookTheme.paper)
             }
-            .frame(width: 36, height: 36)
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.card).stroke(NookTheme.line2, lineWidth: 1))
+            .frame(width: 40, height: 40)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(line)
-                    .font(NookTheme.font(14, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
+                    .lineLimit(2)
                 Text(subline)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
             }
         }
     }
@@ -484,8 +488,9 @@ private struct CommandDetail: View {
     let note: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // The whole command, never cut off: what you approve is exactly what runs. Long commands scroll.
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            // The whole command, never cut off: what you approve is exactly what runs. Long commands scroll. It sits in
+            // a sunken well, so it reads as code apart from the words around it.
             ScrollView(.vertical) {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("$ ").foregroundStyle(NookTheme.textTertiary)
@@ -496,14 +501,14 @@ private struct CommandDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: command.count > 140 ? 120 : nil)
-            .font(NookTheme.mono(13.5))
-            .padding(.vertical, 10)
+            .font(NookTheme.mono(13))
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .top) { NookDivider() }
-            .overlay(alignment: .bottom) { NookDivider() }
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
 
             Text(note)
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
         }
     }
@@ -570,20 +575,21 @@ private struct StepsDetail: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ForEach(steps) { step in
-                HStack(spacing: 12) {
+                HStack(spacing: NookTheme.Spacing.lg) {
                     Text("\(step.number)")
-                        .font(NookTheme.font(11, .bold))
+                        .font(NookTheme.rounded(11, .semibold))
                         .foregroundStyle(color(step.tone))
                         .frame(width: 20, height: 20)
-                        .overlay(Circle().stroke(color(step.tone), lineWidth: 1.5))
+                        .background(Circle().fill(color(step.tone).opacity(0.14)))
                     Text(step.text)
-                        .font(NookTheme.font(14))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.paper)
+                    Spacer(minLength: NookTheme.Spacing.sm)
                     if !step.tag.isEmpty {
                         Text(step.tag)
-                            .font(NookTheme.font(12, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(color(step.tone))
                     }
                 }
@@ -599,7 +605,7 @@ private struct ChoicesDetail: View {
     @State private var selected: Set<String> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(set.options) { option in
                 ChoiceRow(option: option, multi: set.multiSelect, checked: selected.contains(option.label)) {
                     if set.multiSelect {
@@ -619,7 +625,7 @@ private struct ChoicesDetail: View {
                     }
                     .opacity(selected.isEmpty ? 0.5 : 1)
                 }
-                .padding(.top, 4)
+                .padding(.top, NookTheme.Spacing.xs)
             }
         }
     }
@@ -634,18 +640,18 @@ private struct ChoiceRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                 Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
                     .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(checked ? NookTheme.mint : NookTheme.textSecondary)
-                    .padding(.top, 2)
-                VStack(alignment: .leading, spacing: 2) {
+                    .foregroundStyle(checked ? NookTheme.mint : (hovering ? NookTheme.paper : NookTheme.textTertiary))
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(option.label)
-                        .font(NookTheme.font(14, .medium))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                     if !option.description.isEmpty {
                         Text(option.description)
-                            .font(NookTheme.font(12))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -653,15 +659,16 @@ private struct ChoiceRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                .fill(hovering || checked ? NookTheme.smoke : NookTheme.field))
             .contentShape(Rectangle())
-            .hoverLift(hovering, scale: 1.01)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
     }
 }
 
@@ -672,10 +679,10 @@ private struct DiffDetail: View {
     let note: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).foregroundStyle(NookTheme.textTertiary).padding(.bottom, 4)
+                    Text(title).foregroundStyle(NookTheme.textTertiary).padding(.bottom, NookTheme.Spacing.xs)
                     ForEach(lines) { line in
                         Text(line.text).foregroundStyle(line.color).lineLimit(1)
                     }
@@ -684,12 +691,12 @@ private struct DiffDetail: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 150)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.well))
 
             Text(note)
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
         }
     }
@@ -704,7 +711,8 @@ private struct NoteDetail: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             ScrollView(showsIndicators: false) {
                 Text(text)
-                    .font(NookTheme.font(14, .semibold))
+                    .font(NookTheme.TextStyle.body)
+                    .lineSpacing(3)
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -712,7 +720,7 @@ private struct NoteDetail: View {
             }
             .frame(maxHeight: 160)
             Text(label)
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.textTertiary)
         }
     }
@@ -723,15 +731,17 @@ private struct FactsDetail: View {
     let facts: [Fact]
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 10) {
+        LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                  spacing: NookTheme.Spacing.md) {
             ForEach(facts) { fact in
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(fact.value)
-                        .font(NookTheme.font(16, .semibold))
+                        .font(NookTheme.TextStyle.title)
+                        .monospacedDigit()
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(fact.label)
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }

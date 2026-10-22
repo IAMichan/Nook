@@ -34,7 +34,7 @@ struct NookNoticeActions: View {
     private var hasTrailing: Bool { !more.isEmpty || onVoice != nil }
 
     private func row(compact: Bool) -> some View {
-        HStack(spacing: compact ? 0 : 4) {
+        HStack(spacing: compact ? 0 : NookTheme.Spacing.xs) {
             Group {
                 if let secondary {
                     NookSplitButton(primary: primary, secondary: secondary, compact: compact)
@@ -42,12 +42,12 @@ struct NookNoticeActions: View {
                     NookPrimaryButton(title: primary.label, symbol: primary.symbol, action: primary.perform)
                 }
             }
-            .padding(.trailing, compact ? 4 : 0)
+            .padding(.trailing, compact ? NookTheme.Spacing.xs : 0)
             ForEach(Array(extra.enumerated()), id: \.offset) { _, action in
                 NookGhostButton(title: action.label, symbol: action.symbol, compact: compact, action: action.perform)
             }
             if hasTrailing {
-                Spacer(minLength: 4)
+                Spacer(minLength: NookTheme.Spacing.xs)
                 if !more.isEmpty { NookMoreMenu(actions: more) }
                 if let onVoice { NookIconButton(systemName: "mic", label: tr("card.voiceAdjust"), action: onVoice) }
             }

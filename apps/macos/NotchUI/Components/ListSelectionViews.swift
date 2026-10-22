@@ -15,7 +15,8 @@ struct SelectionModeButton: View {
                 .font(NookTheme.font(13, .medium))
                 .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
                 .frame(width: 30, height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(active ? NookTheme.smoke : NookTheme.field))
+                // The same height, corners and fill as the search field it sits next to.
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(active ? NookTheme.smoke : NookTheme.field))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -31,7 +32,7 @@ struct SelectableRow: ViewModifier {
     let toggle: () -> Void
 
     func body(content: Content) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             if active {
                 Button(action: toggle) {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -82,28 +83,28 @@ struct SelectionBar: View {
     @State private var confirming: String?
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Text(confirmText ?? (count == 0 ? tr("select.none") : tr("select.count", count)))
-                    .font(NookTheme.font(12, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(confirmText == nil ? NookTheme.textSecondary : NookTheme.coral)
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                Spacer(minLength: NookTheme.Spacing.xs)
                 textButton(allSelected ? tr("button.clear") : tr("select.all"), action: toggleAll)
                     .keyboardShortcut("a", modifiers: .command)
                 textButton(tr("select.done"), action: done)
                     .keyboardShortcut(.escape, modifiers: [])
             }
-            HStack(spacing: 4) {
+            HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(actions) { action in
                     iconButton(action)
                 }
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
+        .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .padding(.vertical, NookTheme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.graphite))
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .onChange(of: count) { _, _ in confirming = nil }
     }
@@ -125,7 +126,7 @@ struct SelectionBar: View {
     private func textButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(NookTheme.font(12, .semibold))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.iris)
                 .fixedSize()
         }

@@ -13,8 +13,8 @@ struct ListEmptyNote: View {
 
     var body: some View {
         Text(text)
-            .font(NookTheme.font(12.5))
-            .foregroundStyle(NookTheme.textTertiary)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(padding)
     }
