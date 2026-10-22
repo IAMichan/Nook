@@ -322,7 +322,9 @@ enum TelegramData {
             var described: [String: Any] = [:]
             let route: (type: String, field: String)
             switch file.kind {
-            case .photo, .sticker where file.fileExtension != "webp":
+            case .photo:
+                route = ("inputMessagePhoto", "photo")
+            case .sticker where file.fileExtension != "webp":
                 route = ("inputMessagePhoto", "photo")
             case .sticker:
                 route = ("inputMessageSticker", "sticker")

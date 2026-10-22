@@ -114,15 +114,15 @@ final class ChatComposerModel: ObservableObject {
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
                 took = true
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
                     guard let url, url.isFileURL else { return }
-                    Task { @MainActor [weak self] in self?.add([url]) }
+                    Task { @MainActor in self?.add([url]) }
                 }
             } else if provider.canLoadObject(ofClass: NSImage.self) {
                 took = true
-                _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
+                _ = provider.loadObject(ofClass: NSImage.self) { [weak self] image, _ in
                     guard let image = image as? NSImage else { return }
-                    Task { @MainActor [weak self] in self?.add(image) }
+                    Task { @MainActor in self?.add(image) }
                 }
             }
         }
@@ -527,7 +527,7 @@ private struct ChatAttachmentChip: View {
                         .foregroundStyle(NookTheme.textTertiary)
                 }
             }
-            ToolbarIconButton("xmark", tr("chat.compose.remove"), height: 22, width: 22, action: remove)
+            ToolbarIconButton("xmark", tr("chat.compose.remove"), height: 22, width: 22, remove)
         }
         .padding(NookTheme.Spacing.xs)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
@@ -590,7 +590,9 @@ private struct ChatAttachmentChip: View {
 enum ChatAttachmentThumbnail {
     static func make(_ file: ChatAttachment) async -> NSImage? {
         switch file.kind {
-        case .photo, .sticker, .gif where ChatMediaImages.isPicture(file.url):
+        case .photo, .sticker:
+            return ChatMediaImages.image(file.url, side: 120)
+        case .gif where ChatMediaImages.isPicture(file.url):
             return ChatMediaImages.image(file.url, side: 120)
         case .video, .gif:
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file.url))
