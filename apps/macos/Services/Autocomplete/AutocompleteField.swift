@@ -29,6 +29,9 @@ struct AutocompleteFieldSnapshot {
     /// The font of the text at the cursor, so the suggestion looks like the text it continues.
     var fontName: String?
     var fontSize: CGFloat?
+
+    /// Where a card or the emoji picker goes (see `CompletionPlacement.cardAnchor`).
+    var cardAnchor: CGRect? { CompletionPlacement.cardAnchor(caret: caret, field: fieldFrame, fontSize: fontSize) }
 }
 
 /// Reads the focused field of the front app through the Accessibility API. Password fields are never read. Slow apps can take
@@ -54,8 +57,10 @@ enum AutocompleteField {
     /// Roles that take typed text.
     private static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
 
-    /// - Parameter screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.
-    static func read(screenHeight: CGFloat) -> AutocompleteFieldSnapshot? {
+    /// - Parameters:
+    ///   - screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.
+    ///   - screens: every screen's frame, taken on the main thread: a cursor on none of them is not believed.
+    static func read(screenHeight: CGFloat, screens: [CGRect] = []) -> AutocompleteFieldSnapshot? {
         guard AXIsProcessTrusted(), let element = focusedElement(), isEditable(element) else { return nil }
         let role: String? = attribute(element, kAXRoleAttribute)
         let subrole: String? = attribute(element, kAXSubroleAttribute)
@@ -88,20 +93,21 @@ enum AutocompleteField {
             return nil
         }
 
-        if let size: CGSize = axValue(element, kAXSizeAttribute, .cgSize), let origin: CGPoint = axValue(element, kAXPositionAttribute, .cgPoint) {
-            snapshot.fieldFrame = flip(CGRect(origin: origin, size: size))
-        }
-        // A cursor outside its own field (scrolled away, a stale answer) would put the suggestion somewhere else on screen.
-        if let caret = snapshot.caret, let field = snapshot.fieldFrame, field.width > 0,
-           !field.insetBy(dx: -4, dy: -4).contains(CGPoint(x: caret.minX, y: caret.midY)) {
-            snapshot.caret = nil
-        }
         if let location = fontLocation, let font = font(in: element, at: location) {
             snapshot.fontName = font.name
             snapshot.fontSize = font.size
         }
+        var windowFrame: CGRect?
+        if let window: AXUIElement = attribute(element, kAXWindowAttribute) {
+            snapshot.windowTitle = attribute(window, kAXTitleAttribute)
+            windowFrame = frame(of: window).map(flip)
+        }
+        // A cursor outside its window, its field or any screen (scrolled away, a stale or made-up answer) would put the
+        // suggestion somewhere else on screen: better none at all.
+        snapshot.fieldFrame = CompletionPlacement.checkedField(frame(of: element).map(flip), window: windowFrame)
+        snapshot.caret = CompletionPlacement.checkedCaret(snapshot.caret, field: snapshot.fieldFrame, window: windowFrame, screens: screens,
+                                                          fontSize: snapshot.fontSize)
         snapshot.placeholder = attribute(element, kAXPlaceholderValueAttribute)
-        if let window: AXUIElement = attribute(element, kAXWindowAttribute) { snapshot.windowTitle = attribute(window, kAXTitleAttribute) }
         snapshot.site = site(containing: element)
         return snapshot
     }
@@ -198,6 +204,11 @@ enum AutocompleteField {
         return AXValueGetValue(value as! AXValue, type, pointer) ? pointer.pointee : nil
     }
 
+    private static func frame(of element: AXUIElement) -> CGRect? {
+        guard let size: CGSize = axValue(element, kAXSizeAttribute, .cgSize), let origin: CGPoint = axValue(element, kAXPositionAttribute, .cgPoint) else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
     private static func selectedRange(of element: AXUIElement) -> CFRange? {
         axValue(element, kAXSelectedTextRangeAttribute, .cfRange)
     }
@@ -208,8 +219,17 @@ enum AutocompleteField {
               let value = parameterized(element, kAXBoundsForRangeParameterizedAttribute, parameter),
               CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
-        guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 1, rect.height < 400 else { return nil }
+        // A rect at the screen's corner is an app's way of saying it does not know (Notes, for the end of the text).
+        guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 1, rect.height < 400, rect.origin != .zero else { return nil }
         return rect
+    }
+
+    private static func lineRange(in element: AXUIElement, containing location: Int) -> CFRange? {
+        guard let line = parameterized(element, kAXLineForIndexParameterizedAttribute, NSNumber(value: location)) as? NSNumber,
+              let value = parameterized(element, kAXRangeForLineParameterizedAttribute, line as CFNumber),
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil
     }
 
     // MARK: The cursor
@@ -228,8 +248,26 @@ enum AutocompleteField {
             }
             return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
         }
-        if let empty, empty.height > 1 {
+        // Notes and other rich text views often have no box for the last character, but do for the line it ends: the cursor
+        // at the end of that line is at the line's right edge.
+        if location > 0, !previousIsNewline, let line = lineRange(in: element, containing: location - 1) {
+            var length = line.length
+            while length > 0, line.location + length > location || [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: line.location + length - 1)) {
+                length -= 1
+            }
+            if line.location + length == location, length > 0, let box = bounds(in: element, location: line.location, length: length),
+               box.height < 100 {
+                return CGRect(x: box.maxX, y: box.minY, width: 0, height: box.height)
+            }
+        }
+        // Some apps give the whole line for an empty range: its left edge is the cursor only at the start of a line.
+        if let empty, empty.height > 1, empty.width < 4 || location == 0 || previousIsNewline {
             return CGRect(x: empty.minX, y: empty.minY, width: 0, height: min(empty.height, 200))
+        }
+        // On a new line: the next character, when there is one, starts where the cursor is.
+        if location < text.length, ![0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: location)),
+           let next = bounds(in: element, location: location, length: 1), next.width < 200 {
+            return CGRect(x: next.minX, y: next.minY, width: 0, height: next.height)
         }
         return nil
     }
@@ -285,7 +323,8 @@ enum AutocompleteTyper {
     private static let chunk = 20
 
     /// Deletes `count` characters before the cursor, then types `text` (emoji, typo fixes, other words).
-    static func replace(last count: Int, with text: String) {
+    /// - Parameter oneByOne: one character per key event, for apps that take only the first character of each.
+    static func replace(last count: Int, with text: String, oneByOne: Bool = false) {
         let source = CGEventSource(stateID: .combinedSessionState)
         for _ in 0..<count {
             for isDown in [true, false] {
@@ -295,7 +334,7 @@ enum AutocompleteTyper {
                 event.post(tap: .cgSessionEventTap)
             }
         }
-        type(text)
+        type(text, oneByOne: oneByOne)
     }
 
     /// Presses one key (an accept key held while a suggestion was on its way, passed on after all).
@@ -309,15 +348,10 @@ enum AutocompleteTyper {
         }
     }
 
-    static func type(_ text: String) {
+    static func type(_ text: String, oneByOne: Bool = false) {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let units = Array(text.utf16)
-        var start = 0
-        while start < units.count {
-            var end = min(start + chunk, units.count)
-            // Never between the halves of a surrogate pair.
-            if end < units.count, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
-            let piece = Array(units[start..<end])
+        let pieces: [[UInt16]] = oneByOne ? text.map { Array(String($0).utf16) } : chunks(of: Array(text.utf16))
+        for piece in pieces {
             for isDown in [true, false] {
                 guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: isDown) else { continue }
                 event.flags = []
@@ -325,7 +359,19 @@ enum AutocompleteTyper {
                 event.setIntegerValueField(.eventSourceUserData, value: marker)
                 event.post(tap: .cgSessionEventTap)
             }
+        }
+    }
+
+    private static func chunks(of units: [UInt16]) -> [[UInt16]] {
+        var result: [[UInt16]] = []
+        var start = 0
+        while start < units.count {
+            var end = min(start + chunk, units.count)
+            // Never between the halves of a surrogate pair.
+            if end < units.count, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
+            result.append(Array(units[start..<end]))
             start = end
         }
+        return result
     }
 }
