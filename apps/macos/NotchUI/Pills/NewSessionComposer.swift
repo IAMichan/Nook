@@ -34,7 +34,12 @@ struct NewSessionComposer: View {
     @StateObject private var composerModel = ComposerModel()
     @ObservedObject private var promptLinks = PromptLinkInbox.shared
     @State private var linkNotice: String?
+    /// Set once the session started: what is left in the box then is not worth bringing back.
+    @State private var started = false
     @FocusState private var focused: Bool
+
+    /// The key of the task you were typing in `ComposerDraftStore`, so it also outlives a relaunch.
+    static let draftKey = "new-session"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +53,14 @@ struct NewSessionComposer: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { prepare(); app.refreshAgentModels(); applyPromptLink() }
+        .onAppear { restoreOrPrepare(); app.refreshAgentModels(); applyPromptLink() }
+        // Closing the notch (or switching tabs) drops this view; what you typed and chose waits for its return.
+        .onDisappear(perform: keepDraft)
+        .onChange(of: config.task) { _, task in
+            // Typing again after a start begins the next draft.
+            if !task.isEmpty { started = false }
+            if !started { ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: task) }
+        }
         .onChange(of: promptLinks.pending) { _, _ in applyPromptLink() }
         .onChange(of: workingDirectory, initial: true) { _, directory in onDirectory(directory) }
     }
@@ -483,6 +495,40 @@ struct NewSessionComposer: View {
         linkNotice = link.warnings.contains(.strippedHiddenCharacters) ? tr("promptLink.stripped") : tr("promptLink.filled")
     }
 
+    /// Back where you left it when the notch closed, else a fresh box with your last choices (and the task you were
+    /// typing before Nook quit).
+    private func restoreOrPrepare() {
+        guard let draft = NewSessionDraft.saved else {
+            prepare()
+            if config.task.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { config.task = saved }
+            return
+        }
+        config = draft.config
+        images = draft.images
+        project = draft.project
+        allowShared = draft.allowShared
+        showClone = draft.showClone
+        cloneURL = draft.cloneURL
+        pendingID = draft.pendingID
+        remoteMachine = draft.remoteMachine
+        remoteFolder = draft.remoteFolder
+        for (id, text) in draft.excerpts { composerModel.keep(id, text: text) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
+        // A project still being inspected when the notch closed is looked at again.
+        if project == nil, !config.projectPath.isEmpty, remoteMachine == nil,
+           FileManager.default.fileExists(atPath: config.projectPath) {
+            select(config.projectPath)
+        }
+    }
+
+    private func keepDraft() {
+        guard !started else { NewSessionDraft.saved = nil; return }
+        NewSessionDraft.saved = NewSessionDraft(
+            config: config, images: images, project: project, allowShared: allowShared, showClone: showClone,
+            cloneURL: cloneURL, pendingID: pendingID, remoteMachine: remoteMachine, remoteFolder: remoteFolder,
+            excerpts: composerModel.excerpts)
+    }
+
     private func prepare() {
         // Your default agent, unless it is not connected: then the first one that is.
         let connected = app.connectedProviders
@@ -540,6 +586,8 @@ struct NewSessionComposer: View {
     private func select(_ path: String) {
         remoteMachine = nil
         config.projectPath = path
+        // The next new session opens on the project you chose last, also when this one never started.
+        settings.lastProject = path
         inspecting = true
         error = nil
         Task {
@@ -614,6 +662,9 @@ struct NewSessionComposer: View {
                     UserDefaults.standard.set(remote.directory, forKey: "agents.remoteFolder." + remote.machineID)
                 }
                 remember()
+                started = true
+                NewSessionDraft.saved = nil
+                ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
                 config.task = ""
                 pendingID = UUID()
                 starting = false
@@ -624,4 +675,22 @@ struct NewSessionComposer: View {
             }
         }
     }
+}
+
+/// The new-session box as you left it when the notch closed: the task, its pictures and big pastes, and every choice
+/// around it. Kept in memory only; the task alone also goes to `ComposerDraftStore` for after a relaunch.
+@MainActor
+private struct NewSessionDraft {
+    static var saved: NewSessionDraft?
+
+    var config: NewRunConfig
+    var images: [ImageAttachment]
+    var project: ProjectInfo?
+    var allowShared: Bool
+    var showClone: Bool
+    var cloneURL: String
+    var pendingID: UUID
+    var remoteMachine: RemoteMachine?
+    var remoteFolder: String
+    var excerpts: [String: String]
 }

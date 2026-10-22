@@ -9,7 +9,7 @@ extension AppModel {
     // MARK: Sources in Chat
 
     func scope(of conversation: UUID?) -> SourceScope {
-        conversation.flatMap { chat.conversation($0)?.scope } ?? .automatic
+        conversation.flatMap { chat.conversation($0)?.scope } ?? chat.lastScope
     }
 
     func setScope(_ scope: SourceScope) {

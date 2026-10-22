@@ -185,13 +185,14 @@ struct LiveActivity: Equatable, Sendable {
 }
 
 enum TimelinePresentation {
-    /// Groups the events of a session into blocks. `active`: the last turn is still running and never folds.
+    /// Groups the events of a session into blocks. `active`: the last turn is still running. The last turn never folds,
+    /// also once it finished, so the session reads the same the moment the agent is done as while it worked.
     static func blocks(_ events: [RunEvent], active: Bool) -> [TimelineBlock] {
         let turns = split(visible(events, active: active))
         var blocks: [TimelineBlock] = []
         for (index, turn) in turns.enumerated() {
             let isLast = index == turns.count - 1
-            blocks += present(turn, open: isLast && active)
+            blocks += present(turn, open: isLast)
         }
         return blocks
     }
