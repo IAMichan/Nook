@@ -38,7 +38,7 @@ struct ChatsFocus: Equatable {
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
-/// "All" and "Unread" on top, a filter per app with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there, any other opens in its own app.
+/// "All" and "Unread" on top, a filter per app with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -785,6 +785,10 @@ private struct ChatsDetail: View {
     @State private var notice: String?
     @State private var sending = false
     @FocusState private var replyFocused: Bool
+    /// A photo shown big over the chat, until it is clicked or Escape is pressed.
+    @State private var zoomed: ChatBubble?
+    /// The message the field answers, quoted above it until it is sent or let go.
+    @State private var replyingTo: ChatBubble?
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -817,12 +821,45 @@ private struct ChatsDetail: View {
                 .padding(.bottom, NookTheme.Spacing.md)
             Rectangle().fill(NookTheme.hairline).frame(height: 1)
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
-                           onOpen: { open($0) }, onZoom: { open($0) })
+                           onOpen: { open($0) }, onZoom: { zoom($0) },
+                           onReply: whatsAppChat == nil ? nil : quote, onReact: whatsAppChat == nil ? nil : react)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
                 .padding(.top, NookTheme.Spacing.md)
         }
+        .overlay {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+                ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
+                              onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
+                              onOpen: { self.zoomed = nil; open(zoomed) })
+                    .transition(.opacity)
+            }
+        }
         .task(id: entry.id) { await loadWhatsApp() }
+    }
+
+    /// A photo enlarges over the chat, inside Nook; a photo Nook does not have yet opens as any file does.
+    private func zoom(_ bubble: ChatBubble) {
+        guard case .photo = bubble.media, bubble.image != nil else { return open(bubble) }
+        withAnimation(NookTheme.reveal) { zoomed = bubble }
+    }
+
+    /// The field answers this message: it shows above the field until the answer goes.
+    private func quote(_ bubble: ChatBubble) {
+        withAnimation(NookTheme.reveal) { replyingTo = bubble }
+        replyFocused = true
+    }
+
+    /// Your emoji on a message, after your own click (the same one again takes it back); the chat shows it at once.
+    private func react(_ bubble: ChatBubble, _ emoji: String) {
+        guard let chat = whatsAppChat else { return }
+        Task { @MainActor in
+            do {
+                try await app.reactWhatsApp(emoji, to: bubble.id, chat: chat)
+            } catch {
+                notice = error.localizedDescription
+            }
+        }
     }
 
     private var header: some View {
@@ -861,6 +898,8 @@ private struct ChatsDetail: View {
                        sendLabel: whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
                        readyNotice: whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
                        busy: sending,
+                       quote: replyingTo?.quote(contact: entry.name),
+                       cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: { instruction in
                            let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
                            return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,
@@ -871,18 +910,21 @@ private struct ChatsDetail: View {
                        })
     }
 
-    /// Your answer goes to the chat as typed, after your own Return or click; when it fails the text stays.
+    /// Your answer goes to the chat as typed (to the quoted message, when one is), after your own Return or click; when
+    /// it fails the text and the quote stay.
     private func send(to chat: String) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !sending else { return }
         sending = true
         notice = tr("whatsapp.card.sending")
+        let quoted = replyingTo?.id
         Task { @MainActor in
             defer { sending = false }
             do {
-                try await app.sendWhatsAppFromChats(text, chat: chat)
+                try await app.sendWhatsAppFromChats(text, chat: chat, replyTo: quoted)
                 reply = ""
                 notice = nil
+                if replyingTo?.id == quoted { replyingTo = nil }
                 replyFocused = true
             } catch {
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)

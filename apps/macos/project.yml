@@ -310,6 +310,7 @@ targets:
       - path: Services/Autocomplete/CompletionSampling.swift
       - path: Services/Autocomplete/CompletionPreferences.swift
       - path: Services/Autocomplete/CompletionEmoji.swift
+      - path: Services/Messages/EmojiCatalog.swift
       - path: Services/Autocomplete/CompletionPrivacy.swift
       - path: Core/PrivacyLevel.swift
       - path: Services/Autocomplete/CompletionLearning.swift

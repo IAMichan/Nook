@@ -404,6 +404,11 @@ final class WhatsAppLink: ObservableObject {
             guard inbox.conversations[key] != nil else { return }
             inbox.markRead(key)
             onReadElsewhere?(key)
+        case .reaction(let chat, let message, let emoji, let sender, let fromMe)?:
+            // A new emoji redraws the chat's card when it is on screen, as new ticks do; it never brings one up.
+            if let changed = inbox.applyReaction(emoji, message: message, chat: chat, sender: sender, fromMe: fromMe) {
+                onReceipt?(changed)
+            }
         default:
             break
         }
@@ -666,9 +671,9 @@ final class WhatsAppLink: ObservableObject {
         return choices
     }
 
-    /// Sends a text to a chat. Throws with a sentence the user can act on.
+    /// Sends a text to a chat, as an answer to its message `replyTo` when set. Throws with a sentence the user can act on.
     @discardableResult
-    func send(_ text: String, to recipient: String) async throws -> String {
+    func send(_ text: String, to recipient: String, replyTo: String? = nil) async throws -> String {
         guard let provider, isConnected else { throw NookError(statusLine) }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
@@ -679,11 +684,12 @@ final class WhatsAppLink: ObservableObject {
         guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
         let gen = generation
         do {
-            let id = try await provider.send(text: body, to: target.jid)
+            let id = try await provider.send(text: body, to: target.jid, replyTo: replyTo)
             guard gen == generation else { return target.name }
             var mine = WAMessage(id: id ?? "nook-\(UUID().uuidString)", chat: target.jid, sender: me ?? "",
                                  senderName: "", text: body, date: Date(), fromMe: true)
             mine.chatName = target.name
+            mine.replyTo = replyTo
             inbox.add(mine, filters: filters, name: target.name)
             // Answering reads the conversation.
             if WhatsAppSettings.markReadOnReply {
@@ -693,12 +699,42 @@ final class WhatsAppLink: ObservableObject {
             Log.connectors.info("WhatsApp: message sent")
             return target.name
         } catch let error as WAError {
-            switch error {
-            case .unreachable: throw NookError(tr("whatsapp.status.unreachable"))
-            case .unauthorized: throw NookError(tr("whatsapp.status.unauthorized"))
-            case .notLoggedIn: throw NookError(tr("whatsapp.status.needsQR"))
-            case .refused(let why): throw NookError(why)
-            }
+            throw Self.sentence(error)
+        }
+    }
+
+    /// Puts `emoji` on a message of a chat that is in the inbox, or takes it back when it is already yours. Returns the
+    /// chat's name. Throws with a sentence the user can act on.
+    @discardableResult
+    func react(_ emoji: String, to id: String, chat: String) async throws -> String {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        let key = WAJID.normalized(chat)
+        guard let conversation = inbox.conversations[key],
+              let message = conversation.messages.first(where: { $0.id == id }) else {
+            throw NookError(tr("whatsapp.react.missing"))
+        }
+        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
+        let old = message.reactions.first(where: \.fromMe)?.emoji
+        // The same emoji again takes it back, as on the phone.
+        let new = old == emoji ? "" : emoji
+        let gen = generation
+        do {
+            try await provider.react(new, to: id, chat: key, old: old)
+            guard gen == generation else { return conversation.name }
+            inbox.applyReaction(new, message: id, chat: key, sender: me ?? "", fromMe: true)
+            Log.connectors.info("WhatsApp: reaction sent")
+            return conversation.name
+        } catch let error as WAError {
+            throw Self.sentence(error)
+        }
+    }
+
+    private static func sentence(_ error: WAError) -> NookError {
+        switch error {
+        case .unreachable: return NookError(tr("whatsapp.status.unreachable"))
+        case .unauthorized: return NookError(tr("whatsapp.status.unauthorized"))
+        case .notLoggedIn: return NookError(tr("whatsapp.status.needsQR"))
+        case .refused(let why): return NookError(why)
         }
     }
 

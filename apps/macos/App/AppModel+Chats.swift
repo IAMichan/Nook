@@ -34,13 +34,20 @@ extension AppModel {
         workspace.openApplication(at: url, configuration: configuration) { _, _ in }
     }
 
-    /// Your answer from the Chats tab to a WhatsApp chat: your own words and your own click, as in the chat's card, and
-    /// logged the same way. Returns the chat's name.
+    /// Your answer from the Chats tab to a WhatsApp chat (to one of its messages, when `replyTo` is set): your own words
+    /// and your own click, as in the chat's card, and logged the same way. Returns the chat's name.
     @discardableResult
-    func sendWhatsAppFromChats(_ text: String, chat: String) async throws -> String {
-        let name = try await WhatsAppLink.shared.send(text, to: chat)
+    func sendWhatsAppFromChats(_ text: String, chat: String, replyTo: String? = nil) async throws -> String {
+        let name = try await WhatsAppLink.shared.send(text, to: chat, replyTo: replyTo)
         store.audit(tool: "whatsapp_send", args: name, result: "verstuurd")
         return name
+    }
+
+    /// An emoji on a message of a WhatsApp chat, after your own click in its card or the Chats tab (the same emoji again
+    /// takes it back), logged as a send is.
+    func reactWhatsApp(_ emoji: String, to message: String, chat: String) async throws {
+        let name = try await WhatsAppLink.shared.react(emoji, to: message, chat: chat)
+        store.audit(tool: "whatsapp_react", args: "\(name): \(emoji)", result: "verstuurd")
     }
 
     /// A file in a WhatsApp chat in the Chats tab: fetched from the gateway and shown in Quick Look, else in the app the
