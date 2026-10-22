@@ -26,6 +26,13 @@ extension AppModel {
             guard let self, self.viewModel.hasCard(id: Self.whatsAppCardPrefix + chat) else { return }
             self.presentWhatsApp(chat)
         }
+        // Read on the phone: a card still waiting in line goes; the one on screen stays (you may be typing) and is redrawn.
+        WhatsAppLink.shared.onReadElsewhere = { [weak self] chat in
+            guard let self else { return }
+            let token = Self.whatsAppCardPrefix + chat
+            self.viewModel.removePending(id: token)
+            if self.viewModel.isShowing(card: token) { self.presentWhatsApp(chat) }
+        }
         WhatsAppLink.shared.start()
     }
 

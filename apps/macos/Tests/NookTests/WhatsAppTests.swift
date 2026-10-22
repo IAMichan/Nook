@@ -91,6 +91,19 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.last?.id, "m29")
     }
 
+    func testCatchUpAfterSleepIsKeptButNeverNew() {
+        var inbox = WAInbox()
+        let chat = "1@s.whatsapp.net"
+        let woke = Date(timeIntervalSince1970: 1_800_000_000 + 100)
+        // Written while the Mac slept (likely read on the phone): kept, not unread, not announced.
+        XCTAssertEqual(inbox.add(message("old", chat: chat, at: 10), filters: WAFilters(), quietBefore: woke), .quiet)
+        XCTAssertEqual(inbox.conversations[chat]?.unread, 0)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.count, 1)
+        // A message written now still reaches you.
+        XCTAssertEqual(inbox.add(message("new", chat: chat, at: 200), filters: WAFilters(), quietBefore: woke), .notify)
+        XCTAssertEqual(inbox.conversations[chat]?.unread, 1)
+    }
+
     func testRateLimit() {
         var limit = WARateLimit(limit: 2, window: 60)
         let now = Date()
@@ -228,9 +241,12 @@ final class WhatsAppTests: XCTestCase {
         let gowa = Data(#"{"event":"message.ack","device_id":"31699999999@s.whatsapp.net","payload":{"ids":["A1","A2"],"chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","receipt_type":"read"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowa),
                        .receipt(ids: ["A1", "A2"], chat: "31600000001@s.whatsapp.net", status: .read))
-        // Your own phone reading their messages, and one group member's receipt, move no ticks.
+        // Your own phone reading their messages moves no ticks: the chat is read, in a group too.
         let own = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"31600000001@s.whatsapp.net","receipt_type":"read-self"}}"#.utf8)
-        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: own), .ignored)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: own), .readElsewhere(chat: "31600000001@s.whatsapp.net"))
+        let ownGroup = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"read-self"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: ownGroup), .readElsewhere(chat: "1203630@g.us"))
+        // One group member's receipt moves no ticks either.
         let group = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"delivered"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: group), .ignored)
 

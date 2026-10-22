@@ -113,6 +113,9 @@ struct WAPreview {
 final class WhatsAppLink: ObservableObject {
     static let shared = WhatsAppLink()
     nonisolated static let webhookPath = "/whatsapp"
+    /// A message older than this when it reaches Nook is a catch-up (after a sleep or an outage), never announced:
+    /// the webhook is instant and polling at most half a minute late.
+    static let freshness: TimeInterval = 120
 
     enum Link: Equatable {
         case off
@@ -146,6 +149,8 @@ final class WhatsAppLink: ObservableObject {
     var onMessage: ((_ chat: String) -> Void)?
     /// Your own messages in a chat got new ticks (delivered, read).
     var onReceipt: ((_ chat: String) -> Void)?
+    /// You read a chat on the phone: what Nook still had waiting for it goes.
+    var onReadElsewhere: ((_ chat: String) -> Void)?
 
     var isConnected: Bool { link == .connected }
 
@@ -392,6 +397,11 @@ final class WhatsAppLink: ObservableObject {
             ingest([message], announce: true)
         case .receipt(let ids, let chat, let status)?:
             if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(changed) }
+        case .readElsewhere(let chat)?:
+            let key = WAJID.normalized(chat)
+            guard inbox.conversations[key] != nil else { return }
+            inbox.markRead(key)
+            onReadElsewhere?(key)
         default:
             break
         }
@@ -436,9 +446,10 @@ final class WhatsAppLink: ObservableObject {
 
     private func ingest(_ messages: [WAMessage], announce: Bool) {
         var fresh: String?
+        let quietBefore = Date().addingTimeInterval(-Self.freshness)
         for message in messages {
             let key = WAJID.normalized(message.chat)
-            let outcome = inbox.add(message, filters: filters)
+            let outcome = inbox.add(message, filters: filters, quietBefore: quietBefore)
             nameGroupIfNeeded(key)
             if outcome == .notify, !message.fromMe { fresh = key }
         }
