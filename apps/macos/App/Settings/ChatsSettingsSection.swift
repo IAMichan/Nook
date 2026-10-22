@@ -16,7 +16,7 @@ struct ChatsSettingsSection: View {
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
     @State private var giphyKey = ""
-    @State private var giphySet = Giphy.key != nil
+    @State private var giphySet = Giphy.ownKey != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
 
     var body: some View {

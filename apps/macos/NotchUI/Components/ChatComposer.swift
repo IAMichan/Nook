@@ -1064,8 +1064,10 @@ private struct ChatStickerShelf: View {
 // MARK: GIFs from GIPHY
 
 extension Giphy {
-    /// Your GIPHY API key, set in Settings › Chats; nil until then.
-    static var key: String? { CloudHelp.secret(keyAccount) }
+    /// Your own GIPHY API key from Settings › Chats, else Nook's.
+    static var key: String? { key(own: ownKey) }
+    /// The key you added yourself in Settings › Chats; nil when Nook's own is used.
+    static var ownKey: String? { CloudHelp.secret(keyAccount) }
 }
 
 /// GIFs to send with one click, as in WhatsApp: GIPHY's trending ones, or the ones matching what you type. Without a GIPHY

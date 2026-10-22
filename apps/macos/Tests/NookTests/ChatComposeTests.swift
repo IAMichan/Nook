@@ -388,6 +388,13 @@ final class ChatComposeTests: XCTestCase {
         XCTAssertTrue(Giphy.gifs(Data("{}".utf8)).isEmpty)
     }
 
+    func testYourOwnGiphyKeyTakesNooksPlace() {
+        XCTAssertEqual(Giphy.key(own: "mine"), "mine")
+        XCTAssertEqual(Giphy.key(own: nil), Giphy.builtInKey)
+        XCTAssertEqual(Giphy.key(own: "  "), Giphy.builtInKey, "a blank key is no key")
+        XCTAssertFalse(Giphy.builtInKey.isEmpty)
+    }
+
     func testGiphySaysWhyItRefused() {
         XCTAssertEqual(Giphy.problem(Data(#"{"meta":{"status":401,"msg":"Unauthorized"}}"#.utf8)), "Unauthorized")
         XCTAssertEqual(Giphy.problem(Data(#"{"message":"Invalid authentication credentials"}"#.utf8)), "Invalid authentication credentials")
