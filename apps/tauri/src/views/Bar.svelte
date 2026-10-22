@@ -123,6 +123,8 @@
     inside = false;
     // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
     if (pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
+    // Both the pointer and a notice that ran out call this; a second timer must not orphan the first.
+    clearTimeout(closeTimer);
     closeTimer = setTimeout(close, 450);
   }
 

@@ -9,6 +9,8 @@ use nook_core::store::NookStore;
 pub struct AppState {
     pub settings: RwLock<Settings>,
     pub chat: Mutex<NookChat>,
+    /// Keeps chat saves in order now that the file is written after the chat lock is released.
+    chat_save: Mutex<()>,
     pub store: Arc<NookStore>,
     pub secrets: Arc<dyn SecretStore>,
     /// Lopende vragen per Nook, zodat Stoppen werkt.
@@ -23,6 +25,7 @@ impl AppState {
         Self {
             settings: RwLock::new(Settings::load()),
             chat: Mutex::new(NookChat::load()),
+            chat_save: Mutex::new(()),
             store: Arc::new(store),
             secrets,
             running: Mutex::new(Default::default()),
@@ -46,11 +49,13 @@ impl AppState {
         f(&mut guard)
     }
 
-    /// Opslaan na elke wijziging; het bestand is klein en `write_atomic` laat nooit een half bestand achter.
+    /// Saves after every change; `write_atomic` never leaves half a file behind. The chat is only serialized under its
+    /// lock: the write itself (several MB once images are attached) happens after, so nothing waits on the disk for it.
     pub fn save_chat(&self) {
-        self.with_chat(|c| {
-            let _ = c.save();
-        });
+        let _order = self.chat_save.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((file, Ok(bytes))) = self.with_chat(|c| c.snapshot()) {
+            let _ = nook_core::paths::write_atomic(&file, &bytes);
+        }
     }
 
     pub fn key_for(&self, provider: nook_core::provider::AIProvider) -> Option<String> {

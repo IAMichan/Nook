@@ -206,11 +206,22 @@ impl ClaudeCodeConversation {
             drop(stdin);
         }
         self.images.clear();
+        // Drained alongside stdout: a CLI that writes more than a pipe buffer of warnings would otherwise block on
+        // stderr, and the answer would only end at the timeout.
+        let stderr = child.stderr.take().map(|mut stderr| {
+            tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                let mut errors = String::new();
+                let _ = stderr.read_to_string(&mut errors).await;
+                errors
+            })
+        });
         let stdout = child.stdout.take().ok_or_else(|| NookError::new("Claude Code gaf geen uitvoer."))?;
         let mut reader = BufReader::new(stdout).lines();
         let mut text = String::new();
         let mut finished: Option<(String, bool)> = None;
         let mut raw = String::new();
+        let mut last_emit = std::time::Instant::now() - super::conversations::EMIT_EVERY;
         let work = async {
             while let Some(line) = reader.next_line().await? {
                 if raw.len() < 4_000 {
@@ -223,7 +234,8 @@ impl ClaudeCodeConversation {
                 }
                 if let Some(delta) = parsed.delta {
                     text.push_str(&delta);
-                    if let Some(cb) = on_text {
+                    if let Some(cb) = on_text.filter(|_| last_emit.elapsed() > super::conversations::EMIT_EVERY) {
+                        last_emit = std::time::Instant::now();
                         cb(super::text::visible(&text));
                     }
                 }
@@ -246,11 +258,10 @@ impl ClaudeCodeConversation {
             }
         }
         let status = child.wait().await?;
-        let mut errors = String::new();
-        if let Some(mut stderr) = child.stderr.take() {
-            use tokio::io::AsyncReadExt;
-            let _ = stderr.read_to_string(&mut errors).await;
-        }
+        let errors = match stderr {
+            Some(task) => task.await.unwrap_or_default(),
+            None => String::new(),
+        };
         let detail = format!("{raw}{errors}");
         // Nooit opnieuw proberen zonder de afschermende vlaggen: dan zou Claude Code de hooks van de gebruiker laden.
         if !status.success() && (detail.contains("setting-sources") || detail.contains("strict-mcp-config")) {

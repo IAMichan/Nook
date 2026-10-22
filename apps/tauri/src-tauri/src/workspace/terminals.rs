@@ -42,7 +42,9 @@ pub struct TerminalInfo {
 
 struct Term {
     info: TerminalInfo,
-    writer: Box<dyn Write + Send>,
+    /// Input for the shell, written by its own thread: a write to a pty blocks once its buffer is full (a large paste
+    /// into a program that does not read), and doing that here would hold the map lock the output reader needs.
+    input: std::sync::mpsc::Sender<Vec<u8>>,
     master: Box<dyn MasterPty + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     buffer: OutputBuffer,
@@ -103,7 +105,16 @@ impl Terminals {
         drop(pair.slave);
         let killer = child.clone_killer();
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let (input, keys) = std::sync::mpsc::channel::<Vec<u8>>();
+        // Ends when the terminal is closed (the sender is dropped) or the shell is gone.
+        std::thread::spawn(move || {
+            while let Ok(data) = keys.recv() {
+                if writer.write_all(&data).and_then(|_| writer.flush()).is_err() {
+                    break;
+                }
+            }
+        });
         let number = {
             let mut n = lock(&self.opened);
             *n += 1;
@@ -123,7 +134,7 @@ impl Terminals {
             created: chrono::Utc::now(),
         };
         lock(&self.inner)
-            .insert(id.clone(), Term { info: info.clone(), writer, master: pair.master, killer, buffer: OutputBuffer::default() });
+            .insert(id.clone(), Term { info: info.clone(), input, master: pair.master, killer, buffer: OutputBuffer::default() });
         lock(&self.order).push(id.clone());
         // Uitvoer lezen tot de shell stopt.
         let inner = self.inner.clone();
@@ -162,9 +173,9 @@ impl Terminals {
     }
 
     pub fn write(&self, id: &str, data: &str) -> Result<(), String> {
-        let mut map = lock(&self.inner);
-        let t = map.get_mut(id).ok_or("Deze terminal bestaat niet meer.")?;
-        t.writer.write_all(data.as_bytes()).and_then(|_| t.writer.flush()).map_err(|e| e.to_string())
+        let map = lock(&self.inner);
+        let t = map.get(id).ok_or("Deze terminal bestaat niet meer.")?;
+        t.input.send(data.as_bytes().to_vec()).map_err(|_| "De shell neemt geen invoer meer aan.".to_string())
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) {

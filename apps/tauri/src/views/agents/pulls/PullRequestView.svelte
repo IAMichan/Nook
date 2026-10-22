@@ -2,6 +2,7 @@
   // One pull request, read in full inside Nook (`PullRequestDetailView` on the Mac): the description, checks and
   // timeline, the commits, and every changed file with its diff. The bar at the bottom merges it with the account it
   // was listed under, only after you confirmed it in that same bar; the merge is written to the action log.
+  import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type { PullRequestItem } from "../../../lib/connectors";
   import { renderMarkdown } from "../../../lib/markdown";
@@ -72,7 +73,9 @@
   $effect(() => {
     let cancelled = false;
     let recheck: ReturnType<typeof setTimeout> | undefined;
-    load().then(() => {
+    // Only a different pull request loads again; `load` reads `loading`, which must not re-run this effect.
+    void [accountId, item.repo, item.number];
+    untrack(load).then(() => {
       // GitHub works out mergeability after the first ask: look again once it has.
       if (!cancelled && detail?.isOpen && detail.mergeable === null) recheck = setTimeout(() => !cancelled && load(), 3000);
     });

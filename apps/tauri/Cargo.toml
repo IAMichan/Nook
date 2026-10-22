@@ -25,3 +25,9 @@ log = "0.4"
 [workspace.lints.clippy]
 # De adapters spiegelen de initializers op de Mac; een struct per aanroep maakt ze niet duidelijker.
 too_many_arguments = "allow"
+
+# Installers are built once per release and run on every start: thin LTO lets the optimizer work across crates at a
+# modest build-time cost, and stripping leaves the symbol tables out of the shipped binary, which makes it a lot smaller.
+[profile.release]
+lto = "thin"
+strip = true
