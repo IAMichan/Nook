@@ -73,7 +73,7 @@ grep -rnE 'Image\(systemName: "magnifyingglass"\)' NotchUI App --include='*.swif
   | grep -v -e '^NotchUI/Components/PanelBlocks.swift:' -e '^NotchUI/Pills/TimelineFind.swift:' \
   | report "search fields are a NookSearchField (no magnifying glass and text field built inline)"
 
-grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
+grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Components/PanelBlocks.swift:' \
   | report "dividers are a NookDivider (no 1 pt Rectangle drawn inline)"
 

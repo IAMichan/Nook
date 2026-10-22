@@ -10,7 +10,7 @@ copying it again.
 | --- | --- |
 | `NookTheme.paper`, `textStrong`, `textSecondary`, `textTertiary`, `textMuted`, `ink` | Text colors, from brightest to most muted |
 | `NookTheme.canvas`, `surface`, `field`, `well`, `smoke`, `graphite` | Surfaces: the window canvas, a lifted sidebar or menu, a text field, a sunken code well, and the two card fills |
-| `NookTheme.line`, `line2`, `hairline`, `fieldStroke` | Hairlines and strokes |
+| `NookTheme.line`, `line2`, `hairline`, `fieldStroke`, `separator` | Hairlines and strokes; `separator` is the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
@@ -78,7 +78,7 @@ The checklist for a new or changed view:
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
-  something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider`, and a notice under
+  something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice under
   the tabs a `PanelNoticeBar`. Change one of these and every tab follows.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a coral-tinted `.cardBackground` notice with a retry.
@@ -116,6 +116,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
 | `NookSectionLabel` | `PanelBlocks.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
 | `NookDivider` | `PanelBlocks.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
+| `NookRowSeparator` | `PanelBlocks.swift` | The clearer line between the items of a list (Nook's chats, Agents, Chats), in `NookTheme.separator`; placed before every item but the first |
 | `PanelNoticeBar` | `PanelBlocks.swift` | A notice under the tabs (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one |
 | `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
