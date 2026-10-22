@@ -416,6 +416,7 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
+                                if entry.id != section.entries.first?.id { NookRowSeparator() }
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
                                          onToggleRead: { entry.readable ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
                                     .contextMenu {

@@ -123,7 +123,7 @@ final class UIConsistencyTests: XCTestCase {
 
     /// A line between rows or regions is a `NookDivider`, so every divider has the same weight and color.
     func testDividersAreTheSharedComponent() {
-        let found = offenders(#"Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline)[^)]*\)\.frame\(height: 1\)"#) {
+        let found = offenders(#"Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)"#) {
             $0 == "NotchUI/Components/PanelBlocks.swift"
         }
         XCTAssertEqual(found, [], "use NookDivider (NotchUI/Components/PanelBlocks.swift)")

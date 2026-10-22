@@ -274,6 +274,7 @@ struct AgentInboxList: View {
     private func entryRow(_ entry: InboxEntry, in section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                           shown: [String]) -> some View {
         if let item = byID[entry.id] {
+            if entry.id != section.rows.first?.id { NookRowSeparator() }
             let slim = section.kind == .snoozed || section.kind == .settled
             let isRun = runID(item) != nil
             let snoozeActive = section.kind == .snoozed
