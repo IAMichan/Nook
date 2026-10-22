@@ -411,7 +411,8 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
-                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected) { selection = entry.id }
+                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
+                                         onToggleRead: { entry.unread > 0 ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
                                     .contextMenu {
                                         if entry.unread > 0 {
                                             Button(tr("chats.markRead")) { markRead(entry) }
@@ -745,6 +746,8 @@ private struct ChatsRow: View {
     let entry: ChatsEntry
     let photo: NSImage?
     let selected: Bool
+    /// Read or unread by hand, from the button that shows while the pointer is on the row.
+    var onToggleRead: (() -> Void)? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -762,6 +765,25 @@ private struct ChatsRow: View {
     }
 
     var body: some View {
+        ZStack(alignment: .topTrailing) {
+            row
+            // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
+            if let onToggleRead {
+                ToolbarIconButton(entry.unread > 0 ? "checkmark.circle" : "circle.badge",
+                                  tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
+                    .pointerStyle(.link)
+                    .padding(.top, NookTheme.Spacing.sm)
+                    .padding(.trailing, NookTheme.Spacing.sm)
+                    .opacity(hovering ? 1 : 0)
+                    .allowsHitTesting(hovering)
+            }
+        }
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .accessibilityAction(named: Text(tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
+    }
+
+    private var row: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
                 ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 34)
@@ -776,6 +798,7 @@ private struct ChatsRow: View {
                             .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(entry.unread > 0 ? NookTheme.amber : NookTheme.textTertiary)
                             .fixedSize()
+                            .opacity(hovering && onToggleRead != nil ? 0 : 1)
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
                         if let ticks = entry.ticks { TicksView(ticks: ticks) }
@@ -804,7 +827,6 @@ private struct ChatsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .accessibilityLabel("\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
