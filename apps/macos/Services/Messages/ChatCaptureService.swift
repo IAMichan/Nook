@@ -33,6 +33,17 @@ final class ChatCaptureService: ObservableObject {
     /// A notification Nook already has another way (WhatsApp, while the phone is linked, arrives live).
     var skips: (ChatNotice) -> Bool = { _ in false }
 
+    /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token.
+    let messagesBridge = MessagesBridge()
+    let slackBridge = SlackBridge()
+    private var bridges: [ChatBridge] { [messagesBridge, slackBridge] }
+    /// Why a bridge could not read, per app; empty while all of them work.
+    @Published private(set) var bridgeProblems: [String: String] = [:]
+    /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
+    @Published private(set) var bridged: Set<String> = []
+    private var bridgeDue: [String: Date] = [:]
+    private var bridging = false
+
     /// How often the database is looked at. Only a database that changed is read.
     private static let interval: TimeInterval = 4
     /// A first start shows what came in this long ago: macOS keeps the notifications it showed for a while, so the
@@ -61,11 +72,18 @@ final class ChatCaptureService: ObservableObject {
         lastChange = nil
         // Nothing collected yet (a start before Full Disk Access, or before any chat wrote): look back again.
         if inbox.threads.isEmpty { inbox.lastRecord = nil }
+        bridgeDue = [:]
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.poll() }
+            Task { @MainActor in
+                await self?.poll()
+                await self?.pollBridges()
+            }
         }
         timer?.tolerance = 1
-        Task { await poll() }
+        Task {
+            await poll()
+            await pollBridges()
+        }
     }
 
     func stop() {
@@ -93,7 +111,7 @@ final class ChatCaptureService: ObservableObject {
                     guard let record = NotificationRecord.integer(row["id"]) else { continue }
                     lastRecord = max(lastRecord ?? record, record)
                     guard let notification = NotificationRecord.notification(row),
-                          let notice = ChatCapture.notice(notification), !skips(notice) else { continue }
+                          let notice = ChatCapture.notice(notification), !skips(notice), !isBridged(notice.app) else { continue }
                     if inbox.add(notice, id: "n\(notification.record)") { changed = true }
                 }
                 if lastRecord == nil {
@@ -119,6 +137,50 @@ final class ChatCaptureService: ObservableObject {
         } catch {
             status = .failed(error.localizedDescription)
         }
+    }
+
+    // MARK: Bridges
+
+    /// A working bridge brings this app's messages itself: its notifications would only repeat them.
+    private func isBridged(_ app: String) -> Bool {
+        bridges.contains { $0.app == app && $0.isWorking }
+    }
+
+    /// Reads every bridge that is due, of the apps that are on. Runs next to the notifications, also while those cannot
+    /// be read: Slack needs no disk access.
+    func pollBridges() async {
+        guard enabled, !bridging else { return }
+        bridging = true
+        defer { bridging = false }
+        var changed = false
+        for bridge in bridges {
+            guard sources.isOn(bridge.app), bridge.isReady else {
+                bridgeProblems[bridge.app] = nil
+                bridged.remove(bridge.app)
+                continue
+            }
+            if let due = bridgeDue[bridge.app], due > Date() { continue }
+            bridgeDue[bridge.app] = Date().addingTimeInterval(bridge.interval)
+            do {
+                for chat in try await bridge.read() where inbox.merge(chat) { changed = true }
+                bridgeProblems[bridge.app] = nil
+                bridged.insert(bridge.app)
+            } catch {
+                bridgeProblems[bridge.app] = error.localizedDescription
+                // Try again in a minute, not every few seconds.
+                bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
+            }
+        }
+        if changed { save() }
+    }
+
+    /// The Slack token changed in Settings: read Slack again from the start.
+    func slackTokenChanged() {
+        slackBridge.reset()
+        bridgeDue[slackBridge.app] = nil
+        bridged.remove(slackBridge.app)
+        bridgeProblems[slackBridge.app] = nil
+        Task { await pollBridges() }
     }
 
     // MARK: Sources

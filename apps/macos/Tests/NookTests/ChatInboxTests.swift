@@ -306,6 +306,124 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(decoded, inbox)
     }
 
+    func testAnInboxFromBeforeBridgesStillLoads() throws {
+        let json = #"{"threads":{"telegram|anna":{"id":"telegram|anna","app":"telegram","name":"Anna","unread":1,"#
+            + #""messages":[{"id":"1","sender":"","text":"hi","date":800000000}]}},"lastRecord":3}"#
+        let inbox = try JSONDecoder().decode(ChatInbox.self, from: Data(json.utf8))
+        XCTAssertEqual(inbox.threads["telegram|anna"]?.messages.first?.isMine, false)
+        XCTAssertNil(inbox.removed)
+    }
+
+    // MARK: Bridges
+
+    private func message(_ id: String, _ text: String, at offset: TimeInterval = 0, mine: Bool = false,
+                         sender: String = "") -> InboxMessage {
+        InboxMessage(id: id, sender: sender, text: text, date: now.addingTimeInterval(offset), fromMe: mine)
+    }
+
+    func testABridgeBringsHistoryAsRead() {
+        var inbox = ChatInbox()
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "slack", name: "Anna",
+                                              messages: [message("a", "hi"), message("b", "hey", at: 10, mine: true)], unread: nil)))
+        let thread = inbox.threads[ChatInbox.key(app: "slack", chat: "Anna")]
+        XCTAssertEqual(thread?.messages.map(\.text), ["hi", "hey"])
+        XCTAssertEqual(thread?.unread, 0, "the history on the first look was read in the app already")
+        XCTAssertEqual(thread?.messages.last?.isMine, true)
+        XCTAssertFalse(thread?.isGroup ?? true, "your own messages carry no sender")
+    }
+
+    func testNewMessagesFromOthersCountAsUnread() {
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [message("a", "hi")], unread: nil))
+        inbox.merge(BridgedChat(app: "slack", name: "Anna",
+                                messages: [message("a", "hi"), message("b", "mine", at: 5, mine: true), message("c", "new", at: 10)],
+                                unread: nil))
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "slack", chat: "Anna")]?.unread, 1)
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [message("c", "new", at: 10)], unread: nil)),
+                       "nothing new")
+    }
+
+    func testABridgeAndANotificationAreOneMessage() {
+        var inbox = ChatInbox()
+        inbox.add(notice("Anna", "hi", app: "messages"), id: "n1")
+        inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [message("imessage-9", "hi", at: 2)], unread: 1))
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "messages", chat: "Anna")]?.messages.count, 1)
+        XCTAssertFalse(inbox.add(notice("Anna", "hi", app: "messages", at: 3), id: "n2"))
+        // The same words from you are another message.
+        inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [message("imessage-10", "hi", at: 4, mine: true)], unread: 1))
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "messages", chat: "Anna")]?.messages.count, 2)
+    }
+
+    func testTheAppsUnreadCountWinsOnlyWhenItChanges() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "messages", chat: "Anna")
+        inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [message("1", "hi")], unread: 2))
+        XCTAssertEqual(inbox.threads[key]?.unread, 2)
+        inbox.markRead(key)
+        inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [], unread: 2))
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "read in Nook stays read")
+        inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [message("2", "again", at: 5)], unread: 3))
+        XCTAssertEqual(inbox.threads[key]?.unread, 3)
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "messages", name: "Jan", messages: [], unread: 4)),
+                       "a count alone does not make a chat")
+    }
+
+    func testARemovedChatComesBackOnlyWithNewMessages() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "slack", chat: "Anna")
+        inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [message("a", "hi")], unread: nil))
+        inbox.remove(key, at: now.addingTimeInterval(5))
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [message("a", "hi")], unread: nil)))
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: [message("b", "later", at: 10)], unread: nil)))
+        XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["later"])
+    }
+
+    // MARK: Slack
+
+    func testSlackMarkup() {
+        let users = ["U1": "Anna"]
+        XCTAssertEqual(SlackData.clean("hi <@U1>, see <#C1|general> and <https://x.com|this> &amp; <https://y.com>", users: users),
+                       "hi @Anna, see #general and this & https://y.com")
+        XCTAssertEqual(SlackData.clean("<!here> lunch?", users: [:]), "@here lunch?")
+    }
+
+    func testSlackConversationsAndNames() {
+        let list: [String: Any] = ["ok": true, "channels": [
+            ["id": "D1", "is_im": true, "user": "U1", "created": 100.0],
+            ["id": "G1", "is_mpim": true, "name": "mpdm-anna--jan--me-1", "updated": 1_700_000_000_000.0],
+            ["id": "C1", "is_channel": true, "name": "general"],
+            ["id": "D2", "is_im": true, "user": "U9", "is_user_deleted": true]
+        ]]
+        let conversations = SlackData.conversations(list)
+        XCTAssertEqual(conversations.map(\.id), ["D1", "G1"])
+        XCTAssertEqual(conversations[1].updated, 1_700_000_000, "milliseconds to seconds")
+        let users = SlackData.users(["members": [
+            ["id": "U1", "name": "anna", "profile": ["display_name": "", "real_name": "Anna Smit"]],
+            ["id": "U2", "name": "me", "profile": ["display_name": "me"]]
+        ]])
+        XCTAssertEqual(users["U1"], "Anna Smit")
+        XCTAssertEqual(SlackData.chatName(conversations[0], users: users, me: "U2"), "Anna Smit")
+        XCTAssertEqual(SlackData.chatName(conversations[1], users: users, me: "U2"), "anna, jan")
+    }
+
+    func testSlackHistory() {
+        let group = SlackData.Conversation(id: "G1", user: nil, name: "mpdm-a--b-1", isGroup: true, updated: 0)
+        let history: [String: Any] = ["ok": true, "messages": [
+            ["ts": "1700000020.000200", "user": "U2", "text": "mine"],
+            ["ts": "1700000010.000100", "user": "U1", "text": "hello"],
+            ["ts": "1700000005.000100", "user": "U1", "subtype": "channel_join", "text": "joined"],
+            ["ts": "1700000001.000100", "user": "U1", "text": "", "files": [["name": "plan.pdf"]]]
+        ]]
+        let messages = SlackData.messages(history, conversation: group, users: ["U1": "Anna"], me: "U2")
+        XCTAssertEqual(messages.map(\.text), ["plan.pdf", "hello", "mine"])
+        XCTAssertEqual(messages[1].sender, "Anna")
+        XCTAssertTrue(messages[2].isMine)
+        XCTAssertEqual(messages[2].sender, "")
+        XCTAssertEqual(messages[1].id, "slack-G1-1700000010.000100")
+        XCTAssertEqual(SlackData.error(["ok": false, "error": "invalid_auth"]), "invalid_auth")
+        XCTAssertNil(SlackData.error(["ok": true]))
+    }
+
     // MARK: As bubbles
 
     private var calendar: Calendar {

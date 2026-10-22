@@ -166,7 +166,10 @@ struct ChatsTab: View {
             }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
-            let preview = thread.messages.last.map { $0.sender.isEmpty ? $0.text : "\($0.sender): \($0.text)" } ?? ""
+            let preview = thread.messages.last.map { message in
+                let who = message.isMine ? tr("chat.you") : message.sender
+                return who.isEmpty ? message.text : "\(who): \(message.text)"
+            } ?? ""
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
                                       preview: preview, last: thread.last, unread: thread.unread))
         }
@@ -334,10 +337,22 @@ struct ChatsTab: View {
             }
             if shown.isEmpty {
                 if !searching, let filter {
-                    // A source that is on but brought in nothing yet: say so, and offer to open it.
+                    // A source that is on but brought in nothing yet: why, and what to do about it.
                     let name = MessagingApps.app(id: filter)?.name ?? filter
                     VStack(spacing: NookTheme.Spacing.sm) {
-                        ListEmptyNote(tr("chats.source.empty", name))
+                        if let problem = capture.bridgeProblems[filter] {
+                            Text(problem)
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.coralSoft)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if filter == capture.slackBridge.app, !capture.slackBridge.isReady {
+                            // Slack keeps its history on its own servers: with a token Nook reads it from there.
+                            ListEmptyNote(tr("chats.slack.connectHint"))
+                            SmallGhostButton(title: tr("chats.slack.connect")) { app.openSettings(section: .chats) }
+                        } else {
+                            ListEmptyNote(tr("chats.source.empty", name))
+                        }
                         SmallGhostButton(title: tr("chats.openApp", name)) { app.openChatApp(filter) }
                     }
                     .frame(maxWidth: .infinity)
@@ -706,7 +721,7 @@ private struct ChatsDetail: View {
         case .captured(let id):
             return (capture.inbox.threads[id]?.messages ?? []).map { message in
                 ChatBubble(id: message.id, text: message.text, time: Self.time.string(from: message.date), date: message.date,
-                           sender: message.sender)
+                           sender: message.sender, fromMe: message.isMine)
             }
         }
     }
@@ -733,7 +748,8 @@ private struct ChatsDetail: View {
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                Text(whatsAppChat == nil ? tr("chats.fromNotifications", appName) : appName)
+                // A chat a bridge reads is the app's own; any other is what its notifications showed.
+                Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
                     .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
