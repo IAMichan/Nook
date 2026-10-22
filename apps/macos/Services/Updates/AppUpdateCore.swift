@@ -140,6 +140,15 @@ struct GitHubRepository: Equatable, Sendable {
     func pullRequest(_ number: Int) -> URL? { URL(string: "https://github.com/\(owner)/\(name)/pull/\(number)") }
 }
 
+/// Text for the AppleScript that opens the project in Xcode.
+enum AppleScript {
+    /// A quoted AppleScript string literal.
+    static func string(_ text: String) -> String {
+        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+}
+
 /// The local checkout the update goes into, read right after fetching.
 struct UpdateCheckout: Equatable, Sendable {
     /// The checked-out branch, nil when detached.
