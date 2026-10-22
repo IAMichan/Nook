@@ -18,7 +18,7 @@ struct RemoteMachinesSection: View {
                 HStack(spacing: 10) {
                     Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(machine.name).font(NookTheme.font(13, .medium))
+                        Text(machine.name).font(NookTheme.TextStyle.strong)
                         Text(machine.host + (machine.port.map { ":\($0)" } ?? ""))
                             .font(NookTheme.mono(11))
                             .foregroundStyle(NookTheme.textSecondary)
@@ -112,7 +112,7 @@ private struct AddMachineSheet: View {
                 .font(NookTheme.TextStyle.code)
             TextField(tr("remote.port"), text: $port, prompt: Text("22")).textFieldStyle(.roundedBorder)
             if !host.isEmpty, !RemoteMachines.isValidHost(host.trimmingCharacters(in: .whitespaces)) {
-                Text(tr("remote.badHost")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                SettingNote(tr("remote.badHost"), tone: .warning)
             }
             HStack {
                 Spacer()

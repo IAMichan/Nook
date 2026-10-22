@@ -47,6 +47,7 @@ extension SettingsView {
                 LabeledContent(tr("settings.voice.customSounds")) {
                     Button(tr("button.openFolder")) { NookSound.openFolder() }
                 }
+                .disabled(!settings.sounds)
             } header: {
                 Text(tr("settings.voice.sounds"))
             } footer: {
@@ -54,22 +55,8 @@ extension SettingsView {
             }
             quietSection
             Section {
-                Button { app.settingsSection = .devices } label: {
-                    HStack(spacing: 12) {
-                        SettingsTile(.devices, size: 26)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tr("companion.push.enable")).foregroundStyle(.primary)
-                            Text(tr("settings.notifications.iphoneDetail"))
-                                .font(NookTheme.TextStyle.detail)
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                SettingsLinkRow(title: tr("companion.push.enable"), detail: tr("settings.notifications.iphoneDetail"),
+                                section: .devices) { app.settingsSection = .devices }
             } header: {
                 Text(tr("settings.notifications.iphone"))
             }

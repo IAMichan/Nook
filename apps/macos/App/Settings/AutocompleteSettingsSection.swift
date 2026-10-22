@@ -183,7 +183,7 @@ struct AutocompleteSettingsSection: View {
                 }
             }
             if let model = downloads.downloading, !CompletionCatalogModel.catalog.contains(model) { downloadRow(model) }
-            if let error = downloads.error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral) }
+            if let error = downloads.error { SettingNote(error, tone: .error) }
         } header: {
             Text(tr("autocomplete.section.download"))
         } footer: {
@@ -200,7 +200,7 @@ struct AutocompleteSettingsSection: View {
             SettingLabel(file.title, detail: "\(file.sizeText) · \(sourceLabel(file.source))")
             Spacer()
             if inUse {
-                Text(tr("autocomplete.download.inUse")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                InUseLabel(tr("autocomplete.download.inUse"))
             } else {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
                 // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
@@ -252,8 +252,9 @@ struct AutocompleteSettingsSection: View {
                     if model == recommended {
                         Text(tr("autocomplete.recommended"))
                             .font(NookTheme.TextStyle.label)
-                            .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+                            .foregroundStyle(NookTheme.textStrong)
+                            .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, 1)
+                            .background(Capsule().fill(NookTheme.smoke))
                     }
                 }
                 if downloads.downloading == model {
@@ -269,7 +270,7 @@ struct AutocompleteSettingsSection: View {
                 Button(tr("button.cancel")) { downloads.cancel() }
             } else if installed {
                 if inUse {
-                    Text(tr("autocomplete.download.inUse")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    InUseLabel(tr("autocomplete.download.inUse"))
                 } else if let here {
                     Button(tr("autocomplete.use")) { store.prefs.modelPath = here.path }
                 }
@@ -354,18 +355,9 @@ struct AutocompleteSettingsSection: View {
     /// The keys live under Shortcuts, with every other key of Nook.
     private var keysLink: some View {
         Section {
-            Button { app.settingsSection = .shortcuts } label: {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tr("autocomplete.section.keys")).foregroundStyle(.primary)
-                        Text(tr("settings.autocomplete.keysMoved")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-                }
-                .contentShape(Rectangle())
+            SettingsLinkRow(title: tr("autocomplete.section.keys"), detail: tr("settings.autocomplete.keysMoved"), section: .shortcuts) {
+                app.settingsSection = .shortcuts
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -394,7 +386,7 @@ struct AutocompleteSettingsSection: View {
                     .font(NookTheme.TextStyle.body)
                     .frame(minHeight: 70)
                     .onChange(of: instructions) { _, value in store.prefs.instructions = value }
-                Text(tr("autocomplete.instructionsHint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                SettingNote(tr("autocomplete.instructionsHint"))
             }
             SettingToggle(tr("autocomplete.learn"), detail: tr("autocomplete.learnDetail"), isOn: $store.prefs.learn)
                 .onChange(of: store.prefs.learn) { _, _ in autocomplete.applyPersonalization() }
@@ -435,7 +427,7 @@ struct AutocompleteSettingsSection: View {
             }
             Section {
                 if apps.isEmpty {
-                    Text(installed.isEmpty ? tr("autocomplete.loading.apps") : tr("autocomplete.apps.noMatch")).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(installed.isEmpty ? tr("autocomplete.loading.apps") : tr("autocomplete.apps.noMatch"))
                 }
                 ForEach(apps) { app in appRow(app) }
             } footer: {
@@ -552,7 +544,7 @@ struct AutocompleteSettingsSection: View {
                     ConfirmedButton(tr("autocomplete.apps.removeSite"), question: tr("confirm.remove", site)) { store.prefs.sites[site] = nil }
                 } label: {
                     HStack(spacing: 10) {
-                        SiteIcon(domain: site, fallback: "globe", tint: .secondary, size: 18)
+                        SiteIcon(domain: site, fallback: "globe", tint: NookTheme.textSecondary, size: 18)
                         Text(site)
                         Spacer()
                         Toggle("", isOn: siteEnabled(site)).labelsHidden().toggleStyle(.switch).controlSize(.small)
@@ -643,7 +635,7 @@ struct AutocompleteSettingsSection: View {
 
             Section(tr("autocomplete.stats.chart")) {
                 if stats.totalTakes == 0 {
-                    Text(tr("autocomplete.stats.empty")).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(tr("autocomplete.stats.empty"))
                 } else {
                     Chart(recent, id: \.date) { entry in
                         BarMark(x: .value("Dag", entry.date, unit: .day), y: .value("Keer", entry.day.takes))
@@ -718,14 +710,14 @@ private struct StatTile: View {
     let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: symbol).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-            Text(value).font(NookTheme.rounded(24, .semibold)).monospacedDigit()
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            Label(title, systemImage: symbol).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+            Text(value).font(NookTheme.rounded(24, .semibold)).monospacedDigit().foregroundStyle(NookTheme.paper)
             Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
+        .padding(NookTheme.Spacing.lg)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.surface))
     }
 }
 

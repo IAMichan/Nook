@@ -33,7 +33,7 @@ struct ShortcutRecorder: View {
                         .help(tr("shortcut.reset"))
                     }
                 }
-                if !note.isEmpty { Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+                if !note.isEmpty { SettingNote(note) }
             }
         }
         .onDisappear { stop() }

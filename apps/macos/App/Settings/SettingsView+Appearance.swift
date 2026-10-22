@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Settings › Appearance: how Nook looks. A large live Nook on top that shows each mood, the three styles as cards,
-/// then the face, the finish and the color, each option once.
+/// then the color (the biggest change after the style), the face, the finish and the wardrobe, each option once.
 extension SettingsView {
     // MARK: Appearance
 
@@ -29,6 +29,33 @@ extension SettingsView {
                 if !NookLook.presets.contains(where: { $0.look == settings.nookLook }) {
                     Text(tr("settings.appearance.styleCustom"))
                 }
+            }
+
+            Section {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    ForEach([NookTheme.defaultAccentHex, 0x8B7BFF, 0x5AA9FF, 0x5ED6A6, 0xF2B866, 0xEF7B73, 0xFF7EB6] as [UInt32], id: \.self) { hex in
+                        Button { settings.accentHex = hex } label: {
+                            // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
+                            Circle().fill(Color(hex: hex)).frame(width: 22, height: 22)
+                                .padding(NookTheme.Spacing.xs)
+                                .overlay(Circle().stroke(settings.accentHex == hex ? NookTheme.paper : Color.clear, lineWidth: 1.5))
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tr("settings.display.accent"))
+                        .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
+                    }
+                    Spacer(minLength: 8)
+                    ColorPicker(tr("settings.display.accent"), selection: Binding(
+                        get: { Color(hex: settings.accentHex) },
+                        set: { settings.accentHex = NSColor($0).nookHex }
+                    ), supportsOpacity: false)
+                    .labelsHidden()
+                }
+            } header: {
+                Text(tr("settings.display.color"))
+            } footer: {
+                Text(tr("settings.display.accentHint"))
             }
 
             Section {
@@ -61,31 +88,6 @@ extension SettingsView {
             WardrobeSettingsSection()
 
             Section {
-                HStack(spacing: 10) {
-                    ForEach([0xF4F3F7, 0x8B7BFF, 0x5AA9FF, 0x46E0A6, 0xFFB84D, 0xFF6B6B, 0xFF7EB6] as [UInt32], id: \.self) { hex in
-                        Button { settings.accentHex = hex } label: {
-                            Circle().fill(Color(hex: hex)).frame(width: 24, height: 24)
-                                .overlay(Circle().stroke(Color.primary.opacity(settings.accentHex == hex ? 0.9 : 0.15),
-                                                         lineWidth: settings.accentHex == hex ? 2 : 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(tr("settings.display.accent"))
-                        .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
-                    }
-                    Spacer(minLength: 8)
-                    ColorPicker(tr("settings.display.accent"), selection: Binding(
-                        get: { Color(hex: settings.accentHex) },
-                        set: { settings.accentHex = NSColor($0).nookHex }
-                    ), supportsOpacity: false)
-                    .labelsHidden()
-                }
-            } header: {
-                Text(tr("settings.display.color"))
-            } footer: {
-                Text(tr("settings.display.accentHint"))
-            }
-
-            Section {
                 HStack {
                     Spacer()
                     Button(tr("settings.appearance.reset")) {
@@ -113,11 +115,11 @@ extension SettingsView {
                         Text(tr(item.key))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
-                            .font(NookTheme.font(13, selected ? .semibold : .regular))
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 4)
-                            .foregroundStyle(selected ? NookTheme.onIris : Color.primary)
-                            .background(Capsule().fill(selected ? NookTheme.iris : Color.primary.opacity(0.06)))
+                            .font(selected ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
+                            .padding(.horizontal, NookTheme.Spacing.md)
+                            .padding(.vertical, NookTheme.Spacing.xs)
+                            .foregroundStyle(selected ? NookTheme.onIris : NookTheme.textStrong)
+                            .background(Capsule().fill(selected ? NookTheme.iris : NookTheme.smoke))
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -128,8 +130,7 @@ extension SettingsView {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
         .padding(.horizontal, 14)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.graphite))
-        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).strokeBorder(NookTheme.line2, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.surface))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("settings.appearance.preview"))
     }
@@ -168,9 +169,9 @@ extension SettingsView {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .padding(.horizontal, 8)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.smoke.opacity(selected ? 0.9 : 0.5)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(selected ? NookTheme.smoke : NookTheme.graphite))
             .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .strokeBorder(selected ? NookTheme.iris : Color.primary.opacity(0.1), lineWidth: selected ? 2 : 1))
+                .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 2))
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)

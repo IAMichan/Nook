@@ -20,9 +20,7 @@ struct AccountsSettingsSection: View {
                 }
 
                 if kind == .gemini || kind == .antigravity {
-                    Text(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
                 } else if kind.supportsProfiles {
                     Button {
                         adding = kind
@@ -79,28 +77,31 @@ private struct AgentAccountCardRow: View {
                 HStack(spacing: 12) {
                     AgentLogo(profile.kind, size: 28)
                         .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.04)))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(title)
-                                .font(NookTheme.font(13, .medium))
-                                .foregroundStyle(.primary)
+                                .font(NookTheme.TextStyle.strong)
+                                .foregroundStyle(NookTheme.paper)
 
                             if several && app.profiles.isPreferred(profile) {
                                 Text(tr("agents.default"))
-                                    .font(NookTheme.font(11, .semibold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 1.5)
-                                    .background(Capsule().fill(Color.accentColor.opacity(0.18)))
-                                    .foregroundStyle(Color.accentColor)
+                                    .font(NookTheme.TextStyle.label)
+                                    .padding(.horizontal, NookTheme.Spacing.sm)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(NookTheme.smoke))
+                                    .foregroundStyle(NookTheme.textStrong)
                             }
                         }
 
-                        Text(subtitle)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(health == .needsYou ? NookTheme.amber : NookTheme.textSecondary)
-                            .lineLimit(1)
+                        // The state is the pill's to say; this line only says whose account it is.
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
 
                     Spacer(minLength: 8)
@@ -129,10 +130,11 @@ private struct AgentAccountCardRow: View {
         return tr("agents.notLoggedIn")
     }
 
-    private var subtitle: String {
-        if let progress = app.agentConnect[profile.id], progress.isBusy { return progress.text }
+    /// Who is signed in (name, organization, where its files live); nil while nobody is, when the pill says it all.
+    private var subtitle: String? {
+        if let progress = app.agentConnect[profile.id], progress.isBusy { return nil }
         guard let account else {
-            return app.history.executables[profile.kind] == nil ? tr("agents.notInstalled") : tr("agents.notLoggedIn")
+            return profile.isDefault ? nil : profile.displayHome
         }
         var parts = [profile.usesAPIKey ? tr("accounts.method.apiKey") : account.name]
         if !profile.usesAPIKey, !account.organization.isEmpty { parts.append(account.organization) }
@@ -301,11 +303,9 @@ private struct ManageAccountSheet: View {
                 }
             }
             if case .failed(let message)? = progress {
-                Text(message).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral).fixedSize(horizontal: false, vertical: true)
+                SettingNote(message, tone: .error)
             }
-            Text(tr("accounts.antigravitySignInHelp"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+            SettingNote(tr("accounts.antigravitySignInHelp"))
         }
     }
 
@@ -327,7 +327,7 @@ private struct ManageAccountSheet: View {
                 }
             }
             .padding(10)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
         } else {
             HStack {
                 SecureField(tr("accounts.keyPlaceholder"), text: $key)
@@ -418,7 +418,7 @@ private struct AddAccountSheet: View {
                             }
                         }
                         .padding(8)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.04)))
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
                     }
                 }
 

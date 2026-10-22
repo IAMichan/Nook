@@ -49,32 +49,13 @@ extension SettingsView {
 
     var devicesSection: some View {
         Group {
-            Section {
-                CompanionSettingsRows()
-            } header: {
-                Text(tr("settings.devices.iphone"))
-            }
+            CompanionSettingsRows()
             RemoteMachinesSection()
         }
     }
 
     /// A row that takes you to the one place where something lives.
     func settingsLink(_ section: SettingsSection, title: String, detail: String) -> some View {
-        Button { app.settingsSection = section } label: {
-            HStack(spacing: 12) {
-                SettingsTile(section, size: 26)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).foregroundStyle(.primary)
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        SettingsLinkRow(title: title, detail: detail, section: section) { app.settingsSection = section }
     }
 }

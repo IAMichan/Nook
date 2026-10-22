@@ -5,6 +5,7 @@ import Foundation
 
 let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "settings.ws.modelsPerAgent": "Model per agent",
         "whatsapp.settings.muteStatus": "Statussen stil",
         "whatsapp.settings.muteStatusDetail": "Statusupdates van je contacten melden zich niet.",
         "whatsapp.settings.muteChannels": "Kanalen stil",
@@ -163,6 +164,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigen mix"
     ],
     .en: [
+        "settings.ws.modelsPerAgent": "Model per agent",
         "whatsapp.settings.muteStatus": "Status updates stay quiet",
         "whatsapp.settings.muteStatusDetail": "Status updates from your contacts do not reach you.",
         "whatsapp.settings.muteChannels": "Channels stay quiet",
@@ -321,6 +323,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "own mix"
     ],
     .de: [
+        "settings.ws.modelsPerAgent": "Modell pro Agent",
         "whatsapp.settings.muteStatus": "Status stumm",
         "whatsapp.settings.muteStatusDetail": "Statusmeldungen deiner Kontakte melden sich nicht.",
         "whatsapp.settings.muteChannels": "Kanäle stumm",
@@ -479,6 +482,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "eigene Mischung"
     ],
     .fr: [
+        "settings.ws.modelsPerAgent": "Modèle par agent",
         "whatsapp.settings.muteStatus": "Statuts silencieux",
         "whatsapp.settings.muteStatusDetail": "Les statuts de vos contacts ne vous dérangent pas.",
         "whatsapp.settings.muteChannels": "Chaînes silencieuses",
@@ -637,6 +641,7 @@ let settingsLayoutTranslations: [AppLanguage: [String: String]] = [
         "settings.tool.custom": "mélange personnel"
     ],
     .es: [
+        "settings.ws.modelsPerAgent": "Modelo por agente",
         "whatsapp.settings.muteStatus": "Estados en silencio",
         "whatsapp.settings.muteStatusDetail": "Los estados de tus contactos no te avisan.",
         "whatsapp.settings.muteChannels": "Canales en silencio",

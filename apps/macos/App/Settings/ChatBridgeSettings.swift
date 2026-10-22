@@ -91,7 +91,7 @@ struct TelegramSettingsRows: View {
     @ViewBuilder
     private var loginError: some View {
         if let error = telegram.loginError {
-            Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
+            SettingNote(error, tone: .error)
         }
     }
 

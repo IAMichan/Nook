@@ -35,16 +35,12 @@ struct PortfolioSettings: View {
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.coral)
             }
-            Text(tr("portfolio.walletHint"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+            SettingNote(tr("portfolio.walletHint"))
 
             ForEach(PortfolioExchange.allCases) { exchange in
                 PortfolioExchangeFields(portfolio: portfolio, exchange: exchange)
             }
-            Text(tr("portfolio.exchangeHint"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+            SettingNote(tr("portfolio.exchangeHint"))
         }
     }
 
