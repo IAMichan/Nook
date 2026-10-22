@@ -81,7 +81,15 @@ private struct BrainPicker: View {
                 .foregroundStyle(NookTheme.paper)
         case .external(let provider):
             BrandMark(logo: BrandLogo.forProvider(provider), size: 17)
+                .accountBadge(account(of: provider), size: 17, ring: DropdownStyle.panel)
         }
+    }
+
+    /// How a service is reached: through your Claude account (personal or work) for Claude Code, else an API key.
+    /// Tells apart the two Claude marks in the rail.
+    private func account(of provider: AIProvider) -> AccountKind {
+        guard provider == .claudeCode else { return .apiKey }
+        return AccountKind.of(app.profiles.preferredProfile(.claude), app: app)
     }
 
     private var addButton: some View {
