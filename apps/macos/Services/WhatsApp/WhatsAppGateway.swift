@@ -366,6 +366,17 @@ enum WAJID {
 struct WAInbox: Equatable, Sendable {
     /// Messages kept per chat (in memory only): enough for the notch card to scroll back a while.
     static let keep = 50
+    /// An opened chat fetches its messages from the gateway again once the last fetch is this old.
+    static let historyRefresh: TimeInterval = 30
+
+    /// Whether a chat last fetched at `last` (nil: never) is fetched again on open. Not only once: what came in while
+    /// the live feed was down (yesterday's chat, open again today) would otherwise never show. A clock set back
+    /// since then counts as due too.
+    static func historyDue(last: Date?, now: Date) -> Bool {
+        guard let last else { return true }
+        let elapsed = now.timeIntervalSince(last)
+        return elapsed < 0 || elapsed >= historyRefresh
+    }
 
     /// A chat's newest `limit` messages from the gateway's history and what Nook kept, each once (the kept copy wins:
     /// it has the ticks and reactions that came in since), oldest first.
