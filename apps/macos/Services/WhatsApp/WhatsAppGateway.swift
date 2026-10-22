@@ -370,10 +370,12 @@ struct WAInbox: Equatable, Sendable {
     static let historyRefresh: TimeInterval = 30
 
     /// Whether a chat last fetched at `last` (nil: never) is fetched again on open. Not only once: what came in while
-    /// the live feed was down (yesterday's chat, open again today) would otherwise never show.
+    /// the live feed was down (yesterday's chat, open again today) would otherwise never show. A clock set back
+    /// since then counts as due too.
     static func historyDue(last: Date?, now: Date) -> Bool {
         guard let last else { return true }
-        return now.timeIntervalSince(last) >= historyRefresh
+        let elapsed = now.timeIntervalSince(last)
+        return elapsed < 0 || elapsed >= historyRefresh
     }
 
     /// A chat's newest `limit` messages from the gateway's history and what Nook kept, each once (the kept copy wins:

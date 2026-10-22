@@ -181,6 +181,7 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAInbox.historyDue(last: nil, now: now))
         XCTAssertFalse(WAInbox.historyDue(last: now.addingTimeInterval(-5), now: now), "opened twice in a row: fetched once")
         XCTAssertTrue(WAInbox.historyDue(last: now.addingTimeInterval(-86_400), now: now), "opened yesterday: fetched again")
+        XCTAssertTrue(WAInbox.historyDue(last: now.addingTimeInterval(3_600), now: now), "the clock was set back")
 
         // Yesterday's history is kept; today's poll the live feed missed comes in with the next fetch.
         let group = "120363000000000001@g.us"
