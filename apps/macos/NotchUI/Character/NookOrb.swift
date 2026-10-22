@@ -20,9 +20,10 @@ struct NookOrb: View {
     var curious: Bool = false
     /// Soft light around the orb. Off when docked in the notch, where the glow only smudges the black.
     var glow: Bool = true
-    /// Frames per second while awake. The closed notch thinks along at a lower rate for hours on end (an agent working
-    /// or waiting), where its slow breathing looks the same and costs a fraction of the redraws.
-    var frameRate: Double = 30
+    /// Frames per second while awake; `nil` follows the energy plan (`EnergyPlan.interactiveFrameRate`). The closed
+    /// notch thinks along at a lower rate for hours on end (an agent working or waiting), where its slow breathing looks
+    /// the same and costs a fraction of the redraws.
+    var frameRate: Double?
     /// Draws this look instead of the one chosen in Settings: the previews in Settings › Appearance.
     var look: NookLook?
     /// Wears this instead of what Nook wears right now (`NookAppearance.outfit`): previews and moments.
@@ -40,7 +41,8 @@ struct NookOrb: View {
         // A dozing Nook keeps animating on every screen, so all orbs nod off together; its slow breathing and nodding
         // need only a few frames a second, and it can doze for hours. While you are away or the display sleeps (the
         // energy plan pauses) nobody sees it breathe, so it holds still instead of drawing all night.
-        TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, frameRate) : 1.0 / Self.dozingFrameRate,
+        let awakeRate = frameRate ?? energy.plan.interactiveFrameRate
+        TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, awakeRate) : 1.0 / Self.dozingFrameRate,
                                 paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
             orb(pose(at: context.date))
         }

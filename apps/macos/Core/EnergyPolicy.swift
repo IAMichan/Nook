@@ -106,6 +106,14 @@ struct EnergyPlan: Equatable {
     /// Frames per second of Nook in the closed notch while he thinks along without the pointer on him.
     var idleOrbFrameRate: Double { pace == .full ? 12 : 8 }
 
+    /// Frames per second of motion you are looking at and steering: Nook following the pointer, the ring in the open
+    /// panel, a shimmer on the step that runs. As smooth as the display at full speed; half of that on battery.
+    var interactiveFrameRate: Double { pace == .full ? 60 : 30 }
+
+    /// Frames per second of small loops that run in the closed notch for as long as something plays or works (the
+    /// equalizer, the light sweeping through the task ring): fluid enough to read as motion, a fraction of the redraws.
+    var ambientFrameRate: Double { pace == .full ? 30 : 15 }
+
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }
 

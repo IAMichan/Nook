@@ -46,9 +46,11 @@ struct PulseDot: View {
 /// The step currently being executed: a shimmer effect traversing the text.
 struct ShimmerText: View {
     let text: String
+    /// Published only when the plan changes: sets how often the shimmer redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / energy.plan.interactiveFrameRate)) { context in
             let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
             Text(text)
                 .foregroundStyle(
