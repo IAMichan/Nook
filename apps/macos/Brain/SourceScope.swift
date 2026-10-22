@@ -437,7 +437,7 @@ enum SourceRouter {
     /// Broad queries ("summarize my week", "what happened") may consult all available sources.
     private static let broad = #"samenvat\w*|vat\b.*samen|overzicht|summar\w*|zusammenfass\w*|alles|everything|all (my|of)|wat is er gebeurd|what happened|deze week|this week|diese woche|bereid\w* .*voor|prepare|voorbereid\w*"#
 
-    static func relevant(to text: String, scope: SourceScope, active: Set<String>) -> Set<String> {
+    static func relevant(to text: String, scope: SourceScope, active: Set<String>, history: [ChatTurn] = []) -> Set<String> {
         let allowed = active.filter { scope.allows($0) }
         if text.range(of: broad, options: [.regularExpression, .caseInsensitive]) != nil { return allowed }
         var wanted = core.union(scope.focus)
@@ -447,9 +447,10 @@ enum SourceRouter {
         }
         let mentioned = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids })
         wanted.formUnion(mentioned)
-        // A chat message to write ("schrijf een antwoord aan Arjan op WhatsApp"): words like "bericht", "antwoord" and
-        // "schrijf" only describe the message, so they do not send Nook off to the mail unless the question names it.
-        if ChatIntent.detect(text).primaryAction == "whatsapp_send" {
+        // A chat message to write ("schrijf een antwoord aan Arjan op WhatsApp", or a follow-up in a WhatsApp conversation):
+        // words like "bericht", "antwoord" and "schrijf" only describe the message, so they do not send Nook off to the
+        // mail unless the question names it.
+        if ChatIntent.detect(text, history: history).primaryAction == "whatsapp_send" {
             wanted.subtract(["mail", "customsources"].filter { !mentioned.contains($0) })
         }
         return allowed.intersection(wanted)

@@ -128,6 +128,18 @@ final class SourceScopeTests: XCTestCase {
         XCTAssertTrue(named.contains("mail"), "a source the question names is still used")
     }
 
+    func testAFollowUpMessageInAChatConversationDoesNotSearchTheMail() {
+        let active: Set<String> = ["calendar", "mail", "whatsapp", "customsources"]
+        let history = [
+            ChatTurn(fromUser: true, text: "Schrijf een kort antwoord aan Arjan op WhatsApp dat ik kan versturen."),
+            ChatTurn(fromUser: false, text: "Voorstel: Dank Arjan.")
+        ]
+        let question = "Dit is niet goed want er is al een nieuw bericht, schrijf een berciht over dat pr 422 is gemerged"
+        let relevant = SourceRouter.relevant(to: question, scope: .automatic, active: active, history: history)
+        XCTAssertFalse(relevant.contains("mail"))
+        XCTAssertFalse(relevant.contains("customsources"))
+    }
+
     func testRouterBroadQuestionUsesAllAllowed() {
         let active: Set<String> = ["calendar", "mail", "github", "stripe"]
         let relevant = SourceRouter.relevant(to: "Vat samen wat er deze week gebeurde", scope: SourceScope(excluded: ["stripe"]), active: active)

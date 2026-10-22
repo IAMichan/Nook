@@ -193,6 +193,20 @@ final class ChatIntentTests: XCTestCase {
             XCTAssertEqual(ChatIntent.detect(prompt).primaryAction, "whatsapp_send", prompt)
         }
     }
+    /// A follow-up that asks for a new message names no channel and may be mistyped: it continues the WhatsApp conversation.
+    func testANewMessageInAChatConversationStaysAWhatsAppMessage() {
+        let history = [
+            ChatTurn(fromUser: true, text: "Schrijf een kort antwoord aan Arjan den Hartog op WhatsApp dat ik kan versturen."),
+            ChatTurn(fromUser: false, text: "Voorstel: Dank Arjan, goed punt.")
+        ]
+        let text = "Dit is niet goed want er is al een nieuw bericht, schrijf een berciht over dat pr 422 is gemerged en bednak hem voor die pr"
+        XCTAssertNil(ChatIntent.detect(text).primaryAction, "alone it names no channel")
+        XCTAssertEqual(ChatIntent.detect(text, history: history).primaryAction, "whatsapp_send")
+        XCTAssertNil(ChatIntent.detect(text, history: []).primaryAction, "no conversation to continue")
+        XCTAssertTrue(ChatIntent.writesMessage("schrijf een bericht over de release"))
+        XCTAssertFalse(ChatIntent.writesMessage("schrijf een gericht op"))
+    }
+
     /// "Merge alle PR's" offers the batch merge first, with the overview that lists what to merge; a question about a merge does not.
     func testMergingPullRequestsOffersTheMergeActions() {
         for text in ["Merge alle PR's", "merge all my pull requests", "Kun je alle open PR's samenvoegen?", "Voeg de pull requests van nook samen",

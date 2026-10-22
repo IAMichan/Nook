@@ -262,7 +262,7 @@ extension AppModel {
         // Only sources relevant to this query are included in full; others as one-line summaries.
         var activeIDs = Set(connectors.searchable.map { $0.id })
         activeIDs.insert(SourceCatalog.loops)
-        let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs)
+        let relevant = SourceRouter.relevant(to: text, scope: scope, active: activeIDs, history: history)
         let tools = scopedTools(scope, ledger: ledger)
         // What Nook remembers about the user that matters here; a follow-up also recalls with the question before it.
         let recallText = text + (history.last(where: \.fromUser).map { "\n" + $0.text } ?? "")

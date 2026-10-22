@@ -149,7 +149,7 @@ struct ChatIntent: Equatable {
                 if let kind = detect(turn.text).kinds.first(where: { actionByKind[$0] != nil }) { return kind }
                 return sends(turn.text) ? channel(of: recent) : nil
             }.first ?? (recent.contains { !$0.fromUser && sends($0.text) } ? channel(of: recent) : nil)
-        } else if (sends(raw) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
+        } else if ((sends(raw) || writesMessage(raw)) && !questions(raw)) || (goAhead && recent.prefix(2).contains { sends($0.text) })
             || (retry && recent.contains { $0.fromUser && sends($0.text) }) {
             carried = channel(of: recent)
         } else if goAhead {
@@ -208,6 +208,14 @@ struct ChatIntent: Equatable {
     static func sends(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         return text.range(of: #"^(stuur|verstuur|verzend|send|schick|sende)\b|\b(stuur|stuurt|sturen|verstuur|versturen|verzend|verzenden|send|sending|schicken|senden|sende)\b[^.?!]{0,60}\b(bericht|berichtje|message|nachricht|tekst|text)\b|\b(bericht|berichtje|message|nachricht|tekst|text)\b[^.?!]{0,60}\b(sturen|versturen|verzenden|send|schicken|senden)\b"#, options: .regularExpression) != nil
+    }
+
+    /// "Schrijf een nieuw bericht over…": a message to write, with the channel left to the conversation. A mistyped
+    /// "berciht" counts, as long as a writing verb comes with it.
+    static func writesMessage(_ raw: String) -> Bool {
+        let words = raw.lowercased().split { !$0.isLetter }.map(String.init)
+        guard let verb = words.firstIndex(where: { ["schrijf", "maak", "stel", "write", "draft", "schreib"].contains($0) }) else { return false }
+        return words[(verb + 1)...].contains { $0 == "bericht" || $0 == "berichtje" || $0 == "message" || $0 == "nachricht" || (!$0.hasPrefix("ge") && $0.count >= 6 && $0.count <= 8 && Fuzzy.distance($0, "bericht") <= 2) }
     }
 
     /// Doing it again: "opnieuw", "stuur het nog een keer", "probeer het nog eens", "try again", "nochmal".
