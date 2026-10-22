@@ -42,6 +42,7 @@ extension SettingsView {
             } footer: {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(tr("doubletap.settings.askDetail", doubleTap.key.symbol))
+                    Text(tr("doubletap.settings.writeDetail"))
                     Text(tr("doubletap.settings.detail"))
                     if doubleTap.taskOnTap {
                         Text(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))

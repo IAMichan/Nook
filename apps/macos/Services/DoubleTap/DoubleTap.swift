@@ -5,11 +5,13 @@ import Combine
 /// Double Tap: tap the chosen key twice (right ⌘ by default) and a small field in the notch asks what Nook should do
 /// (`onAsk`). Typing "fill in the form" there (`DoubleTapLogic.asksToFill`) fills the empty fields of the form or reply
 /// box in front with what Nook remembers about you and the text on screen (`fill(request:)`). See `DoubleTapLogic` for
-/// the rules of filling.
+/// the rules of filling. Asking it to write ("schrijf een sollicitatiebrief", "translate this", `DoubleTapLogic.asksToWrite`)
+/// types the text where the cursor is, in any app: a Word document, a mail, a note, a chat (`write(request:)`).
 ///
 /// - The key is watched with NSEvent `flagsChanged` monitors only: no event tap, so no Input Monitoring prompt.
 /// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return and never
 ///   types into a password field or into apps that hold passwords or run commands (`UIControl.isBlocked`).
+/// - Every step (reading the app, thinking, what Nook is about to type) shows in the notch with Stop (`onStep`).
 /// - The result is a card in the notch with what was filled, Undo (which empties the fields again) and, when the form has
 ///   a send button, Send: the form is only sent when the user presses it there. Buttons that pay, order or delete are
 ///   never offered.
@@ -37,6 +39,10 @@ final class DoubleTap: ObservableObject {
     /// The notch asks what Nook should do (`AppModel.presentTakeoverPrompt`): on a double tap, and on one tap when
     /// `taskOnTap` is on.
     var onAsk: (() -> Void)?
+    /// The step Nook is on, in the notch with Stop (`AppModel.startDoubleTap`); without it the pill shows the step.
+    var onStep: ((String) -> Void)?
+    /// The steps are over; `last` is the last step shown, so a result shown since is left alone.
+    var onStepsEnd: ((_ last: String) -> Void)?
     /// One tap gives Nook a task (Settings › Shortcuts).
     @Published var taskOnTap: Bool {
         didSet { defaults.set(taskOnTap, forKey: "takeoverOnTap") }
@@ -52,6 +58,8 @@ final class DoubleTap: ObservableObject {
     private var monitors: [Any] = []
     private var task: Task<Void, Never>?
     private let pill = FlowPill()
+    /// The last step shown, for `onStepsEnd`.
+    private var lastStep = ""
 
     private init() {
         enabled = defaults.object(forKey: "doubleTapEnabled") as? Bool ?? true
@@ -141,16 +149,44 @@ final class DoubleTap: ObservableObject {
     /// `delay`: time for the app the user was in to get the keyboard back after the notch's field closed. A request while
     /// Nook is still filling is ignored: two answers would land in the same fields.
     func fill(request: String = "", after delay: Double = 0) {
+        start(after: delay) { [weak self] in await self?.run(request: request) }
+    }
+
+    /// Writes what the user asked for ("schrijf een sollicitatiebrief", "vertaal dit naar het Engels") where the cursor
+    /// is, in whatever app is in front: a document, a mail, a note, a chat. Selected text is replaced. `fallback` runs
+    /// when there is no cursor in a text to write at, so the request goes to the chat instead of getting lost.
+    func write(request: String, after delay: Double = 0, fallback: (() -> Void)? = nil) {
+        start(after: delay) { [weak self] in await self?.runWrite(request: request, fallback: fallback) }
+    }
+
+    /// Stop in the notch: the brain's answer is no longer typed.
+    func stop() {
+        task?.cancel()
+    }
+
+    private func start(after delay: Double, _ body: @escaping @MainActor () async -> Void) {
         guard task == nil else { return }
         task = Task { @MainActor [weak self] in
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard let self else { return }
             self.isFilling = true
-            await self.run(request: request)
+            await body()
             self.isFilling = false
-            self.pill.hide()
+            self.endSteps()
             self.task = nil
         }
+    }
+
+    /// Shows what Nook is doing now: in the notch when the app shows it there, else in the pill.
+    private func step(_ line: String) {
+        lastStep = line
+        if let onStep { onStep(line) } else { pill.show(.message(line)) }
+    }
+
+    private func endSteps() {
+        pill.hide()
+        if !lastStep.isEmpty { onStepsEnd?(lastStep) }
+        lastStep = ""
     }
 
     private func run(request: String) async {
@@ -165,19 +201,29 @@ final class DoubleTap: ObservableObject {
         guard !UIControl.isBlocked(app: appName, bundleID: app.bundleIdentifier) else {
             return ToastCenter.shared.info(tr("doubletap.blocked", appName))
         }
+        step(tr("doubletap.step.reading", appName))
         DoubleTapForm.wake(app)
-        guard let form = DoubleTapForm.read(app) else { return ToastCenter.shared.info(tr("doubletap.noField")) }
+        // A document or a text that is not a form (Word, Pages, a note): "fill this in" writes at the cursor there.
+        guard let form = DoubleTapForm.read(app) else {
+            return await writeInstead(request: request, app: app, otherwise: tr("doubletap.noField"))
+        }
         if form.focusIsSecure { return ToastCenter.shared.info(tr("doubletap.secure")) }
         let fields = DoubleTapLogic.candidates(form.fields.map(\.field))
-        guard DoubleTapLogic.hasRoom(fields) else { return ToastCenter.shared.info(tr("doubletap.nothingEmpty")) }
+        guard DoubleTapLogic.hasRoom(fields) else {
+            // Every field is filled. In a text box or document (Word's page is one big text area) the cursor is where
+            // the text goes; in a form whose fields are all filled, there is nothing to do.
+            let focus = form.fields.first(where: \.field.focused)?.field
+            guard focus?.isMultiline ?? true else { return ToastCenter.shared.info(tr("doubletap.nothingEmpty")) }
+            return await writeInstead(request: request, app: app, otherwise: tr("doubletap.nothingEmpty"))
+        }
 
-        pill.show(.message(tr("doubletap.working")))
+        step(tr("doubletap.step.fields", fields.count))
         let screen = screenText(app.bundleIdentifier ?? "") ?? ""
         let prompt = DoubleTapLogic.prompt(app: appName, window: form.title, fields: fields, facts: facts(), screen: screen,
                                            request: request)
-        guard let reply = await ask(DoubleTapLogic.system, prompt, Self.deadline), !Task.isCancelled else {
-            return ToastCenter.shared.warning(tr("doubletap.failed"))
-        }
+        let reply = await ask(DoubleTapLogic.system, prompt, Self.deadline)
+        guard !Task.isCancelled else { return }
+        guard let reply else { return ToastCenter.shared.warning(tr("doubletap.failed")) }
         let values = DoubleTapLogic.values(from: reply, fields: fields)
         guard !values.isEmpty else { return ToastCenter.shared.info(tr("doubletap.nothing")) }
 
@@ -185,6 +231,7 @@ final class DoubleTap: ObservableObject {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
             return ToastCenter.shared.info(tr("doubletap.moved"))
         }
+        step(tr("doubletap.working"))
         var written: [DoubleTapForm.Entry] = []
         var pasted = false
         for field in fields {
@@ -220,6 +267,86 @@ final class DoubleTap: ObservableObject {
             ToastCenter.shared.success(title, detail: tr("doubletap.notSent"), action: undo.map { undo in
                 NookToastAction(title: tr("doubletap.undo"), perform: undo)
             })
+        }
+    }
+
+    // MARK: Writing at the cursor
+
+    private func runWrite(request: String, fallback: (() -> Void)?) async {
+        guard AXIsProcessTrusted() else {
+            return ToastCenter.shared.warning(tr("doubletap.noAccess"), action: NookToastAction(title: tr("doubletap.openSettings")) {
+                SystemPermission.accessibility.openSettings()
+            })
+        }
+        guard ask != nil else { return ToastCenter.shared.warning(tr("doubletap.noBrain")) }
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != own else {
+            return noCursor(fallback)
+        }
+        let appName = app.localizedName ?? ""
+        guard !UIControl.isBlocked(app: appName, bundleID: app.bundleIdentifier) else {
+            return ToastCenter.shared.info(tr("doubletap.write.blocked", appName))
+        }
+        step(tr("doubletap.step.reading", appName))
+        DoubleTapForm.wake(app)
+        guard let cursor = await Self.cursor(in: app) else { return noCursor(fallback) }
+        await write(request: request, at: cursor, in: app)
+    }
+
+    private func noCursor(_ fallback: (() -> Void)?) {
+        if let fallback { fallback() } else { ToastCenter.shared.info(tr("doubletap.noField")) }
+    }
+
+    /// "Fill this in" where there is no form to fill: write at the cursor when there is one, else say `otherwise`.
+    private func writeInstead(request: String, app: NSRunningApplication, otherwise: String) async {
+        guard let cursor = await Self.cursor(in: app) else { return ToastCenter.shared.info(otherwise) }
+        let asked = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        await write(request: asked.isEmpty ? "Fill this in for me." : asked, at: cursor, in: app)
+    }
+
+    /// The text around the cursor, when the focus of the app in front is a text that takes typing: nil when it is not
+    /// (the desktop, a list, a button) or when it is a password field. An app that keeps its text from the accessibility
+    /// layer (some Electron apps) but has a text focus gives an empty snapshot: Nook writes without the context.
+    private static func cursor(in app: NSRunningApplication) async -> AutocompleteFieldSnapshot? {
+        guard !DoubleTapForm.focusIsSecure(app) else { return nil }
+        let height = NSScreen.screens.first?.frame.height ?? 0
+        let screens = NSScreen.screens.map(\.frame)
+        if let snapshot = await Task.detached(operation: { AutocompleteField.read(screenHeight: height, screens: screens) }).value {
+            return snapshot
+        }
+        guard FlowPaste.focusTakesText() == true else { return nil }
+        return AutocompleteFieldSnapshot(before: "", after: "", hasSelection: false, caret: nil)
+    }
+
+    private func write(request: String, at cursor: AutocompleteFieldSnapshot, in app: NSRunningApplication) async {
+        guard let ask else { return ToastCenter.shared.warning(tr("doubletap.noBrain")) }
+        let appName = app.localizedName ?? ""
+        step(tr("doubletap.step.thinking", DoubleTapLogic.preview(request)))
+        let screen = screenText(app.bundleIdentifier ?? "") ?? ""
+        let prompt = DoubleTapLogic.writePrompt(request: request, app: appName, window: cursor.windowTitle ?? "",
+                                                before: cursor.before, after: cursor.after, selected: cursor.selectedText,
+                                                facts: facts(), screen: screen)
+        let reply = await ask(DoubleTapLogic.writeSystem, prompt, Self.deadline)
+        guard !Task.isCancelled else { return }
+        guard let reply else { return ToastCenter.shared.warning(tr("doubletap.write.failed")) }
+        guard let text = DoubleTapLogic.written(from: reply) else { return ToastCenter.shared.info(tr("doubletap.write.nothing")) }
+
+        // What Nook is about to type stays in the notch for a moment, so Stop can still keep it out.
+        step(tr("doubletap.step.typing", appName, DoubleTapLogic.preview(text)))
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        guard !Task.isCancelled else { return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
+            return ToastCenter.shared.info(tr("doubletap.moved"))
+        }
+        switch FlowPaste.insert(text) {
+        case .pasted:
+            ToastCenter.shared.success(tr("doubletap.typed", appName), detail: tr("doubletap.typed.undo"))
+        case .noAccess:
+            ToastCenter.shared.warning(tr("doubletap.noAccess"), action: NookToastAction(title: tr("doubletap.openSettings")) {
+                SystemPermission.accessibility.openSettings()
+            })
+        case .noField:
+            ToastCenter.shared.warning(tr("doubletap.write.refused", appName))
         }
     }
 }
@@ -269,6 +396,14 @@ struct DoubleTapForm {
     /// Chromium and Electron build their accessibility tree only for a client that asks.
     static func wake(_ app: NSRunningApplication) {
         AutocompleteField.wake(app)
+    }
+
+    /// Whether the cursor is in a password field of the app.
+    static func focusIsSecure(_ app: NSRunningApplication) -> Bool {
+        let root = AXUIElementCreateApplication(app.processIdentifier)
+        _ = AXUIElementSetMessagingTimeout(root, 1.0)
+        guard let focused = element(root, kAXFocusedUIElementAttribute) else { return false }
+        return string(focused, kAXSubroleAttribute) == kAXSecureTextFieldSubrole || string(focused, kAXRoleAttribute) == "AXSecureTextField"
     }
 
     /// Nil when the app shows no window or no field.

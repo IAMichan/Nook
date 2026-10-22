@@ -342,8 +342,8 @@ extension AppModel {
         autocomplete.refresh()
     }
 
-    /// Double Tap: the notch asks what Nook should do, or (when chosen in Settings) the form in front is filled with your
-    /// memory and the screen, on the brain you chose. What goes to an
+    /// Double Tap: the notch asks what Nook should do; the form in front is filled with your memory and the screen, or
+    /// the text you ask for is typed at your cursor, on the brain you chose, with every step in the notch. What goes to an
     /// external brain follows the same rules as a question: memories kept on this Mac stay here, and the screen only when
     /// the privacy level allows it.
     func startDoubleTap() {
@@ -363,6 +363,15 @@ extension AppModel {
             return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
         }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
+        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type.
+        doubleTap.onStep = { [weak self] line in
+            self?.viewModel.showWork(line) { DoubleTap.shared.stop() }
+        }
+        doubleTap.onStepsEnd = { [weak self] last in
+            // Only the step line goes: a result shown in its place since (a toast, a card) stays.
+            guard let self, case .done(let shown) = self.viewModel.state, shown == last else { return }
+            self.viewModel.endWork()
+        }
         doubleTap.onAsk = { [weak self] in self?.presentTakeoverPrompt() }
         doubleTap.refresh()
     }
