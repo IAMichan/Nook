@@ -6,6 +6,8 @@ struct PlannedAction: Identifiable {
     let tool: String
     /// Can still change: the user may edit a proposal before executing it.
     var input: [String: Any]
+    /// How the step read when it was saved, shown if the tool is no longer known (a plan restored from disk).
+    var summary: String? = nil
 }
 
 struct BrainPlan {

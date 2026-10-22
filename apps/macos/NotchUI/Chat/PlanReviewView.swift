@@ -17,6 +17,7 @@ struct PlanReview: View {
 
     /// Action remains to be taken: pending or following an error.
     private var open: Bool {
+        if message.planArchived { return false }
         switch message.planState {
         case .pending, .failed: return true
         default: return false
@@ -44,6 +45,7 @@ struct PlanReview: View {
     private var header: String {
         let count = message.actions.count
         if finished { return count == 1 ? tr("chat.plan.doneOne") : tr("chat.plan.doneMany", count) }
+        if message.planArchived { return count == 1 ? tr("chat.plan.archivedOne") : tr("chat.plan.archived", count) }
         return count == 1 ? tr("chat.plan.reviewOne") : tr("chat.plan.review", count)
     }
 
@@ -249,6 +251,9 @@ struct PlanReview: View {
     private var controls: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             switch message.planState {
+            case .pending where message.planArchived:
+                // A plan from an earlier session: it shows what was proposed, but runs only from a new request.
+                Text(tr("chat.plan.notExecuted")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
             case .pending:
                 SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
                     .disabled(blocked)
@@ -269,16 +274,18 @@ struct PlanReview: View {
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        if !runnable.isEmpty {
-                            SmallPrimaryButton(title: onlyRetries ? tr("chat.retry") : tr("chat.plan.continue"),
-                                               systemName: "arrow.clockwise") { app.runPlan(message.id) }
-                                .disabled(blocked)
+                    if !message.planArchived {
+                        HStack(spacing: 6) {
+                            if !runnable.isEmpty {
+                                SmallPrimaryButton(title: onlyRetries ? tr("chat.retry") : tr("chat.plan.continue"),
+                                                   systemName: "arrow.clockwise") { app.runPlan(message.id) }
+                                    .disabled(blocked)
+                            }
+                            if !duplicates.isEmpty {
+                                SmallGhostButton(title: tr("chat.plan.runAnyway")) { app.runPlan(message.id, force: duplicates) }
+                            }
+                            SmallGhostButton(title: tr("chat.plan.stop")) { app.cancelPlan(message.id) }
                         }
-                        if !duplicates.isEmpty {
-                            SmallGhostButton(title: tr("chat.plan.runAnyway")) { app.runPlan(message.id, force: duplicates) }
-                        }
-                        SmallGhostButton(title: tr("chat.plan.stop")) { app.cancelPlan(message.id) }
                     }
                 }
             }
