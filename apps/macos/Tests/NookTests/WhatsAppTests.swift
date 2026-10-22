@@ -260,4 +260,58 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAReceipt.read.advanced(to: .failed), .failed)
         XCTAssertNil(WAReceipt(status: "retry"))
     }
+
+    func testBeeperChatsAndAccounts() {
+        let accounts = Data(#"[{"accountID":"wa","status":"connected","user":{"id":"@me:beeper.com"}},{"accountID":"tg","status":"connecting","user":{"id":"@tg:beeper.local"}}]"#.utf8)
+        XCTAssertEqual(WABeeper.accounts(accounts)?.link, .connected)
+        XCTAssertEqual(WABeeper.accounts(accounts)?.me, ["@me:beeper.com", "@tg:beeper.local"])
+        XCTAssertEqual(WABeeper.accounts(Data(#"[{"status":"connecting","user":{"id":"x"}}]"#.utf8))?.link, .connecting)
+        XCTAssertNil(WABeeper.accounts(Data("[]".utf8)))
+
+        let chats = WABeeper.chats(Data(#"""
+        {"items":[
+          {"id":"!a:beeper.com","title":"Jan","type":"single","lastActivity":"2026-10-20T10:00:00.000Z"},
+          {"id":"!b:beeper.com","title":"Familie","type":"group","lastActivity":"2026-10-20T09:00:00.000Z"},
+          {"id":"!c:beeper.com","title":"Oud","type":"single","isArchived":true},
+          {"id":"!d:beeper.com","title":"Jan (alles)","type":"single","merge":{}},
+          {"id":"!e:beeper.com","title":"Jan op Telegram","type":"single","mergedIntoChatID":"!d:beeper.com"}
+        ]}
+        """#.utf8))
+        XCTAssertEqual(chats.map(\.jid), ["!a:beeper.com@beeper", "!b:beeper.com@beeper.group"])
+        XCTAssertEqual(chats.first?.name, "Jan")
+        XCTAssertEqual(WAJID.kind(chats[0].jid), .person)
+        XCTAssertEqual(WAJID.kind(chats[1].jid), .group)
+        // The ':' of a Beeper id is no device number.
+        XCTAssertEqual(WAJID.normalized(chats[0].jid), "!a:beeper.com@beeper")
+        XCTAssertEqual(WAJID.beeperChat(chats[1].jid), "!b:beeper.com")
+        XCTAssertNil(WAJID.appLink(chats[0].jid))
+    }
+
+    func testBeeperMessagesFeedTheInbox() {
+        let group = "!b:beeper.com@beeper.group"
+        let messages = WABeeper.messages(Data(#"""
+        {"items":[
+          {"id":"m1","senderID":"@piet:beeper.com","senderName":"Piet","text":"hoi","timestamp":"2026-10-20T09:00:00.000Z","mentions":["@me:beeper.com"]},
+          {"id":"m2","senderID":"@me:beeper.com","isSender":true,"type":"FILE","attachments":[{"type":"unknown","fileName":"offerte.pdf"}],"timestamp":"2026-10-20T09:01:00.000Z"},
+          {"id":"m3","senderID":"@piet:beeper.com","type":"REACTION","timestamp":"2026-10-20T09:02:00.000Z"},
+          {"id":"m4","senderID":"@piet:beeper.com","type":"AUDIO","attachments":[{"type":"audio","isVoiceNote":true,"duration":12}],"timestamp":"2026-10-20T09:03:00.000Z"}
+        ]}
+        """#.utf8), chat: group, name: "Familie", me: ["@me:beeper.com"])
+        XCTAssertEqual(messages.map(\.id), ["m1", "m2", "m4"])
+        XCTAssertTrue(messages[0].mentionsMe)
+        XCTAssertTrue(messages[1].fromMe)
+        XCTAssertEqual(messages[1].media, .document(name: "offerte.pdf"))
+        XCTAssertEqual(messages[2].media, .voice(seconds: 12))
+
+        // A mention in a quiet group still reaches you, like on WhatsApp.
+        var inbox = WAInbox()
+        XCTAssertEqual(inbox.add(messages[0], filters: WAFilters()), .notify)
+        XCTAssertEqual(inbox.conversations[group]?.name, "Familie")
+        XCTAssertTrue(inbox.conversations[group]?.isGroup == true)
+
+        XCTAssertEqual(WABeeper.attachment(Data(#"{"attachments":[{"srcURL":"mxc://beeper.com/x","fileName":"a.jpg"}]}"#.utf8))?.src,
+                       "mxc://beeper.com/x")
+        XCTAssertEqual(WAWebhook.parse(kind: .beeper, body: Data("{}".utf8)), .ignored)
+        XCTAssertFalse(WAGatewayKind.beeper.hasWebhook)
+    }
 }

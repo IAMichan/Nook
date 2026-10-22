@@ -2,7 +2,7 @@
 
 import Foundation
 
-// The two local WhatsApp gateways Nook can talk to. Each call goes to the URL set in
+// The local gateways Nook can talk to: GOWA and OpenWA for WhatsApp, Beeper Desktop for every network it bridges. Each call goes to the URL set in
 // Settings (127.0.0.1 by default) and nowhere else: nothing from WhatsApp's own servers. A
 // photo or document is only fetched when you click it in a chat, and then from the gateway.
 // Endpoints, headers and bodies follow each gateway's docs (see WhatsAppGateway.swift for the
@@ -420,5 +420,101 @@ actor OpenWAProvider: WhatsAppProvider {
     /// OpenWA names people `<number>@c.us` (Nook keeps the @s.whatsapp.net form inside).
     static func openwaId(_ jid: String) -> String {
         jid.hasSuffix("@s.whatsapp.net") ? jid.replacingOccurrences(of: "@s.whatsapp.net", with: "@c.us") : jid
+    }
+}
+
+// MARK: - Beeper
+
+/// Beeper Desktop's local API (port 23373; turned on in Beeper › Settings › Developers). Auth: `Authorization: Bearer
+/// <token>`. Every chat network linked in Beeper (WhatsApp, Telegram, Signal, Instagram, …) arrives as one list of
+/// chats. Signing in happens in Beeper itself, so there is no QR; there is no webhook either, so Nook asks every few
+/// seconds (all on this Mac, nothing leaves it).
+actor BeeperProvider: WhatsAppProvider {
+    nonisolated let kind = WAGatewayKind.beeper
+    private let http: WAHTTP
+    /// The user ids of this account, from the last status (to tell a mention of you).
+    private var selves: [String] = []
+
+    init(base: URL, token: String?) {
+        var headers: [String: String] = [:]
+        if let token = token?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
+            headers["Authorization"] = "Bearer " + token
+        }
+        http = WAHTTP(base: base, headers: headers)
+    }
+
+    private func call(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil) async throws -> Data {
+        let (data, code) = try await http.call(method, path, query: query, json: json)
+        if code == 401 || code == 403 { throw WAError.unauthorized }
+        guard (200..<300).contains(code) else { throw WAError.refused(WABeeper.errorMessage(data) ?? "HTTP \(code)") }
+        return data
+    }
+
+    private func chatPath(_ chat: String) -> String {
+        "/v1/chats/" + WAHTTP.pathComponent(WAJID.beeperChat(chat))
+    }
+
+    /// One chat's newest messages under Nook's id for it, with its title.
+    private func chatMessages(_ chat: String, name: String?) async throws -> [WAMessage] {
+        WABeeper.messages(try await call("GET", chatPath(chat) + "/messages"), chat: chat, name: name, me: selves)
+    }
+
+    func status() async throws -> WAStatus {
+        guard let accounts = WABeeper.accounts(try await call("GET", "/v1/accounts")) else {
+            throw WAError.refused(tr("beeper.status.noAccounts"))
+        }
+        selves = accounts.me
+        return WAStatus(link: accounts.link, me: nil)
+    }
+
+    func qrCode() async throws -> (png: Data, seconds: Int)? { nil }
+
+    func registerWebhook(url: String, secret: String) async throws {}
+
+    func recentMessages(since date: Date, me: String?) async throws -> [WAMessage] {
+        let chats = WABeeper.chats(try await call("GET", "/v1/chats", query: [URLQueryItem(name: "limit", value: "25")]))
+        var out: [WAMessage] = []
+        // Only the chats that moved since `date` (Beeper lists them newest first).
+        for chat in chats.prefix(8) where chat.last > date {
+            out += try await chatMessages(chat.jid, name: chat.name).filter { $0.date > date }
+        }
+        return out.sorted { $0.date < $1.date }
+    }
+
+    func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage] {
+        let newest = try await chatMessages(chat, name: nil).sorted { $0.date > $1.date }.prefix(limit)
+        return newest.sorted { $0.date < $1.date }
+    }
+
+    func send(text: String, to chat: String) async throws -> String? {
+        let data = try await call("POST", chatPath(chat) + "/messages", json: ["text": text])
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["pendingMessageID"] as? String
+    }
+
+    func markRead(chat: String, lastIncoming: String?) async throws {
+        var body: [String: any Sendable] = [:]
+        if let lastIncoming { body["messageID"] = lastIncoming }
+        _ = try await call("POST", chatPath(chat) + "/read", json: body)
+    }
+
+    func groupName(_ chat: String) async -> String? {
+        guard WAJID.isGroup(chat), let data = try? await call("GET", chatPath(chat)),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let title = obj["title"] as? String, !title.isEmpty else { return nil }
+        return title
+    }
+
+    func chats(limit: Int) async throws -> [WAChatInfo] {
+        WABeeper.chats(try await call("GET", "/v1/chats", query: [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 200)))]))
+    }
+
+    /// Where Beeper keeps the file, then the file itself from Beeper's own server: never another host.
+    func media(chat: String, message: String) async throws -> WAFile {
+        let data = try await call("GET", chatPath(chat) + "/messages/" + WAHTTP.pathComponent(message))
+        guard let attachment = WABeeper.attachment(data) else { throw WAError.refused("media") }
+        let (bytes, code, mime) = try await http.download("/v1/assets/serve", query: [URLQueryItem(name: "url", value: attachment.src)])
+        if code == 401 || code == 403 { throw WAError.unauthorized }
+        guard code == 200 else { throw WAError.refused(WABeeper.errorMessage(bytes) ?? "HTTP \(code)") }
+        return WAFile(data: bytes, name: attachment.name, mimeType: mime)
     }
 }

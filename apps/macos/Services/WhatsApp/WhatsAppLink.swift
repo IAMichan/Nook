@@ -67,7 +67,7 @@ enum WhatsAppSettings {
         }
     }
 
-    /// GOWA: `user:pass` for basic auth. OpenWA: the API key.
+    /// GOWA: `user:pass` for basic auth. OpenWA: the API key. Beeper: the access token.
     static var credential: String? { SecretStore.read(credentialAccount) }
 
     static func setCredential(_ value: String) {
@@ -89,6 +89,7 @@ enum WhatsAppSettings {
         switch gateway {
         case .gowa: return GOWAProvider(base: base, basicAuth: credential)
         case .openwa: return OpenWAProvider(base: base, apiKey: credential)
+        case .beeper: return BeeperProvider(base: base, token: credential)
         }
     }
 }
@@ -224,7 +225,7 @@ final class WhatsAppLink: ObservableObject {
         self.provider = provider
         generation += 1
         link = .connecting
-        startListener(kind: provider.kind)
+        if provider.kind.hasWebhook { startListener(kind: provider.kind) }
         WhatsAppGOWAProcess.shared.sync()
         let timer = Timer(timeInterval: 5, repeats: true) { _ in
             MainActor.assumeIsolated { WhatsAppLink.shared.onTick() }
@@ -279,7 +280,8 @@ final class WhatsAppLink: ObservableObject {
             refresh()
         } else {
             if tick % 12 == 0 { refresh() }
-            if tick % 4 == 0 { poll() }
+            // Without a webhook (Beeper) every tick: its API is on this Mac, so asking costs nothing.
+            if tick % 4 == 0 || provider?.kind.hasWebhook == false { poll() }
         }
     }
 
@@ -652,13 +654,14 @@ final class WhatsAppLink: ObservableObject {
     func chatChoices() -> [(name: String, detail: String)] {
         var seen: Set<String> = []
         var choices: [(name: String, detail: String)] = []
+        let label = WhatsAppSettings.gateway.chatLabel
         for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
             choices.append((conversation.name, conversation.unread > 0
-                ? "WhatsApp · " + tr("whatsapp.card.unread", conversation.unread) : "WhatsApp"))
+                ? label + " · " + tr("whatsapp.card.unread", conversation.unread) : label))
         }
         for chat in knownChats.sorted(by: { $0.last > $1.last })
         where !filters.ignored.contains(chat.jid) && seen.insert(chat.jid).inserted {
-            choices.append((chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name, "WhatsApp"))
+            choices.append((chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name, label))
         }
         return choices
     }

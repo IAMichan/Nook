@@ -5,6 +5,7 @@
 //! veldnamen komen uit de documentatie van de koppelingen:
 //!   GOWA   — github.com/aldinokemal/go-whatsapp-web-multidevice
 //!   OpenWA — github.com/rmyndharis/OpenWA
+//!   Beeper — github.com/beeper/desktop-api-js (the Beeper Desktop API, every chat network Beeper bridges)
 
 pub mod link;
 pub mod provider;
@@ -30,6 +31,8 @@ pub enum GatewayKind {
     #[default]
     Gowa,
     Openwa,
+    /// Beeper Desktop's local API: WhatsApp, Telegram, Signal, Instagram, … in one place.
+    Beeper,
 }
 
 impl GatewayKind {
@@ -37,6 +40,7 @@ impl GatewayKind {
         match self {
             Self::Gowa => "GOWA",
             Self::Openwa => "OpenWA",
+            Self::Beeper => "Beeper",
         }
     }
 
@@ -44,6 +48,7 @@ impl GatewayKind {
         match self {
             Self::Gowa => "http://127.0.0.1:3000",
             Self::Openwa => "http://127.0.0.1:2785",
+            Self::Beeper => "http://localhost:23373",
         }
     }
 
@@ -52,7 +57,14 @@ impl GatewayKind {
         match self {
             Self::Gowa => "x-hub-signature-256",
             Self::Openwa => "x-openwa-signature",
+            // Beeper has no webhook: Nook asks its local API every few seconds instead.
+            Self::Beeper => "",
         }
+    }
+
+    /// Whether the gateway posts new messages to Nook's webhook. Beeper does not: Nook polls it.
+    pub fn has_webhook(self) -> bool {
+        self != Self::Beeper
     }
 }
 
@@ -325,8 +337,27 @@ impl Filters {
 pub mod jid {
     use super::ChatKind;
 
+    /// Beeper's chats under an id of Nook's own: the Beeper chat id with "@beeper" (a person) or "@beeper.group"
+    /// (a group) after it, so the rules for people and groups apply to them too.
+    pub const BEEPER: &str = "@beeper";
+    pub const BEEPER_GROUP: &str = "@beeper.group";
+
+    pub fn is_beeper(jid: &str) -> bool {
+        jid.ends_with(BEEPER) || jid.ends_with(BEEPER_GROUP)
+    }
+
+    /// Nook's id for a Beeper chat.
+    pub fn beeper(chat_id: &str, group: bool) -> String {
+        format!("{chat_id}{}", if group { BEEPER_GROUP } else { BEEPER })
+    }
+
+    /// The Beeper chat id inside Nook's id.
+    pub fn beeper_chat(jid: &str) -> &str {
+        jid.strip_suffix(BEEPER_GROUP).or_else(|| jid.strip_suffix(BEEPER)).unwrap_or(jid)
+    }
+
     pub fn is_group(jid: &str) -> bool {
-        jid.ends_with("@g.us")
+        jid.ends_with("@g.us") || jid.ends_with(BEEPER_GROUP)
     }
 
     /// The status updates of your contacts arrive as one chat, status@broadcast.
@@ -362,6 +393,9 @@ pub mod jid {
 
     /// "33612345678@s.whatsapp.net" → "+33612345678".
     pub fn display_number(jid: &str) -> String {
+        if is_beeper(jid) {
+            return "Beeper".into();
+        }
         let user = jid.split('@').next().unwrap_or(jid);
         let digits = user.split(':').next().unwrap_or(user);
         if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
@@ -373,6 +407,10 @@ pub mod jid {
 
     /// Dezelfde persoon in zijn verschillende vormen: "336…:12@s.whatsapp.net" en "336…@c.us" zijn één gesprek.
     pub fn normalized(jid: &str) -> String {
+        // A Beeper chat id ("!abc:beeper.com") is one already; its ':' is no device number.
+        if is_beeper(jid) {
+            return jid.to_string();
+        }
         let Some((user, server)) = jid.split_once('@') else { return jid.to_string() };
         let user = user.split(':').next().unwrap_or(user);
         let server = if server == "c.us" { "s.whatsapp.net" } else { server };
@@ -381,6 +419,9 @@ pub mod jid {
 
     /// De cijfers van het gebruikersdeel: "33612345678:3@s.whatsapp.net" → "33612345678".
     pub fn digits(jid: &str) -> String {
+        if is_beeper(jid) {
+            return String::new();
+        }
         let user = jid.split('@').next().unwrap_or(jid);
         user.split(':').next().unwrap_or(user).chars().filter(|c| c.is_ascii_digit()).collect()
     }
@@ -733,6 +774,7 @@ pub fn parse_webhook(kind: GatewayKind, body: &[u8], me: Option<&str>) -> Option
     Some(match kind {
         GatewayKind::Gowa => parse_gowa(&json, me),
         GatewayKind::Openwa => parse_openwa(&json, me),
+        GatewayKind::Beeper => WebhookEvent::Ignored,
     })
 }
 
