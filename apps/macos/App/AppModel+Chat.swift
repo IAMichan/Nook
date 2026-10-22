@@ -437,15 +437,19 @@ extension AppModel {
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
         let title = tr("nooks.finished", conversation.title)
         logNotice(.done, title: title, detail: preview, target: .conversation(id))
-        presentNookNotice(title: title, detail: preview, button: tr("nooks.view"), mood: .done) { [weak self] in
+        presentNookNotice(title: title, detail: preview, button: tr("nooks.view"), mood: .done, replyTo: id) { [weak self] in
             self?.openConversation(id)
         }
     }
 
     /// A notice from Nook himself (an answer that finished, call notes that are ready), shown as Settings ›
     /// Notifications says: a card with `button` and Later, one line with `button`, or a macOS notification.
-    func presentNookNotice(title: String, detail: String, button: String, mood: NookMood, open: @escaping () -> Void) {
-        let token = "nookdone-" + UUID().uuidString
+    /// `replyTo`: the conversation the card's field answers, so a question Nook asks back is answered in the notch
+    /// (`answerFromNotice`) instead of only through View or Later.
+    func presentNookNotice(title: String, detail: String, button: String, mood: NookMood, replyTo conversation: UUID? = nil,
+                           open: @escaping () -> Void) {
+        let token = conversation.map { Self.nookReplyCardPrefix + $0.uuidString + "/" + UUID().uuidString }
+            ?? "nookdone-" + UUID().uuidString
         deliverNotice(.nook, id: token, title: title, body: detail, card: { [weak self] in
             guard let self else { return }
             self.viewModel.register("\(token)#open", open)
@@ -459,7 +463,12 @@ extension AppModel {
                 detail: .none,
                 primary: CardAction(label: button, outcome: .callback("\(token)#open", "")),
                 secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
-                contentHeight: 100 + CGFloat(lines) * 24
+                contentHeight: 100 + CGFloat(lines) * 24 + (conversation == nil ? 0 : 50),
+                input: conversation != nil,
+                inputPrompt: tr("nooks.replyPrompt"),
+                // A question back ("What should I send Arjan?") takes the keyboard so the answer can be typed at once;
+                // any other answer leaves you typing where you were, and a click in the field answers.
+                focusesInput: shown.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?")
             ))
         }, strip: { [weak self] in
             self?.viewModel.notify(title, button: button, action: open)
