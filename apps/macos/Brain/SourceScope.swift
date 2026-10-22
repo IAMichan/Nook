@@ -445,7 +445,13 @@ enum SourceRouter {
         for intent in intents + SourceCatalog.registeredIntents where text.range(of: #"(?<![\p{L}\d])(?:"# + intent.pattern + #")"#, options: [.regularExpression, .caseInsensitive]) != nil {
             wanted.formUnion(intent.ids)
         }
-        for mention in SourceCatalog.mentions(in: text) { wanted.formUnion(mention.ids) }
+        let mentioned = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids })
+        wanted.formUnion(mentioned)
+        // A chat message to write ("schrijf een antwoord aan Arjan op WhatsApp"): words like "bericht", "antwoord" and
+        // "schrijf" only describe the message, so they do not send Nook off to the mail unless the question names it.
+        if ChatIntent.detect(text).primaryAction == "whatsapp_send" {
+            wanted.subtract(["mail", "customsources"].filter { !mentioned.contains($0) })
+        }
         return allowed.intersection(wanted)
     }
 }

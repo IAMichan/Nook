@@ -115,6 +115,19 @@ final class SourceScopeTests: XCTestCase {
         }
     }
 
+    func testAChatMessageToWriteDoesNotSearchTheMail() {
+        let active: Set<String> = ["calendar", "mail", "whatsapp", "customsources", "contacts"]
+        for question in ["Stuur Arjan den Hartog even een WhatsApp berichtje met welkom als contributer bij Nook",
+                         "Schrijf een kort antwoord aan Arjan den Hartog op WhatsApp dat ik kan versturen."] {
+            let relevant = SourceRouter.relevant(to: question, scope: .automatic, active: active)
+            XCTAssertFalse(relevant.contains("mail"), question)
+            XCTAssertFalse(relevant.contains("customsources"), question)
+            XCTAssertTrue(relevant.contains("whatsapp"), question)
+        }
+        let named = SourceRouter.relevant(to: "Stuur Arjan een WhatsApp met wat er in mijn mail staat", scope: .automatic, active: active)
+        XCTAssertTrue(named.contains("mail"), "a source the question names is still used")
+    }
+
     func testRouterBroadQuestionUsesAllAllowed() {
         let active: Set<String> = ["calendar", "mail", "github", "stripe"]
         let relevant = SourceRouter.relevant(to: "Vat samen wat er deze week gebeurde", scope: SourceScope(excluded: ["stripe"]), active: active)
