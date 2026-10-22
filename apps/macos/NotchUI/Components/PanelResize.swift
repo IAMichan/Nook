@@ -59,6 +59,8 @@ enum PanelLayout {
     static let tool: Double = 460
     /// An artifact beside the app that made it (a Claude artifact next to Claude).
     static let artifact: Double = 420
+    /// The chat list on the left of the Chats tab.
+    static let chatsList: Double = 290
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260
