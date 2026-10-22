@@ -156,6 +156,9 @@ targets:
       - path: Core/I18n+Energy.swift
       - path: Core/I18n+Toast.swift
       - path: Core/I18n+Confirm.swift
+      - path: Core/I18n+Buddy.swift
+      - path: Core/I18n+Quiet.swift
+      - path: Core/I18n+Update.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
