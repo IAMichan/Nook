@@ -74,7 +74,13 @@ struct WhatsAppLinkSection: View {
                     }
                     TextField(tr("whatsapp.settings.address"), text: $address, prompt: Text(gateway.defaultURL))
                         .onSubmit { WhatsAppSettings.url = address; link.settingsChanged() }
-                    SecureField(gateway == .gowa ? tr("whatsapp.settings.basicAuth") : tr("whatsapp.settings.apiKey"), text: $credential)
+                    if gateway == .beeper {
+                        Text(tr("whatsapp.settings.beeperHelp"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    SecureField(credentialLabel, text: $credential)
                         .onSubmit { WhatsAppSettings.setCredential(credential); link.settingsChanged() }
                     if gateway == .gowa, WhatsAppGOWAInstaller.isInstalled {
                         Toggle(tr("whatsapp.settings.autoStart"), isOn: $autoStart)
@@ -90,6 +96,14 @@ struct WhatsAppLinkSection: View {
             Text(tr("whatsapp.settings.title"))
         } footer: {
             Text(tr("whatsapp.settings.footer"))
+        }
+    }
+
+    private var credentialLabel: String {
+        switch gateway {
+        case .gowa: return tr("whatsapp.settings.basicAuth")
+        case .openwa: return tr("whatsapp.settings.apiKey")
+        case .beeper: return tr("whatsapp.settings.beeperToken")
         }
     }
 
