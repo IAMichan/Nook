@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Security
 import UniformTypeIdentifiers
 
 /// Settings › Chats: everything the Chats tab shows, on its own page. WhatsApp through the linked phone, and every other
@@ -10,6 +11,8 @@ struct ChatsSettingsSection: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @State private var typed = ""
     @State private var notice: String?
+    @State private var slackToken = ""
+    @State private var slackSet = SlackBridge.token != nil
 
     var body: some View {
         Group {
@@ -32,6 +35,38 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.sources"))
             } footer: {
                 Text(tr("chats.settings.sourcesFooter"))
+            }
+
+            Section {
+                slackRow
+            } header: {
+                Text(tr("chats.slack.title"))
+            } footer: {
+                Text(tr("chats.slack.footer"))
+            }
+
+            Section {
+                TelegramSettingsRows(telegram: capture.telegramBridge) { capture.bridgeChanged(capture.telegramBridge.app) }
+            } header: {
+                Text(tr("chats.telegram.title"))
+            } footer: {
+                Text(tr("chats.telegram.footer"))
+            }
+
+            Section {
+                TeamsSettingsRows(teams: capture.teamsBridge) { capture.bridgeChanged(capture.teamsBridge.app) }
+            } header: {
+                Text(tr("chats.teams.title"))
+            } footer: {
+                Text(tr("chats.teams.footer"))
+            }
+
+            Section {
+                BeeperSettingsRows(capture: capture)
+            } header: {
+                Text(tr("chats.beeper.title"))
+            } footer: {
+                Text(tr("chats.beeper.footer"))
             }
 
             WhatsAppLinkSection()
@@ -62,6 +97,51 @@ struct ChatsSettingsSection: View {
                 EmptyView()
             }
         }
+    }
+
+    /// Slack with its history: a user token, kept in the Keychain, and whether reading with it works.
+    @ViewBuilder
+    private var slackRow: some View {
+        SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
+        HStack(spacing: NookTheme.Spacing.sm) {
+            SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…"))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+                .onSubmit { saveSlackToken() }
+            Button(tr("chats.slack.save")) { saveSlackToken() }
+                .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
+            if slackSet {
+                Button(tr("chats.slack.disconnect")) {
+                    Keychain.remove(SlackBridge.tokenAccount)
+                    slackSet = false
+                    capture.slackTokenChanged()
+                }
+            }
+        }
+        if slackSet {
+            if let problem = capture.bridgeProblems[capture.slackBridge.app] {
+                StatusRow(title: tr("chats.slack.problem"), detail: problem, state: .error) { EmptyView() }
+            } else if capture.bridged.contains(capture.slackBridge.app) {
+                StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.connectedDetail"), state: .done) { EmptyView() }
+            } else if !capture.enabled {
+                StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.collectOff"), state: .todo) { EmptyView() }
+            }
+        }
+    }
+
+    private func saveSlackToken() {
+        let token = slackToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.hasPrefix("xox") else { return }
+        guard Keychain.write(token, account: SlackBridge.tokenAccount) == errSecSuccess else {
+            ToastCenter.shared.error(tr("chats.slack.notSaved"))
+            return
+        }
+        slackToken = ""
+        slackSet = true
+        capture.setSource(capture.slackBridge.app, on: true)
+        if !capture.enabled { setCollecting(true) }
+        capture.slackTokenChanged()
     }
 
     /// Adding a source: a website or an app's name typed in one field, or a Mac app picked from the Applications folder.

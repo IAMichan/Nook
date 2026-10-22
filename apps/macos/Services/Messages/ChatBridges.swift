@@ -1,0 +1,494 @@
+import Foundation
+
+/// A chat app Nook reads itself, history included, instead of waiting for its notifications: Messages from its database
+/// on this Mac, Slack through its Web API with your token. What a bridge reads lands in the same `ChatInbox` as the
+/// collected notifications (`ChatCaptureService` runs them), so a chat is one chat however it came in. Read-only:
+/// answering still happens in the app itself.
+@MainActor
+protocol ChatBridge: AnyObject {
+    /// The app's source id (`MessagingApp.id`).
+    var app: String { get }
+    /// Whether it can read right now: the app's data is there, or a token is set.
+    var isReady: Bool { get }
+    /// Its last read worked, so the app's notifications only repeat what it reads.
+    var isWorking: Bool { get }
+    /// How long to wait between two reads.
+    var interval: TimeInterval { get }
+    /// The chats that changed since the last read (everything on the first), with their newest messages.
+    func read() async throws -> [BridgedChat]
+}
+
+// MARK: Messages
+
+/// iMessage and sms from Messages' own database (`~/Library/Messages/chat.db`), read-only and only on this Mac. Needs
+/// Full Disk Access, as collecting notifications does. The first read brings the newest chats with their history;
+/// after that only the messages that came in since, and every chat's unread count as Messages keeps it.
+@MainActor
+final class MessagesBridge: ChatBridge {
+    let app = "messages"
+    let interval: TimeInterval = 5
+    private(set) var isWorking = false
+
+    /// Chats and messages per chat on the first read.
+    private static let chats = 30
+    private static let perChat = 30
+    /// Only the newest messages are looked at: the database keeps the whole history and an old Mac has a lot of it.
+    private static let window = 20_000
+
+    private var path: String { AppDatabase.home + "/Library/Messages/chat.db" }
+    private var lastRow: Int64?
+    private var lastChange: Date?
+    /// Every chat read so far by its id in the database, with its name in Nook, for the unread counts.
+    private var names: [String: String] = [:]
+
+    var isReady: Bool { FileManager.default.fileExists(atPath: path) }
+
+    func read() async throws -> [BridgedChat] {
+        let change = [path, path + "-wal"]
+            .compactMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }.max()
+        if lastRow != nil, change != nil, change == lastChange { return [] }
+        let contacts = await ContactDirectory.names()
+        let recent = "m.ROWID > (SELECT COALESCE(MAX(ROWID), 0) - \(Self.window) FROM message)"
+        let rows: [[String: Any]]
+        if let lastRow {
+            rows = try await query(Self.select + " WHERE m.ROWID > \(lastRow) AND COALESCE(m.associated_message_type, 0) = 0 ORDER BY m.ROWID")
+        } else {
+            rows = try await query("""
+            SELECT * FROM (
+                SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x.chat ORDER BY x.date DESC) AS position FROM (
+                    \(Self.select) WHERE \(recent) AND COALESCE(m.associated_message_type, 0) = 0
+                        AND cmj.chat_id IN (
+                            SELECT cmj.chat_id FROM message m JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+                            WHERE \(recent) GROUP BY cmj.chat_id ORDER BY MAX(m.date) DESC LIMIT \(Self.chats))
+                ) x
+            ) WHERE position <= \(Self.perChat)
+            """)
+        }
+        var messages: [String: [InboxMessage]] = [:]
+        var newest = lastRow ?? 0
+        let unnamed = try await groupNames(rows, contacts: contacts)
+        for row in rows {
+            let id = NotificationRecord.integer(row["id"]) ?? 0
+            newest = max(newest, id)
+            guard let message = AppData.messages([row], names: contacts).first else { continue }
+            let chat = message.chat
+            names[chat] = unnamed[chat] ?? names[chat] ?? message.chatName
+            let group = (AppData.number(row["grp"]) ?? 0) != 0
+            messages[chat, default: []].append(InboxMessage(
+                id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender, text: message.text,
+                date: message.date, fromMe: message.fromMe))
+        }
+        // Messages' own unread count of every chat Nook shows: reading it on the Mac or the phone clears it here too.
+        let unreadRows = try await query("""
+        SELECT cmj.chat_id AS chat, SUM(CASE WHEN m.is_from_me = 0 AND m.is_read = 0 THEN 1 ELSE 0 END) AS unread
+        FROM message m JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+        WHERE \(recent) AND COALESCE(m.associated_message_type, 0) = 0 GROUP BY cmj.chat_id
+        """)
+        var unread: [String: Int] = [:]
+        for row in unreadRows { unread[AppData.string(row["chat"])] = Int(AppData.number(row["unread"]) ?? 0) }
+
+        lastRow = newest
+        lastChange = change
+        isWorking = true
+        // An iMessage and an sms conversation with the same person are one chat in Nook, with both their counts.
+        var chats: [String: BridgedChat] = [:]
+        for (chat, name) in names {
+            var merged = chats[name] ?? BridgedChat(app: app, name: name, messages: [], unread: 0)
+            merged.messages += messages[chat] ?? []
+            merged.unread = (merged.unread ?? 0) + (unread[chat] ?? 0)
+            chats[name] = merged
+        }
+        return chats.values.map { chat in
+            var chat = chat
+            chat.messages.sort { $0.date < $1.date }
+            return chat
+        }
+    }
+
+    /// A group without a name of its own is called after its people, as Messages does ("Anna, Jan, Lisa"), instead of
+    /// every such group becoming one chat.
+    private func groupNames(_ rows: [[String: Any]], contacts: [String: String]) async throws -> [String: String] {
+        let chats = Set(rows.filter { row in
+            (AppData.number(row["grp"]) ?? 0) != 0 && AppData.string(row["chatname"]).hasPrefix("chat")
+                && names[AppData.string(row["chat"])] == nil
+        }.compactMap { Int(AppData.string($0["chat"])) })
+        guard !chats.isEmpty else { return [:] }
+        let people = try await query("""
+        SELECT chj.chat_id AS chat, h.id AS handle FROM chat_handle_join chj JOIN handle h ON h.ROWID = chj.handle_id
+        WHERE chj.chat_id IN (\(chats.sorted().map(String.init).joined(separator: ",")))
+        """)
+        var handles: [String: [String]] = [:]
+        for row in people {
+            let handle = AppData.cleanHandle(AppData.string(row["handle"]))
+            handles[AppData.string(row["chat"]), default: []].append(contacts[AppData.key(handle)] ?? handle)
+        }
+        return handles.mapValues { $0.sorted().joined(separator: ", ") }
+    }
+
+    private static let select = """
+    SELECT m.ROWID AS id, cmj.chat_id AS chat, COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, '') AS chatname,
+           COALESCE(h.id, '') AS handle, m.is_from_me AS me, m.date AS date, m.text AS text, hex(m.attributedBody) AS body,
+           CASE WHEN c.style = 43 THEN 1 ELSE 0 END AS grp
+    FROM message m
+    JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    JOIN chat c ON c.ROWID = cmj.chat_id
+    LEFT JOIN handle h ON h.ROWID = m.handle_id
+    """
+
+    private func query(_ sql: String) async throws -> [[String: Any]] {
+        do {
+            return try await AppDatabase.query(path, sql, app: "Messages")
+        } catch {
+            isWorking = false
+            throw error
+        }
+    }
+}
+
+// MARK: WhatsApp Desktop
+
+/// WhatsApp from the WhatsApp app's own database on this Mac (`ChatStorage.sqlite`), read-only, for when no phone is
+/// linked through a gateway: then the linked phone brings WhatsApp live and this bridge stays out of the way. Needs
+/// Full Disk Access. The first read brings the newest chats with their history, after that only what is new, with
+/// WhatsApp's own unread counts.
+@MainActor
+final class WhatsAppDesktopBridge: ChatBridge {
+    let app = "whatsapp"
+    let interval: TimeInterval = 5
+    private(set) var isWorking = false
+
+    private static let chats = 30
+    private static let perChat = 30
+    private static var path: String {
+        AppDatabase.home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite"
+    }
+
+    private var lastRow: Int64?
+    private var lastChange: Date?
+    /// Every chat read so far by its row, with its name in Nook, for the unread counts.
+    private var names: [String: String] = [:]
+    /// Whether the group member table can be joined (it is not in every version of the app).
+    private var members = true
+
+    var isReady: Bool { !WhatsAppLink.shared.isConnected && FileManager.default.fileExists(atPath: Self.path) }
+
+    func read() async throws -> [BridgedChat] {
+        guard isReady else { isWorking = false; return [] }
+        let change = [Self.path, Self.path + "-wal"]
+            .compactMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }.max()
+        if lastRow != nil, change != nil, change == lastChange { return [] }
+        let contacts = await ContactDirectory.names()
+        // Private chats (0) and groups (1); not broadcast lists or status updates.
+        let kinds = "s.ZSESSIONTYPE IN (0, 1)"
+        let rows: [[String: Any]]
+        if let lastRow {
+            rows = try await select("WHERE m.Z_PK > \(lastRow) AND \(kinds) ORDER BY m.Z_PK")
+        } else {
+            rows = try await select("""
+            WHERE \(kinds) AND m.ZCHATSESSION IN (
+                SELECT s.Z_PK FROM ZWACHATSESSION s WHERE \(kinds) ORDER BY s.ZLASTMESSAGEDATE DESC LIMIT \(Self.chats))
+            """, window: Self.perChat)
+        }
+        var messages: [String: [InboxMessage]] = [:]
+        var newest = lastRow ?? 0
+        for row in rows {
+            let id = NotificationRecord.integer(row["id"]) ?? 0
+            newest = max(newest, id)
+            let chat = AppData.string(row["chat"])
+            let group = (AppData.number(row["kind"]) ?? 0) == 1
+            var name = AppData.string(row["chatname"])
+            if name.isEmpty { name = contacts[AppData.key(AppData.string(row["jid"]))] ?? WAJID.displayNumber(AppData.string(row["jid"])) }
+            names[chat] = name
+            let mine = (AppData.number(row["me"]) ?? 0) != 0
+            var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty { text = Self.label(Int(AppData.number(row["type"]) ?? 0)) }
+            guard !text.isEmpty else { continue }
+            var sender = ""
+            if group, !mine {
+                sender = AppData.string(row["sender"])
+                if sender.isEmpty { sender = contacts[AppData.key(AppData.string(row["member"]))] ?? "" }
+            }
+            messages[chat, default: []].append(InboxMessage(
+                id: "wadesktop-\(id)", sender: sender, text: text,
+                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine))
+        }
+        let known = names.keys.compactMap(Int.init).map(String.init).joined(separator: ",")
+        var unread: [String: Int] = [:]
+        if !known.isEmpty {
+            for row in try await query("SELECT Z_PK AS chat, ZUNREADCOUNT AS unread FROM ZWACHATSESSION WHERE Z_PK IN (\(known))") {
+                unread[AppData.string(row["chat"])] = max(0, Int(AppData.number(row["unread"]) ?? 0))
+            }
+        }
+        lastRow = newest
+        lastChange = change
+        isWorking = true
+        return names.map { chat, name in
+            BridgedChat(app: app, name: name, messages: (messages[chat] ?? []).sorted { $0.date < $1.date }, unread: unread[chat] ?? 0)
+        }
+    }
+
+    /// The messages with their chat; `window` keeps only the newest of each chat. Without the group member table the
+    /// same query runs again without the senders' names.
+    private func select(_ filter: String, window: Int? = nil) async throws -> [[String: Any]] {
+        func sql(_ members: Bool) -> String {
+            let base = """
+            SELECT m.Z_PK AS id, m.ZCHATSESSION AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname,
+                   COALESCE(s.ZCONTACTJID, '') AS jid, s.ZSESSIONTYPE AS kind, m.ZISFROMME AS me, m.ZMESSAGEDATE AS date,
+                   m.ZTEXT AS text, m.ZMESSAGETYPE AS type,
+                   \(members ? "COALESCE(g.ZCONTACTNAME, '') AS sender, COALESCE(g.ZMEMBERJID, '') AS member" : "'' AS sender, '' AS member")
+            FROM ZWAMESSAGE m JOIN ZWACHATSESSION s ON s.Z_PK = m.ZCHATSESSION
+            \(members ? "LEFT JOIN ZWAGROUPMEMBER g ON g.Z_PK = m.ZGROUPMEMBER" : "")
+            \(filter)
+            """
+            guard let window else { return base }
+            return "SELECT * FROM (SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x.chat ORDER BY x.date DESC) AS position FROM (\(base)) x) WHERE position <= \(window)"
+        }
+        if members {
+            do {
+                return try await query(sql(true))
+            } catch where error.localizedDescription.contains("no such") {
+                members = false
+            }
+        }
+        return try await query(sql(false))
+    }
+
+    /// What a message without text holds, by WhatsApp's message type.
+    private static func label(_ type: Int) -> String {
+        switch type {
+        case 1: return tr("whatsapp.file.photo")
+        case 2: return tr("whatsapp.file.video")
+        case 3: return tr("whatsapp.file.voice")
+        case 8: return tr("whatsapp.file.document")
+        case 15: return "🙂"
+        case 5: return "📍"
+        case 4: return "👤"
+        default: return ""
+        }
+    }
+
+    private func query(_ sql: String) async throws -> [[String: Any]] {
+        do {
+            return try await AppDatabase.query(Self.path, sql, app: "WhatsApp")
+        } catch {
+            isWorking = false
+            throw error
+        }
+    }
+}
+
+// MARK: Beeper
+
+/// Every network linked in Beeper Desktop (Instagram, Messenger, Discord, Signal, LinkedIn, X, Google Chat…), each chat
+/// under its own app, through Beeper's own local API on this Mac (Settings › Developers in Beeper) with the token set in
+/// Settings › Chats. Nothing leaves the Mac: the API is Beeper's, on localhost. A network Nook reads with a bridge of
+/// its own (Telegram, Slack…) is left to that bridge. While Beeper is the WhatsApp gateway, its chats already come in
+/// through the linked phone list (with answering in place), so this bridge stays out of the way.
+@MainActor
+final class BeeperBridge: ChatBridge {
+    let app = "beeper"
+    let interval: TimeInterval = 10
+    private(set) var isWorking = false
+    /// The apps whose chats it brought in: their notifications only repeat it.
+    private(set) var covered: Set<String> = []
+    /// An app another bridge already reads.
+    var skips: (String) -> Bool = { _ in false }
+
+    static let tokenAccount = "chats.beeper.token"
+    private static let base = URL(string: "http://localhost:23373")!
+    private static let chatCount = 40
+    private static let history = 30
+
+    /// The newest activity per chat at the last read: only chats that moved are read again.
+    private var seen: [String: Date] = [:]
+
+    static var token: String? { CloudHelp.secret(tokenAccount) }
+
+    var isReady: Bool {
+        !(WhatsAppLink.enabled && WhatsAppLink.gateway == .beeper) && Self.token != nil
+    }
+
+    func reset() {
+        seen = [:]
+        covered = []
+        isWorking = false
+    }
+
+    func read() async throws -> [BridgedChat] {
+        guard isReady, let token = Self.token else { isWorking = false; return [] }
+        do {
+            let chats = BeeperData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
+                .filter { !skips($0.app) }
+            var result: [BridgedChat] = []
+            for chat in chats where chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil) {
+                let path = "/v1/chats/" + (chat.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? chat.id) + "/messages"
+                let messages = BeeperData.messages(try await get(path, ["limit": String(Self.history)], token: token), chat: chat)
+                seen[chat.id] = chat.last ?? .distantPast
+                covered.insert(chat.app)
+                guard !messages.isEmpty else { continue }
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread))
+            }
+            isWorking = true
+            return result
+        } catch {
+            isWorking = false
+            throw error
+        }
+    }
+
+    private func get(_ path: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
+        var components = URLComponents(url: Self.base, resolvingAgainstBaseURL: false)!
+        components.percentEncodedPath = path
+        components.queryItems = parameters.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { throw NookError("Beeper: \(path)") }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await ConnectorHTTP.session.data(for: request)
+        } catch {
+            throw NookError(tr("chats.beeper.unreachable"))
+        }
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 || code == 403 { throw NookError(tr("chats.beeper.unauthorized")) }
+        guard (200..<300).contains(code), let json = BeeperData.object(data) else { throw NookError("Beeper: HTTP \(code)") }
+        return json
+    }
+}
+
+// MARK: Slack
+
+/// Your Slack direct messages and group messages, with their history, through Slack's Web API and a user token you set
+/// in Settings › Chats (kept in the Keychain). Read-only scopes are enough: im:history, mpim:history, im:read,
+/// mpim:read and users:read. Only slack.com is asked, and only for your own conversations.
+@MainActor
+final class SlackBridge: ChatBridge {
+    let app = "slack"
+    let interval: TimeInterval = 60
+    private(set) var isWorking = false
+
+    /// Where the token is kept.
+    static let tokenAccount = "chats.slack.token"
+
+    static var token: String? {
+        guard let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
+        return token
+    }
+
+    /// Conversations read in one go: the most recently active first, then a few of the others in turn, so every one is
+    /// read sooner or later without passing Slack's rate limits.
+    private static let perRead = 12
+    private static let rotating = 4
+    private static let firstHistory = 30
+
+    private var me: String?
+    private var users: [String: String] = [:]
+    private var usersAt: Date?
+    private var conversations: [SlackData.Conversation] = []
+    private var conversationsAt: Date?
+    /// The newest message read per conversation (Slack's `ts`), to ask only for what is newer.
+    private var newest: [String: String] = [:]
+    /// The latest activity seen per conversation, to read the busiest first.
+    private var active: [String: Double] = [:]
+    private var turn = 0
+
+    var isReady: Bool { Self.token != nil }
+
+    /// Forgets what was read (a new token may be another workspace).
+    func reset() {
+        me = nil
+        users = [:]
+        usersAt = nil
+        conversations = []
+        conversationsAt = nil
+        newest = [:]
+        active = [:]
+        isWorking = false
+    }
+
+    func read() async throws -> [BridgedChat] {
+        guard let token = Self.token else { isWorking = false; return [] }
+        do {
+            if me == nil { me = SlackData.me(try await call("auth.test", [:], token: token)) }
+            if usersAt.map({ Date().timeIntervalSince($0) > 3600 }) ?? true {
+                users = try await pages("users.list", ["limit": "200"], token: token, maxPages: 5).reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
+                usersAt = Date()
+            }
+            if conversationsAt.map({ Date().timeIntervalSince($0) > 600 }) ?? true {
+                conversations = try await pages("conversations.list", ["types": "im,mpim", "exclude_archived": "true", "limit": "200"],
+                                                token: token, maxPages: 5).flatMap(SlackData.conversations)
+                for conversation in conversations { active[conversation.id] = max(active[conversation.id] ?? 0, conversation.updated) }
+                conversationsAt = Date()
+            }
+            var chats: [BridgedChat] = []
+            for conversation in pick() {
+                var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
+                if let ts = newest[conversation.id] { parameters["oldest"] = ts }
+                let json = try await call("conversations.history", parameters, token: token)
+                let messages = SlackData.messages(json, conversation: conversation, users: users, me: me)
+                if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
+                    .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
+                    newest[conversation.id] = last
+                    active[conversation.id] = max(active[conversation.id] ?? 0, Double(last) ?? 0)
+                } else if newest[conversation.id] == nil {
+                    newest[conversation.id] = "0"
+                }
+                guard !messages.isEmpty else { continue }
+                chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
+                                         messages: messages, unread: nil))
+            }
+            isWorking = true
+            return chats
+        } catch {
+            isWorking = false
+            throw error
+        }
+    }
+
+    /// The conversations to read now: never read ones and the busiest, then a few others in turn.
+    private func pick() -> [SlackData.Conversation] {
+        let ordered = conversations.sorted { (active[$0.id] ?? 0) > (active[$1.id] ?? 0) }
+        let unread = ordered.filter { newest[$0.id] == nil }
+        let busy = ordered.filter { newest[$0.id] != nil }
+        var picked = Array(unread.prefix(Self.perRead))
+        let room = Self.perRead - picked.count
+        guard room > 0 else { return picked }
+        picked += busy.prefix(max(0, room - Self.rotating))
+        let rest = Array(busy.dropFirst(max(0, room - Self.rotating)))
+        if !rest.isEmpty {
+            for offset in 0..<min(Self.rotating, rest.count, room) { picked.append(rest[(turn + offset) % rest.count]) }
+            turn += Self.rotating
+        }
+        return picked
+    }
+
+    private func pages(_ method: String, _ parameters: [String: String], token: String, maxPages: Int) async throws -> [[String: Any]] {
+        var results: [[String: Any]] = []
+        var cursor: String?
+        for _ in 0..<maxPages {
+            var query = parameters
+            if let cursor { query["cursor"] = cursor }
+            let json = try await call(method, query, token: token)
+            results.append(json)
+            cursor = SlackData.nextCursor(json)
+            if cursor == nil { break }
+        }
+        return results
+    }
+
+    private func call(_ method: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
+        var components = URLComponents(string: "https://slack.com/api/" + method)!
+        components.queryItems = parameters.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { throw NookError("Slack: \(method)") }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.session.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 429 { throw NookError(tr("chats.slack.rateLimited")) }
+        guard (200..<300).contains(code), let json = SlackData.object(data) else { throw NookError("Slack: HTTP \(code)") }
+        if let error = SlackData.error(json) { throw NookError(tr("chats.slack.refused", error)) }
+        return json
+    }
+}

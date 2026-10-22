@@ -305,6 +305,22 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var sender: String = ""
     var text: String
     var date: Date
+    /// Your own message: only a bridge (`ChatBridge`) knows those, a notification is always someone else's. Optional so
+    /// an inbox saved before bridges still loads.
+    var fromMe: Bool? = nil
+
+    var isMine: Bool { fromMe == true }
+}
+
+/// One chat as a bridge reads it from its app, with its newest messages (yours included), oldest first.
+struct BridgedChat: Equatable, Sendable {
+    /// The app's id (`MessagingApp.id`).
+    var app: String
+    var name: String
+    var messages: [InboxMessage]
+    /// How many messages wait for you, when the app keeps track of it (Messages does); nil counts the new messages
+    /// from others that come in after the first look.
+    var unread: Int?
 }
 
 /// One chat in one app, with its newest messages.
@@ -317,6 +333,9 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// Oldest first, the newest `ChatInbox.keep` only.
     var messages: [InboxMessage] = []
     var unread: Int = 0
+    /// The unread count the app itself gave last time (a bridge that knows it): only a change in it overrides what you
+    /// read in Nook.
+    var appUnread: Int? = nil
 
     var last: Date { messages.last?.date ?? .distantPast }
     /// Someone else than the chat itself wrote in it: a group.
@@ -390,12 +409,17 @@ struct ChatInbox: Codable, Equatable, Sendable {
     static let keep = 50
     /// Chats kept; the quietest go first.
     static let maxThreads = 200
+    /// Two copies of one message: a bridge and a notification can both bring it in, each under an id of its own.
+    static let sameMessageWindow: TimeInterval = 60
+
     /// A chat that had nothing new for this long is dropped.
     static let maxAge: TimeInterval = 30 * 86_400
 
     var threads: [String: InboxThread] = [:]
     /// The newest notification read, so none is read twice.
     var lastRecord: Int64?
+    /// Chats you removed, and when: a bridge brings back only what is newer, not the history you threw away.
+    var removed: [String: Date]? = nil
 
     static func key(app: String, chat: String) -> String {
         app + "|" + chat.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
@@ -409,7 +433,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let key = Self.key(app: notice.app, chat: notice.chat)
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
-            $0.id == id || ($0.text == notice.text && $0.sender == notice.sender && abs($0.date.timeIntervalSince(notice.date)) < 60)
+            $0.id == id || (!$0.isMine && $0.text == notice.text && abs($0.date.timeIntervalSince(notice.date)) < Self.sameMessageWindow)
         }) { return false }
         let message = InboxMessage(id: id, sender: notice.sender, text: notice.text, date: notice.date)
         // Usually the newest, but a late notification goes in its place.
@@ -423,6 +447,42 @@ struct ChatInbox: Codable, Equatable, Sendable {
         return true
     }
 
+    /// Brings in what a bridge read: the messages this chat does not show yet, in their place. With `chat.unread` the
+    /// app's own count wins; without, a message from someone else that is newer than what the chat showed counts as
+    /// unread, except on the first look at a chat, whose history was likely read in the app already. False when nothing
+    /// changed.
+    @discardableResult
+    mutating func merge(_ chat: BridgedChat) -> Bool {
+        let key = Self.key(app: chat.app, chat: chat.name)
+        let known = threads[key]
+        let gone = removed?[key]
+        let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
+        // Without new messages a bridge can still bring the app's unread count for a chat Nook shows.
+        guard !messages.isEmpty || (known != nil && chat.unread != nil) else { return false }
+        var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
+        let before = thread
+        let newestBefore = known?.last
+        for message in messages where !thread.messages.contains(where: {
+            $0.id == message.id
+                || ($0.isMine == message.isMine && $0.text == message.text
+                    && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
+        }) {
+            let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
+            thread.messages.insert(message, at: index)
+            if chat.unread == nil, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
+        }
+        if thread.messages.count > Self.keep { thread.messages.removeFirst(thread.messages.count - Self.keep) }
+        if let unread = chat.unread, unread != thread.appUnread {
+            thread.unread = unread
+            thread.appUnread = unread
+        }
+        thread.name = chat.name
+        guard thread != before else { return false }
+        threads[key] = thread
+        dropQuietest()
+        return true
+    }
+
     mutating func markRead(_ id: String) {
         threads[id]?.unread = 0
     }
@@ -431,8 +491,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
         for key in threads.keys { threads[key]?.unread = 0 }
     }
 
-    mutating func remove(_ id: String) {
+    mutating func remove(_ id: String, at date: Date = Date()) {
         threads[id] = nil
+        removed = (removed ?? [:]).filter { date.timeIntervalSince($0.value) < Self.maxAge }
+        removed?[id] = date
     }
 
     /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`.
