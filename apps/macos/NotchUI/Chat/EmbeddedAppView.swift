@@ -89,8 +89,22 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         views[app.id] = nil
         sides[app.id]?.removeFromSuperview()
         sides[app.id] = nil
+        // A chat app Nook reads with this sign-in (Instagram) lets go of it too: it is signed out with it.
+        ChatCaptureService.shared.signedOutOnThisMac(app.id)
+        Self.stores[app.id] = nil
         try? await Task.sleep(nanoseconds: 300_000_000)
         try? await WKWebsiteDataStore.remove(forIdentifier: app.storeID)
+    }
+
+    /// Every web app's own cookies and storage, one store per app for all its web views: the app beside the chat, and
+    /// the page a chat bridge reads it through out of sight (`InstagramBridge`), so signing in once serves both.
+    private static var stores: [String: WKWebsiteDataStore] = [:]
+
+    static func dataStore(for app: EmbeddedApp) -> WKWebsiteDataStore {
+        if let store = stores[app.id] { return store }
+        let store = WKWebsiteDataStore(forIdentifier: app.storeID)
+        stores[app.id] = store
+        return store
     }
 
     /// The open app in the user's own browser.
@@ -116,7 +130,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     private func makeWebView(for app: EmbeddedApp) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: app.storeID)
+        configuration.websiteDataStore = Self.dataStore(for: app)
         // Present as Safari: WhatsApp Web and others refuse browsers they do not know.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
         let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 700), configuration: configuration)

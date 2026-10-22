@@ -54,7 +54,13 @@ final class TeamsBridge: ObservableObject, ChatBridge {
     var isReady: Bool { Self.clientID != nil && accounts.contains { CloudHelp.secret($0.refreshAccount) != nil } }
     private(set) var isWorking = false
 
-    static var clientID: String? { CloudHelp.secret(clientAccount) }
+    /// The app Nook signs in as: the one you registered and set in Settings › Chats, else Nook's own.
+    static var clientID: String? { CloudHelp.secret(clientAccount) ?? builtInClientID }
+
+    /// Nook's own app in Microsoft Entra: a multi-tenant public client ("Allow public client flows" on) with the
+    /// delegated permissions Chat.Read and User.Read. With it, Log in on Teams' row in Settings › Chats is all Teams
+    /// needs. Nil until it is registered; then everyone registers an app of their own.
+    static let builtInClientID: String? = nil
 
     init() {
         accounts = Self.loadAccounts()

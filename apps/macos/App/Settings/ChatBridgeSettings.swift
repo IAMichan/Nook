@@ -287,3 +287,110 @@ struct BeeperSettingsRows: View {
         capture.bridgeChanged(capture.beeperBridge.app)
     }
 }
+
+/// Where logging in to an app from its row stands.
+enum LoginStep { case signedOut, waiting, signedIn }
+
+/// An app in Settings › Chats that Nook reads after you log in to it from its own row: a Log in button until you did,
+/// then its switch, with Log out beside it. While the sign-in runs, the row says so (with Teams' code to type).
+struct LoginSourceRow<Label: View, Waiting: View>: View {
+    let step: LoginStep
+    @Binding var isOn: Bool
+    let logIn: () -> Void
+    let cancel: () -> Void
+    let logOut: () -> Void
+    @ViewBuilder let label: () -> Label
+    @ViewBuilder let waiting: () -> Waiting
+
+    var body: some View {
+        switch step {
+        case .signedIn:
+            Toggle(isOn: $isOn) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    label()
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    Button(tr("chats.login.logOut"), action: logOut)
+                        .buttonStyle(.link)
+                }
+            }
+        case .waiting:
+            HStack(spacing: NookTheme.Spacing.md) {
+                label()
+                Spacer(minLength: NookTheme.Spacing.sm)
+                waiting()
+                ProgressView().controlSize(.small)
+                Button(tr("chats.teams.cancel"), action: cancel)
+            }
+        case .signedOut:
+            HStack(spacing: NookTheme.Spacing.md) {
+                label()
+                Spacer(minLength: NookTheme.Spacing.sm)
+                Button(tr("chats.login.button"), action: logIn)
+            }
+        }
+    }
+}
+
+/// Instagram's row: Log in opens instagram.com beside the chat, and the row waits until you signed in there.
+struct InstagramSourceRow<Label: View>: View {
+    @ObservedObject var bridge: InstagramBridge
+    @Binding var isOn: Bool
+    let logIn: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        LoginSourceRow(step: step, isOn: $isOn, logIn: logIn, cancel: { bridge.cancelSignIn() },
+                       logOut: { Task { await bridge.signOut() } }, label: label) {
+            Text(tr("chats.login.waiting"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+        }
+        // A sign-in made meanwhile elsewhere in Nook (Instagram beside the chat) shows here too.
+        .task { await bridge.refresh() }
+    }
+
+    private var step: LoginStep {
+        switch bridge.state {
+        case .signedOut: return .signedOut
+        case .waiting: return .waiting
+        case .signedIn: return .signedIn
+        }
+    }
+}
+
+/// Teams' row: Log in signs in with a code on Microsoft's own page; the code shows in the row while Nook waits.
+struct TeamsSourceRow<Label: View>: View {
+    @ObservedObject var teams: TeamsBridge
+    @Binding var isOn: Bool
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        LoginSourceRow(step: step, isOn: $isOn, logIn: logIn, cancel: { teams.cancelSignIn() }, logOut: logOut, label: label) {
+            if case .code(let code) = teams.state {
+                Text(code.userCode)
+                    .font(NookTheme.mono(13, .semibold))
+                    .textSelection(.enabled)
+                Button(tr("chats.teams.copyCode")) { Pasteboard.copy(code.userCode) }
+            }
+        }
+    }
+
+    private var step: LoginStep {
+        if teams.isReady { return .signedIn }
+        if case .code = teams.state { return .waiting }
+        return .signedOut
+    }
+
+    private func logIn() {
+        // Without Nook's own app id, the one you registered is asked for in the Teams section below.
+        guard TeamsBridge.clientID != nil else {
+            ToastCenter.shared.error(tr("chats.login.teamsNeedsClient"))
+            return
+        }
+        teams.signIn()
+    }
+
+    private func logOut() {
+        for account in teams.accounts { teams.signOut(account.id) }
+    }
+}

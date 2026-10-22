@@ -67,7 +67,10 @@ struct ChatsSettingsSection: View {
             }
 
             Section {
-                TeamsSettingsRows(teams: capture.teamsBridge, problem: capture.bridgeProblems[capture.teamsBridge.app]) { capture.bridgeChanged(capture.teamsBridge.app) }
+                TeamsSettingsRows(teams: capture.teamsBridge, problem: capture.bridgeProblems[capture.teamsBridge.app]) {
+                    // A new account switches Teams on and reads right away; one signed out reads again without it.
+                    if capture.teamsBridge.accounts.isEmpty { capture.bridgeChanged(capture.teamsBridge.app) } else { capture.loggedIn(capture.teamsBridge.app) }
+                }
             } header: {
                 Text(tr("chats.teams.title"))
             } footer: {
@@ -178,30 +181,50 @@ struct ChatsSettingsSection: View {
     }
 
     /// One app: its icon, name and where its messages come from, with its switch (and a remove button when you added it).
+    /// Instagram and Teams are read by logging in to them: their row has a Log in button until you did.
+    @ViewBuilder
     private func row(_ source: MessagingApp) -> some View {
-        let custom = !MessagingApps.builtIn.contains { $0.id == source.id }
         // An app is only on while collecting is: switching one on switches collecting on with it.
-        return Toggle(isOn: Binding(get: { capture.enabled && capture.sources.isOn(source.id) },
-                                    set: { on in
-                                        capture.setSource(source.id, on: on)
-                                        if on, !capture.enabled { setCollecting(true) }
-                                    })) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                SiteIcon(domain: source.site, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 20, source: source.id)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.name)
-                    Text(origin(source))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                if custom {
-                    Spacer(minLength: NookTheme.Spacing.sm)
-                    Button { capture.removeSource(source.id) } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless)
-                        .help(tr("chats.settings.remove", source.name))
-                }
+        let isOn = Binding(get: { capture.enabled && capture.sources.isOn(source.id) },
+                           set: { on in
+                               capture.setSource(source.id, on: on)
+                               if on, !capture.enabled { setCollecting(true) }
+                           })
+        switch source.id {
+        case capture.instagramBridge.app:
+            InstagramSourceRow(bridge: capture.instagramBridge, isOn: isOn, logIn: logInToInstagram) { label(source) }
+        case capture.teamsBridge.app:
+            TeamsSourceRow(teams: capture.teamsBridge, isOn: isOn) { label(source) }
+        default:
+            Toggle(isOn: isOn) { label(source) }
+        }
+    }
+
+    /// Opens instagram.com beside the chat, signed in with Nook's own store, and waits until you logged in there.
+    private func logInToInstagram() {
+        guard let web = EmbeddedAppCatalog.all.first(where: { $0.id == capture.instagramBridge.app }) else { return }
+        capture.instagramBridge.watchSignIn()
+        app.openEmbeddedApp(web, mode: .web)
+        app.showChat()
+    }
+
+    private func label(_ source: MessagingApp) -> some View {
+        let custom = !MessagingApps.builtIn.contains { $0.id == source.id }
+        return HStack(spacing: NookTheme.Spacing.md) {
+            SiteIcon(domain: source.site, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 20, source: source.id)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.name)
+                Text(origin(source))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            if custom {
+                Spacer(minLength: NookTheme.Spacing.sm)
+                Button { capture.removeSource(source.id) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .help(tr("chats.settings.remove", source.name))
             }
         }
     }
