@@ -8,7 +8,9 @@ import NaturalLanguage
 extension AppModel {
     // MARK: Asking Nook
 
-    func handleUserText(_ raw: String, images: [ImageAttachment] = []) {
+    /// `reveal: false` leaves the notch as it is while Nook answers (the Double Tap quick field); the answer then
+    /// arrives as a small card (`nookFinished`), and the chat opens only when you open it yourself.
+    func handleUserText(_ raw: String, images: [ImageAttachment] = [], reveal: Bool = true) {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty else { return }
         // A picture without a question: ask what is on it.
@@ -40,7 +42,7 @@ extension AppModel {
             presentSetupCard()
             return
         }
-        ask(text, images: images)
+        ask(text, images: images, reveal: reveal)
     }
 
     // MARK: Chat
