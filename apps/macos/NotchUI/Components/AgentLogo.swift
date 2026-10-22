@@ -80,9 +80,9 @@ private struct ArchGlyph: Shape {
     }
 }
 
-/// Whether an account is someone's own or their employer's.
+/// Whether an account is someone's own or their employer's, or a bare API key (paid per question).
 enum AccountKind {
-    case personal, work
+    case personal, work, apiKey
 
     private static let workWords = ["werk", "work", "zakelijk", "business", "bedrijf", "company", "team", "kantoor", "office", "arbeit", "firma"]
 
@@ -96,10 +96,32 @@ enum AccountKind {
         return .personal
     }
 
-    var label: String { tr(self == .work ? "agents.account.work" : "agents.account.personal") }
+    var label: String {
+        switch self {
+        case .personal: return tr("agents.account.personal")
+        case .work: return tr("agents.account.work")
+        case .apiKey: return tr("accounts.method.apiKey")
+        }
+    }
+
+    fileprivate var symbol: String {
+        switch self {
+        case .personal: return "person.fill"
+        case .work: return "briefcase.fill"
+        case .apiKey: return "key.fill"
+        }
+    }
+
+    fileprivate var fill: Color {
+        switch self {
+        case .personal: return Color(hex: 0x3A3A42)
+        case .work: return Color(hex: 0x3D58D6)
+        case .apiKey: return Color(hex: 0x9A6F1C)
+        }
+    }
 }
 
-/// A small round badge: a person for a personal account, a briefcase for a work account.
+/// A small round badge: a person for a personal account, a briefcase for a work account, a key for an API key.
 struct AccountBadge: View {
     let kind: AccountKind
     var size: CGFloat = 10
@@ -108,9 +130,9 @@ struct AccountBadge: View {
 
     var body: some View {
         Circle()
-            .fill(kind == .work ? Color(hex: 0x3D58D6) : Color(hex: 0x3A3A42))
+            .fill(kind.fill)
             .overlay(
-                Image(systemName: kind == .work ? "briefcase.fill" : "person.fill")
+                Image(systemName: kind.symbol)
                     .font(NookTheme.font(size * 0.52, .bold))
                     .foregroundStyle(Color.white.opacity(0.92))
             )
@@ -132,12 +154,19 @@ struct AgentMark: View {
     var body: some View {
         AgentLogo(agent: agent, size: size)
             .opacity(dimmed ? 0.5 : 1)
-            .overlay(alignment: .bottomTrailing) {
-                if let account {
-                    AccountBadge(kind: account, size: max(8, size * 0.56), ring: ring)
-                        .offset(x: size * 0.28, y: size * 0.22)
-                }
-            }
+            .accountBadge(account, size: size, ring: ring)
             .help(account.map { "\(agent) · \($0.label)" } ?? agent)
+    }
+}
+
+extension View {
+    /// Pins the account badge to the bottom-right corner of a logo of the given size.
+    func accountBadge(_ account: AccountKind?, size: CGFloat, ring: Color) -> some View {
+        overlay(alignment: .bottomTrailing) {
+            if let account {
+                AccountBadge(kind: account, size: max(8, size * 0.56), ring: ring)
+                    .offset(x: size * 0.28, y: size * 0.22)
+            }
+        }
     }
 }

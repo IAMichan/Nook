@@ -163,7 +163,7 @@ struct DropdownSearch: View {
 
 /// The split panel behind the model pickers: a narrow rail of places on the left (the agents, or this Mac and the
 /// external AIs) and the shown place's choices on the right. Groups in the rail are split by a short line, and the place
-/// in use gets a dot while you look at another one. The rail hides when there is only one place and no footer.
+/// in use gets a dot while you look at another one. A logo may carry its account badge. The rail hides when there is only one place and no footer.
 struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: View {
     let groups: [[Place]]
     /// The place in use; the panel opens on it.
@@ -232,7 +232,8 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
                 .frame(width: 32, height: 32)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                     .fill(place == current ? DropdownStyle.chosen : .clear))
-                .overlay(alignment: .bottomTrailing) {
+                // Top corner: the bottom one holds the account badge.
+                .overlay(alignment: .topTrailing) {
                     if place == chosen && place != current {
                         Circle().fill(NookTheme.paper.opacity(0.7)).frame(width: 4, height: 4).padding(4)
                     }
@@ -294,9 +295,16 @@ struct AgentModelPicker: View {
 
     var body: some View {
         RailDropdown(groups: [providers], chosen: provider, help: { $0.displayName }, onShow: { _ in query = "" },
-                     icon: { AgentMark(agent: $0.displayName, account: nil, size: 18, ring: DropdownStyle.panel) }) { current in
+                     icon: { AgentMark(agent: $0.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) }) { current in
             models(of: current)
         }
+    }
+
+    /// The account an agent runs under from here: the chosen one for the agent in use, else the one picking it would take.
+    private func account(of current: RunProvider) -> AccountKind? {
+        let accounts = app.connectedProfiles(for: current)
+        let profile = current == provider ? accounts.first(where: { $0.id == profileID }) ?? accounts.first : accounts.first
+        return profile.map { AccountKind.of($0, app: app) }
     }
 
     @ViewBuilder
