@@ -26,3 +26,6 @@ apps/macos/Config/Signing.local.xcconfig
 
 # TDLib for the Telegram bridge, built by scripts/build-tdlib.sh
 apps/macos/Vendor/
+
+# Previews and drafts made for the user by coding agents (see AGENTS.md §5)
+.scratch/
