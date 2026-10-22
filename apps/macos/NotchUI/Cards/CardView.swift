@@ -287,7 +287,7 @@ struct CardView: View {
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
-                // Centered on the send button while it is one line; further lines grow upward from there.
+                // One line sits level with the send button; each further line makes the field (and the notch) taller.
                 .frame(minHeight: 28)
                 .focused($replyFocused)
                 .onSubmit { if !mentionModel.isOpen { submitReply() } }
