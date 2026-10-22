@@ -79,4 +79,17 @@ final class MailUnreadTests: XCTestCase {
         let text = MailStats.describe([row], date: { _ in "14 okt" })
         XCTAssertEqual(text, "### Vraag | van Lisa <lisa@example.com> | 14 okt | ongelezen | Werk\nKun je morgen?")
     }
+
+    func testFailureSaysWhyMailGaveNoAnswer() {
+        // A timeout names the wait and the error code, instead of only "Mail did not respond".
+        XCTAssertEqual(MailStats.failure(errorNumber: -1712, message: nil, timeout: 15),
+                       tr("connect.mail.timeout", 15) + " (" + tr("connect.mail.code", -1712) + ")")
+        XCTAssertEqual(MailStats.failure(errorNumber: -609, message: "Connection is invalid.", timeout: 15),
+                       tr("connect.mail.notRunning") + " (" + tr("connect.mail.code", -609) + ")")
+        // Any other error carries AppleScript's own message, without a doubled full stop.
+        XCTAssertEqual(MailStats.failure(errorNumber: -10000, message: "Mail got an error: AppleEvent handler failed.", timeout: 15),
+                       tr("connect.mail.scriptError").replacingOccurrences(of: "%@", with: "Mail got an error: AppleEvent handler failed")
+                       + " (" + tr("connect.mail.code", -10000) + ")")
+        XCTAssertEqual(MailStats.failure(errorNumber: nil, message: nil, timeout: 15), tr("connect.mail.noAnswer"))
+    }
 }

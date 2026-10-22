@@ -206,4 +206,15 @@ final class DoubleTapTests: XCTestCase {
         XCTAssertEqual(DoubleTapLogic.preview("Hallo Jan,\n\nTot morgen!"), "Hallo Jan, Tot morgen!")
         XCTAssertEqual(DoubleTapLogic.preview(String(repeating: "word ", count: 30), limit: 10), "word word…")
     }
+
+    func testProgressLineShowsWhatNookDoesThenTheNewestWords() {
+        XCTAssertEqual(DoubleTapLogic.progressLine(text: "", status: "Thinking…"), "Thinking…")
+        XCTAssertEqual(DoubleTapLogic.progressLine(text: "", status: ""), "")
+        XCTAssertEqual(DoubleTapLogic.progressLine(text: "Morgen heb je\n\nom 9:00 een afspraak", status: "Thinking…"),
+                       "om 9:00 een afspraak")
+        let long = DoubleTapLogic.progressLine(text: "one two three four five six seven eight", status: "", limit: 20)
+        XCTAssertTrue(long.hasPrefix("…"), long)
+        XCTAssertTrue(long.hasSuffix("seven eight"), long)
+        XCTAssertLessThanOrEqual(long.count, 20)
+    }
 }

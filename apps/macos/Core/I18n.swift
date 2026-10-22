@@ -476,7 +476,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.webSearchDetail": "Voor nieuws, weer, uitslagen, prijzen en openingstijden. Werkt met elk brein.",
         "settings.assistant.thinkAlongToggle": "Denk mee terwijl ik werk",
         "settings.assistant.thinkAlongDetail": "Kan Nook iets overnemen of weet hij een slimmere aanpak, dan stelt hij het voor naast de notch. Zeg je vaker nee, dan houdt hij zich in. Stuurt af en toe de tekst van je voorste vensters naar je brein.",
-        "settings.assistant.mutedIn": "Niet meedenken in",
         "settings.assistant.autoRunSafe": "Kleine dingen meteen doen",
         "settings.assistant.autoRunSafeDetail": "Muziek, volume, een app, een herinnering of een open punt. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.",
 
@@ -1250,7 +1249,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.webSearchDetail": "For news, weather, scores, prices, and opening hours. Works with any brain.",
         "settings.assistant.thinkAlongToggle": "Suggest ideas while I work",
         "settings.assistant.thinkAlongDetail": "If Nook can take something over or knows a smarter approach, it proposes it next to the notch. If you say no often, it holds back. Occasionally sends front window text to your brain.",
-        "settings.assistant.mutedIn": "Muted in",
         "settings.assistant.autoRunSafe": "Perform small tasks immediately",
         "settings.assistant.autoRunSafeDetail": "Music, volume, an app, a reminder, or a to-do. Events, emails, links, commands, and services always ask first.",
 
@@ -2024,7 +2022,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.webSearchDetail": "Für Nachrichten, Wetter, Sportergebnisse, Preise und Öffnungszeiten. Funktioniert mit jedem Gehirn.",
         "settings.assistant.thinkAlongToggle": "Mitdenken während ich arbeite",
         "settings.assistant.thinkAlongDetail": "Kann Nook etwas übernehmen oder kennt einen besseren Weg, schlägt es dies neben der Notch vor. Sagst du öfter nein, hält es sich zurück. Sendet gelegentlich Vordergrundfenster-Texte an dein Gehirn.",
-        "settings.assistant.mutedIn": "Nicht mitdenken in",
         "settings.assistant.autoRunSafe": "Kleine Aufgaben sofort erledigen",
         "settings.assistant.autoRunSafeDetail": "Musik, Lautstärke, eine App, eine Erinnerung oder offener Punkt. Termine, E-Mails, Links, Befehle und Dienste fragen immer zuerst.",
 

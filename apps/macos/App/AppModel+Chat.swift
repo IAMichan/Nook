@@ -428,27 +428,42 @@ extension AppModel {
         chat.setBusy(false, conversation: conversation)
     }
 
-    /// Conversation finished in background while looking elsewhere: display notification.
+    /// Conversation finished in background while looking elsewhere: a notice the way Settings › Notifications says for
+    /// Nook himself.
     func nookFinished(_ id: UUID) {
         let watching = viewModel.isShowing(.chat) && chat.activeID == id
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
-        let token = "nookdone-" + UUID().uuidString
-        viewModel.register("\(token)#open") { [weak self] in self?.openConversation(id) }
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
-        logNotice(.done, title: tr("nooks.finished", conversation.title), detail: preview, target: .conversation(id))
-        let lines = max(1, min(3, Int(ceil(Double(preview.count) / 46.0))))
-        let card = NookCard(
-            id: token,
-            mood: .done,
-            context: tr("nooks.finished", conversation.title),
-            title: preview,
-            detail: .none,
-            primary: CardAction(label: tr("nooks.view"), outcome: .callback("\(token)#open", "")),
-            secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
-            contentHeight: 100 + CGFloat(lines) * 24
-        )
-        viewModel.present(card)
+        let title = tr("nooks.finished", conversation.title)
+        logNotice(.done, title: title, detail: preview, target: .conversation(id))
+        presentNookNotice(title: title, detail: preview, button: tr("nooks.view"), mood: .done) { [weak self] in
+            self?.openConversation(id)
+        }
+    }
+
+    /// A notice from Nook himself (an answer that finished, call notes that are ready), shown as Settings ›
+    /// Notifications says: a card with `button` and Later, one line with `button`, or a macOS notification.
+    func presentNookNotice(title: String, detail: String, button: String, mood: NookMood, open: @escaping () -> Void) {
+        let token = "nookdone-" + UUID().uuidString
+        deliverNotice(.nook, id: token, title: title, body: detail, card: { [weak self] in
+            guard let self else { return }
+            self.viewModel.register("\(token)#open", open)
+            let shown = detail.isEmpty ? title : detail
+            let lines = max(1, min(3, Int(ceil(Double(shown.count) / 46.0))))
+            self.viewModel.present(NookCard(
+                id: token,
+                mood: mood,
+                context: detail.isEmpty ? "" : title,
+                title: shown,
+                detail: .none,
+                primary: CardAction(label: button, outcome: .callback("\(token)#open", "")),
+                secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
+                contentHeight: 100 + CGFloat(lines) * 24
+            ))
+        }, strip: { [weak self] in
+            self?.viewModel.notify(title, button: button, action: open)
+        }, open: open)
     }
 
     private static let thinkBlockRegex = try? NSRegularExpression(pattern: #"<think>[\s\S]*?</think>"#)

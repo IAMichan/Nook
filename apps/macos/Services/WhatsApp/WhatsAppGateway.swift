@@ -364,6 +364,15 @@ struct WAInbox: Equatable, Sendable {
     /// Messages kept per chat (in memory only): enough for the notch card to scroll back a while.
     static let keep = 50
 
+    /// A chat's newest `limit` messages from the gateway's history and what Nook kept, each once (the kept copy wins:
+    /// it has the ticks and reactions that came in since), oldest first.
+    static func newest(_ fetched: [WAMessage], _ kept: [WAMessage], limit: Int) -> [WAMessage] {
+        var byId: [String: WAMessage] = [:]
+        for message in fetched { byId[message.id] = message }
+        for message in kept { byId[message.id] = message }
+        return Array(byId.values.sorted { $0.date < $1.date }.suffix(limit))
+    }
+
     private(set) var conversations: [String: WAConversation] = [:]
     private var seenIds: Set<String> = []
     /// The same ids in arrival order, so the oldest are the ones forgotten.

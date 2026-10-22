@@ -303,6 +303,23 @@ enum DoubleTapLogic {
         return String(flat.prefix(limit)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
+    // MARK: Progress in the notch
+
+    /// The one line the notch shows while Nook answers a request from the quick field: the end of the answer as it is
+    /// written, else what Nook is doing ("Thinking…", "Looking in Calendar…"). Empty when there is nothing to show yet.
+    static func progressLine(text: String, status: String, limit: Int = 70) -> String {
+        let lastLine = { (value: String) in
+            value.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty } ?? ""
+        }
+        let written = lastLine(text)
+        guard !written.isEmpty else { return String(lastLine(status).prefix(limit)) }
+        guard written.count > limit else { return written }
+        // The newest words, starting at a word: the line moves along as Nook writes.
+        let tail = written.suffix(limit - 1)
+        let start = tail.firstIndex(of: " ").map { tail.index(after: $0) } ?? tail.startIndex
+        return "…" + tail[start...]
+    }
+
     // MARK: Prompt
 
     static let system = """

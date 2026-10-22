@@ -221,15 +221,14 @@ extension AppModel {
            viewModel.sessionTool == .conversation { return }
         let runID = run.id
         let message = tr("ws.notice.question", run.provider.displayName, run.title)
-        logNotice(.waiting, title: message, target: .run(runID), key: "wsquestion-" + runID.uuidString)
-        NookSound.play(.attention)
-        guard !quiet.silent else { return }
+        logNotice(.waiting, title: message, target: .run(runID), key: "wsquestion-" + runID.uuidString,
+                  source: .agents, app: run.provider.rawValue)
+        // The question is in the conversation, which a click opens: the card is the same line as the strip.
         let show: () -> Void = { [weak self] in
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
-        guard settings.noticeDelivery == .system else { show(); return }
-        SystemNotifier.shared.notice(id: "wsquestion-" + runID.uuidString, title: message,
-                                     open: { [weak self] in self?.openWorkspace(run: runID) }, fallback: show)
+        deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, title: message,
+                      sound: .attention, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
@@ -243,38 +242,26 @@ extension AppModel {
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
-        let failedTurn = run.status == .failed
-        logNotice(failedTurn ? .failed : .done,
-                  title: failedTurn ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title),
-                  detail: failedTurn ? (run.statusDetail ?? "") : "",
-                  context: [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
-                      .joined(separator: " · "),
-                  target: .run(run.id))
-        NookSound.play(run.status == .failed ? .error : .done)
-        guard !quiet.silent else { return }
-        guard settings.noticeDelivery == .system else { showTurnNotice(run); return }
         let failed = run.status == .failed
+        let title = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
+        let context = [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
+            .joined(separator: " · ")
+        logNotice(failed ? .failed : .done, title: title, detail: failed ? (run.statusDetail ?? "") : "", context: context,
+                  target: .run(run.id), source: .agents, app: run.provider.rawValue)
         let runID = run.id
-        SystemNotifier.shared.notice(
-            id: "agentstatus-ws-" + UUID().uuidString,
-            title: failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title),
-            subtitle: [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
-                .joined(separator: " · "),
-            body: failed ? (run.statusDetail ?? "") : "",
-            open: { [weak self] in self?.openWorkspace(run: runID) },
-            fallback: { [weak self] in self?.showTurnNotice(run) }
-        )
+        deliverNotice(.agents, app: run.provider.rawValue, id: "agentstatus-ws-" + UUID().uuidString, title: title,
+                      subtitle: context, body: failed ? (run.statusDetail ?? "") : "", sound: failed ? .error : .done,
+                      card: { [weak self] in self?.showTurnNotice(run, compact: false) },
+                      strip: { [weak self] in self?.showTurnNotice(run, compact: true) },
+                      open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
-    /// The notch notice for a finished or failed turn: a card or one slim line (Settings › Notifications).
-    private func showTurnNotice(_ run: WorkspaceRun) {
-        switch viewModel.state {
-        case .idle, .music, .track, .done: break
-        default: return
-        }
+    /// The notch notice for a finished or failed turn: a card, or one slim line (`compact`).
+    private func showTurnNotice(_ run: WorkspaceRun, compact: Bool) {
+        guard notchFreeForNotice else { return }
         let failed = run.status == .failed
         let runID = run.id
-        guard settings.agentNotice == .detailed else {
+        guard !compact else {
             let message = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
             viewModel.finish(message, button: tr("ws.notice.open"), tone: failed ? .failed : .done, acknowledge: true) { [weak self] in
                 self?.openWorkspace(run: runID)

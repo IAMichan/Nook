@@ -130,6 +130,15 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatDraft.choices(for: "", presets: presets), [])
     }
 
+    func testSteeringADraft() {
+        let request = ChatDraft.refinement(of: "  Sure, see you at 8!\n", change: " Make it shorter. ")
+        XCTAssertTrue(request.contains("<<<\nSure, see you at 8!\n>>>"), "the draft as it is in the field, trimmed")
+        XCTAssertTrue(request.hasSuffix("The change: Make it shorter."))
+        XCTAssertTrue(ChatDraft.refinement(of: "Hi", change: "  ").hasSuffix("The change: " + ChatDraft.Tweak.again.request),
+                      "no change typed: other words")
+        XCTAssertEqual(Set(ChatDraft.Tweak.allCases.map(\.titleKey)).count, ChatDraft.Tweak.allCases.count)
+    }
+
     func testNookInstruction() {
         XCTAssertEqual(ChatDraft.instruction(in: "@nook say yes, short"), "say yes, short")
         XCTAssertEqual(ChatDraft.instruction(in: "  @Nook: zeg dat ik later ben"), "zeg dat ik later ben")
@@ -241,6 +250,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(telegram?.unread, 2)
         XCTAssertEqual(inbox.sorted.first?.app, "signal", "newest first")
         XCTAssertEqual(inbox.totalUnread, 3)
+    }
+
+    func testFreshChatsAreTheOnesSomeoneJustWroteIn() {
+        var before = ChatInbox()
+        before.add(notice("Anna", "old", at: -3600), id: "1")
+        before.add(notice("Ben", "seen", at: 0), id: "2")
+        var after = before
+        after.add(notice("Anna", "new", at: 20), id: "3")
+        after.add(notice("Cas", "hello", at: 10), id: "4")
+        after.add(notice("Dirk", "long ago", at: -7200), id: "5")
+        let since = now.addingTimeInterval(-600)
+        XCTAssertEqual(ChatInbox.fresh(before: before, after: after, since: since),
+                       [ChatInbox.key(app: "telegram", chat: "Cas"), ChatInbox.key(app: "telegram", chat: "Anna")],
+                       "oldest first; Ben had nothing new and Dirk's message is too old to be news")
+        XCTAssertEqual(ChatInbox.fresh(before: after, after: after, since: since), [])
     }
 
     func testTheSameNotificationTwiceIsOneMessage() {

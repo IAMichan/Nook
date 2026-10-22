@@ -1,8 +1,8 @@
 import AppKit
 import UserNotifications
 
-/// Shows agent notices and permission requests as macOS notifications instead of notch cards (Settings › Notifications ›
-/// Show notices as). A request whose whole command fits on the banner gets Allow and Deny there; anything you cannot
+/// Shows notices as macOS notifications instead of on the notch, for every source set to "macOS notification" in
+/// Settings › Notifications (`NoticeRules`), and an agent's permission requests when agents are. A request whose whole command fits on the banner gets Allow and Deny there; anything you cannot
 /// fully see on a banner (a dangerous or long command, a file edit's diff, an MCP tool) only gets Deny and Show, so what
 /// is approved is always what was shown. A click on a notification opens it in the notch.
 @MainActor

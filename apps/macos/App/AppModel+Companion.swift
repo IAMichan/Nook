@@ -37,14 +37,47 @@ extension AppModel {
         WhatsAppLink.shared.start()
     }
 
-    /// A new message (or new ticks) in `chat`: its card, or the card on screen redrawn. Nothing is marked read by showing it.
-    /// `asked`: you opened the chat yourself ("@chat Jan"), so the card comes up now, even with notifications off.
+    /// A new message (or new ticks) in `chat`: a notice the way Settings › Notifications says for chats (its card with a
+    /// field to answer, one line, or a macOS notification), or the card on screen redrawn. Nothing is marked read by
+    /// showing it. `asked`: you opened the chat yourself ("@chat Jan"), so the card comes up now, whatever the rules.
     func presentWhatsApp(_ chat: String, asked opened: Bool = false) {
         let link = WhatsAppLink.shared
         let token = Self.whatsAppCardPrefix + chat
         let asked = opened || viewModel.hasCard(id: token)
-        guard asked || WhatsAppSettings.notify, let conversation = link.inbox.conversations[chat],
+        guard let conversation = link.inbox.conversations[chat],
               asked ? !conversation.messages.isEmpty : conversation.messages.contains(where: { !$0.fromMe }) else { return }
+        // In the notice history: the newest message from them, once (the card also updates for your own replies and ticks).
+        var line = ""
+        if !opened, let last = conversation.messages.last(where: { !$0.fromMe }) {
+            let file = Self.whatsAppFileLabel(last.media)
+            let text = file == nil ? Self.whatsAppText(last) : (last.text.isEmpty ? file ?? "" : last.text)
+            let sender = conversation.isGroup && !last.senderName.isEmpty ? last.senderName + ": " : ""
+            if NoticeHistory.shared.entries.first(where: { $0.key == token })?.detail != NoticeLog.detail(sender + text) {
+                line = sender + text
+                logNotice(.info, title: conversation.name, detail: line, context: "WhatsApp", target: .whatsApp(chat), key: token,
+                          source: .chats, app: "whatsapp")
+            }
+        }
+        guard !asked else {
+            showWhatsAppCard(chat, opened: opened)
+            return
+        }
+        // Nothing new from them (your own reply, new ticks): nothing to tell.
+        guard !line.isEmpty else { return }
+        let open: () -> Void = { [weak self] in self?.presentWhatsApp(chat, asked: true) }
+        deliverNotice(.chats, app: "whatsapp", id: token, title: conversation.name, subtitle: "WhatsApp", body: line,
+                      card: { [weak self] in self?.showWhatsAppCard(chat, opened: false) },
+                      strip: { [weak self] in
+                          self?.viewModel.notify(conversation.name + ": " + line, button: tr("notices.openChat"), action: open)
+                      },
+                      open: open)
+    }
+
+    /// The card of a WhatsApp chat, with a field to answer; redrawn when it is on screen already.
+    private func showWhatsAppCard(_ chat: String, opened: Bool) {
+        let link = WhatsAppLink.shared
+        let token = Self.whatsAppCardPrefix + chat
+        guard let conversation = link.inbox.conversations[chat], !conversation.messages.isEmpty else { return }
         viewModel.register("\(token)#read") { link.markRead(chat) }
         viewModel.register("\(token)#nook") { [weak self] in
             guard let self else { return }
@@ -56,16 +89,6 @@ extension AppModel {
         viewModel.register("\(token)#quiet") { link.mute(chat) }
         viewModel.register("\(token)#mute") { link.ignore(chat) }
 
-        // In the notice history: the newest message from them, once (the card also updates for your own replies and ticks).
-        if !opened, let last = conversation.messages.last(where: { !$0.fromMe }) {
-            let file = Self.whatsAppFileLabel(last.media)
-            let text = file == nil ? Self.whatsAppText(last) : (last.text.isEmpty ? file ?? "" : last.text)
-            let sender = conversation.isGroup && !last.senderName.isEmpty ? last.senderName + ": " : ""
-            if NoticeHistory.shared.entries.first(where: { $0.key == token })?.detail != NoticeLog.detail(sender + text) {
-                logNotice(.info, title: conversation.name, detail: sender + text, context: "WhatsApp",
-                          target: .whatsApp(chat), key: token)
-            }
-        }
         let messages = conversation.messages.suffix(WAInbox.keep)
         let bubbles = Self.whatsAppBubbles(conversation)
         let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
@@ -498,7 +521,8 @@ extension AppModel {
         }
         chat.append(message, to: conversation)
         logNotice(note.status == .failed ? .failed : .done, title: tr("notes.ready", note.title), target: .conversation(conversation))
-        viewModel.notify(tr("notes.ready", note.title), button: tr("notes.open")) { [weak self] in self?.showChat() }
+        presentNookNotice(title: tr("notes.ready", note.title), detail: "", button: tr("notes.open"),
+                          mood: note.status == .failed ? .worry : .done) { [weak self] in self?.openConversation(conversation) }
     }
 }
 

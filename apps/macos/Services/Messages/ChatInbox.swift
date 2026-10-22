@@ -465,6 +465,18 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// version reads them again once, so the chats an earlier, shorter one skipped still come in. Nil before it was kept.
     var lookedBack: TimeInterval? = nil
 
+    /// The chats someone else wrote in between `before` and `after`: their newest message from someone else is new, no
+    /// older than `since`, and still unread. Oldest first, so the newest notice comes last.
+    static func fresh(before: ChatInbox, after: ChatInbox, since: Date) -> [String] {
+        after.threads.values.compactMap { thread -> (String, Date)? in
+            guard thread.unread > 0, let newest = thread.messages.last(where: { !$0.isMine }), newest.date >= since,
+                  before.threads[thread.id]?.messages.last(where: { !$0.isMine })?.id != newest.id else { return nil }
+            return (thread.id, newest.date)
+        }
+        .sorted { $0.1 < $1.1 }
+        .map(\.0)
+    }
+
     static func key(app: String, chat: String) -> String {
         app + "|" + chat.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
@@ -779,6 +791,48 @@ enum ChatDraft {
             if !inner.contains(pair.0), !inner.contains(pair.1) { text = String(inner).trimmingCharacters(in: .whitespacesAndNewlines) }
         }
         return text.isEmpty ? nil : text
+    }
+}
+
+// MARK: Steering a draft
+
+extension ChatDraft {
+    /// The one-click changes offered under a message Nook wrote: each is a text key for its button and the request the
+    /// brain gets, in English as every request Nook writes itself.
+    enum Tweak: String, CaseIterable, Identifiable {
+        case shorter, warmer, formal, again
+
+        var id: String { rawValue }
+        var titleKey: String { "chats.draft.tweak." + rawValue }
+        var symbol: String {
+            switch self {
+            case .shorter: "arrow.down.right.and.arrow.up.left"
+            case .warmer: "face.smiling"
+            case .formal: "briefcase"
+            case .again: "arrow.triangle.2.circlepath"
+            }
+        }
+        var request: String {
+            switch self {
+            case .shorter: "Make it shorter."
+            case .warmer: "Make it warmer and friendlier."
+            case .formal: "Make it more formal."
+            case .again: "Say the same in other words."
+            }
+        }
+    }
+
+    /// The request that rewrites the message in the field (Nook's draft, perhaps changed by you) as asked, so it can be
+    /// steered after it was written. The draft is the user's own text, so it may be quoted as such.
+    static func refinement(of draft: String, change: String) -> String {
+        let ask = change.trimmingCharacters(in: .whitespacesAndNewlines)
+        return """
+        Rewrite this message, which the user is about to send. Keep what it says unless the change asks otherwise:
+        <<<
+        \(draft.trimmingCharacters(in: .whitespacesAndNewlines))
+        >>>
+        The change: \(ask.isEmpty ? Tweak.again.request : ask)
+        """
     }
 }
 

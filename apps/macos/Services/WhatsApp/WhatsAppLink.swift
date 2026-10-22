@@ -38,11 +38,6 @@ enum WhatsAppSettings {
         get { let value = defaults.integer(forKey: "whatsappPort"); return (1024...65535).contains(value) ? value : defaultPort }
         set { defaults.set(newValue, forKey: "whatsappPort") }
     }
-    /// A new message shows in the notch with a field to answer it.
-    static var notify: Bool {
-        get { defaults.object(forKey: "whatsappNotify") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "whatsappNotify") }
-    }
     /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
     static var markReadOnReply: Bool {
         get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }
@@ -594,15 +589,15 @@ final class WhatsAppLink: ObservableObject {
         }
     }
 
-    /// The newest messages of one chat, from the gateway (falls back to what Nook kept).
+    /// The newest messages of one chat: the gateway's history together with what came in live, so a message that
+    /// arrived after the gateway's stored history is never left out (falls back to what Nook kept).
     func messages(of chat: String, limit: Int = 20) async throws -> [WAMessage] {
         guard let provider, isConnected else { throw NookError(statusLine) }
         let key = WAJID.normalized(chat)
-        if let fetched = try? await provider.messages(chat: key, limit: limit, me: me), !fetched.isEmpty {
-            for message in fetched { inbox.add(message, filters: filters, history: true) }
-            return fetched
-        }
-        return inbox.conversations[key]?.messages ?? []
+        let fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
+        for message in fetched { inbox.add(message, filters: filters, history: true) }
+        let kept = inbox.conversations[key]?.messages ?? []
+        return WAInbox.newest(fetched, kept, limit: limit)
     }
 
     /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.

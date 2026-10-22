@@ -273,6 +273,19 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WhatsAppRecipients.lines([voice], chatName: "Lisa", calendar: calendar).hasSuffix("Lisa: [voice message]"))
     }
 
+    func testAChatReadsTheGatewayHistoryTogetherWithWhatCameInLive() {
+        let old = message("1", chat: "c", text: "Kun je de taak oppakken?", at: 0)
+        let stored = message("2", chat: "c", text: "Bedankt!", at: 60, fromMe: true, name: "")
+        var live = message("3", chat: "c", text: "Is Guard productie al klaar?", at: 30 * 86_400)
+        live.reactions = [WAReaction(emoji: "👍", sender: "me", fromMe: true)]
+        var keptStored = stored
+        keptStored.receipt = .read
+        let chat = WAInbox.newest([stored, old], [keptStored, live], limit: 20)
+        XCTAssertEqual(chat.map(\.id), ["1", "2", "3"], "the live message the gateway's history lacks is the newest")
+        XCTAssertEqual(chat[1].receipt, .read, "the kept copy, with its ticks, wins")
+        XCTAssertEqual(WAInbox.newest([stored, old], [live], limit: 2).map(\.id), ["2", "3"])
+    }
+
     func testGOWADownloadIsFetchedFromTheGatewayItself() {
         let answer = #"{"code":"SUCCESS","results":{"filename":"offerte.pdf","file_path":"statics/media/31612345678/2026-10-20/offerte.pdf","file_url":"http://localhost:3000/statics/media/31612345678/2026-10-20/offerte.pdf"}}"#
         let saved = WAGOWA.download(Data(answer.utf8))
