@@ -377,9 +377,10 @@ struct ChatsTab: View {
                                 .foregroundStyle(NookTheme.coralSoft)
                                 .multilineTextAlignment(.center)
                                 .fixedSize(horizontal: false, vertical: true)
-                        } else if let bridge = capture.bridge(for: filter), bridge.app != capture.messagesBridge.app, !bridge.isReady {
-                            // Slack, Telegram and Teams keep their history on their own servers: connected once, Nook
-                            // reads it from there.
+                        } else if let bridge = capture.bridge(for: filter),
+                                  ![capture.messagesBridge.app, capture.whatsAppDesktopBridge.app].contains(bridge.app), !bridge.isReady {
+                            // Slack, Telegram, Teams and Beeper keep their history elsewhere: connected once, Nook reads
+                            // it from there.
                             ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
                             SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
                         } else {

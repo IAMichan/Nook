@@ -190,6 +190,7 @@ targets:
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
+      - path: Services/Messages/BeeperData.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift

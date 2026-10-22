@@ -505,6 +505,40 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TeamsData.unread(messages, readUntil: chats[0].readUntil), 1)
     }
 
+    // MARK: Beeper
+
+    func testBeeperNetworksGoToTheirApps() {
+        XCTAssertEqual(BeeperData.app(network: "Instagram", account: "instagramgo"), "instagram")
+        XCTAssertEqual(BeeperData.app(network: "Facebook/Messenger", account: "facebookgo"), "messenger")
+        XCTAssertEqual(BeeperData.app(network: "", account: "discordgo"), "discord")
+        XCTAssertEqual(BeeperData.app(network: "Twitter/X", account: "twitter"), "x")
+        XCTAssertEqual(BeeperData.app(network: "Signal", account: "signal"), "signal")
+        XCTAssertNil(BeeperData.app(network: "Google Messages", account: "gmessages"), "a network without a source is left out")
+    }
+
+    func testBeeperChatsAndMessages() {
+        let list: [String: Any] = ["items": [
+            ["id": "!a:beeper.local", "accountID": "instagramgo", "network": "Instagram", "title": "Anna", "type": "single",
+             "unreadCount": 2, "lastActivity": "2026-10-22T09:00:00.000Z"],
+            ["id": "!b", "accountID": "discordgo", "title": "Gamers", "type": "group", "isArchived": true],
+            ["id": "!c", "accountID": "gmessages", "title": "Bank", "type": "single"]
+        ]]
+        let chats = BeeperData.chats(list)
+        XCTAssertEqual(chats.map(\.app), ["instagram"])
+        XCTAssertEqual(chats.first?.unread, 2)
+        let group = BeeperData.Chat(id: "!g", app: "discord", title: "Gamers", isGroup: true, unread: 0, last: nil)
+        let history: [String: Any] = ["items": [
+            ["id": "2", "timestamp": "2026-10-22T09:00:00Z", "text": "gg", "senderName": "Jan", "isSender": false],
+            ["id": "1", "timestamp": "2026-10-22T08:00:00Z", "text": "", "type": "IMAGE", "isSender": true],
+            ["id": "3", "timestamp": "2026-10-22T09:01:00Z", "text": "👍", "type": "REACTION"]
+        ]]
+        let messages = BeeperData.messages(history, chat: group)
+        XCTAssertEqual(messages.map(\.text), [tr("whatsapp.file.photo"), "gg"])
+        XCTAssertTrue(messages[0].isMine)
+        XCTAssertEqual(messages[1].sender, "Jan")
+        XCTAssertEqual(messages[1].id, "beeper-!g-2")
+    }
+
     // MARK: As bubbles
 
     private var calendar: Calendar {

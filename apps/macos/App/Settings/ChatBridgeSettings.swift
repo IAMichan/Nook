@@ -207,3 +207,56 @@ struct TeamsSettingsRows: View {
         teams.clientChanged()
     }
 }
+
+/// Settings › Chats › Beeper: the token of Beeper Desktop's local API, for every network linked in Beeper.
+struct BeeperSettingsRows: View {
+    @ObservedObject var capture: ChatCaptureService
+    @State private var token = ""
+    @State private var saved = BeeperBridge.token != nil
+
+    var body: some View {
+        if WhatsAppLink.enabled && WhatsAppLink.gateway == .beeper {
+            // Its chats already come in through the WhatsApp link, with answering in place.
+            StatusRow(title: tr("chats.beeper.viaGateway"), detail: tr("chats.beeper.viaGatewayDetail"), state: .done) { EmptyView() }
+        } else {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                SettingLabel(tr("chats.beeper.token"), detail: tr("chats.beeper.tokenDetail"))
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    SecureField("", text: $token, prompt: Text(saved ? "••••••••" : tr("chats.beeper.token")))
+                        .labelsHidden().textFieldStyle(.roundedBorder)
+                        .onSubmit { save() }
+                    Button(tr("chats.slack.save")) { save() }
+                        .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if saved {
+                        Button(tr("chats.slack.disconnect")) {
+                            Keychain.remove(BeeperBridge.tokenAccount)
+                            saved = false
+                            capture.beeperBridge.reset()
+                            capture.bridgeChanged(capture.beeperBridge.app)
+                        }
+                    }
+                }
+            }
+            if saved {
+                if let problem = capture.bridgeProblems[capture.beeperBridge.app] {
+                    StatusRow(title: tr("chats.beeper.problem"), detail: problem, state: .error) { EmptyView() }
+                } else if capture.bridged.contains(capture.beeperBridge.app) {
+                    StatusRow(title: tr("chats.beeper.connected"), detail: tr("chats.beeper.connectedDetail"), state: .done) { EmptyView() }
+                }
+            }
+        }
+    }
+
+    private func save() {
+        let value = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, Keychain.write(value, account: BeeperBridge.tokenAccount) == errSecSuccess else {
+            ToastCenter.shared.error(tr("chats.slack.notSaved"))
+            return
+        }
+        token = ""
+        saved = true
+        capture.setSource(capture.beeperBridge.app, on: true)
+        capture.beeperBridge.reset()
+        capture.bridgeChanged(capture.beeperBridge.app)
+    }
+}

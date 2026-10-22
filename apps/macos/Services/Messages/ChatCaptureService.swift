@@ -39,7 +39,13 @@ final class ChatCaptureService: ObservableObject {
     let slackBridge = SlackBridge()
     let telegramBridge = TelegramBridge()
     let teamsBridge = TeamsBridge()
-    private var bridges: [ChatBridge] { [messagesBridge, slackBridge, telegramBridge, teamsBridge] }
+    /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every network linked in Beeper.
+    let whatsAppDesktopBridge = WhatsAppDesktopBridge()
+    let beeperBridge = BeeperBridge()
+    /// Beeper goes last: a network another bridge reads is left to that one.
+    private var bridges: [ChatBridge] {
+        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, beeperBridge]
+    }
 
     /// The bridge of an app, if Nook has one.
     func bridge(for app: String) -> ChatBridge? {
@@ -78,6 +84,10 @@ final class ChatCaptureService: ObservableObject {
         inbox.trim()
         self.inbox = inbox
         enabled = ConnectorToggle.isOn(ChatInboxConnector.sourceID, default: false)
+        beeperBridge.skips = { [weak self] app in
+            guard let self else { return false }
+            return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.beeperBridge }
+        }
     }
 
     private var databasePath: String { NotificationRecord.databasePath(home: AppDatabase.home) }
@@ -162,7 +172,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// A working bridge brings this app's messages itself: its notifications would only repeat them.
     private func isBridged(_ app: String) -> Bool {
-        bridges.contains { $0.app == app && $0.isWorking }
+        bridges.contains { $0.app == app && $0.isWorking } || (beeperBridge.isWorking && beeperBridge.covered.contains(app))
     }
 
     /// Reads every bridge that is due, of the apps that are on. Runs next to the notifications, also while those cannot

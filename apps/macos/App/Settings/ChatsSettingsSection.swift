@@ -61,6 +61,14 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.teams.footer"))
             }
 
+            Section {
+                BeeperSettingsRows(capture: capture)
+            } header: {
+                Text(tr("chats.beeper.title"))
+            } footer: {
+                Text(tr("chats.beeper.footer"))
+            }
+
             WhatsAppLinkSection()
         }
     }
