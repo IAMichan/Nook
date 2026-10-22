@@ -378,6 +378,35 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["later"])
     }
 
+    func testARemovedChatDoesNotComeBackFromOldNotifications() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Anna")
+        inbox.add(notice("Anna", "hi"), id: "n1")
+        inbox.remove(key, at: now.addingTimeInterval(5))
+        // Looking back again reads the same notification once more.
+        XCTAssertFalse(inbox.add(notice("Anna", "hi"), id: "n1"))
+        XCTAssertNil(inbox.threads[key])
+        XCTAssertTrue(inbox.add(notice("Anna", "later", at: 10), id: "n2"))
+        XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["later"])
+    }
+
+    func testSlackAndTeamsNotificationsFromTheirMacApps() {
+        let slack = ChatCapture.notice(notification("com.tinyspeck.slackmacgap", title: "New message in #github-updates",
+                                                    body: "GitHub: 1 new commit pushed"))
+        XCTAssertEqual(slack?.app, "slack")
+        XCTAssertEqual(slack?.chat, "New message in #github-updates")
+        let teams = ChatCapture.notice(notification("com.microsoft.teams2", title: "Mindlinq Business & Dev",
+                                                    body: "Aron: Ter info"))
+        XCTAssertEqual(teams?.app, "teams")
+        XCTAssertEqual(teams?.chat, "Mindlinq Business & Dev")
+        XCTAssertEqual(teams?.text, "Aron: Ter info")
+    }
+
+    func testTeamsOnItsNewerWebAddresses() {
+        XCTAssertEqual(MessagingApps.app(mentionedIn: ["teams.cloud.microsoft", "Anna", "hoi"])?.id, "teams")
+        XCTAssertEqual(MessagingApps.app(mentionedIn: ["teams.live.com", "Anna", "hoi"])?.id, "teams")
+    }
+
     // MARK: Slack
 
     func testSlackMarkup() {

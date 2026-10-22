@@ -33,7 +33,8 @@ enum MessagingApps {
         MessagingApp(id: "messages", name: "Messages", bundleIDs: ["com.apple.MobileSMS", "com.apple.iChat"]),
         MessagingApp(id: "slack", name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"], domains: ["app.slack.com"], site: "slack.com"),
         MessagingApp(id: "discord", name: "Discord", bundleIDs: ["com.hnc.Discord"], domains: ["discord.com"], site: "discord.com"),
-        MessagingApp(id: "teams", name: "Teams", bundleIDs: ["com.microsoft.teams2", "com.microsoft.teams"], domains: ["teams.microsoft.com"], site: "teams.microsoft.com"),
+        MessagingApp(id: "teams", name: "Teams", bundleIDs: ["com.microsoft.teams2", "com.microsoft.teams"],
+                     domains: ["teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com"], site: "teams.microsoft.com"),
         MessagingApp(id: "googlechat", name: "Google Chat", domains: ["chat.google.com"], site: "chat.google.com"),
         MessagingApp(id: "snapchat", name: "Snapchat", domains: ["snapchat.com"], site: "snapchat.com"),
         MessagingApp(id: "viber", name: "Viber", bundleIDs: ["com.viber.osx"], site: "viber.com"),
@@ -420,6 +421,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
     var lastRecord: Int64?
     /// Chats you removed, and when: a bridge brings back only what is newer, not the history you threw away.
     var removed: [String: Date]? = nil
+    /// How far back the notifications were read when collecting started (seconds). A longer look-back in a newer
+    /// version reads them again once, so the chats an earlier, shorter one skipped still come in. Nil before it was kept.
+    var lookedBack: TimeInterval? = nil
 
     static func key(app: String, chat: String) -> String {
         app + "|" + chat.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
@@ -431,6 +435,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
     @discardableResult
     mutating func add(_ notice: ChatNotice, id: String) -> Bool {
         let key = Self.key(app: notice.app, chat: notice.chat)
+        // A chat you removed comes back with what is newer, not with the notifications it already had.
+        if let gone = removed?[key], notice.date <= gone { return false }
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
             $0.id == id || (!$0.isMine && $0.text == notice.text && abs($0.date.timeIntervalSince(notice.date)) < Self.sameMessageWindow)
