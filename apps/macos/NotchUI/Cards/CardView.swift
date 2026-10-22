@@ -204,6 +204,7 @@ struct CardView: View {
         .onAppear {
             if let draft = card.draft { reply = draft }
             // Wait briefly for the panel to acquire keyboard focus.
+            guard card.focusesInput else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
         .onChange(of: card.draft) { _, draft in

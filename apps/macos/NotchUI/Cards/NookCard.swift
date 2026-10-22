@@ -153,10 +153,13 @@ struct NookCard: Equatable, Identifiable {
     var secondary: CardAction
     /// Content height below the notch, excluding margins.
     var contentHeight: CGFloat
-    /// Displays a text field for immediate follow-up. The field gains focus as soon as the card appears.
+    /// Displays a text field for immediate follow-up.
     var input: Bool = false
     /// The text field's placeholder when it is not a follow-up question (e.g. "Answer Lisa…").
     var inputPrompt: String? = nil
+    /// The field takes the keyboard as soon as the card appears. Off for cards that arrive on their own (an incoming
+    /// message, a suggestion): you keep typing where you were, and a click in the field answers.
+    var focusesInput: Bool = true
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
     /// Less common actions, tucked away in a "…" menu at the end of the button row so the row stays calm.

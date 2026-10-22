@@ -15,6 +15,8 @@ final class NotchController {
     private var monitors: [Any] = []
     private var cancellables = Set<AnyCancellable>()
     private var previousApp: NSRunningApplication?
+    /// The card on screen at the last state change, so an update of that card is told apart from a new one.
+    private var shownCard: String?
 
     private var dragStart: (mouse: NSPoint, centerX: CGFloat, top: CGFloat)?
 
@@ -159,7 +161,13 @@ final class NotchController {
         let chatFocus = (state == .panel(.nook) || state == .panel(.chat)) && viewModel.focusChat
         viewModel.focusChat = false
         var wantsKeys = chatFocus
-        if case .card(let card) = state, card.input { wantsKeys = true }
+        let previousCard = shownCard
+        if case .card(let card) = state { shownCard = card.id } else { shownCard = nil }
+        if case .card(let card) = state, card.input {
+            // Already typing in this card (a click in its field): a new message updating it keeps the keyboard.
+            if panel.isKeyWindow, card.id == previousCard { return }
+            wantsKeys = card.focusesInput
+        }
         if wantsKeys {
             guard !panel.isKeyWindow else { return }
             let front = NSWorkspace.shared.frontmostApplication
@@ -173,7 +181,10 @@ final class NotchController {
             if case .panel = state { return }
             // Finished typing: return focus to previously active application.
             panel.resignKey()
-            previousApp?.activate(options: [])
+            // A click in the field made the panel key without activating Nook: the app in front is still yours.
+            let front = NSWorkspace.shared.frontmostApplication
+            let own = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+            (previousApp ?? (own ? nil : front))?.activate(options: [])
             previousApp = nil
         }
     }

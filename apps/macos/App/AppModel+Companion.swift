@@ -80,6 +80,8 @@ extension AppModel {
             contentHeight: Self.whatsAppCardHeight(bubbles),
             input: true,
             inputPrompt: tr("whatsapp.card.answer", conversation.name),
+            // A new message never takes the keyboard from what you are doing; a chat you opened yourself does.
+            focusesInput: opened,
             extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", ""), symbol: "sparkles")],
             more: [CardAction(label: tr("whatsapp.card.quiet"), outcome: .callback("\(token)#quiet", ""), symbol: "bell.slash"),
                    CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""), symbol: "eye.slash")],
