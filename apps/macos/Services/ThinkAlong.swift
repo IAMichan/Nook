@@ -19,7 +19,8 @@ final class ThinkAlong: ObservableObject {
         var declined: Bool
     }
 
-    /// Apps where Nook never proactively assists (bundle ID → name), at your request.
+    /// The apps Think Along was switched off in at some point (bundle ID → name), so Settings › Notifications can list
+    /// them by name. Whether one is off now is in `AppSettings.noticeRules`.
     @Published private(set) var mutedApps: [String: String]
 
     private var focusKey = ""
@@ -61,7 +62,8 @@ final class ThinkAlong: ObservableObject {
 
     /// - Parameter minGap: at least this long since the last look, when more than the usual gap.
     func shouldLook(bundleID: String, window: String, print: UInt64, minGap: TimeInterval? = nil, now: Date = Date()) -> Bool {
-        guard !bundleID.isEmpty, bundleID != Bundle.main.bundleIdentifier, mutedApps[bundleID] == nil,
+        guard !bundleID.isEmpty, bundleID != Bundle.main.bundleIdentifier,
+              AppSettings.shared.noticeRules.isOn(.suggestions, app: bundleID),
               !ScreenReader.excludedBundles.contains(bundleID) else { return false }
         // Away from the Mac: nothing to proactively assist with.
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
@@ -136,10 +138,6 @@ final class ThinkAlong: ObservableObject {
         guard !bundleID.isEmpty else { return }
         mutedApps[bundleID] = name
         UserDefaults.standard.set(mutedApps, forKey: "thinkAlongMuted")
-    }
-
-    func unmuteAll() {
-        mutedApps = [:]
-        UserDefaults.standard.removeObject(forKey: "thinkAlongMuted")
+        AppSettings.shared.noticeRules.set(.suggestions, app: bundleID, on: false)
     }
 }

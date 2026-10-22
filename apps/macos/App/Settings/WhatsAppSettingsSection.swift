@@ -11,8 +11,14 @@ struct WhatsAppLinkSection: View {
     @State private var address = WhatsAppSettings.url
     @State private var credential = WhatsAppSettings.credential ?? ""
     @State private var autoStart = WhatsAppGOWAProcess.autoStart
-    @State private var notify = WhatsAppSettings.notify
+    /// Whether WhatsApp may notify is one of the switches in Settings › Notifications, the same one shown here.
+    @ObservedObject private var settings = AppSettings.shared
     @State private var markRead = WhatsAppSettings.markReadOnReply
+
+    private var notify: Binding<Bool> {
+        Binding(get: { settings.noticeRules.isOn(.chats, app: "whatsapp") },
+                set: { settings.noticeRules.set(.chats, app: "whatsapp", on: $0) })
+    }
 
     var body: some View {
         Section {
@@ -84,9 +90,8 @@ struct WhatsAppLinkSection: View {
         // every chat on its own (louder or quieter than its kind).
         if enabled, link.isConnected {
             Section {
-                SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: $notify)
-                    .onChange(of: notify) { _, value in WhatsAppSettings.notify = value }
-                if notify {
+                SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: notify)
+                if notify.wrappedValue {
                     SettingToggle(tr("whatsapp.settings.muteGroups"), detail: tr("whatsapp.settings.muteGroupsDetail"),
                                   isOn: Binding(get: { link.filters.muteGroups }, set: { link.filters.muteGroups = $0 }))
                     SettingToggle(tr("whatsapp.settings.muteStatus"), detail: tr("whatsapp.settings.muteStatusDetail"),

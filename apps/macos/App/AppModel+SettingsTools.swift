@@ -135,8 +135,10 @@ extension AppModel {
         case "wake_word": return SettingsCatalog.value(settings.wakeWord)
         case "dictation": return SettingsCatalog.value(FlowStore.shared.enabled)
         case "agent_sounds": return SettingsCatalog.value(settings.sounds)
-        case "agent_notice": return settings.agentNotice.rawValue
-        case "notice_delivery": return settings.noticeDelivery.rawValue
+        case "notices_agents": return settings.noticeRules.style(for: .agents).rawValue
+        case "notices_chats": return settings.noticeRules.style(for: .chats).rawValue
+        case "notices_nook": return settings.noticeRules.style(for: .nook).rawValue
+        case "notices_suggestions": return settings.noticeRules.style(for: .suggestions).rawValue
         case "use_memory": return SettingsCatalog.value(settings.useMemory)
         case "learn_from_chats": return SettingsCatalog.value(settings.learnFromChats)
         case "online_lyrics": return SettingsCatalog.value(settings.onlineLyrics)
@@ -165,11 +167,10 @@ extension AppModel {
             FlowStore.shared.enabled = on
             FlowDictation.shared.refresh()
         case "agent_sounds": settings.sounds = on
-        case "agent_notice": if let style = AgentNoticeStyle(rawValue: value) { settings.agentNotice = style }
-        case "notice_delivery":
-            if let delivery = NoticeDelivery(rawValue: value) {
-                settings.noticeDelivery = delivery
-                if delivery == .system { SystemNotifier.shared.requestAccess() }
+        case "notices_agents", "notices_chats", "notices_nook", "notices_suggestions":
+            if let source = NoticeSource(rawValue: String(id.dropFirst("notices_".count))), let style = NoticeStyle(rawValue: value) {
+                settings.noticeRules.setStyle(style, for: source)
+                requestNotificationAccessIfNeeded()
             }
         case "use_memory": settings.useMemory = on
         case "learn_from_chats": settings.learnFromChats = on

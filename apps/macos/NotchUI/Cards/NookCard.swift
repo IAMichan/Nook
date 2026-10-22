@@ -202,6 +202,9 @@ struct NookCard: Equatable, Identifiable {
     /// The field answers the chat the card shows (a WhatsApp message): it is the Chats tab's `ChatReplyField`, so "@"
     /// opens the same menu and "@nook …" lets Nook write the message into the field instead of sending it.
     var chatReply: Bool = false
+    /// A chat of an app Nook cannot write in (Telegram, Messages…), by that app's name: the field works as in the Chats
+    /// tab, so what you type (or let Nook write) is copied and the app opens to paste it; no quotes or emoji.
+    var replyCopiesTo: String? = nil
     /// Only the field, with its send button inside it: a small card that asks one thing (the double tap's "what should
     /// Nook do?"). The title stays for VoiceOver and the buttons for Escape, but neither is drawn.
     var compact: Bool = false

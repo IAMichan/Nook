@@ -32,6 +32,10 @@ final class ChatCaptureService: ObservableObject {
 
     /// A notification Nook already has another way (WhatsApp, while the phone is linked, arrives live).
     var skips: (ChatNotice) -> Bool = { _ in false }
+    /// Chats someone just wrote in (their keys in `inbox`), newest last: Nook may tell you (Settings › Notifications).
+    var onFresh: ([String]) -> Void = { _ in }
+    /// Only a message this recent is news; older ones that come in (a first look, a long sleep) are for the Chats tab.
+    static let newsWindow: TimeInterval = 600
 
     /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token,
     /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in.
@@ -151,8 +155,10 @@ final class ChatCaptureService: ObservableObject {
         polling = true
         defer { polling = false }
         let started = generation
+        let before = inbox
         do {
             if inbox.lastRecord == nil { replaying = true }
+            let wasReplaying = replaying
             let seen = Date().addingTimeInterval(-Self.freshness)
             var lastRecord = inbox.lastRecord
             var changed = false
@@ -198,7 +204,10 @@ final class ChatCaptureService: ObservableObject {
             lastChange = change
             retryAt = nil
             status = .running
-            if changed { save() }
+            if changed {
+                save()
+                if !wasReplaying { announce(since: before) }
+            }
         } catch let error as NookError where error.kind == .auth {
             guard started == generation else { return }
             status = .needsAccess
@@ -233,6 +242,7 @@ final class ChatCaptureService: ObservableObject {
         bridging = true
         defer { bridging = false }
         var changed = false
+        let before = inbox
         for bridge in bridges {
             guard sources.isOn(bridge.app), bridge.isReady else {
                 bridgeProblems[bridge.app] = nil
@@ -253,7 +263,17 @@ final class ChatCaptureService: ObservableObject {
                 bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
             }
         }
-        if changed { save() }
+        if changed {
+            save()
+            announce(since: before)
+        }
+    }
+
+    /// Tells about the chats someone wrote in since `before`, in the apps that are on.
+    private func announce(since before: ChatInbox) {
+        let fresh = ChatInbox.fresh(before: before, after: inbox, since: Date().addingTimeInterval(-Self.newsWindow))
+            .filter { inbox.threads[$0].map { sources.isOn($0.app) } ?? false }
+        if !fresh.isEmpty { onFresh(fresh) }
     }
 
     /// The Slack token changed in Settings: read Slack again from the start.

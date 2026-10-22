@@ -310,6 +310,11 @@ extension AppModel {
             replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)))
             return
         }
+        // Another app's chat card: the answer is copied for that app.
+        if card.id.hasPrefix(Self.chatCardPrefix) {
+            copyCardReply(text, card: card)
+            return
+        }
         // The notch's "what can Nook do for you?" field: a new conversation in the Nook chat.
         if card.id.hasPrefix(Self.takeoverCardPrefix) {
             askFromQuickField(text)

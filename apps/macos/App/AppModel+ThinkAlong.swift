@@ -146,10 +146,17 @@ extension AppModel {
 
         let offer = BrainPlan(text: body, actions: plan.actions)
         let card = nudgeCard(offer, offers: split.offers, bundleID: bundleID, appName: appName)
-        guard viewModel.offerNudge(line, card: card) else { return }
+        // On the notch it needs a resting notch; when it is busy, the offer waits for a later look.
+        let decision = settings.noticeRules.decide(.suggestions, app: bundleID, quiet: quiet.silent)
+        if let style = decision.style, style != .system, !viewModel.nudgeFits { return }
         thinkAlong.didOffer(line)
-        logNotice(.info, title: line, detail: body == line ? "" : body, context: appName)
+        logNotice(.info, title: line, detail: body == line ? "" : body, context: appName, source: .suggestions, app: bundleID)
         missedNudge = (line, card, appName, Date())
+        deliverNotice(.suggestions, app: bundleID, id: card.id, title: line, subtitle: appName,
+                      body: body == line ? "" : body,
+                      card: { [weak self] in self?.viewModel.present(card) },
+                      strip: { [weak self] in _ = self?.viewModel.offerNudge(line, card: card) },
+                      open: { [weak self] in self?.viewModel.present(card) })
     }
 
     /// Dates the offer talks about ("2027-09-20", "next Friday"), as the system's date detector reads them.

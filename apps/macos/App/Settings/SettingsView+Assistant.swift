@@ -32,16 +32,9 @@ extension SettingsView {
                             .buttonStyle(.link)
                     }
                 }
-                if !app.thinkAlong.mutedApps.isEmpty {
-                    LabeledContent(tr("settings.assistant.mutedIn")) {
-                        HStack {
-                            Text(app.thinkAlong.mutedApps.values.sorted().joined(separator: ", "))
-                                .foregroundStyle(NookTheme.textSecondary)
-                                .lineLimit(2)
-                            Button(tr("button.clear")) { app.thinkAlong.unmuteAll() }
-                        }
-                    }
-                }
+                // How a suggestion shows, and the apps it is switched off in, are with every other notice.
+                SettingsLinkRow(title: tr("notices.settings.suggestionsLink"), detail: tr("notices.settings.suggestionsLinkDetail"),
+                                section: .notifications) { app.settingsSection = .notifications }
                 SettingToggle(tr("settings.assistant.autoRunSafe"), detail: tr("settings.assistant.autoRunSafeDetail"), isOn: $settings.autoRunSafe)
             }
             buddySection

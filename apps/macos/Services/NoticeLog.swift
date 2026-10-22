@@ -20,6 +20,8 @@ struct NoticeEntry: Equatable, Identifiable {
         case conversation(UUID)
         /// A WhatsApp chat, by its id.
         case whatsApp(String)
+        /// A chat from another app in the Chats tab, by its id there ("telegram|anna").
+        case chat(String)
         /// Nothing to open: the entry is only read.
         case nowhere
     }
