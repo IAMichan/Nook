@@ -97,34 +97,26 @@ enum MailActions {
     /// "subject|||sender" per changed message.
     static func script(_ change: Change, _ selection: Selection) -> String {
         var conditions: [String] = []
+        var fields: [Field] = [.subject, .sender]
         if !selection.ids.isEmpty {
-            conditions.append("(" + selection.ids.map { "message id is \(quote($0))" }.joined(separator: " or ") + ")")
+            fields.append(.messageID)
+            conditions.append("(" + selection.ids.map { "mid is \(quote($0))" }.joined(separator: " or ") + ")")
         }
-        if let from = selection.from { conditions.append("sender contains \(quote(from))") }
-        if let subject = selection.subject { conditions.append("subject contains \(quote(subject))") }
-        if selection.unreadOnly { conditions.append("read status is false") }
-        if selection.days != nil { conditions.append("date received > cutoff") }
-        let filter = conditions.isEmpty ? "" : " whose " + conditions.joined(separator: " and ")
+        if let from = selection.from { conditions.append("sndr contains \(quote(from))") }
+        if let subject = selection.subject { conditions.append("subj contains \(quote(subject))") }
+        if selection.unreadOnly {
+            fields.append(.read)
+            conditions.append("isRead is false")
+        }
+        if selection.days != nil {
+            fields.append(.date)
+            conditions.append("rcvd > cutoff")
+        }
+        let condition = conditions.isEmpty ? "true" : conditions.joined(separator: " and ")
         let cutoff = selection.days.map { "set cutoff to (current date) - (\($0) * days)\n" } ?? ""
         return """
         \(cutoff)tell application "Mail"
-            set found to {}
-            repeat with acc in accounts
-                repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
-                    set total to count of messages of box
-                    if total > 0 then
-                        if total > \(scanned) then
-                            set hits to (messages 1 thru \(scanned) of box\(filter))
-                        else
-                            set hits to (messages of box\(filter))
-                        end if
-                        repeat with h in hits
-                            if (count of found) >= \(limit) then exit repeat
-                            set end of found to contents of h
-                        end repeat
-                    end if
-                end repeat
-            end repeat
+        \(collectScript(condition: condition, fields: fields, sent: false, limit: limit))
             set out to ""
             set changed to 0
             repeat with m in found
@@ -137,6 +129,72 @@ enum MailActions {
             end repeat
             return (changed as string) & linefeed & out
         end tell
+        """
+    }
+
+    /// A message property read in bulk by `collectScript`, and the script variable that holds it for one message.
+    enum Field: String {
+        case subject = "subj", sender = "sndr", messageID = "mid", read = "isRead", date = "rcvd"
+
+        var property: String {
+            switch self {
+            case .subject: return "subject"
+            case .sender: return "sender"
+            case .messageID: return "message id"
+            case .read: return "read status"
+            case .date: return "date received"
+            }
+        }
+    }
+
+    /// AppleScript (inside `tell application "Mail"`) that collects at most `limit` matching messages in `found`, from
+    /// every account's inbox or from the sent mailbox. Mail rejects a `whose` filter on a range ("messages 1 thru 600 of
+    /// box whose …" fails with -1719, invalid index) and a `whose` over a whole big inbox is too slow, so the newest
+    /// `scanned` messages of each mailbox are read in bulk (one Apple Event per property) and filtered here.
+    /// `condition` uses the variables of `fields` (`subj contains "x" or sndr contains "x"`).
+    static func collectScript(condition: String, fields: [Field], sent: Bool, limit: Int) -> String {
+        let fetch = fields.map { "set \($0.rawValue)s to \($0.property) of messages lo thru hi of mb" }
+            .joined(separator: "\n                ")
+        let pick = fields.map { "set \($0.rawValue) to item i of \($0.rawValue)s" }
+            .joined(separator: "\n                        ")
+        let boxes = sent ? "set boxes to {sent mailbox}" : """
+            set boxes to {}
+            repeat with acc in accounts
+                try
+                    set boxes to boxes & (mailboxes of acc whose name is "INBOX" or name is "Inbox")
+                end try
+            end repeat
+        """
+        return """
+            set found to {}
+        \(boxes)
+            repeat with box in boxes
+                if (count of found) >= \(limit) then exit repeat
+                set mb to contents of box
+                set total to count of messages of mb
+                if total > 0 then
+                    set lo to 1
+                    set hi to total
+                    if total > \(scanned) then
+                        set hi to \(scanned)
+                        -- Mail usually lists the newest first; if not, take the other end.
+                        if (date received of message 1 of mb) < (date received of message total of mb) then
+                            set lo to total - \(scanned - 1)
+                            set hi to total
+                        end if
+                    end if
+                    \(fetch)
+                    repeat with i from 1 to (hi - lo + 1)
+                        set hit to false
+                        try
+                            \(pick)
+                            set hit to (\(condition))
+                        end try
+                        if hit then set end of found to (get message (lo + i - 1) of mb)
+                        if (count of found) >= \(limit) then exit repeat
+                    end repeat
+                end if
+            end repeat
         """
     }
 
