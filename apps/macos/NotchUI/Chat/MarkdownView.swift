@@ -235,7 +235,7 @@ private struct CalloutBlock: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .cardBackground(callout.kind.color.opacity(0.09), stroke: callout.kind.color.opacity(0.25), radius: 10)
+        .cardBackground(callout.kind.color.opacity(0.09), stroke: callout.kind.color.opacity(0.25), radius: NookTheme.Radius.card)
     }
 }
 
@@ -296,7 +296,7 @@ private struct MarkdownCodeBlock: View {
                 }
             }
         }
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: NookTheme.Radius.card)
     }
 }
 
@@ -330,7 +330,7 @@ struct ChoiceList: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
-                    .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+                    .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
                     .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card))
                 }
                 .buttonStyle(.plain)
@@ -389,7 +389,7 @@ private struct TableBlock: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 2)
         }
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: NookTheme.Radius.card)
     }
 
     private var headerRow: some View {

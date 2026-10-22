@@ -1,5 +1,6 @@
 // The pull request list kept between visits (`PullRequestStore` on the Mac): the last list shows at once, also after a
 // restart, and refreshes in the background when it is older than half a minute. A failed refresh keeps an account's rows.
+import { untrack } from "svelte";
 import { connectorsApi, type AccountPullRequests } from "./connectors";
 
 const CACHE = "pulls.list";
@@ -37,8 +38,10 @@ class PullRequestStore {
   }
 
   /// Refreshes when stale (or always with `force`); returns at once while a refresh is already running.
+  /// Read without tracking: an effect that calls `refresh()` must not run again each time `loading` flips, or a failing
+  /// fetch (which leaves `fetchedAt` at 0) would retry in a tight loop.
   async refresh(force = false) {
-    if (this.loading || (!force && Date.now() - this.fetchedAt < STALE_AFTER)) return;
+    if (untrack(() => this.loading) || (!force && Date.now() - this.fetchedAt < STALE_AFTER)) return;
     this.loading = true;
     try {
       const fresh = await connectorsApi.githubPullRequests();

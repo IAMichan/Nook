@@ -29,7 +29,7 @@ struct CardView: View {
                 if !card.sources.isEmpty {
                     ForEach(card.sources.prefix(5), id: \.self) { source in
                         Text(source)
-                            .font(NookTheme.font(10.5, .medium))
+                            .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textSecondary)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
@@ -82,7 +82,7 @@ struct CardView: View {
         .overlay {
             if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
                 PhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
-                          onClose: { withAnimation(.easeOut(duration: 0.15)) { self.zoomed = nil } },
+                          onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
                           onOpen: { self.zoomed = nil; onOpen(zoomed) })
                     .transition(.opacity)
             }
@@ -90,7 +90,7 @@ struct CardView: View {
         .onChange(of: card.id) { _, _ in zoomed = nil }
         .onExitCommand {
             // Escape first shrinks an enlarged photo back; only then does it close the card.
-            if zoomed != nil { withAnimation(.easeOut(duration: 0.15)) { zoomed = nil }; return }
+            if zoomed != nil { withAnimation(NookTheme.reveal) { zoomed = nil }; return }
             onAction(card.escape ?? card.primary)
         }
     }
@@ -244,7 +244,7 @@ struct CardView: View {
             FactsDetail(facts: facts)
         case .chat(let bubbles):
             ChatDetail(bubbles: bubbles, contact: card.title, onOpen: onOpen) { bubble in
-                withAnimation(.easeOut(duration: 0.15)) { zoomed = bubble }
+                withAnimation(NookTheme.reveal) { zoomed = bubble }
             }
         }
     }
@@ -267,7 +267,7 @@ private struct CardAppIcon: View {
                     .aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: "app.fill")
-                    .font(NookTheme.font(13))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
             }
         }
@@ -295,7 +295,7 @@ private struct ChatDetail: View {
                     .onChange(of: bubbles.last?.id) { _, last in
                         // A new message (or one you just sent) scrolls into view.
                         guard let last else { return }
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
                     }
             }
         }
@@ -875,7 +875,7 @@ private struct ChoiceRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: multi ? (checked ? "checkmark.square.fill" : "square") : "arrow.right.circle")
-                    .font(NookTheme.font(13, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(checked ? NookTheme.mint : NookTheme.textSecondary)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {

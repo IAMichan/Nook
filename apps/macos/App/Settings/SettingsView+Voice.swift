@@ -28,11 +28,13 @@ extension SettingsView {
     var notificationsSection: some View {
         Group {
             Section {
+                NoticeDeliveryPicker(settings: settings)
                 Picker(selection: $settings.agentNotice) {
                     ForEach(AgentNoticeStyle.allCases) { Text(tr($0.titleKey)).tag($0) }
                 } label: {
                     SettingLabel(tr("agentNotice.style"), detail: tr("agentNotice.styleDetail"))
                 }
+                .disabled(settings.noticeDelivery == .system)
             } header: {
                 Text(tr("agentNotice.title"))
             } footer: {
@@ -56,12 +58,12 @@ extension SettingsView {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tr("companion.push.enable")).foregroundStyle(.primary)
                             Text(tr("settings.notifications.iphoneDetail"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -91,7 +93,7 @@ extension SettingsView {
             SettingToggle(tr("quiet.showInScreenshots"), detail: tr("quiet.showInScreenshotsDetail"), isOn: $settings.showInScreenshots)
                 .disabled(settings.hideFromCaptures)
             LabeledContent(tr("quiet.now")) {
-                Text(app.quietStatusText).foregroundStyle(.secondary)
+                Text(app.quietStatusText).foregroundStyle(NookTheme.textSecondary)
             }
             // While this line is on screen the situation is read even with "change nothing" for both.
             .onAppear { app.quietViewers += 1; app.quietTick() }
@@ -100,6 +102,31 @@ extension SettingsView {
             Text(tr("quiet.title"))
         } footer: {
             Text(tr("quiet.footer"))
+        }
+    }
+}
+
+/// Settings › Notifications: notch cards or macOS notifications, with a way to System Settings when macOS blocks Nook's.
+private struct NoticeDeliveryPicker: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject private var notifier = SystemNotifier.shared
+
+    var body: some View {
+        Picker(selection: $settings.noticeDelivery) {
+            ForEach(NoticeDelivery.allCases) { Text(tr($0.titleKey)).tag($0) }
+        } label: {
+            SettingLabel(tr("noticeDelivery.title"), detail: tr("noticeDelivery.detail"))
+        }
+        .onChange(of: settings.noticeDelivery) { _, delivery in
+            if delivery == .system { notifier.requestAccess() }
+        }
+        .onAppear {
+            if settings.noticeDelivery == .system { notifier.requestAccess() }
+        }
+        if notifier.blocked, settings.noticeDelivery == .system {
+            LabeledContent(tr("noticeDelivery.blocked")) {
+                Button(tr("noticeDelivery.openSettings")) { SystemNotifier.openSystemSettings() }
+            }
         }
     }
 }

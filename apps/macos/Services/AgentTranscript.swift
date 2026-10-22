@@ -28,6 +28,8 @@ struct AgentToolStep: Identifiable, Equatable {
     var lines: EditLines? = nil
     /// The file a step read, wrote or edited, as the agent named it: what clicking the step opens in the side panel.
     var file: String? = nil
+    /// Why a failed step failed, on one line, as the tool reported it.
+    var error: String? = nil
 }
 
 /// A single message from an active session's conversation.
@@ -48,6 +50,8 @@ struct AgentChatMessage: Identifiable, Equatable {
     /// When it was written, and when the last part of it (a later block, a step's result) came in: what the turn took.
     var date: Date?
     var updated: Date?
+    /// You stopped the agent right after this message: its turn ended without the agent finishing it.
+    var interrupted = false
 
     var fromUser: Bool { kind == .user }
     var isThinking: Bool { kind == .thinking }
@@ -208,9 +212,15 @@ enum AgentTranscript {
                     // Results of the agent's steps come back as user lines: they only mark a step done or failed.
                     for block in (message["content"] as? [[String: Any]]) ?? [] where block["type"] as? String == "tool_result" {
                         guard let callID = block["tool_use_id"] as? String else { continue }
-                        finish(step: callID, failed: (block["is_error"] as? Bool) == true, at: when, in: &messages)
+                        let failed = (block["is_error"] as? Bool) == true
+                        finish(step: callID, failed: failed, error: failed ? errorLine(Self.text(block["content"])) : nil,
+                               at: when, in: &messages)
                     }
                     let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if isInterruption(text), !messages.isEmpty {
+                        messages[messages.count - 1].interrupted = true
+                        continue
+                    }
                     guard !text.isEmpty, isTypedPrompt(text) else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
                 } else {
@@ -262,6 +272,8 @@ enum AgentTranscript {
                     append(reply: (payload["message"] as? String) ?? "", id: id, at: when, to: &messages)
                 case "agent_reasoning":
                     append(thinking: (payload["text"] as? String) ?? "", id: id, at: when, to: &messages)
+                case "turn_aborted":
+                    if !messages.isEmpty { messages[messages.count - 1].interrupted = true }
                 default:
                     continue
                 }
@@ -295,7 +307,8 @@ enum AgentTranscript {
                            at: when, to: &messages)
                     finish(step: callID, failed: false, at: when, in: &messages)
                 case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
-                    finish(step: callID, failed: false, at: when, in: &messages)
+                    let code = codexExitCode(payload["output"])
+                    finish(step: callID, failed: (code ?? 0) != 0, at: when, in: &messages)
                 default:
                     continue
                 }
@@ -371,10 +384,12 @@ enum AgentTranscript {
     }
 
     /// Marks the step with this call id done or failed. Results follow their call closely, so only recent lists are searched.
-    private static func finish(step callID: String, failed: Bool, at date: Date?, in messages: inout [AgentChatMessage]) {
+    private static func finish(step callID: String, failed: Bool, error: String? = nil, at date: Date?,
+                               in messages: inout [AgentChatMessage]) {
         for index in messages.indices.reversed().prefix(12) where messages[index].isTools {
             guard let position = messages[index].steps.lastIndex(where: { $0.id == callID }) else { continue }
             messages[index].steps[position].state = failed ? .failed : .done
+            messages[index].steps[position].error = error
             messages[index].touch(date)
             return
         }
@@ -455,6 +470,19 @@ enum AgentTranscript {
         return ""
     }
 
+    /// The exit code a Codex command reported: in the JSON it wraps its output in (`metadata.exit_code`) or on the
+    /// "Exit code: 1" line newer versions start their output with. Nil when the output does not say.
+    static func codexExitCode(_ output: Any?) -> Int? {
+        guard let text = output as? String else { return nil }
+        if let data = text.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let metadata = object["metadata"] as? [String: Any] {
+            return (metadata["exit_code"] as? NSNumber)?.intValue
+        }
+        let first = text.prefix(while: { !$0.isNewline })
+        guard first.hasPrefix("Exit code:") else { return nil }
+        return Int(first.dropFirst("Exit code:".count).trimmingCharacters(in: .whitespaces))
+    }
+
     /// The first line, shortened: a step reads on one line.
     private static func oneLine(_ text: String) -> String {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).first ?? ""
@@ -489,6 +517,21 @@ enum AgentTranscript {
         if let string = content as? String { return string }
         guard let blocks = content as? [[String: Any]] else { return "" }
         return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+    }
+
+    /// Why a step failed, from the tool's result: its first line with words in it, without Claude Code's
+    /// `<tool_use_error>` wrapper. Nil when the result says nothing.
+    static func errorLine(_ result: String) -> String? {
+        let clean = result.replacingOccurrences(of: "<tool_use_error>", with: "")
+            .replacingOccurrences(of: "</tool_use_error>", with: "")
+        guard let line = clean.split(whereSeparator: \.isNewline).lazy
+            .map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty }) else { return nil }
+        return line.count > 200 ? String(line.prefix(199)) + "…" : line
+    }
+
+    /// Claude Code's note that you stopped it: "[Request interrupted by user]", also "… for tool use".
+    static func isInterruption(_ text: String) -> Bool {
+        text.hasPrefix("[Request interrupted")
     }
 
     /// Filters to actual user prompts, excluding synthetic commands, output, or interruption notices.

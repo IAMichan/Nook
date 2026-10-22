@@ -177,7 +177,7 @@ final class CompanionServer: ObservableObject {
         let macName = MachineName.local
         switch request.op {
         case .hello, .list:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(workspace),
+            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
                                      features: CompanionFeature.all)
         case .register:
             // The token goes into a URL on Apple's host: only hex is accepted.
@@ -190,6 +190,15 @@ final class CompanionServer: ObservableObject {
             CompanionStore.shared.setPush(device: deviceID, token: nil, production: nil)
             return CompanionResponse(id: request.id, ok: true)
         case .decide:
+            // An agent in a terminal on the Mac, or a request through the workspace bridge.
+            if let session = request.session, CompanionAgents.handles(session) {
+                let allow = request.allow == true
+                if let error = CompanionAgents.decide(app, session: session, item: request.item ?? "", allow: allow) {
+                    return .failure(request.id, error)
+                }
+                audit(allow ? "allow" : "deny", session)
+                return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
+            }
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)
             }
@@ -200,7 +209,7 @@ final class CompanionServer: ObservableObject {
             if allow, !canAllow(pending) { return .failure(request.id, .notAllowedFromPhone) }
             workspace.decide(runID, requestID: pending.id, allow ? .allow : .deny)
             audit(allow ? "allow" : "deny", "\(workspace.run(runID)?.title ?? "") · \(pending.tool)")
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace))
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .answer:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
                 return .failure(request.id, .unknownSession)
@@ -216,7 +225,7 @@ final class CompanionServer: ObservableObject {
             if !first.allowsOther, !first.options.contains(where: { $0.label == text }) { return .failure(request.id, .badRequest) }
             workspace.answer(runID, questionID: question.id, answers: [first.id: [text]])
             audit("answer", workspace.run(runID)?.title ?? "")
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace))
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .send:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
@@ -224,14 +233,14 @@ final class CompanionServer: ObservableObject {
             guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
             if run.status.isActive { workspace.enqueue(runID, text: text) } else { workspace.send(runID, text: text) }
             audit("send", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace), message: run.status.isActive ? "queued" : "sent")
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: run.status.isActive ? "queued" : "sent")
         case .stop:
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
             workspace.stop(runID)
             audit("stop", run.title)
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace))
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .options:
             return await launchOptions(request, app: app)
         case .start:
@@ -263,7 +272,12 @@ final class CompanionServer: ObservableObject {
         return CompanionPolicy.canAllow(tool: pending.tool, commandIsSafe: safe)
     }
 
-    func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
+    /// Workspace sessions, then agents running in a terminal and bridge requests (`CompanionAgents`).
+    func digests(_ app: AppModel) -> [SessionDigest] {
+        digests(app.workspace) + CompanionAgents.digests(app)
+    }
+
+    private func digests(_ workspace: WorkspaceManager) -> [SessionDigest] {
         let now = Date()
         let runs = workspace.runs.filter { !$0.archived }.sorted { $0.updatedAt > $1.updatedAt }.prefix(25)
         return runs.map { run in

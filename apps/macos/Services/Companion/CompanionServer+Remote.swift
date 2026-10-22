@@ -86,7 +86,7 @@ extension CompanionServer {
             // A folder another session works in is refused, as in the composer; the phone can pick a worktree instead.
             let id = try await workspace.start(config, allowSharedFolder: false)
             audit("start", "\(provider.displayName) · \(workspace.run(id)?.title ?? "")")
-            return CompanionResponse(id: request.id, ok: true, sessions: digests(workspace), created: id.uuidString)
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app), created: id.uuidString)
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
         }

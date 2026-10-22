@@ -25,7 +25,7 @@ extension CompanionServer {
         }
         let digest = HomeDigest(lines: Array(lines), events: Array(events), suggestions: app.startSuggestions.prefix(4).map { CompanionPolicy.clip($0.text, limit: 200) },
                                 track: track, accounts: accounts(app))
-        return CompanionResponse(id: request.id, ok: true, sessions: digests(app.workspace), home: digest)
+        return CompanionResponse(id: request.id, ok: true, sessions: digests(app), home: digest)
     }
 
     /// The player's buttons. Only what the notch's player offers; nothing else on the Mac is controlled from here.

@@ -21,18 +21,29 @@
     if (empty) brainApi.suggestions().then((s) => (starters = s)).catch(() => (starters = []));
   });
 
-  // Mee naar beneden scrollen terwijl het antwoord binnenkomt.
+  // Follow the answer down while it comes in, but only while the view is at the bottom: someone who scrolled up to
+  // read keeps their place. A new message of their own, or another Nook, always scrolls down.
+  let atEnd = true;
+  const onScroll = () => {
+    if (scroller) atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 48;
+  };
+  let lastCount = 0;
+  let lastNook: string | null = null;
   $effect(() => {
-    void nook.active?.messages.length;
-    void Object.values(nook.streaming).join("").length;
-    queueMicrotask(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
+    const shown = nook.activeId;
+    const count = nook.active?.messages.length ?? 0;
+    for (const id in nook.streaming) void nook.streaming[id]?.length;
+    if (count > lastCount || shown !== lastNook) atEnd = true;
+    lastCount = count;
+    lastNook = shown;
+    if (atEnd) queueMicrotask(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
   });
 
   const lastId = $derived(nook.active?.messages[nook.active.messages.length - 1]?.id);
 </script>
 
 <div class="chat">
-  <div class="messages" bind:this={scroller}>
+  <div class="messages" bind:this={scroller} onscroll={onScroll}>
     {#if empty}
       <div class="empty">
         <Orb size={44} />

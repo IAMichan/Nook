@@ -188,7 +188,13 @@ pub fn read_text(path: &Path, limit: u64) -> Result<String> {
     let text = match ext.as_str() {
         "docx" => zipped_xml(path, "word/document.xml", "w:p")?,
         "odt" => zipped_xml(path, "content.xml", "text:p")?,
-        "html" | "htm" => strip_tags(&std::fs::read_to_string(path)?),
+        "html" | "htm" => {
+            // Same limit as plain text: a saved mail archive can be huge, and the tags are stripped in memory.
+            if std::fs::metadata(path)?.len() > limit {
+                return Err(nook_err!("{} is te groot om te lezen.", name(path)));
+            }
+            strip_tags(&String::from_utf8_lossy(&std::fs::read(path)?))
+        }
         _ => {
             let size = std::fs::metadata(path)?.len();
             if size > limit {

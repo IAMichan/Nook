@@ -354,6 +354,11 @@ final class AppSettings: ObservableObject {
     @Published var agentNotice: AgentNoticeStyle {
         didSet { UserDefaults.standard.set(agentNotice.rawValue, forKey: "agentNotice") }
     }
+    /// Where agent notices and permission requests appear: on the notch, or as macOS notifications with Allow and Deny
+    /// on the banner (Settings › Notifications).
+    @Published var noticeDelivery: NoticeDelivery {
+        didSet { UserDefaults.standard.set(noticeDelivery.rawValue, forKey: "noticeDelivery") }
+    }
     /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
@@ -576,6 +581,7 @@ final class AppSettings: ObservableObject {
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         agentNotice = AgentNoticeStyle(rawValue: defaults.string(forKey: "agentNotice") ?? "") ?? .detailed
+        noticeDelivery = NoticeDelivery(rawValue: defaults.string(forKey: "noticeDelivery") ?? "") ?? .notch
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")
         provider = AIProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .claude
@@ -632,4 +638,16 @@ enum AgentNoticeStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var titleKey: String { "agentNotice.style.\(rawValue)" }
+}
+
+/// Where Nook shows what agents need from you: a card on the notch, or a macOS notification.
+enum NoticeDelivery: String, CaseIterable, Identifiable {
+    /// Cards and strips on the notch (the default).
+    case notch
+    /// macOS notifications: a permission request carries Allow and Deny on its banner, a click opens it in the notch.
+    case system
+
+    var id: String { rawValue }
+
+    var titleKey: String { "noticeDelivery.\(rawValue)" }
 }

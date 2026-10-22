@@ -44,15 +44,26 @@ struct SessionDetailView: View {
                 .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
             }
             .safeAreaInset(edge: .bottom) {
-                ComposerBar(placeholder: "Message to the agent", text: $message) { text in
-                    Haptics.tap()
-                    Task { await client.send(session, text: text) }
+                // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
+                if session.canSend != false {
+                    ComposerBar(placeholder: "Message to the agent", text: $message) { text in
+                        Haptics.tap()
+                        Task { await client.send(session, text: text) }
+                    }
+                } else {
+                    Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
+                        .font(.footnote).foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(Theme.Spacing.md)
+                        .background(Theme.canvas)
+                        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
                 }
             }
             .navigationTitle(session.folder)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if session.attention == "working" || session.attention == "approval" || session.attention == "input" {
+                if session.canSend != false,
+                   session.attention == "working" || session.attention == "approval" || session.attention == "input" {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { confirmStop = true } label: { Image(systemName: "stop.circle.fill").foregroundStyle(Theme.coral) }
                             .accessibilityLabel("Stop")

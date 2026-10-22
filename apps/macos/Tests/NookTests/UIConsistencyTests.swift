@@ -82,8 +82,33 @@ final class UIConsistencyTests: XCTestCase {
 
     /// Corners sit on the radius scale: `NookTheme.Radius.chip … pill`, not a number that happens to look right.
     func testCornerRadiiComeFromTheScale() {
-        let found = offenders(#"cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)(?![.0-9])"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        let found = offenders(#"cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)(?![.0-9])|cardBackground\(.*radius:\s*[0-9]"#) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
         XCTAssertEqual(found, [], "use NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20)")
+    }
+
+    /// Text sits on the type scale: SwiftUI's own styles (`.caption`, `.callout`, `.headline`, `.system(.body)`) have
+    /// sizes of their own that do not line up with `NookTheme.TextStyle`.
+    func testTextUsesTheTypeScale() {
+        let found = offenders(#"\.font\(\s*(Font)?\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)"#) {
+            $0 == "NotchUI/Theme/NookTheme.swift"
+        }
+        XCTAssertEqual(found, [], "use a NookTheme.TextStyle (caption, detail, label, body, strong, title, heading, code)")
+    }
+
+    /// State keeps its meaning: an error is `coral`, a warning `amber`, done `mint`, and muted text `textSecondary`, never
+    /// the system red, orange, green, or secondary, which are a different red, orange, and gray.
+    func testStateColorsComeFromTheTheme() {
+        let system = #"\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b|return \.(red|orange|yellow|green|secondary|tertiary)\b"#
+        let found = offenders(system) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        XCTAssertEqual(found, [], "use NookTheme.coral / amber / mint / textSecondary / textTertiary")
+    }
+
+    /// Motion feels the same everywhere: a hover, a section that opens, or a scroll to a line uses its `NookTheme` animation
+    /// instead of a duration picked on the spot.
+    func testShortAnimationsComeFromTheTheme() {
+        let inline = #"withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:"#
+        let found = offenders(inline) { self.isCharacter($0) || $0 == "NotchUI/Theme/NookTheme.swift" }
+        XCTAssertEqual(found, [], "use NookTheme.hover / reveal / scroll / swap")
     }
 
     /// Every token the scale promises exists, so the names in the docs and in the lint script stay true.
@@ -92,7 +117,7 @@ final class UIConsistencyTests: XCTestCase {
             return XCTFail("NookTheme.swift not found")
         }
         for name in ["enum Radius", "enum Spacing", "enum TextStyle", "static let canvas", "static let well", "static let surface",
-                     "static let hairline", "static let fieldStroke", "static func rounded("] {
+                     "static let hairline", "static let fieldStroke", "static func rounded(", "static var detail", "static var heading", "static let reveal", "static let scroll"] {
             XCTAssertTrue(theme.contains(name), "NookTheme lost \(name)")
         }
     }

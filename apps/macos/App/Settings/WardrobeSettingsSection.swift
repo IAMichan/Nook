@@ -67,11 +67,11 @@ struct WardrobeSettingsSection: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(trying == nil ? tr("wardrobe.mirror.title") : tr("wardrobe.mirror.trying"))
-                    .font(.headline)
+                    .font(NookTheme.TextStyle.strong)
                 if wearing.isEmpty {
                     Text(tr("wardrobe.mirror.nothing"))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textSecondary)
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(wearing) { item in
@@ -103,20 +103,20 @@ struct WardrobeSettingsSection: View {
         let chosen = settings.nookWardrobe.chosen.contains(item)
         return HStack(spacing: 6) {
             Image(systemName: chosen ? "checkmark.circle.fill" : "sparkles")
-                .font(.caption)
-                .foregroundStyle(chosen ? NookTheme.iris : Color.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(chosen ? NookTheme.iris : NookTheme.textSecondary)
             Text(tr(item.titleKey))
-                .font(.callout)
+                .font(NookTheme.TextStyle.body)
             Text(tr(chosen ? "wardrobe.mirror.chosen" : "wardrobe.mirror.auto"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
             if chosen {
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { settings.nookWardrobe.clear(item.slot) }
+                    withAnimation(NookTheme.reveal) { settings.nookWardrobe.clear(item.slot) }
                     cheer()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(NookTheme.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(tr("wardrobe.takeOff", tr(item.titleKey)))
@@ -162,7 +162,7 @@ struct WardrobeSettingsSection: View {
     // MARK: Dressing
 
     private func choose(_ item: NookAccessory?) {
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(NookTheme.reveal) {
             if let item { settings.nookWardrobe.wear(item) } else { settings.nookWardrobe.clear(slot) }
         }
         trying = nil
@@ -182,13 +182,13 @@ struct WardrobeSettingsSection: View {
         if wardrobe.chosen.isEmpty, let hat = NookAccessory.allCases.filter({ $0.slot == .head }).randomElement() {
             wardrobe.wear(hat)
         }
-        withAnimation(.easeOut(duration: 0.2)) { settings.nookWardrobe = wardrobe }
+        withAnimation(NookTheme.reveal) { settings.nookWardrobe = wardrobe }
         NookPresence.shared.celebrate()
         cheer(.celebrate)
     }
 
     private func undress() {
-        withAnimation(.easeOut(duration: 0.2)) { settings.nookWardrobe.chosen = [] }
+        withAnimation(NookTheme.reveal) { settings.nookWardrobe.chosen = [] }
         cheer(.surprised)
     }
 
@@ -234,12 +234,12 @@ private struct WardrobeTile: View {
                     } else {
                         Image(systemName: automatic ? "sparkles" : "circle.slash")
                             .font(NookTheme.font(20, .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
                 .frame(width: 70, height: 64)
                 Text(title)
-                    .font(.caption.weight(selected ? .semibold : .regular))
+                    .font(NookTheme.font(11, selected ? .semibold : .regular))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -256,13 +256,13 @@ private struct WardrobeTile: View {
                         .padding(6)
                 } else if picked {
                     Image(systemName: "sparkles")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .padding(7)
                 }
             }
             .scaleEffect(hovering ? 1.03 : 1)
-            .animation(.spring(duration: 0.25, bounce: 0.3), value: hovering)
+            .animation(NookTheme.hover, value: hovering)
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)

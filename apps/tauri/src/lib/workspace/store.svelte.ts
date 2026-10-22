@@ -28,8 +28,15 @@ class WorkspaceStore {
     });
   }
 
-  async refresh() {
-    if (this.refreshing) return this.refreshing;
+  /// A burst of events becomes one fetch. An event during a fetch asks for one more afterwards, because the fetch that
+  /// is running may have read the state before that change.
+  private again = false;
+
+  async refresh(): Promise<void> {
+    if (this.refreshing) {
+      this.again = true;
+      return this.refreshing;
+    }
     this.refreshing = (async () => {
       try {
         this.overview = await workspaceApi.overview();
@@ -37,6 +44,10 @@ class WorkspaceStore {
         this.error = String(e);
       } finally {
         this.refreshing = null;
+        if (this.again) {
+          this.again = false;
+          void this.refresh();
+        }
       }
     })();
     return this.refreshing;

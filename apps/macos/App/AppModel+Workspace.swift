@@ -93,7 +93,10 @@ extension AppModel {
         }
         workspace.accountHome = { [weak self] profileID in self?.profiles.profile(id: profileID)?.homeURL.path ?? profileID }
         workspace.onApproval = { [weak self] run, pending in self?.presentWorkspaceApproval(run, pending) }
-        workspace.onApprovalGone = { [weak self] requestID in self?.viewModel.dismissCard(id: "wsapproval-" + requestID) }
+        workspace.onApprovalGone = { [weak self] requestID in
+            SystemNotifier.shared.withdraw("wsapproval-" + requestID)
+            self?.viewModel.dismissCard(id: "wsapproval-" + requestID)
+        }
         workspace.onTurnFinished = { [weak self] run in self?.workspaceTurnFinished(run) }
         workspace.onQuestion = { [weak self] run, pending in
             CompanionNotifier.shared.question(run, pending)
@@ -142,12 +145,16 @@ extension AppModel {
         let bridge = WorkspaceBridge.shared
         bridge.app = self
         bridge.onApproval = { [weak self] request in self?.presentBridgeApproval(request) }
-        bridge.onApprovalGone = { [weak self] id in self?.viewModel.dismissCard(id: "bridge-" + id) }
+        bridge.onApprovalGone = { [weak self] id in
+            SystemNotifier.shared.withdraw("bridge-" + id)
+            self?.viewModel.dismissCard(id: "bridge-" + id)
+        }
         bridge.start()
         workspace.bridgeLaunch = { WorkspaceBridge.shared.launch }
     }
 
     private func presentBridgeApproval(_ request: BridgeRequest) {
+        CompanionNotifier.shared.approval(ApprovalCenter.make(request))
         var open: (label: String, action: () -> Void)?
         switch request.caller.kind {
         case .run(let runID):
@@ -215,9 +222,13 @@ extension AppModel {
         NookSound.play(.attention)
         guard !quiet.silent else { return }
         let runID = run.id
-        viewModel.notify(tr("ws.notice.question", run.provider.displayName, run.title), button: tr("ws.notice.open")) { [weak self] in
-            self?.openWorkspace(run: runID)
+        let message = tr("ws.notice.question", run.provider.displayName, run.title)
+        let show: () -> Void = { [weak self] in
+            self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
+        guard settings.noticeDelivery == .system else { show(); return }
+        SystemNotifier.shared.notice(id: "wsquestion-" + runID.uuidString, title: message,
+                                     open: { [weak self] in self?.openWorkspace(run: runID) }, fallback: show)
     }
 
     private func workspaceTurnFinished(_ run: WorkspaceRun) {
@@ -233,6 +244,22 @@ extension AppModel {
         guard !WorkspaceWindowController.shared.isKey else { return }
         NookSound.play(run.status == .failed ? .error : .done)
         guard !quiet.silent else { return }
+        guard settings.noticeDelivery == .system else { showTurnNotice(run); return }
+        let failed = run.status == .failed
+        let runID = run.id
+        SystemNotifier.shared.notice(
+            id: "agentstatus-ws-" + UUID().uuidString,
+            title: failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title),
+            subtitle: [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
+                .joined(separator: " · "),
+            body: failed ? (run.statusDetail ?? "") : "",
+            open: { [weak self] in self?.openWorkspace(run: runID) },
+            fallback: { [weak self] in self?.showTurnNotice(run) }
+        )
+    }
+
+    /// The notch notice for a finished or failed turn: a card or one slim line (Settings › Notifications).
+    private func showTurnNotice(_ run: WorkspaceRun) {
         switch viewModel.state {
         case .idle, .music, .track, .done: break
         default: return
@@ -294,7 +321,7 @@ extension AppModel {
             try runVisibly(intro + " && " + command, in: FileManager.default.homeDirectoryForCurrentUser.path,
                            name: "nook-login-\(profile.id)", title: tr("accounts.terminalTitle.login", profile.kind.name))
         } catch {
-            viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
         Task { [weak self] in
@@ -323,7 +350,7 @@ extension AppModel {
             try runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
                            name: "nook-logout-\(profile.id)", title: tr("accounts.terminalTitle.logout", profile.kind.name))
         } catch {
-            viewModel.finish(tr("accounts.terminalFailed", error.localizedDescription))
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
         Task { [weak self] in

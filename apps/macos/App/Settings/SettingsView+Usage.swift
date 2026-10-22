@@ -45,7 +45,7 @@ extension SettingsView {
         switch state {
         case .notInstalled: return target.detail
         case .installed: return "\(tr("agents.status.done")) · \(target.displayPath)"
-        case .outdated: return "Connected with an older version: update for permissions and prompts in the notch"
+        case .outdated: return tr("agents.status.outdated")
         case .unreadable(let message): return message
         }
     }
@@ -62,7 +62,7 @@ extension SettingsView {
         do {
             pendingChange = try AgentConfigInstaller.prepare(target, install: install)
         } catch {
-            status = error.localizedDescription
+            ToastCenter.shared.error(error, title: tr(install ? "settings.link.failed" : "settings.unlink.failed", target.title))
         }
     }
 
@@ -70,11 +70,13 @@ extension SettingsView {
         pendingChange = nil
         do {
             let backup = try AgentConfigInstaller.apply(change)
-            let verb = change.install ? tr("button.link") : tr("button.unlink")
-            status = "\(change.target.title): \(verb)." + (backup.map { " Backup: \($0.lastPathComponent)" } ?? "")
-                + (change.install && change.target != .claudeStatusLine ? " Restart the agent for changes to take effect." : "")
+            let lines = [backup.map { tr("settings.link.backup", $0.lastPathComponent) },
+                         change.install && change.target != .claudeStatusLine ? tr("settings.link.restart") : nil]
+            ToastCenter.shared.success(tr(change.install ? "settings.link.done" : "settings.unlink.done", change.target.title),
+                                       detail: lines.compactMap { $0 }.joined(separator: " "))
         } catch {
-            status = error.localizedDescription
+            ToastCenter.shared.error(error, title: tr(change.install ? "settings.link.failed" : "settings.unlink.failed",
+                                                      change.target.title))
         }
         refreshAgentStates()
     }

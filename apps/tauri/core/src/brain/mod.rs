@@ -13,6 +13,33 @@ pub(crate) fn matches(re: &fancy_regex::Regex, text: &str) -> bool {
     re.is_match(text).unwrap_or(false)
 }
 
+/// A regex whose pattern is only known at runtime (intents, aliases, memory subjects). The same patterns are checked
+/// against every message, so each one is compiled once and kept; `None` remembers a pattern that does not compile.
+/// The cache starts over when it grows past its cap, so subjects that come and go cannot make it grow without bound.
+pub(crate) fn cached(pattern: &str) -> Option<std::sync::Arc<fancy_regex::Regex>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+    type Cache = Mutex<HashMap<String, Option<Arc<fancy_regex::Regex>>>>;
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    const CAP: usize = 1024;
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(found) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(pattern) {
+        return found.clone();
+    }
+    let built = fancy_regex::Regex::new(pattern).ok().map(Arc::new);
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= CAP {
+        cache.clear();
+    }
+    cache.insert(pattern.to_string(), built.clone());
+    built
+}
+
+/// Whether the runtime pattern occurs in the text; a pattern that does not compile never matches.
+pub(crate) fn matches_pattern(pattern: &str, text: &str) -> bool {
+    cached(pattern).is_some_and(|re| matches(&re, text))
+}
+
 pub mod action_gate;
 pub mod chart;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

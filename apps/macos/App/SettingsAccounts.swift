@@ -21,8 +21,8 @@ struct AccountsSettingsSection: View {
 
                 if kind == .gemini || kind == .antigravity {
                     Text(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                 } else if kind.supportsProfiles {
                     Button {
                         adding = kind
@@ -84,12 +84,12 @@ private struct AgentAccountCardRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(title)
-                                .font(.body.weight(.medium))
+                                .font(NookTheme.font(13, .medium))
                                 .foregroundStyle(.primary)
 
                             if several && app.profiles.isPreferred(profile) {
                                 Text(tr("agents.default"))
-                                    .font(.caption2.weight(.semibold))
+                                    .font(NookTheme.font(11, .semibold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 1.5)
                                     .background(Capsule().fill(Color.accentColor.opacity(0.18)))
@@ -98,8 +98,8 @@ private struct AgentAccountCardRow: View {
                         }
 
                         Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(health == .needsYou ? Color.orange : Color.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(health == .needsYou ? NookTheme.amber : NookTheme.textSecondary)
                             .lineLimit(1)
                     }
 
@@ -166,7 +166,7 @@ private struct ManageAccountSheet: View {
             VStack(alignment: .leading, spacing: 18) {
                 // Name
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(tr("agents.name")).font(.headline)
+                    Text(tr("agents.name")).font(NookTheme.TextStyle.strong)
                     HStack {
                         TextField(profile.isDefault ? tr("agents.personal") : tr("agents.name"), text: $name)
                             .textFieldStyle(.roundedBorder)
@@ -182,7 +182,7 @@ private struct ManageAccountSheet: View {
 
                     // Method: subscription or API key
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(tr("accounts.method")).font(.headline)
+                        Text(tr("accounts.method")).font(NookTheme.TextStyle.strong)
                         Picker("", selection: Binding(
                             get: { profile.auth ?? .cli },
                             set: { method in
@@ -202,8 +202,8 @@ private struct ManageAccountSheet: View {
                         }
 
                         Text(tr(profile.kind == .claude ? "accounts.method.help.claude" : "accounts.method.help.codex"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
 
@@ -214,8 +214,8 @@ private struct ManageAccountSheet: View {
 
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.coral)
                 }
 
                 if several && !app.profiles.isPreferred(profile) {
@@ -231,9 +231,10 @@ private struct ManageAccountSheet: View {
             if !profile.isDefault {
                 if confirmRemove {
                     Text(tr("agents.removeConfirm", profile.displayHome))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { confirmRemove = false }
+                        .keyboardShortcut(.cancelAction)
                     Button(tr("agents.remove"), role: .destructive) {
                         app.removeAccount(profile)
                         done()
@@ -244,6 +245,7 @@ private struct ManageAccountSheet: View {
             }
             Spacer()
             Button(tr("settings2.done"), action: done)
+                .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
         }
@@ -271,7 +273,7 @@ private struct ManageAccountSheet: View {
             .buttonStyle(.borderedProminent)
 
             if account != nil {
-                Button(tr("accounts.logout")) {
+                ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) {
                     app.logout(profile)
                 }
             }
@@ -295,15 +297,15 @@ private struct ManageAccountSheet: View {
 
                 if let progress, progress.isBusy {
                     ProgressView().controlSize(.small)
-                    Text(progress.text).font(.caption).foregroundStyle(.secondary)
+                    Text(progress.text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
             }
             if case .failed(let message)? = progress {
-                Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                Text(message).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral).fixedSize(horizontal: false, vertical: true)
             }
             Text(tr("accounts.antigravitySignInHelp"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
         }
     }
 
@@ -313,15 +315,15 @@ private struct ManageAccountSheet: View {
         if stored && key.isEmpty {
             HStack {
                 Label(tr("accounts.keyStored"), systemImage: "key.fill")
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(NookTheme.mint)
                 Spacer()
                 if profile.kind == .claude {
-                    Button(tr("accounts.removeKey")) {
+                    ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
                         app.profiles.setAPIKey("", for: profile)
                         app.history.refresh(minimumInterval: 0)
                     }
                 } else {
-                    Button(tr("accounts.logout")) { app.logout(profile) }
+                    ConfirmedButton(tr("accounts.logout"), question: tr("confirm.logout", profile.kind.name)) { app.logout(profile) }
                 }
             }
             .padding(10)
@@ -404,11 +406,11 @@ private struct AddAccountSheet: View {
 
                 if !found.isEmpty {
                     Divider()
-                    Text(tr("agents.foundOnMac")).font(.headline)
+                    Text(tr("agents.foundOnMac")).font(NookTheme.TextStyle.strong)
                     ForEach(found, id: \.url) { item in
                         HStack {
                             Text(AgentProfile.tildePath(item.url.path))
-                                .font(.system(.body, design: .monospaced))
+                                .font(NookTheme.TextStyle.code)
                             Spacer()
                             Button(tr("agents.add")) {
                                 app.addAccount(kind, label: AgentProfileStore.label(forFolder: item.url), home: item.url)
@@ -422,12 +424,13 @@ private struct AddAccountSheet: View {
 
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.coral)
                 }
             }
         } footer: {
             Button(tr("button.cancel")) { dismiss() }
+                .keyboardShortcut(.cancelAction)
             Spacer()
             if saving {
                 ProgressView().controlSize(.small)
@@ -435,6 +438,7 @@ private struct AddAccountSheet: View {
                 Button(method == .cli
                        ? (app.history.executables[kind] == nil ? tr("agents.installAndLogin") : tr("agents.addAndLogin"))
                        : tr("agents.add")) { add() }
+                    .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(!canAdd)
