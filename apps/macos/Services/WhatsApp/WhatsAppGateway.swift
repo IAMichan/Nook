@@ -1206,6 +1206,15 @@ enum WAGOWA {
         ["rest", "--host=127.0.0.1", "--port=\(url.port ?? 3000)", "--auto-download-media=false"]
     }
 
+    /// The PATH Nook starts GOWA with. GOWA runs ffmpeg for every video and GIF it sends, but an app started from the
+    /// Finder gets only the system folders, so an ffmpeg from Homebrew was never found: its folders are added after them.
+    static func searchPath(_ current: String?) -> String {
+        var folders = (current ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        if folders.isEmpty { folders = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] }
+        for folder in ["/opt/homebrew/bin", "/usr/local/bin"] where !folders.contains(folder) { folders.append(folder) }
+        return folders.joined(separator: ":")
+    }
+
     /// The error code of a refused call (`ALREADY_LOGGED_IN`, `DEVICE_ID_REQUIRED`…).
     static func errorCode(_ data: Data) -> String? {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["code"] as? String
@@ -1215,8 +1224,12 @@ enum WAGOWA {
     /// `INTERNAL_SERVER_ERROR` alone says nothing you can act on.
     static func errorReason(_ data: Data) -> String? {
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        if let message = object?["message"] as? String, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return message }
-        return errorCode(data)
+        guard let message = object?["message"] as? String, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return errorCode(data)
+        }
+        // GOWA needs ffmpeg for every video and GIF: say how to get it, not only that it is missing.
+        if message.lowercased().contains("ffmpeg not installed") { return tr("whatsapp.gowa.needsFFmpeg") }
+        return message
     }
 
     /// `GET /chats` → `results: {data: [{jid, name, last_message_time, …}], pagination}`.

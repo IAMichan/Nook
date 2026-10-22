@@ -135,9 +135,18 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAGOWA.groupNames(Data("{}".utf8)).isEmpty)
     }
 
+    func testGOWAFindsHomebrewsFFmpeg() {
+        XCTAssertEqual(WAGOWA.searchPath("/usr/bin:/bin:/usr/sbin:/sbin"),
+                       "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
+        XCTAssertEqual(WAGOWA.searchPath("/opt/homebrew/bin:/usr/bin"), "/opt/homebrew/bin:/usr/bin:/usr/local/bin")
+        XCTAssertEqual(WAGOWA.searchPath(nil), "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
+    }
+
     func testARefusedSendSaysWhyNotOnlyItsCode() {
-        let refused = #"{"status":500,"code":"INTERNAL_SERVER_ERROR","message":"ffmpeg not installed (required for PTT voice notes)","results":null}"#
-        XCTAssertEqual(WAGOWA.errorReason(Data(refused.utf8)), "ffmpeg not installed (required for PTT voice notes)")
+        let refused = #"{"status":500,"code":"INTERNAL_SERVER_ERROR","message":"failed to create thumbnail exit status 1","results":null}"#
+        XCTAssertEqual(WAGOWA.errorReason(Data(refused.utf8)), "failed to create thumbnail exit status 1")
+        let noFFmpeg = #"{"status":500,"code":"INTERNAL_SERVER_ERROR","message":"ffmpeg not installed","results":null}"#
+        XCTAssertEqual(WAGOWA.errorReason(Data(noFFmpeg.utf8)), tr("whatsapp.gowa.needsFFmpeg"), "says how to get ffmpeg")
         XCTAssertEqual(WAGOWA.errorReason(Data(#"{"code":"DEVICE_ID_REQUIRED","message":" "}"#.utf8)), "DEVICE_ID_REQUIRED")
         XCTAssertNil(WAGOWA.errorReason(Data("<html>".utf8)))
     }

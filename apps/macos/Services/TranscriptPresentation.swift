@@ -89,13 +89,15 @@ extension AgentActivity {
 }
 
 enum TranscriptPresentation {
-    /// The rows of a conversation. `working`: the agent works on the last turn, which stays open and shows its progress.
+    /// The rows of a conversation. `working`: the agent works on the last turn, which shows its progress. The last turn
+    /// stays open once it is done too, so the work you watched does not fold away the moment the agent finishes.
     static func rows(_ messages: [AgentChatMessage], working: Bool) -> [TranscriptRow] {
         // Thinking the agent kept to itself says nothing in a timeline that already shows the work.
         let turns = split(messages.filter { !($0.isThinking && $0.text.isEmpty) })
         var rows: [TranscriptRow] = []
         for (index, turn) in turns.enumerated() {
-            rows += present(turn, open: working && index == turns.count - 1)
+            let isLast = index == turns.count - 1
+            rows += isLast && !working ? presentSettled(turn) : present(turn, open: working && isLast)
         }
         return rows
     }
@@ -134,6 +136,14 @@ enum TranscriptPresentation {
         return [.user(first),
                 .fold(id: firstWork.id, seconds: seconds(turn), rows: group(work, finalID: nil)),
                 .assistant(turn[answer], isFinal: true)]
+    }
+
+    /// The last turn once it is done: laid out as while it ran, without the progress rows, its answer marked final.
+    private static func presentSettled(_ turn: [AgentChatMessage]) -> [TranscriptRow] {
+        let answer = turn.last { $0.kind == .assistant }
+        let rows = group(turn, finalID: answer?.id)
+        guard let stop = turn.last(where: \.interrupted) else { return rows }
+        return rows + [.interrupted(id: stop.id)]
     }
 
     /// The turn that runs: how long it has been going right under your message, the work so far, and at the end the step

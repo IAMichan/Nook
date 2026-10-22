@@ -37,4 +37,38 @@ final class EffortLevelsTests: XCTestCase {
         XCTAssertTrue(CodexTurnEffort.param(effort: nil).isEmpty)
         XCTAssertTrue(CodexTurnEffort.param(effort: "").isEmpty)
     }
+
+    // Antigravity lists one model per thinking level; the menu shows each family once.
+    private let antigravity = [
+        AgentModel(id: "gemini-3-pro-high", name: "Gemini 3 Pro (High)", isDefault: true),
+        AgentModel(id: "gemini-3-pro-low", name: "Gemini 3 Pro (Low)"),
+        AgentModel(id: "gemini-3-flash", name: "Gemini 3 Flash"),
+        AgentModel(id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5"),
+        AgentModel(id: "claude-sonnet-4-5-thinking", name: "Claude Sonnet 4.5 (Thinking)"),
+        AgentModel(id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)"),
+    ]
+
+    func testModelFamilies() {
+        let families = ModelVariants.families(antigravity)
+        XCTAssertEqual(families.map(\.name), ["Gemini 3 Pro", "Claude Sonnet 4.5"])
+        XCTAssertEqual(families[0].members.map(\.level), ["low", "high"])
+        XCTAssertEqual(families[1].members, [ModelVariants.Member(level: "", id: "claude-sonnet-4-5"),
+                                             ModelVariants.Member(level: "thinking", id: "claude-sonnet-4-5-thinking")])
+        XCTAssertNil(ModelVariants.family(of: "gpt-oss-120b-medium", in: antigravity), "a single level is not a family")
+        XCTAssertNil(ModelVariants.family(of: "", in: antigravity))
+        XCTAssertEqual(ModelVariants.split(AgentModel(id: "gemini-4-pro-low", name: "gemini-4-pro-low")).name, "gemini-4-pro")
+    }
+
+    func testCollapseAndPick() {
+        let ids = [""] + antigravity.map(\.id)
+        XCTAssertEqual(ModelVariants.collapse(ids, in: antigravity),
+                       ["", "gemini-3-pro-high", "gemini-3-flash", "claude-sonnet-4-5", "gpt-oss-120b-medium"])
+        XCTAssertEqual(ModelVariants.pick("gemini-3-pro-high", keeping: "gemini-3-pro-low", in: antigravity), "gemini-3-pro-low",
+                       "picking the family you are in keeps its level")
+        XCTAssertEqual(ModelVariants.pick("gemini-3-pro-high", keeping: "claude-sonnet-4-5-thinking", in: antigravity), "gemini-3-pro-high",
+                       "a level the family lacks falls back to the default")
+        XCTAssertEqual(ModelVariants.pick("gemini-3-flash", keeping: "gemini-3-pro-low", in: antigravity), "gemini-3-flash")
+        XCTAssertEqual(EffortLevels.label(variant: ""), "effort.level.default")
+        XCTAssertEqual(EffortLevels.label(variant: "thinking"), "effort.level.thinking")
+    }
 }

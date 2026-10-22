@@ -221,6 +221,14 @@ final class NookChat: ObservableObject {
         load()
     }
 
+    /// The sources you last chose in a chat: a new chat starts with them instead of falling back to automatic.
+    var lastScope: SourceScope {
+        guard let data = UserDefaults.standard.data(forKey: Self.lastScopeKey),
+              let scope = try? JSONDecoder().decode(SourceScope.self, from: data) else { return .automatic }
+        return scope
+    }
+    private static let lastScopeKey = "chat.lastScope"
+
     // MARK: Read
 
     var active: Conversation? { activeID.flatMap { conversation($0) } }
@@ -278,7 +286,8 @@ final class NookChat: ObservableObject {
     func startNew() -> UUID {
         if let current = active, current.isEmpty, !current.busy { return current.id }
         conversations.removeAll { $0.isEmpty && !$0.busy }
-        let conversation = Conversation(id: UUID(), title: tr("nooks.new"), created: Date(), updated: Date())
+        var conversation = Conversation(id: UUID(), title: tr("nooks.new"), created: Date(), updated: Date())
+        conversation.scope = lastScope
         conversations.append(conversation)
         activeID = conversation.id
         trim()
@@ -290,7 +299,8 @@ final class NookChat: ObservableObject {
     @discardableResult
     func startInBackground() -> UUID {
         conversations.removeAll { $0.isEmpty && !$0.busy && $0.id != activeID }
-        let conversation = Conversation(id: UUID(), title: tr("nooks.new"), created: Date(), updated: Date())
+        var conversation = Conversation(id: UUID(), title: tr("nooks.new"), created: Date(), updated: Date())
+        conversation.scope = lastScope
         conversations.append(conversation)
         trim()
         scheduleSave()
@@ -425,6 +435,7 @@ final class NookChat: ObservableObject {
     func setScope(_ scope: SourceScope, conversation id: UUID) {
         guard let index = index(of: id) else { return }
         conversations[index].scope = scope
+        UserDefaults.standard.set(try? JSONEncoder().encode(scope), forKey: Self.lastScopeKey)
         scheduleSave()
     }
 
