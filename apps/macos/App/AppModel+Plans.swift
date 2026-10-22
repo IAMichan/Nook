@@ -315,6 +315,12 @@ extension AppModel {
             copyCardReply(text, card: card)
             return
         }
+        // A finished conversation's notice: the answer continues that conversation, still in the notch.
+        if card.id.hasPrefix(Self.nookReplyCardPrefix),
+           let id = UUID(uuidString: String(card.id.dropFirst(Self.nookReplyCardPrefix.count).prefix { $0 != "/" })) {
+            answerFromNotice(text, conversation: id)
+            return
+        }
         // The notch's "what can Nook do for you?" field: a new conversation in the Nook chat.
         if card.id.hasPrefix(Self.takeoverCardPrefix) {
             askFromQuickField(text)
