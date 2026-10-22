@@ -30,18 +30,13 @@ struct AgentsUsagePanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(tr("agents.footer.usage"))
-                    .font(NookTheme.font(14, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                Spacer()
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            PanelListHeader(tr("agents.footer.usage")) {
                 UsageRefreshButton()
             }
-            .frame(height: 30)
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                     if profiles.isEmpty {
                         ListEmptyNote(tr("agents.noneConnected"))
                     }
@@ -53,16 +48,16 @@ struct AgentsUsagePanel: View {
                             Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
                             Text(tr("agents.usage.paceLegend"))
                         }
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                     }
                     Text(tr("agents.usage.note"))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 8)
+                .padding(.bottom, NookTheme.Spacing.md)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -74,15 +69,15 @@ struct AgentsUsagePanel: View {
     /// header also counts them and shows the highest limit in use; with one, the account itself already says it all.
     private func section(_ kind: AgentKind, _ profiles: [AgentProfile]) -> some View {
         let peak = profiles.count > 1 ? profiles.flatMap { app.quota.limits(for: $0) }.map(\.percent).max() : nil
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 AgentLogo(agent: kind.name, size: 16)
                 Text(kind.name)
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 if profiles.count > 1 {
                     Text(tr("agents.usage.accounts", profiles.count))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
@@ -90,7 +85,7 @@ struct AgentsUsagePanel: View {
                     peakPill(peak, accent: kind.color)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, NookTheme.Spacing.xs)
 
             VStack(spacing: 0) {
                 ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
@@ -100,8 +95,8 @@ struct AgentsUsagePanel: View {
                     account(profile)
                 }
             }
-            // The same surface the terminals, the browser and the worktrees sit on.
-            .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: NookTheme.Radius.panel, style: .continuous)
+            // The same quiet card every page groups its rows on.
+            .panelCard()
         }
     }
 
@@ -110,16 +105,16 @@ struct AgentsUsagePanel: View {
         let usage = app.history.profileUsage[profile.id]
         let account = app.history.profileAccounts[profile.id]
         let accent = profile.kind.color
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             HStack(spacing: 9) {
                 AccountBadge(kind: AccountKind.of(profile, app: app), size: 20, ring: NookTheme.field)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(AccountLabel.name(profile, app: app))
-                        .font(NookTheme.font(13, .medium))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(account.map { $0.plan.isEmpty ? $0.name : "\($0.name) · \($0.plan)" } ?? tr("agents.notLoggedIn"))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -134,14 +129,14 @@ struct AgentsUsagePanel: View {
                 Text(profile.kind == .gemini ? tr("agents.usage.geminiNoLimits")
                      : profile.kind == .antigravity && app.antigravityUsage.noLogin ? tr("agents.usage.antigravityNoToken")
                      : tr("ws.usage.quotaUnavailable"))
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 let groups = limitGroups(limits)
                 let plain = groups.first { $0.name.isEmpty }?.limits ?? []
                 let models = groups.filter { !$0.name.isEmpty }
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     ForEach(plain) { limit in
                         limitRow(limit, title: limit.label, accent: accent)
                     }
@@ -173,9 +168,9 @@ struct AgentsUsagePanel: View {
     /// would be by now, so a fill past it is running ahead of the window; it moves along every minute.
     private func limitRow(_ limit: QuotaLimit, title: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(title)
-                    .font(NookTheme.font(12.5, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Group {
@@ -185,7 +180,7 @@ struct AgentsUsagePanel: View {
                         Text(reset)
                     }
                 }
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
                 Spacer(minLength: 6)
@@ -222,7 +217,7 @@ struct AgentsUsagePanel: View {
             .font(NookTheme.font(11, .semibold).monospacedDigit())
             .foregroundStyle(UsageTone.text(peak))
             .padding(.horizontal, 7)
-            .padding(.vertical, 2)
+            .padding(.vertical, NookTheme.Spacing.xxs)
             .background(Capsule().fill(UsageTone.fill(peak, accent: accent).opacity(0.14)))
     }
 
@@ -246,19 +241,19 @@ struct AgentsUsagePanel: View {
             for limit in model.limits where !windows.contains(limit.window) { windows.append(limit.window) }
         }
         let hidden = sorted.count - folded.count
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 9) {
                 GridRow {
                     Text(tr("agents.usage.model"))
                     ForEach(windows, id: \.self) { Text($0) }
                 }
-                .font(NookTheme.font(11, .medium))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
                 ForEach(shown, id: \.name) { model in
                     GridRow {
                         Text(model.name)
-                            .font(NookTheme.font(12.5, .medium))
+                            .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.paper)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -269,7 +264,7 @@ struct AgentsUsagePanel: View {
                                 modelCell(limit, accent: accent)
                             } else {
                                 Text("—")
-                                    .font(NookTheme.font(12))
+                                    .font(NookTheme.TextStyle.detail)
                                     .foregroundStyle(NookTheme.textTertiary)
                             }
                         }
@@ -323,7 +318,7 @@ struct AgentsUsagePanel: View {
     /// "Today 1.2M": the label quiet, the number plain, on one line.
     private func stat(_ title: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Text(title).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+            Text(title).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             Text(value).font(NookTheme.font(12.5, .semibold).monospacedDigit()).foregroundStyle(NookTheme.paper)
         }
         .lineLimit(1)

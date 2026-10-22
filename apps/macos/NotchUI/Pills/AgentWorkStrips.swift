@@ -12,11 +12,11 @@ struct TasksStrip: View {
     var body: some View {
         let progress = RunTasks.progress(steps)
         let finished = progress.done >= progress.total
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "checklist").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.tasks.title")).foregroundStyle(NookTheme.textTertiary)
                     Text(progress.current)
@@ -33,7 +33,7 @@ struct TasksStrip: View {
                         .rotationEffect(.degrees(open ? 180 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
@@ -42,30 +42,30 @@ struct TasksStrip: View {
             if open {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                             Image(systemName: symbol(step.status))
                                 .font(NookTheme.font(10, .semibold))
                                 .foregroundStyle(color(step.status))
                                 .frame(width: 12)
                             Text(step.text)
-                                .font(NookTheme.font(12))
+                                .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(step.status == .done ? NookTheme.textTertiary : NookTheme.textSecondary)
                                 .strikethrough(step.status == .done, color: NookTheme.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
-                .padding(.leading, 2)
-                .padding(.top, 2)
+                .padding(.leading, NookTheme.Spacing.xxs)
+                .padding(.top, NookTheme.Spacing.xxs)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
     private var segments: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                 Capsule().fill(segmentColor(step.status)).frame(height: 3)
             }
@@ -107,11 +107,11 @@ struct SubagentBar: View {
 
     var body: some View {
         let done = agents.filter { !$0.isRunning }.count
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button {
                 withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
                     Text(tr("ws.subagents.title")).foregroundStyle(NookTheme.textTertiary)
                     Text(agents.first(where: \.isRunning)?.title ?? agents.last?.title ?? "")
@@ -126,28 +126,28 @@ struct SubagentBar: View {
                         .rotationEffect(.degrees(open ? 180 : 0))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if open {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     ForEach(agents) { agent in row(agent) }
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
     }
 
     private func row(_ agent: SubagentInfo) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             Button {
                 shown = shown == agent.id ? nil : agent.id
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     if agent.isRunning {
                         ProgressView().controlSize(.mini).frame(width: 12)
                     } else {
@@ -162,13 +162,13 @@ struct SubagentBar: View {
                     Text(agent.title).lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if shown == agent.id {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     if !agent.prompt.isEmpty {
                         Text(ToolSummary.oneLine(agent.prompt, 400))
                             .foregroundStyle(NookTheme.textTertiary)
@@ -178,7 +178,7 @@ struct SubagentBar: View {
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .padding(.leading, 20)
@@ -195,18 +195,18 @@ struct PullRequestWatchStrip: View {
     @State private var showsCI = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             ComposerPill(symbol: "eye", dot: nil, text: tr("ws.prwatch.watching"), showsChevron: false)
             // The state in the same badge as on the pull request page; CI and reviews after it.
             PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch.state) ?? .open, number: number)
             if let ci {
                 // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
                 Button(action: openCI) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         Text(ci)
                         Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
                     }
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(watch.checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
                     .contentShape(Rectangle())
                 }
@@ -218,7 +218,7 @@ struct PullRequestWatchStrip: View {
             }
             if !summary.isEmpty {
                 Text(summary)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -306,7 +306,7 @@ struct TurnChangesChip: View {
 
     var body: some View {
         Button { open.toggle() } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(systemName: "doc.badge.ellipsis").font(NookTheme.font(10.5, .semibold))
                 Text(tr("ws.turnChanges.count", turn.files.count))
                 if let total, total != EditLines() { EditLinesLabel(lines: total) }
@@ -314,7 +314,7 @@ struct TurnChangesChip: View {
             .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textSecondary)
             .padding(.horizontal, 9)
-            .padding(.vertical, 4)
+            .padding(.vertical, NookTheme.Spacing.xs)
             .background(Capsule().fill(NookTheme.paper.opacity(0.06)))
             .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
             .contentShape(Capsule())
@@ -338,12 +338,12 @@ struct TurnChangesChip: View {
         HStack(spacing: 0) {
             List(turn.files, id: \.self, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { path in
                 VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text((path as NSString).lastPathComponent).font(NookTheme.font(12, .medium)).lineLimit(1)
+                    HStack(spacing: NookTheme.Spacing.sm) {
+                        Text((path as NSString).lastPathComponent).font(NookTheme.TextStyle.label).lineLimit(1)
                         Spacer(minLength: 0)
                         if let count = counts?[relative(path)] { EditLinesLabel(lines: count, size: 10) }
                     }
-                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.head)
+                    Text(relative(path)).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.head)
                 }
                 .tag(path)
             }

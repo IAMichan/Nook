@@ -116,20 +116,18 @@ struct ChatTranscript: View {
     }
 }
 
-/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct".
+/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct". Just the quiet word, centered, with room
+/// around it: the space marks the break, no pill needed.
 private struct ChatDayDivider: View {
     let label: String
 
     var body: some View {
         Text(label)
             .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(NookTheme.textSecondary)
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(NookTheme.smoke))
+            .foregroundStyle(NookTheme.textTertiary)
             .frame(maxWidth: .infinity)
-            .padding(.top, NookTheme.Spacing.lg)
-            .padding(.bottom, NookTheme.Spacing.xs)
+            .padding(.top, NookTheme.Spacing.xl)
+            .padding(.bottom, NookTheme.Spacing.sm)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -168,9 +166,10 @@ private struct ChatBubbleView: View {
 
     /// When it was sent, and for your own how far it got.
     private var stamp: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             Text(bubble.time)
-                .font(NookTheme.font(10.5))
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
                 .foregroundStyle(NookTheme.textTertiary)
             if let ticks = bubble.ticks { TicksView(ticks: ticks) }
         }
@@ -246,7 +245,7 @@ private struct ChatBubbleView: View {
         VStack(alignment: .leading, spacing: 2) {
             if first, !bubble.sender.isEmpty {
                 Text(bubble.sender)
-                    .font(NookTheme.font(11.5, .semibold))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(Self.senderColors[ChatTimeline.colorIndex(for: bubble.sender, count: Self.senderColors.count)])
                     .lineLimit(1)
             }
@@ -260,7 +259,7 @@ private struct ChatBubbleView: View {
             if let attachment = bubble.attachment {
                 if bubble.text.isEmpty {
                     // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
                         media(attachment)
                         stamp
                     }
@@ -269,14 +268,14 @@ private struct ChatBubbleView: View {
                 }
             }
             if !bubble.text.isEmpty {
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                         if emojiOnly {
                             Text(bubble.text)
                                 .font(NookTheme.font(34))
                                 .textSelection(.enabled)
                         } else {
-                            ChatMessageText(text: long && !expanded ? folded : bubble.text, weight: newest ? .medium : .regular,
+                            ChatMessageText(text: long && !expanded ? folded : bubble.text,
                                             lineLimit: long && !expanded ? Self.foldedLines : nil)
                         }
                         if long {
@@ -295,9 +294,9 @@ private struct ChatBubbleView: View {
                 stamp.frame(maxWidth: bubble.poll == nil ? nil : CGFloat.infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, bare ? NookTheme.Spacing.xs : 12)
-        .padding(.vertical, bare ? NookTheme.Spacing.xxs : 7)
-        .background(shape.fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)))
+        .padding(.horizontal, bare ? NookTheme.Spacing.xs : NookTheme.Spacing.lg)
+        .padding(.vertical, bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
+        .background(shape.fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.13) : NookTheme.smoke)))
     }
 
     /// Round, with the first bubble of a run pointing at its writer the way a chat app's tail does.
@@ -326,12 +325,12 @@ private struct QuotedMessage: View {
             VStack(alignment: .leading, spacing: 1) {
                 if !quote.sender.isEmpty {
                     Text(quote.sender)
-                        .font(NookTheme.font(11.5, .semibold))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(tint)
                         .lineLimit(1)
                 }
                 Text(quote.text)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -345,7 +344,7 @@ private struct QuotedMessage: View {
             Capsule().fill(tint).frame(width: 3).padding(.vertical, NookTheme.Spacing.xs).padding(.leading, NookTheme.Spacing.xs)
         }
         .frame(maxWidth: PhotoButton.maxWidth, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.paper.opacity(0.05)))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(tr("chat.quote", quote.sender.isEmpty ? quote.text : "\(quote.sender): \(quote.text)"))
     }
@@ -365,14 +364,15 @@ private struct ReactionChips: View {
                         Text(reaction.emoji).font(NookTheme.font(12.5))
                         if reaction.count > 1 {
                             Text("\(reaction.count)")
-                                .font(NookTheme.font(10.5, .semibold))
+                                .font(NookTheme.TextStyle.caption)
+                                .monospacedDigit()
                                 .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
                     .padding(.horizontal, NookTheme.Spacing.sm)
                     .padding(.vertical, NookTheme.Spacing.xxs)
+                    // Yours is tinted; the others are a plain soft chip, no edge, so a row of them stays quiet.
                     .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.18) : NookTheme.graphite))
-                    .overlay(Capsule().stroke(reaction.mine ? NookTheme.mint.opacity(0.4) : NookTheme.line2, lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -451,7 +451,7 @@ private struct MoreEmojiButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .hoverLift(hovering, scale: 1.08)
+        .hoverLift(hovering, scale: 1.03)
         .help(tr("chat.react.more"))
         .accessibilityLabel(tr("chat.react.more"))
     }
@@ -473,7 +473,7 @@ private struct ReactionPickerButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .hoverLift(hovering, scale: 1.12)
+        .hoverLift(hovering, scale: 1.06)
         .help(chosen ? tr("chat.react.takeBack") : emoji)
         .accessibilityLabel(emoji)
     }
@@ -752,7 +752,7 @@ private struct AttachmentButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 if let preview {
                     Image(nsImage: preview)
                         .resizable()
@@ -762,22 +762,22 @@ private struct AttachmentButton: View {
                 } else {
                     Image(systemName: "doc.fill")
                         .font(NookTheme.font(14))
-                        .foregroundStyle(NookTheme.mint)
+                        .foregroundStyle(NookTheme.textSecondary)
                 }
                 Text(name)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
                 Text(tr("card.attachment.view"))
-                    .font(NookTheme.font(12, .semibold))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(Color.white.opacity(hovering ? 0.1 : 0.06)))
+            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper.opacity(hovering ? 0.09 : 0.05)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

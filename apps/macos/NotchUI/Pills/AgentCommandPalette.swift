@@ -65,13 +65,13 @@ struct AgentCommandPalette: View {
                 ListEmptyNote(tr("palette.none"), padding: NookTheme.Spacing.xl)
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 2) {
+                    VStack(spacing: NookTheme.Spacing.xxs) {
                         ForEach(Array(list.enumerated()), id: \.element.id) { offset, entry in
                             row(entry, selected: offset == index)
                                 .onTapGesture { index = offset; run(list) }
                         }
                     }
-                    .padding(6)
+                    .padding(NookTheme.Spacing.sm)
                 }
                 .frame(maxHeight: 320)
             }
@@ -90,9 +90,9 @@ struct AgentCommandPalette: View {
         HStack(spacing: 10) {
             Image(systemName: entry.symbol).font(NookTheme.font(12, .medium)).frame(width: 18)
                 .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
-            Text(entry.title).font(NookTheme.font(13.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
+            Text(entry.title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
             if !entry.detail.isEmpty {
-                Text(entry.detail).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
+                Text(entry.detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 0)
         }

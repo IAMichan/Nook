@@ -18,7 +18,7 @@ struct AuditLogSection: View {
             ForEach(entries.prefix(100)) { entry in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text(entry.tool).font(NookTheme.font(13, .medium))
+                        Text(entry.tool).font(NookTheme.TextStyle.strong)
                         Spacer()
                         Text(entry.date.formatted(date: .abbreviated, time: .shortened)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
@@ -34,7 +34,7 @@ struct AuditLogSection: View {
             }
             HStack {
                 Spacer()
-                if !note.isEmpty { Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+                if !note.isEmpty { SettingNote(note) }
                 ConfirmedButton(tr("privacy.log.clear"), question: tr("confirm.clearAudit"), detail: tr("confirm.clearAudit.detail")) {
                     app.store.clearAudit()
                     note = tr("privacy.log.cleared")

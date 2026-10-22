@@ -12,19 +12,19 @@ struct CommandConsolePanel: View {
     private var output: String { CommandConsole.output(event.output) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             header
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                             Text("$").foregroundStyle(NookTheme.mint)
                             Text(command).foregroundStyle(NookTheme.paper)
                         }
                         .font(NookTheme.mono(11.5, .medium))
                         if output.isEmpty {
                             Text(tr(event.state == .running ? "ws.console.waiting" : "ws.console.noOutput"))
-                                .font(NookTheme.font(11.5))
+                                .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
@@ -53,7 +53,7 @@ struct CommandConsolePanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "terminal").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(tr("ws.console.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
             status
@@ -76,15 +76,15 @@ struct CommandConsolePanel: View {
                 SpinningRing(color: NookTheme.textSecondary).frame(width: 10, height: 10)
                 Text(tr("ws.console.running"))
             }
-            .font(NookTheme.font(11.5))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
         case .failed:
             Label(tr("ws.console.failed"), systemImage: "xmark")
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.coralSoft)
         default:
             Label(tr("ws.console.done"), systemImage: "checkmark")
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.mint)
         }
     }

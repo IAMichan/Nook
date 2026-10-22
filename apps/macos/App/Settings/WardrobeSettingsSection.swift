@@ -239,16 +239,16 @@ private struct WardrobeTile: View {
                 }
                 .frame(width: 70, height: 64)
                 Text(title)
-                    .font(NookTheme.font(11, selected ? .semibold : .regular))
+                    .font(selected ? NookTheme.TextStyle.label : NookTheme.TextStyle.detail)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .fill(NookTheme.smoke.opacity(selected ? 0.95 : (hovering ? 0.75 : 0.5))))
+                .fill(selected || hovering ? NookTheme.smoke : NookTheme.graphite))
             .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .strokeBorder(selected ? NookTheme.iris : Color.primary.opacity(hovering ? 0.2 : 0.1), lineWidth: selected ? 2 : 1))
+                .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 2))
             .overlay(alignment: .topTrailing) {
                 if selected {
                     Image(systemName: "checkmark.circle.fill")

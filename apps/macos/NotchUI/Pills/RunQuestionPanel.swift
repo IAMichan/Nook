@@ -19,23 +19,23 @@ struct RunQuestionPanel: View {
 
     var body: some View {
         if let item {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
                     Text(item.header.isEmpty ? tr("ws.question.title", agent) : item.header)
-                        .font(NookTheme.font(12, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer(minLength: 6)
                     if question.questions.count > 1 {
                         Text("\(index + 1)/\(question.questions.count)")
-                            .font(NookTheme.font(11.5))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .monospacedDigit()
                     }
                     if let onStop {
                         Button(action: onStop) {
                             Label(tr("ws.question.stop"), systemImage: "stop.fill").labelStyle(.iconOnly)
-                                .font(NookTheme.font(10, .bold))
+                                .font(NookTheme.TextStyle.caption)
                                 .foregroundStyle(NookTheme.textSecondary)
                                 .frame(width: 22, height: 22)
                                 .background(Circle().fill(NookTheme.smoke))
@@ -46,17 +46,17 @@ struct RunQuestionPanel: View {
                     }
                 }
                 Text(item.question)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { number, option in
                         optionButton(item, option, number: number)
                     }
                 }
                 if item.allowsOther {
-                    HStack(spacing: 8) {
+                    HStack(spacing: NookTheme.Spacing.md) {
                         TextField(tr("ws.question.own"), text: $own)
                             .textFieldStyle(.plain)
                             .font(NookTheme.TextStyle.body)
@@ -66,8 +66,8 @@ struct RunQuestionPanel: View {
                             NookGhostButton(title: isLast ? tr("ws.question.send") : tr("ws.question.next")) { submitOwn(item) }
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                    .padding(.vertical, NookTheme.Spacing.md)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
                 }
                 if item.multiSelect, !picks.isEmpty {
@@ -79,8 +79,8 @@ struct RunQuestionPanel: View {
                     }
                 }
             }
-            .padding(12)
-            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
+            .padding(NookTheme.Spacing.lg)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
             // Keys 1–9 pick an option, except while you type your own answer.
             .background { if !ownFocused { digitShortcuts(item) } }
         }
@@ -95,15 +95,15 @@ struct RunQuestionPanel: View {
                 record(item, [option.label])
             }
         } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(number < 9 ? "\(number + 1)" : "·")
                     .font(NookTheme.mono(11, .medium))
                     .foregroundStyle(NookTheme.textTertiary)
                     .frame(width: 14)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(option.label).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(option.label).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper)
                     if !option.description.isEmpty {
-                        Text(option.description).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
+                        Text(option.description).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

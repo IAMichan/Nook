@@ -96,16 +96,11 @@ struct ServiceTile: View {
 
     private var tile: some View {
         RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor))
-            .overlay(
-                RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
-            )
+            .fill(NookTheme.smoke)
             .overlay(
                 SiteIcon(domain: domain, fallback: fallback, tint: tint, size: size * 0.62, source: source)
             )
             .frame(width: size, height: size)
-            .shadow(color: .black.opacity(0.06), radius: 1, y: 0.5)
     }
 }
 
@@ -208,7 +203,7 @@ struct GalleryCard<Icon: View, Accessory: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(detail)
                         .font(NookTheme.TextStyle.detail)
@@ -217,15 +212,12 @@ struct GalleryCard<Icon: View, Accessory: View>: View {
                         .multilineTextAlignment(.leading)
                 }
             }
-            .padding(12)
+            .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // A fill a step above the page and no edge: the cards group by their own surface, as the panel's cards do.
             .background(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                    .fill(Color.primary.opacity(hovering ? 0.07 : 0.035))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(hovering ? 0.14 : 0.07))
+                    .fill(hovering ? NookTheme.smoke : NookTheme.graphite)
             )
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
@@ -240,10 +232,11 @@ struct GalleryGrid<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 260), spacing: 10)], spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 260), spacing: NookTheme.Spacing.md)],
+                  spacing: NookTheme.Spacing.md) {
             content()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, NookTheme.Spacing.xs)
     }
 }
 

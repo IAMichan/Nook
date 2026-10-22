@@ -46,7 +46,7 @@ struct ChatReplyField: View {
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                     Text(notice)
-                        .font(NookTheme.TextStyle.caption)
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(2)
                 }
@@ -185,11 +185,11 @@ private struct ReplyingBar: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(quote.sender.isEmpty ? tr("chat.reply") : tr("chat.replyingTo", quote.sender))
-                    .font(NookTheme.font(11.5, .semibold))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(tint)
                     .lineLimit(1)
                 Text(quote.text)
-                    .font(NookTheme.TextStyle.caption)
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
             }
@@ -198,8 +198,8 @@ private struct ReplyingBar: View {
         }
         .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+        .padding(.vertical, NookTheme.Spacing.sm)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
         .accessibilityElement(children: .contain)
     }
 }

@@ -69,21 +69,26 @@ struct PlanReview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // A title that says what the plan is, the steps split by a hairline, and the buttons below.
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Text(header)
-                .font(NookTheme.font(10.5, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
 
-            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                stepView(index, step)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    if index > 0 { NookDivider(inset: 27) }
+                    stepView(index, step)
+                        .padding(.vertical, NookTheme.Spacing.md)
+                }
             }
 
             if !finished {
-                controls.padding(.top, 2)
+                controls
             }
         }
-        .padding(14)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
+        .padding(NookTheme.Spacing.xl)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
     }
 
     // MARK: Single step
@@ -91,12 +96,12 @@ struct PlanReview: View {
     @ViewBuilder
     private func stepView(_ index: Int, _ step: PlanStep) -> some View {
         let isOpen = expanded.contains(index) || !problems(index).isEmpty
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
                 marker(index, step)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(step.text)
-                        .font(NookTheme.font(13.5))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(included(index) ? NookTheme.paper : NookTheme.textTertiary)
                         .strikethrough(!included(index))
                         .fixedSize(horizontal: false, vertical: true)
@@ -108,17 +113,11 @@ struct PlanReview: View {
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(color(step.tone))
                 }
-                Button {
-                    if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
-                } label: {
-                    Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                        .font(NookTheme.font(10, .semibold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
+                ToolbarIconButton(isOpen ? "chevron.up" : "chevron.down", tr("chat.plan.details"), height: 20, width: 20) {
+                    withAnimation(NookTheme.reveal) {
+                        if expanded.contains(index) { expanded.remove(index) } else { expanded.insert(index) }
+                    }
                 }
-                .buttonStyle(.plain)
-                .help(tr("chat.plan.details"))
             }
 
             if isOpen {
@@ -156,7 +155,7 @@ struct PlanReview: View {
                 .help(included(index) ? tr("chat.plan.exclude") : tr("chat.plan.include"))
             } else {
                 Text("\(step.number)")
-                    .font(NookTheme.font(10.5, .bold))
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(color(step.tone))
                     .frame(width: 18, height: 18)
                     .overlay(Circle().stroke(color(step.tone), lineWidth: 1.5))
@@ -168,19 +167,19 @@ struct PlanReview: View {
     private func stateLine(_ index: Int) -> some View {
         switch state(index) {
         case .done:
-            Text(tr("chat.plan.stepDone")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint)
+            Text(tr("chat.plan.stepDone")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
         case .verified:
-            Text(tr("chat.plan.stepVerified")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.mint)
+            Text(tr("chat.plan.stepVerified")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
         case .approved:
-            Text(tr("chat.plan.approved")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
+            Text(tr("chat.plan.approved")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
         case .failed(let error):
             StepFailure(error: error).padding(.top, 4)
         case .duplicate(let when):
-            Text(tr("chat.plan.duplicate", when)).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.amber)
+            Text(tr("chat.plan.duplicate", when)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
         case .notRun:
-            Text(tr("chat.plan.notRun")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+            Text(tr("chat.plan.notRun")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
         case .skipped:
-            Text(tr("chat.plan.skipped")).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+            Text(tr("chat.plan.skipped")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
         case .running, .pending:
             EmptyView()
         }
@@ -192,11 +191,11 @@ struct PlanReview: View {
         let action = message.actions[index]
         let fields = app.actionFields(action)
         let canEdit = open && state(index).canRun
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ForEach(fields) { field in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(field.label)
-                        .font(NookTheme.font(10.5, .semibold))
+                        .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
                     if editing.contains(index) && field.editable && canEdit {
                         TextField("", text: Binding(
@@ -204,14 +203,14 @@ struct PlanReview: View {
                             set: { app.editAction(message.id, index: index, key: field.key, value: $0) }
                         ), axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(NookTheme.font(12.5))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(field.multiline ? 2...12 : 1...3)
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.graphite))
+                        .padding(NookTheme.Spacing.md)
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.graphite))
                     } else {
                         Text(field.value)
-                            .font(NookTheme.font(12.5))
+                            .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.paper)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
@@ -222,10 +221,10 @@ struct PlanReview: View {
             if let result = state(index).result {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tr("chat.plan.result"))
-                        .font(NookTheme.font(10.5, .semibold))
+                        .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(result)
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -233,7 +232,7 @@ struct PlanReview: View {
             }
             ForEach(problems(index), id: \.self) { problem in
                 Label(problem, systemImage: "exclamationmark.triangle.fill")
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
             }
             if canEdit && fields.contains(where: \.editable) {
@@ -248,7 +247,7 @@ struct PlanReview: View {
 
     @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             switch message.planState {
             case .pending:
                 SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
@@ -256,13 +255,13 @@ struct PlanReview: View {
                 SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
             case .running:
                 ProgressView().controlSize(.small)
-                Text(tr("chat.plan.running")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textSecondary)
+                Text(tr("chat.plan.running")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             case .done(let result):
                 Image(systemName: "checkmark").font(NookTheme.font(11, .bold)).foregroundStyle(NookTheme.mint)
-                Text(result).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.mint)
+                Text(result).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.mint)
                     .fixedSize(horizontal: false, vertical: true)
             case .cancelled:
-                Text(tr("chat.plan.cancelled")).font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
+                Text(tr("chat.plan.cancelled")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
             case .failed(let error):
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     // The step itself already shows why; here only where the plan stands, so the reason is not repeated.
@@ -332,7 +331,7 @@ private struct StepFailure: View {
                         .frame(width: 14)
                         .opacity(line.symbol == nil ? 0 : 1)
                     Text(line.text)
-                        .font(line.id == 0 ? NookTheme.TextStyle.label : NookTheme.font(11.5))
+                        .font(line.id == 0 ? NookTheme.TextStyle.label : NookTheme.TextStyle.detail)
                         .foregroundStyle(line.id == 0 ? NookTheme.coralSoft : NookTheme.textStrong)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -342,6 +341,6 @@ private struct StepFailure: View {
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.coral.opacity(0.07), stroke: NookTheme.coral.opacity(0.2), radius: NookTheme.Radius.control)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
     }
 }

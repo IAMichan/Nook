@@ -168,7 +168,7 @@ struct MusicScrubBar: View {
                 }
             }
         }
-        .font(NookTheme.font(style == .inline ? 10.5 : 11, .medium).monospacedDigit())
+        .font(NookTheme.TextStyle.caption.monospacedDigit())
         .foregroundStyle(dragFraction == nil ? NookTheme.textTertiary : NookTheme.textSecondary)
     }
 

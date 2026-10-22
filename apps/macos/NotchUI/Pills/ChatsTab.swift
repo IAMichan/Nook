@@ -115,7 +115,7 @@ struct ChatsTab: View {
                                     .font(NookTheme.TextStyle.body)
                                     .foregroundStyle(NookTheme.textSecondary)
                                 Text(tr("chats.placeholderDetail"))
-                                    .font(NookTheme.TextStyle.caption)
+                                    .font(NookTheme.TextStyle.detail)
                                     .foregroundStyle(NookTheme.textTertiary)
                                     .multilineTextAlignment(.center)
                             }
@@ -370,16 +370,16 @@ struct ChatsTab: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    /// The list's title, as the Agents tab has it: how many messages wait for you, and the list's two actions.
+    /// The list's title, as the Agents tab has it, with the list's two actions. What is unread is counted once, on the
+    /// Unread filter right under it, not again here.
     private var listHeader: some View {
-        PanelListHeader(tr("tab.chats"), count: unreadTotal) {
+        PanelListHeader(tr("tab.chats")) {
             // WhatsApp's unread marks belong to the phone: a chat there is read by what you do with it.
             if capture.inbox.totalUnread > 0 {
                 ToolbarIconButton("checkmark.circle", tr("chats.markAllRead")) { capture.markAllRead() }
             }
             ToolbarIconButton("plus", tr("chats.addSource")) { app.openSettings(section: .chats) }
         }
-        .accessibilityValue(unreadTotal > 0 ? "\(tr("chats.group.unread")): \(unreadTotal)" : "")
     }
 
     private var searchField: some View {
@@ -463,21 +463,32 @@ struct ChatsTab: View {
                         .padding(.top, NookTheme.Spacing.xl)
                 }
             }
-            if capture.enabled, capture.status == .running, capture.inbox.threads.isEmpty {
-                // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
-                Label(tr("chats.status.waiting"), systemImage: "tray")
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, NookTheme.Spacing.md)
-            }
-            if !capture.enabled {
-                // Only WhatsApp so far: the other chat apps are one switch away.
-                SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .chats) }
-            }
-            if photos.canAsk {
-                // Photos come from Contacts on this Mac; macOS asks only after this click.
-                SmallGhostButton(title: tr("chats.photos.allow")) { photos.requestAccess() }
+            listHints
+        }
+    }
+
+    /// The quiet hints at the foot of the list, together in one place: what Nook waits for, and what one click adds.
+    @ViewBuilder
+    private var listHints: some View {
+        let waiting = capture.enabled && capture.status == .running && capture.inbox.threads.isEmpty
+        if waiting || !capture.enabled || photos.canAsk {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                if waiting {
+                    // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
+                    Label(tr("chats.status.waiting"), systemImage: "tray")
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, NookTheme.Spacing.lg)
+                }
+                if !capture.enabled {
+                    // Only WhatsApp so far: the other chat apps are one switch away.
+                    SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .chats) }
+                }
+                if photos.canAsk {
+                    // Photos come from Contacts on this Mac; macOS asks only after this click.
+                    SmallGhostButton(title: tr("chats.photos.allow")) { photos.requestAccess() }
+                }
             }
         }
     }
@@ -517,41 +528,18 @@ struct ChatsTab: View {
     }
 
     /// The notifications could not be read: why, and a way to try again.
+    /// The same notice bar the panel shows under its tabs: why, in a line, with the one action that fixes it.
     private func failedBar(_ why: String) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.coral)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(tr("chats.status.failed"))
-                    .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(NookTheme.paper)
-                Text(why)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-            }
-            Spacer(minLength: NookTheme.Spacing.sm)
+        PanelNoticeBar(title: tr("chats.status.failed"), detail: why, symbol: "exclamationmark.triangle.fill",
+                       tone: NookTheme.coral, help: why) {
             NookNoticeActions(primary: NookNoticeAction(tr("chats.status.retry")) { capture.start() })
                 .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.coral.opacity(0.4), radius: NookTheme.Radius.card)
     }
 
     /// macOS keeps its notifications behind Full Disk Access.
     private var accessBar: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "lock.fill")
-                .font(NookTheme.font(12))
-                .foregroundStyle(NookTheme.amber)
-            Text(tr("chats.capture.needsAccess"))
-                .font(NookTheme.font(12.5, .medium))
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(2)
-            Spacer(minLength: NookTheme.Spacing.sm)
+        PanelNoticeBar(title: tr("chats.capture.needsAccess"), symbol: "lock.fill", tone: NookTheme.amber) {
             NookNoticeActions(primary: NookNoticeAction(tr("chats.capture.grant")) {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
                     NSWorkspace.shared.open(url)
@@ -559,9 +547,6 @@ struct ChatsTab: View {
             })
             .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
     }
 }
 
@@ -613,22 +598,26 @@ private struct ChatsGroupHeader: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
+                // Written as a group's name everywhere else (no capitals, no tracking); the chevron says it folds.
+                Text(title)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
                 Image(systemName: "chevron.right")
-                    .font(NookTheme.font(8.5, .bold))
+                    .font(NookTheme.font(8, .bold))
                     .rotationEffect(.degrees(open ? 90 : 0))
-                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-                Text(title.uppercased())
-                    .font(NookTheme.font(10.5, .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-                Spacer(minLength: NookTheme.Spacing.xs)
-                Text("\(count)")
-                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textTertiary)
+                    .opacity(hovering || !open ? 1 : 0)
+                Spacer(minLength: NookTheme.Spacing.xs)
+                if !open {
+                    Text("\(count)")
+                        .font(NookTheme.TextStyle.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.top, first ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
-            .padding(.bottom, NookTheme.Spacing.xxs)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.top, first ? NookTheme.Spacing.xs : NookTheme.Spacing.lg)
+            .padding(.bottom, NookTheme.Spacing.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -664,23 +653,18 @@ private struct ChatsFilterChip: View {
                         .lineLimit(1)
                 }
                 if unread > 0 {
-                    Text("\(unread)")
-                        .font(NookTheme.font(10, .bold))
-                        .foregroundStyle(NookTheme.ink)
-                        .padding(.horizontal, NookTheme.Spacing.xs)
-                        .frame(minWidth: 16, minHeight: 16)
-                        .background(Capsule().fill(NookTheme.amber))
+                    // A dot, as on "+N": the count itself is on the Unread filter and in each chat's row.
+                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
                 }
             }
             .padding(.horizontal, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
-            .frame(height: 24)
+            .frame(height: 26)
             .background(Capsule().fill(selected ? NookTheme.smoke : (hovering ? NookTheme.rowHover : Color.clear)))
-            .overlay(Capsule().stroke(selected ? NookTheme.line2 : NookTheme.hairline, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(title)
+        .help(unread > 0 ? "\(title), \(tr("chats.group.unread")): \(unread)" : title)
         .fixedSize()
         .accessibilityLabel(unread > 0 ? "\(title), \(tr("chats.group.unread")): \(unread)" : title)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -727,9 +711,8 @@ private struct ChatsMoreSources: View {
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
-            .frame(height: 24)
+            .frame(height: 26)
             .background(Capsule().fill(hovering ? NookTheme.rowHover : Color.clear))
-            .overlay(Capsule().stroke(NookTheme.hairline, lineWidth: 1))
             .contentShape(Capsule())
         }
         .menuStyle(.borderlessButton)
@@ -789,15 +772,18 @@ private struct ChatsRow: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 34)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
+                    // One title line (who, when) and one line under it (the newest message); unread is said once, by
+                    // the count at the end of the second line.
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                         Text(entry.name)
-                            .font(NookTheme.font(13, entry.unread > 0 ? .semibold : .medium))
+                            .font(NookTheme.TextStyle.strong)
                             .foregroundStyle(NookTheme.paper)
                             .lineLimit(1)
                         Spacer(minLength: NookTheme.Spacing.xs)
                         Text(when)
                             .font(NookTheme.TextStyle.caption)
-                            .foregroundStyle(entry.unread > 0 ? NookTheme.amber : NookTheme.textTertiary)
+                            .monospacedDigit()
+                            .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize()
                             .opacity(hovering && onToggleRead != nil ? 0 : 1)
                     }
@@ -805,30 +791,26 @@ private struct ChatsRow: View {
                         if let ticks = entry.ticks { TicksView(ticks: ticks) }
                         // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
                         Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
-                            .font(NookTheme.font(12))
-                            .foregroundStyle(entry.unread > 0 ? NookTheme.textStrong : NookTheme.textTertiary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary : NookTheme.textSecondary)
                             .lineLimit(1)
                         Spacer(minLength: NookTheme.Spacing.xs)
-                        if entry.unread > 0 {
-                            Text("\(entry.unread)")
-                                .font(NookTheme.font(10.5, .bold))
-                                .foregroundStyle(NookTheme.ink)
-                                .padding(.horizontal, NookTheme.Spacing.sm)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(Capsule().fill(NookTheme.amber))
-                                .fixedSize()
-                        }
+                        NookCountBadge(count: entry.unread)
+                            .fixedSize()
                     }
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
+            // The avatar lines up with the list's title and its group names above it.
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name): \(entry.preview)")
+        .accessibilityLabel(entry.unread > 0
+            ? "\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name), \(tr("chats.group.unread")): \(entry.unread): \(entry.preview)"
+            : "\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -865,11 +847,9 @@ private struct ChatsAvatar: View {
                 .interpolation(.high)
                 .scaledToFill()
                 .clipShape(Circle())
-                .overlay(Circle().stroke(NookTheme.line2, lineWidth: 1))
         } else {
             Circle()
                 .fill(tint.opacity(0.16))
-                .overlay(Circle().stroke(tint.opacity(0.28), lineWidth: 1))
                 .overlay(
                     Text(WAJID.initials(name))
                         .font(NookTheme.rounded(size * 0.36, .semibold))
@@ -998,29 +978,47 @@ private struct ChatsDetail: View {
                     .lineLimit(1)
                 // A chat a bridge reads is the app's own; any other is what its notifications showed.
                 Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
-                    .font(NookTheme.TextStyle.caption)
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
             }
             Spacer(minLength: NookTheme.Spacing.sm)
+            // What you do most stays in sight (ask Nook, open the app); the rest waits in the "…" menu.
             if let chat = whatsAppChat {
                 ToolbarIconButton("sparkles", tr("whatsapp.card.nook")) { app.askNookAboutWhatsApp(chat, name: entry.name) }
-            } else if case .captured(let id) = entry.origin {
-                ToolbarIconButton("trash", tr("chats.remove")) { capture.remove(id) }
             }
-            // Read or unread by hand, for every chat.
+            ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
+            moreMenu
+        }
+    }
+
+    /// Read or unread by hand, for every chat, and removing a chat collected from notifications.
+    private var moreMenu: some View {
+        Menu {
             if entry.unread > 0 {
-                ToolbarIconButton("checkmark.circle", tr("chats.markRead")) {
+                Button(tr("chats.markRead")) {
                     switch entry.origin {
                     case .captured(let id): capture.markRead(id)
                     case .whatsApp(let jid): whatsApp.markRead(jid)
                     }
                 }
             } else {
-                ToolbarIconButton("circle.badge", tr("chats.markUnread"), onMarkUnread)
+                Button(tr("chats.markUnread"), action: onMarkUnread)
             }
-            ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
+            if case .captured(let id) = entry.origin {
+                Divider()
+                Button(tr("chats.remove"), role: .destructive) { capture.remove(id) }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(NookTheme.textSecondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
         }
+        .composerMenu()
+        .help(tr("chat.moreActions"))
+        .accessibilityLabel(tr("chat.moreActions"))
     }
 
     /// One field for every chat: what you type goes to a WhatsApp chat, or is copied for the app of any other chat;

@@ -10,15 +10,15 @@ struct UsageLimitBanner: View {
     var body: some View {
         if run.limitedAt != nil, !run.status.isActive {
             let auto = run.autoResume == true
-            HStack(alignment: .center, spacing: 9) {
+            HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
                 Image(systemName: auto ? "clock.arrow.circlepath" : "hourglass")
                     .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.amber)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("ws.limit.title")).font(NookTheme.font(12, .semibold)).foregroundStyle(NookTheme.textSecondary)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("ws.limit.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textSecondary)
                     TimelineView(.periodic(from: .now, by: 30)) { context in
                         Text(line(now: context.date, auto: auto))
-                            .font(NookTheme.font(11.5))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -37,9 +37,9 @@ struct UsageLimitBanner: View {
                     .help(tr("ws.limit.resumeHelp"))
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: NookTheme.Radius.card, style: .continuous)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
         }
     }
 

@@ -14,8 +14,9 @@ extension SettingsView {
                     ScreenStatusText(screenContext: app.screenContext, enabled: settings.liveScreen)
                 }
                 if !permissions.isGranted(.screen) {
-                    Button(tr("settings.assistant.managePermissions")) { app.settingsSection = .privacy }
-                        .buttonStyle(.link)
+                    SettingsLinkRow(title: tr("settings.assistant.managePermissions"), section: .privacy, state: .warning) {
+                        app.settingsSection = .privacy
+                    }
                 }
             }
             Section(tr("settings.assistant.thinkAlong")) {
@@ -24,12 +25,8 @@ extension SettingsView {
                 .disabled(settings.useLocal)
                 // A switch that is greyed out without a word leaves you guessing: say why, and where to change it.
                 if settings.useLocal {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "info.circle").foregroundStyle(NookTheme.textSecondary)
-                        Text(tr("settings.assistant.thinkAlongLocal"))
-                            .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                        SettingNote(tr("settings.assistant.thinkAlongLocal"))
                         Spacer(minLength: 0)
                         Button(tr("settings.section.brain")) { app.settingsSection = .brain }
                             .buttonStyle(.link)
@@ -70,7 +67,7 @@ extension SettingsView {
                     .frame(width: 30, height: 30)
                 Text(tr(BuddyPlanner.lineKey(BuddyMoment(kind: .morning, id: "preview", count: 3), tone: settings.buddyTone), 3))
                     .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
+                    .foregroundStyle(NookTheme.textStrong)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .opacity(settings.buddyMoments ? 1 : 0.5)

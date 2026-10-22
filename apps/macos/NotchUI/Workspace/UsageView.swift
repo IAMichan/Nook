@@ -47,9 +47,9 @@ struct UsageView: View {
     private func accountRow(_ profile: AgentProfile) -> some View {
         let limits = app.quota.limits(for: profile)
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 AgentLogo(profile.kind, size: 22)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(profile.kind.shortName)
                     Text(AccountLabel.name(profile, app: app))
                         .font(NookTheme.TextStyle.detail)
@@ -74,12 +74,12 @@ struct UsageView: View {
             }
             .padding(.leading, 34)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, NookTheme.Spacing.xs)
     }
 
     private func limitRow(_ limit: QuotaLimit, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(limit.label)
                     .font(NookTheme.TextStyle.body)
                     .lineLimit(1)
@@ -142,7 +142,7 @@ struct UsageView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, NookTheme.Spacing.xs)
                 if !report.days.isEmpty {
                     chart(report)
                 }
@@ -155,7 +155,7 @@ struct UsageView: View {
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Text(title)
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
@@ -191,7 +191,7 @@ struct UsageView: View {
             }
         }
         .frame(height: 140)
-        .padding(.vertical, 4)
+        .padding(.vertical, NookTheme.Spacing.xs)
         .accessibilityLabel(tr("ws.usage.overTime"))
     }
 
@@ -200,9 +200,9 @@ struct UsageView: View {
     private func byModelSection(_ report: UsageReport) -> some View {
         Section {
             ForEach(report.rows) { row in
-                HStack(spacing: 12) {
+                HStack(spacing: NookTheme.Spacing.lg) {
                     AgentLogo(row.provider.kind, size: 22)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(row.model == "default" ? tr("ws.model.default") : row.model)
                             .lineLimit(1)
                         Text("\(row.provider.displayName) · \(row.sessions) \(tr("ws.usage.sessions").lowercased())")
@@ -211,7 +211,7 @@ struct UsageView: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
                         Text(TokenTally.format(row.inputTokens + row.outputTokens))
                             .monospacedDigit()
                         if workspace.settings.showCost {
@@ -222,7 +222,7 @@ struct UsageView: View {
                         }
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, NookTheme.Spacing.xxs)
             }
         } header: {
             Text(tr("ws.usage.byModel"))

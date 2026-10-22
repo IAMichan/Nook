@@ -5,6 +5,8 @@ import Foundation
 
 let homeTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chart.value": "Waarde",
+        "chart.seriesNumber": "Reeks %ld",
         "home.section.forYou": "Voor jou",
         "home.section.start": "Begin met",
         "app.today.agentWaiting": "%@ wacht op je",
@@ -24,6 +26,8 @@ let homeTranslations: [AppLanguage: [String: String]] = [
         "suggest.cal.today": "Waar heb ik vandaag nog tijd?",
     ],
     .en: [
+        "chart.value": "Value",
+        "chart.seriesNumber": "Series %ld",
         "home.section.forYou": "For you",
         "home.section.start": "Start with",
         "app.today.agentWaiting": "%@ is waiting for you",
@@ -43,6 +47,8 @@ let homeTranslations: [AppLanguage: [String: String]] = [
         "suggest.cal.today": "Where do I still have time today?",
     ],
     .de: [
+        "chart.value": "Wert",
+        "chart.seriesNumber": "Reihe %ld",
         "home.section.forYou": "Für dich",
         "home.section.start": "Starte mit",
         "app.today.agentWaiting": "%@ wartet auf dich",
@@ -62,6 +68,8 @@ let homeTranslations: [AppLanguage: [String: String]] = [
         "suggest.cal.today": "Wann habe ich heute noch Zeit?",
     ],
     .fr: [
+        "chart.value": "Valeur",
+        "chart.seriesNumber": "Série %ld",
         "home.section.forYou": "Pour vous",
         "home.section.start": "Commencer par",
         "app.today.agentWaiting": "%@ vous attend",
@@ -81,6 +89,8 @@ let homeTranslations: [AppLanguage: [String: String]] = [
         "suggest.cal.today": "Où ai-je encore du temps aujourd’hui ?",
     ],
     .es: [
+        "chart.value": "Valor",
+        "chart.seriesNumber": "Serie %ld",
         "home.section.forYou": "Para ti",
         "home.section.start": "Empieza con",
         "app.today.agentWaiting": "%@ te está esperando",

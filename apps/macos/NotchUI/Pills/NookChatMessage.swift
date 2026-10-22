@@ -23,7 +23,7 @@ struct ChatMessageView: View, Equatable {
     }
 
     private var user: some View {
-        VStack(alignment: .trailing, spacing: 6) {
+        VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) {
             if !message.images.isEmpty {
                 ImageMessageRow(images: message.images)
             }
@@ -35,7 +35,7 @@ struct ChatMessageView: View, Equatable {
     }
 
     private var nook: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if message.isError {
                 ChatErrorCard(message: message, canRetry: isLast)
             } else if !message.text.isEmpty {
@@ -72,11 +72,11 @@ struct ChatMessageView: View, Equatable {
             }
 
             // What Nook can do next: one click to execute.
+            // Stacked when they do not fit side by side, so a long offer is never cut off.
             if !message.streaming && !message.offers.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(message.offers, id: \.self) { offer in
-                        OfferChip(text: offer) { app.handleUserText(offer) }
-                    }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NookTheme.Spacing.sm) { offerChips }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { offerChips }
                 }
             }
 
@@ -93,10 +93,17 @@ struct ChatMessageView: View, Equatable {
         .onHover { hovering = $0 }
     }
 
+    @ViewBuilder
+    private var offerChips: some View {
+        ForEach(message.offers, id: \.self) { offer in
+            OfferChip(text: offer) { app.handleUserText(offer) }
+        }
+    }
+
     /// Under a finished answer, on hover: copy, try again (the newest answer only) and when it was written. The row keeps
     /// its place when hidden, so nothing jumps when the pointer moves over the thread.
     private var actionRow: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy"), height: 22) {
                 Pasteboard.copy(message.text)
                 copied = true
@@ -106,13 +113,14 @@ struct ChatMessageView: View, Equatable {
                 ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
             }
             Text(message.date.formatted(date: .omitted, time: .shortened))
-                .font(NookTheme.TextStyle.detail)
+                .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.textTertiary)
-                .padding(.leading, 4)
+                .padding(.leading, NookTheme.Spacing.xs)
         }
         .opacity(hovering || copied ? 1 : 0)
         .animation(NookTheme.hover, value: hovering)
-        .padding(.top, -4)
+        .padding(.top, -NookTheme.Spacing.sm)
+        .padding(.leading, -NookTheme.Spacing.sm)
     }
 
     static func == (a: ChatMessageView, b: ChatMessageView) -> Bool {
@@ -140,67 +148,50 @@ private struct ChatErrorCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark")
-                    .font(NookTheme.font(10, .bold))
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(NookTheme.font(14, .semibold))
                     .foregroundStyle(NookTheme.coralSoft)
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(NookTheme.coral.opacity(0.14)))
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("chat.error.title"))
-                        .font(NookTheme.font(13.5, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                     Text(explanation)
-                        .font(NookTheme.font(12.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            HStack(spacing: 6) {
-                Button { app.performRecovery(recovery) } label: {
-                    Text(app.recoveryTitle(recovery))
-                        .font(NookTheme.font(12, .semibold))
-                        .foregroundStyle(NookTheme.ink)
-                        .padding(.horizontal, 13)
-                        .frame(height: 28)
-                        .background(Capsule().fill(NookTheme.paper))
+            // The fix first, try again second, and the raw message tucked behind Details.
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    SmallPrimaryButton(title: app.recoveryTitle(recovery)) { app.performRecovery(recovery) }
+                    if canRetry {
+                        SmallGhostButton(title: tr("chat.retry")) { app.retryLast() }
+                    }
+                }
+                Button { withAnimation(NookTheme.reveal) { showDetails.toggle() } } label: {
+                    Text(showDetails ? tr("chat.error.hideDetails") : tr("chat.error.details"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textTertiary)
                 }
                 .buttonStyle(.plain)
-                if canRetry {
-                    Button { app.retryLast() } label: {
-                        Text(tr("chat.retry"))
-                            .font(NookTheme.font(12, .semibold))
-                            .foregroundStyle(NookTheme.paper)
-                            .padding(.horizontal, 13)
-                            .frame(height: 28)
-                            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
+                if showDetails {
+                    Text(message.text)
+                        .font(NookTheme.mono(11.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(NookTheme.Spacing.md)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.well))
                 }
             }
-            .padding(.leading, 32)
-            Button { withAnimation(NookTheme.reveal) { showDetails.toggle() } } label: {
-                Text(showDetails ? tr("chat.error.hideDetails") : tr("chat.error.details"))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 32)
-            if showDetails {
-                Text(message.text)
-                    .font(NookTheme.mono(11))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
-                    .padding(.leading, 32)
-            }
+            .padding(.leading, 26)
         }
-        .padding(12)
-        .cardBackground(NookTheme.coral.opacity(0.06), stroke: NookTheme.coral.opacity(0.22), radius: NookTheme.Radius.sheet, style: .continuous)
+        .padding(NookTheme.Spacing.lg)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coral.opacity(0.07)))
     }
 }
 
@@ -239,8 +230,8 @@ private struct TypingIndicator: View {
                 }
             }
         }
-        .font(NookTheme.font(12.5))
-        .padding(.vertical, 4)
+        .font(NookTheme.TextStyle.detail)
+        .padding(.vertical, NookTheme.Spacing.xs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
     }
@@ -254,19 +245,18 @@ private struct OfferChip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(systemName: "arrow.turn.down.right")
-                    .font(NookTheme.font(9.5, .semibold))
+                    .font(NookTheme.font(10, .semibold))
                     .foregroundStyle(NookTheme.textTertiary)
                 Text(text)
-                    .font(NookTheme.font(12, .medium))
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 11)
-            .frame(height: 26)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .frame(height: 28)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.field))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

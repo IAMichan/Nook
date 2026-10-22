@@ -18,39 +18,46 @@ struct MusicTab: View {
         if app.nowPlaying.permissionDenied { denied } else { nothingPlaying }
     }
 
+    /// Nook may not ask the player what plays: why, and the one button that fixes it.
     private var denied: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Text(tr("music.deniedTitle"))
-                .font(NookTheme.font(17, .semibold))
+                .font(NookTheme.TextStyle.heading)
                 .foregroundStyle(NookTheme.paper)
             Text(tr("music.deniedDetail"))
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
-            Button(tr("button.openAutomation")) {
+                .fixedSize(horizontal: false, vertical: true)
+            SmallPrimaryButton(title: tr("button.openAutomation")) {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
                     NSWorkspace.shared.open(url)
                 }
             }
-            .buttonStyle(.plain)
-            .font(NookTheme.font(12, .semibold))
-            .foregroundStyle(NookTheme.paper)
+            .padding(.top, NookTheme.Spacing.sm)
         }
+        .frame(maxWidth: 420, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, NookTheme.Spacing.xs)
     }
 
     private var nothingPlaying: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Text(tr("music.nothingPlayingTitle"))
-                .font(NookTheme.font(17, .semibold))
+                .font(NookTheme.TextStyle.heading)
                 .foregroundStyle(NookTheme.paper)
             Text(tr("music.nothingPlayingDetail"))
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text(tr("music.permissionNote"))
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, NookTheme.Spacing.xs)
         }
+        .frame(maxWidth: 420, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, NookTheme.Spacing.xs)
     }
 }
 
@@ -81,7 +88,6 @@ private struct MusicPlayerView: View {
     @AppStorage("musicSection") private var storedSection = MusicSection.lyrics.rawValue
     /// The player is unfolded over the stage. Remembered, like the section.
     @AppStorage("musicPlayerExpanded") private var expanded = false
-    @Namespace private var sectionSelection
 
     private var sections: [MusicSection] { MusicSection.available(for: info.app) }
     private var section: MusicSection {
@@ -92,13 +98,13 @@ private struct MusicPlayerView: View {
     private static let fold = Animation.spring(duration: 0.45, bounce: 0.12)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             sectionBar
             ZStack(alignment: .bottom) {
                 if !expanded {
                     stage
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.bottom, MusicDock.barHeight + 12)
+                        .padding(.bottom, MusicDock.barHeight + NookTheme.Spacing.lg)
                         .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
                 }
                 MusicDock(
@@ -165,17 +171,15 @@ private struct MusicPlayerView: View {
 
     // MARK: Section bar
 
-    /// While the player is unfolded no section is selected: the player is what shows.
+    /// The same tabs as everywhere else in the panel. While the player is unfolded no section is selected: the player is
+    /// what shows.
     private var sectionBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 2) {
-                ForEach(sections) { item in
-                    MusicSectionPill(section: item, selected: !expanded && item == section, namespace: sectionSelection) { select(item) }
-                }
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookTabBar(items: sections.map { NookTabBar<MusicSection?>.Item(value: $0, title: $0.title) },
+                       selected: expanded ? nil : section) { picked in
+                if let picked { select(picked) }
             }
-            .padding(3)
-            .background(Capsule().fill(NookTheme.graphite))
-            Spacer(minLength: 8)
+            Spacer(minLength: NookTheme.Spacing.md)
             if !expanded, section == .lyrics, let source = MusicLyricsView.source(of: lyrics, for: info) {
                 Text(source)
                     .font(NookTheme.TextStyle.detail)
@@ -191,40 +195,7 @@ private struct MusicPlayerView: View {
                     .accessibilityLabel(tr("music.spotifyNote"))
             }
         }
-        .padding(.trailing, 4)
+        .padding(.trailing, NookTheme.Spacing.xs)
         .animation(NookTheme.reveal, value: expanded)
-    }
-}
-
-private struct MusicSectionPill: View {
-    let section: MusicSection
-    let selected: Bool
-    let namespace: Namespace.ID
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(section.title)
-                .font(NookTheme.font(12, .semibold))
-                .foregroundStyle(selected ? NookTheme.ink : (hovering ? NookTheme.paper : NookTheme.textSecondary))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background {
-                    if selected {
-                        Capsule()
-                            .fill(NookTheme.paper)
-                            .matchedGeometryEffect(id: "musicSection", in: namespace)
-                    } else if hovering {
-                        Capsule().fill(NookTheme.smoke)
-                    }
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-        .accessibilityLabel(section.title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

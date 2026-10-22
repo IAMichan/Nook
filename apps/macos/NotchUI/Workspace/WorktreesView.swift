@@ -9,9 +9,9 @@ struct WorktreesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("ws.worktrees.title")).font(NookTheme.font(17, .semibold))
-                    Text(tr("ws.worktrees.subtitle")).font(NookTheme.font(12)).foregroundStyle(WS.secondary)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr("ws.worktrees.title")).font(NookTheme.TextStyle.heading)
+                    Text(tr("ws.worktrees.subtitle")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
                 }
                 Spacer()
                 if workspace.worktreesLoading { ProgressView().controlSize(.small) }
@@ -27,15 +27,15 @@ struct WorktreesView: View {
             } else {
                 Table(workspace.worktreeRows) {
                     TableColumn(tr("ws.worktrees.col.worktree")) { row in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(URL(fileURLWithPath: row.worktree.path).lastPathComponent).font(NookTheme.font(12.5, .medium))
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            Text(URL(fileURLWithPath: row.worktree.path).lastPathComponent).font(NookTheme.TextStyle.body)
                             Text(AgentPathFormat.tilde(row.worktree.path)).font(NookTheme.mono(10.5)).foregroundStyle(WS.tertiary)
                                 .lineLimit(1).truncationMode(.middle)
                         }
                     }
                     .width(min: 180, ideal: 260)
                     TableColumn(tr("ws.worktrees.col.branch")) { row in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Text(row.worktree.branch ?? tr("ws.new.detached")).font(NookTheme.mono(11.5))
                             if let base = row.baseBranch { Text("← \(base)").font(NookTheme.mono(10.5)).foregroundStyle(WS.tertiary) }
                         }
@@ -46,14 +46,14 @@ struct WorktreesView: View {
                     }
                     .width(min: 140, ideal: 220)
                     TableColumn(tr("ws.worktrees.col.changes")) { row in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Text(row.changedFiles.map { $0 == 0 ? tr("ws.inspector.clean") : tr("ws.inspector.filesChanged", $0) } ?? tr("ws.unavailable"))
                                 .foregroundStyle((row.changedFiles ?? 0) > 0 ? NookTheme.amber : WS.secondary)
                             if let ahead = row.ahead, let behind = row.behind {
                                 Text(tr("ws.inspector.aheadBehind", ahead, behind)).foregroundStyle(WS.tertiary)
                             }
                         }
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                     }
                     .width(min: 110, ideal: 140)
                     TableColumn("") { row in
@@ -85,15 +85,15 @@ struct WorktreesView: View {
                 workspace.selectedRunID = run.id
                 app.viewModel.selectedAgentID = "run:" + run.id.uuidString
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     StatusBadge(status: run.status, compact: true)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(run.title).font(NookTheme.font(12)).lineLimit(1)
-                        HStack(spacing: 4) {
+                        Text(run.title).font(NookTheme.TextStyle.detail).lineLimit(1)
+                        HStack(spacing: NookTheme.Spacing.xs) {
                             AgentLogo(run.provider.kind, size: 10)
                             Text("\(run.provider.kind.shortName) · \(NookDates.ago(run.updatedAt))")
                         }
-                        .font(NookTheme.font(10.5)).foregroundStyle(WS.tertiary)
+                        .font(NookTheme.TextStyle.caption).foregroundStyle(WS.tertiary)
                     }
                 }
             }
@@ -101,13 +101,13 @@ struct WorktreesView: View {
             .help(tr("ws.worktrees.openSession"))
         } else {
             Text(row.worktree.isMain ? tr("ws.worktrees.main") : tr("ws.worktrees.noSession"))
-                .font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)
+                .font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
         }
     }
 
     private func actions(_ row: WorktreeRow) -> some View {
         let active = row.runIDs.compactMap { workspace.run($0) }.contains { $0.status.isActive }
-        return HStack(spacing: 4) {
+        return HStack(spacing: NookTheme.Spacing.xs) {
             Button { workspace.openInEditor(row.worktree.path) } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }
                 .help(tr("ws.action.openEditor"))
             Button { workspace.openTerminal(row.worktree.path) } label: { Image(systemName: "terminal") }

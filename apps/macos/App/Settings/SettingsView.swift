@@ -113,6 +113,8 @@ struct SettingsView: View {
                 detail(for: app.settingsSection)
             }
             .formStyle(.grouped)
+            // Every row reads at the panel's body size; captions and notes set their own smaller style.
+            .font(NookTheme.TextStyle.body)
             .scrollContentBackground(.hidden)
             .background(NookTheme.canvas)
             .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)-\(settings.accentHex)")

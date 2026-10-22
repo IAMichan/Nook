@@ -14,7 +14,7 @@ copying it again.
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
-| `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
+| `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
 | `NookTheme.Spacing.xxs … xxxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24, 32 (`xxxl` between the sections of a page) |
@@ -168,6 +168,10 @@ are not kept there.
 | `SettingToggle(_:detail:isOn:)` | `SettingsBlocks.swift` | A switch with a caption under its title |
 | `SettingLabel(_:detail:)` | `SettingsBlocks.swift` | The same title and caption, for rows with a button or picker |
 | `StatusRow`, `SettingsHeader`, `Keycap` | `SettingsBlocks.swift` | Status lines, section headers, keyboard keys |
+| `SettingNote(_:tone:)` | `SettingsBlocks.swift` | The one hint or status line under a setting: `info`, `success`, `warning`, `error`; a warning or error carries a symbol, not only a color |
+| `SettingsLinkRow` | `SettingsBlocks.swift` | A row that leads to another page or flow: tile, title, line under it, chevron; a status symbol only when something is not done |
+| `InUseLabel` | `SettingsBlocks.swift` | The mint "In use" check on the chosen model, file or key |
+| `HoverActionsRow` | `SettingsBlocks.swift` | A row whose buttons show under the pointer; at rest a small symbol says its state (memory rows) |
 | `SettingsTile`, `HealthPill`, `SetupStep`, `GalleryCard`, `IntroCard` | `SettingsStyle.swift` | Tiles, health pills, setup steps |
 | `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of every connected service (icon, name with state, one line, actions) |
 | `GalleryCard`, `GalleryGrid`, `ConnectMethodBadge` | `SettingsStyle.swift`, `ServiceRows.swift` | The one card shape of everything you can add; the badge says how (sign in, a key, MCP) |

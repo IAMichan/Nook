@@ -24,12 +24,14 @@ extension SettingsView {
             .onDisappear { permissions.unwatch() }
             privateSourcesSection
             neverReadAppsSection
-            AuditLogSection()
+            // What Nook promises, on its own: four facts to read, apart from the switches.
             Section(tr("settings.privacy.whatLeavesMac")) {
                 promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
                 promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
                 promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
                 promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
+            }
+            Section {
                 SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
                               isOn: $settings.onlineLyrics)
                 LabeledContent(tr("settings.privacy.screenText")) {
@@ -39,6 +41,8 @@ extension SettingsView {
                     }
                 }
             }
+            // The log of what Nook did last: the longest part, so it comes last.
+            AuditLogSection()
         }
     }
 
@@ -53,14 +57,9 @@ extension SettingsView {
                 SettingLabel(tr("settings.privacy.level"), detail: tr("settings.privacy.levelDetail"))
             }
             .pickerStyle(.segmented)
-            Text(tr(settings.privacyLevel.detailKey))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingNote(tr(settings.privacyLevel.detailKey))
             if settings.isLocalBrain {
-                Text(tr("settings.privacy.level.localBrain"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
+                SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
             }
         } header: {
             Text(tr("settings.privacy.levelTitle"))
@@ -114,7 +113,7 @@ extension SettingsView {
         HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(NookTheme.font(14))
-                .foregroundStyle(NookTheme.iris)
+                .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22)
             SettingLabel(title, detail: detail)
         }
@@ -122,9 +121,8 @@ extension SettingsView {
 
     func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
         StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
-            if granted {
-                Text(tr("music.on")).foregroundStyle(NookTheme.textSecondary)
-            } else {
+            // Granted needs no word: the check in front of the row says it.
+            if !granted {
                 Button(tr("button.allow")) {
                     app.requestPermission { await request(); refreshTick += 1 }
                 }

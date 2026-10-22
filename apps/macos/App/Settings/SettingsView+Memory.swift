@@ -40,6 +40,7 @@ struct MemorySettingsSection: View {
                 if settings.localOnlySources.contains(SourceCatalog.memory) {
                     Label(tr("memory.settings.localOnlyAll"), systemImage: "lock.fill")
                         .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -55,22 +56,20 @@ struct MemorySettingsSection: View {
                         .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let draftProblem {
-                    Label(draftProblem, systemImage: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                    SettingNote(draftProblem, tone: .warning)
                 }
                 if app.memory.items.count > 6 {
-                    TextField(tr("memory.settings.search"), text: $search)
-                        .textFieldStyle(.roundedBorder)
+                    NookSearchField(prompt: tr("memory.settings.search"), text: $search, style: .inline)
                 }
                 if visible.isEmpty {
-                    Text(app.memory.items.isEmpty ? tr("memory.settings.empty") : tr("memory.settings.noMatch"))
-                        .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(app.memory.items.isEmpty ? tr("memory.settings.empty") : tr("memory.settings.noMatch"))
                 }
                 ForEach(MemoryItem.Kind.allCases, id: \.self) { kind in
                     let group = visible.filter { $0.kind == kind }
                     if !group.isEmpty {
                         Text(tr("memory.kind.\(kind.rawValue)"))
-                            .font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textSecondary)
-                            .padding(.top, 4)
+                            .font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textTertiary)
+                            .padding(.top, NookTheme.Spacing.sm)
                         ForEach(group) { item in row(item) }
                     }
                 }
@@ -140,7 +139,7 @@ struct MemorySettingsSection: View {
                 }
             }
             if let imported {
-                Label(tr("memory.import.done", imported), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                SettingNote(tr("memory.import.done", imported), tone: .success)
             }
             if let oldServer {
                 HStack {
@@ -156,9 +155,11 @@ struct MemorySettingsSection: View {
         }
     }
 
+    /// A memory: its text and where it came from; edit, pin, keep on this Mac and delete show under the pointer, with a
+    /// pin and a lock at rest when those are on.
     private func row(_ item: MemoryItem) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HoverActionsRow(keepActions: editing == item.id) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 if editing == item.id {
                     TextField("", text: $editText)
                         .textFieldStyle(.roundedBorder)
@@ -171,7 +172,10 @@ struct MemorySettingsSection: View {
                 }
                 Text(caption(item)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
-            Spacer(minLength: 8)
+        } idle: {
+            if item.pinned { Image(systemName: "pin.fill").font(NookTheme.font(10)) }
+            if item.localOnly { Image(systemName: "lock.fill").font(NookTheme.font(10)) }
+        } actions: {
             Button {
                 if editing == item.id {
                     app.memory.edit(item.id, text: editText)
@@ -184,18 +188,22 @@ struct MemorySettingsSection: View {
                 Image(systemName: editing == item.id ? "checkmark" : "pencil")
             }
             .help(tr("memory.settings.edit"))
+            .accessibilityLabel(tr("memory.settings.edit"))
             Button { app.memory.setPinned(item.id, !item.pinned) } label: {
                 Image(systemName: item.pinned ? "pin.fill" : "pin")
             }
             .help(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
+            .accessibilityLabel(tr(item.pinned ? "memory.settings.unpin" : "memory.settings.pin"))
             Button { app.memory.setLocalOnly(item.id, !item.localOnly) } label: {
                 Image(systemName: item.localOnly ? "lock.fill" : "lock.open")
             }
             .help(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
+            .accessibilityLabel(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             Button(role: .destructive) { app.memory.delete(item.id) } label: {
                 Image(systemName: "trash")
             }
             .help(tr("memory.settings.delete"))
+            .accessibilityLabel(tr("memory.settings.delete"))
         }
         .buttonStyle(.borderless)
     }

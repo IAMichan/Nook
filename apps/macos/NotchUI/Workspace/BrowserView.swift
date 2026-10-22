@@ -300,7 +300,7 @@ struct BrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Button { store.webView.goBack() } label: { Image(systemName: "chevron.left") }
                     .disabled(!store.canGoBack)
                     .help(tr("a11y.back"))
@@ -318,7 +318,7 @@ struct BrowserView: View {
                 .accessibilityLabel(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
                 TextField(tr("workbench.browser.address"), text: $store.address)
                     .textFieldStyle(.plain)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 10)
                     .frame(height: 26)
@@ -341,17 +341,17 @@ struct BrowserView: View {
             .buttonStyle(.borderless)
             .foregroundStyle(NookTheme.textSecondary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, NookTheme.Spacing.sm)
             if let agent = store.openedBy {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
                     Text(tr("bridge.browserBy", agent))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.bottom, NookTheme.Spacing.sm)
             }
             // A line only above a page; the empty browser runs on into the background.
             NookDivider()
@@ -447,7 +447,7 @@ private struct BrowserPopupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 if let agent = store.openedBy {
                     AgentMark(agent: agent, account: nil, size: 14, ring: .clear)
                 } else {
@@ -457,10 +457,10 @@ private struct BrowserPopupView: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(store.title.isEmpty ? tr("browser.popup.title") : store.title)
-                        .font(NookTheme.font(12, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .lineLimit(1)
                     Text(store.address)
-                        .font(NookTheme.font(10.5))
+                        .font(NookTheme.TextStyle.caption)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)

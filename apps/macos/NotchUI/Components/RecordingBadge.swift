@@ -37,30 +37,30 @@ private struct RecordingBadgeView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Circle()
                     .fill(NookTheme.coral)
-                    .frame(width: 9, height: 9)
+                    .frame(width: 8, height: 8)
                     .opacity(0.55 + 0.45 * Double(min(1, notes.level * 12)))
                 Text(elapsed(at: context.date))
-                    .font(NookTheme.font(12, .semibold).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .font(NookTheme.TextStyle.label.monospacedDigit())
+                    .foregroundStyle(NookTheme.paper)
                 Text(tr("notes.badge.recording"))
-                    .font(NookTheme.font(12))
-                    .foregroundStyle(.white.opacity(0.7))
-                Spacer(minLength: 4)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                Spacer(minLength: NookTheme.Spacing.xs)
                 Button(tr("notes.badge.stop")) { notes.stop() }
                     .buttonStyle(.plain)
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.16)))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.paper)
+                    .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                    .padding(.vertical, NookTheme.Spacing.xs)
+                    .background(Capsule().fill(NookTheme.smoke))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 34)
-            .background(Capsule().fill(Color.black.opacity(0.85)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12)))
+            .background(Capsule().fill(NookTheme.notch.opacity(0.88)))
+            .overlay(Capsule().strokeBorder(NookTheme.line2))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

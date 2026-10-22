@@ -101,8 +101,8 @@ struct AgentInboxList: View {
         // The rows as shown, top to bottom (folded shelves left out): what select all and a ⇧-click range go by.
         let shown = sections.filter { $0.kind == .pinned || $0.kind == .active || !collapsed.contains($0.kind) }
             .flatMap { $0.rows.map(\.id) }
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 searchField
                 SelectionModeButton(active: selection.isActive) {
                     withAnimation(NookTheme.reveal) {
@@ -112,12 +112,12 @@ struct AgentInboxList: View {
             }
             if let hint {
                 Text(hint)
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.amber)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, NookTheme.Spacing.lg)
             }
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
                         sectionView(section, sections: sections, byID: byID, shown: shown)
                     }
@@ -171,19 +171,19 @@ struct AgentInboxList: View {
     private func sectionView(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem], shown: [String]) -> some View {
         switch section.kind {
         case .pinned, .active:
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
             }
-            .padding(.bottom, section.kind == .pinned ? 4 : 0)
+            .padding(.bottom, section.kind == .pinned ? NookTheme.Spacing.md : 0)
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
         case .working, .snoozed, .settled:
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 shelfHeader(section, sections: sections, byID: byID)
                 if !collapsed.contains(section.kind) {
                     ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, NookTheme.Spacing.md)
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
         }
     }
@@ -192,20 +192,20 @@ struct AgentInboxList: View {
     /// on their own once they no longer fit.
     private func settledShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                               shown: [String]) -> some View {
-        let rows = VStack(alignment: .leading, spacing: 2) {
+        let rows = VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
             if section.hiddenCount > 0 {
                 Button { settledLimit += InboxLayout.settledPage } label: {
                     Text(tr("inbox.moreSettled", min(section.hiddenCount, InboxLayout.settledPage)))
-                        .font(NookTheme.font(12, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textTertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, NookTheme.Spacing.lg)
+                        .padding(.vertical, NookTheme.Spacing.sm)
                 }
                 .buttonStyle(.plain)
             }
         }
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             if !collapsed.contains(section.kind) {
                 ViewThatFits(in: .vertical) {
                     rows
@@ -227,16 +227,16 @@ struct AgentInboxList: View {
                 if open { collapsed.insert(section.kind) } else { collapsed.remove(section.kind) }
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Text(tr("inbox.section." + section.kind.rawValue, count))
-                    .font(NookTheme.font(12, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(section.kind == .snoozed ? NookTheme.textSecondary : NookTheme.textTertiary)
                 NookDivider()
                 if let ghost {
                     Text(ghost)
-                        .font(NookTheme.font(11, .semibold))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .padding(.horizontal, NookTheme.Spacing.sm).padding(.vertical, NookTheme.Spacing.xxs)
                         .background(Capsule().fill(NookTheme.iris.opacity(0.14)))
                 }
                 // The docked settled shelf opens upwards: its chevron points up while closed, down while open.
@@ -246,7 +246,7 @@ struct AgentInboxList: View {
                     .rotationEffect(.degrees(open ? 0 : (docked ? 180 : -90)))
                     .foregroundStyle(NookTheme.textTertiary)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 28)
             .contentShape(Rectangle())
         }
@@ -472,21 +472,21 @@ struct AgentInboxList: View {
     private var undoNotice: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             if let entry = store.undoLog.current(now: context.date) {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Text(tr(entry.messageKey, entry.count))
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Button(tr("inbox.undo")) { store.undo() }
                         .buttonStyle(.plain)
-                        .font(NookTheme.font(12, .semibold))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
                         .keyboardShortcut("z", modifiers: .command)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, NookTheme.Spacing.lg)
                 .frame(height: 32)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.smoke))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.surface))
                 .transition(.opacity)
             }
         }

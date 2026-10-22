@@ -135,7 +135,7 @@ final class UIConsistencyTests: XCTestCase {
             return XCTFail("NookTheme.swift not found")
         }
         for name in ["enum Radius", "enum Spacing", "enum TextStyle", "static let canvas", "static let well", "static let surface",
-                     "static let hairline", "static let fieldStroke", "static func rounded(", "static let xxxl", "static var detail", "static var heading", "static let reveal", "static let scroll"] {
+                     "static let hairline", "static let fieldStroke", "static func rounded(", "static let xxxl", "static var detail", "static var heading", "static var display", "static let reveal", "static let scroll"] {
             XCTAssertTrue(theme.contains(name), "NookTheme lost \(name)")
         }
     }

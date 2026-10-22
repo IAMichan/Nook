@@ -47,9 +47,9 @@ struct NotchRootView: View {
             .overlay(shape.strokeBorder(Color.white.opacity(floating && !bare ? 0.1 : 0), lineWidth: 1))
             // Open, or showing a conversation, the sides and bottom corners can be dragged to make the notch larger or smaller.
             .overlay { if viewModel.isResizable { NotchResizeHandles(viewModel: viewModel) } }
-            // A subtle expansion when hovering over the notch: indicates responsiveness.
-            .scaleEffect(hoverGrow ? 1.04 : 1, anchor: .top)
-            .animation(.spring(duration: 0.32, bounce: 0.2), value: hoverGrow)
+            // A slight expansion when hovering over the notch: it is alive, without bouncing.
+            .scaleEffect(hoverGrow ? 1.02 : 1, anchor: .top)
+            .animation(NookTheme.hover, value: hoverGrow)
         }
         .frame(
             width: NotchController.panelSize.width,
@@ -136,27 +136,16 @@ struct NotchRootView: View {
         switch viewModel.state {
         case .idle:
             let active = app.activeAgents
-            if !active.isEmpty {
-                // An agent is working: Nook is thinking along inside a thin ring, one piece per session, like in the panel.
-                let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
-                wings(nh: nh, nw: nw, mood: waiting ? .waiting : .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
-                    EmptyView()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
-                .floatingDrag(viewModel)
-            } else if app.chat.anyBusy {
-                // A Nook is working on something in the background: visibly thinking along.
-                wings(nh: nh, nw: nw, mood: .think, animated: true, orbSize: 20, ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
-                    EmptyView()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { NookPresence.shared.poke(); viewModel.openPanel() }
-                .floatingDrag(viewModel)
-            } else if app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
+            let busy = !active.isEmpty || app.chat.anyBusy
+            if !busy && app.settings.hideWhenIdle && !viewModel.geometry.isFloating {
                 Color.clear
             } else {
-                wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside, orbSize: 20, ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
+                // An agent or a Nook at work: Nook thinks along inside a thin ring, one piece per task, as in the panel
+                // (waiting when one asks for you). At rest he only looks up when the pointer comes near.
+                let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+                let mood: NookMood = busy ? (waiting ? .waiting : .think) : (viewModel.pointerInside ? .seen : .rest)
+                wings(nh: nh, nw: nw, mood: mood, animated: busy || viewModel.pointerInside, orbSize: 20,
+                      ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
                     EmptyView()
                 }
                 .contentShape(Rectangle())
@@ -237,7 +226,7 @@ struct NotchRootView: View {
         let isPlaying = app.nowPlaying.current?.isPlaying ?? true
         return HStack(spacing: 0) {
             // Left wing: Nook pinned to the far left, album cover beside it
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 NookOrb(mood: viewModel.pointerInside ? .seen : .rest, size: 24, animated: true, glow: viewModel.geometry.isFloating)
                 TrackCover(artworkURL: app.nowPlaying.current?.artworkURL)
                 Spacer(minLength: 0)
@@ -248,21 +237,21 @@ struct NotchRootView: View {
             Spacer(minLength: 0)
 
             // Right wing: track title & artist, equalizer bars pinned to the far right
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 VStack(alignment: .leading, spacing: 0.5) {
                     Text(title)
-                        .font(NookTheme.font(11.5, .semibold))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     if !artist.isEmpty {
                         Text(artist)
-                            .font(NookTheme.font(10))
+                            .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }
                 }
                 .truncationMode(.tail)
-                Spacer(minLength: 6)
+                Spacer(minLength: NookTheme.Spacing.sm)
                 EqualizerBars(color: NookTheme.music, height: 13, isPlaying: isPlaying)
             }
             .padding(.trailing, 14)
@@ -285,13 +274,13 @@ struct NotchRootView: View {
         let button = min(24, nh - 8)
         let tone = viewModel.doneTone
         return HStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: tone.symbol)
                     .font(NookTheme.font(tone == .waiting ? 13 : 11, .bold))
                     .foregroundStyle(tone.color)
                     .frame(width: 16)
                 Text(message)
-                    .font(NookTheme.font(12, .semibold))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -303,7 +292,7 @@ struct NotchRootView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 4) {
+            HStack(spacing: NookTheme.Spacing.xs) {
                 Spacer(minLength: 0)
                 NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
                     viewModel.doneButtonPressed()
@@ -324,24 +313,22 @@ struct NotchRootView: View {
 
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
-            HStack {
+            stripOrb(nh: nh) {
                 NookOrb(mood: viewModel.doneTone.mood, size: 24, glow: viewModel.geometry.isFloating)
-                    .padding(.leading, 18)
-                Spacer()
             }
-            .frame(height: nh)
             .contentShape(Rectangle())
             .floatingDrag(viewModel)
 
-            HStack(spacing: 10) {
+            StripLine {
                 Image(systemName: viewModel.doneTone.symbol)
                     .font(NookTheme.font(viewModel.doneTone == .waiting ? 14 : 12, .bold))
                     .foregroundStyle(viewModel.doneTone.color)
                 Text(message)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                    .truncationMode(.tail)
+                Spacer(minLength: NookTheme.Spacing.md)
                 NookGhostButton(title: viewModel.doneButtonTitle, compact: viewModel.doneAcknowledge) {
                     viewModel.doneButtonPressed()
                 }
@@ -352,9 +339,17 @@ struct NotchRootView: View {
                     .id(viewModel.doneStamp)
                 }
             }
-            .padding(.horizontal, 20)
-            .frame(height: 40)
         }
+    }
+
+    /// The row under the notch that holds Nook in a strip (a result, a nudge, a moment), level with where he sits in
+    /// the closed notch.
+    private func stripOrb<Orb: View>(nh: CGFloat, @ViewBuilder orb: () -> Orb) -> some View {
+        HStack {
+            orb().padding(.leading, 18)
+            Spacer()
+        }
+        .frame(height: nh)
     }
 
     // MARK: Nook thinking along
@@ -362,29 +357,24 @@ struct NotchRootView: View {
     /// A short sentence below the notch, like "Shall I add this to your calendar?". Hover or click for the full proposal.
     private func nudgeStrip(line: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
-            HStack {
+            stripOrb(nh: nh) {
                 NookOrb(mood: .seen, size: 24, animated: true, curious: true, glow: viewModel.geometry.isFloating)
-                    .padding(.leading, 18)
-                Spacer()
             }
-            .frame(height: nh)
 
-            HStack(spacing: 10) {
+            StripLine(height: 34) {
                 Image(systemName: "sparkles")
                     .font(NookTheme.font(12, .semibold))
                     .foregroundStyle(NookTheme.iris)
                 Text(line)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 8)
+                Spacer(minLength: NookTheme.Spacing.md)
                 Image(systemName: "chevron.down")
                     .font(NookTheme.font(10, .bold))
                     .foregroundStyle(NookTheme.textTertiary)
             }
-            .padding(.horizontal, 20)
-            .frame(height: 34)
         }
         .contentShape(Rectangle())
         .onTapGesture { viewModel.openNudge() }
@@ -400,15 +390,12 @@ struct NotchRootView: View {
     /// line does what the button says (the good morning shows today's events), or puts it away otherwise.
     private func momentStrip(_ moment: NookMoment, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
-            HStack {
+            stripOrb(nh: nh) {
                 NookOrb(mood: moment.mood, size: 24, animated: true, glow: viewModel.geometry.isFloating, outfit: moment.outfit)
-                    .padding(.leading, 18)
-                Spacer()
             }
-            .frame(height: nh)
             .floatingDrag(viewModel)
 
-            HStack(spacing: 10) {
+            StripLine(trailing: NookTheme.Spacing.lg) {
                 Group {
                     if moment.mood == .breathe {
                         // The line follows the breath: in, hold, out.
@@ -421,7 +408,7 @@ struct NotchRootView: View {
                         Text(moment.line)
                     }
                 }
-                .font(NookTheme.font(13.5, .medium))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -430,23 +417,12 @@ struct NotchRootView: View {
                     // Breathing along is only started with the button: a click on the line never surprises you with it.
                     if let action = moment.action, action != .breathe { app.performMomentAction(moment) } else { viewModel.show(.idle) }
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: NookTheme.Spacing.md)
                 if moment.action != nil, !moment.actionTitle.isEmpty {
                     NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }
                 }
-                Button { viewModel.show(.idle) } label: {
-                    Image(systemName: "xmark")
-                        .font(NookTheme.font(10, .bold))
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tr("button.close"))
+                ToolbarIconButton("xmark", tr("button.close")) { viewModel.show(.idle) }
             }
-            .padding(.leading, 20)
-            .padding(.trailing, 14)
-            .frame(height: 40)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("buddy.accessibility", moment.mood.label, moment.line))
@@ -703,7 +679,7 @@ private struct NotchResizeHandles: View {
         switch edge {
         case .bottomLeft, .bottomRight:
             ResizeGrip(mirrored: edge == .bottomLeft)
-                .stroke(Color.white.opacity(lit ? 0.75 : 0.28), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .stroke(Color.white.opacity(lit ? 0.7 : 0.18), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .frame(width: 10, height: 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .bottomLeft ? .bottomLeading : .bottomTrailing)
                 .padding(edge == .bottomLeft ? .leading : .trailing, 11)
@@ -779,9 +755,21 @@ private struct TrackCover: View {
         }
         .frame(width: 22, height: 22)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-        )
+    }
+}
+
+/// The one line of a strip under the notch (a result, a nudge, a moment): its mark, the words and its buttons, at the
+/// same height and margins in every strip, so they read as one kind of thing.
+private struct StripLine<Content: View>: View {
+    var trailing: CGFloat = NookTheme.Spacing.xl + NookTheme.Spacing.xs
+    /// The height the notch makes room for under itself (see `NotchViewModel`'s size for each strip).
+    var height: CGFloat = 40
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md + NookTheme.Spacing.xxs) { content() }
+            .padding(.leading, NookTheme.Spacing.xl + NookTheme.Spacing.xs)
+            .padding(.trailing, trailing)
+            .frame(height: height)
     }
 }
