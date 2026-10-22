@@ -219,10 +219,11 @@ extension AppModel {
     private func workspaceQuestion(_ run: WorkspaceRun) {
         if viewModel.isShowing(.agents), viewModel.selectedAgentID == "run:" + run.id.uuidString,
            viewModel.sessionTool == .conversation { return }
-        NookSound.play(.attention)
-        guard !quiet.silent else { return }
         let runID = run.id
         let message = tr("ws.notice.question", run.provider.displayName, run.title)
+        logNotice(.waiting, title: message, target: .run(runID), key: "wsquestion-" + runID.uuidString)
+        NookSound.play(.attention)
+        guard !quiet.silent else { return }
         let show: () -> Void = { [weak self] in
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
@@ -242,6 +243,13 @@ extension AppModel {
         guard attentionLedger.shouldNotify(id: run.id.uuidString, state: state, turn: Int(run.updatedAt.timeIntervalSince1970)) else { return }
         // Only notify if the user is not already looking at the workspace window.
         guard !WorkspaceWindowController.shared.isKey else { return }
+        let failedTurn = run.status == .failed
+        logNotice(failedTurn ? .failed : .done,
+                  title: failedTurn ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title),
+                  detail: failedTurn ? (run.statusDetail ?? "") : "",
+                  context: [run.provider.displayName, (run.projectPath as NSString).lastPathComponent].filter { !$0.isEmpty }
+                      .joined(separator: " · "),
+                  target: .run(run.id))
         NookSound.play(run.status == .failed ? .error : .done)
         guard !quiet.silent else { return }
         guard settings.noticeDelivery == .system else { showTurnNotice(run); return }

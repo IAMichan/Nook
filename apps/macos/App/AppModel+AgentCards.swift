@@ -19,6 +19,8 @@ extension AppModel {
     /// requests queued behind it.
     func presentApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?,
                              waiting: Int = 0) {
+        logNotice(.waiting, title: approval.title, detail: approval.command, context: context,
+                  target: noticeTarget(approval), key: approval.cardToken)
         guard settings.noticeDelivery == .system else {
             showApprovalCard(approval, context: context, open: open, waiting: waiting)
             return
@@ -88,6 +90,10 @@ extension AppModel {
         guard index < request.items.count else { return }
         let item = request.items[index]
         let token = "question-" + request.id
+        if index == 0, !inNotch {
+            logNotice(.waiting, title: item.question, context: "\(request.agentName) · \(request.project)",
+                      target: .agent(request.sessionKey), key: token)
+        }
         // As a macOS notification: the choices do not fit on a banner, so a click brings up the card.
         if index == 0, !inNotch, settings.noticeDelivery == .system {
             NookSound.play(.attention)
@@ -168,6 +174,8 @@ extension AppModel {
             if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
             buddyAgentFinished(last: !others)
         }
+        logNotice(Self.noticeKind(session.status), title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
+                  detail: session.summary, context: session.project, target: .agent(session.id))
         // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, no card pops up.
         guard !quiet.silent else { return }
         if settings.noticeDelivery == .system {
@@ -285,6 +293,18 @@ extension AppModel {
         case .done: return .done
         case .failed: return .failed
         default: return .waiting
+        }
+    }
+
+    /// The session a permission request comes from, for its entry in the notice history.
+    private func noticeTarget(_ approval: AgentApproval) -> NoticeEntry.Target {
+        switch approval.origin {
+        case .run(let runID, _):
+            return .run(runID)
+        case .hook(let request):
+            return hub.sessions.first { $0.approvalID == request }.map { .agent($0.id) } ?? .agents
+        case .bridge:
+            return .agents
         }
     }
 

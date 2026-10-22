@@ -105,6 +105,8 @@ struct PanelView: View {
             let gear = app.demoMode
             HStack(spacing: 2) {
                 talkButton
+                // What Nook told you lately, for a notice that closed before you looked.
+                if !app.demoMode { NoticeBellButton() }
                 if gear || !inWindow {
                     Rectangle()
                         .fill(NookTheme.textTertiary.opacity(0.35))

@@ -434,6 +434,7 @@ extension AppModel {
         let token = "nookdone-" + UUID().uuidString
         viewModel.register("\(token)#open") { [weak self] in self?.openConversation(id) }
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
+        logNotice(.done, title: tr("nooks.finished", conversation.title), detail: preview, target: .conversation(id))
         let lines = max(1, min(3, Int(ceil(Double(preview.count) / 46.0))))
         let card = NookCard(
             id: token,

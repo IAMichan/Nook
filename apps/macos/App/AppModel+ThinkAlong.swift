@@ -148,6 +148,7 @@ extension AppModel {
         let card = nudgeCard(offer, offers: split.offers, bundleID: bundleID, appName: appName)
         guard viewModel.offerNudge(line, card: card) else { return }
         thinkAlong.didOffer(line)
+        logNotice(.info, title: line, detail: body == line ? "" : body, context: appName)
         missedNudge = (line, card, appName, Date())
     }
 
