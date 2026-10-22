@@ -681,9 +681,6 @@ private struct ChatsDetail: View {
     @State private var reply = ""
     @State private var notice: String?
     @State private var sending = false
-    @State private var drafting = false
-    /// The menu "@" opens above the field, as in Nook's own chat: "@nook" and ready-made requests.
-    @StateObject private var menu = ComposerModel()
     @FocusState private var replyFocused: Bool
 
     private static let time: DateFormatter = {
@@ -719,7 +716,7 @@ private struct ChatsDetail: View {
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { open($0) })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { footer }
+            footer
                 .padding(.top, NookTheme.Spacing.md)
         }
         .task(id: entry.id) { await loadWhatsApp() }
@@ -751,129 +748,23 @@ private struct ChatsDetail: View {
         }
     }
 
-    /// "@nook …" at the start of the field: Nook writes the message instead of sending what is typed.
-    private var asksNook: Bool { ChatDraft.instruction(in: reply) != nil }
-
     /// One field for every chat: what you type goes to a WhatsApp chat, or is copied for the app of any other chat;
     /// "@nook …" lets Nook write the message first, into this field, for you to read before it goes anywhere.
-    @ViewBuilder
     private var footer: some View {
-        if let notice {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                if drafting || sending {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: "info.circle")
-                        .font(NookTheme.font(10.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                Text(notice)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-            }
-            .padding(.horizontal, NookTheme.Spacing.xs)
-            .transition(.opacity)
-        }
-        if menu.isOpen {
-            ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
-        }
-        HStack(spacing: NookTheme.Spacing.sm) {
-            TextField(whatsAppChat == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
-                      text: $reply, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1...6)
-                .focused($replyFocused)
-                .onSubmit { menu.isOpen ? chooseSelected() : submit() }
-                .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
-                .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
-                .onKeyPress(.tab) { () -> KeyPress.Result in
-                    guard menu.isOpen else { return .ignored }
-                    chooseSelected()
-                    return .handled
-                }
-                .onKeyPress(.escape) { () -> KeyPress.Result in
-                    guard menu.isOpen else { return .ignored }
-                    menu.close()
-                    return .handled
-                }
-                .onChange(of: reply) { _, text in updateMenu(text) }
-                .disabled(sending || drafting)
-            NookIconButton(systemName: asksNook ? "sparkles" : (whatsAppChat == nil ? "doc.on.doc" : "arrow.up"),
-                           label: submitLabel, filled: true, size: 28) { submit() }
-                .disabled(sending || drafting || (!asksNook && reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-                .help(submitLabel)
-        }
-        .padding(.leading, NookTheme.Spacing.md)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
-    }
-
-    /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language.
-    private func updateMenu(_ text: String) {
-        let presets = ChatDraft.presetKeys.map { tr($0) }
-        menu.show(ChatDraft.choices(for: text, presets: presets).map { choice in
-            ComposerSuggestion(id: "nook:" + choice.insertion, title: choice.title,
-                               detail: tr(choice.isNook ? "chats.nook.detail" : "chats.nook.presetDetail"), symbol: "sparkles",
-                               payload: .command(ComposerCommand(name: choice.insertion, insertion: choice.insertion, action: .insert)))
-        })
-    }
-
-    /// A line of the menu fills the field; Return then lets Nook write.
-    private func choose(_ row: ComposerSuggestion) {
-        guard case .command(let command) = row.payload else { return }
-        reply = command.insertion
-        menu.close()
-        replyFocused = true
-    }
-
-    private func chooseSelected() {
-        guard menu.suggestions.indices.contains(menu.selection) else { return }
-        choose(menu.suggestions[menu.selection])
-    }
-
-    private func moveInMenu(_ delta: Int) -> KeyPress.Result {
-        guard menu.isOpen else { return .ignored }
-        menu.move(delta)
-        return .handled
-    }
-
-    private var submitLabel: String {
-        if asksNook { return tr("chats.draft.button") }
-        return whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send")
-    }
-
-    /// Return or the button: Nook writes for "@nook …", a WhatsApp chat gets the text, any other chat's app gets it on
-    /// the clipboard and comes to the front.
-    private func submit() {
-        if let instruction = ChatDraft.instruction(in: reply) {
-            draft(instruction)
-        } else if let chat = whatsAppChat {
-            send(to: chat)
-        } else {
-            copyForApp()
-        }
-    }
-
-    /// Nook writes the message from this chat's newest messages and what you asked, and puts it in the field.
-    private func draft(_ instruction: String) {
-        guard !drafting else { return }
-        drafting = true
-        notice = tr("chats.draft.writing")
-        let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
-        Task { @MainActor in
-            defer { drafting = false }
-            do {
-                reply = try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript, instruction: instruction)
-                notice = whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready")
-                replyFocused = true
-            } catch {
-                notice = error.localizedDescription
-            }
-        }
+        ChatReplyField(text: $reply, notice: $notice, focus: $replyFocused,
+                       placeholder: whatsAppChat == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
+                       sendSymbol: whatsAppChat == nil ? "doc.on.doc" : "arrow.up",
+                       sendLabel: whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
+                       readyNotice: whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
+                       busy: sending,
+                       draft: { instruction in
+                           let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
+                           return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,
+                                                                 instruction: instruction)
+                       },
+                       send: {
+                           if let chat = whatsAppChat { send(to: chat) } else { copyForApp() }
+                       })
     }
 
     /// Your answer goes to the chat as typed, after your own Return or click; when it fails the text stays.

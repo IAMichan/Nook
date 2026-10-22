@@ -7,6 +7,8 @@ struct CardView: View {
     let onAction: (CardAction) -> Void
     let onVoice: () -> Void
     var onReply: (String) -> Void = { _ in }
+    /// "@nook …" in a chat card's field: the message Nook writes for what was asked, put in the field to read first.
+    var onDraft: (String) async throws -> String = { _ in throw NookError(tr("chats.draft.failed")) }
     var onChoose: (String, [String]) -> Void = { _, _ in }
     /// A chat bubble's attachment was clicked: the card stays open while the file opens.
     var onOpen: (ChatBubble) -> Void = { _ in }
@@ -15,6 +17,8 @@ struct CardView: View {
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
+    /// What the chat field says about Nook writing a message ("@nook …").
+    @State private var chatNotice: String?
     /// A chat bubble's photo shown big over the card, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
 
@@ -49,7 +53,7 @@ struct CardView: View {
                     .padding(.bottom, 6)
             }
 
-            if card.input { replyField.padding(.bottom, 10) }
+            if card.input { inputField.padding(.bottom, 10) }
 
             // Buttons stay on one line each; when they do not fit side by side, they tighten up instead of wrapping.
             if card.acknowledge != nil {
@@ -70,7 +74,7 @@ struct CardView: View {
                     .transition(.opacity)
             }
         }
-        .onChange(of: card.id) { _, _ in zoomed = nil }
+        .onChange(of: card.id) { _, _ in zoomed = nil; chatNotice = nil }
         .onExitCommand {
             // Escape first shrinks an enlarged photo back; only then does it close the card.
             if zoomed != nil { withAnimation(NookTheme.reveal) { zoomed = nil }; return }
@@ -158,6 +162,34 @@ struct CardView: View {
         }
     }
 
+    /// The card's field: a chat's answer field for a message card, else a follow-up question. A draft from the model
+    /// (text put back after a failed send) fills it.
+    private var inputField: some View {
+        Group {
+            if card.chatReply { chatField } else { replyField }
+        }
+        .onAppear {
+            if let draft = card.draft { reply = draft }
+            // Wait briefly for the panel to acquire keyboard focus.
+            guard card.focusesInput else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
+        }
+        .onChange(of: card.draft) { _, draft in
+            guard let draft else { return }
+            reply = draft
+            replyFocused = true
+        }
+    }
+
+    /// A message card answers its chat as the Chats tab does: Return sends, "@" opens the menu, "@nook …" lets Nook
+    /// write the message into the field.
+    private var chatField: some View {
+        ChatReplyField(text: $reply, notice: $chatNotice, focus: $replyFocused,
+                       placeholder: card.inputPrompt ?? tr("chat.followupPrompt"),
+                       sendSymbol: "arrow.up", sendLabel: tr("card.send"), readyNotice: tr("chats.draft.ready"),
+                       draft: onDraft, send: submitReply)
+    }
+
     /// Follow-up questions via text: always ready to type. Return starts a new line and the field grows with it;
     /// Cmd+Return sends. Wrapping instead of scrolling sideways keeps the text still while a long sentence is typed.
     private var replyField: some View {
@@ -201,17 +233,6 @@ struct CardView: View {
         .padding(.trailing, 10)
         .frame(minHeight: 38)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(NookTheme.field))
-        .onAppear {
-            if let draft = card.draft { reply = draft }
-            // Wait briefly for the panel to acquire keyboard focus.
-            guard card.focusesInput else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
-        }
-        .onChange(of: card.draft) { _, draft in
-            guard let draft else { return }
-            reply = draft
-            replyFocused = true
-        }
     }
 
     /// Return adds a line where the cursor is; with Cmd it sends.

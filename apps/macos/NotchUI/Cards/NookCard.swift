@@ -160,6 +160,9 @@ struct NookCard: Equatable, Identifiable {
     /// The field takes the keyboard as soon as the card appears. Off for cards that arrive on their own (an incoming
     /// message, a suggestion): you keep typing where you were, and a click in the field answers.
     var focusesInput: Bool = true
+    /// The field answers the chat the card shows (a WhatsApp message): it is the Chats tab's `ChatReplyField`, so "@"
+    /// opens the same menu and "@nook …" lets Nook write the message into the field instead of sending it.
+    var chatReply: Bool = false
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
     /// Less common actions, tucked away in a "…" menu at the end of the button row so the row stays calm.
