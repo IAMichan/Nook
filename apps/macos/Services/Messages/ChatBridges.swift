@@ -40,6 +40,12 @@ final class MessagesBridge: ChatBridge {
     private var lastChange: Date?
     /// Every chat read so far by its id in the database, with its name in Nook, for the unread counts.
     private var names: [String: String] = [:]
+    /// The group chats among them, and their people (you left out) once asked, as Messages lists them.
+    private var groups: Set<String> = []
+    private var members: [String: [String]] = [:]
+    /// Your own newest messages by row, with their chat: their ticks are read again each time, as they move.
+    private var mine: [Int64: (chat: String, message: InboxMessage)] = [:]
+    private static let tracked = 200
 
     var isReady: Bool { FileManager.default.fileExists(atPath: path) }
 
@@ -79,10 +85,37 @@ final class MessagesBridge: ChatBridge {
             let chat = message.chat
             names[chat] = unnamed[chat] ?? names[chat] ?? message.chatName
             let group = (AppData.number(row["grp"]) ?? 0) != 0
-            messages[chat, default: []].append(InboxMessage(
+            if group { groups.insert(chat) }
+            var inbox = InboxMessage(
                 id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
-                text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media))
+                text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
+            if message.fromMe {
+                inbox.receipt = Self.receipt(row)
+                mine[id] = (chat, inbox)
+            }
+            messages[chat, default: []].append(inbox)
         }
+        if mine.count > Self.tracked {
+            for id in mine.keys.sorted().dropLast(Self.tracked) { mine[id] = nil }
+        }
+        // Your earlier messages whose ticks moved since (delivered, read): the chat shows them now.
+        let fresh = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
+        let earlier = mine.keys.filter { !fresh.contains($0) }
+        if !earlier.isEmpty {
+            for row in try await query("""
+            SELECT ROWID AS id, is_sent AS sent, is_delivered AS delivered, COALESCE(date_read, 0) AS readat,
+                   COALESCE(error, 0) AS error
+            FROM message WHERE ROWID IN (\(earlier.sorted().map(String.init).joined(separator: ",")))
+            """) {
+                guard let id = NotificationRecord.integer(row["id"]), var known = mine[id] else { continue }
+                let receipt = Self.receipt(row)
+                guard receipt != known.message.receipt else { continue }
+                known.message.receipt = receipt
+                mine[id] = known
+                messages[known.chat, default: []].append(known.message)
+            }
+        }
+        try await loadMembers(contacts: contacts)
         // Messages' own unread count of every chat Nook shows: reading it on the Mac or the phone clears it here too.
         let unreadRows = try await query("""
         SELECT cmj.chat_id AS chat, SUM(CASE WHEN m.is_from_me = 0 AND m.is_read = 0 THEN 1 ELSE 0 END) AS unread
@@ -101,6 +134,7 @@ final class MessagesBridge: ChatBridge {
             var merged = chats[name] ?? BridgedChat(app: app, name: name, messages: [], unread: 0)
             merged.messages += messages[chat] ?? []
             merged.unread = (merged.unread ?? 0) + (unread[chat] ?? 0)
+            if let people = members[chat], !people.isEmpty { merged.members = people }
             chats[name] = merged
         }
         return chats.values.map { chat in
@@ -132,6 +166,34 @@ final class MessagesBridge: ChatBridge {
 
     /// The text a message with only a file is read with, so it is not skipped as empty.
     private static let placeholder = "\u{1}"
+
+    /// How far your message got, from its row (`sent`, `delivered`, `readat`, `error`). Read is the date they read it,
+    /// which Messages only has when they share read receipts; `is_read` is about your own reading.
+    private static func receipt(_ row: [String: Any]) -> ChatReceipt {
+        ChatReceipts.messages(sent: (AppData.number(row["sent"]) ?? 0) != 0,
+                              delivered: (AppData.number(row["delivered"]) ?? 0) != 0,
+                              read: (AppData.number(row["readat"]) ?? 0) > 0,
+                              failed: (AppData.number(row["error"]) ?? 0) != 0)
+    }
+
+    /// The people of the group chats not asked yet, by their name in Contacts (else their number or address).
+    private func loadMembers(contacts: [String: String]) async throws {
+        let asked = groups.filter { members[$0] == nil }.compactMap(Int.init)
+        guard !asked.isEmpty else { return }
+        let people = try await query("""
+        SELECT chj.chat_id AS chat, h.id AS handle FROM chat_handle_join chj JOIN handle h ON h.ROWID = chj.handle_id
+        WHERE chj.chat_id IN (\(asked.sorted().map(String.init).joined(separator: ",")))
+        """)
+        var found: [String: Set<String>] = [:]
+        for row in people {
+            let handle = AppData.cleanHandle(AppData.string(row["handle"]))
+            guard !handle.isEmpty else { continue }
+            found[AppData.string(row["chat"]), default: []].insert(contacts[AppData.key(handle)] ?? handle)
+        }
+        for id in asked.map(String.init) {
+            members[id] = (found[id] ?? []).sorted()
+        }
+    }
 
     /// The first file of each of these messages, where Messages keeps it on this Mac (`~/Library/Messages/Attachments`):
     /// a photo, a sticker, a GIF, a video or an audio message, shown as itself.
@@ -169,7 +231,8 @@ final class MessagesBridge: ChatBridge {
     private static let select = """
     SELECT m.ROWID AS id, cmj.chat_id AS chat, COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, '') AS chatname,
            COALESCE(h.id, '') AS handle, m.is_from_me AS me, m.date AS date, m.text AS text, hex(m.attributedBody) AS body,
-           CASE WHEN c.style = 43 THEN 1 ELSE 0 END AS grp
+           CASE WHEN c.style = 43 THEN 1 ELSE 0 END AS grp, m.is_sent AS sent, m.is_delivered AS delivered,
+           COALESCE(m.date_read, 0) AS readat, COALESCE(m.error, 0) AS error
     FROM message m
     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
     JOIN chat c ON c.ROWID = cmj.chat_id
@@ -212,6 +275,12 @@ final class WhatsAppDesktopBridge: ChatBridge {
     private var members = true
     /// Whether the media table can be joined, for the photos, stickers, videos and voice messages the app keeps.
     private var mediaItems = true
+    /// The group chats read so far, and their people (you left out) once asked.
+    private var groups: Set<String> = []
+    private var groupPeople: [String: [String]] = [:]
+    /// Your own newest messages by row, with their chat: their ticks are read again each time, as they move.
+    private var mine: [Int64: (chat: String, message: InboxMessage)] = [:]
+    private static let tracked = 200
     /// Where the app keeps the files of its chats; a media item's path is relative to it.
     private static var mediaRoot: String {
         AppDatabase.home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/"
@@ -252,14 +321,42 @@ final class WhatsAppDesktopBridge: ChatBridge {
             if text.isEmpty, media == nil { text = Self.label(Int(AppData.number(row["type"]) ?? 0)) }
             guard !text.isEmpty || media != nil else { continue }
             var sender = ""
-            if group, !mine {
-                sender = AppData.string(row["sender"])
-                if sender.isEmpty { sender = contacts[AppData.key(AppData.string(row["member"]))] ?? "" }
+            if group {
+                groups.insert(chat)
+                if !mine {
+                    sender = AppData.string(row["sender"])
+                    if sender.isEmpty { sender = contacts[AppData.key(AppData.string(row["member"]))] ?? "" }
+                }
             }
-            messages[chat, default: []].append(InboxMessage(
+            var message = InboxMessage(
                 id: "wadesktop-\(id)", sender: sender, text: text,
-                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media))
+                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media)
+            if mine {
+                message.receipt = ChatReceipts.whatsAppDesktop(status: Int(AppData.number(row["status"]) ?? 0))
+                self.mine[id] = (chat, message)
+            }
+            messages[chat, default: []].append(message)
         }
+        if self.mine.count > Self.tracked {
+            for id in self.mine.keys.sorted().dropLast(Self.tracked) { self.mine[id] = nil }
+        }
+        // Your earlier messages whose ticks moved since (delivered, read): the chat shows them now.
+        let fresh = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
+        let earlier = self.mine.keys.filter { !fresh.contains($0) }
+        if !earlier.isEmpty {
+            for row in try await query("""
+            SELECT Z_PK AS id, COALESCE(ZMESSAGESTATUS, 0) AS status FROM ZWAMESSAGE
+            WHERE Z_PK IN (\(earlier.sorted().map(String.init).joined(separator: ",")))
+            """) {
+                guard let id = NotificationRecord.integer(row["id"]), var known = self.mine[id],
+                      let receipt = ChatReceipts.whatsAppDesktop(status: Int(AppData.number(row["status"]) ?? 0)),
+                      receipt != known.message.receipt else { continue }
+                known.message.receipt = receipt
+                self.mine[id] = known
+                messages[known.chat, default: []].append(known.message)
+            }
+        }
+        await loadPeople(contacts: contacts)
         let known = names.keys.compactMap(Int.init).map(String.init).joined(separator: ",")
         var unread: [String: Int] = [:]
         if !known.isEmpty {
@@ -271,8 +368,36 @@ final class WhatsAppDesktopBridge: ChatBridge {
         lastChange = change
         isWorking = true
         return names.map { chat, name in
-            BridgedChat(app: app, name: name, messages: (messages[chat] ?? []).sorted { $0.date < $1.date }, unread: unread[chat] ?? 0)
+            let people = groupPeople[chat] ?? []
+            return BridgedChat(app: app, name: name, messages: (messages[chat] ?? []).sorted { $0.date < $1.date },
+                               unread: unread[chat] ?? 0, members: people.isEmpty ? nil : people)
         }
+    }
+
+    /// The people of the group chats not asked yet (`ZWAGROUPMEMBER`, the ones still in it), by their name in WhatsApp,
+    /// else in Contacts, else their number. Without that table (an older app) groups list nobody.
+    private func loadPeople(contacts: [String: String]) async {
+        let asked = groups.filter { groupPeople[$0] == nil }.compactMap(Int.init)
+        guard members, !asked.isEmpty else { return }
+        let rows: [[String: Any]]
+        do {
+            rows = try await query("""
+            SELECT ZCHATSESSION AS chat, COALESCE(ZCONTACTNAME, '') AS name, COALESCE(ZMEMBERJID, '') AS jid
+            FROM ZWAGROUPMEMBER WHERE ZCHATSESSION IN (\(asked.sorted().map(String.init).joined(separator: ","))) AND COALESCE(ZISACTIVE, 1) = 1
+            """)
+        } catch {
+            for id in asked.map(String.init) { groupPeople[id] = [] }
+            return
+        }
+        var found: [String: Set<String>] = [:]
+        for row in rows {
+            let jid = AppData.string(row["jid"])
+            var name = AppData.string(row["name"])
+            if name.isEmpty { name = contacts[AppData.key(jid)] ?? WAJID.displayNumber(jid) }
+            guard !name.isEmpty else { continue }
+            found[AppData.string(row["chat"]), default: []].insert(name)
+        }
+        for id in asked.map(String.init) { groupPeople[id] = (found[id] ?? []).sorted() }
     }
 
     /// The file of a photo, video, voice message, sticker or document, where the app keeps it on this Mac.
@@ -296,7 +421,7 @@ final class WhatsAppDesktopBridge: ChatBridge {
             let base = """
             SELECT m.Z_PK AS id, m.ZCHATSESSION AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname,
                    COALESCE(s.ZCONTACTJID, '') AS jid, s.ZSESSIONTYPE AS kind, m.ZISFROMME AS me, m.ZMESSAGEDATE AS date,
-                   m.ZTEXT AS text, m.ZMESSAGETYPE AS type,
+                   m.ZTEXT AS text, m.ZMESSAGETYPE AS type, COALESCE(m.ZMESSAGESTATUS, 0) AS status,
                    \(members ? "COALESCE(g.ZCONTACTNAME, '') AS sender, COALESCE(g.ZMEMBERJID, '') AS member" : "'' AS sender, '' AS member"),
                    \(media ? "COALESCE(mi.ZMEDIALOCALPATH, '') AS file, COALESCE(mi.ZMOVIEDURATION, 0) AS seconds, COALESCE(mi.ZTITLE, '') AS title" : "'' AS file, 0 AS seconds, '' AS title")
             FROM ZWAMESSAGE m JOIN ZWACHATSESSION s ON s.Z_PK = m.ZCHATSESSION
@@ -401,7 +526,8 @@ final class BeeperBridge: ChatBridge {
                 covered.insert(chat.app)
                 guard !messages.isEmpty else { continue }
                 let picture = await local(chat.picture, token: token)
-                result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture))
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: messages, unread: chat.unread, avatar: picture,
+                                          members: chat.members.isEmpty ? nil : chat.members))
             }
             isWorking = true
             return result
@@ -500,6 +626,8 @@ final class SlackBridge: ChatBridge {
     private var newest: [String: String] = [:]
     /// The latest activity seen per conversation, to read the busiest first.
     private var active: [String: Double] = [:]
+    /// The people of each group conversation, by name, asked once.
+    private var people: [String: [String]] = [:]
     private var turn = 0
 
     var isReady: Bool { Self.token != nil }
@@ -515,6 +643,7 @@ final class SlackBridge: ChatBridge {
         conversationsAt = nil
         newest = [:]
         active = [:]
+        people = [:]
         isWorking = false
     }
 
@@ -550,8 +679,14 @@ final class SlackBridge: ChatBridge {
                 }
                 guard !messages.isEmpty else { continue }
                 let picture = await avatar(of: conversation.user)
+                if conversation.isGroup, people[conversation.id] == nil {
+                    // One refused list (a missing scope) leaves the group without its people, not without its messages.
+                    let json = try? await call("conversations.members", ["channel": conversation.id, "limit": "200"], token: token)
+                    people[conversation.id] = json.map { SlackData.members($0, users: users, me: me) } ?? []
+                }
+                let members = people[conversation.id] ?? []
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
-                                         messages: messages, unread: nil, avatar: picture))
+                                         messages: messages, unread: nil, avatar: picture, members: members.isEmpty ? nil : members))
             }
             isWorking = true
             return chats

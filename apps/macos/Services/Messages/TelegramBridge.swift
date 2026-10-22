@@ -46,6 +46,16 @@ final class TelegramBridge: ObservableObject, ChatBridge {
     private var downloads: [Int64: (chat: Int64, message: String)] = [:]
     /// Chat pictures asked of TDLib, by their file id: whose picture it is.
     private var pictures: [Int64: Int64] = [:]
+    /// Your own user id, to leave you out of a group's people.
+    private var meID: Int64?
+    /// Each group's people by user id, asked once per chat.
+    private var members: [Int64: [Int64]] = [:]
+    private var membersAsked: Set<Int64> = []
+    /// Your messages in groups whose viewers were asked, and when: asked again once the chat says more of them was read.
+    private var viewersAsked: [String: Int64] = [:]
+    /// Of how many of your newest messages in a group Telegram is asked who read them (it keeps that for a week, in
+    /// groups of up to 100 people).
+    private static let viewed = 5
 
     var isReady: Bool { state == .login(.ready) }
     var isWorking: Bool { isReady }
@@ -132,6 +142,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         messages = [:]
         shown = []
         changed = []
+        meID = nil
+        members = [:]
+        membersAsked = []
+        viewersAsked = [:]
     }
 
     // MARK: ChatBridge
@@ -142,7 +156,9 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         changed = []
         return ids.compactMap { id in
             guard let chat = chats[id], !chat.title.isEmpty else { return nil }
-            return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar)
+            let people = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
+            return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
+                               members: people.isEmpty ? nil : people)
         }
     }
 
@@ -175,6 +191,20 @@ final class TelegramBridge: ObservableObject, ChatBridge {
                 chats[id]?.title = title
                 changed.insert(id)
             }
+        case "updateChatReadOutbox":
+            // Someone read your messages up to this one: they get two ticks, and in a group Telegram says who.
+            if let id = TelegramData.int64(object["chat_id"]), let upTo = TelegramData.int64(object["last_read_outbox_message_id"]) {
+                chats[id]?.readOutbox = upTo
+                markRead(upTo: upTo, in: id)
+                askViewers(in: id)
+            }
+        case "basicGroupFullInfo", "chatMembers":
+            if let extra = object["@extra"] as? String, extra.hasPrefix("members:"), let id = Int64(extra.dropFirst("members:".count)) {
+                members[id] = TelegramData.members(object)
+                changed.insert(id)
+            }
+        case "messageViewers", "users":
+            if let extra = object["@extra"] as? String, extra.hasPrefix("viewers:") { viewed(TelegramData.viewers(object), extra: extra) }
         case "updateChatReadInbox":
             if let id = TelegramData.int64(object["chat_id"]) {
                 chats[id]?.unread = Int(TelegramData.int64(object["unread_count"]) ?? 0)
@@ -218,6 +248,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
                   let id = extra.split(separator: ":").last.flatMap({ Int64($0) }) else { return }
             let list = object["messages"] as? [[String: Any]] ?? []
             add(list, to: id)
+            if first {
+                askMembers(of: id)
+                askViewers(in: id)
+            }
             // TDLib often answers the first ask with only the newest message: ask once more for the ones before it.
             if first, list.count < Self.history, let oldest = list.compactMap({ TelegramData.int64($0["id"]) }).min() {
                 send(["@type": "getChatHistory", "chat_id": id, "from_message_id": oldest, "offset": 0,
@@ -228,7 +262,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
             let file = TelegramData.type(object) == "file" ? object : (object["file"] as? [String: Any] ?? [:])
             if let id = TelegramData.int64(file["id"]), let path = TelegramData.downloaded(file) { downloaded(id, path: path) }
         case "user":
-            if object["@extra"] as? String == "me" { account = TelegramData.userName(object) }
+            if object["@extra"] as? String == "me" {
+                account = TelegramData.userName(object)
+                meID = TelegramData.int64(object["id"])
+            }
         case "error":
             let message = (object["message"] as? String) ?? "error"
             if object["@extra"] as? String == "login" {
@@ -286,6 +323,57 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         if known.count > ChatInbox.keep { known.removeFirst(known.count - ChatInbox.keep) }
         messages[id] = known
         changed.insert(id)
+    }
+
+    /// Your messages up to `upTo` were read: two ticks.
+    private func markRead(upTo: Int64, in chat: Int64) {
+        guard var list = messages[chat] else { return }
+        var touched = false
+        for index in list.indices where list[index].isMine && (list[index].receipt ?? .sent) < .read {
+            guard let ids = TelegramData.ids(list[index].id), ids.message <= upTo else { continue }
+            list[index].receipt = (list[index].receipt ?? .sent).advanced(to: .read)
+            touched = true
+        }
+        guard touched else { return }
+        messages[chat] = list
+        changed.insert(chat)
+    }
+
+    /// Who is in a group, asked once: a basic group's full info, or a supergroup's first 200 members.
+    private func askMembers(of chat: Int64) {
+        guard let group = chats[chat], group.isGroup, membersAsked.insert(chat).inserted else { return }
+        if let basic = group.basicGroup {
+            send(["@type": "getBasicGroupFullInfo", "basic_group_id": basic, "@extra": "members:\(chat)"])
+        } else if let supergroup = group.supergroup {
+            send(["@type": "getSupergroupMembers", "supergroup_id": supergroup, "offset": 0, "limit": 200,
+                  "@extra": "members:\(chat)"])
+        }
+    }
+
+    /// Who read your newest messages in a group: asked of Telegram for those it says were read since the last ask.
+    /// Telegram answers only for the last week, and in groups of up to 100 people; elsewhere the message keeps its ticks.
+    private func askViewers(in chat: Int64) {
+        guard let group = chats[chat], group.isGroup, group.readOutbox > 0 else { return }
+        let week = Date().addingTimeInterval(-7 * 86_400)
+        for message in (messages[chat] ?? []).filter({ $0.isMine && $0.date > week }).suffix(Self.viewed) {
+            guard let ids = TelegramData.ids(message.id), ids.message <= group.readOutbox,
+                  viewersAsked[message.id] != group.readOutbox else { continue }
+            viewersAsked[message.id] = group.readOutbox
+            send(["@type": "getMessageViewers", "chat_id": chat, "message_id": ids.message, "@extra": "viewers:\(message.id)"])
+        }
+        if viewersAsked.count > 500 { viewersAsked.removeAll() }
+    }
+
+    /// Telegram's answer to who read one of your messages ("viewers:<message id>"): the message lists them.
+    private func viewed(_ viewers: [(user: Int64, date: Date?)], extra: String) {
+        let id = String(extra.dropFirst("viewers:".count))
+        guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }) else { return }
+        let readers = viewers.filter { $0.user != meID }.map { viewer in
+            ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date)
+        }
+        guard messages[ids.chat]?[index].readers != readers else { return }
+        messages[ids.chat]?[index].readers = readers
+        changed.insert(ids.chat)
     }
 
     /// Your vote on a poll, after your own click (an empty choice takes it back); the poll shows it at once.

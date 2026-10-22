@@ -886,6 +886,139 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertTrue(overview.hasSuffix(" · Jan: dinner?"), overview)
         XCTAssertTrue(ChatInbox.transcript(thread).hasSuffix("] Jan: dinner?"))
     }
+
+    // MARK: Sent, delivered, read
+
+    func testReceiptsOnlyMoveForward() {
+        XCTAssertEqual(ChatReceipt.sent.advanced(to: .read), .read)
+        XCTAssertEqual(ChatReceipt.read.advanced(to: .delivered), .read, "a late delivery never takes the blue ticks back")
+        XCTAssertEqual(ChatReceipt.read.advanced(to: .failed), .failed, "a failure always shows")
+        XCTAssertEqual(ChatReceipt(status: "played"), .read)
+        XCTAssertNil(ChatReceipt(status: "typing"))
+        let reader = ChatReader(name: "Anna", receipt: .delivered, date: now)
+        XCTAssertEqual(reader.advanced(to: .read, at: now.addingTimeInterval(60)).date, now.addingTimeInterval(60))
+        XCTAssertEqual(reader.advanced(to: .delivered, at: now.addingTimeInterval(60)), reader, "nothing new keeps the time")
+    }
+
+    func testAGroupsTicksWaitForEveryMember() {
+        let anna = ChatReader(name: "Anna", receipt: .read)
+        let jan = ChatReader(name: "Jan", receipt: .delivered)
+        XCTAssertEqual(ChatReceipts.overall([anna], members: nil, current: .sent), .sent, "without the members nothing moves")
+        XCTAssertEqual(ChatReceipts.overall([anna], members: 2, current: .sent), .sent, "one of two answered")
+        XCTAssertEqual(ChatReceipts.overall([anna, jan], members: 2, current: .sent), .delivered, "both have it")
+        XCTAssertEqual(ChatReceipts.overall([anna, ChatReader(name: "Jan", receipt: .read)], members: 2, current: .sent), .read)
+        XCTAssertEqual(ChatReceipts.overall([anna, jan], members: 2, current: .failed), .failed)
+    }
+
+    func testAMessagesInfoListsEveryone() {
+        let early = ChatReader(name: "Jan", receipt: .read, date: now)
+        let late = ChatReader(name: "Anna", receipt: .read, date: now.addingTimeInterval(60))
+        let has = ChatReader(name: "Bo", receipt: .delivered)
+        let all = ChatReceipts.everyone([late, has, early], members: ["Anna", "Bo", "Jan", "Lisa", ""])
+        XCTAssertEqual(all.map(\.name), ["Jan", "Anna", "Bo", "Lisa"], "who read it first on top, then who has it, then the rest")
+        XCTAssertEqual(all.last?.receipt, .sent)
+        XCTAssertEqual(ChatReceipts.everyone([ChatReader(name: "Gone", receipt: .read)], members: ["Anna"]).map(\.name),
+                       ["Gone", "Anna"], "someone who left since still shows")
+    }
+
+    func testEachAppsStatusAsTicks() {
+        XCTAssertEqual(ChatReceipts.messages(sent: true, delivered: true, read: true, failed: false), .read)
+        XCTAssertEqual(ChatReceipts.messages(sent: true, delivered: true, read: false, failed: false), .delivered)
+        XCTAssertEqual(ChatReceipts.messages(sent: false, delivered: false, read: false, failed: false), .pending)
+        XCTAssertEqual(ChatReceipts.messages(sent: true, delivered: false, read: false, failed: true), .failed)
+        XCTAssertEqual(ChatReceipts.whatsAppDesktop(status: 5), .delivered)
+        XCTAssertEqual(ChatReceipts.whatsAppDesktop(status: 8), .read)
+        XCTAssertNil(ChatReceipts.whatsAppDesktop(status: 0), "an unknown status shows no ticks rather than wrong ones")
+        XCTAssertEqual(ChatReceipts.telegram(message: 5, readUpTo: 5, pending: false, failed: false), .read)
+        XCTAssertEqual(ChatReceipts.telegram(message: 6, readUpTo: 5, pending: false, failed: false), .sent)
+        XCTAssertEqual(ChatReceipts.telegram(message: 6, readUpTo: 5, pending: true, failed: false), .pending)
+    }
+
+    func testABridgeMovesTheTicksOfMessagesTheChatHas() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "messages", chat: "Family")
+        var sent = message("imessage-1", "on my way", mine: true)
+        sent.receipt = .sent
+        inbox.merge(BridgedChat(app: "messages", name: "Family", messages: [sent], unread: 0, members: ["Anna", "Jan"]))
+        XCTAssertEqual(inbox.threads[key]?.members, ["Anna", "Jan"])
+        XCTAssertTrue(inbox.threads[key]?.isGroup ?? false, "more than one other person is a group, before anyone wrote")
+        var read = sent
+        read.receipt = .read
+        read.readers = [ChatReader(name: "Anna", receipt: .read, date: now)]
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "messages", name: "Family", messages: [read], unread: 0)))
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.receipt, .read)
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.readers?.map(\.name), ["Anna"])
+        XCTAssertEqual(inbox.threads[key]?.messages.count, 1)
+        // A late "delivered" never takes the blue ticks back.
+        var late = sent
+        late.receipt = .delivered
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "messages", name: "Family", messages: [late], unread: 0)))
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.receipt, .read)
+    }
+
+    func testReceiptsSurviveARestart() throws {
+        var inbox = ChatInbox()
+        var sent = message("slack-1", "hi", mine: true)
+        sent.receipt = .delivered
+        sent.readers = [ChatReader(name: "Anna", receipt: .read, date: now)]
+        inbox.merge(BridgedChat(app: "slack", name: "Team", messages: [sent], unread: nil, members: ["Anna", "Jan"]))
+        let kept = try JSONDecoder().decode(ChatInbox.self, from: try JSONEncoder().encode(inbox))
+        XCTAssertEqual(kept, inbox)
+        // An inbox saved before receipts still loads.
+        let old = #"{"threads":{"slack|team":{"id":"slack|team","app":"slack","name":"Team","unread":0,"messages":[{"id":"1","sender":"","text":"hi","date":0,"fromMe":true}]}}}"#
+        let loaded = try JSONDecoder().decode(ChatInbox.self, from: Data(old.utf8))
+        XCTAssertNil(loaded.threads["slack|team"]?.messages.first?.receipt)
+        XCTAssertNil(loaded.threads["slack|team"]?.members)
+    }
+
+    func testTelegramReceiptsAndPeople() {
+        let chat = TelegramData.chat(["@type": "chat", "id": -7, "title": "Club", "last_read_outbox_message_id": 20,
+                                      "type": ["@type": "chatTypeBasicGroup", "basic_group_id": 77]])
+        XCTAssertEqual(chat?.readOutbox, 20)
+        XCTAssertEqual(chat?.basicGroup, 77)
+        XCTAssertNil(chat?.supergroup)
+        let outgoing: [String: Any] = ["@type": "message", "id": 20, "date": 1_700_000_000, "is_outgoing": true,
+                                       "content": ["@type": "messageText", "text": ["@type": "formattedText", "text": "hi"]]]
+        XCTAssertEqual(chat.flatMap { TelegramData.message(outgoing, chat: $0, users: [:]) }?.receipt, .read)
+        var newer = outgoing
+        newer["id"] = 21
+        XCTAssertEqual(chat.flatMap { TelegramData.message(newer, chat: $0, users: [:]) }?.receipt, .sent)
+        newer["sending_state"] = ["@type": "messageSendingStatePending"]
+        XCTAssertEqual(chat.flatMap { TelegramData.message(newer, chat: $0, users: [:]) }?.receipt, .pending)
+        var theirs = outgoing
+        theirs["is_outgoing"] = false
+        XCTAssertNil(chat.flatMap { TelegramData.message(theirs, chat: $0, users: [:]) }?.receipt, "their message has no ticks")
+
+        XCTAssertEqual(TelegramData.members(["@type": "basicGroupFullInfo", "members": [
+            ["@type": "chatMember", "member_id": ["@type": "messageSenderUser", "user_id": 3]],
+            ["@type": "chatMember", "member_id": ["@type": "messageSenderChat", "chat_id": -9]]
+        ]]), [3])
+        let viewers = TelegramData.viewers(["@type": "messageViewers", "viewers": [["@type": "messageViewer", "user_id": 3,
+                                                                                     "view_date": 1_700_000_100]]])
+        XCTAssertEqual(viewers.map { $0.user }, [3])
+        XCTAssertEqual(viewers.first?.date, Date(timeIntervalSince1970: 1_700_000_100))
+        XCTAssertEqual(TelegramData.viewers(["@type": "users", "user_ids": [4, 5]]).map { $0.user }, [4, 5])
+    }
+
+    func testOtherAppsNameAGroupsPeopleAndSayYourMessageWasSent() {
+        let beeper = BeeperData.chats(["items": [
+            ["id": "!g", "accountID": "discordgo", "title": "Gamers", "type": "group",
+             "participants": ["items": [["id": "@me", "fullName": "Me", "isSelf": true], ["id": "@jan", "fullName": "Jan"],
+                                        ["id": "@bo", "username": "bo"]]]]
+        ]])
+        XCTAssertEqual(beeper.first?.members, ["Jan", "bo"])
+        let mine = BeeperData.messages(["items": [["id": "1", "timestamp": "2026-10-22T08:00:00Z", "text": "gg", "isSender": true]]],
+                                       chat: beeper[0])
+        XCTAssertEqual(mine.first?.receipt, .sent)
+
+        let teams = TeamsData.chats(["value": [
+            ["id": "c1", "chatType": "group", "topic": "Launch", "members": [
+                ["userId": "me", "displayName": "Me"], ["userId": "u2", "displayName": "Anna"]]]
+        ]], me: "me")
+        XCTAssertEqual(teams.first?.members, ["Anna"])
+
+        XCTAssertEqual(SlackData.members(["members": ["U1", "U2", "U3"]], users: ["U2": "Anna"], me: "U1"), ["Anna", "U3"])
+    }
 }
 
 private extension ChatSources.Added {

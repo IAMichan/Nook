@@ -182,7 +182,8 @@ final class TeamsBridge: ObservableObject, ChatBridge {
                 }
                 guard !messages.isEmpty else { continue }
                 result.append(BridgedChat(app: app, name: chat.name, messages: messages,
-                                          unread: TeamsData.unread(messages, readUntil: chat.readUntil)))
+                                          unread: TeamsData.unread(messages, readUntil: chat.readUntil),
+                                          members: chat.members.isEmpty ? nil : chat.members))
             }
             isWorking = true
             if state != .signedIn { state = .signedIn }

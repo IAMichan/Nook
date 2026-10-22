@@ -376,6 +376,48 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(ticks("old"))
     }
 
+    func testAGroupsTicksWaitForEveryMember() {
+        var inbox = WAInbox()
+        let group = "1203630@g.us"
+        inbox.add(message("out", chat: group, at: 5, fromMe: true, name: ""), filters: WAFilters())
+        inbox.add(message("in", chat: group, from: "31600000002@s.whatsapp.net", at: 6, name: "Jan"), filters: WAFilters())
+        func sent() -> WAMessage? { inbox.conversations[group]?.messages.first { $0.id == "out" } }
+
+        // Anna read it: she is listed, but the group's ticks wait while the members are not known.
+        XCTAssertEqual(inbox.applyMemberReceipt(.read, ids: ["out"], chat: group, member: "31600000001@s.whatsapp.net"), group)
+        XCTAssertEqual(sent()?.receipt, .sent)
+        XCTAssertEqual(sent()?.readers.values.map(\.receipt), [.read])
+        XCTAssertNil(inbox.applyMemberReceipt(.read, ids: ["in"], chat: group, member: "31600000001@s.whatsapp.net"),
+                     "their message has no ticks")
+
+        let anna = WAMember(ids: ["31600000001@s.whatsapp.net", "123@lid"], name: "Anna")
+        let jan = WAMember(ids: ["31600000002@s.whatsapp.net"], name: "")
+        XCTAssertTrue(inbox.setMembers([anna, jan], chat: group))
+        XCTAssertEqual(sent()?.receipt, .sent, "Jan has not got it yet")
+        XCTAssertEqual(inbox.applyMemberReceipt(.delivered, ids: ["out"], chat: group, member: "31600000002@c.us"), group)
+        XCTAssertEqual(sent()?.receipt, .delivered, "everyone has it: two grey ticks")
+        inbox.applyMemberReceipt(.read, ids: ["out"], chat: group, member: "31600000002@s.whatsapp.net")
+        XCTAssertEqual(sent()?.receipt, .read, "everyone read it: two blue ticks")
+        XCTAssertEqual(sent()?.readers.count, 2, "one person under two ways of writing their id stays one")
+
+        let conversation = inbox.conversations[group]!
+        XCTAssertEqual(conversation.memberName("123@lid"), "Anna")
+        XCTAssertEqual(conversation.memberName("31600000002@s.whatsapp.net"), "Jan", "the name they wrote under")
+        XCTAssertEqual(conversation.memberNames, ["Anna", "Jan"])
+    }
+
+    func testGatewaysListAGroupsMembers() {
+        let gowa = Data(#"{"code":"SUCCESS","results":{"JID":"1203630@g.us","Name":"Club","Participants":[{"JID":"123@lid","PhoneNumber":"31600000001@s.whatsapp.net","DisplayName":"Anna"},{"JID":"31699999999@s.whatsapp.net","DisplayName":""}]}}"#.utf8)
+        let members = WAGOWA.members(gowa)
+        XCTAssertEqual(members.map(\.name), ["Anna", ""])
+        XCTAssertTrue(members[0].matches("31600000001@c.us"))
+        XCTAssertEqual(WAMembers.others(members, me: "31699999999@s.whatsapp.net").map(\.name), ["Anna"], "you are left out")
+        let openwa = WAMembers.list([["id": ["_serialized": "31600000001@c.us"], "isAdmin": true], "31600000002@c.us"])
+        XCTAssertEqual(openwa.map(\.ids), [["31600000001@c.us"], ["31600000002@c.us"]])
+        let beeper = WAMembers.list(["items": [["id": "@me", "isSelf": true], ["id": "@jan", "fullName": "Jan"]]])
+        XCTAssertEqual(beeper.map(\.name), ["Jan"])
+    }
+
     func testGatewayReceipts() {
         let gowa = Data(#"{"event":"message.ack","device_id":"31699999999@s.whatsapp.net","payload":{"ids":["A1","A2"],"chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","receipt_type":"read"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowa),
@@ -385,9 +427,15 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: own), .readElsewhere(chat: "31600000001@s.whatsapp.net"))
         let ownGroup = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"read-self"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: ownGroup), .readElsewhere(chat: "1203630@g.us"))
-        // One group member's receipt moves no ticks either.
+        // A group's receipt without a member says nothing; one with a member moves that member only.
         let group = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","receipt_type":"delivered"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: group), .ignored)
+        let member = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","from":"31600000001@s.whatsapp.net in 1203630@g.us","receipt_type":"read"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: member),
+                       .memberReceipt(ids: ["A1"], chat: "1203630@g.us", member: "31600000001@s.whatsapp.net", status: .read))
+        let sender = Data(#"{"event":"message.ack","payload":{"ids":["A1"],"chat_id":"1203630@g.us","sender_id":"123@lid","receipt_type":"delivered"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: sender),
+                       .memberReceipt(ids: ["A1"], chat: "1203630@g.us", member: "123@lid", status: .delivered))
 
         let openwa = Data(#"{"event":"message.ack","sessionId":"s","data":{"id":"uuid-1","messageId":"B1","status":"delivered","ack":2,"chatId":"31600000001@c.us"}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwa),

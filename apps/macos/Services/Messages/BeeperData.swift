@@ -15,6 +15,8 @@ enum BeeperData {
         /// The chat's picture as Beeper gives it (a file on this Mac or an `mxc://` address): the group's own, or the
         /// other person's in a private chat.
         var picture: String? = nil
+        /// A group's other people by name (you left out), as far as Beeper lists them with the chat.
+        var members: [String] = []
     }
 
     /// Beeper's networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"),
@@ -52,8 +54,19 @@ enum BeeperData {
             let title = ((chat["title"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
             guard !title.isEmpty else { return nil }
             let unread = (chat["unreadCount"] as? Int) ?? Int((chat["unreadCount"] as? Double) ?? 0)
-            return Chat(id: id, app: source, title: title, isGroup: chat["type"] as? String == "group", unread: unread,
-                        last: date(chat["lastActivity"]), picture: picture(chat))
+            let isGroup = chat["type"] as? String == "group"
+            return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
+                        last: date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [])
+        }
+    }
+
+    /// The people of a chat Beeper lists with it, yourself (`isSelf`) left out: their full name, else their username.
+    static func members(_ chat: [String: Any]) -> [String] {
+        let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
+        return people.compactMap { person in
+            guard person["isSelf"] as? Bool != true else { return nil }
+            let name = ((person["fullName"] as? String) ?? (person["username"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+            return name.isEmpty ? nil : name
         }
     }
 
@@ -79,8 +92,11 @@ enum BeeperData {
             guard !text.isEmpty || media != nil else { return nil }
             let mine = message["isSender"] as? Bool == true
             let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
-            return InboxMessage(id: "beeper-\(chat.id)-\(id)", sender: sender, text: text, date: sent, fromMe: mine,
-                                media: media)
+            var inbox = InboxMessage(id: "beeper-\(chat.id)-\(id)", sender: sender, text: text, date: sent, fromMe: mine,
+                                     media: media)
+            // Beeper lists a message once the network has it, and shares no delivery or read receipts: one tick.
+            if mine { inbox.receipt = .sent }
+            return inbox
         }
         return messages.sorted { $0.date < $1.date }
     }

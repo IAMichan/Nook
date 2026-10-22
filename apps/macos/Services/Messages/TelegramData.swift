@@ -15,6 +15,11 @@ enum TelegramData {
         /// The chat's picture (a person's, a group's) as a file in TDLib, and where it is once downloaded.
         var photo: Int64? = nil
         var avatar: String? = nil
+        /// The newest of your messages someone read: yours up to it have two ticks.
+        var readOutbox: Int64 = 0
+        /// The group behind the chat, to ask who is in it: a basic group or a supergroup.
+        var basicGroup: Int64? = nil
+        var supergroup: Int64? = nil
     }
 
     /// Where the login stands.
@@ -82,7 +87,39 @@ enum TelegramData {
         let picture = photo(object["photo"])
         return Chat(id: id, title: (object["title"] as? String) ?? "", isGroup: isGroup,
                     unread: Int(int64(object["unread_count"]) ?? 0), order: order(object["positions"]),
-                    photo: picture?.id, avatar: picture?.path)
+                    photo: picture?.id, avatar: picture?.path, readOutbox: int64(object["last_read_outbox_message_id"]) ?? 0,
+                    basicGroup: type(kind) == "chatTypeBasicGroup" ? int64(kind["basic_group_id"]) : nil,
+                    supergroup: type(kind) == "chatTypeSupergroup" ? int64(kind["supergroup_id"]) : nil)
+    }
+
+    /// The people of a group, by their user id: a `basicGroupFullInfo`'s or a `chatMembers`' `members`.
+    static func members(_ object: [String: Any]) -> [Int64] {
+        (object["members"] as? [[String: Any]] ?? []).compactMap { member in
+            let sender = member["member_id"] as? [String: Any] ?? [:]
+            return type(sender) == "messageSenderUser" ? int64(sender["user_id"]) : int64(member["user_id"])
+        }
+    }
+
+    /// Who saw one of your messages in a group, and when: a `messageViewers` (`viewers: [{user_id, view_date}]`), or the
+    /// `users` an older TDLib answers with (no times).
+    static func viewers(_ object: [String: Any]) -> [(user: Int64, date: Date?)] {
+        if type(object) == "users" {
+            return (object["user_ids"] as? [Any] ?? []).compactMap { int64($0) }.map { ($0, nil) }
+        }
+        return (object["viewers"] as? [[String: Any]] ?? []).compactMap { viewer in
+            guard let user = int64(viewer["user_id"]) else { return nil }
+            let seconds = int64(viewer["view_date"]) ?? 0
+            return (user, seconds > 0 ? Date(timeIntervalSince1970: Double(seconds)) : nil)
+        }
+    }
+
+    /// Your message's ticks: a clock while it goes out, a red mark when it could not, else two once the chat says it was
+    /// read up to it.
+    static func receipt(_ object: [String: Any], readOutbox: Int64) -> ChatReceipt? {
+        guard object["is_outgoing"] as? Bool == true, let id = int64(object["id"]) else { return nil }
+        let sending = type(object["sending_state"] as? [String: Any] ?? [:])
+        return ChatReceipts.telegram(message: id, readUpTo: readOutbox, pending: sending == "messageSendingStatePending",
+                                     failed: sending == "messageSendingStateFailed")
     }
 
     /// A `chatPhotoInfo`: its small picture, as the chat list shows it.
@@ -130,8 +167,10 @@ enum TelegramData {
         let mine = object["is_outgoing"] as? Bool == true
         let sender = mine || !chat.isGroup ? "" : senderUser(object).flatMap { users[$0] } ?? ""
         let date = Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0))
-        return InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
-                            media: attached?.media, poll: asked)
+        var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
+                                   media: attached?.media, poll: asked)
+        message.receipt = receipt(object, readOutbox: chat.readOutbox)
+        return message
     }
 
     /// A `messagePoll`'s poll: its question, each option with its votes and whether you chose it, and whether more

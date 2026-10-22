@@ -19,9 +19,11 @@ struct ChatsEntry: Identifiable, Equatable {
     let preview: String
     let last: Date
     let unread: Int
-    /// The newest message is yours: how far it got (sent, delivered, read). Nil for theirs, and for every chat collected
-    /// from notifications, which only ever show what came in.
+    /// The newest message is yours: how far it got (sent, delivered, read), as far as its app says. Nil for theirs, and
+    /// for every chat collected from notifications, which only ever show what came in.
     var ticks: BubbleTicks? = nil
+    /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
+    var members: [String]? = nil
     /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a Beeper chat
     /// and a chat collected from notifications, which are matched by name.
     var handle: String? = nil
@@ -60,7 +62,9 @@ extension ChatsEntry {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: whatsApp.unread(conversation.id), ticks: ticks, handle: handle(conversation.id),
+                                          unread: whatsApp.unread(conversation.id), ticks: ticks,
+                                          members: conversation.members == nil ? nil : conversation.memberNames,
+                                          handle: handle(conversation.id),
                                           avatar: whatsApp.avatars[conversation.id], waitsInApp: whatsApp.waitsInWhatsApp(conversation.id)))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
@@ -81,8 +85,11 @@ extension ChatsEntry {
                 let who = message.isMine ? tr("chat.you") : message.sender
                 return who.isEmpty ? message.summary : "\(who): \(message.summary)"
             } ?? ""
+            let newest = thread.messages.last
+            let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, unread: thread.unread, avatar: thread.avatar))
+                                      preview: preview, last: thread.last, unread: thread.unread, ticks: ticks,
+                                      members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
@@ -844,9 +851,7 @@ private struct ChatsAvatar: View {
     let photo: NSImage?
     let size: CGFloat
 
-    private static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
-
-    private var tint: Color { Self.colors[ChatTimeline.colorIndex(for: name, count: Self.colors.count)] }
+    private var tint: Color { ChatPersonBadge.tint(for: name) }
 
     var body: some View {
         face
@@ -916,7 +921,8 @@ private struct ChatsDetail: View {
         case .whatsApp(let jid):
             return whatsApp.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0) } ?? []
         case .captured(let id):
-            return (capture.inbox.threads[id]?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date)) }
+            let thread = capture.inbox.threads[id]
+            return (thread?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date), members: thread?.members ?? []) }
         }
     }
 
@@ -997,11 +1003,21 @@ private struct ChatsDetail: View {
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                // A chat a bridge reads is the app's own; any other is what its notifications showed.
-                Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    // A chat a bridge reads is the app's own; any other is what its notifications showed.
+                    Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                    // A group whose app lists its people: how many, and a click lists them.
+                    if let members = entry.members, !members.isEmpty {
+                        Text("·")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .accessibilityHidden(true)
+                        ChatMembersButton(members: members)
+                    }
+                }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             // What you do most stays in sight (ask Nook, open the app); the rest waits in the "…" menu.
@@ -1126,6 +1142,8 @@ private struct ChatsDetail: View {
     private func loadWhatsApp() async {
         guard let chat = whatsAppChat else { return }
         _ = await whatsApp.loadHistory(chat)
+        // A group's people: its header lists them, and your messages' info says who does not have them yet.
+        await whatsApp.loadMembers(chat)
         guard let conversation = whatsApp.inbox.conversations[chat] else { return }
         let wanted = conversation.messages.filter { AppModel.whatsAppPreviews($0.media) }.suffix(AppModel.whatsAppPreviewCount)
             .filter { whatsApp.preview($0.id) == nil }.map(\.id)

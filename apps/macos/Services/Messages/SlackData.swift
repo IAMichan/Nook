@@ -110,10 +110,18 @@ enum SlackData {
             let user = (message["user"] as? String) ?? (message["bot_id"] as? String) ?? ""
             let mine = me != nil && user == me
             let sender = mine || !conversation.isGroup ? "" : (users[user] ?? (message["username"] as? String) ?? user)
-            return InboxMessage(id: "slack-\(conversation.id)-\(ts)", sender: sender, text: text,
-                                date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
+            var inbox = InboxMessage(id: "slack-\(conversation.id)-\(ts)", sender: sender, text: text,
+                                     date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
+            // Slack keeps no delivery or read receipts: your message is on Slack, and that is all it says.
+            if mine { inbox.receipt = .sent }
+            return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// The people of a conversation (`conversations.members` → `members: [user id]`) by name, yourself left out.
+    static func members(_ json: [String: Any], users: [String: String], me: String?) -> [String] {
+        (json["members"] as? [String] ?? []).filter { $0 != me }.map { users[$0] ?? $0 }
     }
 
     /// What an app's message holds in its attachments: per attachment its lead line, its title and its text (else its

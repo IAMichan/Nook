@@ -13,6 +13,8 @@ enum TeamsData {
         var last: Date?
         /// Until when you read it, as Teams keeps it.
         var readUntil: Date?
+        /// A group chat's other people by name (you left out).
+        var members: [String] = []
     }
 
     /// What the sign-in page needs: the code to type and where.
@@ -106,7 +108,7 @@ enum TeamsData {
             let viewpoint = chat["viewpoint"] as? [String: Any]
             if viewpoint?["isHidden"] as? Bool == true { return nil }
             return Chat(id: id, name: name, isGroup: kind != "oneOnOne", last: date(preview?["createdDateTime"]),
-                        readUntil: date(viewpoint?["lastMessageReadDateTime"]))
+                        readUntil: date(viewpoint?["lastMessageReadDateTime"]), members: kind == "oneOnOne" ? [] : people)
         }
     }
 
@@ -132,7 +134,10 @@ enum TeamsData {
             let user = ((message["from"] as? [String: Any])?["user"] as? [String: Any]) ?? [:]
             let mine = me != nil && (user["id"] as? String) == me
             let sender = mine || !chat.isGroup ? "" : ((user["displayName"] as? String) ?? "")
-            return InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
+            var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
+            // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
+            if mine { inbox.receipt = .sent }
+            return inbox
         }
         return messages.sorted { $0.date < $1.date }
     }

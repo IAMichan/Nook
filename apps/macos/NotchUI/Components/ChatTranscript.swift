@@ -146,9 +146,9 @@ private struct ChatBubbleView: View {
     @State private var hovering = false
     /// The emoji to react with are open beside the bubble.
     @State private var picking = false
+    /// Your message's info (who read it, who has it) is open over its ticks.
+    @State private var showingInfo = false
 
-    /// Each person in a group writes in a color of their own, the same every time.
-    private static let senderColors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
 
@@ -171,7 +171,21 @@ private struct ChatBubbleView: View {
                 .font(NookTheme.TextStyle.caption)
                 .monospacedDigit()
                 .foregroundStyle(NookTheme.textTertiary)
-            if let ticks = bubble.ticks { TicksView(ticks: ticks) }
+            if let ticks = bubble.ticks {
+                if bubble.readers.isEmpty {
+                    TicksView(ticks: ticks)
+                } else {
+                    // In a group: a click on the ticks says who read it, who has it, and who does not yet.
+                    Button { showingInfo = true } label: { TicksView(ticks: ticks) }
+                        .buttonStyle(.plain)
+                        .pointerStyle(.link)
+                        .help(tr("chat.info.title"))
+                        .accessibilityLabel(tr("chat.info.title"))
+                        .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
+                            MessageInfoView(ticks: ticks, readers: bubble.readers)
+                        }
+                }
+            }
         }
         .fixedSize()
     }
@@ -246,7 +260,8 @@ private struct ChatBubbleView: View {
             if first, !bubble.sender.isEmpty {
                 Text(bubble.sender)
                     .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(Self.senderColors[ChatTimeline.colorIndex(for: bubble.sender, count: Self.senderColors.count)])
+                    // Each person in a group writes in a color of their own, the same every time.
+                    .foregroundStyle(ChatPersonBadge.tint(for: bubble.sender))
                     .lineLimit(1)
             }
             if let quote = bubble.quote {
@@ -497,9 +512,10 @@ enum ChatLinks {
     }
 }
 
-/// Your own message's ticks after its time, as WhatsApp draws them: a clock while it goes out, one grey tick on the
-/// server, two on their phone, two blue ones once read, a red mark when it could not be sent. Also in front of a chat's
-/// newest message in the Chats tab's list, when that message is yours.
+/// Your own message's ticks after its time, as WhatsApp draws them, in every chat app that says how far a message got:
+/// a clock while it goes out, one grey tick on the server, two on their phone, two blue ones once read, a red mark when
+/// it could not be sent. Also in front of a chat's newest message in the Chats tab's list, when that message is yours.
+/// In a group whose app says it per person, a click on them opens `MessageInfoView`.
 struct TicksView: View {
     let ticks: BubbleTicks
 
@@ -521,6 +537,7 @@ struct TicksView: View {
             }
         }
         .foregroundStyle(color)
+        .help(tr(label))
         .accessibilityElement()
         .accessibilityLabel(tr(label))
     }

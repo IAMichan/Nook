@@ -43,6 +43,9 @@ protocol WhatsAppProvider: Sendable {
     func groupName(_ chat: String) async -> String?
     /// The names of every group you are in, by JID, in one call: empty when the gateway cannot list them.
     func groupNames() async -> [String: String]
+    /// A group's members (you among them), for who has your messages and who read them: empty when the gateway
+    /// cannot list them.
+    func groupMembers(_ chat: String) async -> [WAMember]
     /// The chats on the phone, newest first: who Nook may send to, by name.
     func chats(limit: Int) async throws -> [WAChatInfo]
     /// The file of one message (a document, photo, video or voice note), only when you open it.
@@ -61,6 +64,7 @@ protocol WhatsAppProvider: Sendable {
 extension WhatsAppProvider {
     func avatar(_ chat: String) async -> URL? { nil }
     func groupNames() async -> [String: String] { [:] }
+    func groupMembers(_ chat: String) async -> [WAMember] { [] }
     func channels() async -> [WAChannel] { [] }
     var canVote: Bool { false }
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
@@ -290,6 +294,12 @@ actor GOWAProvider: WhatsAppProvider {
         return WAGOWA.groupNames(data)
     }
 
+    func groupMembers(_ chat: String) async -> [WAMember] {
+        guard WAJID.isGroup(chat),
+              let data = try? await scoped("GET", "/group/info", query: [URLQueryItem(name: "group_id", value: chat)]) else { return [] }
+        return WAGOWA.members(data)
+    }
+
     func chats(limit: Int) async throws -> [WAChatInfo] {
         WAGOWA.chats(try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(limit))]))
             .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
@@ -462,6 +472,13 @@ actor OpenWAProvider: WhatsAppProvider {
         return name
     }
 
+    func groupMembers(_ chat: String) async -> [WAMember] {
+        guard WAJID.isGroup(chat),
+              let data = try? await scoped("GET", "/groups/\(WAHTTP.pathComponent(chat))"),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+        return WAMembers.list(obj["participants"])
+    }
+
     func channels() async -> [WAChannel] {
         guard let data = try? await scoped("GET", "/channels") else { return [] }
         return WAAvatar.openwaChannels(data)
@@ -592,6 +609,13 @@ actor BeeperProvider: WhatsAppProvider {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let title = obj["title"] as? String, !title.isEmpty else { return nil }
         return title
+    }
+
+    /// Beeper lists a chat's people with it, yourself marked (`isSelf`), so you are left out here already.
+    func groupMembers(_ chat: String) async -> [WAMember] {
+        guard WAJID.isGroup(chat), let data = try? await call("GET", chatPath(chat)),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+        return WAMembers.others(WAMembers.list(obj["participants"]), me: nil, selves: selves)
     }
 
     func chats(limit: Int) async throws -> [WAChatInfo] {

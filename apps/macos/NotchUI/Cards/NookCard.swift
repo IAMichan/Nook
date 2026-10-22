@@ -72,6 +72,9 @@ struct ChatBubble: Equatable, Identifiable {
     var image: NSImage? = nil
     /// Your own message's ticks next to its time; nil shows none (their message, or a status that isn't known).
     var ticks: BubbleTicks? = nil
+    /// Your own message in a group: everyone in it and how far the message got with them (read, has it, not yet), as
+    /// its info lists them. Empty where the app does not say it per person.
+    var readers: [ChatReader] = []
     /// The file on this Mac, when Nook already has it: a click opens it from there.
     var file: URL? = nil
     /// The message this one answers, shown small at the top of the bubble.
@@ -126,6 +129,16 @@ extension ChatBubble {
 
 /// How far your own message got, as WhatsApp shows it.
 enum BubbleTicks: Equatable {
+    init(_ receipt: ChatReceipt) {
+        switch receipt {
+        case .failed: self = .failed
+        case .pending: self = .pending
+        case .sent: self = .sent
+        case .delivered: self = .delivered
+        case .read: self = .read
+        }
+    }
+
     /// Still on its way to the server: a clock.
     case pending
     /// On the server: one grey tick.

@@ -35,30 +35,8 @@ enum WAMedia: Equatable, Sendable {
     case other
 }
 
-/// How far your own message got, as WhatsApp's ticks show it: one grey tick when the server has it, two when it
-/// reached the phone, two blue ones once it was read.
-enum WAReceipt: Int, Comparable, Sendable {
-    case failed = -1, pending, sent, delivered, read
-
-    static func < (a: WAReceipt, b: WAReceipt) -> Bool { a.rawValue < b.rawValue }
-
-    /// A gateway's status word: OpenWA's `pending|sent|delivered|read|played|failed`, GOWA's `delivered|read|played`.
-    init?(status: String) {
-        switch status.lowercased() {
-        case "pending": self = .pending
-        case "sent", "server": self = .sent
-        case "delivered", "delivery": self = .delivered
-        case "read", "played": self = .read
-        case "failed", "error": self = .failed
-        default: return nil
-        }
-    }
-
-    /// Ticks only move forward; a failure always shows.
-    func advanced(to new: WAReceipt) -> WAReceipt {
-        new == .failed || new > self ? new : self
-    }
-}
+/// How far your own message got: the same ticks every chat app shows (see ChatReceipts.swift).
+typealias WAReceipt = ChatReceipt
 
 struct WAMessage: Identifiable, Equatable, Sendable {
     var id: String
@@ -78,6 +56,9 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     /// Your own message's ticks; nil when they are unknown (someone else's message, or older history the gateway
     /// keeps no status for).
     var receipt: WAReceipt? = nil
+    /// In a group, your own message per member who answered (by the id the gateway named them with): who has it, who
+    /// read it, and when. A group's ticks wait for every member; this says who is there already.
+    var readers: [String: ChatReader] = [:]
     /// The message this one answers (WhatsApp's "reply"), when the gateway says.
     var replyTo: String? = nil
     /// The answered message's text as the gateway quotes it, for when Nook does not keep that message.
@@ -222,6 +203,33 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var messages: [WAMessage] = []
     var unread: Int = 0
     var lastActivity: Date
+    /// A group's other members (you left out), once the gateway was asked; nil while that is not known.
+    var members: [WAMember]? = nil
+
+    /// A member's name in this group: the one the gateway gives, else the name they wrote under here, else their number.
+    func memberName(_ id: String) -> String {
+        if let member = members?.first(where: { $0.matches(id) }), !member.name.isEmpty { return member.name }
+        if let written = messages.last(where: { !$0.fromMe && WAJID.sameReactor($0.sender, id) && !$0.senderName.isEmpty }) {
+            return written.senderName
+        }
+        return WAJID.displayNumber(id)
+    }
+
+    /// The other members by name, as the group's info lists them.
+    var memberNames: [String] {
+        (members ?? []).map { member in member.name.isEmpty ? memberName(member.ids.first ?? "") : member.name }
+    }
+}
+
+/// One member of a group: every id the gateway knows them by (their number, their @lid, a network's user id) and
+/// their name, when it gives one.
+struct WAMember: Equatable, Sendable {
+    var ids: [String]
+    var name: String
+
+    func matches(_ id: String) -> Bool {
+        ids.contains { WAJID.sameReactor($0, id) || WAJID.normalized($0) == WAJID.normalized(id) }
+    }
 }
 
 /// What one chat does when a message arrives, chosen per chat in Settings › WhatsApp.
@@ -516,6 +524,47 @@ struct WAInbox: Equatable, Sendable {
         conversations[chat] = conversation
     }
 
+    /// One group member's receipt for your own messages: that member moves forward in the message's info, and once every
+    /// member has it (or read it) the message's own ticks follow, as WhatsApp's do. The chat that changed, nil when none
+    /// did (their own message, one Nook doesn't keep, or a receipt that says nothing new).
+    @discardableResult
+    mutating func applyMemberReceipt(_ status: WAReceipt, ids: [String], chat: String, member: String,
+                                     at date: Date = Date()) -> String? {
+        let key = WAJID.normalized(chat)
+        guard !member.isEmpty, status >= .delivered, var conversation = conversations[key] else { return nil }
+        let wanted = Set(ids)
+        var touched = false
+        for index in conversation.messages.indices where wanted.contains(conversation.messages[index].id) {
+            guard conversation.messages[index].fromMe else { continue }
+            var message = conversation.messages[index]
+            let slot = message.readers.keys.first { WAJID.sameReactor($0, member) } ?? member
+            let reader = message.readers[slot] ?? ChatReader(name: slot, receipt: .sent)
+            message.readers[slot] = reader.advanced(to: status, at: date)
+            message.receipt = ChatReceipts.overall(Array(message.readers.values), members: conversation.members?.count,
+                                                   current: message.receipt ?? .sent)
+            if message != conversation.messages[index] { conversation.messages[index] = message; touched = true }
+        }
+        guard touched else { return nil }
+        conversations[key] = conversation
+        return key
+    }
+
+    /// A group's members as the gateway lists them (you left out): its info lists them, and the ticks of your messages
+    /// that every member already has catch up. False when nothing changed.
+    @discardableResult
+    mutating func setMembers(_ members: [WAMember], chat: String) -> Bool {
+        let key = WAJID.normalized(chat)
+        guard var conversation = conversations[key], conversation.members != members else { return false }
+        conversation.members = members
+        for index in conversation.messages.indices where conversation.messages[index].fromMe && !conversation.messages[index].readers.isEmpty {
+            let message = conversation.messages[index]
+            conversation.messages[index].receipt = ChatReceipts.overall(Array(message.readers.values), members: members.count,
+                                                                        current: message.receipt ?? .sent)
+        }
+        conversations[key] = conversation
+        return true
+    }
+
     /// Someone voted on a poll (an empty choice takes their vote back). The chat that changed, nil when Nook does not
     /// keep that poll.
     @discardableResult
@@ -730,6 +779,8 @@ enum WAWebhookEvent: Equatable, Sendable {
     case message(WAMessage)
     /// Your own messages reached the phone or were read: their ticks move.
     case receipt(ids: [String], chat: String, status: WAReceipt)
+    /// One group member has your messages, or read them: the message's info says so, and its ticks move once everyone has.
+    case memberReceipt(ids: [String], chat: String, member: String, status: WAReceipt)
     /// You read the chat on the phone (or another linked device): it is read here too.
     case readElsewhere(chat: String)
     /// Someone (you too, from the phone) put an emoji on a message, or took it back (an empty emoji).
@@ -805,18 +856,24 @@ enum WAWebhook {
                          sender: nonEmpty(p["from"]) ?? (fromMe ? "" : chat), fromMe: fromMe)
     }
 
-    /// `{"event":"message.ack","payload":{ids, chat_id, from, receipt_type: "delivered"|"read"|"played"|…}}`.
-    /// A group sends one per member, while WhatsApp's own ticks wait for every member: a group keeps its one tick.
-    /// The `-self` receipts are your own phone reading incoming messages, which have no ticks: the chat is read.
+    /// `{"event":"message.ack","payload":{ids, chat_id, from, sender_id, receipt_type: "delivered"|"read"|"played"|…}}`.
+    /// A group sends one per member (`sender_id`, or `from` as "<member> in <group>"), while WhatsApp's own ticks wait
+    /// for every member: each one moves that member only. The `-self` receipts are your own phone reading incoming
+    /// messages, which have no ticks: the chat is read.
     private static func parseGOWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
         guard let p = json["payload"] as? [String: Any],
               let chat = p["chat_id"] as? String, !chat.isEmpty,
               let type = p["receipt_type"] as? String else { return .ignored }
         if type == "read-self" || type == "played-self" { return .readElsewhere(chat: chat) }
-        guard !WAJID.isGroup(chat), !type.hasSuffix("-self"),
+        guard !type.hasSuffix("-self"),
               let ids = (p["ids"] as? [String])?.filter({ !$0.isEmpty }), !ids.isEmpty,
               let status = WAReceipt(status: type), status >= .delivered else { return .ignored }
-        return .receipt(ids: ids, chat: chat, status: status)
+        guard WAJID.isGroup(chat) else { return .receipt(ids: ids, chat: chat, status: status) }
+        let from = nonEmpty(p["from"]).map { from in
+            from.range(of: " in ").map { String(from[..<$0.lowerBound]) } ?? from
+        }
+        guard let member = nonEmpty(p["sender_id"]) ?? from, member != chat, !WAJID.isGroup(member) else { return .ignored }
+        return .memberReceipt(ids: ids, chat: chat, member: member, status: status)
     }
 
     /// GOWA puts each media under its own key; only the label matters to Nook.
@@ -890,7 +947,12 @@ enum WAWebhook {
         guard let d = json["data"] as? [String: Any],
               let id = nonEmpty(d["messageId"]) ?? nonEmpty(d["id"]),
               let status = (d["status"] as? String).flatMap(WAReceipt.init(status:)) else { return .ignored }
-        return .receipt(ids: [id], chat: (d["chatId"] as? String) ?? "", status: status)
+        let chat = (d["chatId"] as? String) ?? ""
+        // In a group OpenWA's ack is the whole group's, as WhatsApp's own ticks; one naming a member is that member's.
+        if WAJID.isGroup(chat), let member = nonEmpty(d["participant"]), status >= .delivered {
+            return .memberReceipt(ids: [id], chat: chat, member: member, status: status)
+        }
+        return .receipt(ids: [id], chat: chat, status: status)
     }
 
     /// OpenWA's `type` (text|image|video|audio|voice|document|sticker|location|contact|poll|…).
@@ -1028,6 +1090,13 @@ enum WAGOWA {
             guard let jid = c["jid"] as? String, !jid.isEmpty else { return nil }
             return (jid, (c["name"] as? String) ?? "", WADate.rfc3339(c["last_message_time"] as? String) ?? .distantPast)
         }
+    }
+
+    /// `GET /group/info?group_id=` → `results: {JID, Name, Participants: [{JID, PhoneNumber, LID, DisplayName, …}]}`
+    /// (whatsmeow's GroupInfo): the group's members, each under every id WhatsApp gives them.
+    static func members(_ data: Data) -> [WAMember] {
+        guard let r = results(data) as? [String: Any] else { return [] }
+        return WAMembers.list(r["Participants"] ?? r["participants"])
     }
 
     /// `GET /user/my/groups` → `results: {data: [{JID, Name, LinkedParentJID, …}]}` (whatsmeow's GroupInfo). A
@@ -1299,6 +1368,34 @@ extension WAJID {
     /// The same person reacting: their number, else (a Beeper user id, an @lid) the id itself.
     static func sameReactor(_ a: String, _ b: String) -> Bool {
         sameUser(a, b) || a == b
+    }
+}
+
+/// A group's members as a gateway lists them, whatever its field names: whatsmeow's (`JID`, `PhoneNumber`, `LID`,
+/// `DisplayName`), OpenWA's (`id`, `name`, `pushname`), Beeper's (`id`, `fullName`, `isSelf`), or bare ids.
+enum WAMembers {
+    static func list(_ value: Any?) -> [WAMember] {
+        let items = (value as? [Any]) ?? (((value as? [String: Any])?["items"]) as? [Any]) ?? []
+        return items.compactMap { item in
+            if let id = item as? String, !id.isEmpty { return WAMember(ids: [id], name: "") }
+            guard let p = item as? [String: Any], p["isSelf"] as? Bool != true else { return nil }
+            func field(_ key: String) -> String? {
+                nonEmpty(p[key]) ?? nonEmpty(p[key.prefix(1).lowercased() + String(key.dropFirst())]) ?? nonEmpty(p[key.lowercased()])
+            }
+            // OpenWA can give the id as an object: {_serialized: "316…@c.us"}.
+            let serialized = nonEmpty((p["id"] as? [String: Any])?["_serialized"])
+            let ids = [field("JID"), field("PhoneNumber"), field("LID"), field("Id"), serialized].compactMap { $0 }
+            guard !ids.isEmpty else { return nil }
+            let name = field("DisplayName") ?? field("FullName") ?? field("Name") ?? field("Pushname") ?? field("PushName") ?? ""
+            return WAMember(ids: ids, name: name.trimmingCharacters(in: .whitespaces))
+        }
+    }
+
+    /// The members without you: `me` is your number or JID, `selves` the user ids a network gives you.
+    static func others(_ members: [WAMember], me: String?, selves: [String] = []) -> [WAMember] {
+        members.filter { member in
+            !(me.map(member.matches) ?? false) && !selves.contains { member.ids.contains($0) }
+        }
     }
 }
 
