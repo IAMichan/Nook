@@ -137,6 +137,15 @@ extension AppModel {
             DoubleTap.shared.fill(request: request, after: 0.3)
             return
         }
+        // "Schrijf een sollicitatiebrief", "vertaal dit": typed where your cursor is, in Word or any other app. Without a
+        // cursor in a text, it is a chat message after all.
+        if DoubleTapLogic.asksToWrite(request) {
+            DoubleTap.shared.write(request: request, after: 0.3) { [weak self] in
+                self?.chat.startNew()
+                self?.handleUserText(request, reveal: false)
+            }
+            return
+        }
         chat.startNew()
         handleUserText(request, reveal: false)
     }

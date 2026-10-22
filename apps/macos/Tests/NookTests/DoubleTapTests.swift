@@ -162,4 +162,48 @@ final class DoubleTapTests: XCTestCase {
         XCTAssertNil(DoubleTapLogic.submitButton(labels: ["Sender settings"], defaultIndex: nil), "whole words only")
         XCTAssertEqual(DoubleTapLogic.submitButton(labels: ["Sign up"], defaultIndex: nil), 0)
     }
+
+    // MARK: Writing at the cursor
+
+    func testWritingRequestsInEveryLanguage() {
+        for text in ["schrijf een sollicitatiebrief", "Write a short intro about our product", "can you write a reply",
+                     "kun je een brief schrijven", "vertaal dit naar het Engels", "maak een samenvatting van deze tekst",
+                     "herschrijf dit formeler", "schreib eine Antwort", "écris une lettre de motivation",
+                     "escribe un correo a Ana", "translate this into Dutch", "typ een korte reactie"] {
+            XCTAssertTrue(DoubleTapLogic.asksToWrite(text), text)
+        }
+        for text in ["wat is het weer morgen", "maak een afspraak om 3 uur", "how do I write a for loop in Swift",
+                     "finish this for me", "voeg een afspraak toe", "schrijf me in op bol.com", "open Spotify", ""] {
+            XCTAssertFalse(DoubleTapLogic.asksToWrite(text), text)
+        }
+    }
+
+    func testWritePromptHoldsTheContextAroundTheCursor() {
+        let prompt = DoubleTapLogic.writePrompt(request: "schrijf verder", app: "Microsoft Word", window: "Brief.docx",
+                                                before: "Geachte heer Jansen,", after: "Met vriendelijke groet", selected: "",
+                                                facts: ["Lives in Utrecht"], screen: "")
+        XCTAssertTrue(prompt.contains("The user's request: schrijf verder"))
+        XCTAssertTrue(prompt.contains("App: Microsoft Word — window: Brief.docx"))
+        XCTAssertTrue(prompt.contains("Geachte heer Jansen,"))
+        XCTAssertTrue(prompt.contains("Text after the cursor:\nMet vriendelijke groet"))
+        XCTAssertFalse(prompt.contains("Selected text"))
+        let empty = DoubleTapLogic.writePrompt(request: "write a poem", app: "Notes", window: "", before: "", after: "",
+                                               selected: "Old line", facts: [], screen: "")
+        XCTAssertTrue(empty.contains("Selected text (your text replaces it):\nOld line"))
+        XCTAssertTrue(empty.contains("the cursor is at the start"))
+    }
+
+    func testWrittenTextIsCleanedAndChecked() {
+        XCTAssertEqual(DoubleTapLogic.written(from: "```\nHallo Jan,\n\nTot morgen!\n```"), "Hallo Jan,\n\nTot morgen!")
+        XCTAssertEqual(DoubleTapLogic.written(from: "\"Dear Ms. Smith\""), "Dear Ms. Smith")
+        XCTAssertEqual(DoubleTapLogic.written(from: "## Intro\nThis is **important**."), "Intro\nThis is important.")
+        XCTAssertNil(DoubleTapLogic.written(from: "   "))
+        XCTAssertNil(DoubleTapLogic.written(from: "Pay with 4111 1111 1111 1111"))
+        XCTAssertNil(DoubleTapLogic.written(from: String(repeating: "a", count: DoubleTapLogic.maxWrittenLength + 1)))
+    }
+
+    func testPreviewIsOneShortLine() {
+        XCTAssertEqual(DoubleTapLogic.preview("Hallo Jan,\n\nTot morgen!"), "Hallo Jan, Tot morgen!")
+        XCTAssertEqual(DoubleTapLogic.preview(String(repeating: "word ", count: 30), limit: 10), "word word…")
+    }
 }
