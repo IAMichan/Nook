@@ -78,6 +78,9 @@ struct WAPoll: Equatable, Sendable {
     var multiple: Bool = false
     /// Each voter's choice, by their JID; your own under `WAPoll.me`.
     var votes: [String: [String]] = [:]
+    /// False for a poll found in the gateway's own database after it came (see `WAGOWAStoredPolls`): the votes cast
+    /// before are not known, so it shows no counts.
+    var counted = true
 
     static let me = "\u{1}me"
 
@@ -86,7 +89,7 @@ struct WAPoll: Equatable, Sendable {
         let mine = votes[Self.me] ?? []
         return ChatPoll(question: question, options: options.map { option in
             ChatPoll.Option(text: option, votes: votes.values.filter { $0.contains(option) }.count, chosen: mine.contains(option))
-        }, multiple: multiple)
+        }, multiple: multiple, unknownCounts: counted ? nil : true)
     }
 }
 
@@ -120,6 +123,13 @@ enum WAPollData {
             (option as? String) ?? ((option as? [String: Any])?["name"] as? String)
         }
         return WAPoll(question: question, options: options, multiple: p["allowMultipleAnswers"] as? Bool == true)
+    }
+
+    /// GOWA's word that a poll was edited or got an option (`type: "edit"|"add_option"`): no new poll, and no message
+    /// either. The poll itself shows as it stands the next time its chat opens (see `WAGOWAStoredPolls`).
+    static func isChange(_ value: Any?) -> Bool {
+        guard let type = (value as? [String: Any])?["type"] as? String else { return false }
+        return type == "edit" || type == "add_option"
     }
 
     /// GOWA's own text of a vote kept in a chat's history ("Poll vote: Sushi", "Poll vote cleared"): it is no message.
@@ -789,6 +799,123 @@ enum WAWebhookEvent: Equatable, Sendable {
     case ignored
 }
 
+/// Polls kept by the GOWA that Nook runs on this Mac, read from its own databases. GOWA leaves polls out of a chat's
+/// history (`GET /chat/{jid}/messages` only has messages with text or a file), so a poll that came while the live feed
+/// was down, or before Nook started, would never show. Its `chatstorage.db` keeps each poll's question and options
+/// (`poll_definitions`, GOWA 9.3 and later); WhatsApp's session database next to it (`whatsapp.db`) says who sent it
+/// (`whatsmeow_message_secrets`) and their name. The votes are kept nowhere: such a poll shows without counts.
+enum WAGOWAStoredPolls {
+    struct Stored: Equatable {
+        var id: String
+        var chat: String
+        var date: Date
+        var poll: WAPoll
+    }
+
+    /// The newest `limit` polls of these chats.
+    static func pollsSQL(chats: [String], limit: Int) -> String {
+        """
+        SELECT poll_message_id AS id, chat_jid AS chat, question, options_json AS options,
+               selectable_option_count AS selectable, created_at AS created
+        FROM poll_definitions WHERE chat_jid IN (\(list(chats))) ORDER BY created_at DESC LIMIT \(limit)
+        """
+    }
+
+    /// Who sent these messages, with the name WhatsApp gave them (a member known by their @lid through their number).
+    static func sendersSQL(ids: [String]) -> String {
+        """
+        SELECT s.message_id AS id, s.sender_jid AS sender,
+               COALESCE(NULLIF(c.full_name, ''), NULLIF(c.push_name, ''), NULLIF(p.full_name, ''), NULLIF(p.push_name, ''), '') AS name
+        FROM whatsmeow_message_secrets s
+        LEFT JOIN whatsmeow_contacts c ON c.our_jid = s.our_jid AND c.their_jid = s.sender_jid
+        LEFT JOIN whatsmeow_lid_map m ON s.sender_jid = m.lid || '@lid'
+        LEFT JOIN whatsmeow_contacts p ON p.our_jid = s.our_jid AND p.their_jid = m.pn || '@s.whatsapp.net'
+        WHERE s.message_id IN (\(list(ids)))
+        """
+    }
+
+    /// This account, by its number and its @lid.
+    static let deviceSQL = "SELECT jid, COALESCE(lid, '') AS lid FROM whatsmeow_device"
+
+    private static func list(_ values: [String]) -> String {
+        values.map { "'" + $0.replacingOccurrences(of: "'", with: "''") + "'" }.joined(separator: ",")
+    }
+
+    /// The rows of `pollsSQL`; a row without an id or a question is left out.
+    static func polls(_ rows: [[String: Any]]) -> [Stored] {
+        rows.compactMap { row in
+            guard let id = row["id"] as? String, !id.isEmpty, let chat = row["chat"] as? String, !chat.isEmpty,
+                  let question = row["question"] as? String, !question.isEmpty,
+                  let date = (row["created"] as? String).flatMap(Self.date) else { return nil }
+            let json = (row["options"] as? String).flatMap { $0.data(using: .utf8) }
+            let list = json.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [Any] ?? []
+            let options = list.compactMap { option -> String? in
+                ((option as? [String: Any])?["name"] as? String) ?? (option as? String)
+            }
+            // 0 is "any number", 1 is one answer.
+            let selectable = (row["selectable"] as? NSNumber)?.intValue ?? 1
+            return Stored(id: id, chat: chat, date: date,
+                          poll: WAPoll(question: question, options: options, multiple: selectable != 1, counted: false))
+        }
+    }
+
+    /// The polls as messages: sent by the one `senders` names (yours when that is this account), else by the chat.
+    static func messages(_ polls: [Stored], senders: [[String: Any]], device: [String: Any]?) -> [WAMessage] {
+        var from: [String: (jid: String, name: String)] = [:]
+        for row in senders {
+            guard let id = row["id"] as? String, let jid = row["sender"] as? String, !jid.isEmpty else { continue }
+            from[id] = (jid, (row["name"] as? String) ?? "")
+        }
+        let own = [device?["jid"] as? String, device?["lid"] as? String].compactMap { $0 }.filter { !$0.isEmpty }
+        return polls.map { stored in
+            let sender = from[stored.id]
+            let mine = sender.map { sender in own.contains { WAJID.sameUser($0, sender.jid) } } ?? false
+            let jid = sender?.jid ?? stored.chat
+            var name = sender?.name ?? ""
+            if name.isEmpty, !mine, WAJID.isGroup(stored.chat), WAJID.kind(jid) == .person, !jid.hasSuffix("@lid") {
+                name = WAJID.displayNumber(jid)
+            }
+            var message = WAMessage(id: stored.id, chat: stored.chat, sender: jid, senderName: mine ? "" : name,
+                                    text: "", media: .none, date: stored.date, fromMe: mine)
+            message.poll = stored.poll
+            return message
+        }
+    }
+
+    /// A time as GOWA's SQLite driver writes it: "2026-10-22 13:02:54.123456789+02:00", or "… +0200 CEST", or RFC 3339.
+    static func date(_ text: String) -> Date? {
+        let s = text.trimmingCharacters(in: .whitespaces)
+        guard s.count >= 19, let base = plain.date(from: String(s.prefix(19)).replacingOccurrences(of: "T", with: " ")) else {
+            return nil
+        }
+        var rest = s.dropFirst(19)
+        var fraction: TimeInterval = 0
+        if rest.first == "." {
+            let digits = rest.dropFirst().prefix(while: \.isNumber)
+            fraction = TimeInterval("0." + String(digits)) ?? 0
+            rest = rest.dropFirst(1 + digits.count)
+        }
+        rest = rest.drop(while: { $0 == " " })
+        var offset: TimeInterval = 0
+        if let sign = rest.first, sign == "+" || sign == "-" {
+            let digits = String(rest.dropFirst().prefix(while: { $0.isNumber || $0 == ":" }).filter(\.isNumber))
+            if digits.count == 4, let hours = Int(digits.prefix(2)), let minutes = Int(digits.suffix(2)) {
+                offset = TimeInterval(hours * 3600 + minutes * 60) * (sign == "-" ? -1 : 1)
+            }
+        }
+        return base.addingTimeInterval(fraction - offset)
+    }
+
+    /// "2026-10-22 13:02:54", read as UTC.
+    private static let plain: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+}
+
 enum WAWebhook {
     /// "sha256=<lowercase hex>" of HMAC-SHA256(secret, body): what both gateways send.
     static func signature(body: Data, secret: String) -> String {
@@ -823,6 +950,7 @@ enum WAWebhook {
               let p = json["payload"] as? [String: Any],
               let id = p["id"] as? String, !id.isEmpty,
               let chat = p["chat_id"] as? String, !chat.isEmpty else { return .ignored }
+        if WAPollData.isChange(p["poll"]) { return .ignored }
         let from = (p["from"] as? String) ?? chat
         let text = (p["body"] as? String) ?? ""
         let mine = me ?? (json["device_id"] as? String)

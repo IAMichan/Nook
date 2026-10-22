@@ -196,6 +196,56 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[group]?.unread, 0, "fetched history counts as read")
     }
 
+    func testPollsGOWAKeepsOutOfTheHistoryComeFromItsOwnDatabase() {
+        let group = "120363000000000001@g.us"
+        XCTAssertTrue(WAGOWAStoredPolls.pollsSQL(chats: [group], limit: 20).contains("chat_jid IN ('\(group)')"))
+        XCTAssertTrue(WAGOWAStoredPolls.sendersSQL(ids: ["it's"]).contains("'it''s'"), "quotes are escaped")
+
+        let rows: [[String: Any]] = [
+            ["id": "P1", "chat": group, "question": "Lunch?", "options": #"[{"name":"Pizza","hash":"a"},{"name":"Sushi","hash":"b"}]"#,
+             "selectable": 1, "created": "2027-01-15 09:00:00.5+01:00"],
+            ["id": "P2", "chat": group, "question": "Wanneer?", "options": #"[{"name":"Ma"},{"name":"Di"}]"#,
+             "selectable": 0, "created": "2027-01-15 10:00:00 +0000 UTC"],
+            ["id": "", "chat": group, "question": "No id", "options": "[]", "selectable": 1, "created": "2027-01-15 09:00:00"],
+        ]
+        let polls = WAGOWAStoredPolls.polls(rows)
+        XCTAssertEqual(polls.map(\.id), ["P1", "P2"])
+        XCTAssertEqual(polls.first?.poll, WAPoll(question: "Lunch?", options: ["Pizza", "Sushi"], counted: false))
+        XCTAssertEqual(polls.last?.poll.multiple, true, "0 is any number of answers")
+        XCTAssertEqual(polls.first?.date, Date(timeIntervalSince1970: 1_800_000_000 + 0.5), "09:00 at +01:00 is 08:00 UTC")
+        XCTAssertEqual(polls.last?.date, Date(timeIntervalSince1970: 1_800_000_000 + 7_200))
+        XCTAssertEqual(WAGOWAStoredPolls.date("2027-01-15T08:00:00Z"), Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertNil(WAGOWAStoredPolls.date("gisteren"))
+
+        // Who sent it: yours by your number or your @lid, else the member with the name WhatsApp has for them.
+        let senders: [[String: Any]] = [
+            ["id": "P1", "sender": "31600000000@s.whatsapp.net", "name": ""],
+            ["id": "P2", "sender": "4242@lid", "name": "Anna"],
+        ]
+        let device: [String: Any] = ["jid": "31600000000:12@s.whatsapp.net", "lid": "999:12@lid"]
+        let messages = WAGOWAStoredPolls.messages(polls, senders: senders, device: device)
+        XCTAssertEqual(messages.map(\.fromMe), [true, false])
+        XCTAssertEqual(messages.last?.senderName, "Anna")
+        XCTAssertEqual(messages.last?.sender, "4242@lid")
+        XCTAssertEqual(messages.first?.poll?.chatPoll.counted, false, "the votes before are not known: no counts")
+        XCTAssertEqual(WAGOWAStoredPolls.messages(polls, senders: [], device: nil).first?.sender, group,
+                       "without a sender the chat sent it")
+
+        // Kept by Nook as any message, so it shows in the chat.
+        var inbox = WAInbox()
+        for message in messages { inbox.add(message, filters: WAFilters(), history: true) }
+        XCTAssertEqual(inbox.conversations[group]?.messages.compactMap(\.poll?.question), ["Lunch?", "Wanneer?"])
+    }
+
+    func testAnEditedPollIsNoNewPoll() {
+        let body = Data(#"{"event":"message","payload":{"id":"E1","chat_id":"120363000000000001@g.us","body":"Poll edited: Lunch?","poll":{"type":"edit","poll_id":"P1","question":"Lunch?","options":[{"name":"Pizza"}]}}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: body), .ignored)
+        let creation = Data(#"{"event":"message","payload":{"id":"P1","chat_id":"120363000000000001@g.us","body":"Poll: Lunch?","poll":{"type":"creation","poll_id":"P1","question":"Lunch?","options":[{"name":"Pizza"}]}}}"#.utf8)
+        guard case .message(let parsed)? = WAWebhook.parse(kind: .gowa, body: creation) else { return XCTFail("no poll") }
+        XCTAssertEqual(parsed.poll?.question, "Lunch?")
+        XCTAssertEqual(parsed.text, "")
+    }
+
     func testChannelsGetTheirNameAndPicture() {
         let channel = "120363173134535056@newsletter"
         XCTAssertTrue(WAJID.isPlaceholderName(WAJID.displayNumber(channel), for: channel), "a channel known only by its number")

@@ -318,8 +318,13 @@ final class WhatsAppDesktopBridge: ChatBridge {
             let mine = (AppData.number(row["me"]) ?? 0) != 0
             var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
             let media = Self.media(row)
-            if text.isEmpty, media == nil { text = Self.label(Int(AppData.number(row["type"]) ?? 0)) }
-            guard !text.isEmpty || media != nil else { continue }
+            let type = Int(AppData.number(row["type"]) ?? 0)
+            // A poll shows as one, its question its text; its options and votes stay in the app.
+            let poll = type == Self.pollType
+                ? ChatPoll(question: text.isEmpty ? tr("chat.poll.title") : text, options: [], unknownCounts: true) : nil
+            if poll != nil { text = "" }
+            if text.isEmpty, media == nil, poll == nil { text = Self.label(type) }
+            guard !text.isEmpty || media != nil || poll != nil else { continue }
             var sender = ""
             if group {
                 groups.insert(chat)
@@ -330,7 +335,7 @@ final class WhatsAppDesktopBridge: ChatBridge {
             }
             var message = InboxMessage(
                 id: "wadesktop-\(id)", sender: sender, text: text,
-                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media)
+                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media, poll: poll)
             if mine {
                 message.receipt = ChatReceipts.whatsAppDesktop(status: Int(AppData.number(row["status"]) ?? 0))
                 self.mine[id] = (chat, message)
@@ -448,6 +453,9 @@ final class WhatsAppDesktopBridge: ChatBridge {
         }
         return try await query(sql(false, false))
     }
+
+    /// WhatsApp's message type of a poll.
+    private static let pollType = 46
 
     /// What a message without text holds, by WhatsApp's message type.
     private static func label(_ type: Int) -> String {

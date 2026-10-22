@@ -140,12 +140,18 @@ extension AppModel {
         }
     }
 
+    /// "14:05" under each bubble: one formatter for every redraw, not a new one each time.
+    private static let whatsAppBubbleTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     /// A chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows as
     /// itself, a video plays in its bubble and a document shows its first page; until then a file is a button.
     static func whatsAppBubbles(_ conversation: WAConversation) -> [ChatBubble] {
         let link = WhatsAppLink.shared
-        let time = DateFormatter()
-        time.dateFormat = "HH:mm"
+        let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return conversation.messages.suffix(WAInbox.keep).map { message in
             let file = Self.whatsAppFileLabel(message.media)
