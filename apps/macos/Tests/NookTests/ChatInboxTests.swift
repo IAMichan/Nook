@@ -424,6 +424,87 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(SlackData.error(["ok": true]))
     }
 
+    // MARK: Telegram
+
+    func testTelegramChatsAndLogin() {
+        let group = TelegramData.chat(["@type": "chat", "id": -100123, "title": "Family", "unread_count": 2,
+                                       "type": ["@type": "chatTypeSupergroup", "is_channel": false],
+                                       "positions": [["@type": "chatPosition", "list": ["@type": "chatListMain"], "order": "42"]]])
+        XCTAssertEqual(group, TelegramData.Chat(id: -100123, title: "Family", isGroup: true, unread: 2, order: 42))
+        XCTAssertNil(TelegramData.chat(["@type": "chat", "id": 1, "title": "News",
+                                        "type": ["@type": "chatTypeSupergroup", "is_channel": true]]), "a channel is no chat")
+        XCTAssertEqual(TelegramData.chat(["@type": "chat", "id": 7, "title": "Anna", "type": ["@type": "chatTypePrivate"]])?.isGroup, false)
+        XCTAssertEqual(TelegramData.authorization(["@type": "updateAuthorizationState",
+                                                   "authorization_state": ["@type": "authorizationStateWaitCode",
+                                                                           "code_info": ["phone_number": "+31612345678"]]]),
+                       .code(phone: "+31612345678"))
+        XCTAssertEqual(TelegramData.authorization(["@type": "authorizationStateReady"]), .ready)
+        XCTAssertEqual(TelegramData.userName(["@type": "user", "first_name": "Anna", "last_name": "Smit"]), "Anna Smit")
+        XCTAssertEqual(TelegramData.userName(["@type": "user", "first_name": "", "usernames": ["active_usernames": ["anna"]]]), "@anna")
+    }
+
+    func testTelegramMessages() {
+        let chat = TelegramData.Chat(id: -5, title: "Family", isGroup: true, unread: 0, order: 0)
+        let text: [String: Any] = ["@type": "message", "id": 10, "date": 1_700_000_000, "is_outgoing": false,
+                                   "sender_id": ["@type": "messageSenderUser", "user_id": 3],
+                                   "content": ["@type": "messageText", "text": ["@type": "formattedText", "text": " dinner? "]]]
+        let message = TelegramData.message(text, chat: chat, users: [3: "Jan"])
+        XCTAssertEqual(message?.text, "dinner?")
+        XCTAssertEqual(message?.sender, "Jan")
+        XCTAssertEqual(message?.id, "telegram--5-10")
+        XCTAssertEqual(message?.isMine, false)
+        var mine = text
+        mine["is_outgoing"] = true
+        XCTAssertEqual(TelegramData.message(mine, chat: chat, users: [3: "Jan"])?.sender, "", "your own message has no sender")
+        XCTAssertEqual(TelegramData.text(["@type": "messagePhoto", "caption": ["text": "beach"]]), tr("whatsapp.file.photo") + ": beach")
+        XCTAssertEqual(TelegramData.text(["@type": "messageDocument", "document": ["file_name": "plan.pdf"]]), "plan.pdf")
+        XCTAssertNil(TelegramData.text(["@type": "messagePinMessage"]), "a service message shows nothing")
+        XCTAssertEqual(TelegramData.request(["@type": "getMe"]), #"{"@type":"getMe"}"#)
+    }
+
+    // MARK: Teams
+
+    func testTeamsSignInAnswers() {
+        let code = TeamsData.deviceCode(["device_code": "D", "user_code": "ABCD-EFGH", "interval": 5, "expires_in": 900,
+                                         "verification_uri": "https://microsoft.com/devicelogin"], now: now)
+        XCTAssertEqual(code?.userCode, "ABCD-EFGH")
+        XCTAssertEqual(code?.expires, now.addingTimeInterval(900))
+        XCTAssertEqual(TeamsData.token(["error": "authorization_pending"]), .pending(slowDown: false))
+        XCTAssertEqual(TeamsData.token(["error": "slow_down"]), .pending(slowDown: true))
+        XCTAssertEqual(TeamsData.token(["access_token": "A", "refresh_token": "R", "expires_in": 60], now: now),
+                       .token(access: "A", refresh: "R", expires: now.addingTimeInterval(60)))
+        XCTAssertEqual(TeamsData.token(["error": "expired_token", "error_description": "AADSTS70020: expired\r\nTrace ID: x"]),
+                       .failed("AADSTS70020: expired"))
+        XCTAssertEqual(String(data: TeamsData.form(["scope": "Chat.Read offline_access", "a": "b&c"]), encoding: .utf8),
+                       "a=b%26c&scope=Chat.Read%20offline_access")
+    }
+
+    func testTeamsChatsAndMessages() {
+        let list: [String: Any] = ["value": [
+            ["id": "1", "chatType": "oneOnOne", "members": [["userId": "me", "displayName": "Me"], ["userId": "u1", "displayName": "Anna"]],
+             "lastMessagePreview": ["createdDateTime": "2026-10-22T09:00:00.123Z"],
+             "viewpoint": ["lastMessageReadDateTime": "2026-10-22T08:00:00Z"]],
+            ["id": "2", "chatType": "group", "topic": "Launch", "members": []],
+            ["id": "3", "chatType": "meeting", "topic": "", "members": [["userId": "u2", "displayName": "Jan"]]],
+            ["id": "4", "chatType": "oneOnOne", "members": [["userId": "u3", "displayName": "Lisa"]], "viewpoint": ["isHidden": true]]
+        ]]
+        let chats = TeamsData.chats(list, me: "me")
+        XCTAssertEqual(chats.map(\.name), ["Anna", "Launch"], "a meeting without a topic and a hidden chat are left out")
+        XCTAssertNotNil(chats[0].last)
+        let history: [String: Any] = ["value": [
+            ["id": "m2", "messageType": "message", "createdDateTime": "2026-10-22T09:00:00Z",
+             "from": ["user": ["id": "u1", "displayName": "Anna"]], "body": ["contentType": "html", "content": "<p>Hi &amp; welcome</p><p>to</p>"]],
+            ["id": "m1", "messageType": "message", "createdDateTime": "2026-10-22T07:00:00Z",
+             "from": ["user": ["id": "me"]], "body": ["contentType": "text", "content": "morning"]],
+            ["id": "s1", "messageType": "systemEventMessage", "createdDateTime": "2026-10-22T07:30:00Z", "body": ["content": ""]]
+        ]]
+        let messages = TeamsData.messages(history, chat: chats[0], me: "me")
+        XCTAssertEqual(messages.map(\.text), ["morning", "Hi & welcome\nto"])
+        XCTAssertTrue(messages[0].isMine)
+        XCTAssertEqual(messages[1].sender, "", "a private chat needs no sender")
+        XCTAssertEqual(TeamsData.unread(messages, readUntil: chats[0].readUntil), 1)
+    }
+
     // MARK: As bubbles
 
     private var calendar: Calendar {

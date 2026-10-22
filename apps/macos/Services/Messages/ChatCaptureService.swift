@@ -33,10 +33,26 @@ final class ChatCaptureService: ObservableObject {
     /// A notification Nook already has another way (WhatsApp, while the phone is linked, arrives live).
     var skips: (ChatNotice) -> Bool = { _ in false }
 
-    /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token.
+    /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token,
+    /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in.
     let messagesBridge = MessagesBridge()
     let slackBridge = SlackBridge()
-    private var bridges: [ChatBridge] { [messagesBridge, slackBridge] }
+    let telegramBridge = TelegramBridge()
+    let teamsBridge = TeamsBridge()
+    private var bridges: [ChatBridge] { [messagesBridge, slackBridge, telegramBridge, teamsBridge] }
+
+    /// The bridge of an app, if Nook has one.
+    func bridge(for app: String) -> ChatBridge? {
+        bridges.first { $0.app == app }
+    }
+
+    /// A bridge's sign-in changed (Telegram logged in, Teams signed in): read it now instead of at its next turn.
+    func bridgeChanged(_ app: String) {
+        bridgeDue[app] = nil
+        bridged.remove(app)
+        bridgeProblems[app] = nil
+        Task { await pollBridges() }
+    }
     /// Why a bridge could not read, per app; empty while all of them work.
     @Published private(set) var bridgeProblems: [String: String] = [:]
     /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
@@ -73,6 +89,8 @@ final class ChatCaptureService: ObservableObject {
         // Nothing collected yet (a start before Full Disk Access, or before any chat wrote): look back again.
         if inbox.threads.isEmpty { inbox.lastRecord = nil }
         bridgeDue = [:]
+        // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Chats.
+        if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.poll()
@@ -89,6 +107,7 @@ final class ChatCaptureService: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        telegramBridge.stop()
         status = .off
     }
 
@@ -177,10 +196,7 @@ final class ChatCaptureService: ObservableObject {
     /// The Slack token changed in Settings: read Slack again from the start.
     func slackTokenChanged() {
         slackBridge.reset()
-        bridgeDue[slackBridge.app] = nil
-        bridged.remove(slackBridge.app)
-        bridgeProblems[slackBridge.app] = nil
-        Task { await pollBridges() }
+        bridgeChanged(slackBridge.app)
     }
 
     // MARK: Sources

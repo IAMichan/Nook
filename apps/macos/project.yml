@@ -118,7 +118,8 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
-        # The build phase below reads the git checkout, which a sandboxed script may not. It is the target's only script.
+        # The build phases below read the git checkout and the TDLib that scripts/build-tdlib.sh built, which a
+        # sandboxed script may not.
         ENABLE_USER_SCRIPT_SANDBOXING: NO
     postBuildScripts:
       - name: Stamp source commit
@@ -126,6 +127,11 @@ targets:
         script: sh "$SRCROOT/Config/stamp-source.sh"
         inputFiles:
           - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        basedOnDependencyAnalysis: false
+      - name: Embed TDLib
+        # Copies the TDLib that scripts/build-tdlib.sh built into the app and signs it like Nook, for the Telegram bridge
+        # (see Config/embed-tdlib.sh). Without it, nothing happens.
+        script: sh "$SRCROOT/Config/embed-tdlib.sh"
         basedOnDependencyAnalysis: false
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).
   # This code relies solely on Foundation, so files are included directly in the test bundle: no app host required for testing.
@@ -182,6 +188,8 @@ targets:
       - path: Services/EmbeddedApps/WhatsAppWeb.swift
       - path: Services/Messages/ChatInbox.swift
       - path: Services/Messages/SlackData.swift
+      - path: Services/Messages/TelegramData.swift
+      - path: Services/Messages/TeamsData.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift

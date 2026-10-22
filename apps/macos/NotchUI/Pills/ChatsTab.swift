@@ -377,10 +377,11 @@ struct ChatsTab: View {
                                 .foregroundStyle(NookTheme.coralSoft)
                                 .multilineTextAlignment(.center)
                                 .fixedSize(horizontal: false, vertical: true)
-                        } else if filter == capture.slackBridge.app, !capture.slackBridge.isReady {
-                            // Slack keeps its history on its own servers: with a token Nook reads it from there.
-                            ListEmptyNote(tr("chats.slack.connectHint"))
-                            SmallGhostButton(title: tr("chats.slack.connect")) { app.openSettings(section: .chats) }
+                        } else if let bridge = capture.bridge(for: filter), bridge.app != capture.messagesBridge.app, !bridge.isReady {
+                            // Slack, Telegram and Teams keep their history on their own servers: connected once, Nook
+                            // reads it from there.
+                            ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
+                            SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
                         } else {
                             ListEmptyNote(tr("chats.source.empty", name))
                         }

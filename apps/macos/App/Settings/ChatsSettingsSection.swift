@@ -45,6 +45,22 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.slack.footer"))
             }
 
+            Section {
+                TelegramSettingsRows(telegram: capture.telegramBridge) { capture.bridgeChanged(capture.telegramBridge.app) }
+            } header: {
+                Text(tr("chats.telegram.title"))
+            } footer: {
+                Text(tr("chats.telegram.footer"))
+            }
+
+            Section {
+                TeamsSettingsRows(teams: capture.teamsBridge) { capture.bridgeChanged(capture.teamsBridge.app) }
+            } header: {
+                Text(tr("chats.teams.title"))
+            } footer: {
+                Text(tr("chats.teams.footer"))
+            }
+
             WhatsAppLinkSection()
         }
     }

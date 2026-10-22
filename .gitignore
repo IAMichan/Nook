@@ -23,3 +23,6 @@ apps/ios/NookCompanion/*.entitlements
 
 # Local code signing identity (written by apps/macos/Config/local-signing.sh)
 apps/macos/Config/Signing.local.xcconfig
+
+# TDLib for the Telegram bridge, built by scripts/build-tdlib.sh
+apps/macos/Vendor/
