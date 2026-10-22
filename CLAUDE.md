@@ -21,3 +21,6 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
    - Run `./scripts/core-tests.sh` (which includes `I18nCoverageTests` and `UIConsistencyTests`) before creating a commit or pull request.
    - Run `./scripts/ui-lint.sh` whenever `apps/macos/NotchUI` or `apps/macos/App` changed.
    - If you add or remove files in `apps/macos` or `apps/ios`, update `project.yml` if needed and regenerate the project with `xcodegen`.
+5. **Show what you make in the side panel:**
+   - Write images, rendered pages, PDFs, and drafts meant for the user to `.scratch/` in the repository (git-ignored), never to `/tmp` or `/private/tmp`, because the side panel only opens files inside the working directory.
+   - Send them with `SendUserFile` (`display: "render"` for images, HTML, and PDFs) as soon as they are ready, so they open in the side panel without the user having to look for them. See section 5 of [AGENTS.md](AGENTS.md).
