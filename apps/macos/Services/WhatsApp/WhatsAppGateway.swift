@@ -317,12 +317,15 @@ enum WAJID {
         return digits.allSatisfy(\.isNumber) && !digits.isEmpty ? "+" + digits : digits
     }
 
-    /// Whether a group's name is only a stand-in for its id: empty, the id itself, or what a gateway makes of it
-    /// ("Group 31622360496-1542111077"). Such a group is asked for its real name.
+    /// Whether a group's name is only a stand-in for its id: empty, the id itself, what a gateway makes of it
+    /// ("Group 31622360496-1542111077"), or only numbers without a letter (the members' phone numbers in a row).
+    /// Such a group is asked for its real name.
     static func isPlaceholderName(_ name: String, for jid: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let user = jid.split(separator: "@").first.map(String.init) ?? jid
+        let onlyNumbers = !trimmed.contains { $0.isLetter } && trimmed.filter(\.isNumber).count >= 7
         return trimmed.isEmpty || trimmed == jid || trimmed == displayNumber(jid) || (!user.isEmpty && trimmed.contains(user))
+            || onlyNumbers
     }
 
     /// Two letters for the avatar: "Marie Dupont" → "MD", "+33 6…" → "#".
@@ -425,8 +428,11 @@ struct WAInbox: Equatable, Sendable {
         var conversation = conversations[chat] ?? WAConversation(
             id: chat, name: name ?? message.chatName ?? personName ?? number,
             isGroup: isGroup, lastActivity: message.date)
-        if let name = name ?? message.chatName, !name.isEmpty { conversation.name = name }
-        else if conversation.name == number, let personName { conversation.name = personName }
+        // A stand-in for the id ("Group 3162…", the id itself) never replaces a real name the chat already has.
+        if let name = name ?? message.chatName, !name.isEmpty,
+           !WAJID.isPlaceholderName(name, for: chat) || WAJID.isPlaceholderName(conversation.name, for: chat) {
+            conversation.name = name
+        } else if conversation.name == number, let personName { conversation.name = personName }
         var msg = message
         msg.chat = chat
         if msg.fromMe {

@@ -596,6 +596,12 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         let fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
         for message in fetched { inbox.add(message, filters: filters, history: true) }
+        // An opened chat keeps the name the chat list showed: the gateway's history may only know it by its id.
+        if let shown = inbox.conversations[key]?.name, WAJID.isPlaceholderName(shown, for: key),
+           let known = knownChats.first(where: { $0.jid == key }), !WAJID.isPlaceholderName(known.name, for: key) {
+            inbox.rename(key, to: known.name)
+        }
+        nameGroupIfNeeded(key)
         let kept = inbox.conversations[key]?.messages ?? []
         return WAInbox.newest(fetched, kept, limit: limit)
     }
