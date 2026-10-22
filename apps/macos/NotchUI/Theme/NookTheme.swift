@@ -33,7 +33,7 @@ enum NookTheme {
     static let textTertiary = Color(hex: 0x6C6C74)
 
     /// Nook's own color. Soft white by default; the user can pick another in Settings › Appearance.
-    static let defaultAccentHex: UInt32 = 0xF2F2F4
+    static let defaultAccentHex: UInt32 = 0xF4F3F7
     /// Current accent (kept in sync by `AppSettings.accentHex`).
     static var accentHex: UInt32 = defaultAccentHex
     static var iris: Color { Color(hex: accentHex) }
