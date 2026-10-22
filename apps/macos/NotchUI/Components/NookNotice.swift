@@ -7,12 +7,14 @@ import SwiftUI
 /// A notice that closes by itself always has that OK (`countdown` set); one that waits for you (a permission request,
 /// an agent's question, a task's Stop) has none, and its own actions decide. The surfaces only add their frame around
 /// it (`PanelNoticeBar`, the toast's bubble, the strip's margins), so every notice reads as the same kind of thing.
-struct NookNotice<Actions: View>: View {
+struct NookNotice<Trailing: View>: View {
     let title: String
     var detail: String? = nil
     /// The mark before the message; nil for none.
     var symbol: String? = nil
     var tone: Color = NookTheme.textSecondary
+    /// The notice's own actions (View, Open, Stop), in the dark bar before the OK: the same in every notice.
+    var actions: [NookNoticeAction] = []
     /// Seconds until the notice closes by itself: shows the OK with its ring. Nil: the notice waits for you.
     var countdown: TimeInterval? = nil
     /// The pointer is on the notice: the ring holds, as the notice's clock does (`NoticeClock`).
@@ -22,7 +24,9 @@ struct NookNotice<Actions: View>: View {
     /// The title and its line wrap instead of staying on one line (a toast, which has room to grow).
     var wraps: Bool = false
     var onOK: () -> Void = {}
-    @ViewBuilder var actions: () -> Actions
+    /// What a notice that waits for you asks with (`NookNoticeActions`: Allow and Deny), or a small extra control
+    /// (the toast's copy button). Plain actions go in `actions`.
+    @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(alignment: wraps ? .top : .center, spacing: NookTheme.Spacing.md) {
@@ -50,17 +54,32 @@ struct NookNotice<Actions: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            NookNoticeEnd(countdown: countdown, paused: paused, restart: restart, onOK: countdown == nil ? nil : onOK,
-                          actions: actions)
+            HStack(spacing: NookTheme.Spacing.xs) {
+                trailing()
+                NookNoticeEnd(actions: actions, countdown: countdown, paused: paused, restart: restart,
+                              onOK: countdown == nil ? nil : onOK)
+            }
+            .fixedSize()
         }
         .accessibilityElement(children: .contain)
     }
 }
 
-/// The end of every notice, short or large: the notice's own actions, then the OK that closes it at once, with the
-/// countdown ring of it closing by itself. `NookNotice` ends in it, and so do the compact agent notice in the notch's
-/// own row and a card with an OK (`CardView`), so the OK and its ring are the same everywhere.
-struct NookNoticeEnd<Actions: View>: View {
+extension NookNotice where Trailing == EmptyView {
+    init(title: String, detail: String? = nil, symbol: String? = nil, tone: Color = NookTheme.textSecondary,
+         actions: [NookNoticeAction] = [], countdown: TimeInterval? = nil, paused: Bool = false,
+         restart: AnyHashable? = nil, wraps: Bool = false, onOK: @escaping () -> Void = {}) {
+        self.init(title: title, detail: detail, symbol: symbol, tone: tone, actions: actions, countdown: countdown,
+                  paused: paused, restart: restart, wraps: wraps, onOK: onOK) { EmptyView() }
+    }
+}
+
+/// The end of every notice, short or large: the notice's own actions in one dark bar (`NookActionBar`), then the OK
+/// that closes it at once, with the countdown ring of it closing by itself. `NookNotice` ends in it, and so do the
+/// compact agent notice in the notch's own row and a card with an OK (`CardView`), so a notice's buttons look and
+/// behave the same everywhere.
+struct NookNoticeEnd: View {
+    var actions: [NookNoticeAction] = []
     var title: String = tr("button.ok")
     /// Seconds until the notice closes by itself, as a ring on the OK; nil for an OK without a ring.
     var countdown: TimeInterval? = nil
@@ -69,32 +88,26 @@ struct NookNoticeEnd<Actions: View>: View {
     /// A new value starts the ring over.
     var restart: AnyHashable? = nil
     var compact: Bool = true
-    /// A fixed height for the OK, e.g. to fit inside the notch's own row; nil follows `compact`.
+    /// A fixed height for the bar and the OK, e.g. to fit inside the notch's own row; nil follows `compact`.
     var height: CGFloat? = nil
-    var spacing: CGFloat = NookTheme.Spacing.xs
+    var spacing: CGFloat = NookTheme.Spacing.sm
     /// What the OK does; nil: no OK, the notice waits for you and its actions decide.
     var onOK: (() -> Void)? = nil
-    @ViewBuilder var actions: () -> Actions
 
     var body: some View {
+        // The bar and the OK stand exactly as tall, side by side.
+        let side = height ?? (compact ? 32 : 38)
         HStack(spacing: spacing) {
-            actions()
+            if !actions.isEmpty {
+                NookActionBar(actions: actions, compact: compact, height: side)
+            }
             if let onOK {
                 NookAcknowledgeButton(title: title, compact: compact, countdown: countdown, paused: paused,
-                                      height: height, action: onOK)
+                                      height: side, action: onOK)
                     .id(restart)
             }
         }
         .fixedSize()
-    }
-}
-
-extension NookNotice where Actions == EmptyView {
-    init(title: String, detail: String? = nil, symbol: String? = nil, tone: Color = NookTheme.textSecondary,
-         countdown: TimeInterval? = nil, paused: Bool = false, restart: AnyHashable? = nil, wraps: Bool = false,
-         onOK: @escaping () -> Void = {}) {
-        self.init(title: title, detail: detail, symbol: symbol, tone: tone, countdown: countdown, paused: paused,
-                  restart: restart, wraps: wraps, onOK: onOK) { EmptyView() }
     }
 }
 

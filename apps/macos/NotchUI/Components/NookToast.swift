@@ -241,10 +241,8 @@ struct NookToastView: View {
 
     var body: some View {
         NookNotice(title: toast.title, detail: toast.detail, symbol: toast.kind.symbol, tone: toast.kind.color,
+                   actions: toast.action.map { [NookNoticeAction($0.title, perform: perform)] } ?? [],
                    countdown: toast.duration, paused: paused, restart: restart, wraps: true, onOK: close) {
-            if let action = toast.action {
-                NookGhostButton(title: action.title, compact: true, height: 30, action: perform)
-            }
             if toast.kind == .error, let detail = toast.detail {
                 ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("toast.copy"), height: 20) {
                     Pasteboard.copy([toast.title, detail].joined(separator: "\n"))

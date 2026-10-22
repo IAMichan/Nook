@@ -168,24 +168,26 @@ struct CountdownRing: View {
     }
 }
 
-/// A notice's other actions side by side in one dark bar, split by thin lines: the first reads brightest. Pairs with
-/// `NookAcknowledgeButton` next to it.
+/// A notice's own actions side by side in one dark bar, split by thin lines: the first reads brightest. Every notice
+/// that closes by itself shows its actions this way, next to its OK (`NookNoticeEnd`).
 struct NookActionBar: View {
-    let actions: [CardAction]
+    let actions: [NookNoticeAction]
     var compact: Bool = false
-    let onAction: (CardAction) -> Void
+    /// A fixed height, e.g. to fit inside the notch's own row; nil follows `compact`.
+    var height: CGFloat? = nil
 
     var body: some View {
+        let barHeight = height ?? (compact ? 34 : 40)
         HStack(spacing: 0) {
             ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
                 if index > 0 {
-                    Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
+                    Rectangle().fill(NookTheme.line2).frame(width: 1, height: min(18, barHeight - 12))
                 }
-                NookActionBarItem(action: action, bright: index == 0, compact: compact) { onAction(action) }
+                NookActionBarItem(action: action, bright: index == 0, compact: compact, height: barHeight - 6)
             }
         }
-        .padding(.horizontal, 4)
-        .frame(height: compact ? 34 : 40)
+        .padding(.horizontal, 3)
+        .frame(height: barHeight)
         .background(
             Capsule().fill(NookTheme.graphite)
                 .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
@@ -194,14 +196,14 @@ struct NookActionBar: View {
 }
 
 private struct NookActionBarItem: View {
-    let action: CardAction
+    let action: NookNoticeAction
     let bright: Bool
     let compact: Bool
-    let tap: () -> Void
+    let height: CGFloat
     @State private var hovering = false
 
     var body: some View {
-        Button(action: tap) {
+        Button(action: action.perform) {
             HStack(spacing: 6) {
                 if let symbol = action.symbol {
                     Image(systemName: symbol).font(NookTheme.font(compact ? 11 : 12, .semibold))
@@ -213,7 +215,7 @@ private struct NookActionBarItem: View {
             .fixedSize()
             .padding(.horizontal, compact ? 10 : 14)
             .frame(maxWidth: .infinity)
-            .frame(height: compact ? 28 : 32)
+            .frame(height: height)
             .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
             .contentShape(Capsule())
         }

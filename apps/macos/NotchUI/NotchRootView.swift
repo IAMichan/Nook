@@ -282,7 +282,7 @@ struct NotchRootView: View {
                     .foregroundStyle(tone.color)
                     .frame(width: 16)
                 Text(message)
-                    .font(NookTheme.TextStyle.label)
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -297,14 +297,8 @@ struct NotchRootView: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 // The same end as every notice, sized to the notch's own row.
-                NookNoticeEnd(countdown: viewModel.noticeSeconds, paused: noticePaused, restart: viewModel.noticeStamp,
-                              height: button, onOK: ok) {
-                    if viewModel.doneHasAction {
-                        NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
-                            viewModel.doneButtonPressed()
-                        }
-                    }
-                }
+                NookNoticeEnd(actions: doneActions, countdown: viewModel.noticeSeconds, paused: noticePaused,
+                              restart: viewModel.noticeStamp, height: button, onOK: ok)
             }
             .padding(.trailing, 10)
             .frame(width: wing, height: nh)
@@ -317,6 +311,12 @@ struct NotchRootView: View {
     /// The ring on a strip's OK holds while the pointer is on the notch, as the strip's clock does.
     private var noticePaused: Bool { viewModel.pointerInside && viewModel.noticeHolds }
 
+    /// The confirmation strip's own button (View, Open, Stop), when it has one.
+    private var doneActions: [NookNoticeAction] {
+        guard viewModel.doneHasAction else { return [] }
+        return [NookNoticeAction(viewModel.doneButtonTitle) { viewModel.doneButtonPressed() }]
+    }
+
     /// A result under the notch (or the step of a task Nook works on, with Stop): the same notice as every other.
     private func doneStrip(message: String, nh: CGFloat) -> some View {
         VStack(spacing: 0) {
@@ -328,12 +328,8 @@ struct NotchRootView: View {
 
             StripLine {
                 NookNotice(title: message, symbol: viewModel.doneTone.symbol, tone: viewModel.doneTone.color,
-                           countdown: viewModel.noticeSeconds, paused: noticePaused,
-                           onOK: { viewModel.acknowledgeNotice() }) {
-                    if viewModel.doneHasAction {
-                        NookGhostButton(title: viewModel.doneButtonTitle, compact: true) { viewModel.doneButtonPressed() }
-                    }
-                }
+                           actions: doneActions, countdown: viewModel.noticeSeconds, paused: noticePaused,
+                           onOK: { viewModel.acknowledgeNotice() })
                 .id(viewModel.noticeStamp)
             }
         }
@@ -361,10 +357,9 @@ struct NotchRootView: View {
 
             StripLine {
                 NookNotice(title: line, symbol: "sparkles", tone: NookTheme.iris,
+                           actions: [NookNoticeAction(tr("button.view")) { viewModel.openNudge() }],
                            countdown: viewModel.noticeSeconds, paused: noticePaused,
-                           onOK: { viewModel.acknowledgeNotice() }) {
-                    NookGhostButton(title: tr("button.view"), compact: true) { viewModel.openNudge() }
-                }
+                           onOK: { viewModel.acknowledgeNotice() })
                 .id(viewModel.noticeStamp)
                 .accessibilityLabel(tr("notch.nudgeProposal", line))
             }
@@ -401,12 +396,10 @@ struct NotchRootView: View {
     }
 
     private func momentNotice(_ moment: NookMoment, line: String) -> some View {
-        NookNotice(title: line, countdown: viewModel.noticeSeconds, paused: noticePaused,
-                   onOK: { viewModel.acknowledgeNotice() }) {
-            if moment.action != nil, !moment.actionTitle.isEmpty {
-                NookGhostButton(title: moment.actionTitle, compact: true) { app.performMomentAction(moment) }
-            }
-        }
+        let actions: [NookNoticeAction] = moment.action != nil && !moment.actionTitle.isEmpty
+            ? [NookNoticeAction(moment.actionTitle) { app.performMomentAction(moment) }] : []
+        return NookNotice(title: line, actions: actions, countdown: viewModel.noticeSeconds, paused: noticePaused,
+                          onOK: { viewModel.acknowledgeNotice() })
         .id(viewModel.noticeStamp)
         .contentShape(Rectangle())
         .onTapGesture {

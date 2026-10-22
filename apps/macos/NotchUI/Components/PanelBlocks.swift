@@ -222,20 +222,23 @@ struct NookRowSeparator: View {
 /// shared `NookNotice` in one quiet bar under the tabs, with its actions on the right. `tone` tints the mark and the
 /// edge for something risky. With `countdown` the notice closes by itself and ends in the OK with its ring; a request
 /// that waits for you has none.
-struct PanelNoticeBar<Actions: View>: View {
+struct PanelNoticeBar<Trailing: View>: View {
     let title: String
     var detail: String? = nil
     var symbol: String? = nil
     var tone: Color? = nil
     var help: String? = nil
+    /// The notice's own actions, in the dark bar before the OK (a note that closes by itself).
+    var actions: [NookNoticeAction] = []
     var countdown: TimeInterval? = nil
     var paused: Bool = false
     var onOK: () -> Void = {}
-    @ViewBuilder var actions: () -> Actions
+    /// What a request that waits for you asks with (`NookNoticeActions`: Allow and Deny).
+    @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         NookNotice(title: title, detail: detail, symbol: symbol, tone: tone ?? NookTheme.textSecondary,
-                   countdown: countdown, paused: paused, onOK: onOK, actions: actions)
+                   actions: actions, countdown: countdown, paused: paused, onOK: onOK, trailing: trailing)
             .help(help ?? title)
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)

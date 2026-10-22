@@ -145,13 +145,12 @@ struct CardView: View {
     /// as the white main button with the countdown of the card closing by itself.
     private func noticeRow(compact: Bool) -> some View {
         let actions = ([card.primary, card.secondary] + card.extra + card.more).filter { !$0.label.isEmpty }
+            .map { action in NookNoticeAction(action.label, symbol: action.symbol) { onAction(action) } }
         let acknowledge = card.acknowledge
         let ok: (() -> Void)? = acknowledge == nil ? nil : { if let acknowledge { onAction(acknowledge) } }
-        return NookNoticeEnd(title: card.acknowledge?.label ?? tr("button.ok"), countdown: card.countdown, paused: paused,
-                             restart: card.id, compact: compact,
-                             spacing: compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg, onOK: ok) {
-            NookActionBar(actions: actions, compact: compact, onAction: onAction)
-        }
+        return NookNoticeEnd(actions: actions, title: acknowledge?.label ?? tr("button.ok"), countdown: card.countdown,
+                             paused: paused, restart: card.id, compact: compact,
+                             spacing: compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg, onOK: ok)
     }
 
     private static func isChat(_ detail: CardDetail) -> Bool {

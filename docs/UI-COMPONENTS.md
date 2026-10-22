@@ -72,7 +72,9 @@ The checklist for a new or changed view:
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
 - A short notice (a strip under the notch, a note in the panel's bar, a toast) is always a `NookNotice`: mark, message,
   its own actions, and, when it closes by itself, the OK with its countdown ring. A card with an OK and the compact
-  agent notice in the notch's row end in the same `NookNoticeEnd`; never place a `NookAcknowledgeButton` by hand. Its time runs on a `NoticeClock`, so
+  agent notice in the notch's row end in the same `NookNoticeEnd`; never place a `NookAcknowledgeButton` by hand.
+  Two families, one rule: a notice that closes by itself has its actions in a `NookActionBar` and the OK with its ring
+  (`NookNoticeEnd`); one that waits for you (an approval, a question) asks with `NookNoticeActions` and has no OK. Its time runs on a `NoticeClock`, so
   the ring and the notice hold together while the pointer is on it. A notice that waits for you has no OK.
 - A notification card says its state in `NookCard.status` (a tinted pill at the end of its header, colored by its
   `DoneTone`) and an agent's changed lines in `NookCard.changes`; its `context` keeps only who and where.
@@ -114,7 +116,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookNotice`, `NookNoticeEnd`, `NoticeClock` | `NookNotice.swift` | The one shape of every short notice: the strips under the notch (result, suggestion, moment), `PanelNoticeBar` and the toast. Mark, message and line, its actions, and with `countdown` the OK with its ring. `NookNoticeEnd` is that end (actions + OK with ring) on its own, shared by `NookNotice`, the compact agent notice in the notch's row and a card with an OK; `NoticeClock` runs the same time out and holds while the pointer is on the notice |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
-| `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
+| `NookActionBar` | `NookButtons.swift` | A notice's own actions (`NookNoticeAction`) in one dark bar with thin dividers, next to its OK; drawn by `NookNoticeEnd`, never placed by hand |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
 | `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |

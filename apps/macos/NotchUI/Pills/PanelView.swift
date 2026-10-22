@@ -213,14 +213,15 @@ struct PanelApprovalBar: View {
 
     /// A short notice (a session Nook runs asks something, a note is ready), with its one action.
     private func noticeBar(_ notice: PanelNotice) -> some View {
-        PanelNoticeBar(title: notice.message, countdown: notice.seconds, paused: viewModel.panelNoticeHeld,
-                       onOK: { viewModel.dismissPanelNotice() }) {
-            if let action = notice.action {
-                NookGhostButton(title: notice.button, compact: true) {
-                    viewModel.dismissPanelNotice()
-                    action()
-                }
-            }
+        let actions: [NookNoticeAction] = notice.action.map { action in
+            [NookNoticeAction(notice.button) {
+                viewModel.dismissPanelNotice()
+                action()
+            }]
+        } ?? []
+        return PanelNoticeBar(title: notice.message, actions: actions, countdown: notice.seconds,
+                              paused: viewModel.panelNoticeHeld, onOK: { viewModel.dismissPanelNotice() }) {
+            EmptyView()
         }
         .id(notice.id)
         .onHover { viewModel.holdPanelNotice($0) }
