@@ -433,7 +433,10 @@ pub mod beeper {
         msg.media = media(m["type"].as_str().unwrap_or(""), attachment);
         msg.chat_name = name.filter(|n| !n.is_empty()).map(str::to_string);
         msg.mentions_me = jid::is_group(chat)
-            && crate::connectors::list(&m["mentions"]).iter().filter_map(Value::as_str).any(|who| who == "@room" || me.iter().any(|id| id == who));
+            && crate::connectors::list(&m["mentions"])
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|who| who == "@room" || me.iter().any(|id| id == who));
         Some(msg)
     }
 
@@ -865,13 +868,9 @@ impl Provider {
             }
             GatewayKind::Beeper => {
                 // Where Beeper keeps the file, then the file itself from Beeper's own server: never another host.
-                let path = format!(
-                    "/v1/chats/{}/messages/{}",
-                    path_component(jid::beeper_chat(chat)),
-                    path_component(message)
-                );
-                let (src, name) = beeper::attachment(&self.call("GET", &path, &[], None).await?)
-                    .ok_or_else(|| WaError::Refused("media".into()))?;
+                let path = format!("/v1/chats/{}/messages/{}", path_component(jid::beeper_chat(chat)), path_component(message));
+                let (src, name) =
+                    beeper::attachment(&self.call("GET", &path, &[], None).await?).ok_or_else(|| WaError::Refused("media".into()))?;
                 let (bytes, code, mime) = self.http.download_query("/v1/assets/serve", &[("url", src)]).await?;
                 if code == 401 || code == 403 {
                     return Err(WaError::Unauthorized);
@@ -994,13 +993,15 @@ mod tests {
         assert_eq!(beeper::accounts(br#"[{"status":"connecting","user":{"id":"x"}}]"#).unwrap().0, LinkState::Connecting);
         assert_eq!(beeper::accounts(b"[]"), None);
 
-        let chats = beeper::chats(br#"{"items":[
+        let chats = beeper::chats(
+            br#"{"items":[
             {"id":"!a:beeper.com","title":"Jan","type":"single","lastActivity":"2026-10-20T10:00:00.000Z"},
             {"id":"!b:beeper.com","title":"Familie","type":"group","lastActivity":"2026-10-20T09:00:00.000Z"},
             {"id":"!c:beeper.com","title":"Oud","type":"single","isArchived":true},
             {"id":"!d:beeper.com","title":"Jan (alles)","type":"single","merge":{}},
             {"id":"!e:beeper.com","title":"Jan op Telegram","type":"single","mergedIntoChatID":"!d:beeper.com"}
-        ],"hasMore":false}"#);
+        ],"hasMore":false}"#,
+        );
         assert_eq!(chats.iter().map(|c| c.jid.as_str()).collect::<Vec<_>>(), ["!a:beeper.com@beeper", "!b:beeper.com@beeper.group"]);
         assert_eq!(chats[0].name, "Jan");
         assert!(jid::is_group(&chats[1].jid));
@@ -1024,8 +1025,10 @@ mod tests {
         assert!(messages[1].from_me);
         assert_eq!(messages[1].media, Media::Document { name: Some("offerte.pdf".into()) });
         assert_eq!(messages[2].media, Media::Voice);
-        assert_eq!(beeper::attachment(br#"{"attachments":[{"srcURL":"mxc://beeper.com/x","fileName":"a.jpg"}]}"#),
-                   Some(("mxc://beeper.com/x".into(), Some("a.jpg".into()))));
+        assert_eq!(
+            beeper::attachment(br#"{"attachments":[{"srcURL":"mxc://beeper.com/x","fileName":"a.jpg"}]}"#),
+            Some(("mxc://beeper.com/x".into(), Some("a.jpg".into())))
+        );
     }
 
     #[tokio::test]
@@ -1054,6 +1057,10 @@ mod tests {
         let asked = server.requests();
         assert_eq!(asked[0].header("authorization"), Some("Bearer token"));
         assert!(asked.iter().any(|r| r.body.contains("\"text\":\"Hallo\"")));
-        assert!(asked.last().unwrap().path.starts_with("/v1/assets/serve?url=mxc%3A%2F%2Fbeeper.com%2Fx"), "{}", asked.last().unwrap().path);
+        assert!(
+            asked.last().unwrap().path.starts_with("/v1/assets/serve?url=mxc%3A%2F%2Fbeeper.com%2Fx"),
+            "{}",
+            asked.last().unwrap().path
+        );
     }
 }

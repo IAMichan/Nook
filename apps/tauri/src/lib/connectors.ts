@@ -154,9 +154,19 @@ export interface DeviceCode {
   interval: number;
 }
 
+/** GOWA and OpenWA link WhatsApp itself; Beeper Desktop brings every chat network it bridges. */
+export type WhatsAppGateway = "gowa" | "openwa" | "beeper";
+
+/** The address each gateway listens on by default. */
+export const gatewayAddress: Record<WhatsAppGateway, string> = {
+  gowa: "http://127.0.0.1:3000",
+  openwa: "http://127.0.0.1:2785",
+  beeper: "http://localhost:23373",
+};
+
 export interface WhatsAppSettings {
   enabled: boolean;
-  gateway: "gowa" | "openwa";
+  gateway: WhatsAppGateway;
   url: string;
   port: number;
   notify: boolean;

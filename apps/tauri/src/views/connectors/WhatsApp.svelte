@@ -1,10 +1,13 @@
 <script lang="ts">
-  // WhatsApp live: via een koppeling op deze computer (GOWA of OpenWA), die WhatsApp ziet als gekoppeld apparaat.
+  // WhatsApp live: via een koppeling op deze computer (GOWA of OpenWA), die WhatsApp ziet als gekoppeld apparaat, of
+  // via Beeper Desktop, dat ook Telegram, Signal, Instagram en andere netwerken meebrengt.
   // Nieuwe berichten komen hier binnen; antwoorden kan meteen, en Nook mag na jouw OK een bericht sturen.
   import {
     connectorsApi,
     connectorEvents,
+    gatewayAddress,
     type WhatsAppChatMode,
+    type WhatsAppGateway,
     type WhatsAppConversation,
     type WhatsAppSettings,
     type WhatsAppSettingsChat,
@@ -151,17 +154,23 @@
       {#if advanced}
         <div class="row">
           <span>Koppeling</span>
-          <select value={view.settings.gateway} onchange={(e) => save({ gateway: e.currentTarget.value as "gowa" | "openwa", url: "" })}>
+          <select value={view.settings.gateway} onchange={(e) => save({ gateway: e.currentTarget.value as WhatsAppGateway, url: "" })}>
             <option value="gowa">GOWA</option>
             <option value="openwa">OpenWA</option>
+            <option value="beeper">Beeper</option>
           </select>
         </div>
-        <div class="row"><span>Adres</span><input value={view.settings.url} placeholder={view.settings.gateway === "gowa" ? "http://127.0.0.1:3000" : "http://127.0.0.1:2785"} onchange={(e) => save({ url: e.currentTarget.value })} /></div>
+        {#if view.settings.gateway === "beeper"}
+          <p class="faint small">Beeper Desktop brengt WhatsApp, Telegram, Signal, Instagram en meer samen. Zet in Beeper Desktop › Instellingen › Developers de Desktop API aan en maak daar een token; Beeper moet draaien.</p>
+        {/if}
+        <div class="row"><span>Adres</span><input value={view.settings.url} placeholder={gatewayAddress[view.settings.gateway]} onchange={(e) => save({ url: e.currentTarget.value })} /></div>
         <div class="row">
-          <span>{view.settings.gateway === "gowa" ? "Gebruiker:wachtwoord (optioneel)" : "API-sleutel"}</span>
+          <span>{view.settings.gateway === "gowa" ? "Gebruiker:wachtwoord (optioneel)" : view.settings.gateway === "beeper" ? "Beeper-toegangstoken" : "API-sleutel"}</span>
           <span class="inline"><input type="password" placeholder={view.hasCredential ? "Bewaard in je kluis" : ""} bind:value={credential} /><button onclick={saveCredential} disabled={!credential.trim() && !view.hasCredential}>{credential.trim() ? "Bewaar" : "Weghalen"}</button></span>
         </div>
-        <div class="row"><span>Poort van Nooks webhook (127.0.0.1)</span><input type="number" min="1024" max="65535" value={view.settings.port} onchange={(e) => save({ port: Number(e.currentTarget.value) })} /></div>
+        {#if view.settings.gateway !== "beeper"}
+          <div class="row"><span>Poort van Nooks webhook (127.0.0.1)</span><input type="number" min="1024" max="65535" value={view.settings.port} onchange={(e) => save({ port: Number(e.currentTarget.value) })} /></div>
+        {/if}
         {#if view.desktop && view.settings.gateway === "gowa"}
           <label class="row"><span>GOWA automatisch starten met Nook<br /><span class="faint small">{view.gowaRunning ? "GOWA draait." : "Nook start GOWA alleen op deze computer, op 127.0.0.1, zonder media te downloaden."}</span></span><input type="checkbox" checked={view.settings.autoStart} onchange={(e) => save({ autoStart: e.currentTarget.checked })} /></label>
           {#if view.settings.autoStart}
@@ -190,7 +199,7 @@
     </div>
     {#if sent}<p class="faint small">{sent}</p>{/if}
   {/if}
-  <p class="faint small">WhatsApp heeft geen officiële koppeling voor een eigen account. Nook praat met een koppeling op je eigen computer (GOWA of OpenWA), die WhatsApp ziet als een gekoppeld apparaat, net als WhatsApp Web. Berichten blijven alleen in het geheugen en nooit in een logboek; een foto of bestand dat de kaart toont of dat je opent, staat even in Nooks eigen map en is weg zodra WhatsApp of Nook stopt. Nook stuurt alleen naar chats op je telefoon, hoogstens 6 per minuut, en alleen na jouw Enter of Uitvoeren. Dit is niet officieel: gebruik het met verstand.</p>
+  <p class="faint small">WhatsApp heeft geen officiële koppeling voor een eigen account. Nook praat met een koppeling op je eigen computer (GOWA of OpenWA), die WhatsApp ziet als een gekoppeld apparaat, net als WhatsApp Web, of met Beeper Desktop. Berichten blijven alleen in het geheugen en nooit in een logboek; een foto of bestand dat de kaart toont of dat je opent, staat even in Nooks eigen map en is weg zodra WhatsApp of Nook stopt. Nook stuurt alleen naar chats op je telefoon, hoogstens 6 per minuut, en alleen na jouw Enter of Uitvoeren. Dit is niet officieel: gebruik het met verstand.</p>
 {/if}
 
 <style>
