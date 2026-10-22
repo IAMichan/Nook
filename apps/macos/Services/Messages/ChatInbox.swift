@@ -45,8 +45,8 @@ enum MessagingApps {
         MessagingApp(id: "threema", name: "Threema", bundleIDs: ["ch.threema.threema-desktop", "ch.threema.iapp"], site: "threema.ch"),
         MessagingApp(id: "wire", name: "Wire", bundleIDs: ["com.wearezeta.zclient.mac"], site: "wire.com"),
         MessagingApp(id: "beeper", name: "Beeper", bundleIDs: ["com.automattic.beeper.desktop"], site: "beeper.com"),
-        // In the browser only; their notifications name the site.
-        MessagingApp(id: "linkedin", name: "LinkedIn", domains: ["linkedin.com"], site: "linkedin.com"),
+        // Mostly in the browser, where their notifications name the site; LinkedIn's iPad app also runs on a Mac.
+        MessagingApp(id: "linkedin", name: "LinkedIn", bundleIDs: ["com.linkedin.LinkedIn"], domains: ["linkedin.com"], site: "linkedin.com"),
         MessagingApp(id: "x", name: "X", domains: ["x.com", "twitter.com"], site: "x.com")
     ]
 
@@ -105,6 +105,26 @@ enum MessagingApps {
         }
         let title = fields.first { !$0.isEmpty }?.lowercased() ?? ""
         return apps.first { !$0.domains.isEmpty && $0.name.lowercased() == title }
+    }
+
+    /// A website kept in the Dock as an app of its own (Safari's "Add to Dock", a Chrome or Edge app): its
+    /// notifications come from the browser but do not name the site.
+    static func isWebApp(_ bundleID: String) -> Bool {
+        let id = bundleID.lowercased()
+        return isBrowser(bundleID) && (id.contains(".webapp.") || id.contains(".app."))
+    }
+
+    /// The chat app a web app in the Dock is, by the name it was given ("Instagram", "LinkedIn Messaging",
+    /// "Feed | LinkedIn"): an app whose name is one of its words.
+    static func app(webAppName name: String, in apps: [MessagingApp] = all) -> MessagingApp? {
+        let words = Set(name.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        guard !words.isEmpty else { return nil }
+        // Only apps with a website: a web app named "Google Messages" is not Apple's Messages.
+        return apps.first { app in
+            guard !app.domains.isEmpty else { return false }
+            let own = app.name.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+            return !own.isEmpty && (own.count == 1 ? words.contains(own[0]) : name.lowercased().contains(app.name.lowercased()))
+        }
     }
 
     /// The app a word names: its id or its name ("telegram", "LinkedIn"), any case.
@@ -342,6 +362,9 @@ struct BridgedChat: Equatable, Sendable {
     var avatar: String? = nil
     /// A group's other members by name (you left out), when the app lists them; nil when it does not.
     var members: [String]? = nil
+    /// The app lists this chat as one of yours (Teams): it shows in the Chats tab even without messages, or with only
+    /// old ones, as long as the app keeps listing it.
+    var listed: Bool = false
 }
 
 /// One chat in one app, with its newest messages.
@@ -361,6 +384,9 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var avatar: String? = nil
     /// A group's other members by name (you left out), as its app lists them; nil when it is not known.
     var members: [String]? = nil
+    /// When a bridge last listed this chat as one of yours (`BridgedChat.listed`): it stays while that is recent, even
+    /// without messages or with only old ones.
+    var listed: Date? = nil
 
     var last: Date { messages.last?.date ?? .distantPast }
     /// Someone else than the chat itself wrote in it, or more than one other person is in it: a group.
@@ -378,13 +404,17 @@ struct ChatNotice: Equatable, Sendable {
 
 enum ChatCapture {
     /// The chat message in a notification, or nil when it is from none of `apps` or holds no message.
-    static func notice(_ notification: CapturedNotification, apps: [MessagingApp] = MessagingApps.active) -> ChatNotice? {
+    /// `webAppName` gives the name of a web app in the Dock by its bundle id, which says which chat app it is.
+    static func notice(_ notification: CapturedNotification, apps: [MessagingApp] = MessagingApps.active,
+                       webAppName: (String) -> String? = { _ in nil }) -> ChatNotice? {
         let fromBrowser = MessagingApps.isBrowser(notification.bundleID)
         let app: MessagingApp?
         if let own = MessagingApps.app(bundleID: notification.bundleID, in: apps) {
             app = own
         } else if fromBrowser {
             app = MessagingApps.app(mentionedIn: [notification.subtitle, notification.title, notification.body], in: apps)
+                ?? (MessagingApps.isWebApp(notification.bundleID)
+                    ? webAppName(notification.bundleID).flatMap { MessagingApps.app(webAppName: $0, in: apps) } : nil)
         } else {
             app = nil
         }
@@ -463,6 +493,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     /// A chat that had nothing new for this long is dropped.
     static let maxAge: TimeInterval = 30 * 86_400
+    /// How often a listed chat's `listed` date is renewed: not on every read, so an unchanged chat is not saved again.
+    static let listedRenewal: TimeInterval = 86_400
 
     var threads: [String: InboxThread] = [:]
     /// The newest notification read, so none is read twice.
@@ -518,22 +550,26 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// unread, except on the first look at a chat, whose history was likely read in the app already. False when nothing
     /// changed.
     @discardableResult
-    mutating func merge(_ chat: BridgedChat) -> Bool {
+    mutating func merge(_ chat: BridgedChat, now: Date = Date()) -> Bool {
         let key = Self.key(app: chat.app, chat: chat.name)
         let known = threads[key]
         let gone = removed?[key]
         let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
-        // Without new messages a bridge can still bring the app's unread count (or the group's people) for a chat Nook shows.
-        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil
+        // Without new messages a bridge can still bring the app's unread count (or the group's people) for a chat Nook
+        // shows, or a chat its app lists that you did not remove.
+        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil || chat.listed
                                                      || (chat.avatar != nil && chat.avatar != known?.avatar)))
+                || (known == nil && gone == nil && chat.listed)
         else { return false }
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
         let before = thread
         let newestBefore = known?.last
         // A file a bridge fetched since it last brought this message, new votes on a poll, or your message's new ticks
         // (delivered, read, by whom): the chat shows them now. Ticks only move forward.
-        for message in messages where message.media != nil || message.poll != nil || message.receipt != nil || message.readers != nil {
+        for message in messages {
             guard let index = thread.messages.firstIndex(where: { $0.id == message.id }) else { continue }
+            // An edited message, or one first known from a chat list's preview, now read in full.
+            if !message.text.isEmpty, thread.messages[index].text != message.text { thread.messages[index].text = message.text }
             if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
             if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
             if let receipt = message.receipt {
@@ -561,6 +597,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         thread.name = chat.name
         if let avatar = chat.avatar { thread.avatar = avatar }
         if let members = chat.members { thread.members = members }
+        if chat.listed, thread.listed.map({ now.timeIntervalSince($0) >= Self.listedRenewal }) ?? true { thread.listed = now }
         guard thread != before else { return false }
         threads[key] = thread
         dropQuietest()
@@ -587,15 +624,21 @@ struct ChatInbox: Codable, Equatable, Sendable {
         removed?[id] = date
     }
 
-    /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`.
+    /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`. A chat its app still lists
+    /// stays either way.
     mutating func trim(now: Date = Date()) {
-        threads = threads.filter { now.timeIntervalSince($0.value.last) < Self.maxAge }
-        dropQuietest()
+        threads = threads.filter { now.timeIntervalSince($0.value.last) < Self.maxAge || Self.isListed($0.value, now: now) }
+        dropQuietest(now: now)
     }
 
-    private mutating func dropQuietest() {
+    /// A bridge listed this chat as one of yours lately.
+    static func isListed(_ thread: InboxThread, now: Date = Date()) -> Bool {
+        thread.listed.map { now.timeIntervalSince($0) < maxAge } ?? false
+    }
+
+    private mutating func dropQuietest(now: Date = Date()) {
         guard threads.count > Self.maxThreads else { return }
-        for thread in sorted.dropFirst(Self.maxThreads) { threads[thread.id] = nil }
+        for thread in sorted.filter({ !Self.isListed($0, now: now) }).dropFirst(Self.maxThreads) { threads[thread.id] = nil }
     }
 
     /// Newest first.

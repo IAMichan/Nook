@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Combine
 
 /// Collects the chats of every chat app on this Mac into `ChatInbox`: macOS keeps each notification it showed in a
@@ -172,7 +173,7 @@ final class ChatCaptureService: ObservableObject {
                     guard let record = NotificationRecord.integer(row["id"]) else { continue }
                     lastRecord = max(lastRecord ?? record, record)
                     guard let notification = NotificationRecord.notification(row),
-                          let notice = ChatCapture.notice(notification), !skips(notice) else { continue }
+                          let notice = ChatCapture.notice(notification, webAppName: webAppName), !skips(notice) else { continue }
                     // A bridged app's notification says its bridge has something new: read it now, not at its next turn.
                     if isBridged(notice.app) {
                         if !replaying { nudge(notice.app) }
@@ -217,6 +218,22 @@ final class ChatCaptureService: ObservableObject {
             status = .failed(error.localizedDescription)
             retryAt = Date().addingTimeInterval(10)
         }
+    }
+
+    /// The names of the web apps in the Dock by bundle id, looked up once each (nil when it is not on this Mac).
+    private var webAppNames: [String: String?] = [:]
+
+    /// The name a web app in the Dock was given ("Instagram"), from its app bundle.
+    private func webAppName(_ bundleID: String) -> String? {
+        if let known = webAppNames[bundleID] { return known }
+        let name = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map { url in
+            let bundle = Bundle(url: url)
+            return (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                ?? (bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
+                ?? url.deletingPathExtension().lastPathComponent
+        }
+        webAppNames.updateValue(name, forKey: bundleID)
+        return name
     }
 
     // MARK: Bridges
