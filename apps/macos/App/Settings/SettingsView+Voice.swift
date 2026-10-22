@@ -35,6 +35,8 @@ extension SettingsView {
                     SettingLabel(tr("agentNotice.style"), detail: tr("agentNotice.styleDetail"))
                 }
                 .disabled(settings.noticeDelivery == .system)
+                SettingToggle(tr("agentNotice.watching"), detail: tr("agentNotice.watchingDetail"),
+                              isOn: $settings.quietWhileWatching)
             } header: {
                 Text(tr("agentNotice.title"))
             } footer: {

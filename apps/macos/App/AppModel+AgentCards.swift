@@ -9,6 +9,12 @@ extension AppModel {
     // MARK: Agents
 
     func presentApproval(_ request: ApprovalRequest) {
+        // You are looking at the session: its own prompt shows there, no card or banner on top of it. The hub is still
+        // filing the request, so it is handed back on the next turn.
+        if isWatching(sessionKey: request.sessionKey) {
+            Task { @MainActor [weak self] in self?.hub.decide(request.id, .terminal) }
+            return
+        }
         CompanionNotifier.shared.approval(ApprovalCenter.make(request))
         presentApprovalCard(ApprovalCenter.make(request), context: "\(request.agentName) · \(request.project)", open: nil,
                             waiting: hub.approvals.count - 1)
@@ -90,7 +96,12 @@ extension AppModel {
         guard index < request.items.count else { return }
         let item = request.items[index]
         let token = "question-" + request.id
+        if index == 0, !inNotch, isWatching(sessionKey: request.sessionKey) {
+            Task { @MainActor [weak self] in self?.hub.answerQuestionInTerminal(request.id) }
+            return
+        }
         if index == 0, !inNotch {
+            CompanionNotifier.shared.question(request)
             logNotice(.waiting, title: item.question, context: "\(request.agentName) · \(request.project)",
                       target: .agent(request.sessionKey), key: token)
         }
@@ -166,6 +177,10 @@ extension AppModel {
     /// Agent finished, failed, or awaiting input: dedicated notification card with agent message.
     /// Displayed unless user is active in notch; auto-dismisses after a short timeout.
     func agentNeedsAttention(_ session: AgentSession) {
+        logNotice(Self.noticeKind(session.status), title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
+                  detail: session.summary, context: session.project, target: .agent(session.id))
+        // You are looking at the session: you see it finish there. The notice is only kept in the history.
+        guard !isWatching(sessionKey: session.id) else { return }
         CompanionNotifier.shared.attention(session)
         NookSound.play(session.status == .done ? .done : .attention)
         // The last agent finished: a small celebration.
@@ -174,8 +189,6 @@ extension AppModel {
             if others { NookPresence.shared.nod() } else { NookPresence.shared.celebrate() }
             buddyAgentFinished(last: !others)
         }
-        logNotice(Self.noticeKind(session.status), title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
-                  detail: session.summary, context: session.project, target: .agent(session.id))
         // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, no card pops up.
         guard !quiet.silent else { return }
         if settings.noticeDelivery == .system {
@@ -306,6 +319,15 @@ extension AppModel {
         case .bridge:
             return .agents
         }
+    }
+
+    /// You are looking at this agent session right now, and chose to hear nothing about it then (Settings › Notifications).
+    func isWatching(sessionKey: String) -> Bool {
+        guard settings.quietWhileWatching else { return false }
+        let sessions = hub.sessions.map {
+            SessionFocus.Session(id: $0.id, hostBundleID: $0.hostBundleID, project: $0.project)
+        }
+        return SessionFocus.isWatching(sessionKey, sessions: sessions, front: SessionFocus.current())
     }
 
     /// Activates the window running this agent.

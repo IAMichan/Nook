@@ -359,6 +359,11 @@ final class AppSettings: ObservableObject {
     @Published var noticeDelivery: NoticeDelivery {
         didSet { UserDefaults.standard.set(noticeDelivery.rawValue, forKey: "noticeDelivery") }
     }
+    /// Nothing about the agent session you are looking at: while its app is in front and you are at the Mac, no notice
+    /// when it is done, and its permission requests and questions stay in its own window (Settings › Notifications).
+    @Published var quietWhileWatching: Bool {
+        didSet { UserDefaults.standard.set(quietWhileWatching, forKey: "quietWhileWatching") }
+    }
     /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
@@ -603,6 +608,7 @@ final class AppSettings: ObservableObject {
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         agentNotice = AgentNoticeStyle(rawValue: defaults.string(forKey: "agentNotice") ?? "") ?? .detailed
         noticeDelivery = NoticeDelivery(rawValue: defaults.string(forKey: "noticeDelivery") ?? "") ?? .notch
+        quietWhileWatching = defaults.object(forKey: "quietWhileWatching") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")
         provider = AIProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .claude

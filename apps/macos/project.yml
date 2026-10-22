@@ -204,6 +204,7 @@ targets:
       - path: Services/FinishedSessions.swift
       - path: Services/SessionLiveness.swift
       - path: Services/NudgeFilter.swift
+      - path: Services/SessionFocus.swift
       - path: Services/NoticeLog.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift

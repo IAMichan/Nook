@@ -40,6 +40,7 @@ enum SettingsSearch {
         ("autocomplete.section.keys", .shortcuts),
         ("noticeDelivery.title", .notifications),
         ("agentNotice.style", .notifications),
+        ("agentNotice.watching", .notifications),
         ("settings.voice.agentSound", .notifications),
         ("settings.voice.customSounds", .notifications),
         ("quiet.title", .notifications),
