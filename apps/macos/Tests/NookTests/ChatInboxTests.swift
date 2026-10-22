@@ -243,6 +243,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.totalUnread, 3)
     }
 
+    func testFreshChatsAreTheOnesSomeoneJustWroteIn() {
+        var before = ChatInbox()
+        before.add(notice("Anna", "old", at: -3600), id: "1")
+        before.add(notice("Ben", "seen", at: 0), id: "2")
+        var after = before
+        after.add(notice("Anna", "new", at: 20), id: "3")
+        after.add(notice("Cas", "hello", at: 10), id: "4")
+        after.add(notice("Dirk", "long ago", at: -7200), id: "5")
+        let since = now.addingTimeInterval(-600)
+        XCTAssertEqual(ChatInbox.fresh(before: before, after: after, since: since),
+                       [ChatInbox.key(app: "telegram", chat: "Cas"), ChatInbox.key(app: "telegram", chat: "Anna")],
+                       "oldest first; Ben had nothing new and Dirk's message is too old to be news")
+        XCTAssertEqual(ChatInbox.fresh(before: after, after: after, since: since), [])
+    }
+
     func testTheSameNotificationTwiceIsOneMessage() {
         var inbox = ChatInbox()
         XCTAssertTrue(inbox.add(notice("Anna", "hi"), id: "1"))

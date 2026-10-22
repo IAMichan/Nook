@@ -497,11 +497,15 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Whether a suggestion may show now: the notch rests, nothing waits in line, Nook is not quiet and you are not
+    /// reaching for the notch.
+    var nudgeFits: Bool { state.isResting && pending.isEmpty && !silenced && !reachingForNotch }
+
     /// A suggestion from Nook next to the notch. Idle only: never over a card, panel, or agent prompt.
     /// Dismisses automatically after a timeout (saved to Today).
     @discardableResult
     func offerNudge(_ line: String, card: NookCard, for seconds: Double = 14) -> Bool {
-        guard state.isResting, pending.isEmpty, !silenced, !reachingForNotch else { return false }
+        guard nudgeFits else { return false }
         show(.nudge(line, card))
         doneTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))

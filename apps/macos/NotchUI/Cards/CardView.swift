@@ -211,7 +211,9 @@ struct CardView: View {
     private var chatField: some View {
         ChatReplyField(text: $reply, notice: $chatNotice, focus: $replyFocused,
                        placeholder: card.inputPrompt ?? tr("chat.followupPrompt"),
-                       sendSymbol: "arrow.up", sendLabel: tr("card.send"), readyNotice: tr("chats.draft.ready"),
+                       sendSymbol: card.replyCopiesTo == nil ? "arrow.up" : "doc.on.doc",
+                       sendLabel: card.replyCopiesTo.map { tr("chats.reply.copy", $0) } ?? tr("card.send"),
+                       readyNotice: card.replyCopiesTo.map { tr("chats.draft.readyCopy", $0) } ?? tr("chats.draft.ready"),
                        quote: replyingTo?.quote(contact: card.title),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
@@ -340,13 +342,13 @@ struct CardView: View {
             // A message card's chat can be answered: each message can be quoted in the field, or get an emoji.
             ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen,
                            onZoom: { bubble in withAnimation(NookTheme.reveal) { zoomed = bubble } },
-                           onReply: quoteAction, onReact: card.chatReply ? onReact : nil)
+                           onReply: quoteAction, onReact: card.chatReply && card.replyCopiesTo == nil ? onReact : nil)
         }
     }
 
     /// Quotes a message of a message card's chat in its field; nil for any other card.
     private var quoteAction: ((ChatBubble) -> Void)? {
-        guard card.chatReply else { return nil }
+        guard card.chatReply, card.replyCopiesTo == nil else { return nil }
         return { bubble in
             withAnimation(NookTheme.reveal) { replyingTo = bubble }
             replyFocused = true

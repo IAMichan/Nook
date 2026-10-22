@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 /// Settings › Dictation and voice: dictating anywhere, speech recognition, reading aloud and "Hey Nook".
-/// Settings › Notifications and sound: agent sounds, how Nook behaves in meetings and while you share your screen, and
-/// what the iPhone is told.
+/// Settings › Notifications and sound: how each kind of notice shows and which apps may notify (`NoticeRulesSettings`),
+/// sounds, how Nook behaves in meetings and while you share your screen, and what the iPhone is told.
 extension SettingsView {
     // MARK: Dictation and voice
 
@@ -27,21 +27,7 @@ extension SettingsView {
 
     var notificationsSection: some View {
         Group {
-            Section {
-                NoticeDeliveryPicker(settings: settings)
-                Picker(selection: $settings.agentNotice) {
-                    ForEach(AgentNoticeStyle.allCases) { Text(tr($0.titleKey)).tag($0) }
-                } label: {
-                    SettingLabel(tr("agentNotice.style"), detail: tr("agentNotice.styleDetail"))
-                }
-                .disabled(settings.noticeDelivery == .system)
-                SettingToggle(tr("agentNotice.watching"), detail: tr("agentNotice.watchingDetail"),
-                              isOn: $settings.quietWhileWatching)
-            } header: {
-                Text(tr("agentNotice.title"))
-            } footer: {
-                Text(tr("agentNotice.footer"))
-            }
+            NoticeRulesSettings(settings: settings, thinkAlong: app.thinkAlong)
             Section {
                 Toggle(tr("settings.voice.agentSound"), isOn: $settings.sounds)
                 LabeledContent(tr("settings.voice.customSounds")) {
@@ -91,31 +77,6 @@ extension SettingsView {
             Text(tr("quiet.title"))
         } footer: {
             Text(tr("quiet.footer"))
-        }
-    }
-}
-
-/// Settings › Notifications: notch cards or macOS notifications, with a way to System Settings when macOS blocks Nook's.
-private struct NoticeDeliveryPicker: View {
-    @ObservedObject var settings: AppSettings
-    @ObservedObject private var notifier = SystemNotifier.shared
-
-    var body: some View {
-        Picker(selection: $settings.noticeDelivery) {
-            ForEach(NoticeDelivery.allCases) { Text(tr($0.titleKey)).tag($0) }
-        } label: {
-            SettingLabel(tr("noticeDelivery.title"), detail: tr("noticeDelivery.detail"))
-        }
-        .onChange(of: settings.noticeDelivery) { _, delivery in
-            if delivery == .system { notifier.requestAccess() }
-        }
-        .onAppear {
-            if settings.noticeDelivery == .system { notifier.requestAccess() }
-        }
-        if notifier.blocked, settings.noticeDelivery == .system {
-            LabeledContent(tr("noticeDelivery.blocked")) {
-                Button(tr("noticeDelivery.openSettings")) { SystemNotifier.openSystemSettings() }
-            }
         }
     }
 }

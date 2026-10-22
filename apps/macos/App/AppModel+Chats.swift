@@ -8,7 +8,80 @@ extension AppModel {
     func startChats() {
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
         ChatCaptureService.shared.skips = { notice in notice.app == "whatsapp" && WhatsAppLink.shared.isConnected }
+        ChatCaptureService.shared.onFresh = { [weak self] ids in ids.forEach { self?.presentCapturedChat($0) } }
         ChatCaptureService.shared.start()
+    }
+
+    /// Someone wrote in a chat of another app (Telegram, Messages, Slack…): kept in the notice history, and shown the way
+    /// Settings › Notifications says for chats when that app is switched on there (by default only WhatsApp is, since
+    /// the other apps show their own macOS notifications already). Nook cannot write in these apps: the card opens the
+    /// chat in the Chats tab or in its own app.
+    func presentCapturedChat(_ id: String) {
+        let capture = ChatCaptureService.shared
+        guard let thread = capture.inbox.threads[id], let last = thread.messages.last(where: { !$0.isMine }) else { return }
+        let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
+        let line = (thread.isGroup && !last.sender.isEmpty ? last.sender + ": " : "") + last.summary
+        let token = Self.chatCardPrefix + id
+        logNotice(.info, title: thread.name, detail: line, context: appName, target: .chat(id), key: token,
+                  source: .chats, app: thread.app)
+        let open: () -> Void = { [weak self] in self?.showChats(ChatsFocus(chat: id)) }
+        deliverNotice(.chats, app: thread.app, id: token, title: thread.name, subtitle: appName, body: line,
+                      card: { [weak self] in self?.showCapturedChatCard(id) },
+                      strip: { [weak self] in
+                          self?.viewModel.notify(thread.name + ": " + line, button: tr("notices.openChat"), action: open)
+                      },
+                      open: open)
+    }
+
+    static let chatCardPrefix = "chatnotice-"
+
+    /// Return in the field of another app's chat card: Nook cannot write there, so the text goes on the clipboard and
+    /// the app opens to paste it, as in the Chats tab.
+    func copyCardReply(_ text: String, card: NookCard) {
+        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil,
+              let thread = ChatCaptureService.shared.inbox.threads[String(card.id.dropFirst(Self.chatCardPrefix.count))]
+        else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(reply, forType: .string)
+        viewModel.dismissCard(id: card.id)
+        openChatApp(thread.app)
+        viewModel.finish(tr("chats.reply.copied", card.replyCopiesTo ?? thread.app))
+    }
+
+    /// The card of a chat from another app: its newest messages, Open (in the Chats tab), the app itself, and the same
+    /// answer field as the Chats tab ("@nook …" lets Nook write it; what you send is copied for the app).
+    private func showCapturedChatCard(_ id: String) {
+        guard let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        let token = Self.chatCardPrefix + id
+        let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
+        let time = DateFormatter()
+        time.dateFormat = "HH:mm"
+        let bubbles = thread.messages.suffix(8).map { ChatBubble($0, time: time.string(from: $0.date)) }
+        viewModel.register("\(token)#open") { [weak self] in self?.showChats(ChatsFocus(chat: id)) }
+        viewModel.register("\(token)#app") { [weak self] in self?.openChatApp(thread.app) }
+        let unread = thread.unread > 1 ? " · \(tr("whatsapp.card.unread", thread.unread))" : ""
+        let card = NookCard(
+            id: token,
+            mood: .remind,
+            context: appName + unread,
+            appIcon: thread.app,
+            title: thread.name,
+            detail: .chat(bubbles),
+            primary: CardAction(label: tr("notices.openChat"), outcome: .callback("\(token)#open", "")),
+            secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
+            contentHeight: Self.whatsAppCardHeight(bubbles),
+            input: true,
+            inputPrompt: tr("chats.reply.copyPrompt", thread.name),
+            // A new message never takes the keyboard from what you are doing.
+            focusesInput: false,
+            chatReply: true,
+            replyCopiesTo: appName,
+            extra: [CardAction(label: tr("notices.openApp", appName), outcome: .callback("\(token)#app", ""),
+                               symbol: "arrow.up.forward.app")],
+            escape: CardAction(label: "", outcome: .dismiss)
+        )
+        if viewModel.hasCard(id: token) { viewModel.updateCard(card) } else { viewModel.present(card) }
     }
 
     /// Opens a chat app: beside the chat in Nook when Nook can show it there (the Mac app, else its web version), else
@@ -119,7 +192,7 @@ extension AppModel {
     /// "@nook …" in a message card's field: the message Nook writes from the chat the card shows, as the Chats tab does.
     func draftCardReply(_ instruction: String, card: NookCard) async throws -> String {
         guard case .chat(let bubbles) = card.detail else { throw NookError(tr("chats.draft.failed")) }
-        let app = card.id.hasPrefix(Self.whatsAppCardPrefix) ? "WhatsApp" : card.context
+        let app = card.id.hasPrefix(Self.whatsAppCardPrefix) ? "WhatsApp" : card.replyCopiesTo ?? card.context
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction)
     }

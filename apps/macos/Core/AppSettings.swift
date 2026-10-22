@@ -349,16 +349,14 @@ final class AppSettings: ObservableObject {
     @Published var panelLarge: Bool {
         didSet { UserDefaults.standard.set(panelLarge, forKey: "panelLarge") }
     }
-    /// How large the notch notification is when an agent (terminal or Workspace) finishes, fails or waits on you
-    /// (Settings › Notifications).
-    @Published var agentNotice: AgentNoticeStyle {
-        didSet { UserDefaults.standard.set(agentNotice.rawValue, forKey: "agentNotice") }
+    /// How each kind of notice shows (a card, one line, a macOS notification, or only in the list) and which agents and
+    /// chat apps may notify at all (Settings › Notifications).
+    @Published var noticeRules: NoticeRules {
+        didSet {
+            if let data = try? JSONEncoder().encode(noticeRules) { UserDefaults.standard.set(data, forKey: Self.noticeRulesKey) }
+        }
     }
-    /// Where agent notices and permission requests appear: on the notch, or as macOS notifications with Allow and Deny
-    /// on the banner (Settings › Notifications).
-    @Published var noticeDelivery: NoticeDelivery {
-        didSet { UserDefaults.standard.set(noticeDelivery.rawValue, forKey: "noticeDelivery") }
-    }
+    static let noticeRulesKey = "noticeRules.v1"
     /// Nothing about the agent session you are looking at: while its app is in front and you are at the Mac, no notice
     /// when it is done, and its permission requests and questions stay in its own window (Settings › Notifications).
     @Published var quietWhileWatching: Bool {
@@ -606,8 +604,12 @@ final class AppSettings: ObservableObject {
         panelLarge = defaults.bool(forKey: "panelLarge")
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
-        agentNotice = AgentNoticeStyle(rawValue: defaults.string(forKey: "agentNotice") ?? "") ?? .detailed
-        noticeDelivery = NoticeDelivery(rawValue: defaults.string(forKey: "noticeDelivery") ?? "") ?? .notch
+        // Before these rules: agent notices had their own size and place, and WhatsApp its own switch.
+        noticeRules = defaults.data(forKey: Self.noticeRulesKey).flatMap { try? JSONDecoder().decode(NoticeRules.self, from: $0) }
+            ?? NoticeRules.migrated(agentNotice: defaults.string(forKey: "agentNotice"),
+                                    noticeDelivery: defaults.string(forKey: "noticeDelivery"),
+                                    whatsAppNotify: defaults.object(forKey: "whatsappNotify") as? Bool,
+                                    thinkAlongMuted: Array((defaults.dictionary(forKey: "thinkAlongMuted") ?? [:]).keys))
         quietWhileWatching = defaults.object(forKey: "quietWhileWatching") as? Bool ?? true
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")
@@ -655,28 +657,4 @@ final class AppSettings: ObservableObject {
         guard let key = cachedKey, key.count > 12 else { return nil }
         return "\(key.prefix(7))…\(key.suffix(4))"
     }
-}
-
-/// How large Nook's notification is when an agent finishes, fails or waits on you.
-enum AgentNoticeStyle: String, CaseIterable, Identifiable {
-    /// A card with the agent's own summary, project and changed lines, and buttons to view it, open its terminal or OK.
-    case detailed
-    /// One slim line under the notch with the agent and project, and buttons to view it or OK.
-    case compact
-
-    var id: String { rawValue }
-
-    var titleKey: String { "agentNotice.style.\(rawValue)" }
-}
-
-/// Where Nook shows what agents need from you: a card on the notch, or a macOS notification.
-enum NoticeDelivery: String, CaseIterable, Identifiable {
-    /// Cards and strips on the notch (the default).
-    case notch
-    /// macOS notifications: a permission request carries Allow and Deny on its banner, a click opens it in the notch.
-    case system
-
-    var id: String { rawValue }
-
-    var titleKey: String { "noticeDelivery.\(rawValue)" }
 }

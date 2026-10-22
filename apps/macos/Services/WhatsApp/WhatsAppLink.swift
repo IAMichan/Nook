@@ -38,11 +38,6 @@ enum WhatsAppSettings {
         get { let value = defaults.integer(forKey: "whatsappPort"); return (1024...65535).contains(value) ? value : defaultPort }
         set { defaults.set(newValue, forKey: "whatsappPort") }
     }
-    /// A new message shows in the notch with a field to answer it.
-    static var notify: Bool {
-        get { defaults.object(forKey: "whatsappNotify") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "whatsappNotify") }
-    }
     /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
     static var markReadOnReply: Bool {
         get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }

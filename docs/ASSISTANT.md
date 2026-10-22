@@ -99,6 +99,16 @@ Everything Nook does by himself—reading the screen on a timer (`ScreenContext`
 
 Work you ask for (a question, Screen Peek, dictation) never waits for the plan.
 
+### Notifications: One Rule for Every Source
+
+Every notice Nook gives by himself goes through one decision, so a notice from an agent, a chat app, Nook himself or Think Along behaves the same way:
+
+- **`NoticeRules`** (`Services/NoticeRules.swift`, Foundation-only, `NoticeRulesTests`) holds, per source (**Agents**, **Chat messages**, **Nook**, **Think Along**), how its notices show: a **card**, **one line** under the notch, a **macOS notification**, or **only in the list** under the bell. It also holds one switch per app: per agent (Claude Code, Codex, …), per chat app (WhatsApp, Telegram, Messages, Slack, …) and per app Think Along was muted in. `decide` weighs the source, the app, quiet mode (a meeting or screen share) and whether you are already looking at it.
+- **`AppModel.deliverNotice`** (`App/AppModel+Notices.swift`) is the single place that shows a notice: it plays the sound only when something shows, and falls back to the card when macOS does not let Nook notify. `logNotice` (called first) keeps the notice under the bell, also when it is held back; an app switched off is silent there too, while its own tab (Agents, Chats) still has it.
+- A permission request or question from an agent is urgent: it always reaches you, also with agents switched off or in a meeting, as a macOS notification when that is the choice for agents, else as a card.
+- Chat apps other than WhatsApp are off by default, since they show their own macOS notifications (which is where Nook reads them). Switched on, a new message gets a card with the same `ChatReplyField` as the Chats tab, so "@nook …" lets Nook write the answer; for apps Nook cannot write in, Return copies it and opens the app.
+- **Settings › Notifications** shows all of it on one page; the chat can change each source's style too (`notices_agents`, `notices_chats`, `notices_nook`, `notices_suggestions` in `SettingsCatalog`). Earlier choices (agent notice size and place, WhatsApp's own switch, apps Think Along was muted in) carry over once (`NoticeRules.migrated`).
+
 ### Brain Selection
 
 `BrainSelection` defines where Nook thinks: built-in (MLX), Ollama, LM Studio, or an external cloud provider. Fresh installs default to local on-device inference. Nook never silently falls back to another provider—if your selected model is unavailable, Nook displays a clear error explaining how to resolve it.
