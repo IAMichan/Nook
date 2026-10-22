@@ -773,7 +773,7 @@ private struct ChatsRow: View {
             row.accessibilityAction(named: Text(tr(entry.readable ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let onToggleRead {
-                ToolbarIconButton(entry.readable ? "checkmark.circle" : "circle.badge",
+                ToolbarIconButton(entry.readable ? "envelope.open" : "envelope.badge",
                                   tr(entry.readable ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
                     .pointerStyle(.link)
                     .padding(.top, NookTheme.Spacing.sm)
