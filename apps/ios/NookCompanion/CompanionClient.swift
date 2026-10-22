@@ -71,6 +71,7 @@ final class CompanionClient: ObservableObject {
                 sessions = response.sessions ?? []
                 features = Set(response.features ?? [])
                 featuresKnown = true
+                Notifications.setBadge(sessions.needingYou)
                 phase = .connected
                 startPolling()
                 await Notifications.requestAndRegister()
@@ -103,9 +104,13 @@ final class CompanionClient: ObservableObject {
         poll?.cancel()
         guard link != nil else { return }
         poll = Task { [weak self] in
+            var delay: UInt64 = 5
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                // While the Mac cannot be reached, wait longer each time (10, 20, 40, then 60 s) instead of trying again and
+                // again, which keeps the radio awake; pulling to refresh still tries at once.
+                if case .offline? = self?.phase { delay = min(delay * 2, 60) } else { delay = 5 }
+                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
             }
         }
     }
@@ -237,7 +242,7 @@ final class CompanionClient: ObservableObject {
             let response = try await request(req, using: link)
             if response.ok {
                 apply(response, to: req)
-                phase = .connected
+                if phase != .connected { phase = .connected }
                 if let message = response.message {
                     switch message {
                     case "queued": notice = String(localized: "Queued: the session is still busy.")
@@ -269,17 +274,29 @@ final class CompanionClient: ObservableObject {
         return nil
     }
 
+    /// Takes in what an answer carries. Every poll answers, mostly with the same data: a value is only assigned when it
+    /// changed, so the screens are not redrawn each time.
     private func apply(_ response: CompanionResponse, to req: CompanionRequest) {
-        if let list = response.sessions { sessions = list; Notifications.setBadge(list.needingYou) }
-        if let name = response.macName { macName = name }
-        if let features = response.features { self.features = Set(features) }
+        // The badge is set on (re)connecting too, so one left from before is corrected.
+        if let list = response.sessions, list != sessions || phase != .connected {
+            if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
+            if list != sessions { sessions = list }
+        }
+        if let name = response.macName, name != macName { macName = name }
+        if let features = response.features, Set(features) != self.features { self.features = Set(features) }
         if req.op == .list || req.op == .hello { featuresKnown = true }
-        if let options = response.launch { launchOptions = options }
-        if let timeline = response.timeline, let session = req.session { timelines[session] = timeline }
-        if let list = response.conversations { conversations = list }
-        if let lines = response.messages, let conversation = response.created ?? req.conversation { chatLines[conversation] = lines }
-        if let home = response.home { self.home = home; homeRead = Date() }
-        if let usage = response.usage { self.usage = usage }
+        if let options = response.launch, options != launchOptions { launchOptions = options }
+        if let timeline = response.timeline, let session = req.session, timelines[session] != timeline { timelines[session] = timeline }
+        if let list = response.conversations, list != conversations { conversations = list }
+        if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
+            chatLines[conversation] = lines
+        }
+        // The player's position runs on from when it was read, so that time is kept even when nothing else changed.
+        if let home = response.home {
+            if home != self.home { self.home = home }
+            homeRead = Date()
+        }
+        if let usage = response.usage, usage != self.usage { self.usage = usage }
     }
 
     // MARK: Transport

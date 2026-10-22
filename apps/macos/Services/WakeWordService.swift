@@ -54,7 +54,11 @@ final class WakeWordService {
         guard isRunning else { return }
         isRunning = false
         paused = false
-        observers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0); NotificationCenter.default.removeObserver($0) }
+        observers.forEach {
+            NSWorkspace.shared.notificationCenter.removeObserver($0)
+            NotificationCenter.default.removeObserver($0)
+            DistributedNotificationCenter.default().removeObserver($0)
+        }
         observers = []
         // Wait for the microphone to be released: voice input may start right after.
         teardown(wait: true)

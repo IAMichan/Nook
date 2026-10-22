@@ -218,7 +218,7 @@ extension SettingsView {
     }
 
     func localSources(_ capabilityLine: (String) -> String) -> [ContextSource] {
-        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "bear", "things"]
+        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "chats", "bear", "things"]
         // Apps that are not on this Mac are not worth a row.
         return ids.compactMap { app.connectors.source(id: $0) }
             .filter { ($0 as? AppDatabaseConnector)?.isInstalled ?? true }
@@ -239,7 +239,8 @@ extension SettingsView {
     }
 
     func localRow(_ source: ContextSource, _ capabilityLine: @escaping (String) -> String) -> some View {
-        let fallback = source.id != "clipboard"
+        // The clipboard and the chats from every notification are yours to turn on.
+        let fallback = source.id != "clipboard" && source.id != ChatInboxConnector.sourceID
         return Toggle(isOn: Binding(
             get: { let _ = refreshTick; return ConnectorToggle.isOn(source.id, default: fallback) },
             set: { on in

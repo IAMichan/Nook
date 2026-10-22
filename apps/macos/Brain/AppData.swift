@@ -49,10 +49,8 @@ enum AppData {
     }
 
     static func stamp(_ date: Date, time: Bool = true) -> String {
-        let format = DateFormatter()
-        format.locale = Locale(identifier: "en_US_POSIX")
-        format.dateFormat = time ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd"
-        return format.string(from: date)
+        // Runs once per message of a thread or search result: a cached formatter, not a new one each time.
+        NookDates.formatter(time ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd", locale: "en_US_POSIX").string(from: date)
     }
 
     // MARK: Messages' attributed text

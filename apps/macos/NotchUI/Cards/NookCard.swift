@@ -54,11 +54,13 @@ struct Fact: Equatable, Identifiable {
     var value: String
 }
 
-/// A message in a chat card (WhatsApp): incoming on the left, your own on the right.
+/// A message in a chat card (WhatsApp) or the Chats tab: incoming on the left, your own on the right.
 struct ChatBubble: Equatable, Identifiable {
     var id: String
     var text: String
     var time: String
+    /// When it was sent, for the line where a new day starts; nil when it is not known.
+    var date: Date? = nil
     /// In a group: who wrote it. Empty in a private chat, where the card's title already says who.
     var sender: String = ""
     var fromMe: Bool = false
@@ -125,6 +127,20 @@ enum CardDetail: Equatable {
     case chat([ChatBubble])
 }
 
+/// A notification's state in a few words ("Done", "Needs approval"), as a tinted pill at the end of the card's header,
+/// so a glance tells whether the card needs you. The tone gives it its mark and color: mint done, amber waits on you,
+/// coral went wrong.
+struct CardStatus: Equatable {
+    var text: String
+    var tone: DoneTone
+}
+
+/// The lines an agent changed, shown as "+12 −3" in the card's header.
+struct LineChanges: Equatable {
+    var added: Int
+    var removed: Int
+}
+
 struct NookCard: Equatable, Identifiable {
     var id: String
     var mood: NookMood
@@ -162,6 +178,10 @@ struct NookCard: Equatable, Identifiable {
     var notice: String? = nil
     /// Text put back into the field, e.g. a reply that could not be sent, so nothing typed is lost.
     var draft: String? = nil
+    /// The card's state as a pill at the end of the header; nil shows none (an answer, a suggestion).
+    var status: CardStatus? = nil
+    /// What an agent changed, next to the status. The context line keeps only who and where.
+    var changes: LineChanges? = nil
 }
 
 extension NookCard {

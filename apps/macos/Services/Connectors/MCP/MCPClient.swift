@@ -143,7 +143,7 @@ final class MCPClient: @unchecked Sendable {
     private func call(_ method: String, _ params: [String: Any] = [:]) async throws -> [String: Any] {
         let response = try await transport.request(["jsonrpc": "2.0", "id": newID(), "method": method, "params": params])
         if let error = response["error"] as? [String: Any] {
-            throw NookError("MCP: \((error["message"] as? String) ?? "the server returned an error").")
+            throw MCPServerError(message: "MCP: \((error["message"] as? String) ?? "the server returned an error").")
         }
         return (response["result"] as? [String: Any]) ?? [:]
     }
@@ -175,7 +175,7 @@ final class MCPClient: @unchecked Sendable {
         let result = try await call("tools/call", ["name": name, "arguments": arguments])
         let text = Self.text(of: result)
         if (result["isError"] as? Bool) == true {
-            throw NookError(text.isEmpty ? "The tool reported an error." : String(text.prefix(500)))
+            throw MCPServerError(message: text.isEmpty ? "The tool reported an error." : String(text.prefix(500)))
         }
         return text
     }
@@ -409,4 +409,11 @@ final class MCPHTTPTransport: MCPTransport, @unchecked Sendable {
     }
 
     func close() {}
+}
+
+/// An error the MCP server answered with (a JSON-RPC error, or a tool that reported one): the server is running, so
+/// starting it again and repeating the call would not help, and would run an action twice.
+struct MCPServerError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

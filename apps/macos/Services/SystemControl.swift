@@ -56,15 +56,25 @@ enum SystemControl {
 
     /// Compiled scripts by source, used only on `scriptQueue`. Connectors run the same scripts every refresh (the inbox,
     /// the browser's tabs, the notes), and compiling one costs about as much as running it. Scripts that carry a query
-    /// differ each time, so the cache starts over once it is full instead of growing.
+    /// differ each time, so once the cache is full the least recently used one goes: a burst of searches no longer
+    /// throws out the refresh scripts every connector runs again a minute later.
     private nonisolated(unsafe) static var compiledScripts: [String: NSAppleScript] = [:]
+    /// Sources from least to most recently used.
+    private nonisolated(unsafe) static var compiledScriptOrder: [String] = []
     private nonisolated static let compiledScriptLimit = 64
 
     private nonisolated static func compiledScript(_ source: String) -> NSAppleScript? {
-        if let known = compiledScripts[source] { return known }
+        if let known = compiledScripts[source] {
+            if let index = compiledScriptOrder.lastIndex(of: source) { compiledScriptOrder.remove(at: index) }
+            compiledScriptOrder.append(source)
+            return known
+        }
         guard let script = NSAppleScript(source: source) else { return nil }
-        if compiledScripts.count >= compiledScriptLimit { compiledScripts.removeAll() }
+        while compiledScripts.count >= compiledScriptLimit, !compiledScriptOrder.isEmpty {
+            compiledScripts[compiledScriptOrder.removeFirst()] = nil
+        }
         compiledScripts[source] = script
+        compiledScriptOrder.append(source)
         return script
     }
 

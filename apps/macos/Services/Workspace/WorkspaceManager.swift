@@ -206,6 +206,9 @@ final class WorkspaceManager: ObservableObject {
     /// disk when anything asks for them again (`evictedTimelines`).
     private var timelineUse: [UUID: Date] = [:]
     private var evictedTimelines: Set<UUID> = []
+    /// The last answer of each released timeline, so a summary (the phone's session list) can show it without reading
+    /// the whole timeline back from disk and keeping it in memory again.
+    private var evictedAnswers: [UUID: String] = [:]
     private static let timelineLimit = 16
     private static let timelineIdleSeconds: TimeInterval = 300
     /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
@@ -320,6 +323,7 @@ final class WorkspaceManager: ObservableObject {
         guard evictedTimelines.contains(id) else { return [] }
         // Released while unused: back from disk as if it had never left.
         evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
         quietEvents = true
         events[id] = store.loadEvents(id)
         quietEvents = false
@@ -327,11 +331,19 @@ final class WorkspaceManager: ObservableObject {
         return events[id] ?? []
     }
 
+    /// The text of the session's last answer, from memory only: a released timeline is not read back for it, and asking
+    /// does not count as using the timeline (so polling summaries do not keep every timeline in memory).
+    func lastAnswer(_ id: UUID) -> String {
+        if let loaded = events[id] { return loaded.last(where: { $0.kind == .assistant })?.text ?? "" }
+        return evictedAnswers[id] ?? ""
+    }
+
     /// Loads timeline from disk if not yet in memory.
     func loadTimeline(_ id: UUID) {
         timelineUse[id] = Date()
         guard events[id] == nil else { return }
         evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
         events[id] = store.loadEvents(id)
         evictTimelines()
     }
@@ -348,6 +360,8 @@ final class WorkspaceManager: ObservableObject {
         }
         .sorted { (timelineUse[$0] ?? .distantPast) < (timelineUse[$1] ?? .distantPast) }
         for id in idle.prefix(events.count - Self.timelineLimit) {
+            // Only the start: a summary shows a short excerpt of it, and a long answer need not stay in memory whole.
+            evictedAnswers[id] = events[id]?.last(where: { $0.kind == .assistant }).map { String($0.text.prefix(2_000)) }
             events[id] = nil
             timelineUse[id] = nil
             evictedTimelines.insert(id)
@@ -1551,6 +1565,12 @@ final class WorkspaceManager: ObservableObject {
         events[id] = nil
         timelineUse[id] = nil
         evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
+        // Per-session state that would otherwise stay for every session ever made, until Nook quits.
+        gitRefreshes.removeValue(forKey: id)?.cancel()
+        codexTotals[id] = nil
+        codexSubagents[id] = nil
+        openPullRequests[id] = nil
         approvals[id] = nil
         queued[id] = nil
         questions[id] = nil
@@ -1852,11 +1872,18 @@ final class WorkspaceManager: ObservableObject {
         timelineUse[id] = Date()
         if events[id] == nil {
             evictedTimelines.remove(id)
+            evictedAnswers[id] = nil
             events[id] = store.loadEvents(id)
         }
         events[id]?.append(event)
         if event.kind != .system || event.tool != "launch" {
-            update(id, save: false) { $0.updatedAt = Date() }
+            // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
+            // agent appends many events a second, so in between turn boundaries the time moves on at most every 2 s.
+            let boundary = event.kind == .user || event.kind == .result || event.kind == .error || event.kind == .approval
+            let now = Date()
+            if boundary || runs.first(where: { $0.id == id }).map({ now.timeIntervalSince($0.updatedAt) >= 2 }) ?? false {
+                update(id, save: false) { $0.updatedAt = now }
+            }
         }
         scheduleEventSave(id)
     }

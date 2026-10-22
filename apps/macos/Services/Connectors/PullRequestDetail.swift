@@ -336,9 +336,6 @@ enum PullRequestDetailParser {
 
     static func date(_ value: Any?) -> Date? {
         guard let text = value as? String else { return nil }
-        let formatter = ISO8601DateFormatter()
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: text)
+        return NookDates.isoPlain.date(from: text) ?? NookDates.isoFractional.date(from: text)
     }
 }

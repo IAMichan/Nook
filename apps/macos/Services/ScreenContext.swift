@@ -226,10 +226,11 @@ final class ScreenContext: ObservableObject {
         let backgroundSide = periodic ? plan.backgroundCaptureMaxSide : 2400
         let concurrency = periodic ? plan.ocrConcurrency : 3
 
+        let excluded = ScreenReader.excludedBundles
         let candidates = content.windows.filter { window in
             guard window.windowLayer == 0, window.isOnScreen, window.frame.width > 200, window.frame.height > 100,
                   let owner = window.owningApplication else { return false }
-            return !ScreenReader.excludedBundles.contains(owner.bundleIdentifier)
+            return !excluded.contains(owner.bundleIdentifier)
         }
         // Frontmost app first, followed by largest windows. Even partially obscured windows are included:
         // ScreenCaptureKit captures them unobscured.
