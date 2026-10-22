@@ -101,6 +101,8 @@ enum ClaudeCodeBrain {
                 ? "You may use your built-in tool WebSearch for web queries. To read a page, use Nook's read_webpage tool."
                 : "Do not use the web for this request.",
             "These are ALL your tools: Claude Code's own tools, tool search and MCP servers are not available here. When a source's tools are not listed, call use_source; never tell the user a tool is missing before checking this list.",
+            // Called through tool use instead, Claude Code answers "No such tool available" and the brain gives up.
+            "Nook's tools are not function calls: never invoke them through tool use, always write the JSON line in your reply text.",
             "Tools:"
         ]
         for tool in tools {

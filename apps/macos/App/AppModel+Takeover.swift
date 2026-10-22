@@ -37,8 +37,8 @@ final class TakeoverState: ObservableObject {
 
 /// Taking over a task (`TakeoverPolicy`): "finish this for me", "order more coffee filters", "unsubscribe me from this".
 ///
-/// - Start: a double tap (or one tap) of the Double Tap key opens a field in the notch (typing the task is the go-ahead), or the brain
-///   proposes `take_over` in the chat and the user approves it like any plan.
+/// - Start: the brain proposes `take_over` in the chat and the user approves it like any plan. The Double Tap key's field in
+///   the notch is the same chat (`askFromQuickField`), so a task typed there is proposed the same way.
 /// - Work: the chosen brain reads windows with `read_ui`, acts with `control_ui`, opens pages and apps, and reads again,
 ///   on its own. Nook's own violet cursor shows where it acts; most actions happen in the background (`UIDriver`).
 ///   The notch shows the current step in one slim line, with Stop.
@@ -125,49 +125,19 @@ extension AppModel {
         viewModel.show(.card(card))
     }
 
-    /// The task typed in the notch: it runs right away (typing it was the go-ahead) and is followed in a chat of its own.
-    func startTakeover(_ text: String) {
-        let task = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !task.isEmpty else { return }
+    /// What was typed in the notch's quick field: a new conversation in the Nook chat, through the same path as a message
+    /// typed there (`handleUserText`), so the quick field can do everything the chat can.
+    func askFromQuickField(_ text: String) {
+        let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !request.isEmpty else { return }
         viewModel.show(.idle)
         // "Vul het formulier in": Double Tap fills the form in front, once the app you were in has the keyboard back.
-        if DoubleTapLogic.asksToFill(task) {
-            DoubleTap.shared.fill(request: task, after: 0.3)
+        if DoubleTapLogic.asksToFill(request) {
+            DoubleTap.shared.fill(request: request, after: 0.3)
             return
         }
-        let conversation = chat.startNew()
-        chat.rename(conversation, to: Conversation.title(from: task))
-        chat.append(ChatMessage(role: .user, text: task), to: conversation)
-        var reply = ChatMessage(role: .nook, text: "")
-        reply.streaming = true
-        reply.status = tr("takeover.starting")
-        chat.append(reply, to: conversation)
-        let id = reply.id
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let summary = try await self.takeOver(task, messageID: id)
-                self.chat.update(id) { message in
-                    message.text = summary
-                    message.streaming = false
-                    message.status = ""
-                }
-                self.viewModel.finish(Self.firstLine(summary), button: tr("takeover.openChat"), acknowledge: true) { [weak self] in
-                    self?.showChat()
-                }
-            } catch {
-                self.chat.update(id) { message in
-                    message.text = error.localizedDescription
-                    message.isError = true
-                    message.streaming = false
-                    message.status = ""
-                }
-                self.viewModel.finish(Self.firstLine(error.localizedDescription), button: tr("takeover.openChat"), tone: .failed,
-                                      acknowledge: true) { [weak self] in
-                    self?.showChat()
-                }
-            }
-        }
+        chat.startNew()
+        handleUserText(request)
     }
 
     // MARK: Running
