@@ -14,9 +14,10 @@ enum AgentsPage {
     static let tools: Set<String> = [terminals, browser, worktrees, simulator]
 }
 
-/// Settings, pull requests and usage as quiet icons, and one refresh button at the far end. It shows on every tab: on
-/// Agents under the session list, taking the list's width so the button follows the line beside the list when you drag
-/// it; on the other tabs along the bottom of the panel, where pull requests and usage open their page on Agents.
+/// Settings, pull requests and usage as quiet icons, and one refresh button at the far end. It shows on every tab, under
+/// the tab's list (the sessions on Agents, the Nooks on the chat, the chats on Chats), taking the list's width so the
+/// button follows the line beside the list when you drag it. A tab without a list shows it at the bottom as wide as the
+/// list would be. On the other tabs, pull requests and usage open their page on Agents.
 /// Refresh reads the session lists again and checks main for an update; while there is one (or it installs), the
 /// update button takes its place, so there is never a second round arrow beside it.
 struct PanelFooter: View {
