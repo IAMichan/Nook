@@ -38,7 +38,7 @@ struct ChatsFocus: Equatable {
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
-/// "All" and "Unread" on top, a filter per app with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
+/// "All" and "Unread" on top, one row of app filters (icons, the rest behind "+N") with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -270,6 +270,40 @@ struct ChatsTab: View {
     /// Which apps are installed, looked up once per launch.
     @MainActor private static var installed: [String: Bool] = [:]
 
+    /// One calm row of sources however many there are: "All", the apps with chats as their icons (the one filtered on
+    /// with its name too) as many as fit, and the others behind "+N", unread ones first.
+    private var sourceFilters: some View {
+        let ranked = apps
+        let unread = unreadByApp
+        let withChats = Set(all.map(\.app))
+        return ViewThatFits(in: .horizontal) {
+            sourceRow(ranked, shown: 6, unread: unread, withChats: withChats)
+            sourceRow(ranked, shown: 5, unread: unread, withChats: withChats)
+            sourceRow(ranked, shown: 4, unread: unread, withChats: withChats)
+            sourceRow(ranked, shown: 3, unread: unread, withChats: withChats)
+            sourceRow(ranked, shown: 2, unread: unread, withChats: withChats)
+            sourceRow(ranked, shown: 1, unread: unread, withChats: withChats)
+        }
+    }
+
+    private func sourceRow(_ ranked: [String], shown limit: Int, unread: [String: Int], withChats: Set<String>) -> some View {
+        let split = ChatsSourceSplit.make(ranked, limit: limit, selected: filter, withChats: withChats)
+        return HStack(spacing: NookTheme.Spacing.xs) {
+            ChatsFilterChip(title: tr("chats.filter.allSources"), app: nil, selected: filter == nil) { filter = nil }
+            ForEach(split.row, id: \.self) { id in
+                ChatsFilterChip(title: MessagingApps.app(id: id)?.name ?? id, app: id, unread: unread[id] ?? 0,
+                                selected: filter == id, compact: filter != id) {
+                    filter = filter == id ? nil : id
+                }
+            }
+            if !split.rest.isEmpty {
+                ChatsMoreSources(apps: split.rest, unread: unread) { filter = $0 }
+            }
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     /// The list's title, as the Agents tab has it: how many messages wait for you, and the list's two actions.
     private var listHeader: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
@@ -324,19 +358,7 @@ struct ChatsTab: View {
                                .init(value: true, title: tr("chats.group.unread"), count: unreadTotal)],
                        selected: unreadOnly) { unreadOnly = $0 }
 
-            if apps.count > 1 {
-                // Every source in sight, also with many: the chips wrap onto a next line instead of scrolling away.
-                let unread = unreadByApp
-                ChatsChipFlow(spacing: NookTheme.Spacing.xs) {
-                    ChatsFilterChip(title: tr("chats.filter.allSources"), app: nil, selected: filter == nil) { filter = nil }
-                    ForEach(apps, id: \.self) { id in
-                        ChatsFilterChip(title: MessagingApps.app(id: id)?.name ?? id, app: id, unread: unread[id] ?? 0,
-                                        selected: filter == id) {
-                            filter = filter == id ? nil : id
-                        }
-                    }
-                }
-            }
+            if apps.count > 1 { sourceFilters }
 
             ScrollView {
                 LazyVStack(spacing: NookTheme.Spacing.xxs) {
@@ -578,6 +600,8 @@ private struct ChatsFilterChip: View {
     let app: String?
     var unread = 0
     let selected: Bool
+    /// Only the app's icon (its name on hover), so many apps fit on one line.
+    var compact = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -585,12 +609,15 @@ private struct ChatsFilterChip: View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.xs) {
                 if let app {
-                    SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 13, source: app)
+                    SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: compact ? 15 : 13,
+                             source: app)
                 }
-                Text(title)
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
-                    .lineLimit(1)
+                if !compact || app == nil {
+                    Text(title)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                        .lineLimit(1)
+                }
                 if unread > 0 {
                     Text("\(unread)")
                         .font(NookTheme.font(10, .bold))
@@ -600,7 +627,7 @@ private struct ChatsFilterChip: View {
                         .background(Capsule().fill(NookTheme.amber))
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.horizontal, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
             .frame(height: 24)
             .background(Capsule().fill(selected ? NookTheme.smoke : (hovering ? NookTheme.rowHover : Color.clear)))
             .overlay(Capsule().stroke(selected ? NookTheme.line2 : NookTheme.hairline, lineWidth: 1))
@@ -608,53 +635,64 @@ private struct ChatsFilterChip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(title)
         .fixedSize()
         .accessibilityLabel(unread > 0 ? "\(title), \(tr("chats.group.unread")): \(unread)" : title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// The source chips, as many on a line as fit and the rest on the next, so no source hides off to the side.
-private struct ChatsChipFlow: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = arrange(subviews, width: proposal.width ?? .infinity)
-        let width = rows.map { $0.width }.max() ?? 0
-        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(rows.count - 1, 0))
-        return CGSize(width: width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for row in arrange(subviews, width: bounds.width) {
-            var x = bounds.minX
-            for index in row.items {
-                let size = subviews[index].sizeThatFits(.unspecified)
-                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-                x += size.width + spacing
-            }
-            y += row.height + spacing
+/// Which sources the filter row shows and which wait behind "+N": the first `limit` that have chats (in the order
+/// given, unread ones first), with the one filtered on always in the row; sources without chats always wait.
+enum ChatsSourceSplit {
+    static func make(_ ranked: [String], limit: Int, selected: String?, withChats: Set<String>) -> (row: [String], rest: [String]) {
+        var row = Array(ranked.filter { withChats.contains($0) }.prefix(max(limit, 0)))
+        if let selected, ranked.contains(selected), !row.contains(selected) {
+            if row.count >= max(limit, 1) { row.removeLast() }
+            row.append(selected)
         }
+        return (row, ranked.filter { !row.contains($0) })
     }
+}
 
-    private struct Row { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+/// "+N" at the end of the filter row: the other sources in a menu, with what is unread in each, and a dot when
+/// something waits there.
+private struct ChatsMoreSources: View {
+    let apps: [String]
+    let unread: [String: Int]
+    let choose: (String) -> Void
+    @State private var hovering = false
 
-    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
-        var rows: [Row] = [Row()]
-        for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
-            let needed = rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
-            if needed > width, !rows[rows.count - 1].items.isEmpty {
-                rows.append(Row())
+    private var waiting: Int { apps.reduce(0) { $0 + (unread[$1] ?? 0) } }
+
+    var body: some View {
+        Menu {
+            ForEach(apps, id: \.self) { id in
+                let name = MessagingApps.app(id: id)?.name ?? id
+                let count = unread[id] ?? 0
+                Button(count > 0 ? "\(name) (\(count))" : name) { choose(id) }
             }
-            var row = rows[rows.count - 1]
-            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
-            row.height = max(row.height, size.height)
-            row.items.append(index)
-            rows[rows.count - 1] = row
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text("+\(apps.count)")
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                if waiting > 0 {
+                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .frame(height: 24)
+            .background(Capsule().fill(hovering ? NookTheme.rowHover : Color.clear))
+            .overlay(Capsule().stroke(NookTheme.hairline, lineWidth: 1))
+            .contentShape(Capsule())
         }
-        return rows.filter { !$0.items.isEmpty }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(tr("chats.filter.more"))
+        .accessibilityLabel(waiting > 0 ? "\(tr("chats.filter.more")), \(tr("chats.group.unread")): \(waiting)" : tr("chats.filter.more"))
     }
 }
 
