@@ -23,6 +23,32 @@ struct CardView: View {
     @State private var zoomed: ChatBubble?
 
     var body: some View {
+        Group {
+            if card.compact {
+                // Only the field, level with Nook: the card asks one thing and waits for the answer.
+                inputField.padding(.top, NookTheme.Spacing.xs)
+            } else {
+                fullCard
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+                PhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
+                          onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
+                          onOpen: { self.zoomed = nil; onOpen(zoomed) })
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: card.id) { _, _ in zoomed = nil; chatNotice = nil }
+        .onExitCommand {
+            // Escape first shrinks an enlarged photo back; only then does it close the card.
+            if zoomed != nil { withAnimation(NookTheme.reveal) { zoomed = nil }; return }
+            onAction(card.escape ?? card.primary)
+        }
+    }
+
+    private var fullCard: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             header
 
@@ -64,21 +90,6 @@ struct CardView: View {
             } else {
                 actionRow
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay {
-            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
-                PhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
-                          onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
-                          onOpen: { self.zoomed = nil; onOpen(zoomed) })
-                    .transition(.opacity)
-            }
-        }
-        .onChange(of: card.id) { _, _ in zoomed = nil; chatNotice = nil }
-        .onExitCommand {
-            // Escape first shrinks an enlarged photo back; only then does it close the card.
-            if zoomed != nil { withAnimation(NookTheme.reveal) { zoomed = nil }; return }
-            onAction(card.escape ?? card.primary)
         }
     }
 
@@ -166,7 +177,7 @@ struct CardView: View {
     /// (text put back after a failed send) fills it.
     private var inputField: some View {
         Group {
-            if card.chatReply { chatField } else { replyField }
+            if card.compact { promptField } else if card.chatReply { chatField } else { replyField }
         }
         .onAppear {
             if let draft = card.draft { reply = draft }
@@ -233,6 +244,36 @@ struct CardView: View {
         .padding(.trailing, 10)
         .frame(minHeight: 38)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(NookTheme.field))
+    }
+
+    /// The compact card's one field: Return or the arrow inside the field sends, Escape closes the card.
+    private var promptField: some View {
+        let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(spacing: NookTheme.Spacing.sm) {
+            TextField("", text: $reply, prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary))
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.paper)
+                .focused($replyFocused)
+                .onSubmit(submitReply)
+                .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
+                // In the non-activating notch panel the binding can lag behind the field until Return commits it,
+                // which left the send arrow looking disabled; take every keystroke straight from the field itself.
+                .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
+                    guard replyFocused, let field = note.object as? NSTextField, field.window is NotchPanel,
+                          field.stringValue != reply else { return }
+                    reply = field.stringValue
+                }
+            NookIconButton(systemName: "arrow.up", label: tr("card.send"), filled: true, size: 28, action: submitReply)
+                .disabled(!ready)
+                .opacity(ready ? 1 : 0.4)
+        }
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(card.title)
     }
 
     /// Return adds a line where the cursor is; with Cmd it sends.

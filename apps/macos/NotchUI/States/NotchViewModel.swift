@@ -686,7 +686,7 @@ final class NotchViewModel: ObservableObject {
 
     /// The size a card asks for: its content below the notch, with the margins around it.
     private func cardBase(_ card: NookCard) -> CGSize {
-        CGSize(width: 600, height: geometry.notchHeight + 14 + 22 + card.contentHeight)   // spacing below notch and bottom margin
+        CGSize(width: card.compact ? 520 : 600, height: geometry.notchHeight + 14 + 22 + card.contentHeight)   // spacing below notch and bottom margin
     }
 
     /// The size a tab of the open panel starts at, before your own resize.

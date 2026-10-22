@@ -91,8 +91,8 @@ extension AppModel {
 
     // MARK: Starting from the notch
 
-    /// A double tap (or one tap) of the Double Tap key: a field in the notch asks what Nook should do. A tap while a task
-    /// runs stops it.
+    /// A double tap (or one tap) of the Double Tap key: a small field in the notch asks what Nook should do, with nothing
+    /// around it but its send button. Escape closes it. A tap while a task runs stops it.
     func presentTakeoverPrompt() {
         if TakeoverState.shared.isRunning {
             TakeoverState.shared.stop()
@@ -102,21 +102,20 @@ extension AppModel {
             presentSetupCard()
             return
         }
-        let token = Self.takeoverCardPrefix + UUID().uuidString
-        viewModel.register("\(token)#chat") { [weak self] in self?.showChat() }
         let close = CardAction(label: tr("button.close"), outcome: .dismiss)
         let card = NookCard(
-            id: token,
+            id: Self.takeoverCardPrefix + UUID().uuidString,
             mood: .listen,
             context: tr("takeover.title"),
             title: tr("takeover.prompt.title"),
             detail: .none,
             primary: close,
-            secondary: CardAction(label: tr("takeover.prompt.chat"), outcome: .callback("\(token)#chat", "")),
-            contentHeight: 130,
+            secondary: CardAction(label: "", outcome: .dismiss),
+            contentHeight: 46,
             input: true,
-            inputPrompt: tr("takeover.prompt.placeholder"),
+            inputPrompt: tr("takeover.prompt.title"),
             focusesInput: true,
+            compact: true,
             escape: close
         )
         viewModel.show(.card(card))

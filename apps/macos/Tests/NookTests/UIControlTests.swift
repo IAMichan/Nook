@@ -179,6 +179,20 @@ final class UIControlTests: XCTestCase {
         XCTAssertTrue(text.contains("window \"Displays\""))
     }
 
+    func testProductsInViewComeBeforeAFilterListOutOfView() {
+        // A shop: a long list of brand filters scrolled out of view above the products in view.
+        let filters = (0..<150).map { index -> UIControl.Element in
+            var filter = element("checkbox", "Brand number \(index) (12)", x: 0, y: Double(index * 30) - 5_000)
+            filter.visible = false
+            return filter
+        }
+        let products = [element("link", "Melitta 102 coffee filters, 80 pieces", x: 400, y: 300), element("text", "€ 2,49", x: 400, y: 340)]
+        let text = UIControl.describe(app: "Microsoft Edge", window: "bol.com", elements: filters + products, limit: 2_000)
+        XCTAssertTrue(text.contains("link \"Melitta 102 coffee filters, 80 pieces\""))
+        XCTAssertTrue(text.contains("text \"€ 2,49\""))
+        XCTAssertTrue(text.contains("(off screen)"))
+    }
+
     func testALongPageShowsItsFormBeforeItsLinks() {
         let links = (0..<200).map { element("link", "Navigation link number \($0)", x: 0, y: Double($0)) }
         let form = [element("field", "Email", x: 0, y: 900), element("button", "Send", x: 0, y: 950)]
