@@ -1018,7 +1018,7 @@ private struct ChatsDetail: View {
                     }
                 }
             } else {
-                ToolbarIconButton("circle.badge", tr("chats.markUnread"), action: onMarkUnread)
+                ToolbarIconButton("circle.badge", tr("chats.markUnread"), onMarkUnread)
             }
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
         }
