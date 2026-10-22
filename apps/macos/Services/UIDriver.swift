@@ -335,6 +335,29 @@ enum UIDriver {
         return nil
     }
 
+    /// The browser the user works in: the app in front when it is a browser, else the browser whose window is highest
+    /// on screen, else one that runs. Nil when no browser runs (a page then opens in the default browser).
+    static func userBrowser() -> NSRunningApplication? {
+        let own = ProcessInfo.processInfo.processIdentifier
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != own,
+           browsers.contains(front.bundleIdentifier ?? "") {
+            return front
+        }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        for window in windows where (window[kCGWindowLayer as String] as? Int) == 0 {
+            guard let pid = (window[kCGWindowOwnerPID as String] as? Int).map({ pid_t($0) }),
+                  let app = NSRunningApplication(processIdentifier: pid), browsers.contains(app.bundleIdentifier ?? "") else { continue }
+            return app
+        }
+        // No browser window on screen: the default browser when it runs, else any browser that runs.
+        let running = NSWorkspace.shared.runningApplications.filter { browsers.contains($0.bundleIdentifier ?? "") }
+        if let https = URL(string: "https://example.com"), let defaultURL = NSWorkspace.shared.urlForApplication(toOpen: https),
+           let match = running.first(where: { $0.bundleURL == defaultURL }) {
+            return match
+        }
+        return running.first
+    }
+
     private static func bringToFront(_ app: NSRunningApplication) async throws {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier { return }
         app.activate()

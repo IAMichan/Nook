@@ -124,6 +124,8 @@ enum CardDetail: Equatable {
     case choices(ChoiceSet)
     case diff(title: String, lines: [DiffLine], note: String)
     case facts([Fact])
+    /// A longer text under a small label, complete and wrapped (the step a takeover asks about).
+    case note(String, label: String)
     case chat([ChatBubble])
 }
 

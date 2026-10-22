@@ -16,6 +16,10 @@ final class TakeoverState: ObservableObject {
     fileprivate var decision: CheckedContinuation<Bool, Never>?
     /// Stop was asked for: also before the brain's run exists (while Nook still gathers the context).
     fileprivate var stopRequested = false
+    /// The last window Nook read shows a cookie banner: its plain "Accept" runs without a question.
+    fileprivate var cookieBanner = false
+    /// The browser the task works in (the user's, not just the default one).
+    fileprivate var browser: NSRunningApplication?
 
     /// Stops the task: a question that waits is answered with no, the brain's run is cancelled.
     func stop() {
@@ -178,12 +182,14 @@ extension AppModel {
         state.isRunning = true
         state.stopRequested = false
         state.messageID = messageID
+        state.cookieBanner = false
         UIDriver.onAct = { point, label in TakeoverCursor.shared.move(to: point, label: label) }
         defer {
             state.isRunning = false
             state.resolve(false)
             state.task = nil
             state.messageID = nil
+            state.browser = nil
             UIDriver.onAct = nil
             TakeoverCursor.shared.hide()
             viewModel.endWork()
@@ -206,15 +212,17 @@ extension AppModel {
             images = [image]
         }
         let memories = recalledMemories(for: task, scope: .automatic, tools: []).map(\.text)
+        state.browser = UIDriver.userBrowser()
         let prompt = TakeoverPolicy.prompt(task: task, frontApp: front?.localizedName ?? "", window: "", screen: screen,
-                                           memories: memories, dates: ChatIntent.dateSheet())
+                                           memories: memories, dates: ChatIntent.dateSheet(),
+                                           browser: state.browser?.localizedName ?? "")
 
         // Sources kept on this Mac stay out of reach of an external brain here too (the screen, when it is one of them).
         let available = scopedTools(SourceScope.automatic.keepingLocal(settings.privateSources), ledger: nil)
         guard available.contains(where: { $0.name == "read_ui" }), available.contains(where: { $0.name == "control_ui" }) else {
             throw NookError(tr("takeover.screenPrivate"))
         }
-        let tools = Self.takeoverToolNames.compactMap { name in available.first { $0.name == name } }.map(followed)
+        let tools = Self.takeoverToolNames.compactMap { name in available.first { $0.name == name } }.map(followed).map(inBrowser)
             + [waitForUserTool]
         if state.stopRequested { throw NookError(tr("takeover.stopped")) }
         let run = Task { @MainActor [weak self] () throws -> String in
@@ -262,7 +270,8 @@ extension AppModel {
         }
         if let refusal = TakeoverPolicy.refusal(tool: tool, input: input) { return (refusal, true) }
         let summary = spec.summarize(input)
-        if let line = TakeoverPolicy.checkpoint(tool: tool, input: input, summary: summary) {
+        if let line = TakeoverPolicy.checkpoint(tool: tool, input: input, summary: summary,
+                                                cookieBanner: TakeoverState.shared.cookieBanner) {
             updateTakeover(tr("takeover.waiting"))
             let yes = await askTakeoverUser(title: tr("takeover.check.title"), line: line, yes: tr("takeover.check.yes"))
             guard yes else {
@@ -275,6 +284,7 @@ extension AppModel {
         do {
             let result = try await spec.run(input)
             store.audit(tool: tool, args: args, result: result)
+            if tool == UIDriver.readTool { TakeoverState.shared.cookieBanner = TakeoverPolicy.showsCookieBanner(result) }
             return (result, false)
         } catch {
             store.audit(tool: tool, args: args, result: "FOUT: \(error.localizedDescription)")
@@ -290,6 +300,24 @@ extension AppModel {
                         run: { [weak self] input in
                             self?.updateTakeover(spec.summarize(input))
                             return try await spec.run(input)
+                        })
+    }
+
+    /// Web pages open in the user's browser (the one they have open), not in whatever the default browser is.
+    private func inBrowser(_ spec: ToolSpec) -> ToolSpec {
+        guard spec.name == "open_url" else { return spec }
+        return ToolSpec(name: spec.name, description: "Opens a web URL (https) in the user's browser.", schema: spec.schema,
+                        kind: spec.kind, summarize: spec.summarize, tag: spec.tag,
+                        run: { input in
+                            guard let browser = TakeoverState.shared.browser, let bundle = browser.bundleURL,
+                                  let text = input["url"] as? String, let url = URL(string: text),
+                                  ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+                                return try await spec.run(input)
+                            }
+                            let configuration = NSWorkspace.OpenConfiguration()
+                            configuration.activates = true
+                            _ = try await NSWorkspace.shared.open([url], withApplicationAt: bundle, configuration: configuration)
+                            return "Opened in \(browser.localizedName ?? "the browser")"
                         })
     }
 
@@ -310,16 +338,17 @@ extension AppModel {
         viewModel.register("\(token)#yes") { TakeoverState.shared.resolve(true) }
         viewModel.register("\(token)#no") { TakeoverState.shared.resolve(false) }
         let no = CardAction(label: tr("takeover.check.no"), outcome: .callback("\(token)#no", ""))
-        let lines = max(1, Int(ceil(Double(line.count) / 46.0)))
+        // The whole step, wrapped: what the user approves must be all there is to read.
+        let lines = max(1, Int(ceil(Double(line.count) / 58.0)))
         let card = NookCard(
             id: token,
             mood: .waiting,
             context: tr("takeover.title"),
             title: title,
-            detail: .facts([Fact(label: tr("takeover.check.step"), value: String(line.prefix(240)))]),
+            detail: .note(line, label: tr("takeover.check.step")),
             primary: CardAction(label: yes, outcome: .callback("\(token)#yes", "")),
             secondary: no,
-            contentHeight: 120 + CGFloat(min(lines, 5)) * 20,
+            contentHeight: 124 + CGFloat(min(lines, 8)) * 20,
             escape: no,
             status: CardStatus(text: tr("card.status.approval"), tone: .waiting)
         )
