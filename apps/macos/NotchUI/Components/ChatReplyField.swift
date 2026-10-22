@@ -5,7 +5,8 @@ import SwiftUI
 /// Nook write the message into this field first, through `draft`, for you to read before it goes anywhere. While Nook
 /// writes, and once its message is in the field, a panel above the field shows it as Nook's draft: stop it, go back to
 /// your request, or steer it (shorter, friendlier, more formal, other words, or a change you type) before you send it.
-/// While a message is on its way, the same place shows it going out, and briefly that it arrived.
+/// While a message is on its way, the same place shows it going out, and briefly that it arrived. With `extras` it takes
+/// more than text, as a chat app's field does: files, a poll, a place, a voice message.
 struct ChatReplyField: View {
     @Binding var text: String
     /// The status line above the field: Nook writing, the draft ready, or why something failed. The host may set it too
@@ -19,7 +20,7 @@ struct ChatReplyField: View {
     /// What the status line says once Nook's message is in the field.
     let readyNotice: String
     /// The message the host is sending, or has just sent: a panel above the field shows it, and the field waits.
-    var outgoing: ChatOutgoing? = nil
+    var outgoing: ChatSending? = nil
     /// Who the message goes to, named in that panel ("Sending to Arjan…"); nil says "Sending…".
     var recipient: String? = nil
     /// The message what is typed answers, quoted above the field; nil for an ordinary message.
@@ -48,6 +49,55 @@ struct ChatReplyField: View {
     @FocusState private var steerFocused: Bool
     /// The menu "@" opens above the field, as in Nook's own chat.
     @StateObject private var menu = ComposerModel()
+    @State private var pasteMonitor = PasteMonitor()
+
+    // What `extras` adds (see there).
+    private var leadingAccessory: AnyView?
+    private var aboveAccessory: AnyView?
+    private var idleAccessory: AnyView?
+    private var replacement: AnyView?
+    private var hasExtra = false
+    private var pasted: (() -> Bool)?
+
+    init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
+         sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
+         quote: BubbleQuote? = nil, cancelQuote: @escaping () -> Void = {}, onEscape: (() -> Void)? = nil,
+         draft: @escaping (String) async throws -> String, send: @escaping () -> Void) {
+        _text = text
+        _notice = notice
+        self.focus = focus
+        self.placeholder = placeholder
+        self.sendSymbol = sendSymbol
+        self.sendLabel = sendLabel
+        self.readyNotice = readyNotice
+        self.outgoing = outgoing
+        self.recipient = recipient
+        self.quote = quote
+        self.cancelQuote = cancelQuote
+        self.onEscape = onEscape
+        self.draft = draft
+        self.send = send
+    }
+
+    /// The same field for a chat that takes more than text: buttons before the text (add a file, an emoji), what waits
+    /// to go above the field (files, a poll's form), a button in place of send while nothing is typed (record a voice
+    /// message), a bar that stands in for the whole field (while recording), and Cmd-V for a picture or a file, which
+    /// `paste` claims by returning true. `pending`: something besides text waits to go, so send works without text.
+    func extras<Leading: View, Above: View, Idle: View>(pending: Bool, replacing: AnyView? = nil, paste: (() -> Bool)? = nil,
+                                                       @ViewBuilder leading: () -> Leading, @ViewBuilder above: () -> Above,
+                                                       @ViewBuilder idle: () -> Idle) -> Self {
+        var copy = self
+        copy.hasExtra = pending
+        copy.replacement = replacing
+        copy.pasted = paste
+        copy.leadingAccessory = AnyView(leading())
+        copy.aboveAccessory = AnyView(above())
+        copy.idleAccessory = AnyView(idle())
+        return copy
+    }
+
+    /// Nothing to send: no text, nothing else waiting, and no "@nook …".
+    private var empty: Bool { !asksNook && !hasExtra && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     /// "@nook …" at the start of the field: Nook writes the message instead of sending what is typed.
     private var asksNook: Bool { ChatDraft.instruction(in: text) != nil }
@@ -93,15 +143,33 @@ struct ChatReplyField: View {
                 ReplyingBar(quote: quote, cancel: cancelQuote)
                     .transition(.opacity)
             }
-            field
+            if let aboveAccessory { aboveAccessory }
+            if let replacement {
+                replacement
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .padding(.vertical, NookTheme.Spacing.xs)
+                    .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+            } else {
+                field
+            }
         }
         .animation(NookTheme.reveal, value: showsDraft)
         .animation(NookTheme.reveal, value: drafting)
         .animation(NookTheme.reveal, value: outgoing)
+        .onAppear(perform: startPasteMonitor)
+        .onDisappear { pasteMonitor.stop() }
+    }
+
+    /// Cmd-V in the field with a picture or a file on the pasteboard: the host takes it instead of the text.
+    private func startPasteMonitor() {
+        guard let pasted else { return }
+        let focused = focus
+        pasteMonitor.start { focused.wrappedValue && pasted() }
     }
 
     private var field: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
+            if let leadingAccessory { leadingAccessory }
             TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
@@ -150,13 +218,15 @@ struct ChatReplyField: View {
                 .opacity(drafting || busy ? 0.55 : 1)
             if drafting {
                 NookIconButton(systemName: "stop.fill", label: tr("chats.draft.stop"), filled: true, size: 28) { stopWriting() }
+            } else if empty, !busy, let idleAccessory {
+                idleAccessory
             } else {
                 NookIconButton(systemName: asksNook ? "sparkles" : sendSymbol, label: buttonLabel, filled: true, size: 28) { submit() }
-                    .disabled(busy || (!asksNook && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .disabled(busy || empty)
                     .help(buttonLabel + " (⌘↩)")
             }
         }
-        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.md : NookTheme.Spacing.xs)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.xs)
         // Nook's draft in the field: the field takes Nook's color, so it is clear whose words are about to go out.
@@ -211,7 +281,7 @@ struct ChatReplyField: View {
         guard !busy, !drafting else { return }
         if let instruction = ChatDraft.instruction(in: text) {
             write(instruction)
-        } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        } else if !empty {
             notice = nil
             drafted = nil
             send()
@@ -440,7 +510,7 @@ private struct DraftChip: View {
 }
 
 /// A message on its way to the chat, and briefly once it is there.
-struct ChatOutgoing: Equatable {
+struct ChatSending: Equatable {
     let text: String
     /// The chat has it: the panel says so for a moment before the host lets it go.
     var sent = false

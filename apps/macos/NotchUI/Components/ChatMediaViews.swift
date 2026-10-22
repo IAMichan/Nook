@@ -64,15 +64,25 @@ enum ChatMediaImages {
         return image
     }
 
+    /// How many frames each file holds, read once: a sticker or GIF asks on every redraw of its chat.
+    private static let frames = NSCache<NSString, NSNumber>()
+
+    private static func frameCount(_ url: URL) -> Int {
+        let key = url.path as NSString
+        if let known = frames.object(forKey: key) { return known.intValue }
+        let count = CGImageSourceCreateWithURL(url as CFURL, nil).map(CGImageSourceGetCount) ?? 0
+        frames.setObject(NSNumber(value: count), forKey: key)
+        return count
+    }
+
     /// Whether the file holds more than one frame (an animated GIF, WebP or PNG): it then plays as it is.
     static func isAnimated(_ url: URL) -> Bool {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
-        return CGImageSourceGetCount(source) > 1
+        frameCount(url) > 1
     }
 
     /// Whether the file is a picture at all (a GIF or a sticker), rather than a video the app loops.
     static func isPicture(_ url: URL) -> Bool {
-        CGImageSourceCreateWithURL(url as CFURL, nil).map { CGImageSourceGetCount($0) > 0 } ?? false
+        frameCount(url) > 0
     }
 }
 

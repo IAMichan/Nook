@@ -4,8 +4,9 @@ import Combine
 /// Telegram with its history, through TDLib: Telegram's own client library, built once with scripts/build-tdlib.sh and
 /// shipped inside Nook.app signed like Nook itself, so the hardened runtime and library validation stay on. You log in
 /// as on a new phone or computer (your number, the code Telegram sends you, your password when you set one); the
-/// session is kept in Nook's support folder and Telegram lists it under Settings › Devices. Read-only: Nook asks for
-/// your chats and their messages, nothing else. The app id and hash are your own, from my.telegram.org.
+/// session is kept in Nook's support folder and Telegram lists it under Settings › Devices. Nook asks for your chats
+/// and their messages, and sends only what you send yourself from the Chats tab (text, files, polls, places, contacts).
+/// The app id and hash are your own, from my.telegram.org.
 @MainActor
 final class TelegramBridge: ObservableObject, ChatBridge {
     let app = "telegram"
@@ -56,6 +57,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
     /// Of how many of your newest messages in a group Telegram is asked who read them (it keeps that for a week, in
     /// groups of up to 100 people).
     private static let viewed = 5
+    /// Messages Nook asked TDLib to send, by the `@extra` of the request: what to ask again in the older shape when a
+    /// TDLib from before that shape refuses it, and the first refusal, which is the one that explains.
+    private var sending: [String: (legacy: [String: Any]?, error: String?)] = [:]
+    private var sendCount = 0
 
     var isReady: Bool { state == .login(.ready) }
     var isWorking: Bool { isReady }
@@ -228,10 +233,25 @@ final class TelegramBridge: ObservableObject, ChatBridge {
                 changed.insert(chat)
             }
         case "updateNewMessage":
+            // A message you sent from Nook shows once Telegram has it (`updateMessageSendSucceeded`), under its own id.
+            if let message = object["message"] as? [String: Any], let id = TelegramData.int64(message["chat_id"]),
+               !TelegramData.isPending(message) {
+                add([message], to: id)
+                shown.insert(id)
+            }
+        case "updateMessageSendSucceeded":
             if let message = object["message"] as? [String: Any], let id = TelegramData.int64(message["chat_id"]) {
                 add([message], to: id)
                 shown.insert(id)
             }
+        case "message":
+            // TDLib took a message Nook sent: nothing to ask again.
+            if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
+                sending[extra.hasSuffix(":legacy") ? String(extra.dropLast(":legacy".count)) : extra] = nil
+            }
+        case "updateMessageSendFailed":
+            let reason = ((object["error"] as? [String: Any])?["message"] as? String) ?? "error"
+            ToastCenter.shared.error(tr("chat.compose.notSent"), detail: Self.explain(reason))
         case "chats":
             // The newest chats of the main list: read each one's history.
             let ids = (object["chat_ids"] as? [Any] ?? []).compactMap { TelegramData.int64($0) }.prefix(Self.chatCount)
@@ -268,7 +288,9 @@ final class TelegramBridge: ObservableObject, ChatBridge {
             }
         case "error":
             let message = (object["message"] as? String) ?? "error"
-            if object["@extra"] as? String == "login" {
+            if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
+                refused(extra, message)
+            } else if object["@extra"] as? String == "login" {
                 loginError = Self.explain(message)
             } else if case .login(let step) = state, step != .ready {
                 loginError = Self.explain(message)
@@ -384,6 +406,55 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         send(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options])
         messages[ids.chat]?[index].poll = poll.voting(choice)
         changed.insert(ids.chat)
+    }
+
+    // MARK: Sending
+
+    /// The chat Nook shows under this name, newest first when two share it.
+    func chatID(named name: String) -> Int64? {
+        chats.values.filter { $0.title == name && shown.contains($0.id) }.max { $0.order < $1.order }?.id
+            ?? chats.values.first { $0.title == name }?.id
+    }
+
+    /// Sends what you typed to a chat, as an answer to `replyTo` (a message's id in Nook) when set. The chat shows it
+    /// once Telegram has it; a refusal shows as a toast.
+    func send(text: String, to chat: Int64, replyTo: String? = nil) throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        try request(TelegramData.textContent(body), legacy: nil, chat: chat, replyTo: replyTo)
+    }
+
+    /// Sends a file, a poll, a place or a contact card to a chat, as `send(text:)` does.
+    func send(_ outgoing: ChatOutgoing, to chat: Int64, replyTo: String? = nil) throws {
+        if case .file(let file) = outgoing, file.tooLarge { throw NookError(tr("chat.compose.tooLarge", file.name)) }
+        let content = TelegramData.content(outgoing)
+        let legacy = TelegramData.content(outgoing, legacy: true)
+        try request(content, legacy: NSDictionary(dictionary: legacy).isEqual(to: content) ? nil : legacy, chat: chat,
+                    replyTo: replyTo)
+    }
+
+    private func request(_ content: [String: Any], legacy: [String: Any]?, chat: Int64, replyTo: String?) throws {
+        guard isReady, chats[chat] != nil else { throw NookError(tr("chat.compose.telegramOff")) }
+        sendCount += 1
+        let extra = "send:\(sendCount)"
+        let answered = replyTo.flatMap(TelegramData.ids).flatMap { $0.chat == chat ? $0.message : nil }
+        if let legacy {
+            sending[extra] = (TelegramData.sendMessage(chat: chat, content: legacy, replyTo: answered, extra: extra + ":legacy"), nil)
+        }
+        send(TelegramData.sendMessage(chat: chat, content: content, replyTo: answered, extra: extra))
+        shown.insert(chat)
+    }
+
+    /// TDLib refused a message Nook sent: an older TDLib is asked again in its own shape; else a toast says why.
+    private func refused(_ extra: String, _ reason: String) {
+        let key = extra.hasSuffix(":legacy") ? String(extra.dropLast(":legacy".count)) : extra
+        let pending = sending.removeValue(forKey: key)
+        if !extra.hasSuffix(":legacy"), let legacy = pending?.legacy {
+            sending[key] = (nil, reason)
+            send(legacy)
+            return
+        }
+        ToastCenter.shared.error(tr("chat.compose.notSent"), detail: Self.explain(pending?.error ?? reason))
     }
 
     /// A chat's picture, downloaded once when TDLib does not have it yet.

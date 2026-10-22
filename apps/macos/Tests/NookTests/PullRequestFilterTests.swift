@@ -110,7 +110,7 @@ final class PullRequestFilterTests: XCTestCase {
                                           reviews: [item(3, "Theirs", repo: "acme/app", author: "bob")], error: nil)
         // Watched lists can repeat a pull request that is also yours: it shows once, as yours.
         account.watched = [item(4, "Team", repo: "acme/web", author: "cleo"), item(1, "Mine", repo: "acme/web")]
-        let groups = account.byRepo
+        let groups = account.byRepo()
         XCTAssertEqual(groups.map(\.repo), ["acme/app", "acme/web"])
         XCTAssertEqual(groups[0].rows.map(\.item.number), [3, 2])
         XCTAssertEqual(groups[0].rows.map(\.role), [.review, .mine])
@@ -128,11 +128,38 @@ final class PullRequestFilterTests: XCTestCase {
                                           reviews: [dated(4, 1, author: "bob")], error: nil)
         // A watched one that is also yours shows once, as yours; a group without rows is left out.
         account.watched = [dated(2, 2)]
-        let groups = account.byRole
+        let groups = account.byRole()
         XCTAssertEqual(groups.map(\.role), [.review, .mine])
         // Open ones first, newest first; then the closed and merged ones.
         XCTAssertEqual(groups[1].rows.map(\.item.number), [3, 2, 1])
         account.watched = [dated(5, 9, author: "cleo")]
-        XCTAssertEqual(account.byRole.map(\.id), ["review", "mine", "watched"])
+        XCTAssertEqual(account.byRole().map(\.id), ["review", "mine", "watched"])
+    }
+
+    func testSortsWhatWaitsOnYouFirst() {
+        func dated(_ number: Int, _ minute: Int, repo: String, state: PullRequestItem.State = .open,
+                   ci: PullRequestItem.CI = .passing, author: String = "ada") -> PullRequestItem {
+            PullRequestItem(repo: repo, number: number, title: "T\(number)", url: nil, draft: false,
+                            updated: Date(timeIntervalSince1970: Double(minute * 60)), author: author, ci: ci, state: state)
+        }
+        var account = AccountPullRequests(id: "github", name: "Work", login: "ada",
+                                          mine: [dated(1, 9, repo: "acme/web"), dated(2, 1, repo: "acme/web", ci: .failing)],
+                                          reviews: [dated(3, 2, repo: "acme/app", author: "bob"),
+                                                    dated(4, 8, repo: "acme/web", state: .merged, author: "bob")], error: nil)
+        account.watched = [dated(5, 5, repo: "acme/api", author: "cleo"), dated(6, 3, repo: "acme/web", author: "cleo")]
+
+        // A review waiting for you leads, then yours with failing checks, then the rest newest first, closed last.
+        let byRepo = account.byRepo()
+        XCTAssertEqual(byRepo.map(\.repo), ["acme/app", "acme/web", "acme/api"])
+        XCTAssertEqual(byRepo.map(\.waiting), [1, 0, 0])
+        XCTAssertEqual(byRepo[1].rows.map(\.item.number), [2, 1, 6, 4])
+        XCTAssertEqual(account.byRole().first?.rows.map(\.item.number), [3, 4])
+        XCTAssertEqual(account.byRole()[1].rows.map(\.item.number), [2, 1])
+
+        // By date the repository with the newest open pull request leads; oldest first turns that around.
+        XCTAssertEqual(account.byRepo(sort: .recent).map(\.repo), ["acme/web", "acme/api", "acme/app"])
+        XCTAssertEqual(account.byRepo(sort: .recent)[0].rows.map(\.item.number), [1, 6, 2, 4])
+        XCTAssertEqual(account.byRepo(sort: .oldest).map(\.repo), ["acme/web", "acme/app", "acme/api"])
+        XCTAssertEqual(account.byRepo(sort: .oldest)[0].rows.map(\.item.number), [2, 6, 1, 4])
     }
 }

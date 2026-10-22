@@ -69,6 +69,7 @@ struct ChatTranscript: View {
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),
                                        onVote: voteAction(bubble))
+                            .equatable()
                             .contextMenu {
                                 if let onReply {
                                     Button(tr("chat.reply")) { onReply(bubble) }
@@ -132,7 +133,10 @@ private struct ChatDayDivider: View {
     }
 }
 
-private struct ChatBubbleView: View {
+/// Drawn again only when what it shows changed: the chat around it redraws on every change anywhere in Nook's chats
+/// (a message in another chat, a picture that came in), and fifty bubbles each parsing their text again makes scrolling
+/// stutter.
+private struct ChatBubbleView: View, Equatable {
     let bubble: ChatBubble
     /// The first of a run by one person: their name above it (in a group) and the bubble's corner points at them.
     let first: Bool
@@ -151,6 +155,13 @@ private struct ChatBubbleView: View {
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
+
+    /// The actions only count by whether they are there: they do the same for the same bubble.
+    static func == (a: ChatBubbleView, b: ChatBubbleView) -> Bool {
+        a.bubble == b.bubble && a.first == b.first && a.newest == b.newest
+            && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
+            && (a.onVote == nil) == (b.onVote == nil)
+    }
 
     private var emojiOnly: Bool { bubble.attachment == nil && ChatTimeline.isEmojiOnly(bubble.text) }
     /// A sticker stands on its own, as an emoji does: no bubble around it.
