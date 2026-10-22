@@ -238,8 +238,10 @@ struct NookCard: Equatable, Identifiable {
     var countdown: TimeInterval? = nil
     /// Behavior for Esc. Defaults to primary action if nil.
     var escape: CardAction? = nil
-    /// A short line above the text field: what is happening with what you typed ("Sending…") or why it did not work.
+    /// A short line above the text field: why what you typed did not work.
     var notice: String? = nil
+    /// The answer on its way to the card's chat, shown above the field as it goes out.
+    var sending: String? = nil
     /// Text put back into the field, e.g. a reply that could not be sent, so nothing typed is lost.
     var draft: String? = nil
     /// The card's state as a pill at the end of the header; nil shows none (an answer, a suggestion).

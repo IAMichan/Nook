@@ -220,6 +220,8 @@ struct CardView: View {
                        sendSymbol: card.replyCopiesTo == nil ? "arrow.up" : "doc.on.doc",
                        sendLabel: card.replyCopiesTo.map { tr("chats.reply.copy", $0) } ?? tr("card.send"),
                        readyNotice: card.replyCopiesTo.map { tr("chats.draft.readyCopy", $0) } ?? tr("chats.draft.ready"),
+                       outgoing: card.sending.map { ChatOutgoing(text: $0) },
+                       recipient: card.title,
                        quote: replyingTo?.quote(contact: card.title),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
