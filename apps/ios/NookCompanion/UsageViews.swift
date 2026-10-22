@@ -7,8 +7,10 @@ struct UsageScreen: View {
     @EnvironmentObject private var client: CompanionClient
     @State private var range = "week"
 
+    /// The last answer, whatever its range: the plan limits do not depend on it, so they stay while another range loads.
+    private var latest: UsageDigest? { client.usage }
     /// Only the answer for the range on screen: right after switching, the previous range's numbers are not shown as this one's.
-    private var usage: UsageDigest? { client.usage.flatMap { $0.range == range ? $0 : nil } }
+    private var usage: UsageDigest? { latest.flatMap { $0.range == range ? $0 : nil } }
 
     var body: some View {
         ScrollView {
@@ -16,37 +18,42 @@ struct UsageScreen: View {
                 if !client.can(CompanionFeature.usage) {
                     EmptyState(symbol: "chart.bar", title: "Update Nook on your Mac",
                                message: "Update Nook on your Mac to see your usage here.") {}
-                } else if let usage {
+                } else if let latest {
                     SectionHeader(title: "Plan limits")
-                    if usage.accounts.isEmpty {
+                    if latest.accounts.isEmpty {
                         Text("No agent accounts are connected on your Mac.")
                             .font(.callout).foregroundStyle(Theme.textSecondary).card()
                     }
-                    ForEach(usage.accounts) { AccountUsageCard(account: $0) }
+                    ForEach(latest.accounts) { AccountUsageCard(account: $0) }
 
                     SectionHeader(title: "Sessions in Nook")
+                    // Outside the range's figures, so another range can be picked while one loads or after it failed.
                     Picker("Range", selection: $range) {
                         Text("Today").tag("today")
                         Text("Week").tag("week")
                         Text("Month").tag("month")
                     }
                     .pickerStyle(.segmented)
-                    HStack(spacing: Theme.Spacing.sm) {
-                        StatTile(title: "Sessions", value: usage.sessions.formatted(), symbol: "square.stack.3d.up.fill")
-                        StatTile(title: "Tokens", value: Tokens.format(usage.inputTokens + usage.outputTokens + usage.cacheTokens),
-                                 symbol: "text.word.spacing")
-                        StatTile(title: "Cost", value: usage.cost.map { $0.formatted(.currency(code: "USD")) } ?? "—",
-                                 symbol: "dollarsign.circle.fill")
-                    }
-                    if usage.days.isEmpty {
-                        Text("No sessions with token counts in this period.")
-                            .font(.callout).foregroundStyle(Theme.textSecondary).card()
+                    if let usage {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            StatTile(title: "Sessions", value: usage.sessions.formatted(), symbol: "square.stack.3d.up.fill")
+                            StatTile(title: "Tokens", value: Tokens.format(usage.inputTokens + usage.outputTokens + usage.cacheTokens),
+                                     symbol: "text.word.spacing")
+                            StatTile(title: "Cost", value: usage.cost.map { $0.formatted(.currency(code: "USD")) } ?? "—",
+                                     symbol: "dollarsign.circle.fill")
+                        }
+                        if usage.days.isEmpty {
+                            Text("No sessions with token counts in this period.")
+                                .font(.callout).foregroundStyle(Theme.textSecondary).card()
+                        } else {
+                            TokensChart(days: usage.days)
+                        }
+                        if !usage.models.isEmpty {
+                            SectionHeader(title: "By model")
+                            ModelsCard(models: usage.models)
+                        }
                     } else {
-                        TokensChart(days: usage.days)
-                    }
-                    if !usage.models.isEmpty {
-                        SectionHeader(title: "By model")
-                        ModelsCard(models: usage.models)
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xl)
                     }
                     Text("Limits come from the agents themselves. Tokens and costs count the sessions Nook started.")
                         .font(.caption).foregroundStyle(Theme.textTertiary).padding(.horizontal, Theme.Spacing.xs)
