@@ -323,6 +323,7 @@ final class WorkspaceManager: ObservableObject {
         guard evictedTimelines.contains(id) else { return [] }
         // Released while unused: back from disk as if it had never left.
         evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
         quietEvents = true
         events[id] = store.loadEvents(id)
         quietEvents = false
@@ -342,6 +343,7 @@ final class WorkspaceManager: ObservableObject {
         timelineUse[id] = Date()
         guard events[id] == nil else { return }
         evictedTimelines.remove(id)
+        evictedAnswers[id] = nil
         events[id] = store.loadEvents(id)
         evictTimelines()
     }
@@ -1855,6 +1857,7 @@ final class WorkspaceManager: ObservableObject {
         timelineUse[id] = Date()
         if events[id] == nil {
             evictedTimelines.remove(id)
+            evictedAnswers[id] = nil
             events[id] = store.loadEvents(id)
         }
         events[id]?.append(event)
