@@ -39,17 +39,33 @@ final class ChatCaptureService: ObservableObject {
     static let newsWindow: TimeInterval = 600
 
     /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token,
-    /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in.
+    /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in, Instagram through its
+    /// own web API once you logged in on it inside Nook.
     let messagesBridge = MessagesBridge()
     let slackBridge = SlackBridge()
     let telegramBridge = TelegramBridge()
     let teamsBridge = TeamsBridge()
+    let instagramBridge = InstagramBridge()
     /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every network linked in Beeper.
     let whatsAppDesktopBridge = WhatsAppDesktopBridge()
     let beeperBridge = BeeperBridge()
     /// Beeper goes last: a network another bridge reads is left to that one.
     private var bridges: [ChatBridge] {
-        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, beeperBridge]
+        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, instagramBridge, beeperBridge]
+    }
+
+    /// An app's web sign-in in Nook was forgotten ("Forget" on the app beside the chat): its bridge stops reading.
+    func signedOutOnThisMac(_ app: String) {
+        guard app == instagramBridge.app else { return }
+        instagramBridge.forgotten()
+        bridgeChanged(app)
+    }
+
+    /// You logged in to an app from its row in Settings › Chats: it is switched on, collecting with it, and read now.
+    func loggedIn(_ app: String) {
+        setSource(app, on: true)
+        if !enabled { enabled = true }
+        bridgeChanged(app)
     }
 
     /// The bridge of an app, if Nook has one.
@@ -101,6 +117,11 @@ final class ChatCaptureService: ObservableObject {
         inbox.trim()
         self.inbox = inbox
         enabled = ConnectorToggle.isOn(ChatInboxConnector.sourceID, default: false)
+        instagramBridge.onSignedIn = { [weak self] in
+            guard let self else { return }
+            self.loggedIn(self.instagramBridge.app)
+            ToastCenter.shared.success(tr("chats.login.done", "Instagram"))
+        }
         beeperBridge.skips = { [weak self] app in
             guard let self else { return false }
             return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.beeperBridge }
