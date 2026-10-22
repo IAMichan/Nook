@@ -64,6 +64,9 @@ final class ChatCaptureService: ObservableObject {
     /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
     @Published private(set) var bridged: Set<String> = []
     private var bridgeDue: [String: Date] = [:]
+    /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
+    /// message a few seconds after it notified, so one read right away may still miss it.
+    private var bridgeNudges: [String: Int] = [:]
     private var bridging = false
 
     /// How often the database is looked at. Only a database that changed is read, so looking is cheap; looking often
@@ -115,6 +118,7 @@ final class ChatCaptureService: ObservableObject {
             inbox.lookedBack = Self.firstLook
         }
         bridgeDue = [:]
+        bridgeNudges = [:]
         // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Chats.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
@@ -162,8 +166,13 @@ final class ChatCaptureService: ObservableObject {
                     guard let record = NotificationRecord.integer(row["id"]) else { continue }
                     lastRecord = max(lastRecord ?? record, record)
                     guard let notification = NotificationRecord.notification(row),
-                          let notice = ChatCapture.notice(notification), !skips(notice), !isBridged(notice.app),
-                          inbox.add(notice, id: "n\(notification.record)") else { continue }
+                          let notice = ChatCapture.notice(notification), !skips(notice) else { continue }
+                    // A bridged app's notification says its bridge has something new: read it now, not at its next turn.
+                    if isBridged(notice.app) {
+                        if !replaying { nudge(notice.app) }
+                        continue
+                    }
+                    guard inbox.add(notice, id: "n\(notification.record)") else { continue }
                     changed = true
                     // Looking back: what came in before `freshness` was likely seen on the Mac already.
                     let key = ChatInbox.key(app: notice.app, chat: notice.chat)
@@ -208,6 +217,15 @@ final class ChatCaptureService: ObservableObject {
         bridges.contains { $0.app == app && $0.isWorking } || (beeperBridge.isWorking && beeperBridge.covered.contains(app))
     }
 
+    /// Time between the quick reads after a bridged app's notification.
+    private static let nudgeGap: TimeInterval = 5
+
+    /// A notification of a bridged app came in: its bridge reads now, and twice more shortly after.
+    private func nudge(_ app: String) {
+        bridgeDue[app] = nil
+        bridgeNudges[app] = 3
+    }
+
     /// Reads every bridge that is due, of the apps that are on. Runs next to the notifications, also while those cannot
     /// be read: Slack needs no disk access.
     func pollBridges() async {
@@ -222,7 +240,9 @@ final class ChatCaptureService: ObservableObject {
                 continue
             }
             if let due = bridgeDue[bridge.app], due > Date() { continue }
-            bridgeDue[bridge.app] = Date().addingTimeInterval(bridge.interval)
+            let nudges = bridgeNudges[bridge.app] ?? 0
+            bridgeNudges[bridge.app] = nudges > 1 ? nudges - 1 : nil
+            bridgeDue[bridge.app] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
             do {
                 for chat in try await bridge.read() where inbox.merge(chat) { changed = true }
                 bridgeProblems[bridge.app] = nil
