@@ -48,6 +48,8 @@ struct ChatsTab: View {
     @State private var query = ""
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
+    @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
+    @State private var totalWidth: Double = 0
 
     /// Unread messages in every chat, for the dot on the tab.
     @MainActor
@@ -62,17 +64,33 @@ struct ChatsTab: View {
             if all.isEmpty {
                 empty
             } else {
-                HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
-                    list.frame(width: 290)
-                    if let current {
-                        ChatsDetail(entry: current, capture: capture, whatsApp: whatsApp)
-                            .id(current.id)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
+                HStack(alignment: .top, spacing: 0) {
+                    list
+                        .padding(.trailing, NookTheme.Spacing.xs)
+                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
+                                        available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                                        edge: .trailing, divider: true)
+                    Group {
+                        if let current {
+                            ChatsDetail(entry: current, capture: capture, whatsApp: whatsApp)
+                                .id(current.id)
+                        } else {
+                            // Nothing matches the search: the list says so, this side stays quiet.
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(NookTheme.font(26, .light))
+                                .foregroundStyle(NookTheme.textMuted)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .accessibilityHidden(true)
+                        }
                     }
+                    .padding(.leading, NookTheme.Spacing.lg)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .onAppear { takeFocus() }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
         .onChange(of: selection) { _, id in
@@ -174,25 +192,55 @@ struct ChatsTab: View {
         return busy + [filter]
     }
 
-    private var list: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Image(systemName: "magnifyingglass")
-                    .font(NookTheme.font(11.5))
-                    .foregroundStyle(NookTheme.textTertiary)
-                TextField(tr("chats.search"), text: $query)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.paper)
-                // WhatsApp's unread marks belong to the phone: a chat there is read by what you do with it.
-                if capture.inbox.totalUnread > 0 {
-                    ToolbarIconButton("checkmark.circle", tr("chats.markAllRead")) { capture.markAllRead() }
-                }
-                ToolbarIconButton("plus", tr("chats.addSource")) { app.openSettings(section: .chats) }
+    /// The list's title, as the Agents tab has it: how many messages wait for you, and the list's two actions.
+    private var listHeader: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Text(tr("tab.chats"))
+                .font(NookTheme.font(14, .semibold))
+                .foregroundStyle(NookTheme.paper)
+            let unread = Self.unread
+            if unread > 0 {
+                Text("\(unread)")
+                    .font(NookTheme.font(10.5, .bold))
+                    .foregroundStyle(NookTheme.ink)
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(Capsule().fill(NookTheme.amber))
+                    .accessibilityLabel("\(tr("chats.group.unread")): \(unread)")
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .frame(height: 30)
-            .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
+            Spacer(minLength: NookTheme.Spacing.xs)
+            // WhatsApp's unread marks belong to the phone: a chat there is read by what you do with it.
+            if capture.inbox.totalUnread > 0 {
+                ToolbarIconButton("checkmark.circle", tr("chats.markAllRead")) { capture.markAllRead() }
+            }
+            ToolbarIconButton("plus", tr("chats.addSource")) { app.openSettings(section: .chats) }
+        }
+        .padding(.leading, NookTheme.Spacing.lg)
+        .padding(.trailing, NookTheme.Spacing.xxs)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
+            TextField(tr("chats.search"), text: $query)
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.paper)
+            if !query.isEmpty {
+                ToolbarIconButton("xmark.circle.fill", tr("button.clear"), height: 20, width: 20) { query = "" }
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .frame(height: 30)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            listHeader
+            searchField
 
             if apps.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -425,9 +473,8 @@ private struct ChatsRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 26, source: entry.app)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 2) {
+                ChatsAvatar(name: entry.name, app: entry.app, size: 34)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.sm) {
                         Text(entry.name)
                             .font(NookTheme.font(13, entry.unread > 0 ? .semibold : .medium))
@@ -451,23 +498,55 @@ private struct ChatsRow: View {
                             Text("\(entry.unread)")
                                 .font(NookTheme.font(10.5, .bold))
                                 .foregroundStyle(NookTheme.ink)
-                                .padding(.horizontal, 6)
+                                .padding(.horizontal, NookTheme.Spacing.sm)
                                 .frame(minWidth: 18, minHeight: 18)
                                 .background(Capsule().fill(NookTheme.amber))
+                                .fixedSize()
                         }
                     }
                 }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering)))
+            .padding(.vertical, NookTheme.Spacing.md)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel("\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Who a chat is with: their initials on a tint of their own (the same color their name has in a group's bubbles), with
+/// the app the chat is in as a small badge on the corner.
+private struct ChatsAvatar: View {
+    let name: String
+    let app: String
+    let size: CGFloat
+
+    private static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
+
+    private var tint: Color { Self.colors[ChatTimeline.colorIndex(for: name, count: Self.colors.count)] }
+
+    var body: some View {
+        Circle()
+            .fill(tint.opacity(0.16))
+            .overlay(Circle().stroke(tint.opacity(0.28), lineWidth: 1))
+            .overlay(
+                Text(WAJID.initials(name))
+                    .font(NookTheme.rounded(size * 0.36, .semibold))
+                    .foregroundStyle(tint)
+            )
+            .frame(width: size, height: size)
+            .overlay(alignment: .bottomTrailing) {
+                SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: size * 0.42, source: app)
+                    .padding(NookTheme.Spacing.xxs / 2)
+                    .background(Circle().fill(NookTheme.canvas))
+                    .offset(x: NookTheme.Spacing.xs, y: NookTheme.Spacing.xxs)
+            }
+            .accessibilityHidden(true)
     }
 }
 
@@ -511,23 +590,23 @@ private struct ChatsDetail: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+        VStack(alignment: .leading, spacing: 0) {
             header
+                .padding(.bottom, NookTheme.Spacing.md)
+            Rectangle().fill(NookTheme.hairline).frame(height: 1)
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { open($0) })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            footer
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { footer }
+                .padding(.top, NookTheme.Spacing.md)
         }
-        .padding(NookTheme.Spacing.lg)
-        .cardBackground(NookTheme.surface, stroke: NookTheme.hairline, radius: NookTheme.Radius.panel)
         .task(id: entry.id) { await loadWhatsApp() }
     }
 
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 22, source: entry.app)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 1) {
+            ChatsAvatar(name: entry.name, app: entry.app, size: 32)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(entry.name)
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
@@ -558,10 +637,21 @@ private struct ChatsDetail: View {
     @ViewBuilder
     private var footer: some View {
         if let notice {
-            Text(notice)
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
+                if drafting || sending {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "info.circle")
+                        .font(NookTheme.font(10.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+                Text(notice)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .transition(.opacity)
         }
         if menu.isOpen {
             ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
@@ -589,9 +679,6 @@ private struct ChatsDetail: View {
                 }
                 .onChange(of: reply) { _, text in updateMenu(text) }
                 .disabled(sending || drafting)
-            if drafting {
-                ProgressView().controlSize(.small)
-            }
             NookIconButton(systemName: asksNook ? "sparkles" : (whatsAppChat == nil ? "doc.on.doc" : "arrow.up"),
                            label: submitLabel, filled: true, size: 28) { submit() }
                 .disabled(sending || drafting || (!asksNook && reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
