@@ -712,7 +712,7 @@ struct MacAppMirrorPane: View {
                 VStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text(tr("embedded.mac.waiting", app.title))
-                        .font(NookTheme.font(12.5))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -735,7 +735,7 @@ struct MacAppMirrorPane: View {
             }
             if let notice = mirror.notice {
                 Text(notice)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

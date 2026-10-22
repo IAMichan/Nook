@@ -54,27 +54,27 @@ struct NookChatView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
                 if listShown {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                         NookList(chat: chat)
                         footer
                     }
-                    .padding(.trailing, compact ? 4 : 8)
+                    .padding(.trailing, compact ? NookTheme.Spacing.xs : NookTheme.Spacing.md)
                     .resizablePanel(width: compact ? $listWidth : $windowListWidth,
                                     defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
                                     minimum: PanelLayout.minimumList, available: totalWidth,
                                     rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
-                    .padding(.trailing, compact ? 4 : 8)
+                    .padding(.trailing, compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     if chat.isEmpty {
                         emptyState
                     } else {
                         header
-                            .padding(.bottom, 8)
+                            .padding(.bottom, NookTheme.Spacing.xs)
                         thread
                     }
                     inputBar
-                        .padding(.top, 10)
+                        .padding(.top, NookTheme.Spacing.md)
                 }
                 // In the main window the conversation keeps a readable width, centered in the room beside the list.
                 .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
@@ -97,7 +97,6 @@ struct NookChatView: View {
                         BrowserView(onClose: { viewModel.browserBesideChat = false })
                             .background(NookTheme.field)
                             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -106,7 +105,7 @@ struct NookChatView: View {
             if !listShown && showsFooter {
                 footer
                     .frame(width: min(compact ? listWidth : windowListWidth, max(totalWidth, PanelLayout.minimumList)))
-                    .padding(.top, 8)
+                    .padding(.top, NookTheme.Spacing.md)
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
@@ -114,7 +113,7 @@ struct NookChatView: View {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: NookTheme.Radius.sheet)
                     .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                    .overlay(Text(tr("chat.dropFile")).font(NookTheme.font(13, .medium)).foregroundStyle(NookTheme.paper))
+                    .overlay(Text(tr("chat.dropFile")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper))
                     .allowsHitTesting(false)
             }
         }
@@ -172,7 +171,7 @@ struct NookChatView: View {
                 homeSection(tr("home.section.start"))
                 suggestions
             }
-            .padding(.bottom, 4)
+            .padding(.bottom, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -210,20 +209,16 @@ struct NookChatView: View {
 
     // MARK: Header
 
-    /// "Nook / Plan my Friday" (double-click the name to rename it), the status while it works, and the conversation's
-    /// menu on the right: the same header as an agent session.
+    /// The conversation's title (double-click to rename it), the status while it works, and the conversation's menu on
+    /// the right. The tab and the list already say this is Nook, so the title stands on its own.
     @ViewBuilder
     private var header: some View {
         if let conversation = chat.active {
-            HStack(spacing: 8) {
-                Text(tr("tab.nook"))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize()
-                Text("/").foregroundStyle(NookTheme.textTertiary)
+            HStack(spacing: NookTheme.Spacing.md) {
                 if renaming {
                     TextField(tr("ws.title.placeholder"), text: $titleDraft)
                         .textFieldStyle(.plain)
-                        .font(NookTheme.font(13.5, .medium))
+                        .font(NookTheme.TextStyle.title)
                         .foregroundStyle(NookTheme.paper)
                         .onSubmit {
                             chat.rename(conversation.id, to: titleDraft)
@@ -232,7 +227,7 @@ struct NookChatView: View {
                         .onExitCommand { renaming = false }
                 } else {
                     Text(conversation.title)
-                        .font(NookTheme.font(13.5, .medium))
+                        .font(NookTheme.TextStyle.title)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                         .onTapGesture(count: 2) { startRenaming(conversation) }
@@ -241,7 +236,7 @@ struct NookChatView: View {
                 if conversation.pinned {
                     Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: NookTheme.Spacing.md)
                 if conversation.busy, let since = conversation.turnStarted {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         AgentStatusBadge(state: .working, detail: AgentFormat.short(context.date.timeIntervalSince(since)))
@@ -252,8 +247,8 @@ struct NookChatView: View {
                 // A new Nook starts from the list's header (⌘N), which is always next to a conversation.
                 conversationMenu(conversation)
             }
-            .font(NookTheme.font(13.5))
             .frame(height: 30)
+            .padding(.leading, NookTheme.Spacing.xxs)
             .onChange(of: chat.activeID) { _, _ in renaming = false }
         }
     }
@@ -295,7 +290,8 @@ struct NookChatView: View {
     private var thread: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                // Wide gaps between turns, so each question and its answer read as one block.
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                     let newest = chat.messages.last?.id
                     ForEach(chat.messages) { message in
                         // Equatable on the message's revision: while one answer streams in, the earlier messages
@@ -307,8 +303,9 @@ struct NookChatView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.trailing, 4)
-                .padding(.top, 8)
+                .padding(.horizontal, NookTheme.Spacing.xxs)
+                .padding(.top, NookTheme.Spacing.md)
+                .padding(.bottom, NookTheme.Spacing.xs)
                 .animation(NookTheme.reveal, value: chat.messages.count)
             }
             .defaultScrollAnchor(.bottom)
@@ -395,7 +392,7 @@ struct NookChatView: View {
     /// The same composer as the agents: the text on top, a plus menu and two quiet choices underneath, a round send button
     /// on the right. A file you attach shows above the box, only while there is one.
     private var inputBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let name = app.attachmentName {
                 AttachmentChip(name: name, isImage: app.attachmentIsImage) { app.clearAttachment() }
             }
@@ -415,7 +412,7 @@ struct NookChatView: View {
             }
             .rich(composerModel, chatComposerConfig)
             .trailing {
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 32) { viewModel.startListening() }
             }
             .images($images, asPaths: false, onFile: { app.askAbout($0) })
         }

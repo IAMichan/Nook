@@ -144,9 +144,9 @@ struct NookList: View {
             Button {
                 withAnimation(NookTheme.reveal) { showArchived.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Text(tr("nooks.section.archived", archived.count))
-                        .font(NookTheme.font(12, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize()
                     NookDivider()
@@ -156,8 +156,8 @@ struct NookList: View {
                         .rotationEffect(.degrees(showArchived ? 0 : 180))
                         .foregroundStyle(NookTheme.textTertiary)
                 }
-                .padding(.horizontal, 12)
-                .frame(height: 28)
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .frame(height: 30)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -175,11 +175,11 @@ struct NookList: View {
             if renaming == conversation.id {
                 TextField("", text: $nameDraft)
                     .textFieldStyle(.plain)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 12)
-                    .frame(height: 36)
-                    .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.5), radius: NookTheme.Radius.panel, style: .continuous)
+                    .padding(.horizontal, NookTheme.Spacing.lg)
+                    .frame(height: 40)
+                    .cardBackground(NookTheme.rowSelected, stroke: NookTheme.iris.opacity(0.4), radius: NookTheme.Radius.panel, style: .continuous)
                     .onSubmit {
                         chat.rename(conversation.id, to: nameDraft)
                         renaming = nil
@@ -240,8 +240,8 @@ private struct NookRow: View {
             Button(action: action) { content }
                 .buttonStyle(.plain)
             hoverActions
-                .padding(.top, 8)
-                .padding(.trailing, 8)
+                .padding(.top, NookTheme.Spacing.md)
+                .padding(.trailing, NookTheme.Spacing.md)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
         }
@@ -253,25 +253,25 @@ private struct NookRow: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Text(conversation.title)
-                    .font(NookTheme.font(13.5, receded ? .regular : .medium))
+                    .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
                     .foregroundStyle(receded || conversation.archived ? NookTheme.textSecondary : NookTheme.paper)
                     .lineLimit(1)
                 if conversation.pinned {
                     Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
                 }
-                Spacer(minLength: 6)
+                Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering ? 0 : 1)
             }
             Text(conversation.preview.isEmpty ? statusText : conversation.preview)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(background))
         .contentShape(Rectangle())
@@ -289,7 +289,8 @@ private struct NookRow: View {
             AgentStatusBadge(state: .ready)
         case .idle:
             Text(AgentFormat.short(now.timeIntervalSince(conversation.updated)))
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize()
         }

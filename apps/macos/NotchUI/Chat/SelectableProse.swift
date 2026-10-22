@@ -105,18 +105,19 @@ struct SelectableProse: NSViewRepresentable {
         if let hit = cache.object(forKey: key) { return hit }
         let result = NSMutableAttributedString()
         for (index, block) in blocks.enumerated() {
-            // The 10 points the answer's blocks keep between them.
-            let gap: CGFloat = index == 0 ? 0 : 10
+            // The 12 points the answer's blocks keep between them, so paragraphs read as paragraphs.
+            let gap: CGFloat = index == 0 ? 0 : 12
             switch block {
             case .heading(let level, let text):
                 let headingSize = level <= 1 ? size + 5 : level == 2 ? size + 3 : size + 1
                 let line = inline(text, size: headingSize, weight: .semibold, color: NookTheme.paper)
-                append(line, style: style(before: gap + (level <= 2 ? 6 : 3), lineSpacing: 0), to: result)
+                // A heading takes more room above than below, so it clearly belongs to the text under it.
+                append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
             case .paragraph(let text):
                 append(inline(text, size: size, weight: .regular, color: NookTheme.paper), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
-                    appendItem(item, before: itemIndex == 0 ? gap : 5, size: size, to: result)
+                    appendItem(item, before: itemIndex == 0 ? gap : 6, size: size, to: result)
                 }
             default:
                 break
@@ -126,7 +127,7 @@ struct SelectableProse: NSViewRepresentable {
         return result
     }
 
-    private static func style(before: CGFloat, lineSpacing: CGFloat = 3) -> NSMutableParagraphStyle {
+    private static func style(before: CGFloat, lineSpacing: CGFloat = 4) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = lineSpacing
         style.paragraphSpacingBefore = before
@@ -178,7 +179,7 @@ struct SelectableProse: NSViewRepresentable {
         } else {
             let bullet = bullets[min(item.level, bullets.count - 1)]
             let marker = NSAttributedString(string: bullet, attributes: [
-                .font: font, .foregroundColor: NSColor(item.level == 0 ? NookTheme.iris : NookTheme.textTertiary),
+                .font: font, .foregroundColor: NSColor(item.level == 0 ? NookTheme.textSecondary : NookTheme.textTertiary),
             ])
             line.append(NSAttributedString(string: "\t", attributes: [.font: font]))
             line.append(marker)
