@@ -347,6 +347,8 @@ private struct ChatsDetail: View {
     @State private var notice: String?
     @State private var sending = false
     @State private var drafting = false
+    /// The menu "@" opens above the field, as in Nook's own chat: "@nook" and ready-made requests.
+    @StateObject private var menu = ComposerModel()
     @FocusState private var replyFocused: Bool
 
     private static let time: DateFormatter = {
@@ -427,6 +429,9 @@ private struct ChatsDetail: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(2)
         }
+        if menu.isOpen {
+            ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
+        }
         HStack(spacing: NookTheme.Spacing.sm) {
             TextField(whatsAppChat == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
                       text: $reply, axis: .vertical)
@@ -435,7 +440,20 @@ private struct ChatsDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
                 .focused($replyFocused)
-                .onSubmit { submit() }
+                .onSubmit { menu.isOpen ? chooseSelected() : submit() }
+                .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
+                .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
+                .onKeyPress(.tab) { () -> KeyPress.Result in
+                    guard menu.isOpen else { return .ignored }
+                    chooseSelected()
+                    return .handled
+                }
+                .onKeyPress(.escape) { () -> KeyPress.Result in
+                    guard menu.isOpen else { return .ignored }
+                    menu.close()
+                    return .handled
+                }
+                .onChange(of: reply) { _, text in updateMenu(text) }
                 .disabled(sending || drafting)
             if drafting {
                 ProgressView().controlSize(.small)
@@ -449,6 +467,35 @@ private struct ChatsDetail: View {
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.xs)
         .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+    }
+
+    /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language.
+    private func updateMenu(_ text: String) {
+        let presets = ChatDraft.presetKeys.map { tr($0) }
+        menu.show(ChatDraft.choices(for: text, presets: presets).map { choice in
+            ComposerSuggestion(id: "nook:" + choice.insertion, title: choice.title,
+                               detail: tr(choice.isNook ? "chats.nook.detail" : "chats.nook.presetDetail"), symbol: "sparkles",
+                               payload: .command(ComposerCommand(name: choice.insertion, insertion: choice.insertion, action: .insert)))
+        })
+    }
+
+    /// A line of the menu fills the field; Return then lets Nook write.
+    private func choose(_ row: ComposerSuggestion) {
+        guard case .command(let command) = row.payload else { return }
+        reply = command.insertion
+        menu.close()
+        replyFocused = true
+    }
+
+    private func chooseSelected() {
+        guard menu.suggestions.indices.contains(menu.selection) else { return }
+        choose(menu.suggestions[menu.selection])
+    }
+
+    private func moveInMenu(_ delta: Int) -> KeyPress.Result {
+        guard menu.isOpen else { return .ignored }
+        menu.move(delta)
+        return .handled
     }
 
     private var submitLabel: String {

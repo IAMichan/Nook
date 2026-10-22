@@ -114,6 +114,22 @@ final class ChatInboxTests: XCTestCase {
 
     // MARK: Nook writes a message
 
+    func testMenuUnderTheAt() {
+        let presets = ["Say yes", "Say no, kindly", "Thank them"]
+        let at = ChatDraft.choices(for: "@", presets: presets)
+        XCTAssertEqual(at.first, ChatDraft.Choice(insertion: "@nook ", title: "@nook", isNook: true))
+        XCTAssertEqual(at.dropFirst().map(\.insertion), ["@nook Say yes", "@nook Say no, kindly", "@nook Thank them"])
+        XCTAssertEqual(ChatDraft.choices(for: "@NO", presets: presets).count, 4, "any case, on the way to @nook")
+        XCTAssertEqual(ChatDraft.choices(for: "@nook ", presets: presets).map(\.title),
+                       ["@nook Say yes", "@nook Say no, kindly", "@nook Thank them"], "@nook typed in full: only the requests")
+        XCTAssertEqual(ChatDraft.choices(for: "@nook say", presets: presets).map(\.insertion), ["@nook Say yes", "@nook Say no, kindly"])
+        XCTAssertEqual(ChatDraft.choices(for: "@nook Say yes", presets: presets), [], "typed in full: Return lets Nook write")
+        XCTAssertEqual(ChatDraft.choices(for: "@nook tell him I'm late", presets: presets), [])
+        XCTAssertEqual(ChatDraft.choices(for: "@lisa", presets: presets), [])
+        XCTAssertEqual(ChatDraft.choices(for: "hi @", presets: presets), [], "only at the start")
+        XCTAssertEqual(ChatDraft.choices(for: "", presets: presets), [])
+    }
+
     func testNookInstruction() {
         XCTAssertEqual(ChatDraft.instruction(in: "@nook say yes, short"), "say yes, short")
         XCTAssertEqual(ChatDraft.instruction(in: "  @Nook: zeg dat ik later ben"), "zeg dat ik later ben")

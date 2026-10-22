@@ -228,6 +228,13 @@ final class ComposerModel: ObservableObject {
         }
     }
 
+    /// Shows lines a call site made itself (the "@nook" menu in a chat's answer field); none closes the list.
+    func show(_ rows: [ComposerSuggestion]) {
+        search?.cancel()
+        trigger = nil
+        if rows.map(\.id) != suggestions.map(\.id) { publish(rows) }
+    }
+
     private func publish(_ rows: [ComposerSuggestion]) {
         suggestions = rows
         selection = 0

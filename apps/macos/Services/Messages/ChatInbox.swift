@@ -658,3 +658,40 @@ enum ChatDraft {
         return text.isEmpty ? nil : text
     }
 }
+
+// MARK: The menu under "@"
+
+extension ChatDraft {
+    /// One line of the menu that "@" opens in a chat's answer field, as in Nook's own chat.
+    struct Choice: Equatable {
+        /// What choosing it puts in the field: "@nook " or "@nook Say yes".
+        var insertion: String
+        var title: String
+        /// "@nook" itself; the others are ready-made requests after it.
+        var isNook: Bool
+    }
+
+    /// The ready-made requests the menu offers after "@nook", as text keys: each is said in the user's own language.
+    static let presetKeys = ["chats.nook.preset.yes", "chats.nook.preset.no", "chats.nook.preset.later", "chats.nook.preset.when",
+                             "chats.nook.preset.thanks"]
+
+    /// The menu for what is typed. "@" up to "@nook" offers "@nook" and the requests; "@nook " and the start of a
+    /// request offer the requests that fit. Nothing for other text, and nothing once a line is typed in full, so Return
+    /// then lets Nook write.
+    static func choices(for text: String, presets: [String]) -> [Choice] {
+        let typed = String(text.drop { $0 == " " })
+        guard typed.hasPrefix("@"), !typed.contains("\n") else { return [] }
+        let lower = typed.lowercased()
+        let requests = { (start: String) in
+            presets.filter { preset in
+                let folded = preset.lowercased()
+                return folded.hasPrefix(start) && folded != start
+            }.map { Choice(insertion: "@nook " + $0, title: "@nook " + $0, isNook: false) }
+        }
+        if "@nook".hasPrefix(lower) {
+            return [Choice(insertion: "@nook ", title: "@nook", isNook: true)] + requests("")
+        }
+        guard lower.hasPrefix("@nook ") else { return [] }
+        return requests(String(lower.dropFirst(6)).trimmingCharacters(in: .whitespaces))
+    }
+}
