@@ -16,21 +16,7 @@ struct ChatsSettingsSection: View {
             Section {
                 SettingToggle(tr("chats.settings.collect"), detail: tr("chats.settings.collectDetail"),
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
-                if capture.status == .needsAccess {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        Image(systemName: "lock.fill").foregroundStyle(NookTheme.amber)
-                        Text(tr("chats.capture.needsAccess"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: NookTheme.Spacing.sm)
-                        Button(tr("chats.capture.grant")) {
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        }
-                    }
-                }
+                if capture.enabled { status }
             } header: {
                 Text(tr("chats.settings.otherApps"))
             } footer: {
@@ -38,19 +24,7 @@ struct ChatsSettingsSection: View {
             }
 
             Section {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    TextField(tr("chats.settings.addField"), text: $typed, prompt: Text(tr("chats.settings.addPrompt")))
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { addTyped() }
-                    Button(tr("chats.settings.add")) { addTyped() }
-                        .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Button(tr("chats.settings.chooseApp")) { chooseMacApp() }
-                }
-                if let notice {
-                    Text(notice)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                }
+                addRow
                 ForEach(capture.sources.apps) { source in
                     row(source)
                 }
@@ -64,11 +38,65 @@ struct ChatsSettingsSection: View {
         }
     }
 
+    /// Whether collecting works, in one line: Full Disk Access missing, the database unreadable, or how many chats came in.
+    @ViewBuilder
+    private var status: some View {
+        switch capture.status {
+        case .needsAccess:
+            StatusRow(title: tr("chats.status.access"), detail: tr("chats.capture.needsAccess"), state: .warning) {
+                Button(tr("chats.capture.grant")) {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+        case .failed(let why):
+            StatusRow(title: tr("chats.status.failed"), detail: why, state: .error) {
+                Button(tr("chats.status.retry")) { capture.start() }
+            }
+        case .running, .off:
+            let count = capture.inbox.threads.count
+            StatusRow(title: tr("chats.status.running"),
+                      detail: count == 0 ? tr("chats.status.waiting") : tr("chats.status.count", count),
+                      state: count == 0 ? .todo : .done) {
+                EmptyView()
+            }
+        }
+    }
+
+    /// Adding a source: a website or an app's name typed in one field, or a Mac app picked from the Applications folder.
+    private var addRow: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            SettingLabel(tr("chats.settings.addField"), detail: tr("chats.settings.addDetail"))
+            HStack(spacing: NookTheme.Spacing.sm) {
+                TextField("", text: $typed, prompt: Text(tr("chats.settings.addPrompt")))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity)
+                    .onSubmit { addTyped() }
+                Button(tr("chats.settings.add")) { addTyped() }
+                    .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(tr("chats.settings.chooseApp")) { chooseMacApp() }
+            }
+            if let notice {
+                Text(notice)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+            }
+        }
+        .padding(.vertical, NookTheme.Spacing.xxs)
+    }
+
     /// One app: its icon, name and where its messages come from, with its switch (and a remove button when you added it).
     private func row(_ source: MessagingApp) -> some View {
         let custom = !MessagingApps.builtIn.contains { $0.id == source.id }
-        return Toggle(isOn: Binding(get: { capture.sources.isOn(source.id) },
-                                    set: { capture.setSource(source.id, on: $0) })) {
+        // An app is only on while collecting is: switching one on switches collecting on with it.
+        return Toggle(isOn: Binding(get: { capture.enabled && capture.sources.isOn(source.id) },
+                                    set: { on in
+                                        capture.setSource(source.id, on: on)
+                                        if on, !capture.enabled { setCollecting(true) }
+                                    })) {
             HStack(spacing: NookTheme.Spacing.md) {
                 SiteIcon(domain: source.site, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 20, source: source.id)
                     .frame(width: 22)

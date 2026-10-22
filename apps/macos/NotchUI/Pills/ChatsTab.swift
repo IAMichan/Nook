@@ -34,8 +34,8 @@ struct ChatsFocus: Equatable {
 }
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
-/// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first, with a filter per app and a
-/// search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there, any other opens in its own app.
+/// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), in groups (unread first, then by day) that fold
+/// shut, with a filter per app and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there, any other opens in its own app.
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -46,6 +46,8 @@ struct ChatsTab: View {
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
     @State private var query = ""
+    /// The groups folded shut (a click on their header); a search shows every group open.
+    @State private var collapsed: Set<ChatsGroup> = []
 
     /// Unread messages in every chat, for the dot on the tab.
     @MainActor
@@ -87,6 +89,7 @@ struct ChatsTab: View {
         filter = focus.app
         query = focus.query
         selection = focus.chat
+        collapsed = []
     }
 
     // MARK: The chats
@@ -107,6 +110,17 @@ struct ChatsTab: View {
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           unread: conversation.unread, ticks: ticks))
             }
+            // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
+            // when one is opened.
+            var listed = Set(entries.map(\.id))
+            for chat in whatsApp.knownChats
+            where WAJID.kind(chat.jid) != .status && !whatsApp.filters.ignored.contains(chat.jid) {
+                let id = "wa|" + chat.jid
+                guard listed.insert(id).inserted else { continue }
+                entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
+                                          name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
+                                          preview: "", last: chat.last, unread: 0))
+            }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
             let preview = thread.messages.last.map { $0.sender.isEmpty ? $0.text : "\($0.sender): \($0.text)" } ?? ""
@@ -116,13 +130,35 @@ struct ChatsTab: View {
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
 
+    /// The chats that match the filter and the search, in the list's order: group by group, newest first in each.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
+        let now = Date()
         return all.filter { entry in
             (filter == nil || entry.app == filter)
                 && (needle.isEmpty || entry.name.localizedCaseInsensitiveContains(needle) || entry.preview.localizedCaseInsensitiveContains(needle))
         }
+        .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
+        .sorted { a, b in
+            if a.group != b.group { return a.group < b.group }
+            return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
+        }
+        .map(\.entry)
     }
+
+    /// The shown chats per group, in order; empty groups left out.
+    private var sections: [ChatsSection] {
+        let now = Date()
+        var result: [ChatsSection] = []
+        for entry in shown {
+            let group = ChatsGroup.of(entry, now: now)
+            if result.last?.group == group { result[result.count - 1].entries.append(entry) }
+            else { result.append(ChatsSection(group: group, entries: [entry])) }
+        }
+        return result
+    }
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     /// The chat on the right: the one you picked, else the newest.
     private var current: ChatsEntry? {
@@ -173,15 +209,26 @@ struct ChatsTab: View {
 
             ScrollView {
                 LazyVStack(spacing: NookTheme.Spacing.xxs) {
-                    ForEach(shown) { entry in
-                        ChatsRow(entry: entry, selected: entry.id == current?.id) { selection = entry.id }
+                    let selected = current?.id
+                    let groups = sections
+                    ForEach(groups) { section in
+                        let open = searching || !collapsed.contains(section.group)
+                        ChatsGroupHeader(title: section.group.title, count: section.entries.count, open: open,
+                                         first: section.group == groups.first?.group) {
+                            if collapsed.contains(section.group) { collapsed.remove(section.group) }
+                            else { collapsed.insert(section.group) }
+                        }
+                        .disabled(searching)
+                        if open {
+                            ForEach(section.entries) { entry in
+                                ChatsRow(entry: entry, selected: entry.id == selected) { selection = entry.id }
+                            }
+                        }
                     }
                 }
             }
             if shown.isEmpty {
-                Text(tr("chats.noMatch"))
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textTertiary)
+                ListEmptyNote(tr("chats.noMatch"))
                     .frame(maxWidth: .infinity)
                     .padding(.top, NookTheme.Spacing.xl)
             }
@@ -209,12 +256,21 @@ struct ChatsTab: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 420)
             if !capture.enabled {
-                NookPrimaryButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openSettings(section: .chats) }
-                    .fixedSize()
-                    .padding(.top, NookTheme.Spacing.xs)
+                // Every chat app is on by default: one click starts collecting, Settings is for choosing.
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    NookPrimaryButton(title: tr("chats.empty.turnOn"), symbol: "tray.and.arrow.down") { turnOn() }
+                    NookGhostButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openSettings(section: .chats) }
+                }
+                .fixedSize()
+                .padding(.top, NookTheme.Spacing.xs)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func turnOn() {
+        capture.enabled = true
+        if let source = app.connectors.source(id: ChatInboxConnector.sourceID) { app.connectors.refresh(source) }
     }
 
     /// macOS keeps its notifications behind Full Disk Access.
@@ -238,6 +294,81 @@ struct ChatsTab: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+    }
+}
+
+/// A group of the list: the chats waiting for you first, then by when they last moved.
+enum ChatsGroup: Int, Comparable, CaseIterable {
+    case unread, today, yesterday, week, month, earlier
+
+    static func < (lhs: ChatsGroup, rhs: ChatsGroup) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    var title: String {
+        switch self {
+        case .unread: return tr("chats.group.unread")
+        case .today: return tr("chats.group.today")
+        case .yesterday: return tr("chats.group.yesterday")
+        case .week: return tr("chats.group.week")
+        case .month: return tr("chats.group.month")
+        case .earlier: return tr("chats.group.earlier")
+        }
+    }
+
+    /// Where a chat goes: unread chats on top whatever their age, the others by their newest message.
+    static func of(_ entry: ChatsEntry, now: Date, calendar: Calendar = .current) -> ChatsGroup {
+        if entry.unread > 0 { return .unread }
+        let today = calendar.startOfDay(for: now)
+        if entry.last >= today { return .today }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: today), entry.last >= yesterday { return .yesterday }
+        if let week = calendar.date(byAdding: .day, value: -7, to: today), entry.last >= week { return .week }
+        if let month = calendar.date(byAdding: .day, value: -30, to: today), entry.last >= month { return .month }
+        return .earlier
+    }
+}
+
+/// One group of the list and its chats, newest first.
+struct ChatsSection: Identifiable {
+    let group: ChatsGroup
+    var entries: [ChatsEntry]
+    var id: ChatsGroup { group }
+}
+
+/// A group's title above its chats, with how many there are; a click folds it shut or open.
+private struct ChatsGroupHeader: View {
+    let title: String
+    let count: Int
+    let open: Bool
+    /// The top group sits right under the filters; the others get room above.
+    let first: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(systemName: "chevron.right")
+                    .font(NookTheme.font(8.5, .bold))
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+                Text(title.uppercased())
+                    .font(NookTheme.font(10.5, .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+                Spacer(minLength: NookTheme.Spacing.xs)
+                Text("\(count)")
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.top, first ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
+            .padding(.bottom, NookTheme.Spacing.xxs)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.reveal, value: open)
+        .accessibilityLabel("\(title), \(count)")
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -285,7 +416,9 @@ private struct ChatsRow: View {
     }()
 
     private var when: String {
-        Calendar.current.isDateInToday(entry.last) ? Self.time.string(from: entry.last)
+        // A chat on the phone whose last message the gateway did not date.
+        guard entry.last > .distantPast else { return "" }
+        return Calendar.current.isDateInToday(entry.last) ? Self.time.string(from: entry.last)
             : ChatTimeline.dayLabel(entry.last, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
     }
 
@@ -308,7 +441,8 @@ private struct ChatsRow: View {
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
                         if let ticks = entry.ticks { TicksView(ticks: ticks) }
-                        Text(entry.preview)
+                        // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
+                        Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
                             .font(NookTheme.font(12))
                             .foregroundStyle(entry.unread > 0 ? NookTheme.textStrong : NookTheme.textTertiary)
                             .lineLimit(1)

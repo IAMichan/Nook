@@ -35,8 +35,11 @@ final class ChatCaptureService: ObservableObject {
 
     /// How often the database is looked at. Only a database that changed is read.
     private static let interval: TimeInterval = 4
-    /// A first start shows what came in this long ago.
-    private static let firstLook: TimeInterval = 24 * 3600
+    /// A first start shows what came in this long ago: macOS keeps the notifications it showed for a while, so the
+    /// chats of the last weeks are there at once instead of only the ones that write after switching on.
+    private static let firstLook: TimeInterval = 14 * 86_400
+    /// What came in before this long ago, on a first start, counts as read: it was likely seen on the Mac already.
+    private static let freshness: TimeInterval = 3600
 
     private static var file: URL { NookPaths.supportDirectory.appendingPathComponent("chat-inbox.json") }
     private var timer: Timer?
@@ -56,6 +59,8 @@ final class ChatCaptureService: ObservableObject {
         guard enabled else { return }
         timer?.invalidate()
         lastChange = nil
+        // Nothing collected yet (a start before Full Disk Access, or before any chat wrote): look back again.
+        if inbox.threads.isEmpty { inbox.lastRecord = nil }
         timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.poll() }
         }
@@ -77,6 +82,7 @@ final class ChatCaptureService: ObservableObject {
         polling = true
         defer { polling = false }
         do {
+            let catchingUp = inbox.lastRecord == nil
             var lastRecord = inbox.lastRecord
             var changed = false
             // At most a few pages in one go; a backlog after a long sleep is read over the next looks.
@@ -96,6 +102,10 @@ final class ChatCaptureService: ObservableObject {
                     lastRecord = NotificationRecord.integer(newest.first?["id"]) ?? 0
                 }
                 if rows.count < 200 { break }
+            }
+            if catchingUp {
+                let seen = Date().addingTimeInterval(-Self.freshness)
+                for thread in inbox.threads.values where thread.unread > 0 && thread.last < seen { inbox.markRead(thread.id) }
             }
             if lastRecord != inbox.lastRecord {
                 inbox.lastRecord = lastRecord
