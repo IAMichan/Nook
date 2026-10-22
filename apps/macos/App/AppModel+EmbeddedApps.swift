@@ -15,6 +15,11 @@ extension AppModel {
             chat.append(ChatMessage(role: .nook, text: words.isEmpty ? tr("chats.opened") : tr("chats.openedOn", words)))
             showChats(focus)
             return true
+        case .open(let app, _) where EmbeddedArtifact.app(for: app.url) != nil:
+            // "@open claude.ai/artifact/…": beside Claude, signed in, rather than as a site of its own.
+            if let owner = openArtifact(app.url) {
+                chat.append(ChatMessage(role: .nook, text: tr("embedded.artifact.opened", tr("embedded.artifact"), owner.title)))
+            }
         case .open(let app, let mode):
             let opened = openEmbeddedApp(app, mode: mode)
             chat.append(ChatMessage(role: .nook, text: openedMessage(opened.app, opened.mode, chosen: opened.chosen)))
@@ -60,6 +65,21 @@ extension AppModel {
             viewModel.embeddedAppOpen = true
         }
         return (target, way, wanted != nil)
+    }
+
+    /// An artifact clicked or opened in Nook (a Claude artifact, a ChatGPT canvas): the app that made it opens beside the
+    /// chat in its web version, with the artifact in a side panel next to it, signed in with the app so a private one
+    /// shows too. Returns that app; nil when `url` is no artifact.
+    @discardableResult
+    func openArtifact(_ url: URL) -> EmbeddedApp? {
+        guard let owner = EmbeddedArtifact.app(for: url) else { return nil }
+        let store = EmbeddedAppStore.shared
+        if store.current?.id != owner.id { store.open(owner) }
+        viewModel.browserBesideChat = false
+        viewModel.embeddedAppOpen = true
+        store.openBeside(url)
+        showChat()
+        return owner
     }
 
     /// "@open chat Jan": with a linked phone, Jan's chat shows as the card a new message from Jan brings up (the chat so

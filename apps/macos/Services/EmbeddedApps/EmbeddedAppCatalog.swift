@@ -420,6 +420,38 @@ enum EmbeddedAppCatalog {
     }
 }
 
+/// A page an AI app made for you (a Claude artifact, a ChatGPT canvas) opens in a side panel inside that app's pane,
+/// beside the conversation it came from and signed in with it, instead of in another browser.
+enum EmbeddedArtifact {
+    /// The catalog app whose artifact `url` is, nil for any other page: "claude.ai/artifact/…", "claude.ai/public/artifacts/…",
+    /// "claude.ai/code/artifact/…", a "claude.site" page or Claude's sandbox, a ChatGPT canvas.
+    static func app(for url: URL) -> EmbeddedApp? {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let host = url.host?.lowercased() else { return nil }
+        let path = url.path.lowercased()
+        let on = { (domain: String) in host == domain || host.hasSuffix("." + domain) }
+        let id: String
+        if on("claude.site") || on("claudeusercontent.com") || (on("claude.ai") && path.contains("/artifact")) {
+            id = "claude"
+        } else if (on("chatgpt.com") || on("chat.openai.com")) && path.hasPrefix("/canvas") {
+            id = "chatgpt"
+        } else {
+            return nil
+        }
+        return EmbeddedAppCatalog.all.first { $0.id == id }
+    }
+
+    /// Whether a link that wants a new window in `app`'s pane opens beside it: the app's own artifacts, and other pages
+    /// of its own site ("open in a new tab" there). A link to another site goes to the browser. A blank new window
+    /// (one a page fills itself) has no address yet and stays with the app too.
+    static func opensBeside(_ url: URL?, from app: EmbeddedApp) -> Bool {
+        guard !app.isMacApp else { return false }
+        guard let url, let scheme = url.scheme?.lowercased(), scheme != "about" else { return true }
+        guard ["http", "https"].contains(scheme), let host = url.host?.lowercased() else { return false }
+        if self.app(for: url)?.id == EmbeddedAppCatalog.family(of: app) { return true }
+        return host == app.url.host?.lowercased()
+    }
+}
+
 /// The apps installed on this Mac, for "@open": the `.app` bundles in the usual Applications folders. An app that also
 /// has a web version in the catalog takes over its names ("wa" opens the WhatsApp Mac app) and its symbol; "@open
 /// whatsapp web" still opens the web version.

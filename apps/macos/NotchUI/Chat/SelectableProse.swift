@@ -80,7 +80,13 @@ struct SelectableProse: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
-            if let url, MarkdownBlock.isSafeLink(url) { NSWorkspace.shared.open(url) }
+            guard let url, MarkdownBlock.isSafeLink(url) else { return true }
+            // An artifact opens beside the chat, next to the app that made it; any other link in the browser.
+            if EmbeddedArtifact.app(for: url) != nil {
+                Task { @MainActor in AppModel.shared.openArtifact(url) }
+            } else {
+                NSWorkspace.shared.open(url)
+            }
             return true
         }
     }
