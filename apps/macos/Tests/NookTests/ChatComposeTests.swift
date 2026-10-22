@@ -343,6 +343,57 @@ final class ChatComposeTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: recent[0]), Data("cat".utf8))
     }
 
+    // MARK: GIFs from GIPHY
+
+    func testGiphyAsksForTrendingOrASearch() throws {
+        let trending = try XCTUnwrap(Giphy.request(query: "  ", key: "K"))
+        XCTAssertEqual(trending.host, "api.giphy.com")
+        XCTAssertEqual(trending.path, "/v1/gifs/trending")
+        let items = URLComponents(url: trending, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertTrue(items.contains(URLQueryItem(name: "api_key", value: "K")))
+        XCTAssertFalse(items.contains { $0.name == "q" })
+
+        let search = try XCTUnwrap(Giphy.request(query: "happy cat", key: "K", language: "nl", offset: 30))
+        XCTAssertEqual(search.path, "/v1/gifs/search")
+        let words = URLComponents(url: search, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertTrue(words.contains(URLQueryItem(name: "q", value: "happy cat")))
+        XCTAssertTrue(words.contains(URLQueryItem(name: "lang", value: "nl")))
+        XCTAssertTrue(words.contains(URLQueryItem(name: "offset", value: "30")))
+    }
+
+    func testGiphyAnswersBecomeGIFsToSend() {
+        let json = #"""
+        {"data":[
+          {"id":"a1","title":"Happy Cat","images":{
+            "fixed_width_small":{"url":"https://media1.giphy.com/media/a1/100w.gif","width":"100","height":"75"},
+            "original":{"url":"https://media1.giphy.com/media/a1/giphy.gif","mp4":"https://media1.giphy.com/media/a1/giphy.mp4"}}},
+          {"id":"b2","title":"","images":{
+            "fixed_width":{"url":"https://media2.giphy.com/media/b2/200w.gif"},
+            "original":{"url":"https://media2.giphy.com/media/b2/giphy.gif"}}},
+          {"id":"evil","images":{
+            "fixed_width_small":{"url":"https://example.com/x.gif"},
+            "original":{"mp4":"https://media.giphy.com/x.mp4"}}},
+          {"id":"plain","images":{
+            "fixed_width_small":{"url":"http://media.giphy.com/x.gif"},
+            "original":{"mp4":"https://media.giphy.com/x.mp4"}}}
+        ],"meta":{"status":200,"msg":"OK"}}
+        """#
+        let gifs = Giphy.gifs(Data(json.utf8))
+        XCTAssertEqual(gifs.map(\.id), ["a1", "b2"], "a preview off GIPHY or over plain HTTP is never fetched")
+        XCTAssertEqual(gifs[0].file.pathExtension, "mp4", "the MP4 goes, as WhatsApp sends a GIF")
+        XCTAssertEqual(gifs[0].previewSize, CGSize(width: 100, height: 75))
+        XCTAssertEqual(gifs[1].file.lastPathComponent, "giphy.gif", "without an MP4 the GIF itself goes")
+        XCTAssertEqual(Giphy.fileName(gifs[0]), "GIF.mp4")
+        XCTAssertEqual(Giphy.fileName(gifs[0], preview: true), "preview.gif")
+        XCTAssertTrue(Giphy.gifs(Data("{}".utf8)).isEmpty)
+    }
+
+    func testGiphySaysWhyItRefused() {
+        XCTAssertEqual(Giphy.problem(Data(#"{"meta":{"status":401,"msg":"Unauthorized"}}"#.utf8)), "Unauthorized")
+        XCTAssertEqual(Giphy.problem(Data(#"{"message":"Invalid authentication credentials"}"#.utf8)), "Invalid authentication credentials")
+        XCTAssertNil(Giphy.problem(Data("nope".utf8)))
+    }
+
     // MARK: Voice messages as Ogg Opus
 
     func testOpusPacketsSayHowLongTheyAre() {

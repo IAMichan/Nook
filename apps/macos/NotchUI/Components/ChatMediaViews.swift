@@ -161,7 +161,7 @@ struct ChatGIFView: View {
 }
 
 /// A picture that moves when it has frames (GIF, WebP, APNG), drawn whole by AppKit.
-private struct AnimatedPicture: NSViewRepresentable {
+struct AnimatedPicture: NSViewRepresentable {
     let url: URL
 
     func makeNSView(context: Context) -> NSImageView {
