@@ -488,7 +488,12 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "parakeet.downloading": "Downloaden… %ld%%",
         "parakeet.remove": "Verwijderen",
         "parakeet.use": "Gebruiken voor dicteren en gesprekken",
-        "parakeet.unsupported": "Parakeet vraagt een Mac met Apple silicon. Nook gebruikt de spraakherkenning van je Mac."
+        "parakeet.unsupported": "Parakeet vraagt een Mac met Apple silicon. Nook gebruikt de spraakherkenning van je Mac.",
+        "connect.mail.timeout": "Mail antwoordde niet binnen %ld seconden. Waarschijnlijk is Mail nog bezig met laden of met het bijwerken van een grote mailbox. Wacht even en probeer het opnieuw; blijft het gebeuren, stop Mail dan en open het opnieuw.",
+        "connect.mail.notRunning": "Mail sloot of reageerde niet meer terwijl Nook het las. Open Mail en probeer het opnieuw.",
+        "connect.mail.scriptError": "Mail gaf een fout: %@. Stop Mail, open het opnieuw en probeer het nog eens.",
+        "connect.mail.noAnswer": "Mail gaf geen antwoord. Stop Mail, open het opnieuw en probeer het nog eens.",
+        "connect.mail.code": "foutcode %ld"
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -974,7 +979,12 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "parakeet.downloading": "Downloading… %ld%%",
         "parakeet.remove": "Remove",
         "parakeet.use": "Use for dictation and calls",
-        "parakeet.unsupported": "Parakeet needs a Mac with Apple silicon. Nook uses your Mac's speech recognition."
+        "parakeet.unsupported": "Parakeet needs a Mac with Apple silicon. Nook uses your Mac's speech recognition.",
+        "connect.mail.timeout": "Mail did not answer within %ld seconds. It is probably still loading or syncing a large mailbox. Wait a moment and try again; if it keeps happening, quit Mail and open it again.",
+        "connect.mail.notRunning": "Mail closed or stopped responding while Nook was reading it. Open Mail and try again.",
+        "connect.mail.scriptError": "Mail returned an error: %@. Quit Mail, open it again and try once more.",
+        "connect.mail.noAnswer": "Mail gave no answer. Quit Mail, open it again and try once more.",
+        "connect.mail.code": "error code %ld"
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -1460,6 +1470,11 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "parakeet.downloading": "Lädt… %ld%%",
         "parakeet.remove": "Entfernen",
         "parakeet.use": "Für Diktat und Gespräche verwenden",
-        "parakeet.unsupported": "Parakeet braucht einen Mac mit Apple Silicon. Nook nutzt die Spracherkennung deines Macs."
+        "parakeet.unsupported": "Parakeet braucht einen Mac mit Apple Silicon. Nook nutzt die Spracherkennung deines Macs.",
+        "connect.mail.timeout": "Mail hat nicht innerhalb von %ld Sekunden geantwortet. Wahrscheinlich lädt Mail noch oder synchronisiert ein großes Postfach. Warte kurz und versuche es erneut; passiert es weiter, beende Mail und öffne es neu.",
+        "connect.mail.notRunning": "Mail wurde geschlossen oder reagierte nicht mehr, während Nook es las. Öffne Mail und versuche es erneut.",
+        "connect.mail.scriptError": "Mail meldete einen Fehler: %@. Beende Mail, öffne es neu und versuche es noch einmal.",
+        "connect.mail.noAnswer": "Mail gab keine Antwort. Beende Mail, öffne es neu und versuche es noch einmal.",
+        "connect.mail.code": "Fehlercode %ld"
     ]
 ]
