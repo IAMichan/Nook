@@ -180,9 +180,12 @@ extension AppModel {
         return message
     }
 
-    /// "@nook …" in a message card's field: the message Nook writes from the chat the card shows, as the Chats tab does.
+    /// "@nook …" in a card's field: the message Nook writes from the chat the card shows, as the Chats tab does. A card
+    /// from Nook itself (an answer, a question back) is that chat's one message, so Nook writes your answer to it.
     func draftCardReply(_ instruction: String, card: NookCard) async throws -> String {
-        guard case .chat(let bubbles) = card.detail else { throw NookError(tr("chats.draft.failed")) }
+        guard case .chat(let bubbles) = card.detail else {
+            return try await draftChatMessage(app: "Nook", chat: "Nook", transcript: "Nook: " + card.title, instruction: instruction)
+        }
         let app = card.id.hasPrefix(Self.whatsAppCardPrefix) ? "WhatsApp" : card.replyCopiesTo ?? card.context
         let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: card.title)
         return try await draftChatMessage(app: app, chat: card.title, transcript: transcript, instruction: instruction)

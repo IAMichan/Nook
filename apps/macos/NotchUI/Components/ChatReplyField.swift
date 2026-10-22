@@ -31,7 +31,7 @@ struct ChatReplyField: View {
     /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. Throws with a sentence
     /// you can act on.
     let draft: (String) async throws -> String
-    /// Return or the button with ordinary text: the host sends it (the text is still in `text`).
+    /// Cmd+Return or the button with ordinary text: the host sends it (the text is still in `text`).
     let send: () -> Void
 
     @State private var drafting = false
@@ -108,7 +108,8 @@ struct ChatReplyField: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
                 .focused(focus)
-                .onSubmit { menu.isOpen ? chooseSelected() : submit() }
+                // Return adds a line, Cmd+Return sends; with the `@` menu open Return chooses a line there.
+                .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
                 .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
                 .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
                 .onKeyPress(.tab) { () -> KeyPress.Result in
@@ -152,6 +153,7 @@ struct ChatReplyField: View {
             } else {
                 NookIconButton(systemName: asksNook ? "sparkles" : sendSymbol, label: buttonLabel, filled: true, size: 28) { submit() }
                     .disabled(busy || (!asksNook && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .help(buttonLabel + " (⌘↩)")
             }
         }
         .padding(.leading, NookTheme.Spacing.md)
@@ -174,7 +176,7 @@ struct ChatReplyField: View {
         })
     }
 
-    /// A line of the menu fills the field; Return then lets Nook write.
+    /// A line of the menu fills the field; Cmd+Return then lets Nook write.
     private func choose(_ row: ComposerSuggestion) {
         guard case .command(let command) = row.payload else { return }
         text = command.insertion
@@ -187,13 +189,24 @@ struct ChatReplyField: View {
         choose(menu.suggestions[menu.selection])
     }
 
+    private func returnKey(_ press: KeyPress) -> KeyPress.Result {
+        if menu.isOpen {
+            chooseSelected()
+        } else if press.modifiers.contains(.command) {
+            submit()
+        } else {
+            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+        }
+        return .handled
+    }
+
     private func moveInMenu(_ delta: Int) -> KeyPress.Result {
         guard menu.isOpen else { return .ignored }
         menu.move(delta)
         return .handled
     }
 
-    /// Return or the button: Nook writes for "@nook …"; anything else goes to the host to send.
+    /// Cmd+Return or the button: Nook writes for "@nook …"; anything else goes to the host to send.
     private func submit() {
         guard !busy, !drafting else { return }
         if let instruction = ChatDraft.instruction(in: text) {

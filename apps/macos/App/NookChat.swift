@@ -175,6 +175,11 @@ struct Conversation: Identifiable, ConversationListItem {
     private static let markdownStripSet = CharacterSet(charactersIn: "#*_`>|")
 
     /// Single-line preview: last message from Nook.
+    /// Nook's last answer in full, for a notice that shows all of it ("" before Nook answered).
+    var lastAnswer: String {
+        messages.last(where: { $0.role == .nook && !$0.text.isEmpty })?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     var preview: String {
         guard let last = messages.last(where: { $0.role == .nook && !$0.text.isEmpty }) else { return "" }
         let sample = String(last.text.prefix(240)).replacingOccurrences(of: "\n", with: " ")

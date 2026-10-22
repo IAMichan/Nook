@@ -437,7 +437,9 @@ extension AppModel {
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
         let title = tr("nooks.finished", conversation.title)
         logNotice(.done, title: title, detail: preview, target: .conversation(id))
-        presentNookNotice(title: title, detail: preview, button: tr("nooks.view"), mood: .done, replyTo: id) { [weak self] in
+        // The card shows the whole answer; the notice log, the strip and a macOS notification keep the short preview.
+        presentNookNotice(title: title, detail: preview, full: conversation.lastAnswer, button: tr("nooks.view"), mood: .done,
+                          replyTo: id) { [weak self] in
             self?.openConversation(id)
         }
     }
@@ -445,16 +447,18 @@ extension AppModel {
     /// A notice from Nook himself (an answer that finished, call notes that are ready), shown as Settings ›
     /// Notifications says: a card with `button` and Later, one line with `button`, or a macOS notification.
     /// `replyTo`: the conversation the card's field answers, so a question Nook asks back is answered in the notch
-    /// (`answerFromNotice`) instead of only through View or Later.
-    func presentNookNotice(title: String, detail: String, button: String, mood: NookMood, replyTo conversation: UUID? = nil,
-                           open: @escaping () -> Void) {
+    /// (`answerFromNotice`) instead of only through View or Later. `full`: what the card shows instead of `detail` (the
+    /// whole answer, where `detail` is its one-line preview).
+    func presentNookNotice(title: String, detail: String, full: String = "", button: String, mood: NookMood,
+                           replyTo conversation: UUID? = nil, open: @escaping () -> Void) {
         let token = conversation.map { Self.nookReplyCardPrefix + $0.uuidString + "/" + UUID().uuidString }
             ?? "nookdone-" + UUID().uuidString
         deliverNotice(.nook, id: token, title: title, body: detail, card: { [weak self] in
             guard let self else { return }
             self.viewModel.register("\(token)#open", open)
-            let shown = detail.isEmpty ? title : detail
-            let lines = max(1, min(3, Int(ceil(Double(shown.count) / 46.0))))
+            let shown = String((full.isEmpty ? (detail.isEmpty ? title : detail) : full).prefix(4000))
+            // Room for the whole text up to nine lines, as an answer card has; a longer one scrolls inside the card.
+            let lines = max(1, min(9, Int(ceil(Double(shown.count) / (shown.count > 140 ? 62.0 : 46.0)))))
             self.viewModel.present(NookCard(
                 id: token,
                 mood: mood,
@@ -463,7 +467,7 @@ extension AppModel {
                 detail: .none,
                 primary: CardAction(label: button, outcome: .callback("\(token)#open", "")),
                 secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
-                contentHeight: 100 + CGFloat(lines) * 24 + (conversation == nil ? 0 : 50),
+                contentHeight: min(470, 100 + CGFloat(lines) * (shown.count > 140 ? 21 : 24) + (conversation == nil ? 0 : 50)),
                 input: conversation != nil,
                 inputPrompt: tr("nooks.replyPrompt"),
                 // A question back ("What should I send Arjan?") takes the keyboard so the answer can be typed at once;
