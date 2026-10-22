@@ -724,19 +724,32 @@ enum ChatTimeline {
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
             return tr("chat.day.yesterday")
         }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
+        let template: String
+        if days > 0 && days < 7 {
+            template = "EEEE"
+        } else if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+            template = "dMMM"
+        } else {
+            template = "dMMMyyyy"
+        }
+        return formatter(template, calendar: calendar, locale: locale).string(from: date)
+    }
+
+    /// Formatters by pattern, language and calendar, made once: making one costs more than the rest of a chat's
+    /// timeline, and a chat is drawn again on every change.
+    private static let formatters = NSCache<NSString, DateFormatter>()
+
+    private static func formatter(_ template: String, calendar: Calendar, locale: Locale) -> DateFormatter {
+        let key = NSString(string: "\(template)|\(locale.identifier)|\(calendar.identifier)|\(calendar.timeZone.identifier)")
+        if let made = formatters.object(forKey: key) { return made }
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
-        if days > 0 && days < 7 {
-            formatter.setLocalizedDateFormatFromTemplate("EEEE")
-        } else if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
-            formatter.setLocalizedDateFormatFromTemplate("dMMM")
-        } else {
-            formatter.setLocalizedDateFormatFromTemplate("dMMMyyyy")
-        }
-        return formatter.string(from: date)
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        formatters.setObject(formatter, forKey: key)
+        return formatter
     }
 
     /// A message of one to three emoji and nothing else, which a chat shows large.

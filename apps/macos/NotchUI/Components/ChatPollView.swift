@@ -26,14 +26,19 @@ struct ChatPollView: View {
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(shown.multiple ? tr("chat.poll.many") : tr("chat.poll.one"))
-                .font(NookTheme.TextStyle.caption)
-                .foregroundStyle(NookTheme.textTertiary)
+            if !shown.options.isEmpty {
+                Text(shown.multiple ? tr("chat.poll.many") : tr("chat.poll.one"))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
             ForEach(shown.options) { option in
                 row(option)
             }
             HStack {
-                Text(tr("chat.poll.votes", shown.total))
+                // Counts only where they are known: a poll found later has its votes in the app.
+                if shown.counted, !shown.options.isEmpty {
+                    Text(tr("chat.poll.votes", shown.total))
+                }
                 if onVote == nil {
                     Spacer(minLength: NookTheme.Spacing.sm)
                     Text(tr("chat.poll.inApp"))
@@ -64,25 +69,29 @@ struct ChatPollView: View {
                         .foregroundStyle(NookTheme.paper)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: NookTheme.Spacing.sm)
-                    Text("\(option.votes)")
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .monospacedDigit()
-                }
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(NookTheme.line2)
-                        Capsule().fill(option.chosen ? NookTheme.mint : NookTheme.textSecondary)
-                            .frame(width: geometry.size.width * share)
+                    if shown.counted {
+                        Text("\(option.votes)")
+                            .font(NookTheme.TextStyle.label)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .monospacedDigit()
                     }
                 }
-                .frame(height: 4)
+                if shown.counted {
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(NookTheme.line2)
+                            Capsule().fill(option.chosen ? NookTheme.mint : NookTheme.textSecondary)
+                                .frame(width: geometry.size.width * share)
+                        }
+                    }
+                    .frame(height: 4)
+                }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(onVote == nil)
-        .accessibilityLabel("\(option.text), \(tr("chat.poll.votes", option.votes))")
+        .accessibilityLabel(shown.counted ? "\(option.text), \(tr("chat.poll.votes", option.votes))" : option.text)
         .accessibilityAddTraits(option.chosen ? .isSelected : [])
     }
 }

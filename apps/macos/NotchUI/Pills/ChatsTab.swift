@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// One chat in the Chats tab: a WhatsApp chat through the linked phone, or a chat collected from another app's
 /// notifications.
@@ -100,6 +101,29 @@ extension ChatsEntry {
     }
 }
 
+/// `ChatsEntry.all`, made once and asked many times: the tab asks for it a dozen times while it draws (the list, the
+/// filters, the counts, the open chat), and making it goes through every chat. Forgotten as soon as WhatsApp or the other
+/// chats change, and once the redraw is over, so it is never older than what it is made of.
+@MainActor
+final class ChatsEntryMemo {
+    private var entries: [ChatsEntry]?
+    private var watching: [AnyCancellable] = []
+
+    func entries(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
+        if let entries { return entries }
+        if watching.isEmpty {
+            watching = [
+                whatsApp.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
+                capture.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
+            ]
+        }
+        let made = ChatsEntry.all(whatsApp: whatsApp, capture: capture)
+        entries = made
+        DispatchQueue.main.async { [weak self] in self?.entries = nil }
+        return made
+    }
+}
+
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
 /// "All" and "Unread" on top, one row of app filters (icons, the rest behind "+N") with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
@@ -126,6 +150,7 @@ struct ChatsTab: View {
     /// Settings › Chats: opening a chat marks it read, in Nook only. On by default; WhatsApp keeps it unread either way.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
+    @State private var entriesMemo = ChatsEntryMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
 
@@ -263,8 +288,8 @@ struct ChatsTab: View {
 
     // MARK: The chats
 
-    /// Every chat, newest first, as `ChatsEntry.all` lists them.
-    private var all: [ChatsEntry] { ChatsEntry.all(whatsApp: whatsApp, capture: capture) }
+    /// Every chat, newest first, as `ChatsEntry.all` lists them: made once per redraw (see `ChatsEntryMemo`).
+    private var all: [ChatsEntry] { entriesMemo.entries(whatsApp: whatsApp, capture: capture) }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
         if let avatar = entry.avatar, FileManager.default.fileExists(atPath: avatar),
