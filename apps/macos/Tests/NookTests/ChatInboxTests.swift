@@ -21,6 +21,23 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(MessagingApps.app(bundleID: "com.apple.mail"))
     }
 
+    func testWebAppsInTheDockByTheirName() {
+        XCTAssertTrue(MessagingApps.isWebApp("com.apple.Safari.WebApp.1234"))
+        XCTAssertTrue(MessagingApps.isWebApp("com.google.Chrome.app.abcdef"))
+        XCTAssertFalse(MessagingApps.isWebApp("com.google.Chrome"))
+        XCTAssertEqual(MessagingApps.app(webAppName: "Instagram")?.id, "instagram")
+        XCTAssertEqual(MessagingApps.app(webAppName: "Feed | LinkedIn")?.id, "linkedin")
+        XCTAssertNil(MessagingApps.app(webAppName: "Notion"))
+        XCTAssertEqual(MessagingApps.app(bundleID: "com.linkedin.LinkedIn")?.id, "linkedin")
+        let names = ["com.apple.Safari.WebApp.1234": "LinkedIn"]
+        let notice = ChatCapture.notice(notification("com.apple.Safari.WebApp.1234", title: "Anna de Vries", body: "Thanks for connecting!"),
+                                        apps: MessagingApps.builtIn, webAppName: { names[$0] })
+        XCTAssertEqual(notice?.app, "linkedin")
+        XCTAssertEqual(notice?.chat, "Anna de Vries")
+        XCTAssertNil(ChatCapture.notice(notification("com.apple.Safari.WebApp.9", title: "Anna", body: "hi"), apps: MessagingApps.builtIn,
+                                        webAppName: { _ in "Notion" }))
+    }
+
     func testBrowsersNameTheSite() {
         XCTAssertTrue(MessagingApps.isBrowser("com.google.Chrome"))
         XCTAssertTrue(MessagingApps.isBrowser("com.apple.Safari.WebApp.1234"))
@@ -402,6 +419,33 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["later"])
     }
 
+    func testAListedChatShowsWithoutMessages() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "teams", chat: "Launch")
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "teams", name: "Launch", messages: [], unread: 0, listed: true), now: now),
+                      "a chat its app lists is yours, whether anyone wrote in it or not")
+        XCTAssertEqual(inbox.threads[key]?.listed, now)
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "teams", name: "Launch", messages: [], unread: 0, listed: true),
+                                   now: now.addingTimeInterval(60)), "listed again a minute later: nothing to save")
+        inbox.trim(now: now.addingTimeInterval(ChatInbox.maxAge / 2))
+        XCTAssertNotNil(inbox.threads[key], "a listed chat stays while its app lists it")
+        inbox.trim(now: now.addingTimeInterval(ChatInbox.maxAge + 1))
+        XCTAssertNil(inbox.threads[key], "no longer listed: it goes like any quiet chat")
+
+        inbox.merge(BridgedChat(app: "teams", name: "Anna", messages: [], unread: 0, listed: true), now: now)
+        inbox.remove(ChatInbox.key(app: "teams", chat: "Anna"), at: now)
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "teams", name: "Anna", messages: [], unread: 0, listed: true), now: now),
+                       "a chat you removed does not come back empty")
+    }
+
+    func testAListedChatsPreviewIsCompletedByItsHistory() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "teams", chat: "Anna")
+        inbox.merge(BridgedChat(app: "teams", name: "Anna", messages: [message("teams-1", "See you at")], unread: nil, listed: true))
+        inbox.merge(BridgedChat(app: "teams", name: "Anna", messages: [message("teams-1", "See you at ten")], unread: nil, listed: true))
+        XCTAssertEqual(inbox.threads[key]?.messages.map(\.text), ["See you at ten"])
+    }
+
     func testARemovedChatDoesNotComeBackFromOldNotifications() {
         var inbox = ChatInbox()
         let key = ChatInbox.key(app: "telegram", chat: "Anna")
@@ -753,6 +797,41 @@ final class ChatInboxTests: XCTestCase {
         let notice: [String: Any] = ["value": [["id": "s1", "messageType": "systemEventMessage", "createdDateTime": "2026-10-22T09:00:00.123Z"]]]
         XCTAssertTrue(TeamsData.caughtUp(notice, last: last), "a system notice the list announced counts too")
         XCTAssertTrue(TeamsData.caughtUp(early, last: nil))
+    }
+
+    func testTeamsListsEveryChat() {
+        let list: [String: Any] = ["value": [
+            ["id": "1", "chatType": "oneOnOne", "members": [["userId": "me", "displayName": "Me"], ["userId": "u1", "displayName": "", "email": "guest@fabrikam.com"]]],
+            ["id": "2", "chatType": "oneOnOne", "members": [["userId": "me", "displayName": "Me"]]],
+            ["id": "3", "chatType": "group", "topic": "Launch", "members": [["userId": "me"], ["userId": "u2", "displayName": "Jan"]],
+             "lastMessagePreview": ["id": "p1", "messageType": "message", "createdDateTime": "2026-10-22T09:00:00Z",
+                                    "from": ["user": ["id": "u2", "displayName": "Jan"]], "body": ["contentType": "text", "content": "ship it"]]],
+            ["id": "4", "chatType": "group", "topic": "Old", "members": [],
+             "lastMessagePreview": ["id": "p2", "isDeleted": true, "createdDateTime": "2026-10-22T09:00:00Z", "body": ["content": "gone"]]]
+        ]]
+        let chats = TeamsData.chats(list, me: "me", myName: "Me")
+        XCTAssertEqual(chats.map(\.name), ["guest@fabrikam.com", "Me", "Launch", "Old"],
+                       "a guest without a name by their address, the chat with yourself after you")
+        XCTAssertEqual(chats[2].preview?.id, "teams-p1")
+        XCTAssertEqual(chats[2].preview?.text, "ship it")
+        XCTAssertEqual(chats[2].preview?.sender, "Jan")
+        XCTAssertNil(chats[3].preview, "a deleted message is no preview")
+        XCTAssertNil(chats[0].preview)
+    }
+
+    func testTeamsAccountsKeepTheirChatsApart() {
+        let work = TeamsData.Account(id: "a", name: "Anna Smit", email: "anna@contoso.com")
+        let school = TeamsData.Account(id: "b", name: "Anna Smit", email: "anna@uni.edu")
+        XCTAssertEqual(work.label, "contoso.com")
+        XCTAssertEqual(work.refreshAccount, "chats.teams.refresh.a")
+        XCTAssertEqual(TeamsData.Account(id: "").refreshAccount, "chats.teams.refresh", "the one account of an earlier version")
+        let chat = { (id: String, name: String) in TeamsData.Chat(id: id, name: name, isGroup: false) }
+        let named = TeamsData.distinguish([[chat("1", "Jan"), chat("2", "Lisa")], [chat("3", "jan"), chat("4", "Bo")]],
+                                          labels: [work.label, school.label])
+        XCTAssertEqual(named[0].map(\.name), ["Jan (contoso.com)", "Lisa"])
+        XCTAssertEqual(named[1].map(\.name), ["jan (uni.edu)", "Bo"])
+        XCTAssertEqual(TeamsData.distinguish([[chat("1", "Jan"), chat("2", "Jan")]], labels: ["x"])[0].map(\.name), ["Jan", "Jan"],
+                       "one account alone keeps its names")
     }
 
     // MARK: Beeper
