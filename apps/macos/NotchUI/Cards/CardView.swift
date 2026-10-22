@@ -141,19 +141,16 @@ struct CardView: View {
                                  onVoice: onVoice)
     }
 
-    /// A notice (a card with an OK): its actions in one bar that takes the room, and OK as the white main button with
-    /// the countdown of the card closing by itself.
+    /// A notice (a card with an OK): its actions in one bar, and the shared end of every notice (`NookNoticeEnd`): OK
+    /// as the white main button with the countdown of the card closing by itself.
     private func noticeRow(compact: Bool) -> some View {
         let actions = ([card.primary, card.secondary] + card.extra + card.more).filter { !$0.label.isEmpty }
-        return HStack(spacing: compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg) {
-            NookActionBar(actions: actions, compact: compact, onAction: onAction)
-            if let acknowledge = card.acknowledge {
-                NookAcknowledgeButton(title: acknowledge.label, compact: compact, countdown: card.countdown, paused: paused) {
-                    onAction(acknowledge)
-                }
-                .id(card.id)
-            }
-        }
+            .map { action in NookNoticeAction(action.label, symbol: action.symbol) { onAction(action) } }
+        let acknowledge = card.acknowledge
+        let ok: (() -> Void)? = acknowledge == nil ? nil : { if let acknowledge { onAction(acknowledge) } }
+        return NookNoticeEnd(actions: actions, title: acknowledge?.label ?? tr("button.ok"), countdown: card.countdown,
+                             paused: paused, restart: card.id, compact: compact,
+                             spacing: compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg, onOK: ok)
     }
 
     private static func isChat(_ detail: CardDetail) -> Bool {

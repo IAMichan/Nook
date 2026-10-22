@@ -263,7 +263,7 @@ extension AppModel {
         let runID = run.id
         guard !compact else {
             let message = failed ? tr("ws.notice.failed", run.title) : tr("ws.notice.done", run.title)
-            viewModel.finish(message, button: tr("ws.notice.open"), tone: failed ? .failed : .done, acknowledge: true) { [weak self] in
+            viewModel.finish(message, button: tr("ws.notice.open"), tone: failed ? .failed : .done, inline: true) { [weak self] in
                 self?.openWorkspace(run: runID)
             }
             return

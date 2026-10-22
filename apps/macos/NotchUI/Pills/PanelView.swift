@@ -213,16 +213,18 @@ struct PanelApprovalBar: View {
 
     /// A short notice (a session Nook runs asks something, a note is ready), with its one action.
     private func noticeBar(_ notice: PanelNotice) -> some View {
-        PanelNoticeBar(title: notice.message) {
-            if let action = notice.action {
-                NookNoticeActions(primary: NookNoticeAction(notice.button) {
-                    viewModel.dismissPanelNotice()
-                    action()
-                })
-                .fixedSize()
-            }
-            NookIconButton(systemName: "xmark", label: tr("button.close"), size: 24) { viewModel.dismissPanelNotice() }
+        let actions: [NookNoticeAction] = notice.action.map { action in
+            [NookNoticeAction(notice.button) {
+                viewModel.dismissPanelNotice()
+                action()
+            }]
+        } ?? []
+        return PanelNoticeBar(title: notice.message, actions: actions, countdown: notice.seconds,
+                              paused: viewModel.panelNoticeHeld, onOK: { viewModel.dismissPanelNotice() }) {
+            EmptyView()
         }
+        .id(notice.id)
+        .onHover { viewModel.holdPanelNotice($0) }
     }
 
     /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).

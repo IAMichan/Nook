@@ -76,7 +76,8 @@ struct NookToast: Identifiable, Equatable {
 /// Where it shows: on one surface with a `.nookToastHost()` (the panel in the notch, the main window, Settings), at its
 /// bottom edge, and only there: the key window's, else the one you opened last. With none of them on screen, the notch
 /// shows it in its own confirmation strip (`NotchViewModel.showToast`). Toasts wait their turn; the same message twice
-/// only restarts the timer. Errors stay longest, and any toast stays while the pointer is on it.
+/// only restarts the timer. Errors stay longest, and any toast stays while the pointer is on it. Like every notice that
+/// closes by itself, it ends in the OK with the countdown ring of that time (`NookNotice`).
 ///
 /// A toast is for a result. What waits for a decision is a card or an approval (`NookNoticeActions`); a problem with a
 /// form you are filling in stays next to that form; something that stays true (a disconnected account) is a status row.
@@ -99,8 +100,12 @@ final class ToastCenter: ObservableObject {
     /// In the order they appeared: the last one on screen is where you are looking.
     private var hosts: [Host] = []
     private var queue: [NookToast] = []
-    private var timer: Task<Void, Never>?
-    private var paused = false
+    /// Runs out the current toast's time while the pointer is off it, like the ring on its OK.
+    private let clock = NoticeClock()
+    /// The pointer is on the toast: its clock and ring hold.
+    @Published private(set) var paused = false
+    /// New each time the current toast's time starts over (the same message again), so its ring starts over too.
+    @Published private(set) var stamp = UUID()
 
     // MARK: Showing
 
@@ -144,8 +149,7 @@ final class ToastCenter: ObservableObject {
 
     /// Closes the current toast and shows the next one waiting.
     func dismiss() {
-        timer?.cancel()
-        timer = nil
+        clock.cancel()
         paused = false
         withAnimation(NookTheme.close) {
             current = nil
@@ -160,14 +164,11 @@ final class ToastCenter: ObservableObject {
         }
     }
 
-    /// The pointer is on the toast: it stays, and closes a moment after the pointer leaves.
+    /// The pointer is on the toast: it stays, and runs out the rest of its time once the pointer leaves.
     func setPaused(_ paused: Bool) {
+        guard paused != self.paused, current != nil else { return }
         self.paused = paused
-        if paused {
-            timer?.cancel()
-        } else if let current {
-            schedule(current, after: 1.5)
-        }
+        if paused { clock.hold() } else { clock.resume() }
     }
 
     /// Runs the toast's action and closes it.
@@ -215,70 +216,49 @@ final class ToastCenter: ObservableObject {
         }
     }
 
-    private func schedule(_ toast: NookToast, after delay: TimeInterval? = nil) {
-        timer?.cancel()
-        guard !paused else { return }
+    /// Starts the toast's time over, from its full duration.
+    private func schedule(_ toast: NookToast) {
         let id = toast.id
-        timer = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay ?? toast.duration))
-            guard !Task.isCancelled, let self, self.current?.id == id else { return }
+        stamp = UUID()
+        clock.start(toast.duration, held: paused) { [weak self] in
+            guard let self, self.current?.id == id else { return }
             self.dismiss()
         }
     }
 }
 
-/// The toast itself: the kind's symbol, the title and its line, an optional action, and a close button. An error with
-/// a detail can be copied in one click, so a long git or network message is never lost when the toast closes.
+/// The toast itself: the shared `NookNotice` in a bubble. The kind's symbol, the title and its line, an optional
+/// action, and the OK with the countdown of the toast closing by itself. An error with a detail can be copied in one
+/// click, so a long git or network message is never lost when the toast closes.
 struct NookToastView: View {
     let toast: NookToast
+    var paused: Bool = false
+    /// New when the toast's time starts over: its ring starts over with it.
+    var restart: AnyHashable? = nil
     let perform: () -> Void
     let close: () -> Void
     @State private var copied = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: toast.kind.symbol)
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(toast.kind.color)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(toast.title)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let detail = toast.detail {
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
+        NookNotice(title: toast.title, detail: toast.detail, symbol: toast.kind.symbol, tone: toast.kind.color,
+                   actions: toast.action.map { [NookNoticeAction($0.title, perform: perform)] } ?? [],
+                   countdown: toast.duration, paused: paused, restart: restart, wraps: true, onOK: close) {
+            if toast.kind == .error, let detail = toast.detail {
+                ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("toast.copy"), height: 20) {
+                    Pasteboard.copy([toast.title, detail].joined(separator: "\n"))
+                    copied = true
                 }
-            }
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: NookTheme.Spacing.xs) {
-                if let action = toast.action {
-                    SmallGhostButton(title: action.title, action: perform)
-                }
-                if toast.kind == .error, let detail = toast.detail {
-                    ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("toast.copy"), height: 20) {
-                        Pasteboard.copy([toast.title, detail].joined(separator: "\n"))
-                        copied = true
-                    }
-                    .help(tr("toast.copy"))
-                }
-                ToolbarIconButton("xmark", tr("toast.dismiss"), height: 20, close)
-                    .help(tr("toast.dismiss"))
+                .help(tr("toast.copy"))
             }
         }
+        .textSelection(.enabled)
         .padding(.leading, NookTheme.Spacing.lg)
-        .padding(.trailing, NookTheme.Spacing.sm)
+        .padding(.trailing, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.md)
-        .frame(maxWidth: 440, alignment: .leading)
+        .frame(maxWidth: 480, alignment: .leading)
         // Lifted a step above the panel it floats over; its kind shows in the symbol and a faint edge, not a loud frame.
         .cardBackground(NookTheme.graphite, stroke: toast.kind.color.opacity(0.22), radius: NookTheme.Radius.panel, style: .continuous)
         .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
-        .accessibilityElement(children: .contain)
     }
 }
 
@@ -293,7 +273,8 @@ private struct NookToastHost: ViewModifier {
         content
             .overlay(alignment: .bottom) {
                 if let toast = center.current, center.activeHost == id {
-                    NookToastView(toast: toast, perform: { center.performAction() }, close: { center.dismiss() })
+                    NookToastView(toast: toast, paused: center.paused, restart: center.stamp, perform: { center.performAction() },
+                                  close: { center.dismiss() })
                         .onHover { center.setPaused($0) }
                         .padding(.horizontal, NookTheme.Spacing.xl)
                         .padding(.bottom, NookTheme.Spacing.xl)
