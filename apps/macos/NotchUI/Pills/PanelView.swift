@@ -16,6 +16,8 @@ struct PanelView: View {
     /// For the dot on Chats when a message comes in.
     @ObservedObject private var chats = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppLink.shared
+    /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
+    @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
     static let headerHeight: CGFloat = 32
@@ -37,10 +39,12 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .offset(y: 6)))
                     .padding(.top, headerInset > 0 ? 20 : 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                // Agents and the chat keep the footer under their list.
+                // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
+                // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents.
                 if !footerUnderList && !app.demoMode {
                     PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() },
                                 history: app.history)
+                        .frame(width: agentsListWidth)
                         .padding(.top, 8)
                 }
             }
@@ -50,11 +54,11 @@ struct PanelView: View {
         .nookToastHost()
     }
 
-    /// Agents and the chat show the footer under their own list instead of along the bottom.
+    /// Agents, the chat and Chats show the footer under their own list instead of along the bottom.
     private var footerUnderList: Bool {
         switch tab {
-        case .nook, .chat, .connect, .shelf, .agents: return true
-        case .inbox, .music: return false
+        case .nook, .chat, .connect, .shelf, .agents, .inbox: return true
+        case .music: return false
         }
     }
 
@@ -168,7 +172,7 @@ struct PanelView: View {
                 NookChatTab(viewModel: viewModel, openOnAgents: openOnAgents)
             }
         case .agents: AgentsTab(viewModel: viewModel)
-        case .inbox: ChatsTab(viewModel: viewModel)
+        case .inbox: ChatsTab(viewModel: viewModel, openOnAgents: openOnAgents)
         case .music: MusicTab()
         }
     }

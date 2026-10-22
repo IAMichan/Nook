@@ -42,6 +42,9 @@ struct ChatsFocus: Equatable {
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
+    /// Shows the panel footer under the list of chats, where Agents has it under its sessions, so the refresh and update
+    /// button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
+    var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppLink.shared
@@ -68,14 +71,19 @@ struct ChatsTab: View {
             if case .failed(let why) = capture.status { failedBar(why) }
             if all.isEmpty {
                 empty
+                // No list yet: the footer keeps the list's width at the bottom.
+                if showsFooter { footer.frame(width: min(listWidth, max(totalWidth, PanelLayout.minimumList))) }
             } else {
                 // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
                 HStack(alignment: .top, spacing: 0) {
-                    list
-                        .padding(.trailing, NookTheme.Spacing.xs)
-                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                        available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                        edge: .trailing, divider: true)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                        list
+                        footer
+                    }
+                    .padding(.trailing, NookTheme.Spacing.xs)
+                    .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
+                                    available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                                    edge: .trailing, divider: true)
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp)
@@ -105,6 +113,15 @@ struct ChatsTab: View {
             // Reading a collected chat here is reading it; a WhatsApp chat is only read by what you do with it.
             guard let id, let entry = all.first(where: { $0.id == id }), case .captured(let thread) = entry.origin else { return }
             capture.markRead(thread)
+        }
+    }
+
+    private var showsFooter: Bool { openOnAgents != nil && !app.demoMode }
+
+    @ViewBuilder
+    private var footer: some View {
+        if let openOnAgents, showsFooter {
+            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
         }
     }
 
