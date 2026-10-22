@@ -112,7 +112,7 @@ private struct BrainPicker: View {
     private var macModels: some View {
         DropdownHeader(title: tr("brain.chip.installed"))
         Text(tr("brain.chip.localDetail"))
-            .font(NookTheme.font(11))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8)
@@ -151,7 +151,7 @@ private struct BrainPicker: View {
     private func externalModels(_ provider: AIProvider) -> some View {
         DropdownHeader(title: Self.shortTitle(provider))
         Text(tr("brain.chip.externalDetail", Self.shortTitle(provider)))
-            .font(NookTheme.font(11))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8)

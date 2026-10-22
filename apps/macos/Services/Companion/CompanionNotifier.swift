@@ -39,6 +39,31 @@ final class CompanionNotifier: ObservableObject {
                turn: Int(run.updatedAt.timeIntervalSince1970))
     }
 
+    /// A permission request from an agent running in a terminal, or through the workspace bridge (`CompanionAgents`).
+    func approval(_ approval: AgentApproval) {
+        guard let hub = app?.hub, let session = CompanionAgents.sessionID(approval, hub: hub) else { return }
+        notify(PushEvent(kind: .approval, session: session, item: approval.id, agent: approval.agentName, title: approval.project,
+                         canAllow: CompanionAgents.canAllow(approval)))
+    }
+
+    /// A terminal agent asks a question: the phone is told, the answer is given on the Mac.
+    func question(_ request: AgentQuestionRequest) {
+        notify(PushEvent(kind: .question, session: CompanionAgents.terminalPrefix + request.sessionKey, item: request.id,
+                         agent: request.agentName, title: request.project))
+    }
+
+    /// A terminal agent finished or failed. Waiting on you is told by its approval or question.
+    func attention(_ session: AgentSession) {
+        let kind: PushEvent.Kind
+        switch session.status {
+        case .done: kind = .finished
+        case .failed: kind = .failed
+        default: return
+        }
+        notify(PushEvent(kind: kind, session: CompanionAgents.terminalPrefix + session.id, item: nil, agent: session.name,
+                         title: session.project), turn: Int((session.updated ?? Date()).timeIntervalSince1970))
+    }
+
     private func notify(_ event: PushEvent, turn: Int = 0) {
         let store = CompanionStore.shared
         guard store.enabled, store.canPush else { return }
@@ -56,8 +81,12 @@ final class CompanionNotifier: ObservableObject {
     }
 
     private func badge() -> Int {
-        guard let workspace = app?.workspace else { return 0 }
-        return workspace.runs.filter { !(workspace.approvals[$0.id] ?? []).isEmpty || !(workspace.questions[$0.id] ?? []).isEmpty }.count
+        guard let app else { return 0 }
+        let workspace = app.workspace
+        let runs = workspace.runs.filter { !(workspace.approvals[$0.id] ?? []).isEmpty || !(workspace.questions[$0.id] ?? []).isEmpty }.count
+        // Terminal sessions and bridge requests that wait on you.
+        let others = Set(app.approvals.pending.compactMap { CompanionAgents.sessionID($0, hub: app.hub) })
+        return runs + others.count
     }
 
     private func text(_ event: PushEvent, test: Bool) -> (title: String, body: String) {

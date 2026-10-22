@@ -419,6 +419,25 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// A toast while no panel or window is open to show it (`ToastCenter.notchFallback`): the same result in the
+    /// confirmation strip. Only over a resting notch or another confirmation, never over a card, a question or a
+    /// suggestion that waits for you; false when it was left out.
+    func showToast(_ toast: NookToast) -> Bool {
+        switch state {
+        case .idle, .music, .track, .done: break
+        default: return false
+        }
+        if let action = toast.action {
+            finish(toast.title, button: action.title, tone: toast.kind.doneTone) { [weak self] in
+                self?.show(.idle)
+                action.perform()
+            }
+        } else {
+            finish(toast.title, tone: toast.kind.doneTone)
+        }
+        return true
+    }
+
     /// A notice Nook gives by himself (not in reply to what you just did): like `finish`, but an open panel stays and
     /// shows it in a compact bar (see `PanelApprovalBar`) instead of being replaced and then closed.
     func notify(_ message: String, button: String = tr("button.close"), action: (() -> Void)? = nil) {

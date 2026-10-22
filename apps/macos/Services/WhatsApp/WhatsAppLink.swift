@@ -523,7 +523,7 @@ final class WhatsAppLink: ObservableObject {
 
     /// Saves a fetched file in its own folder under Nook's temporary one, under a name the Mac recognizes.
     private static func save(_ file: WAFile, media: WAMedia) throws -> URL {
-        let name = fileName(for: media, given: file.name, mimeType: file.mimeType)
+        let name = media.safeFileName(given: file.name, mimeType: file.mimeType)
         let folder = openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(name)
@@ -601,27 +601,6 @@ final class WhatsAppLink: ObservableObject {
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-    }
-
-    /// A safe file name: the document's own name when there is one, else one after its kind, with an extension the
-    /// Mac recognizes.
-    nonisolated static func fileName(for media: WAMedia, given: String?, mimeType: String?) -> String {
-        var name: String
-        switch media {
-        case .document(let own): name = own ?? given ?? "document"
-        case .image: name = given ?? "photo"
-        case .video: name = given ?? "video"
-        case .audio, .voice: name = given ?? "voice message"
-        default: name = given ?? "attachment"
-        }
-        name = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
-        if name.isEmpty { name = "attachment" }
-        if (name as NSString).pathExtension.isEmpty, let mimeType,
-           let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension {
-            name += "." + ext
-        }
-        return String(name.suffix(120))
     }
 
     /// Marks the chat read here and on WhatsApp (up to its newest received message).

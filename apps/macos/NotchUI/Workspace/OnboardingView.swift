@@ -21,9 +21,9 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text(tr("onboarding.title")).font(.title2.weight(.semibold))
+                Text(tr("onboarding.title")).font(NookTheme.TextStyle.heading)
                 Spacer()
-                Text(tr("onboarding.step", step + 1, steps)).foregroundStyle(.secondary).monospacedDigit()
+                Text(tr("onboarding.step", step + 1, steps)).foregroundStyle(NookTheme.textSecondary).monospacedDigit()
             }
             ProgressView(value: Double(step + 1), total: Double(steps))
             Group {
@@ -36,6 +36,7 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             HStack {
                 Button(tr("onboarding.later")) { onFinish() }
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 if step > 0 { Button(tr("onboarding.back")) { step -= 1 } }
                 Button(step == steps - 1 ? tr("onboarding.done") : tr("onboarding.next")) {
@@ -54,15 +55,15 @@ struct OnboardingView: View {
 
     private var brainStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(tr("onboarding.brain.title")).font(.headline)
-            Text(tr("onboarding.brain.detail", EmbeddedModel.memoryGB)).foregroundStyle(.secondary)
+            Text(tr("onboarding.brain.title")).font(NookTheme.TextStyle.strong)
+            Text(tr("onboarding.brain.detail", EmbeddedModel.memoryGB)).foregroundStyle(NookTheme.textSecondary)
             if settings.brainReady {
                 Label(tr("settings.checklist.brain.ready", settings.activeModelName), systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(NookTheme.mint)
             } else if let best = recommendations.first {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(AppModel.title(of: best)).fontWeight(.semibold)
-                    Text(best.reason).font(.callout).foregroundStyle(.secondary)
+                    Text(best.reason).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     if best.choice != .unavailable {
                         HStack {
                             Button(best.ready ? tr("brain.advice.use") : tr("brain.advice.install")) { use(best) }
@@ -77,7 +78,7 @@ struct OnboardingView: View {
             } else {
                 ProgressView()
             }
-            if let error { Text(error).font(.callout).foregroundStyle(.red) }
+            if let error { Text(error).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral) }
             Spacer(minLength: 0)
             Button(tr("onboarding.brain.external")) { app.openSettings(section: .brain) }
                 .buttonStyle(.link)
@@ -102,8 +103,8 @@ struct OnboardingView: View {
     private var permissionsStep: some View {
         let _ = tick
         return VStack(alignment: .leading, spacing: 12) {
-            Text(tr("onboarding.permissions.title")).font(.headline)
-            Text(tr("onboarding.permissions.detail")).foregroundStyle(.secondary)
+            Text(tr("onboarding.permissions.title")).font(NookTheme.TextStyle.strong)
+            Text(tr("onboarding.permissions.detail")).foregroundStyle(NookTheme.textSecondary)
             permissionRow(tr("settings.checklist.screen"), granted: permissions.isGranted(.screen)) {
                 await permissions.request(.screen, app: app)
             }
@@ -118,7 +119,7 @@ struct OnboardingView: View {
 
     private func permissionRow(_ title: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
         HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "circle").foregroundStyle(granted ? Color.green : Color.secondary)
+            Image(systemName: granted ? "checkmark.circle.fill" : "circle").foregroundStyle(granted ? NookTheme.mint : NookTheme.textSecondary)
             Text(title)
             Spacer()
             if !granted {
@@ -134,11 +135,11 @@ struct OnboardingView: View {
 
     private var connectionsStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(tr("onboarding.connections.title")).font(.headline)
-            Text(tr("onboarding.connections.detail", app.connectors.active.count)).foregroundStyle(.secondary)
+            Text(tr("onboarding.connections.title")).font(NookTheme.TextStyle.strong)
+            Text(tr("onboarding.connections.detail", app.connectors.active.count)).foregroundStyle(NookTheme.textSecondary)
             Button(tr("onboarding.connections.open")) { app.openSettings(section: .connections) }
             Spacer(minLength: 0)
-            Text(tr("onboarding.firstQuestion")).font(.callout).foregroundStyle(.secondary)
+            Text(tr("onboarding.firstQuestion")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
         }
     }
 }

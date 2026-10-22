@@ -29,6 +29,8 @@ struct NookChatView: View {
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var renaming = false
     @State private var titleDraft = ""
+    /// The conversation whose delete waits for a yes.
+    @State private var deleting: Conversation?
     @ObservedObject private var embedded = EmbeddedAppStore.shared
     /// How wide the chat is next to an open app: drag the line between them, double-click it to reset. Remembered.
     @AppStorage("nook.embeddedApp.chatWidth") private var chatWidth = EmbeddedSplit.defaultChatWidth
@@ -128,7 +130,7 @@ struct NookChatView: View {
                         .font(NookTheme.font(22, .semibold))
                         .foregroundStyle(NookTheme.paper)
                     Text(tr("chat.emptySubtitle"))
-                        .font(NookTheme.font(13))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
 
@@ -157,7 +159,7 @@ struct NookChatView: View {
 
     private func homeSection(_ title: String) -> some View {
         Text(title)
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
             .padding(.leading, 2)
             .padding(.top, 22)
@@ -254,7 +256,7 @@ struct NookChatView: View {
             Divider()
             Button(tr("nooks.archive")) { chat.setArchived(true, conversation.id) }
                 .disabled(conversation.busy)
-            Button(tr("nooks.delete"), role: .destructive) { chat.delete(conversation.id) }
+            Button(tr("nooks.delete"), role: .destructive) { deleting = conversation }
                 .disabled(conversation.busy)
         } label: {
             Image(systemName: "ellipsis")
@@ -266,6 +268,8 @@ struct NookChatView: View {
         .composerMenu()
         .help(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
+        .confirmDelete($deleting, question: { tr("confirm.deleteChat", $0.title) }, detail: tr("confirm.deleteChat.detail"),
+                       confirmTitle: tr("nooks.delete")) { chat.delete($0.id) }
     }
 
     // MARK: Conversation
@@ -287,7 +291,7 @@ struct NookChatView: View {
                 }
                 .padding(.trailing, 4)
                 .padding(.top, 8)
-                .animation(.easeOut(duration: 0.2), value: chat.messages.count)
+                .animation(NookTheme.reveal, value: chat.messages.count)
             }
             .defaultScrollAnchor(.bottom)
             // Scrolling away from the end stops the following until you come back, or jump back with the pill.
@@ -323,7 +327,7 @@ struct NookChatView: View {
                 if scroll.mode == .free, !atEnd {
                     TimelineToEndPill {
                         scroll.jumpedToEnd()
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
                     .padding(.bottom, 8)
                 }
@@ -341,7 +345,7 @@ struct NookChatView: View {
             // You asked something: it is the newest thing and the answer is followed again.
             .onChange(of: chat.messages.last(where: { $0.role == .user })?.id) { _, _ in
                 scroll.jumpedToEnd()
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: scrollKey) { _, _ in
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }

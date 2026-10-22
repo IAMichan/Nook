@@ -123,7 +123,7 @@ struct NewSessionComposer: View {
         HStack(spacing: 8) {
             TextField(tr("ws.new.clonePlaceholder"), text: $cloneURL)
                 .textFieldStyle(.plain)
-                .font(NookTheme.mono(12))
+                .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
@@ -151,7 +151,7 @@ struct NewSessionComposer: View {
             Text(tr("ws.remote.folder", remoteMachine?.name ?? "")).foregroundStyle(NookTheme.textSecondary).fixedSize()
             TextField("~/code/app", text: $remoteFolder)
                 .textFieldStyle(.plain)
-                .font(NookTheme.mono(12))
+                .font(NookTheme.TextStyle.code)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))

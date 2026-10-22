@@ -24,7 +24,7 @@ struct MusicTab: View {
                 .font(NookTheme.font(17, .semibold))
                 .foregroundStyle(NookTheme.paper)
             Text(tr("music.deniedDetail"))
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
             Button(tr("button.openAutomation")) {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
@@ -44,7 +44,7 @@ struct MusicTab: View {
                 .font(NookTheme.font(17, .semibold))
                 .foregroundStyle(NookTheme.paper)
             Text(tr("music.nothingPlayingDetail"))
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
             Text(tr("music.permissionNote"))
                 .font(NookTheme.font(12))
@@ -178,7 +178,7 @@ private struct MusicPlayerView: View {
             Spacer(minLength: 8)
             if !expanded, section == .lyrics, let source = MusicLyricsView.source(of: lyrics, for: info) {
                 Text(source)
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .transition(.opacity)
@@ -192,7 +192,7 @@ private struct MusicPlayerView: View {
             }
         }
         .padding(.trailing, 4)
-        .animation(.easeOut(duration: 0.2), value: expanded)
+        .animation(NookTheme.reveal, value: expanded)
     }
 }
 
@@ -223,7 +223,7 @@ private struct MusicSectionPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .accessibilityLabel(section.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

@@ -11,7 +11,6 @@ struct RunInspector: View {
     @State private var showCommit = false
     @State private var showPullRequest = false
     @State private var confirmRemove = false
-    @State private var actionError: String?
     @State private var busy = false
 
     var body: some View {
@@ -30,11 +29,6 @@ struct RunInspector: View {
             .sheet(item: $changes) { file in ChangesSheet(runID: runID, initialFile: file) }
             .sheet(isPresented: $showCommit) { CommitSheet(runID: runID) }
             .sheet(isPresented: $showPullRequest) { PullRequestSheet(runID: runID) }
-            .alert(tr("ws.git.errorTitle"), isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
-                Button(tr("button.close"), role: .cancel) {}
-            } message: {
-                Text(actionError ?? "")
-            }
             .confirmationDialog(tr("ws.worktree.removeTitle"), isPresented: $confirmRemove) {
                 let dirty = (workspace.git[runID]?.status?.files.count ?? 0) > 0
                 if dirty {
@@ -96,13 +90,8 @@ struct RunInspector: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     WSSectionTitle(title: tr("ws.inspector.changes"), trailing: files.isEmpty ? nil : "\(files.count)")
-                    Button { workspace.refreshGit(runID) } label: {
-                        Image(systemName: "arrow.clockwise").font(NookTheme.font(10))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(WS.tertiary)
-                    .help(tr("ws.git.refresh"))
-                    .disabled(snapshot?.loading == true)
+                    ToolbarIconButton("arrow.clockwise", tr("ws.git.refresh"), height: 20, width: 20,
+                                      enabled: snapshot?.loading != true) { workspace.refreshGit(runID) }
                 }
                 if let error = snapshot?.error {
                     Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft)
@@ -127,7 +116,7 @@ struct RunInspector: View {
                                 .buttonStyle(.plain)
                         }
                         if files.count > 40 {
-                            Text(tr("ws.inspector.moreFiles", files.count - 40)).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                            Text(tr("ws.inspector.moreFiles", files.count - 40)).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                         }
                     }
                 }
@@ -154,6 +143,8 @@ struct RunInspector: View {
                         Image(systemName: "ellipsis.circle")
                     }
                     .menuStyle(.borderlessButton)
+                    .help(tr("a11y.more"))
+                    .accessibilityLabel(tr("a11y.more"))
                     .fixedSize()
                 }
                 .controlSize(.small)
@@ -183,7 +174,7 @@ struct RunInspector: View {
             InfoRow(label: tr("ws.usage.turns"), value: "\(usage.turns)")
             InfoRow(label: tr("ws.usage.active"), value: usage.activeSeconds > 0 ? AgentPathFormat.duration(usage.activeSeconds) : nil)
             Text(caps.reportsCost ? tr("ws.usage.note.claude") : tr("ws.usage.note.codex"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             if run.provider == .claude, let profile = app.profile(for: run), let plan = app.hub.subscriptionUsage(for: profile) {
@@ -226,7 +217,7 @@ struct RunInspector: View {
                 }
             }
             Text(tr("ws.inspector.isolationNote"))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(WS.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -242,14 +233,24 @@ struct RunInspector: View {
     private func push() {
         busy = true
         Task {
-            do { try await workspace.push(runID) } catch { actionError = error.localizedDescription }
+            do {
+                try await workspace.push(runID)
+                ToastCenter.shared.gitQuick(.push, result: .success(nil))
+            } catch {
+                ToastCenter.shared.gitQuick(.push, result: .failure(error))
+            }
             busy = false
         }
     }
 
     private func remove(force: Bool) {
         Task {
-            do { try await workspace.removeWorktree(runID, force: force) } catch { actionError = error.localizedDescription }
+            do {
+                try await workspace.removeWorktree(runID, force: force)
+                ToastCenter.shared.success(tr("ws.worktree.removed"))
+            } catch {
+                ToastCenter.shared.error(error, title: tr("ws.worktree.removeFailed"))
+            }
         }
     }
 }

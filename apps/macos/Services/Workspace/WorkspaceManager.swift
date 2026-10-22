@@ -1643,6 +1643,21 @@ final class WorkspaceManager: ObservableObject {
         return try await Task.detached(priority: .userInitiated) { try git.diff(directory, path: path, from: from, to: to) }.value
     }
 
+    /// The lines one turn added and removed per file (between the same snapshots as `turnDiff`), keyed by the path
+    /// relative to the session's folder. Binary files count as nothing.
+    func turnLines(_ id: UUID, paths: [String], start: Date, end: Date) async throws -> [String: EditLines] {
+        guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
+        let directory = run.workingDirectory
+        let around = TurnChanges.checkpoints(run.checkpoints ?? [], start: start, end: end)
+        let from = around?.before.ref ?? "HEAD"
+        let to = around?.after?.ref
+        // A file outside the folder (the agent's own settings, say) would make git refuse the whole list.
+        let root = directory.hasSuffix("/") ? directory : directory + "/"
+        let inside = paths.filter { !$0.hasPrefix("/") || $0.hasPrefix(root) }
+        let counts = try await Task.detached(priority: .utility) { try git.lineCounts(directory, paths: inside, from: from, to: to) }.value
+        return counts.mapValues { EditLines(added: $0.added ?? 0, removed: $0.removed ?? 0) }
+    }
+
     func commit(_ id: UUID, message: String, paths: [String]) async throws -> String {
         guard let run = run(id), let git = sessionGit(for: run) else { throw StartError.noGit }
         guard !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }

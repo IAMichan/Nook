@@ -39,7 +39,7 @@ struct MemorySettingsSection: View {
                     .disabled(!settings.useMemory)
                 if settings.localOnlySources.contains(SourceCatalog.memory) {
                     Label(tr("memory.settings.localOnlyAll"), systemImage: "lock.fill")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
             }
 
@@ -55,7 +55,7 @@ struct MemorySettingsSection: View {
                         .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 if let draftProblem {
-                    Label(draftProblem, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+                    Label(draftProblem, systemImage: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                 }
                 if app.memory.items.count > 6 {
                     TextField(tr("memory.settings.search"), text: $search)
@@ -63,13 +63,13 @@ struct MemorySettingsSection: View {
                 }
                 if visible.isEmpty {
                     Text(app.memory.items.isEmpty ? tr("memory.settings.empty") : tr("memory.settings.noMatch"))
-                        .font(.callout).foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                 }
                 ForEach(MemoryItem.Kind.allCases, id: \.self) { kind in
                     let group = visible.filter { $0.kind == kind }
                     if !group.isEmpty {
                         Text(tr("memory.kind.\(kind.rawValue)"))
-                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            .font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textSecondary)
                             .padding(.top, 4)
                         ForEach(group) { item in row(item) }
                     }
@@ -82,7 +82,7 @@ struct MemorySettingsSection: View {
 
             Section {
                 LabeledContent(tr("memory.settings.sources")) {
-                    Text(tr("memory.settings.sourcesValue", app.memory.learnedWords)).foregroundStyle(.secondary)
+                    Text(tr("memory.settings.sourcesValue", app.memory.learnedWords)).foregroundStyle(NookTheme.textSecondary)
                 }
                 Button(tr("memory.settings.clear"), role: .destructive) { confirmClear = true }
                     .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
@@ -128,7 +128,7 @@ struct MemorySettingsSection: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tr("memory.import.found", file.count))
-                        Text(file.url.path).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Text(file.url.path).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
                     Button(tr("memory.import.button")) {
@@ -140,13 +140,13 @@ struct MemorySettingsSection: View {
                 }
             }
             if let imported {
-                Label(tr("memory.import.done", imported), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Label(tr("memory.import.done", imported), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
             }
             if let oldServer {
                 HStack {
-                    Text(tr("memory.import.oldServer", oldServer.name)).font(.callout)
+                    Text(tr("memory.import.oldServer", oldServer.name)).font(NookTheme.TextStyle.body)
                     Spacer()
-                    Button(tr("memory.import.removeServer")) { servers.remove(oldServer.id) }
+                    ConfirmedButton(tr("memory.import.removeServer"), question: tr("confirm.remove", oldServer.name)) { servers.remove(oldServer.id) }
                 }
             }
         } header: {
@@ -169,7 +169,7 @@ struct MemorySettingsSection: View {
                 } else {
                     Text(Self.display(item)).textSelection(.enabled)
                 }
-                Text(caption(item)).font(.caption).foregroundStyle(.secondary)
+                Text(caption(item)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 8)
             Button {

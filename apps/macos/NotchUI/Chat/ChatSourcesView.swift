@@ -84,7 +84,7 @@ struct SourcesDisclosure: View {
             let failed = failedCount
             let running = list.contains { if case .running = $0.status { return true }; return false }
             VStack(alignment: .leading, spacing: 6) {
-                Button { withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() } } label: {
+                Button { withAnimation(NookTheme.reveal) { expanded.toggle() } } label: {
                     HStack(spacing: 7) {
                         iconStack(list)
                         Text(summary(used: used, failed: failed, running: running))
@@ -426,7 +426,7 @@ struct NoticeList: View {
             ForEach(notices, id: \.self) { notice in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.circle.fill")
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.amber)
                         .padding(.top, 1)
                     VStack(alignment: .leading, spacing: 6) {
@@ -476,7 +476,7 @@ private struct ReferenceRow: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(([SourceCatalog.title(reference.sourceID)] + (reference.detail.isEmpty ? [] : [reference.detail])).joined(separator: " · "))
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
@@ -653,9 +653,9 @@ struct ContextInspector: View {
         let scope = app.scope(of: chat.activeID)
         let _ = app.connectors.revision
         return VStack(alignment: .leading, spacing: 10) {
-            Text(tr("context.title")).font(.headline)
-            Text(destination).font(.callout).fixedSize(horizontal: false, vertical: true)
-            Text(tr("context.how")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(tr("context.title")).font(NookTheme.TextStyle.strong)
+            Text(destination).font(NookTheme.TextStyle.body).fixedSize(horizontal: false, vertical: true)
+            Text(tr("context.how")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
 
             Divider()
             row(SourceCatalog.title(SourceCatalog.screen), screenState(scope), ok: scope.allows(SourceCatalog.screen) && app.settings.liveScreen)
@@ -669,7 +669,7 @@ struct ContextInspector: View {
             }
             Divider()
             HStack {
-                Text(tr("context.scope", scope.label())).font(.caption).foregroundStyle(.secondary)
+                Text(tr("context.scope", scope.label())).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 Spacer()
                 Button(tr("context.manage")) { app.openSettings(section: .connections) }
             }
@@ -695,13 +695,13 @@ struct ContextInspector: View {
 
     private func row(_ title: String, _ detail: String, ok: Bool, source: ContextSource? = nil) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle().fill(ok ? Color.green : Color.secondary.opacity(0.5)).frame(width: 6, height: 6)
+            Circle().fill(ok ? NookTheme.mint : NookTheme.textSecondary.opacity(0.5)).frame(width: 6, height: 6)
             if let source {
                 SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 14, source: source.id)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
             }
-            Text(title).font(.callout).frame(width: 110, alignment: .leading)
-            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(title).font(NookTheme.TextStyle.body).frame(width: 110, alignment: .leading)
+            Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(2)
         }
     }
 }
@@ -715,7 +715,7 @@ struct AttachmentChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: isImage ? "photo" : "paperclip").font(NookTheme.font(10, .semibold)).foregroundStyle(NookTheme.iris)
-            Text(name).font(NookTheme.font(11.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
+            Text(name).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.paper).lineLimit(1)
             Button(action: remove) {
                 Image(systemName: "xmark").font(NookTheme.font(8.5, .bold)).foregroundStyle(NookTheme.textTertiary)
             }

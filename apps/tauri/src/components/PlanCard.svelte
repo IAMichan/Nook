@@ -11,9 +11,22 @@
   let editing = $state<Record<string, string>>({});
   let error = $state<string | null>(null);
 
+  // Each update replaces the whole conversation, so `message` is a new object every time: compare the actions by value,
+  // or every plan card in the chat fetches its steps again on every update.
+  const actionsKey = $derived(JSON.stringify(message.actions));
+  const messageId = $derived(message.id);
   $effect(() => {
-    void JSON.stringify(message.actions);
-    api.planSteps(nookId, message.id).then((s) => (steps = s));
+    void actionsKey;
+    let stale = false;
+    api
+      .planSteps(nookId, messageId)
+      .then((s) => {
+        if (!stale) steps = s;
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
   });
 
   const included = $derived(message.actionIncluded.length ? message.actionIncluded : message.actions.map(() => true));

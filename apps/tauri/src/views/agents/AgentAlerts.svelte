@@ -108,9 +108,6 @@
     </div>
   </div>
 {/if}
-{#if agents.confirmation}
-  <div class="toast">{agents.confirmation}</div>
-{/if}
 
 <style>
   .alert { padding: 4px 12px 8px; }
@@ -140,5 +137,4 @@
   .qtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .qtitle { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .qsub { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .toast { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--smoke); border: 1px solid var(--line2); border-radius: 999px; padding: 5px 14px; font-size: 12px; color: var(--mint); }
 </style>

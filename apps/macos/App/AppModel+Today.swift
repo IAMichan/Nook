@@ -118,7 +118,7 @@ extension AppModel {
         // Floating notch panel overlays all windows; dismiss it so clicks reach Settings.
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView().environmentObject(self))
+            let host = NSHostingController(rootView: SettingsView().nookToastHost().environmentObject(self))
             host.sizingOptions = [.minSize]
             let window = NSWindow(contentViewController: host)
             window.title = "Nook"

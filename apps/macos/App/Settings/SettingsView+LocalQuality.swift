@@ -15,7 +15,7 @@ struct LocalQualitySection: View {
                 if runner.running {
                     ProgressView(value: Double(runner.done), total: Double(runner.total))
                         .frame(maxWidth: 160)
-                    Text("\(runner.done)/\(runner.total)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    Text("\(runner.done)/\(runner.total)").font(NookTheme.TextStyle.detail.monospacedDigit()).foregroundStyle(NookTheme.textSecondary)
                     Button(tr("button.cancel")) { runner.cancel() }
                 } else {
                     Button(tr("settings.quality.measure")) { runner.start(brain: app.brain, settings: settings) }
@@ -24,23 +24,23 @@ struct LocalQualitySection: View {
                 Spacer()
                 if !runner.results.isEmpty, !runner.running {
                     Text(tr("settings.quality.score", runner.passed, runner.results.count, Int(runner.totalSeconds)))
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(runner.passed * 4 >= runner.results.count * 3 ? Color.green : Color.orange)
+                        .font(NookTheme.TextStyle.body.monospacedDigit())
+                        .foregroundStyle(runner.passed * 4 >= runner.results.count * 3 ? NookTheme.mint : NookTheme.amber)
                 }
             }
             if let failure = runner.failure {
-                Label(failure, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
+                Label(failure, systemImage: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
             }
             if !runner.results.isEmpty {
                 DisclosureGroup(tr("settings.quality.details"), isExpanded: $showDetails) {
                     ForEach(runner.results) { result in
                         VStack(alignment: .leading, spacing: 2) {
                             Label(result.question, systemImage: result.verdict.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(result.verdict.passed ? Color.green : Color.red)
-                            Text(result.answer).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
+                                .foregroundStyle(result.verdict.passed ? NookTheme.mint : NookTheme.coral)
+                            Text(result.answer).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(3).textSelection(.enabled)
                             if !result.verdict.passed {
                                 Text(tr("settings.quality.missing", (result.verdict.missing + result.verdict.forbidden.map { "✗ " + $0 }).joined(separator: ", ")))
-                                    .font(.caption2).foregroundStyle(.orange)
+                                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
                             }
                         }
                     }
@@ -48,8 +48,8 @@ struct LocalQualitySection: View {
             }
             if !runner.history.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("settings.quality.history")).font(.caption).foregroundStyle(.secondary)
-                    ForEach(runner.history, id: \.self) { Text($0).font(.caption2.monospacedDigit()) }
+                    Text(tr("settings.quality.history")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    ForEach(runner.history, id: \.self) { Text($0).font(NookTheme.TextStyle.detail.monospacedDigit()) }
                 }
             }
         } header: {

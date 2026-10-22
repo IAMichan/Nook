@@ -101,12 +101,12 @@ struct SessionPanel: View {
                 changesRow
             }
             if let confirmDefault { defaultBranchConfirmation(confirmDefault) }
-            if let message = error ?? model.error {
+            // A failed action shows as a toast; this is only the script form's own problem.
+            if let message = error {
                 Text(message)
                     .font(NookTheme.font(11.5))
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
                     .textSelection(.enabled)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -198,7 +198,7 @@ struct SessionPanel: View {
                 .textFieldStyle(.roundedBorder)
             TextField(tr("agents.panel.scriptCommand"), text: $scriptCommand)
                 .textFieldStyle(.roundedBorder)
-                .font(NookTheme.mono(12))
+                .font(NookTheme.TextStyle.code)
                 .onSubmit(saveScript)
             HStack(spacing: 6) {
                 Text(tr("agents.panel.scriptFile"))
@@ -206,12 +206,10 @@ struct SessionPanel: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(2)
                 Spacer(minLength: 4)
-                Button(tr("button.cancel")) { resetScriptForm() }
-                Button(tr("agents.panel.scriptSave"), action: saveScript)
-                    .buttonStyle(.borderedProminent)
+                SmallGhostButton(title: tr("button.cancel")) { resetScriptForm() }
+                SmallPrimaryButton(title: tr("agents.panel.scriptSave"), action: saveScript)
                     .disabled(scriptCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .controlSize(.small)
         }
         .font(NookTheme.font(12.5))
         .padding(8)
@@ -350,14 +348,14 @@ struct SessionPanel: View {
     private func perform(_ action: GitQuickAction) {
         guard let runID else { return }
         confirmDefault = nil
-        error = nil
         progress = tr(action.labelKey)
         Task {
             do {
                 // A pull request it made stays put: "View PR" in the menu opens it in Nook's browser when you want it.
-                _ = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch let failure {
-                error = failure.localizedDescription
+                ToastCenter.shared.gitQuick(action, result: .failure(failure))
             }
             progress = nil
             quick = await workspace.quickGitState(runID)
@@ -366,10 +364,14 @@ struct SessionPanel: View {
     }
 
     private func push(_ runID: UUID) {
-        error = nil
         progress = tr("ws.quick.pushing")
         Task {
-            do { try await workspace.push(runID) } catch let failure { error = failure.localizedDescription }
+            do {
+                try await workspace.push(runID)
+                ToastCenter.shared.gitQuick(.push, result: .success(nil))
+            } catch let failure {
+                ToastCenter.shared.gitQuick(.push, result: .failure(failure))
+            }
             progress = nil
             quick = await workspace.quickGitState(runID)
             await model.refresh()
@@ -385,11 +387,9 @@ struct SessionPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                Button(tr("button.cancel")) { confirmDefault = nil }
-                Button(tr("ws.quick.confirm")) { perform(action) }
-                    .buttonStyle(.borderedProminent)
+                SmallGhostButton(title: tr("button.cancel")) { confirmDefault = nil }
+                SmallPrimaryButton(title: tr("ws.quick.confirm")) { perform(action) }
             }
-            .controlSize(.small)
         }
         .padding(8)
     }
@@ -451,6 +451,8 @@ private struct PanelRow: View {
                     Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
                     Menu { menu } label: { chevron.frame(width: 30, height: 34).contentShape(Rectangle()) }
                         .composerMenu()
+                        .help(tr("a11y.more"))
+                        .accessibilityLabel(tr("a11y.more"))
                 }
             } else if let menu {
                 Menu { menu } label: {
@@ -485,7 +487,7 @@ private struct PanelRow: View {
                     .truncationMode(.middle)
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)

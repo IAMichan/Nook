@@ -7,6 +7,7 @@ struct NookPrimaryButton: View {
     var symbol: String? = nil
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
@@ -23,6 +24,8 @@ struct NookPrimaryButton: View {
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
+        // A disabled button dims, so it does not look like one that ignores the click.
+        .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }
 }
@@ -33,12 +36,13 @@ struct SmallPrimaryButton: View {
     var systemName: String? = nil
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let systemName { Image(systemName: systemName).font(NookTheme.font(11, .semibold)) }
-                Text(title).font(NookTheme.font(13, .semibold))
+                Text(title).font(NookTheme.TextStyle.strong)
             }
             .foregroundStyle(NookTheme.ink)
             .padding(.horizontal, 14)
@@ -46,6 +50,7 @@ struct SmallPrimaryButton: View {
             .background(Capsule().fill(hovering ? Color.white : NookTheme.paper))
         }
         .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }
 }
@@ -60,6 +65,7 @@ struct NookGhostButton: View {
     var height: CGFloat = 38
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
@@ -76,6 +82,7 @@ struct NookGhostButton: View {
             .hoverLift(hovering)
         }
         .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }
 }
@@ -237,6 +244,7 @@ struct NookIconButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(label)
         .accessibilityLabel(label)
     }
 }
@@ -247,12 +255,18 @@ struct ToolbarIconButton: View {
     let symbol: String
     let label: String
     var height: CGFloat = 24
+    var width: CGFloat = 24
+    var enabled: Bool = true
     let action: () -> Void
+    @State private var hovering = false
 
-    init(_ symbol: String, _ label: String, height: CGFloat = 24, _ action: @escaping () -> Void) {
+    init(_ symbol: String, _ label: String, height: CGFloat = 24, width: CGFloat = 24, enabled: Bool = true,
+         _ action: @escaping () -> Void) {
         self.symbol = symbol
         self.label = label
         self.height = height
+        self.width = width
+        self.enabled = enabled
         self.action = action
     }
 
@@ -260,11 +274,17 @@ struct ToolbarIconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(NookTheme.font(11, .medium))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 24, height: height)
+                .foregroundStyle(!enabled ? NookTheme.textTertiary.opacity(0.5)
+                                 : (hovering ? NookTheme.paper : NookTheme.textSecondary))
+                .frame(width: width, height: height)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+                    .fill(hovering && enabled ? NookTheme.smoke : Color.clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
         .help(label)
         .accessibilityLabel(label)
     }
@@ -275,11 +295,12 @@ struct SmallGhostButton: View {
     let title: String
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(NookTheme.font(13, .semibold))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
@@ -287,6 +308,7 @@ struct SmallGhostButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
     }
 }

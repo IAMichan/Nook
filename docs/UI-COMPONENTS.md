@@ -14,11 +14,11 @@ copying it again.
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
-| `NookTheme.TextStyle.caption`, `label`, `body`, `strong`, `title`, `code` | The type scale: the same kind of text is the same size everywhere |
+| `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
 | `NookTheme.Spacing.xxs … xxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24 |
-| `NookTheme.open`, `close`, `swap`, `hover` | Animations |
+| `NookTheme.open`, `close`, `swap`, `hover`, `reveal`, `scroll` | Animations: opening and closing the notch, switching tabs, hover feedback, showing or hiding part of a panel (a section, a preview, a selection), and scrolling to a line. Never an inline `.easeOut(duration:)` |
 | `.hoverLift(_:scale:)` | The shared hover lift of buttons and chips |
 
 Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.swift`, which is built from these
@@ -29,8 +29,9 @@ tokens (`WS.background` is `NookTheme.canvas`, `WS.sidebar` is `NookTheme.surfac
 Nook has one visual language, and the repository guards it in three places:
 
 1. **`UIConsistencyTests`** (`apps/macos/Tests/NookTests/UIConsistencyTests.swift`) reads every source under `NotchUI`
-   and `App` and fails when a view uses `Font.system(size:)` inline, a literal `Color(hex:)` / `Color(red:)` /
-   `NSColor(white:)`, or a corner radius written as a number from the scale. It runs with the Xcode tests and with
+   and `App` and fails when a view uses `Font.system(size:)` inline, one of SwiftUI's own text styles (`.caption`,
+   `.callout`, `.headline`, `.system(.body)`), a literal `Color(hex:)` / `Color(red:)` / `NSColor(white:)`, a system
+   state or text color (`.red`, `.orange`, `.green`, `.secondary`), or a corner radius written as a number from the scale. It runs with the Xcode tests and with
    `./scripts/core-tests.sh`.
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` runs it on every pull request.
@@ -43,32 +44,64 @@ loosen the rule itself.
 The checklist for a new or changed view:
 
 - Text: a `NookTheme.TextStyle`, or `NookTheme.font` / `mono` / `rounded` for the odd size. Color from the text ramp
-  (`paper` › `textStrong` › `textSecondary` › `textTertiary` › `textMuted`).
+  (`paper` › `textStrong` › `textSecondary` › `textTertiary` › `textMuted`), never `.secondary` or `.tertiary`. Settings
+  follows the same rules as the panel: a caption under a setting is `TextStyle.detail` in `textSecondary`, a warning
+  under it `amber`, an error `coral`.
 - Surfaces: `canvas` under a window, `surface` for what lifts off it, `field` for input, `well` for code and logs,
   `rowFill(selected:hovering:)` for rows. Strokes are `line`, `line2`, `hairline`, or `fieldStroke`.
 - State color means one thing everywhere: `iris` is Nook, `mint` is done or listening, `amber` waits on you,
   `coral` is an error, `violet` is merged.
 - Corners from `NookTheme.Radius`, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
-  `NookTheme.open` / `close` / `swap` / `hover`.
+  `NookTheme.open` / `close` / `swap` / `hover` / `reveal` / `scroll`, and a looping animation (a pulse, a blinking
+  cursor) stops with Reduce Motion.
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
-- Every string through `tr("key")` in all five languages, and a `.help` or accessibility label on a symbol-only control.
+- The result of an action is a `ToastCenter` toast, never a local notice string, banner or alert (see *Toasts*).
+- Every string through `tr("key")` in all five languages, and a `.help` and accessibility label on a symbol-only control
+  or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
+- A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
+  `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
+- Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
+  Errors: `coralSoft` text, or a coral-tinted `.cardBackground` notice with a retry.
+
+## Toasts — the result of what you did
+
+`ToastCenter.shared` is the one way to report a short result, on the Mac and (as `toast` in `src/lib/toast.svelte.ts`) in
+the Tauri app. Use it whenever an action ends and its own view does not stay to show how it went.
+
+- **Where it shows:** on one surface with `.nookToastHost()` (the panel in the notch and the main window, Settings): the
+  key window's, else the one opened last. With none on screen, the notch shows it in its confirmation strip
+  (`NotchViewModel.showToast`), but never over a card or a question that waits for you. A new window gets
+  `.nookToastHost()` once, at its root.
+- **Kinds keep the state colors:** `success` mint, `error` coral, `warning` amber, `info` iris. An error stays longest,
+  every toast stays while hovered, and an error with a detail can be copied in one click.
+- **Words:** the title says what happened in a few words ("Pushed", "Couldn't remove the worktree", `toast.failed` for
+  "%@ failed"); the error's own text goes in `detail`, never glued into the title.
+- **Not a toast:** a decision Nook waits for (a card or an approval with `NookNoticeActions`), a problem with a form you
+  are filling in (it stays next to that form), a load error that replaces the content (`WSEmptyState`), something
+  that stays true (a status row or banner), and the checkmark a copy button shows on itself. No `.alert` for an
+  error after an action, and no local `notice`/`status` strings that do a toast's job.
+- **The notch's own flows** keep `viewModel.finish`: a card's outcome, a quick command, and an agent that finished.
 
 ## Components — `apps/macos/NotchUI/Components`
 
 | Component | File | Use |
 | --- | --- | --- |
-| `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards and in chat (optional SF Symbol before the title) |
+| `NookPrimaryButton`, `SmallPrimaryButton`, `NookGhostButton`, `SmallGhostButton` | `NookButtons.swift` | Text buttons on cards, in chat, and in the panel's own forms (optional SF Symbol before the title). They dim by themselves when `.disabled`; do not add an `.opacity` for it. Inside the panel use these, not `.borderedProminent` |
 | `NookAcknowledgeButton`, `CountdownRing` | `NookButtons.swift` | The white "OK" that closes a notice at once, with a ring counting down until it closes by itself (card `acknowledge` + `countdown`, compact strip) |
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
+| `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
-| `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header or under a message |
+| `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |
+| `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
+| `ListEmptyNote` | `ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
+| `CheckOutcomeGlyph` | `AgentIndicators.swift` | The outcome of a CI check or step (passing, failing, running, skipped); the pull request page and the CI popover of a watched pull request |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
 | `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |

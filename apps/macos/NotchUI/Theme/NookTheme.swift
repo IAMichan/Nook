@@ -108,11 +108,13 @@ enum NookTheme {
         static let xxl: CGFloat = 24
     }
 
-    /// The type scale: five sizes, each with its weight, so two panels never show the same kind of text at
+    /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
     /// different sizes. Use `font(_:_:)` only for the odd size that these do not cover (a numeral, an icon).
     enum TextStyle {
         /// Captions, timestamps, and section titles in uppercase.
         static var caption: Font { NookTheme.font(10.5, .medium) }
+        /// The line under a title: a setting's explanation, a hint, or an error message.
+        static var detail: Font { NookTheme.font(11) }
         /// Secondary labels, badges, and metadata.
         static var label: Font { NookTheme.font(11.5, .medium) }
         /// Body text in rows, cards, and chat.
@@ -121,6 +123,8 @@ enum NookTheme {
         static var strong: Font { NookTheme.font(13, .semibold) }
         /// The title of a panel or a card.
         static var title: Font { NookTheme.font(15, .semibold) }
+        /// The heading of a sheet or a setup step.
+        static var heading: Font { NookTheme.font(17, .semibold) }
         /// Inline code and paths at body size.
         static var code: Font { NookTheme.mono(12) }
     }
@@ -146,6 +150,10 @@ enum NookTheme {
     static let swap = Animation.spring(duration: 0.28, bounce: 0.12)
     /// Hover feedback on buttons and chips: quick, with a hint of spring.
     static let hover = Animation.spring(duration: 0.2, bounce: 0.1)
+    /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.
+    static let reveal = Animation.easeInOut(duration: 0.18)
+    /// Scrolling a list to a message or a line.
+    static let scroll = Animation.easeOut(duration: 0.2)
     static let spring = open
 }
 

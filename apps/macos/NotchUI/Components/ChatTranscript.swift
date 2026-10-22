@@ -35,7 +35,7 @@ struct ChatTranscript: View {
                 .onChange(of: bubbles.last?.id) { _, last in
                     // A new message (or one you just sent) scrolls into view.
                     guard let last else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
+                    withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
                 }
         }
     }

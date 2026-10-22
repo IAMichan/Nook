@@ -106,12 +106,12 @@ struct ChatMessageView: View, Equatable {
                 ToolbarIconButton("arrow.clockwise", tr("chat.retry"), height: 22) { app.retryLast() }
             }
             Text(message.date.formatted(date: .omitted, time: .shortened))
-                .font(NookTheme.font(11))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .padding(.leading, 4)
         }
         .opacity(hovering || copied ? 1 : 0)
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .padding(.top, -4)
     }
 
@@ -180,9 +180,9 @@ private struct ChatErrorCard: View {
                 }
             }
             .padding(.leading, 32)
-            Button { withAnimation(.easeOut(duration: 0.16)) { showDetails.toggle() } } label: {
+            Button { withAnimation(NookTheme.reveal) { showDetails.toggle() } } label: {
                 Text(showDetails ? tr("chat.error.hideDetails") : tr("chat.error.details"))
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .buttonStyle(.plain)
@@ -200,7 +200,7 @@ private struct ChatErrorCard: View {
             }
         }
         .padding(12)
-        .cardBackground(NookTheme.coral.opacity(0.06), stroke: NookTheme.coral.opacity(0.22), radius: 14, style: .continuous)
+        .cardBackground(NookTheme.coral.opacity(0.06), stroke: NookTheme.coral.opacity(0.22), radius: NookTheme.Radius.sheet, style: .continuous)
     }
 }
 
@@ -271,7 +271,7 @@ private struct OfferChip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .accessibilityLabel("Nook: \(text)")
     }
 }
