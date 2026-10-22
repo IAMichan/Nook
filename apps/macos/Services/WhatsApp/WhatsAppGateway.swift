@@ -105,8 +105,8 @@ extension WAMedia {
     /// A file Nook can fetch from the gateway and open on this Mac.
     var isOpenable: Bool {
         switch self {
-        case .image, .video, .audio, .voice, .document: return true
-        case .none, .sticker, .location, .contact, .other: return false
+        case .image, .video, .audio, .voice, .document, .sticker: return true
+        case .none, .location, .contact, .other: return false
         }
     }
 
@@ -119,6 +119,7 @@ extension WAMedia {
         case .image: name = given ?? "photo"
         case .video: name = given ?? "video"
         case .audio, .voice: name = given ?? "voice message"
+        case .sticker: name = given ?? "sticker"
         default: name = given ?? "attachment"
         }
         name = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")

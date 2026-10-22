@@ -66,8 +66,9 @@ final class ChatCaptureService: ObservableObject {
     private var bridgeDue: [String: Date] = [:]
     private var bridging = false
 
-    /// How often the database is looked at. Only a database that changed is read.
-    private static let interval: TimeInterval = 4
+    /// How often the database is looked at. Only a database that changed is read, so looking is cheap; looking often
+    /// matters because Slack and Teams take a notification back as soon as you read the message elsewhere.
+    private static let interval: TimeInterval = 1
     /// A first start shows what came in this long ago: macOS keeps the notifications it showed for a while, so the
     /// chats of the last weeks are there at once instead of only the ones that write after switching on.
     private static let firstLook: TimeInterval = 14 * 86_400
@@ -78,6 +79,14 @@ final class ChatCaptureService: ObservableObject {
     private var timer: Timer?
     private var polling = false
     private var lastChange: Date?
+    /// After a failed read (no Full Disk Access yet) the next try waits a little, instead of a read every second.
+    private var retryAt: Date?
+    /// The last look stopped at its page limit: the next one goes on even when the database did not change.
+    private var backlog = false
+    /// Looking back after a start: what comes in from before `freshness` counts as read, until the look-back is done.
+    private var replaying = false
+    /// Counts starts and stops, so a look still running from before one does not write over what came after.
+    private var generation = 0
 
     private init() {
         var inbox = SafeStorage.load(ChatInbox.self, from: Self.file).value ?? ChatInbox()
@@ -96,8 +105,15 @@ final class ChatCaptureService: ObservableObject {
         guard enabled else { return }
         timer?.invalidate()
         lastChange = nil
-        // Nothing collected yet (a start before Full Disk Access, or before any chat wrote): look back again.
-        if inbox.threads.isEmpty { inbox.lastRecord = nil }
+        retryAt = nil
+        backlog = false
+        generation += 1
+        // Nothing collected yet (a start before Full Disk Access, or before any chat wrote), or an earlier version looked
+        // back less far: look back again. What is already here is not added twice.
+        if inbox.threads.isEmpty || (inbox.lookedBack ?? 0) < Self.firstLook {
+            inbox.lastRecord = nil
+            inbox.lookedBack = Self.firstLook
+        }
         bridgeDue = [:]
         // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Chats.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
@@ -107,7 +123,7 @@ final class ChatCaptureService: ObservableObject {
                 await self?.pollBridges()
             }
         }
-        timer?.tolerance = 1
+        timer?.tolerance = 0.5
         Task {
             await poll()
             await pollBridges()
@@ -117,6 +133,7 @@ final class ChatCaptureService: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        generation += 1
         telegramBridge.stop()
         status = .off
     }
@@ -125,46 +142,62 @@ final class ChatCaptureService: ObservableObject {
     func poll() async {
         guard enabled, !polling else { return }
         let change = modified()
-        if status == .running, change != nil, change == lastChange { return }
+        if status == .running, !backlog, change != nil, change == lastChange { return }
+        if let retryAt, retryAt > Date() { return }
         polling = true
         defer { polling = false }
+        let started = generation
         do {
-            let catchingUp = inbox.lastRecord == nil
+            if inbox.lastRecord == nil { replaying = true }
+            let seen = Date().addingTimeInterval(-Self.freshness)
             var lastRecord = inbox.lastRecord
             var changed = false
-            // At most a few pages in one go; a backlog after a long sleep is read over the next looks.
+            var full = false
+            // At most a few pages in one go; the rest of a backlog (a look back, a long sleep) follows on the next looks.
             for _ in 0..<5 {
                 let rows = try await AppDatabase.query(databasePath, NotificationRecord.query(
                     after: lastRecord, since: Date().addingTimeInterval(-Self.firstLook)), app: tr("chats.capture.source"))
+                guard started == generation else { return }
                 for row in rows {
                     guard let record = NotificationRecord.integer(row["id"]) else { continue }
                     lastRecord = max(lastRecord ?? record, record)
                     guard let notification = NotificationRecord.notification(row),
-                          let notice = ChatCapture.notice(notification), !skips(notice), !isBridged(notice.app) else { continue }
-                    if inbox.add(notice, id: "n\(notification.record)") { changed = true }
+                          let notice = ChatCapture.notice(notification), !skips(notice), !isBridged(notice.app),
+                          inbox.add(notice, id: "n\(notification.record)") else { continue }
+                    changed = true
+                    // Looking back: what came in before `freshness` was likely seen on the Mac already.
+                    let key = ChatInbox.key(app: notice.app, chat: notice.chat)
+                    if replaying, notice.date < seen, let unread = inbox.threads[key]?.unread, unread > 0 {
+                        inbox.threads[key]?.unread = unread - 1
+                    }
                 }
                 if lastRecord == nil {
                     // Nothing in the last day: start after the newest notification there is.
                     let newest = try await AppDatabase.query(databasePath, NotificationRecord.newestQuery, app: tr("chats.capture.source"))
+                    guard started == generation else { return }
                     lastRecord = NotificationRecord.integer(newest.first?["id"]) ?? 0
                 }
-                if rows.count < 200 { break }
+                full = rows.count >= 200
+                if !full { break }
             }
-            if catchingUp {
-                let seen = Date().addingTimeInterval(-Self.freshness)
-                for thread in inbox.threads.values where thread.unread > 0 && thread.last < seen { inbox.markRead(thread.id) }
-            }
+            backlog = full
+            if !full { replaying = false }
             if lastRecord != inbox.lastRecord {
                 inbox.lastRecord = lastRecord
                 changed = true
             }
             lastChange = change
+            retryAt = nil
             status = .running
             if changed { save() }
         } catch let error as NookError where error.kind == .auth {
+            guard started == generation else { return }
             status = .needsAccess
+            retryAt = Date().addingTimeInterval(10)
         } catch {
+            guard started == generation else { return }
             status = .failed(error.localizedDescription)
+            retryAt = Date().addingTimeInterval(10)
         }
     }
 
@@ -267,8 +300,10 @@ final class ChatCaptureService: ObservableObject {
     /// Forgets every collected chat; the next look starts after the newest notification.
     func clear() {
         let last = inbox.lastRecord
+        let lookedBack = inbox.lookedBack
         inbox = ChatInbox()
         inbox.lastRecord = last
+        inbox.lookedBack = lookedBack
         save()
     }
 

@@ -42,6 +42,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
     private var changed: Set<Int64> = []
     /// The chats Nook shows: the newest of the main list, plus every chat a new message arrives in.
     private var shown: Set<Int64> = []
+    /// Files asked of TDLib to show in a chat (a photo, a sticker, a voice message…), by their id: which message has it.
+    private var downloads: [Int64: (chat: Int64, message: String)] = [:]
+    /// Chat pictures asked of TDLib, by their file id: whose picture it is.
+    private var pictures: [Int64: Int64] = [:]
 
     var isReady: Bool { state == .login(.ready) }
     var isWorking: Bool { isReady }
@@ -138,7 +142,7 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         changed = []
         return ids.compactMap { id in
             guard let chat = chats[id], !chat.title.isEmpty else { return nil }
-            return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread)
+            return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar)
         }
     }
 
@@ -154,7 +158,18 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         case "updateAuthorizationState":
             authorization(TelegramData.authorization(object))
         case "updateNewChat":
-            if let chat = (object["chat"] as? [String: Any]).flatMap(TelegramData.chat) { chats[chat.id] = chat }
+            if let chat = (object["chat"] as? [String: Any]).flatMap(TelegramData.chat) {
+                chats[chat.id] = chat
+                fetchPicture(of: chat.id)
+            }
+        case "updateChatPhoto":
+            if let id = TelegramData.int64(object["chat_id"]) {
+                let picture = TelegramData.photo(object["photo"])
+                chats[id]?.photo = picture?.id
+                chats[id]?.avatar = picture?.path
+                changed.insert(id)
+                fetchPicture(of: id)
+            }
         case "updateChatTitle":
             if let id = TelegramData.int64(object["chat_id"]), let title = object["title"] as? String {
                 chats[id]?.title = title
@@ -196,6 +211,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
                 send(["@type": "getChatHistory", "chat_id": id, "from_message_id": oldest, "offset": 0,
                       "limit": Self.history, "only_local": false, "@extra": "history2:\(id)"])
             }
+        case "file", "updateFile":
+            // A file Nook asked for is on this Mac now: its message shows it.
+            let file = TelegramData.type(object) == "file" ? object : (object["file"] as? [String: Any] ?? [:])
+            if let id = TelegramData.int64(file["id"]), let path = TelegramData.downloaded(file) { downloaded(id, path: path) }
         case "user":
             if object["@extra"] as? String == "me" { account = TelegramData.userName(object) }
         case "error":
@@ -244,11 +263,37 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         for object in list {
             guard let message = TelegramData.message(object, chat: chat, users: users), ids.insert(message.id).inserted else { continue }
             known.append(message)
+            // Its file, when it is not on this Mac yet and not too large to fetch for a chat.
+            if let file = TelegramData.file(object["content"] as? [String: Any] ?? [:]), file.media.path == nil,
+               file.size <= ChatMedia.maxBytes, downloads[file.id] == nil {
+                downloads[file.id] = (id, message.id)
+                send(["@type": "downloadFile", "file_id": file.id, "priority": 1, "offset": 0, "limit": 0, "synchronous": true])
+            }
         }
         known.sort { $0.date < $1.date }
         if known.count > ChatInbox.keep { known.removeFirst(known.count - ChatInbox.keep) }
         messages[id] = known
         changed.insert(id)
+    }
+
+    /// A chat's picture, downloaded once when TDLib does not have it yet.
+    private func fetchPicture(of chat: Int64) {
+        guard let file = chats[chat]?.photo, chats[chat]?.avatar == nil, pictures[file] == nil else { return }
+        pictures[file] = chat
+        send(["@type": "downloadFile", "file_id": file, "priority": 1, "offset": 0, "limit": 0, "synchronous": true])
+    }
+
+    /// A file TDLib finished downloading: the message it belongs to shows it from now on.
+    private func downloaded(_ file: Int64, path: String) {
+        if let chat = pictures.removeValue(forKey: file) {
+            chats[chat]?.avatar = path
+            changed.insert(chat)
+            return
+        }
+        guard let owner = downloads.removeValue(forKey: file),
+              let index = messages[owner.chat]?.firstIndex(where: { $0.id == owner.message }) else { return }
+        messages[owner.chat]?[index].media?.path = path
+        changed.insert(owner.chat)
     }
 
     /// TDLib's error codes in words: PHONE_CODE_INVALID, PASSWORD_HASH_INVALID…

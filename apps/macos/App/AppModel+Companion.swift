@@ -15,7 +15,7 @@ extension AppModel {
     /// A file the card shows by itself: a photo, a video or a document (a voice note stays a button).
     static func whatsAppPreviews(_ media: WAMedia) -> Bool {
         switch media {
-        case .image, .video, .document: return true
+        case .image, .video, .document, .sticker, .audio, .voice: return true
         default: return false
         }
     }
@@ -138,8 +138,11 @@ extension AppModel {
                 switch message.media {
                 case .image: bubble.media = .photo(preview.file)
                 case .video: bubble.media = .video(preview.file)
+                case .sticker: bubble.media = .sticker(preview.file)
+                case .audio(let seconds), .voice(let seconds): bubble.media = .audio(preview.file, seconds: seconds.map(Double.init))
                 default: break
                 }
+                bubble.file = preview.file
             }
             return bubble
         }
@@ -265,6 +268,9 @@ extension AppModel {
             let file: CGFloat
             switch bubble.media {
             case .photo, .video: file = (bubble.image.map(Self.photoHeight) ?? 135) + 4
+            case .gif: file = ChatGIFView.maxHeight + 4
+            case .sticker: file = ChatStickerView.side + 4
+            case .audio: file = 44
             case .file: file = bubble.attachment == nil ? 0 : (bubble.image == nil ? 40 : 60)
             }
             return total + 16 + max(CGFloat(lines) * 18, bubble.attachment == nil ? 18 : 14) + file
@@ -301,6 +307,7 @@ extension AppModel {
         case .image: return tr("whatsapp.file.photo")
         case .video: return tr("whatsapp.file.video")
         case .audio, .voice: return tr("whatsapp.file.voice")
+        case .sticker: return tr("chat.media.sticker")
         default: return nil
         }
     }

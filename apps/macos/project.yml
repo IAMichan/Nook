@@ -169,6 +169,7 @@ targets:
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
+      - path: Core/I18n+ChatMedia.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -191,6 +192,7 @@ targets:
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
       - path: Services/Messages/BeeperData.swift
+      - path: Services/Messages/ChatMedia.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift

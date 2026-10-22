@@ -25,6 +25,8 @@ struct ChatsEntry: Identifiable, Equatable {
     /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a Beeper chat
     /// and a chat collected from notifications, which are matched by name.
     var handle: String? = nil
+    /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
+    var avatar: String? = nil
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -171,10 +173,10 @@ struct ChatsTab: View {
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
             let preview = thread.messages.last.map { message in
                 let who = message.isMine ? tr("chat.you") : message.sender
-                return who.isEmpty ? message.text : "\(who): \(message.text)"
+                return who.isEmpty ? message.summary : "\(who): \(message.summary)"
             } ?? ""
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, unread: thread.unread))
+                                      preview: preview, last: thread.last, unread: thread.unread, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
@@ -185,7 +187,11 @@ struct ChatsTab: View {
     }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
-        photos.photo(handle: entry.handle, name: entry.name)
+        if let avatar = entry.avatar, FileManager.default.fileExists(atPath: avatar),
+           let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
+            return image
+        }
+        return photos.photo(handle: entry.handle, name: entry.name)
     }
 
     /// The chats that match the filter and the search, in the list's order: group by group, newest first in each.
@@ -846,10 +852,7 @@ private struct ChatsDetail: View {
         case .whatsApp(let jid):
             return whatsApp.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0) } ?? []
         case .captured(let id):
-            return (capture.inbox.threads[id]?.messages ?? []).map { message in
-                ChatBubble(id: message.id, text: message.text, time: Self.time.string(from: message.date), date: message.date,
-                           sender: message.sender, fromMe: message.isMine)
-            }
+            return (capture.inbox.threads[id]?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date)) }
         }
     }
 
@@ -981,9 +984,21 @@ private struct ChatsDetail: View {
         app.openChatApp(entry.app)
     }
 
-    /// A file in a WhatsApp chat opens in Quick Look; a collected chat has no files.
+    /// A file opens in Quick Look: from this Mac when Nook has it, from the gateway for WhatsApp, else in its app.
     private func open(_ bubble: ChatBubble) {
-        guard let chat = whatsAppChat, bubble.attachment != nil else { return }
+        // A file Nook already has opens from this Mac, whichever app it came from.
+        if let file = bubble.file {
+            if !FilePreviewWindow.shared.show(file, title: bubble.attachment ?? file.lastPathComponent), !NSWorkspace.shared.open(file) {
+                notice = tr("whatsapp.file.noApp")
+            }
+            return
+        }
+        guard let chat = whatsAppChat else {
+            // Not fetched (yet): the chat's own app has it.
+            if bubble.attachment != nil { app.openChatApp(entry.app) }
+            return
+        }
+        guard bubble.attachment != nil else { return }
         notice = tr("whatsapp.file.opening", bubble.attachment ?? "")
         Task { @MainActor in
             do {

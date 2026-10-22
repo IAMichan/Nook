@@ -145,6 +145,11 @@ private struct ChatBubbleView: View {
     private static let foldedLines = 12
 
     private var emojiOnly: Bool { bubble.attachment == nil && ChatTimeline.isEmojiOnly(bubble.text) }
+    /// A sticker stands on its own, as an emoji does: no bubble around it.
+    private var bare: Bool {
+        if case .sticker = bubble.media, bubble.text.isEmpty { return true }
+        return emojiOnly
+    }
     private var long: Bool { bubble.text.count > 700 || bubble.text.filter { $0 == "\n" }.count >= Self.foldedLines }
 
     var body: some View {
@@ -211,6 +216,12 @@ private struct ChatBubbleView: View {
                     PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
                 case .video(let url):
                     VideoTile(url: url, poster: bubble.image, name: attachment)
+                case .gif(let url):
+                    ChatGIFView(url: url, name: attachment)
+                case .sticker(let url):
+                    ChatStickerView(url: url, name: attachment)
+                case .audio(let url, let seconds):
+                    ChatAudioView(url: url, seconds: seconds, name: attachment, fromMe: bubble.fromMe)
                 default:
                     AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
                 }
@@ -246,9 +257,9 @@ private struct ChatBubbleView: View {
                 .fixedSize()
             }
         }
-        .padding(.horizontal, emojiOnly ? NookTheme.Spacing.xs : 12)
-        .padding(.vertical, emojiOnly ? NookTheme.Spacing.xxs : 7)
-        .background(shape.fill(emojiOnly ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)))
+        .padding(.horizontal, bare ? NookTheme.Spacing.xs : 12)
+        .padding(.vertical, bare ? NookTheme.Spacing.xxs : 7)
+        .background(shape.fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)))
     }
 
     /// Round, with the first bubble of a run pointing at its writer the way a chat app's tail does.

@@ -12,6 +12,9 @@ enum TelegramData {
         var unread: Int
         /// The order of the main chat list (the newest activity first); 0 when the chat is not in it.
         var order: Int64
+        /// The chat's picture (a person's, a group's) as a file in TDLib, and where it is once downloaded.
+        var photo: Int64? = nil
+        var avatar: String? = nil
     }
 
     /// Where the login stands.
@@ -76,8 +79,16 @@ enum TelegramData {
         let kind = object["type"] as? [String: Any] ?? [:]
         if type(kind) == "chatTypeSupergroup", kind["is_channel"] as? Bool == true { return nil }
         let isGroup = ["chatTypeBasicGroup", "chatTypeSupergroup"].contains(type(kind))
+        let picture = photo(object["photo"])
         return Chat(id: id, title: (object["title"] as? String) ?? "", isGroup: isGroup,
-                    unread: Int(int64(object["unread_count"]) ?? 0), order: order(object["positions"]))
+                    unread: Int(int64(object["unread_count"]) ?? 0), order: order(object["positions"]),
+                    photo: picture?.id, avatar: picture?.path)
+    }
+
+    /// A `chatPhotoInfo`: its small picture, as the chat list shows it.
+    static func photo(_ info: Any?) -> (id: Int64, path: String?)? {
+        guard let small = (info as? [String: Any])?["small"] as? [String: Any], let id = int64(small["id"]) else { return nil }
+        return (id, downloaded(small))
     }
 
     /// A chat's place in the main list, from its `positions`.
@@ -110,11 +121,81 @@ enum TelegramData {
     /// whether it is yours. Nil for a message without anything to show (a service message, a pinned notice).
     static func message(_ object: [String: Any], chat: Chat, users: [Int64: String]) -> InboxMessage? {
         guard type(object) == "message", let id = int64(object["id"]) else { return nil }
-        guard let text = Self.text(object["content"] as? [String: Any] ?? [:]), !text.isEmpty else { return nil }
+        let content = object["content"] as? [String: Any] ?? [:]
+        let attached = file(content)
+        // A file shows as itself, with its caption as the text; anything else as its text.
+        let text: String? = attached == nil ? Self.text(content) : Optional(caption(content))
+        guard let text, !text.isEmpty || attached != nil else { return nil }
         let mine = object["is_outgoing"] as? Bool == true
         let sender = mine || !chat.isGroup ? "" : senderUser(object).flatMap { users[$0] } ?? ""
         let date = Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0))
-        return InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine)
+        return InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
+                            media: attached?.media)
+    }
+
+    /// A file TDLib has, or can download: its id in TDLib, and what it is.
+    struct File: Equatable, Sendable {
+        var id: Int64
+        var size: Int
+        var media: ChatMedia
+    }
+
+    /// The file of a photo, video, GIF, sticker, voice or audio message or document: the photo in its largest size, a
+    /// sticker that is no picture (an animated or video one) by its still picture. Nil for a message without one.
+    static func file(_ content: [String: Any]) -> File? {
+        func object(_ key: String) -> [String: Any]? { content[key] as? [String: Any] }
+        func seconds(_ owner: [String: Any]?) -> Double? { int64(owner?["duration"]).map(Double.init) }
+        let found: ([String: Any]?, ChatMedia)
+        switch type(content) {
+        case "messagePhoto":
+            let largest = (object("photo")?["sizes"] as? [[String: Any]])?.last
+            found = (largest?["photo"] as? [String: Any], ChatMedia(kind: .photo))
+        case "messageVideo":
+            let video = object("video")
+            found = (video?["video"] as? [String: Any],
+                     ChatMedia(kind: .video, name: video?["file_name"] as? String, seconds: seconds(video)))
+        case "messageVideoNote":
+            let note = object("video_note")
+            found = (note?["video"] as? [String: Any], ChatMedia(kind: .video, seconds: seconds(note)))
+        case "messageAnimation":
+            let animation = object("animation")
+            found = (animation?["animation"] as? [String: Any], ChatMedia(kind: .gif, name: animation?["file_name"] as? String))
+        case "messageSticker":
+            let sticker = object("sticker")
+            let still = type(sticker?["format"] as? [String: Any] ?? [:]) == "stickerFormatWebp"
+            let file = still ? sticker?["sticker"] : (sticker?["thumbnail"] as? [String: Any])?["file"]
+            found = (file as? [String: Any], ChatMedia(kind: .sticker, name: sticker?["emoji"] as? String))
+        case "messageVoiceNote":
+            let voice = object("voice_note")
+            found = (voice?["voice"] as? [String: Any], ChatMedia(kind: .voice, seconds: seconds(voice)))
+        case "messageAudio":
+            let audio = object("audio")
+            found = (audio?["audio"] as? [String: Any],
+                     ChatMedia(kind: .audio, name: audio?["file_name"] as? String, seconds: seconds(audio)))
+        case "messageDocument":
+            let document = object("document")
+            let name = document?["file_name"] as? String
+            found = (document?["document"] as? [String: Any],
+                     ChatMedia(kind: ChatMedia.kind(mimeType: document?["mime_type"] as? String, name: name), name: name))
+        default:
+            return nil
+        }
+        guard let file = found.0, let id = int64(file["id"]) else { return nil }
+        var media = found.1
+        media.path = downloaded(file)
+        return File(id: id, size: Int(int64(file["size"]) ?? int64(file["expected_size"]) ?? 0), media: media)
+    }
+
+    /// Where a `file` is on this Mac once TDLib downloaded it completely.
+    static func downloaded(_ file: [String: Any]) -> String? {
+        let local = file["local"] as? [String: Any] ?? [:]
+        guard local["is_downloading_completed"] as? Bool == true, let path = local["path"] as? String, !path.isEmpty else { return nil }
+        return path
+    }
+
+    /// A file's caption, "" without one.
+    static func caption(_ content: [String: Any]) -> String {
+        ((content["caption"] as? [String: Any])?["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     /// The text of a message's `content`: its text, or a file's caption after its kind ("Photo: on the beach").
