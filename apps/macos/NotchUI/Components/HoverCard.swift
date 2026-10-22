@@ -7,16 +7,16 @@ struct HoverCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Text(title)
-                .font(NookTheme.font(13.5, .semibold))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 2)
+                .padding(.bottom, NookTheme.Spacing.xxs)
             content
         }
-        .padding(14)
+        .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .frame(minWidth: 220, maxWidth: 320, alignment: .leading)
         .background(DropdownStyle.panel)
         .accessibilityElement(children: .combine)
@@ -30,15 +30,16 @@ struct HoverCardRow: View {
     var help: String? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: symbol)
                 .font(NookTheme.font(11, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
                 .frame(width: 16)
             Text(text)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .font(NookTheme.font(12.5))
+        .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textSecondary)
         .help(help ?? "")
     }
