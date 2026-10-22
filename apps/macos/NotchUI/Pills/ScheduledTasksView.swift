@@ -498,7 +498,7 @@ private struct ScheduledTaskEditor: View {
         panel.prompt = tr("ws.new.choosePrompt")
         panel.message = tr("ws.new.chooseMessage")
         if !path.isEmpty { panel.directoryURL = URL(fileURLWithPath: path) }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         path = url.path
     }
 

@@ -398,7 +398,7 @@ final class McpAppSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         guard data.count <= 25 * 1024 * 1024 else { throw McpAppHost.Refusal(message: tr("ws.mcpApp.downloadTooLarge")) }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = name
-        guard panel.runModal() == .OK, let url = panel.url else { throw McpAppHost.Refusal(message: tr("ws.mcpApp.declined")) }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { throw McpAppHost.Refusal(message: tr("ws.mcpApp.declined")) }
         try data.write(to: url, options: .atomic)
     }
 
@@ -408,7 +408,7 @@ final class McpAppSession: NSObject, ObservableObject, WKNavigationDelegate, WKS
         alert.informativeText = detail
         alert.addButton(withTitle: tr("ws.mcpApp.allow"))
         alert.addButton(withTitle: tr("button.cancel"))
-        return alert.runModal() == .alertFirstButtonReturn
+        return alert.runAboveNotch() == .alertFirstButtonReturn
     }
 }
 

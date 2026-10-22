@@ -353,7 +353,7 @@ struct AgentRunPanel: View {
         panel.nameFieldStringValue = SessionExport.fileName(run)
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         try? SessionExport.markdown(run, events: workspace.timeline(runID)).write(to: url, atomically: true, encoding: .utf8)
     }
 

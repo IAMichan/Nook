@@ -351,7 +351,7 @@ struct PlanCard: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = PlanPreview.fileName(forTitle: title)
         panel.allowedContentTypes = [.plainText]
-        if panel.runModal() == .OK, let url = panel.url {
+        if panel.runAboveNotch() == .OK, let url = panel.url {
             try? text.write(to: url, atomically: true, encoding: .utf8)
         }
     }
