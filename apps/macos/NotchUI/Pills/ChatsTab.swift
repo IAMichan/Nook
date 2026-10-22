@@ -61,7 +61,11 @@ struct ChatsTab: View {
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
+    /// Settings › Chats: opening a chat marks it read, in Nook only. Off by default.
+    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = false
     @State private var totalWidth: Double = 0
+
+    static let readOnOpenKey = "nook.chats.readOnOpen"
 
     /// The chat you opened last, kept for the next time the tab opens.
     static var lastOpened: String? {
@@ -146,12 +150,13 @@ struct ChatsTab: View {
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
-        // A chat you open is read, and so is what comes in while it is open: its badge goes.
+        // With "Mark as read when opened" on, a chat you open is read, and so is what comes in while it is open: its
+        // badge goes. In Nook only: WhatsApp keeps it unread and the sender sees no blue ticks.
         .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in
-            guard let entry = current, entry.unread > 0 else { return }
+            guard readOnOpen, let entry = current, entry.unread > 0 else { return }
             switch entry.origin {
             case .captured(let thread): capture.markRead(thread)
-            case .whatsApp(let jid): whatsApp.markRead(jid)
+            case .whatsApp(let jid): whatsApp.markReadInNook(jid)
             }
         }
     }

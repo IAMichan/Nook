@@ -5,6 +5,9 @@ import Foundation
 
 let chatMediaTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chats.settings.reading": "Lezen",
+        "chats.settings.readOnOpen": "Als gelezen markeren bij openen",
+        "chats.settings.readOnOpenDetail": "Een chat die je in Nook opent, telt als gelezen en zijn badge verdwijnt. Alleen in Nook: WhatsApp en je telefoon houden hem ongelezen en de afzender ziet geen blauwe vinkjes. Uit: je markeert een chat zelf als gelezen, met rechts klikken of de knop bovenaan de chat.",
         "chats.markRead": "Markeer als gelezen",
         "chats.markUnread": "Markeer als ongelezen",
         "chat.poll.failed": "Je stem kon niet worden verstuurd. Probeer het opnieuw of stem in de app.",
@@ -21,6 +24,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.pause": "Pauzeren",
     ],
     .en: [
+        "chats.settings.reading": "Reading",
+        "chats.settings.readOnOpen": "Mark as read when opened",
+        "chats.settings.readOnOpenDetail": "A chat you open in Nook counts as read and its badge goes. In Nook only: WhatsApp and your phone keep it unread and the sender sees no blue ticks. Off: you mark a chat read yourself, with a right-click or the button at the top of the chat.",
         "chats.markRead": "Mark as read",
         "chats.markUnread": "Mark as unread",
         "chat.poll.failed": "Your vote could not be sent. Try again or vote in the app.",
@@ -37,6 +43,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.pause": "Pause",
     ],
     .de: [
+        "chats.settings.reading": "Lesen",
+        "chats.settings.readOnOpen": "Beim Öffnen als gelesen markieren",
+        "chats.settings.readOnOpenDetail": "Ein Chat, den du in Nook öffnest, gilt als gelesen und sein Zähler verschwindet. Nur in Nook: WhatsApp und dein Telefon lassen ihn ungelesen, und der Absender sieht keine blauen Haken. Aus: Du markierst einen Chat selbst als gelesen, per Rechtsklick oder mit der Taste oben im Chat.",
         "chats.markRead": "Als gelesen markieren",
         "chats.markUnread": "Als ungelesen markieren",
         "chat.poll.failed": "Deine Stimme konnte nicht gesendet werden. Versuche es erneut oder stimme in der App ab.",
@@ -53,6 +62,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.pause": "Pausieren",
     ],
     .fr: [
+        "chats.settings.reading": "Lecture",
+        "chats.settings.readOnOpen": "Marquer comme lu à l’ouverture",
+        "chats.settings.readOnOpenDetail": "Une discussion ouverte dans Nook compte comme lue et son badge disparaît. Dans Nook seulement : WhatsApp et votre téléphone la gardent non lue et l’expéditeur ne voit pas de coches bleues. Désactivé : vous marquez vous-même une discussion comme lue, par un clic droit ou avec le bouton en haut de la discussion.",
         "chats.markRead": "Marquer comme lu",
         "chats.markUnread": "Marquer comme non lu",
         "chat.poll.failed": "Votre vote n’a pas pu être envoyé. Réessayez ou votez dans l’app.",
@@ -69,6 +81,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.pause": "Pause",
     ],
     .es: [
+        "chats.settings.reading": "Lectura",
+        "chats.settings.readOnOpen": "Marcar como leído al abrir",
+        "chats.settings.readOnOpenDetail": "Un chat que abres en Nook cuenta como leído y su contador desaparece. Solo en Nook: WhatsApp y tu teléfono lo mantienen sin leer y el remitente no ve los checks azules. Desactivado: marcas tú un chat como leído, con clic derecho o con el botón de arriba del chat.",
         "chats.markRead": "Marcar como leído",
         "chats.markUnread": "Marcar como no leído",
         "chat.poll.failed": "No se pudo enviar tu voto. Inténtalo de nuevo o vota en la app.",
