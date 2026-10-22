@@ -51,7 +51,7 @@ al is.
 | WhatsApp live (GOWA) | ◐ (gateway zelf starten; installer ○) | `core/src/connectors/whatsapp/` |
 | WhatsApp-kaart in de balk: chat als bubbels met vinkjes, foto's in de kaart (groot met een klik), bestanden en video's openen met de app van het systeem, antwoorden, Dempen, Laat Nook antwoorden (leest alleen die chat, stelt alleen een antwoord aan die chat voor, leert niets) | ◐ (met nep-gateway getest, niet met een echte telefoon; alleen in de balk, niet op Android; video speelt niet in de kaart en documenten tonen geen eerste pagina) | `views/connectors/WhatsAppCard.svelte`, `lib/whatsapp.svelte.ts`, `src-tauri/src/commands/whatsapp.rs` |
 | WhatsApp per chat: personen, groepen, statusupdates en kanalen elk een regel; per chat Automatisch, Altijd of Nooit; verborgen chats één voor één terug | ✓ | `core/src/connectors/whatsapp/mod.rs`, `views/connectors/WhatsApp.svelte` |
-| `@open chat` (WhatsApp-chat naast de chat), versturen via WhatsApp Web | — | Geen `@open`-mechanisme en geen ingebedde WhatsApp Web in deze port |
+| `@chat` (WhatsApp-chat naast de chat), versturen via WhatsApp Web | — | Geen `@open`-mechanisme en geen ingebedde WhatsApp Web in deze port |
 | Portfolio | ○ | |
 | Apple Notes, Herinneringen, Mail.app, Berichten, Bear, Things | — | Mac-apps |
 

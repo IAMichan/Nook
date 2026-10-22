@@ -3,7 +3,7 @@ import Foundation
 // whatsapp_send without a linked phone: when WhatsApp Web is open next to the chat ("@open whatsapp web"), Nook sends
 // the approved message through it, the way the user would: search the chat, open it, type the text, press send. This is
 // the part without WebKit (the script that runs in the page and what its answer means), so it can be tested anywhere;
-// `EmbeddedAppStore.sendWhatsApp` runs it in the web view. "@open chat Jan" opens a chat there the same way, without
+// `EmbeddedAppStore.sendWhatsApp` runs it in the web view. "@chat Jan" opens a chat there the same way, without
 // typing anything (`openScript`).
 
 enum WhatsAppWeb {

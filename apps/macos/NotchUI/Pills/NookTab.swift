@@ -424,8 +424,9 @@ struct NookChatView: View {
         var config = ComposerConfig()
         // `@` lists the apps that open next to the chat: the Mac apps on this Mac and the web apps.
         config.apps = EmbeddedAppCatalog.available().map { (id: $0.id, title: $0.title, symbol: $0.symbol) }
-        // "@open chat …" lists the chats of every chat app, so you open the one you mean.
+        // "@chat …" lists the chats of every chat app, so you open the one you mean.
         config.chats = { [app] in app.chatChoices() }
+        config.openApp = { [viewModel] in viewModel.embeddedAppOpen ? EmbeddedAppStore.shared.current?.title : nil }
         config.commands = AgentCommands.commands(for: .claude, hasProject: false, surface: .chat).filter { $0.action == .new }
         config.onCommand = { [app] command in
             if command.action == .new { app.newChat() }

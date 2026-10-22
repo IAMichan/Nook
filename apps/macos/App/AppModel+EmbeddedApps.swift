@@ -1,20 +1,15 @@
 import SwiftUI
 
 /// Apps inside Nook: "@open whatsapp" shows WhatsApp Web next to the chat, so you chat in the app itself and with Nook
-/// about it side by side; "@open chat Jan" shows Jan's chat the way a new message from Jan shows (with a linked phone),
+/// about it side by side; "@chat Jan" shows Jan's chat the way a new message from Jan shows (with a linked phone),
 /// else opens it in WhatsApp beside the chat. "@close" puts it away again (it stays signed in).
 extension AppModel {
-    /// Handles "@open …", "@whatsapp", "@open chat Jan", "@chats …" and "@close" from the chat. False when the text is no
+    /// Handles "@open …", "@whatsapp", "@chat Jan" and "@close" from the chat. False when the text is no
     /// such command.
     func handleEmbeddedAppCommand(_ text: String) -> Bool {
         guard let command = EmbeddedAppCatalog.command(in: text) else { return false }
         chat.append(ChatMessage(role: .user, text: text))
         switch command {
-        case .chats(let words):
-            let focus = chatsFocus(for: words)
-            chat.append(ChatMessage(role: .nook, text: words.isEmpty ? tr("chats.opened") : tr("chats.openedOn", words)))
-            showChats(focus)
-            return true
         case .open(let app, _) where EmbeddedArtifact.app(for: app.url) != nil:
             // "@open claude.ai/artifact/…": beside Claude, signed in, rather than as a site of its own.
             if let owner = openArtifact(app.url) {
@@ -82,7 +77,7 @@ extension AppModel {
         return owner
     }
 
-    /// "@open chat Jan": with a linked phone, Jan's chat shows as the card a new message from Jan brings up (the chat so
+    /// "@chat Jan": with a linked phone, Jan's chat shows as the card a new message from Jan brings up (the chat so
     /// far and a field to answer). Without one WhatsApp opens next to the chat, the way you open it ("@open whatsapp"),
     /// with Jan's chat in it: in WhatsApp Web Nook searches the chat and clicks it, and in the Mac app you pick it there
     /// yourself. Nothing is typed or marked read.

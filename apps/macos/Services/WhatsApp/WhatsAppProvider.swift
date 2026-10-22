@@ -272,11 +272,17 @@ actor GOWAProvider: WhatsAppProvider {
     }
 
     func groupName(_ chat: String) async -> String? {
+        guard let info = await groupInfo(chat) else { return nil }
+        if let name = info.name { return name }
+        // A community's announcement group has no name of its own: it takes its community's.
+        guard let parent = info.parent, parent != chat else { return nil }
+        return await groupInfo(parent)?.name
+    }
+
+    private func groupInfo(_ chat: String) async -> (name: String?, parent: String?)? {
         guard WAJID.isGroup(chat),
-              let data = try? await scoped("GET", "/group/info", query: [URLQueryItem(name: "group_id", value: chat)]),
-              let r = WAGOWA.results(data) as? [String: Any],
-              let name = r["Name"] as? String, !name.isEmpty else { return nil }
-        return name
+              let data = try? await scoped("GET", "/group/info", query: [URLQueryItem(name: "group_id", value: chat)]) else { return nil }
+        return WAGOWA.groupInfo(data)
     }
 
     func groupNames() async -> [String: String] {

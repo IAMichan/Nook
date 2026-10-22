@@ -39,7 +39,7 @@ extension AppModel {
 
     /// A new message (or new ticks) in `chat`: a notice the way Settings › Notifications says for chats (its card with a
     /// field to answer, one line, or a macOS notification), or the card on screen redrawn. Nothing is marked read by
-    /// showing it. `asked`: you opened the chat yourself ("@open chat Jan"), so the card comes up now, whatever the rules.
+    /// showing it. `asked`: you opened the chat yourself ("@chat Jan"), so the card comes up now, whatever the rules.
     func presentWhatsApp(_ chat: String, asked opened: Bool = false) {
         let link = WhatsAppLink.shared
         let token = Self.whatsAppCardPrefix + chat

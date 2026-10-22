@@ -39,25 +39,26 @@ final class EmbeddedAppTests: XCTestCase {
     }
 
     func testChatsOpenByName() {
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat Jan", installed: []), .chat("Jan"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat WhatsApp Jan", installed: []), .chat("Jan"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp chat Jan de Vries", installed: []), .chat("Jan de Vries"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp Jan", installed: []), .chat("Jan"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat met Lisa!", installed: []), .chat("Lisa"))
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat Lisa", installed: []), .chat("Lisa"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat Jan de Vries", installed: []), .chat("Jan de Vries"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat met Lisa!", installed: []), .chat("Lisa"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat Jan", installed: []), .chat("Jan"), "reads the same")
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat gpt", installed: []), .chat("gpt"), "@chat is always a chat")
+        XCTAssertEqual(opened("@chatgpt"), "chatgpt")
+        XCTAssertEqual(opened("@open chat gpt"), "chatgpt", "after @open an app's name wins")
         XCTAssertEqual(opened("@open whatsapp web"), "whatsapp", "a way to open stays the app")
-        XCTAssertEqual(opened("@open chat gpt"), "chatgpt", "an app's name wins")
-        XCTAssertEqual(opened("@chat gpt"), "chatgpt")
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp Jan", installed: []), .unknown("whatsapp Jan"),
+                       "@open opens apps; a chat is @chat")
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chat", installed: []), .unknown("chat"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open whatsapp chat", installed: []), .unknown("whatsapp chat"))
     }
 
     func testChatListFollowsWhatIsTyped() {
-        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@open chat "), "")
+        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@chat "), "", "every chat right after choosing @chat")
+        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@chat Ja"), "Ja")
         XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@open chat Ja"), "Ja")
-        XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@open whatsapp Ja"), "Ja")
         XCTAssertEqual(EmbeddedAppCatalog.chatQuery(in: "@chat met Li"), "Li")
-        XCTAssertNil(EmbeddedAppCatalog.chatQuery(in: "@open chat"), "no list before the space")
+        XCTAssertNil(EmbeddedAppCatalog.chatQuery(in: "@chat"), "no list before the space")
+        XCTAssertNil(EmbeddedAppCatalog.chatQuery(in: "@open whatsapp Ja"))
         XCTAssertNil(EmbeddedAppCatalog.chatQuery(in: "@open gmail"))
 
         let names = ["Jan de Vries", "Lisa", "Family", "Jan Bakker", "Lisa"]
@@ -164,10 +165,15 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "what does @open do", installed: macApps))
     }
 
-    func testListOffersTheWebVersion() {
+    func testListShowsEachWayOnItsOwnLine() {
         let rows = EmbeddedAppCatalog.openSuggestions(for: "whatsapp", installed: macApps)
-        XCTAssertEqual(rows.map { $0.app.id }, ["mac:whatsapp", "mac:whatsapp"])
-        XCTAssertEqual(rows.map { $0.mode }, [nil, .web])
+        XCTAssertEqual(rows.map { $0.app.id }, ["mac:whatsapp", "mac:whatsapp", "mac:whatsapp"])
+        XCTAssertEqual(rows.map { $0.mode }, [.mirror, .web, .window], "the Mac app, its web version, its own window")
+        XCTAssertTrue(EmbeddedAppCatalog.openSuggestions(for: "", installed: macApps).allSatisfy { $0.mode == nil },
+                      "nothing typed yet: one line per app")
+        for mode in EmbeddedAppMode.allCases {
+            XCTAssertEqual(EmbeddedAppMode.named(mode.word), mode, "the word a line puts in the box reads back")
+        }
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open WhatsApp web", installed: macApps),
                        .open(EmbeddedAppCatalog.find("whatsapp", installed: [])!, .web), "what the web line puts in the box")
         XCTAssertFalse(EmbeddedAppCatalog.openSuggestions(for: "calendar", installed: macApps).contains { $0.app.id == "mac:calendar" && $0.mode == .web },
@@ -227,12 +233,9 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertNil(MirrorGeometry.screenPoint(.zero, view: .zero, window: window))
     }
 
-    func testChatsCommand() {
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chats", installed: []), .chats(""))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@Chats telegram", installed: []), .chats("telegram"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chats Anna de Wit.", installed: []), .chats("Anna de Wit"))
-        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat Lisa", installed: []), .chat("Lisa"), "one chat stays @chat")
-        XCTAssertNotEqual(EmbeddedAppCatalog.command(in: "@chatsapp", installed: []), .chats("app"))
+    func testTheChatsTabNeedsNoCommand() {
+        XCTAssertNil(EmbeddedAppCatalog.command(in: "@chats", installed: []), "the Chats tab is a tab, not a command")
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chats Anna", installed: []), .unknown("chats Anna"))
     }
 
     func testArtifactsBelongToTheAppThatMadeThem() {

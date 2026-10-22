@@ -825,7 +825,7 @@ final class WhatsAppLink: ObservableObject {
         return unique
     }
 
-    /// The chats "@open chat …" offers, newest first: those that wrote lately (with how many are new), then the
+    /// The chats "@chat …" offers, newest first: those that wrote lately (with how many are new), then the
     /// others on the phone. Never the ones you chose never to see.
     func chatChoices() -> [(name: String, detail: String)] {
         var seen: Set<String> = []
