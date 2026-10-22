@@ -229,4 +229,10 @@ final class ComposerCoreTests: XCTestCase {
         XCTAssertTrue(FileSearch.search(root: root, query: "zzzz").isEmpty)
         XCTAssertTrue(FileSearch.search(root: "/nonexistent/folder", query: "a").isEmpty)
     }
+
+    func testReferencesAsPlainWordsForFieldsPeopleRead() {
+        XCTAssertEqual(ContextRefs.plainText(ContextRef(kind: .file, id: "Sources/Login.swift", label: "Login.swift")), "Sources/Login.swift")
+        XCTAssertEqual(ContextRefs.plainText(ContextRef(kind: .pullRequest, id: "me/app#12", label: "12")), "#12")
+        XCTAssertEqual(ContextRefs.plainText(ContextRef(kind: .session, id: "abc", label: "Fix login")), "Fix login")
+    }
 }

@@ -42,6 +42,11 @@ struct ComposerConfig {
     var apps: [(id: String, title: String, symbol: String)] = []
     /// The chats of every chat app for "@chat …", newest first: name and a short line about it ("Telegram · 2 new").
     var chats: () -> [(name: String, detail: String)] = { [] }
+    /// People `@` names in plain text ("@Arjan"): the chats of every chat app, name and a short line about it.
+    var people: () -> [(name: String, detail: String)] = { [] }
+    /// A file or session chosen under `@` goes in as plain words (its path or title) instead of a link only an agent
+    /// reads: for a mail, a commit message, or anything else people read.
+    var plainReferences = false
     /// The app open next to the chat, if any: "@close" is offered only then.
     var openApp: () -> String? = { nil }
     /// Big pastes become a reference instead of filling the box.
@@ -128,14 +133,15 @@ final class ComposerModel: ObservableObject {
             if !config.apps.isEmpty {
                 return publish(appRows(EmbeddedAppCatalog.mentionQuery(found.query), config))
             }
-            guard config.fileRoot != nil || !config.sessions().isEmpty else { return close() }
             let query = found.query
+            let people = personRows(query, config)
+            guard config.fileRoot != nil || !config.sessions().isEmpty || !people.isEmpty else { return close() }
             let sessions = config.sessions().filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }.prefix(3).map { session in
                 ComposerSuggestion(id: "session:" + session.id, title: session.title, detail: tr("compose.ref.session"),
                                    symbol: "bubble.left.and.text.bubble.right",
                                    payload: .ref(ContextRef(kind: .session, id: session.id, label: session.title)))
             }
-            guard let root = config.fileRoot else { return publish(Array(sessions)) }
+            guard let root = config.fileRoot else { return publish(people + sessions) }
             search = Task { [weak self] in
                 let files = await Task.detached(priority: .userInitiated) { FileSearch.search(root: root, query: query) }.value
                 guard !Task.isCancelled, let self else { return }
@@ -144,7 +150,7 @@ final class ComposerModel: ObservableObject {
                                        symbol: "doc", payload: .ref(ContextRef(kind: .file, id: path,
                                                                                 label: URL(fileURLWithPath: path).lastPathComponent)))
                 }
-                self.publish(rows + Array(sessions))
+                self.publish(people + rows + sessions)
             }
         case .pullRequest:
             guard let repo = config.repository else { return close() }
@@ -199,6 +205,19 @@ final class ComposerModel: ObservableObject {
                                       detail: tr("embedded.mode.detail." + way.rawValue), symbol: symbol,
                                       payload: .command(ComposerCommand(name: row.app.id, insertion: insertion, action: .insert)))
         }
+    }
+
+    /// The people whose name fits what is typed after `@`, each once; choosing one puts "@Name" in the text.
+    private func personRows(_ query: String, _ config: ComposerConfig) -> [ComposerSuggestion] {
+        var seen = Set<String>()
+        return config.people()
+            .filter { (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) && seen.insert($0.name).inserted }
+            .prefix(5)
+            .map { person in
+                ComposerSuggestion(id: "person:" + person.name, title: person.name, detail: person.detail.isEmpty ? nil : person.detail,
+                                   symbol: "person.crop.circle",
+                                   payload: .command(ComposerCommand(name: "person:" + person.name, insertion: "@" + person.name, action: .insert)))
+            }
     }
 
     private func commandDetail(_ command: ComposerCommand) -> String? { tr(AgentCommands.descriptionKey(for: command)) }
@@ -266,7 +285,7 @@ final class ComposerModel: ObservableObject {
             config.onCommand(command)
             return String(text.dropLast(trigger.token.count)).trimmingCharacters(in: .whitespaces)
         case .ref(let ref):
-            return trigger.replacing(in: text, with: ContextRefs.link(ref))
+            return trigger.replacing(in: text, with: config.plainReferences ? ContextRefs.plainText(ref) : ContextRefs.link(ref))
         }
     }
 

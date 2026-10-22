@@ -132,6 +132,9 @@ struct CommitSheet: View {
     @State private var working = false
     @State private var error: String?
     @State private var done: String?
+    /// `@` in the message: the files of the repository and people from your chats, as plain words.
+    @StateObject private var mentionModel = ComposerModel()
+    private var mentionConfig: ComposerConfig { .mentions(folder: workspace.run(runID)?.workingDirectory) }
 
     private var files: [GitFileChange] { workspace.git[runID]?.status?.files ?? [] }
 
@@ -156,7 +159,9 @@ struct CommitSheet: View {
             .frame(minHeight: 160, maxHeight: 260)
             .listStyle(.bordered)
             Text(tr("ws.commit.message")).font(NookTheme.TextStyle.strong)
+            MentionSuggestions(model: mentionModel, text: $message, config: mentionConfig)
             TextEditor(text: $message)
+                .mentions(mentionModel, text: $message, config: mentionConfig)
                 .font(NookTheme.TextStyle.code)
                 .frame(height: 90)
                 .scrollContentBackground(.hidden)
@@ -219,6 +224,9 @@ struct PullRequestSheet: View {
     @State private var working = false
     @State private var error: String?
     @State private var created: URL?
+    /// `@` in the description: the files of the repository and people from your chats, as plain words.
+    @StateObject private var mentionModel = ComposerModel()
+    private var mentionConfig: ComposerConfig { .mentions(folder: workspace.run(runID)?.workingDirectory) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -233,7 +241,9 @@ struct PullRequestSheet: View {
                     LabeledContent(tr("ws.pr.head"), value: branch ?? "—")
                     TextField(tr("ws.pr.base"), text: $base)
                     TextField(tr("ws.pr.titleField"), text: $title)
+                    MentionSuggestions(model: mentionModel, text: $bodyText, config: mentionConfig)
                     TextField(tr("ws.pr.body"), text: $bodyText, axis: .vertical).lineLimit(3...8)
+                        .mentions(mentionModel, text: $bodyText, config: mentionConfig)
                     Toggle(tr("ws.pr.draft"), isOn: $draft)
                         .disabled(!canCreate)
                 }

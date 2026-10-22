@@ -13,6 +13,8 @@ struct RunQuestionPanel: View {
     @State private var picks: Set<String> = []
     @State private var own = ""
     @FocusState private var ownFocused: Bool
+    /// `@` in your own answer: people from your chats by name.
+    @StateObject private var mentionModel = ComposerModel()
 
     private var item: RunQuestion? { question.questions.indices.contains(index) ? question.questions[index] : nil }
     private var isLast: Bool { index >= question.questions.count - 1 }
@@ -56,12 +58,14 @@ struct RunQuestionPanel: View {
                     }
                 }
                 if item.allowsOther {
+                    MentionSuggestions(model: mentionModel, text: $own, config: .mentions(), focus: $ownFocused)
                     HStack(spacing: NookTheme.Spacing.md) {
                         TextField(tr("ws.question.own"), text: $own)
                             .textFieldStyle(.plain)
                             .font(NookTheme.TextStyle.body)
                             .focused($ownFocused)
-                            .onSubmit { submitOwn(item) }
+                            .onSubmit { if !mentionModel.isOpen { submitOwn(item) } }
+                            .mentions(mentionModel, text: $own, config: .mentions())
                         if !own.trimmingCharacters(in: .whitespaces).isEmpty {
                             NookGhostButton(title: isLast ? tr("ws.question.send") : tr("ws.question.next")) { submitOwn(item) }
                         }
