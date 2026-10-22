@@ -35,6 +35,9 @@ final class TeamsBridge: ObservableObject, ChatBridge {
     private var me: String?
     /// The newest message per chat at the last read, to read only the chats that moved.
     private var seen: [String: Date] = [:]
+    /// Reads of a chat whose messages did not list its newest one yet, per chat.
+    private var retries: [String: Int] = [:]
+    private static let maxRetries = 5
     private var waiting: Task<Void, Never>?
 
     var isReady: Bool { Self.clientID != nil && CloudHelp.secret(Self.refreshAccount) != nil }
@@ -88,6 +91,7 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         me = nil
         account = nil
         seen = [:]
+        retries = [:]
         isWorking = false
         state = Self.clientID == nil ? .noClient : .signedOut
     }
@@ -167,7 +171,15 @@ final class TeamsBridge: ObservableObject, ChatBridge {
                     continue
                 }
                 let messages = TeamsData.messages(answer, chat: chat, me: me)
-                seen[chat.id] = chat.last ?? Date.distantPast
+                // A chat whose messages do not list the announced one yet stays unseen and is read again next round
+                // (a few times at most, so a message Graph never lists does not keep it read forever).
+                let early = retries[chat.id] ?? 0
+                if TeamsData.caughtUp(answer, last: chat.last) || early >= Self.maxRetries {
+                    seen[chat.id] = chat.last ?? Date.distantPast
+                    retries[chat.id] = nil
+                } else {
+                    retries[chat.id] = early + 1
+                }
                 guard !messages.isEmpty else { continue }
                 result.append(BridgedChat(app: app, name: chat.name, messages: messages,
                                           unread: TeamsData.unread(messages, readUntil: chat.readUntil)))
