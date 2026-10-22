@@ -370,7 +370,8 @@ enum ComposerFilePicker {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = URL(fileURLWithPath: folder, isDirectory: true)
-        guard panel.runAboveNotch() == .OK, let url = panel.url else { return nil }
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
         let base = URL(fileURLWithPath: folder, isDirectory: true).standardizedFileURL.path
         let path = url.standardizedFileURL.path
         let relative = path.hasPrefix(base + "/") ? String(path.dropFirst(base.count + 1)) : path
