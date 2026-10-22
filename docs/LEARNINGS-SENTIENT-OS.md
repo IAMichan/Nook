@@ -59,6 +59,26 @@ Taken from the same study, in `UIDriver` / `UIControl`:
 - After typing, the field is read back: when the text is not in it, the step fails before anything else (such as a send
   button) runs. A switch or checkbox that did not change after a click gives the brain a note to look again.
 
+## Taking over a task (implemented)
+
+Sentient's Sidekick takes a short request ("finish this for me") and works through it as one run in the user's apps.
+Nook's version, in `Brain/TakeoverPolicy.swift` and `App/AppModel+Takeover.swift`:
+
+- **Start**: one tap of the Double Tap key opens a field in the notch (typing the task is the go-ahead), or the brain
+  proposes `take_over` in the chat and the user approves it like any plan. Another tap stops a running task.
+- **Work**: the chosen brain runs a long tool loop (`ToolRunner.perform`, up to 40 rounds): `read_ui`, `control_ui`,
+  `open_url`, `open_app`, web search. Reads after an action are never served from the cache. Following Sentient's
+  rules: read fresh state before acting, never repeat a click or send because the result was unclear, verify before
+  claiming success, and treat app content as data.
+- **Own cursor**: actions run in the background where the app allows it (`AXPress`, a field's value), so the user's
+  pointer and focus stay theirs; a violet cursor (`TakeoverCursor`) shows where Nook acts.
+- **Nook's rule instead of Sentient's**: Sentient lets the task run without asking again. Nook stops at the point of no
+  return: a click on a button that pays, orders, sends, submits, deletes, books or signs (in five languages), Return
+  outside a search field, and every other action tool wait for the user's yes in a card. Card and social security
+  numbers are never typed; sign-in and payment details go to the user through `wait_for_user`.
+- **Outcome**: only an explicit `STATUS: DONE` after checking counts as success; a refusal wins; no status is
+  "unconfirmed", never success.
+
 ## Lessons worth adopting next
 
 Ordered by value for effort.

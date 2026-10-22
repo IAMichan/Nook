@@ -468,15 +468,8 @@ final class ScreenReader {
     /// as the accessibility layer), for clicking what the accessibility layer does not show: a canvas, a game, an app that
     /// draws its own controls. Recognized on this Mac; empty without screen permission or for an app never to be read.
     static func seenLines(of app: NSRunningApplication, limit: Int = 150) async -> [UIControl.Seen] {
-        guard ScreenAccess.isUsable, !excludedBundles.contains(app.bundleIdentifier ?? ""),
-              let window = await windows(of: app).first else { return [] }
-        let configuration = SCStreamConfiguration()
-        configuration.width = min(Int(window.frame.width * 2), 3000)
-        configuration.height = min(Int(window.frame.height * 2), 3000)
-        let filter = SCContentFilter(desktopIndependentWindow: window)
-        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
-              let found = try? await recognizeLines(image) else { return [] }
-        let frame = window.frame
+        guard let shot = await windowImage(of: app), let found = try? await recognizeLines(shot.image) else { return [] }
+        let frame = shot.frame
         return found.prefix(limit).map { line in
             UIControl.Seen(text: line.text,
                            x: Double(frame.minX + line.box.minX * frame.width),
@@ -484,6 +477,21 @@ final class ScreenReader {
                            width: Double(line.box.width * frame.width),
                            height: Double(line.box.height * frame.height))
         }
+    }
+
+    /// A picture of an app's largest window and where that window is on screen (points, top-left origin). Nil without
+    /// screen permission or for an app never to be read.
+    static func windowImage(of app: NSRunningApplication, scale: CGFloat = 2) async -> (image: CGImage, frame: CGRect)? {
+        guard ScreenAccess.isUsable, !excludedBundles.contains(app.bundleIdentifier ?? ""),
+              let window = await windows(of: app).first else { return nil }
+        let configuration = SCStreamConfiguration()
+        configuration.width = min(Int(window.frame.width * scale), 3000)
+        configuration.height = min(Int(window.frame.height * scale), 3000)
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else {
+            return nil
+        }
+        return (image, window.frame)
     }
 
     /// Like `recognize`, with each line's box (Vision's normalized rectangle, origin at the bottom left), in reading order.

@@ -10,10 +10,13 @@ import Foundation
 
 // MARK: - The gesture
 
-/// Two taps of one modifier key. A tap is the key going down and up within `maxTap` seconds with no other modifier held
-/// and no ordinary key typed meanwhile; the second press must come within `window` seconds of the first one. Typing
-/// `⌘C` is therefore never a tap, and neither is holding the key (which is how Flow dictates).
+/// Taps of one modifier key. A tap is the key going down and up within `maxTap` seconds with no other modifier held and
+/// no ordinary key typed meanwhile; the second press must come within `window` seconds of the first one. Typing `⌘C` is
+/// therefore never a tap, and neither is holding the key (which is how Flow dictates). A first tap reports `.tap`; the
+/// caller waits `window` seconds and treats it as a single tap only when no `.double` followed.
 struct DoubleTapGesture {
+    enum Event: Equatable { case none, tap, double }
+
     static let window: TimeInterval = 0.4
     static let maxTap: TimeInterval = 0.5
 
@@ -22,8 +25,9 @@ struct DoubleTapGesture {
     private var firstTap: TimeInterval?
 
     /// One flagsChanged event of the key. `alone`: no other modifier is held. `lastKeyDown`: when an ordinary key was
-    /// last pressed, in the same clock as `time`. True on the release that completes a double tap.
-    mutating func update(down: Bool, alone: Bool, at time: TimeInterval, lastKeyDown: TimeInterval) -> Bool {
+    /// last pressed, in the same clock as `time`. `.double` on the release that completes a double tap, `.tap` on the
+    /// release of a tap that may still become one.
+    mutating func update(down: Bool, alone: Bool, at time: TimeInterval, lastKeyDown: TimeInterval) -> Event {
         if down {
             if downAt == nil {
                 downAt = time
@@ -31,21 +35,21 @@ struct DoubleTapGesture {
             } else if !alone {
                 clean = false
             }
-            return false
+            return .none
         }
-        guard let began = downAt else { return false }
+        guard let began = downAt else { return .none }
         downAt = nil
         let tapped = clean && alone && time >= began && time - began <= Self.maxTap && lastKeyDown <= began + 0.002
         guard tapped else {
             firstTap = nil
-            return false
+            return .none
         }
         if let first = firstTap, began - first <= Self.window, lastKeyDown <= first + 0.002 {
             firstTap = nil
-            return true
+            return .double
         }
         firstTap = began
-        return false
+        return .tap
     }
 
     /// Another modifier changed, or the key state could not be trusted: start over.

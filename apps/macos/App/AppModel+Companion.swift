@@ -293,6 +293,7 @@ extension AppModel {
             return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
         }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
+        doubleTap.onTap = { [weak self] in self?.presentTakeoverPrompt() }
         doubleTap.refresh()
     }
 

@@ -99,6 +99,9 @@ final class ToolRunner {
     var onToolsChanged: (([LoopTool]) -> Void)?
     /// Filters what a read tool returns before the model sees it (the privacy level, for an external brain).
     var shield: @MainActor (String) -> String = { $0 }
+    /// Taking over a task (`TakeoverPolicy`): action tools run right away through this, after their input is checked,
+    /// instead of becoming proposals. It decides itself what needs the user's yes first.
+    var perform: (@MainActor (_ tool: String, _ input: [String: Any]) async -> (output: String, isError: Bool))?
 
     private(set) var actions: [PlannedAction] = []
     private(set) var callCount = 0
@@ -148,6 +151,13 @@ final class ToolRunner {
             if !problems.isEmpty, repairsUsed < limits.repairs {
                 repairsUsed += 1
                 return ("Not proposed: " + problems.joined(separator: "; ") + ". Fix these fields and call \(name) again.", true)
+            }
+            if let perform {
+                guard problems.isEmpty else { return ("Not run: " + problems.joined(separator: "; ") + ".", true) }
+                // What was read before this action may be out of date now: the next read reads again.
+                cache.removeAll()
+                let result = await perform(name, clean)
+                return (result.isError ? result.output : UntrustedText.wrap(result.output), result.isError)
             }
             // Out of repair attempts: propose anyway; the review screen shows the problems and blocks running it.
             if actions.contains(where: { $0.tool == name && Self.cacheKey($0.tool, $0.input) == Self.cacheKey(name, clean) }) {

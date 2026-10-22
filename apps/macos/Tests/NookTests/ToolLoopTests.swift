@@ -144,4 +144,25 @@ final class ToolLoopTests: XCTestCase {
         XCTAssertEqual(again.output, "Already proposed.")
         XCTAssertEqual(runner.actions.count, 1)
     }
+
+    func testTakingOverRunsActionsAndReadsAgainAfterThem() async throws {
+        let model = ScriptedModel([
+            ModelTurn(text: "", calls: [call("list_events")]),
+            ModelTurn(text: "", calls: [call("create_event", ["title": "Coffee", "start": "2026-10-16T10:00:00+02:00"])]),
+            ModelTurn(text: "", calls: [call("list_events")]),
+            ModelTurn(text: "All set.\nSTATUS: DONE", calls: [])
+        ])
+        let runner = ToolRunner(tools: tools())
+        var performed: [String] = []
+        runner.perform = { tool, _ in
+            performed.append(tool)
+            return ("created", false)
+        }
+        let plan = try await runner.run(model)
+        XCTAssertEqual(performed, ["create_event"], "the action ran through perform")
+        XCTAssertTrue(plan.actions.isEmpty, "nothing is left to propose")
+        XCTAssertEqual(ran, ["list_events", "list_events"], "after an action the window is read again, not from the cache")
+        XCTAssertEqual(plan.text, "All set.\nSTATUS: DONE")
+    }
 }
+

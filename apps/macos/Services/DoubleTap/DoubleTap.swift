@@ -32,12 +32,20 @@ final class DoubleTap: ObservableObject {
     var screenText: (String) -> String? = { _ in nil }
     /// Shows the result as a card that waits for the user. Set by `AppModel`; without it the result is a toast.
     var present: ((DoubleTapOutcome) -> Void)?
+    /// One tap of the key: the notch asks what Nook should do (`AppModel.presentTakeoverPrompt`).
+    var onTap: (() -> Void)?
+    /// One tap gives Nook a task (Settings › Shortcuts).
+    @Published var taskOnTap: Bool {
+        didSet { defaults.set(taskOnTap, forKey: "takeoverOnTap") }
+    }
 
     /// A local model may take a while on a long form; past this the double tap gives up.
     static let deadline: Double = 60
 
     private let defaults = UserDefaults.standard
     private var gesture = DoubleTapGesture()
+    /// Counts taps, so a single tap knows whether a second one followed.
+    private var tapCount = 0
     private var monitors: [Any] = []
     private var task: Task<Void, Never>?
     private let pill = FlowPill()
@@ -45,6 +53,7 @@ final class DoubleTap: ObservableObject {
     private init() {
         enabled = defaults.object(forKey: "doubleTapEnabled") as? Bool ?? true
         key = FlowKey(rawValue: defaults.string(forKey: "doubleTapKey") ?? "") ?? .rightCommand
+        taskOnTap = defaults.object(forKey: "takeoverOnTap") as? Bool ?? true
     }
 
     /// Flow owns a key it dictates with: holding it and tapping it both mean something there.
@@ -90,8 +99,22 @@ final class DoubleTap: ObservableObject {
         let alone = (down ? held.isEmpty : flags.intersection(others).isEmpty) && NSEvent.pressedMouseButtons == 0
         let now = ProcessInfo.processInfo.systemUptime
         let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
-        if gesture.update(down: down, alone: alone, at: now, lastKeyDown: now - sinceKey) {
+        switch gesture.update(down: down, alone: alone, at: now, lastKeyDown: now - sinceKey) {
+        case .double:
+            tapCount += 1
             fill()
+        case .tap:
+            // One tap: give Nook a task, once it is clear no second tap follows.
+            tapCount += 1
+            let tap = tapCount
+            guard taskOnTap, onTap != nil else { return }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(DoubleTapGesture.window * 1_000_000_000) + 50_000_000)
+                guard let self, self.tapCount == tap else { return }
+                self.onTap?()
+            }
+        case .none:
+            break
         }
     }
 
