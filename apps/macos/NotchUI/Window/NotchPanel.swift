@@ -70,16 +70,34 @@ final class NotchPanel: NSPanel {
     }
 }
 
-extension NSOpenPanel {
-    /// Runs the open panel in front of the notch. `runModal()` puts the panel on the modal level itself, which is below the
-    /// notch, so the notch drops to the normal level while the picker is open and goes back afterwards.
-    func runAboveNotch() -> NSApplication.ModalResponse {
+/// Runs a modal window in front of the notch. A modal session puts its window on the modal level, which is below the
+/// notch, so a picker or alert started from the notch would open unseen behind it while its modal loop blocks every
+/// click. The notch drops to the normal level while it is open and goes back afterwards.
+@MainActor
+enum AboveNotch {
+    static func run<Result>(_ modal: () -> Result) -> Result {
         let notches = NSApp.windows.compactMap { $0 as? NotchPanel }
         let levels = notches.map(\.level)
         notches.forEach { $0.level = .normal }
         NSApp.activate(ignoringOtherApps: true)
         defer { zip(notches, levels).forEach { $0.level = $1 } }
-        return runModal()
+        return modal()
+    }
+}
+
+extension NSSavePanel {
+    /// `runModal()` in front of the notch (see `AboveNotch`); also covers `NSOpenPanel`.
+    @MainActor
+    func runAboveNotch() -> NSApplication.ModalResponse {
+        AboveNotch.run { runModal() }
+    }
+}
+
+extension NSAlert {
+    /// `runModal()` in front of the notch (see `AboveNotch`).
+    @MainActor
+    func runAboveNotch() -> NSApplication.ModalResponse {
+        AboveNotch.run { runModal() }
     }
 }
 

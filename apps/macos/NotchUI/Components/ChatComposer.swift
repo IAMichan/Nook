@@ -158,8 +158,7 @@ final class ChatComposerModel: ObservableObject {
         picker.canChooseDirectories = false
         picker.allowsMultipleSelection = kind != .sticker
         if !types.isEmpty { picker.allowedContentTypes = types }
-        NSApp.activate(ignoringOtherApps: true)
-        guard picker.runModal() == .OK else { return }
+        guard picker.runAboveNotch() == .OK else { return }
         add(picker.urls, as: kind)
     }
 
