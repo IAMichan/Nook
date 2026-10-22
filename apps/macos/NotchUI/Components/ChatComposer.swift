@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class ChatComposerModel: ObservableObject {
     enum Panel: Equatable {
-        case poll, place, contact, stickers
+        case poll, place, contact, stickers, gifs
     }
 
     /// Files waiting to go, in the order they were added.
@@ -29,6 +29,13 @@ final class ChatComposerModel: ObservableObject {
     @Published var contactQuery = ""
     @Published var contacts: [ChatContactCard] = []
     @Published var contactsDenied = false
+    @Published var gifQuery = ""
+    @Published var gifs: [GiphyGIF] = []
+    @Published var gifsLoading = false
+    /// Why GIPHY gave nothing (no key yet, a wrong key, no connection); nil while it answers.
+    @Published var gifProblem: String?
+    /// The GIF being fetched to send, to show it is on its way.
+    @Published var fetchingGIF: String?
 
     let recorder = ChatVoiceRecorder()
     private var choosing = false
@@ -104,6 +111,7 @@ final class ChatComposerModel: ObservableObject {
         placeQuery = ""
         places = []
         contactQuery = ""
+        gifQuery = ""
         recorder.cancel()
     }
 
@@ -186,6 +194,70 @@ final class ChatComposerModel: ObservableObject {
                                   address: item.placemark.title ?? "")
             return place.isValid ? place : nil
         }
+    }
+
+    // MARK: GIFs
+
+    /// GIPHY's trending GIFs while nothing is typed, else the ones matching the words. A newer search wins: the answer to
+    /// words that were since changed is dropped.
+    func lookUpGIFs() async {
+        guard let key = Giphy.key else {
+            gifs = []
+            gifProblem = tr("chat.compose.gifs.noKey")
+            return
+        }
+        let query = gifQuery
+        guard let url = Giphy.request(query: query, key: key, language: I18n.shared.currentLanguage.rawValue) else { return }
+        gifsLoading = true
+        defer { gifsLoading = false }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard query == gifQuery else { return }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(status) else {
+                gifs = []
+                gifProblem = tr("chat.compose.gifs.refused", Giphy.problem(data) ?? "HTTP \(status)")
+                return
+            }
+            gifs = Giphy.gifs(data)
+            gifProblem = gifs.isEmpty ? tr("chat.compose.gifs.none") : nil
+        } catch {
+            guard query == gifQuery else { return }
+            gifs = []
+            gifProblem = error.localizedDescription
+        }
+    }
+
+    /// The GIF's small moving preview, fetched once into Nook's caches; nil while it cannot be.
+    static func preview(_ gif: GiphyGIF) async -> URL? {
+        try? await fetch(gif.preview, to: ChatMedia.destination(key: "giphy-" + gif.id, name: Giphy.fileName(gif, preview: true)))
+    }
+
+    /// Fetches the GIF you picked and hands it over as a GIF to send; nil (with the reason in `problem`) when it fails.
+    func file(for gif: GiphyGIF) async -> ChatAttachment? {
+        fetchingGIF = gif.id
+        defer { fetchingGIF = nil }
+        do {
+            let url = try await Self.fetch(gif.file, to: ChatMedia.destination(key: "giphy-" + gif.id, name: Giphy.fileName(gif)))
+            guard let file = ChatAttachment(url: url, as: .gif), !file.tooLarge else { throw NookError(tr("chat.compose.notSent")) }
+            return file
+        } catch {
+            problem = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// A GIPHY file into `target`, or the copy already there.
+    private static func fetch(_ source: URL, to target: URL) async throws -> URL {
+        if FileManager.default.fileExists(atPath: target.path) { return target }
+        let (temporary, response) = try await URLSession.shared.download(from: source)
+        guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else {
+            throw NookError(tr("chat.compose.notSent"))
+        }
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: target)
+        try FileManager.default.moveItem(at: temporary, to: target)
+        return target
     }
 
     // MARK: Contacts
@@ -390,7 +462,7 @@ struct ChatAttachMenu: View {
             }
             if sends.contains(.gif) {
                 DropdownRow(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tile: NookTheme.mint) {
-                    pick(.gif, [.gif, .mpeg4Movie, .quickTimeMovie])
+                    model.open(.gifs)
                 }
             }
             if sends.contains(.sticker) {
@@ -553,6 +625,7 @@ struct ChatComposerPanels: View {
             case .place: ChatPlaceForm(model: model, send: send)
             case .contact: ChatContactForm(model: model, send: send)
             case .stickers: ChatStickerShelf(model: model, chatStickers: chatStickers, sends: sends, send: send)
+            case .gifs: ChatGIFShelf(model: model, send: send)
             case nil: EmptyView()
             }
             if model.hasFiles {
@@ -985,6 +1058,120 @@ private struct ChatStickerShelf: View {
     private func pick(_ item: ChatShelfItem) {
         guard let file = ChatAttachment(url: item.url, as: item.gif ? .gif : .sticker) else { return }
         send(.file(file))
+    }
+}
+
+// MARK: GIFs from GIPHY
+
+extension Giphy {
+    /// Your GIPHY API key, set in Settings › Chats; nil until then.
+    static var key: String? { CloudHelp.secret(keyAccount) }
+}
+
+/// GIFs to send with one click, as in WhatsApp: GIPHY's trending ones, or the ones matching what you type. Without a GIPHY
+/// key it says where to add one; a GIF from a file can go either way.
+private struct ChatGIFShelf: View {
+    @EnvironmentObject private var app: AppModel
+    @ObservedObject var model: ChatComposerModel
+    let send: (ChatOutgoing) -> Void
+    @FocusState private var focused: Bool
+
+    private static let cell = CGSize(width: 96, height: 72)
+    private let columns = [GridItem(.adaptive(minimum: ChatGIFShelf.cell.width, maximum: ChatGIFShelf.cell.width),
+                                    spacing: NookTheme.Spacing.sm)]
+
+    var body: some View {
+        ChatComposePanel(symbol: "play.square.stack", title: tr("chat.media.gif"), close: { model.closePanel() }) {
+            if Giphy.key == nil {
+                Text(tr("chat.compose.gifs.noKey"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                SmallPrimaryButton(title: tr("chat.compose.gifs.addKey")) { app.openSettings(section: .chats) }
+            } else {
+                NookSearchField(prompt: tr("chat.compose.gifs.search"), text: $model.gifQuery, style: .inline, focus: $focused)
+                results
+            }
+            HStack(spacing: NookTheme.Spacing.sm) {
+                SmallGhostButton(title: tr("chat.compose.stickers.gifFromFile")) {
+                    model.choose(.gif, types: [.gif, .mpeg4Movie, .quickTimeMovie])
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if Giphy.key != nil {
+                    Text(tr("chat.compose.gifs.poweredBy"))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                }
+            }
+        }
+        .onAppear { focused = true }
+        // Typing waits a moment before searching, so each word does not ask GIPHY again; opening loads the trending ones.
+        .task(id: model.gifQuery) {
+            if !model.gifQuery.isEmpty { try? await Task.sleep(nanoseconds: 350_000_000) }
+            guard !Task.isCancelled else { return }
+            await model.lookUpGIFs()
+        }
+    }
+
+    @ViewBuilder private var results: some View {
+        if model.gifs.isEmpty {
+            if model.gifsLoading {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+            } else if let problem = model.gifProblem {
+                ListEmptyNote(problem)
+            }
+        } else {
+            ScrollView {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    ForEach(model.gifs) { gif in
+                        ChatGIFCell(gif: gif, size: Self.cell, fetching: model.fetchingGIF == gif.id) { pick(gif) }
+                    }
+                }
+            }
+            .frame(maxHeight: 220)
+        }
+    }
+
+    /// One click fetches the GIF and sends it as a GIF.
+    private func pick(_ gif: GiphyGIF) {
+        guard model.fetchingGIF == nil else { return }
+        Task { @MainActor in
+            if let file = await model.file(for: gif) { send(.file(file)) }
+        }
+    }
+}
+
+private struct ChatGIFCell: View {
+    let gif: GiphyGIF
+    let size: CGSize
+    let fetching: Bool
+    let action: () -> Void
+    @State private var preview: URL?
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .fill(hovering ? NookTheme.smoke : NookTheme.graphite)
+                if let preview {
+                    AnimatedPicture(url: preview)
+                }
+                if fetching {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
+            .hoverLift(hovering, scale: 1.04)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .task(id: gif.id) { preview = await ChatComposerModel.preview(gif) }
+        .help(gif.title.isEmpty ? tr("chat.compose.sendSticker") : gif.title)
+        .accessibilityLabel(gif.title.isEmpty ? tr("chat.media.gif") : gif.title)
     }
 }
 

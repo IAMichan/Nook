@@ -204,6 +204,7 @@ targets:
       - path: Services/Messages/ChatOutgoing.swift
       - path: Services/Messages/ChatStickers.swift
       - path: Services/Messages/OggOpus.swift
+      - path: Services/Messages/Giphy.swift
       - path: Services/WhatsApp/WhatsAppSend.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
