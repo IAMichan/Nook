@@ -54,18 +54,18 @@ struct ChatPollView: View {
             withAnimation(NookTheme.swap) { pending = shown.voting(choice) }
             onVote(choice)
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                     Image(systemName: option.chosen ? "checkmark.circle.fill" : (shown.multiple ? "square" : "circle"))
                         .font(NookTheme.font(13))
                         .foregroundStyle(option.chosen ? NookTheme.mint : NookTheme.textSecondary)
                     Text(option.text)
-                        .font(NookTheme.font(13.5))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.paper)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: NookTheme.Spacing.sm)
                     Text("\(option.votes)")
-                        .font(NookTheme.font(12, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                         .monospacedDigit()
                 }

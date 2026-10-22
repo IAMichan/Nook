@@ -41,11 +41,8 @@ struct NoticeCenterList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Text(tr("notices.title"))
-                    .font(NookTheme.TextStyle.title)
-                    .foregroundStyle(NookTheme.paper)
-                Spacer(minLength: NookTheme.Spacing.sm)
+            // The same title row as every list in the panel.
+            PanelListHeader(tr("notices.title")) {
                 if !history.entries.isEmpty {
                     ConfirmedButton(tr("notices.clear"), question: tr("notices.clear.question"),
                                     detail: tr("notices.clear.detail")) { history.clear() }
@@ -54,8 +51,8 @@ struct NoticeCenterList: View {
                         .foregroundStyle(NookTheme.textSecondary)
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.top, NookTheme.Spacing.lg)
+            .padding(.trailing, NookTheme.Spacing.lg)
+            .padding(.top, NookTheme.Spacing.md)
             .padding(.bottom, NookTheme.Spacing.sm)
 
             if history.entries.isEmpty {
@@ -121,10 +118,12 @@ struct NoticeRow: View {
                         .accessibilityLabel(tr("notices.unseen"))
                 }
             }
-            .padding(NookTheme.Spacing.sm)
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .padding(.vertical, NookTheme.Spacing.md)
+            // Rows sit on the popover's own surface and only light up under the pointer.
             .background(
                 RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
-                    .fill(NookTheme.rowFill(selected: false, hovering: hovering && opens))
+                    .fill(NookTheme.rowFill(selected: false, hovering: hovering && opens, rest: .clear))
             )
             .contentShape(Rectangle())
         }

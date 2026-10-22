@@ -216,7 +216,7 @@ struct ChatAudioView: View {
             .buttonStyle(.plain)
             .help(player.failed ? tr("card.attachment.open") : (player.playing ? tr("chat.media.pause") : tr("chat.media.play")))
             .accessibilityLabel("\(player.playing ? tr("chat.media.pause") : tr("chat.media.play")): \(name)")
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule().fill(NookTheme.line2)
@@ -230,7 +230,8 @@ struct ChatAudioView: View {
                 }
                 .frame(height: 4)
                 Text(ChatAudioPlayer.clock(player.playing || player.elapsed > 0 ? player.elapsed : (player.duration ?? seconds ?? 0)))
-                    .font(NookTheme.mono(10.5))
+                    .font(NookTheme.TextStyle.caption)
+                    .monospacedDigit()
                     .foregroundStyle(NookTheme.textTertiary)
             }
             .frame(width: 150)
