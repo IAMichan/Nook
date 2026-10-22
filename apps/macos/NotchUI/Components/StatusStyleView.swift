@@ -82,8 +82,9 @@ struct RowBadgeBackground: ViewModifier {
     }
 }
 
-/// The "working" dot: a steady core with a soft halo that breathes. It steps through a few values instead of
-/// repainting every frame, and stands still when it is not on screen or when you asked for less motion.
+/// The "working" dot: a steady core with a soft halo that breathes. Its body steps through a few values instead of
+/// being evaluated every frame; the renderer glides from one step to the next, so the halo grows smoothly. It stands
+/// still when it is not on screen or when you asked for less motion.
 struct SteppedPulseDot: View {
     let color: Color
     var size: CGFloat = 7
@@ -99,7 +100,9 @@ struct SteppedPulseDot: View {
             if visible && !reduceMotion {
                 TimelineView(.periodic(from: .now, by: 1.0 / 4.0)) { context in
                     let step = Int(context.date.timeIntervalSinceReferenceDate * 4) % Self.steps.count
+                    // Back to the first step the halo starts over at once: a new ring, not one shrinking back.
                     dot(halo: Self.steps[step].halo, scale: Self.steps[step].scale)
+                        .animation(step == 0 ? nil : .linear(duration: 0.25), value: step)
                 }
             } else {
                 dot(halo: 0, scale: 1)

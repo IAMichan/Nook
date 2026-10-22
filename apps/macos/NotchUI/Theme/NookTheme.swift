@@ -143,17 +143,19 @@ enum NookTheme {
         .system(size: size, weight: weight, design: .rounded)
     }
 
-    // Animation. Opening has a subtle overshoot; closing is smooth without bounce.
-    static let open = Animation.spring(duration: 0.42, bounce: 0.25)
-    static let close = Animation.spring(duration: 0.3, bounce: 0)
+    // Animation. Every curve is a spring: a spring keeps its velocity when it is interrupted (hover off before the
+    // hover in finished, a tab picked while the last one still slides), where a timing curve restarts from rest and
+    // visibly jerks. Opening has a subtle overshoot; closing is smooth without bounce.
+    static let open = Animation.spring(duration: 0.44, bounce: 0.16)
+    static let close = Animation.spring(duration: 0.32, bounce: 0)
     /// Tab switching within the same panel: tighter and snappier.
-    static let swap = Animation.spring(duration: 0.28, bounce: 0.12)
+    static let swap = Animation.spring(duration: 0.3, bounce: 0.06)
     /// Hover feedback on buttons and chips: quick, with a hint of spring.
-    static let hover = Animation.spring(duration: 0.2, bounce: 0.1)
+    static let hover = Animation.spring(duration: 0.22, bounce: 0.06)
     /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.
-    static let reveal = Animation.easeInOut(duration: 0.18)
+    static let reveal = Animation.spring(duration: 0.24, bounce: 0)
     /// Scrolling a list to a message or a line.
-    static let scroll = Animation.easeOut(duration: 0.2)
+    static let scroll = Animation.spring(duration: 0.3, bounce: 0)
     static let spring = open
 }
 
@@ -179,13 +181,15 @@ extension View {
 }
 
 /// Notch content: appears slightly after the shape (snappy fade-in) and dismisses quickly.
+/// Opacity and scale only: both are composited as they are, where a blur renders the whole panel offscreen again on
+/// every frame of the opening, which is where it stuttered.
 private struct NotchContentFade: ViewModifier {
     var amount: CGFloat   // 1 = gone, 0 = visible
     func body(content: Content) -> some View {
         content
             .opacity(1 - Double(amount))
-            .blur(radius: amount * 6)
-            .scaleEffect(1 - amount * 0.035, anchor: .top)
+            .scaleEffect(1 - amount * 0.03, anchor: .top)
+            .offset(y: -amount * 4)
     }
 }
 
@@ -198,7 +202,7 @@ extension AnyTransition {
         }
         return .asymmetric(
             insertion: .modifier(active: NotchContentFade(amount: 1), identity: NotchContentFade(amount: 0))
-                .animation(.easeOut(duration: 0.34).delay(0.09)),
+                .animation(.spring(duration: 0.36, bounce: 0).delay(0.08)),
             removal: .opacity.animation(.easeIn(duration: 0.12))
         )
     }

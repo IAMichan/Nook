@@ -69,6 +69,8 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(full.backgroundCaptureMaxSide, 2400)
         XCTAssertEqual(full.mirrorFrameRate, 60)
         XCTAssertEqual(full.idleOrbFrameRate, 12)
+        XCTAssertEqual(full.interactiveFrameRate, 60)
+        XCTAssertEqual(full.ambientFrameRate, 30)
 
         let light = EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic)
         XCTAssertEqual(light.ocrConcurrency, 1, "one recognition at a time: a hum, not a spike")
@@ -77,6 +79,8 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(light.backgroundCaptureMaxSide, 1600)
         XCTAssertEqual(light.mirrorFrameRate, 30)
         XCTAssertEqual(light.idleOrbFrameRate, 8)
+        XCTAssertEqual(light.interactiveFrameRate, 30)
+        XCTAssertEqual(light.ambientFrameRate, 15)
         // Paused keeps the same light knobs for the work that still runs.
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(hot: true), mode: .automatic).mirrorFrameRate, 30)
     }

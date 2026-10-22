@@ -57,6 +57,8 @@ struct NookTaskRing: View {
     @State private var shown = false
     @State private var appeared = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Published only when the plan changes: sets how often the ring redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     private var compact: Bool { style == .compact }
     private var lineWidth: CGFloat { compact ? 2 : 3.6 }
@@ -69,8 +71,10 @@ struct NookTaskRing: View {
 
     var body: some View {
         let moving = !reduceMotion && items.contains { $0.state == .running || $0.state == .waiting }
-        // Possibly for hours in the closed notch: fifteen frames a second keep the light smooth enough there.
-        TimelineView(.animation(minimumInterval: 1.0 / (compact ? 15.0 : 30.0), paused: !moving)) { context in
+        // Possibly for hours in the closed notch: the ambient rate keeps the light fluid there at a fraction of the
+        // redraws; in the open panel, where you look at it and point at it, it runs at the interactive rate.
+        let rate = compact ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
+        TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving)) { context in
             ring(at: context.date)
         }
         .frame(width: side, height: side)
