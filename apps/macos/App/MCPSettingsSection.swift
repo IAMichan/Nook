@@ -13,6 +13,10 @@ struct MCPPreset: Identifiable {
     let envLabels: [String: String]
     let envPlaceholders: [String: String]
     let helpURL: URL?
+    /// The default command is the address of a server that is already running (Beeper Desktop), not a program to start.
+    var isRemote = false
+    /// Goes before the typed value, such as "Bearer " for an Authorization header.
+    var envPrefixes: [String: String] = [:]
 
     var name: String { tr("mcp.preset.\(id).name") }
     var detail: String { tr("mcp.preset.\(id).detail") }
@@ -65,6 +69,19 @@ struct MCPPreset: Identifiable {
                 envLabels: ["BRAVE_API_KEY": tr("mcp.preset.brave-search.key")],
                 envPlaceholders: ["BRAVE_API_KEY": "BSA..."],
                 helpURL: URL(string: "https://brave.com/search/api/")
+            ),
+            MCPPreset(
+                id: "beeper",
+                iconDomain: "beeper.com",
+                fallbackIcon: "bubble.left.and.bubble.right.fill",
+                tint: Color(hex: 0x6B5CE7),
+                defaultCommand: "http://localhost:23373/v0/mcp",
+                requiredEnv: ["Authorization"],
+                envLabels: ["Authorization": tr("mcp.preset.beeper.key")],
+                envPlaceholders: ["Authorization": tr("mcp.wizard.keyPrompt")],
+                helpURL: URL(string: "https://developers.beeper.com/desktop-api/"),
+                isRemote: true,
+                envPrefixes: ["Authorization": "Bearer "]
             ),
             MCPPreset(
                 id: "puppeteer",
@@ -461,7 +478,7 @@ struct AddMCPServerWizardSheet: View {
             if let preset {
                 name = preset.name
                 commandOrURL = preset.defaultCommand
-                isRemote = false
+                isRemote = preset.isRemote
             }
         }
     }
@@ -564,7 +581,7 @@ struct AddMCPServerWizardSheet: View {
 
         if isRemote {
             guard let url = URL(string: commandOrURL.trimmingCharacters(in: .whitespaces)),
-                  url.scheme?.lowercased() == "https", url.host != nil else {
+                  url.scheme?.lowercased() == "https" || url.host == "localhost" || url.host == "127.0.0.1", url.host != nil else {
                 problem = tr("mcp.problem.https")
                 return
             }
@@ -579,7 +596,7 @@ struct AddMCPServerWizardSheet: View {
 
         var secrets = MCPServerStore.parseSecrets(rawSecrets)
         for (k, v) in envDrafts where !v.isEmpty {
-            secrets[k] = v.trimmingCharacters(in: .whitespacesAndNewlines)
+            secrets[k] = (preset?.envPrefixes[k] ?? "") + v.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         store.add(name: cleanName, transport: transport, secrets: secrets)
