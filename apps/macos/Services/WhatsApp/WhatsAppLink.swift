@@ -710,6 +710,11 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// Marks the chat read here and on WhatsApp (up to its newest received message).
+    /// Marks the chat read in Nook only: WhatsApp (and your phone) keep it unread, and the sender sees no blue ticks.
+    func markReadInNook(_ chat: String) {
+        inbox.markRead(chat)
+    }
+
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
         inbox.markUnread(chat)

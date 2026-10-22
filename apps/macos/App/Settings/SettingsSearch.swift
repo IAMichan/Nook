@@ -79,6 +79,7 @@ enum SettingsSearch {
         ("settings.connections.add", .connections),
         ("whatsapp.settings.title", .chats),
         ("chats.settings.collect", .chats),
+        ("chats.settings.readOnOpen", .chats),
         ("chats.settings.sources", .chats),
         ("gitlab.title", .connections),
         ("mcp.add", .connections),

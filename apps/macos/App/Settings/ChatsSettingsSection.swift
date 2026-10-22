@@ -13,6 +13,7 @@ struct ChatsSettingsSection: View {
     @State private var notice: String?
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
+    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = false
 
     var body: some View {
         Group {
@@ -24,6 +25,12 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.otherApps"))
             } footer: {
                 Text(tr("chats.settings.privacy"))
+            }
+
+            Section {
+                SettingToggle(tr("chats.settings.readOnOpen"), detail: tr("chats.settings.readOnOpenDetail"), isOn: $readOnOpen)
+            } header: {
+                Text(tr("chats.settings.reading"))
             }
 
             Section {
