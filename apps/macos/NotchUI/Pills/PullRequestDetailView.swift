@@ -316,7 +316,7 @@ struct PullRequestDetailView: View {
     /// One line of the overview card: a name on the left, its state on the right, a click to the tab with the rest.
     private func statusRow<Value: View>(symbol: String, title: String, action: (() -> Void)?,
                                         @ViewBuilder value: () -> Value) -> some View {
-        StatusRow(symbol: symbol, title: title, action: action, value: value())
+        OverviewStatusRow(symbol: symbol, title: title, action: action, value: value())
     }
 
     @ViewBuilder
@@ -878,7 +878,7 @@ struct PullRequestDetailView: View {
 
 /// One line of the overview card: a symbol and a name on the left, the state on the right; with `action` the whole
 /// line is a button to the tab with the details.
-private struct StatusRow<Value: View>: View {
+private struct OverviewStatusRow<Value: View>: View {
     let symbol: String
     let title: String
     let action: (() -> Void)?
