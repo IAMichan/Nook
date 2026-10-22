@@ -49,4 +49,56 @@ extension AppModel {
         ask(tr("whatsapp.card.nookPrompt", name), focus: [Prefetch.Call(tool: "whatsapp_live", input: ["chat": chat, "limit": 20])],
             reflects: false)
     }
+
+    // MARK: From the chat
+
+    /// The Chats tab, on what `focus` asks for.
+    func showChats(_ focus: ChatsFocus = ChatsFocus()) {
+        viewModel.chatsFocus = focus
+        viewModel.show(.panel(.inbox))
+    }
+
+    /// What "@chats …" asks for: nothing (all chats), an app ("telegram"), a chat by its name, else a search.
+    func chatsFocus(for words: String) -> ChatsFocus {
+        let text = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return ChatsFocus() }
+        if let app = MessagingApps.app(named: text) { return ChatsFocus(app: app.id) }
+        if let chat = chatsEntryID(named: text) { return ChatsFocus(chat: chat) }
+        return ChatsFocus(query: text)
+    }
+
+    /// The Chats tab's id of the chat with this name: a WhatsApp chat of the linked phone, else a collected one.
+    func chatsEntryID(named name: String) -> String? {
+        let link = WhatsAppLink.shared
+        if link.isConnected, let target = link.resolve(name), link.inbox.conversations[target.jid] != nil {
+            return "wa|" + target.jid
+        }
+        let capture = ChatCaptureService.shared
+        guard let thread = capture.inbox.thread(named: name), capture.sources.isOn(thread.app) else { return nil }
+        return thread.id
+    }
+
+    /// The chats "@open chat …" offers, newest first: WhatsApp's (with a linked phone or not), then the ones collected
+    /// from the other apps, each with its app and how many are new.
+    func chatChoices() -> [(name: String, detail: String)] {
+        var choices = WhatsAppLink.shared.chatChoices()
+        let capture = ChatCaptureService.shared
+        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
+            let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
+            choices.append((thread.name, thread.unread > 0 ? app + " · " + tr("whatsapp.card.unread", thread.unread) : app))
+        }
+        return choices
+    }
+
+    // MARK: Nook writes a message
+
+    /// "@nook …" in a chat's answer field: the message Nook writes from the chat and what you asked. It only goes into the
+    /// field; sending stays your own click. Throws with a sentence you can act on.
+    func draftChatMessage(app appName: String, chat name: String, transcript: String, instruction: String) async throws -> String {
+        guard settings.brainReady else { throw NookError(tr("chats.draft.noBrain")) }
+        let prompt = ChatDraft.prompt(app: appName, chat: name, transcript: transcript, instruction: instruction)
+        guard let answer = await brain.rewrite(system: ChatDraft.system, prompt: prompt, timeout: 90),
+              let message = ChatDraft.clean(answer) else { throw NookError(tr("chats.draft.failed")) }
+        return message
+    }
 }

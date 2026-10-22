@@ -50,7 +50,9 @@ extension SettingsView {
 
         let local = inCategory(.mac) ? localSources(capabilityLine) : []
         let query = connectionSearch.trimmingCharacters(in: .whitespaces).lowercased()
-        let whatsApp = inCategory(.mac) && (query.isEmpty || "whatsapp".contains(query) || query.contains("whats"))
+        // WhatsApp and the other chat apps have a page of their own (Settings › Chats): a pointer to it stays here.
+        let chatWords = ["chat", "whatsapp", "telegram", "instagram", "messenger", "signal", "linkedin", "dm"]
+        let whatsApp = inCategory(.mac) && (query.isEmpty || chatWords.contains { $0.contains(query) || query.contains($0) })
 
         return Group {
             Section {
@@ -119,7 +121,17 @@ extension SettingsView {
             }
 
             if whatsApp {
-                WhatsAppLinkSection()
+                Section {
+                    HStack(spacing: 10) {
+                        SettingsTile(symbol: SettingsSection.chats.tileSymbol, colors: SettingsSection.chats.tileColors)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SettingsSection.chats.title)
+                            Text(tr("chats.settings.pointer")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        Button(tr("chats.settings.open")) { app.settingsSection = .chats }
+                    }
+                }
             }
 
             if hasCatalogue {
@@ -218,7 +230,7 @@ extension SettingsView {
     }
 
     func localSources(_ capabilityLine: (String) -> String) -> [ContextSource] {
-        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "chats", "bear", "things"]
+        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "bear", "things"]
         // Apps that are not on this Mac are not worth a row.
         return ids.compactMap { app.connectors.source(id: $0) }
             .filter { ($0 as? AppDatabaseConnector)?.isInstalled ?? true }

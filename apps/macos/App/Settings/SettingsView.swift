@@ -6,8 +6,8 @@ import EventKit
 
 /// Settings sections, in the order of the sidebar. Each subject lives in exactly one place.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case start, general, appearance, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, agents,
-         usage, workspace, devices, privacy
+    case start, general, appearance, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, chats,
+         agents, usage, workspace, devices, privacy
 
     /// The sidebar groups: what belongs together sits together.
     enum Group: String, CaseIterable, Identifiable {
@@ -22,7 +22,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             case .nook: return [.start, .general, .appearance, .shortcuts, .notifications]
             case .intelligence: return [.brain, .assistant, .memory]
             case .input: return [.autocomplete, .dictation]
-            case .connect: return [.connections, .agents, .usage, .workspace, .devices]
+            case .connect: return [.connections, .chats, .agents, .usage, .workspace, .devices]
             case .security: return [.privacy]
             }
         }
@@ -171,6 +171,7 @@ struct SettingsView: View {
         case .autocomplete: AutocompleteSettingsSection()
         case .dictation: dictationSection
         case .connections: connectionsSection
+        case .chats: ChatsSettingsSection()
         case .agents: agentsSection
         case .usage: usageSection
         case .workspace: workspaceSection

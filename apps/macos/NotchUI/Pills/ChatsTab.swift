@@ -19,6 +19,18 @@ struct ChatsEntry: Identifiable, Equatable {
     let preview: String
     let last: Date
     let unread: Int
+    /// The newest message is yours: how far it got (sent, delivered, read). Nil for theirs, and for every chat collected
+    /// from notifications, which only ever show what came in.
+    var ticks: BubbleTicks? = nil
+}
+
+/// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
+struct ChatsFocus: Equatable {
+    /// The `ChatsEntry` id to select.
+    var chat: String?
+    /// The app's source id to filter on.
+    var app: String?
+    var query = ""
 }
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
@@ -59,11 +71,22 @@ struct ChatsTab: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { takeFocus() }
+        .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
         .onChange(of: selection) { _, id in
             // Reading a collected chat here is reading it; a WhatsApp chat is only read by what you do with it.
             guard let id, let entry = all.first(where: { $0.id == id }), case .captured(let thread) = entry.origin else { return }
             capture.markRead(thread)
         }
+    }
+
+    /// Shows what "@chats …" or "@open chat …" asked for.
+    private func takeFocus() {
+        guard let focus = viewModel.chatsFocus else { return }
+        viewModel.chatsFocus = nil
+        filter = focus.app
+        query = focus.query
+        selection = focus.chat
     }
 
     // MARK: The chats
@@ -78,12 +101,14 @@ struct ChatsTab: View {
                     let who = message.fromMe ? tr("chat.you") : (conversation.isGroup ? message.senderName : "")
                     return who.isEmpty ? text : "\(who): \(text)"
                 } ?? ""
+                let newest = conversation.messages.last
+                let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: conversation.unread))
+                                          unread: conversation.unread, ticks: ticks))
             }
         }
-        for thread in capture.inbox.sorted {
+        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
             let preview = thread.messages.last.map { $0.sender.isEmpty ? $0.text : "\($0.sender): \($0.text)" } ?? ""
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
                                       preview: preview, last: thread.last, unread: thread.unread))
@@ -105,10 +130,12 @@ struct ChatsTab: View {
         return visible.first { $0.id == selection } ?? visible.first
     }
 
-    /// The apps that have chats here, the busiest first.
+    /// The apps that have chats here, the busiest first, and the one filtered on even when it has none yet.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
-        return counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
+        let busy = counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
+        guard let filter, !busy.contains(filter) else { return busy }
+        return busy + [filter]
     }
 
     private var list: some View {
@@ -125,6 +152,7 @@ struct ChatsTab: View {
                 if capture.inbox.totalUnread > 0 {
                     ToolbarIconButton("checkmark.circle", tr("chats.markAllRead")) { capture.markAllRead() }
                 }
+                ToolbarIconButton("plus", tr("chats.addSource")) { app.openSettings(section: .chats) }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 30)
@@ -159,7 +187,7 @@ struct ChatsTab: View {
             }
             if !capture.enabled {
                 // Only WhatsApp so far: the other chat apps are one switch away.
-                SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .connections) }
+                SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .chats) }
             }
         }
     }
@@ -181,7 +209,7 @@ struct ChatsTab: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 420)
             if !capture.enabled {
-                NookPrimaryButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openSettings(section: .connections) }
+                NookPrimaryButton(title: tr("chats.empty.setup"), symbol: "gearshape") { app.openSettings(section: .chats) }
                     .fixedSize()
                     .padding(.top, NookTheme.Spacing.xs)
             }
@@ -279,6 +307,7 @@ private struct ChatsRow: View {
                             .fixedSize()
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
+                        if let ticks = entry.ticks { TicksView(ticks: ticks) }
                         Text(entry.preview)
                             .font(NookTheme.font(12))
                             .foregroundStyle(entry.unread > 0 ? NookTheme.textStrong : NookTheme.textTertiary)
@@ -317,6 +346,7 @@ private struct ChatsDetail: View {
     @State private var reply = ""
     @State private var notice: String?
     @State private var sending = false
+    @State private var drafting = false
     @FocusState private var replyFocused: Bool
 
     private static let time: DateFormatter = {
@@ -384,6 +414,11 @@ private struct ChatsDetail: View {
         }
     }
 
+    /// "@nook …" at the start of the field: Nook writes the message instead of sending what is typed.
+    private var asksNook: Bool { ChatDraft.instruction(in: reply) != nil }
+
+    /// One field for every chat: what you type goes to a WhatsApp chat, or is copied for the app of any other chat;
+    /// "@nook …" lets Nook write the message first, into this field, for you to read before it goes anywhere.
     @ViewBuilder
     private var footer: some View {
         if let notice {
@@ -392,32 +427,61 @@ private struct ChatsDetail: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(2)
         }
-        if let chat = whatsAppChat {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                TextField(tr("whatsapp.card.answer", entry.name), text: $reply, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1...4)
-                    .focused($replyFocused)
-                    .onSubmit { send(to: chat) }
-                    .disabled(sending)
-                NookIconButton(systemName: "arrow.up", label: tr("chats.send"), filled: true, size: 28) { send(to: chat) }
-                    .disabled(sending || reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help(tr("chats.send"))
+        HStack(spacing: NookTheme.Spacing.sm) {
+            TextField(whatsAppChat == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
+                      text: $reply, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1...6)
+                .focused($replyFocused)
+                .onSubmit { submit() }
+                .disabled(sending || drafting)
+            if drafting {
+                ProgressView().controlSize(.small)
             }
-            .padding(.leading, NookTheme.Spacing.md)
-            .padding(.trailing, NookTheme.Spacing.xs)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+            NookIconButton(systemName: asksNook ? "sparkles" : (whatsAppChat == nil ? "doc.on.doc" : "arrow.up"),
+                           label: submitLabel, filled: true, size: 28) { submit() }
+                .disabled(sending || drafting || (!asksNook && reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                .help(submitLabel)
+        }
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+    }
+
+    private var submitLabel: String {
+        if asksNook { return tr("chats.draft.button") }
+        return whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send")
+    }
+
+    /// Return or the button: Nook writes for "@nook …", a WhatsApp chat gets the text, any other chat's app gets it on
+    /// the clipboard and comes to the front.
+    private func submit() {
+        if let instruction = ChatDraft.instruction(in: reply) {
+            draft(instruction)
+        } else if let chat = whatsAppChat {
+            send(to: chat)
         } else {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Text(tr("chats.replyInApp", appName))
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(2)
-                Spacer(minLength: NookTheme.Spacing.sm)
-                SmallGhostButton(title: tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
+            copyForApp()
+        }
+    }
+
+    /// Nook writes the message from this chat's newest messages and what you asked, and puts it in the field.
+    private func draft(_ instruction: String) {
+        guard !drafting else { return }
+        drafting = true
+        notice = tr("chats.draft.writing")
+        let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
+        Task { @MainActor in
+            defer { drafting = false }
+            do {
+                reply = try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript, instruction: instruction)
+                notice = whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready")
+                replyFocused = true
+            } catch {
+                notice = error.localizedDescription
             }
         }
     }
@@ -439,6 +503,17 @@ private struct ChatsDetail: View {
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
+    }
+
+    /// Nook cannot write in this app: the text goes on the clipboard and the app opens, to paste it there.
+    private func copyForApp() {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        reply = ""
+        notice = tr("chats.reply.copied", appName)
+        app.openChatApp(entry.app)
     }
 
     /// A file in a WhatsApp chat opens in Quick Look; a collected chat has no files.

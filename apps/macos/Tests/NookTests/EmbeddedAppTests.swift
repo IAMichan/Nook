@@ -226,4 +226,12 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertNil(MirrorGeometry.screenPoint(CGPoint(x: 200, y: 20), view: pane, window: window), "the empty margin")
         XCTAssertNil(MirrorGeometry.screenPoint(.zero, view: .zero, window: window))
     }
+
+    func testChatsCommand() {
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chats", installed: []), .chats(""))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@Chats telegram", installed: []), .chats("telegram"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open chats Anna de Wit.", installed: []), .chats("Anna de Wit"))
+        XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat Lisa", installed: []), .chat("Lisa"), "one chat stays @chat")
+        XCTAssertNotEqual(EmbeddedAppCatalog.command(in: "@chatsapp", installed: []), .chats("app"))
+    }
 }

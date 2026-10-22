@@ -22,6 +22,7 @@ extension SettingsSection {
         case .autocomplete: return "text.cursor"
         case .dictation: return "mic.fill"
         case .connections: return "app.connected.to.app.below.fill"
+        case .chats: return "bubble.left.and.bubble.right.fill"
         case .agents: return "terminal.fill"
         case .usage: return "chart.bar.fill"
         case .workspace: return "folder.fill"
