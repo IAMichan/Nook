@@ -32,15 +32,21 @@ final class AppActionsTests: XCTestCase {
 
     func testScriptFiltersAndAppliesTheChange() {
         let script = MailActions.script(.trash, .init(from: "news\"letter", unreadOnly: true, days: 30))
-        XCTAssertTrue(script.contains("sender contains \"news\\\"letter\""))
-        XCTAssertTrue(script.contains("read status is false"))
+        XCTAssertTrue(script.contains("sndr contains \"news\\\"letter\""))
+        XCTAssertTrue(script.contains("isRead is false"))
         XCTAssertTrue(script.contains("set cutoff to (current date) - (30 * days)"))
-        XCTAssertTrue(script.contains("date received > cutoff"))
+        XCTAssertTrue(script.contains("rcvd > cutoff"))
         XCTAssertTrue(script.contains("delete m"))
         XCTAssertTrue(script.contains(">= \(MailActions.limit)"))
+        // Mail rejects `whose` on a range of messages (-1719): the newest messages are read in bulk and filtered instead.
+        XCTAssertFalse(script.contains("whose sender"))
+        XCTAssertFalse(script.contains("of mb whose"))
+        XCTAssertTrue(script.contains("set sndrs to sender of messages lo thru hi of mb"))
+        XCTAssertTrue(script.contains("set end of found to (get message (lo + i - 1) of mb)"))
 
         let ids = MailActions.script(.flagged, .init(ids: ["a@x", "b@x"]))
-        XCTAssertTrue(ids.contains("(message id is \"a@x\" or message id is \"b@x\")"))
+        XCTAssertTrue(ids.contains("(mid is \"a@x\" or mid is \"b@x\")"))
+        XCTAssertTrue(ids.contains("set mids to message id of messages lo thru hi of mb"))
         XCTAssertTrue(ids.contains("set flagged status of m to true"))
     }
 

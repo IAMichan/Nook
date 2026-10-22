@@ -432,7 +432,7 @@ final class MailConnector: ContextSource {
                     let scriptWords = Array(words.sorted { $0.count > $1.count }.prefix(4))
                     let filter = scriptWords.map { word -> String in
                         let q = ScriptText.quote(word)
-                        return sent ? "subject contains \(q)" : "subject contains \(q) or sender contains \(q)"
+                        return sent ? "subj contains \(q)" : "subj contains \(q) or sndr contains \(q)"
                     }.joined(separator: " or ")
 
                     var result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: true), timeout: 20)
@@ -620,36 +620,12 @@ final class MailConnector: ContextSource {
     }
 
     /// Searches every account's INBOX (or the sent mailbox) directly: the unified `inbox` with `whose` can take more than
-    /// 20 s on large accounts, and only the newest 600 messages per mailbox are searched. Without `bodies` only the
-    /// headers come back, which is much faster when Mail is slow.
+    /// 20 s on large accounts, and only the newest 600 messages per mailbox are searched (see `MailActions.collectScript`).
+    /// `filter` uses the variables `subj` and `sndr`. Without `bodies` only the headers come back, which is much faster
+    /// when Mail is slow.
     nonisolated static func searchScript(filter: String, sent: Bool, bodies: Bool) -> String {
-        let collect = sent ? """
-            set total to count of messages of sent mailbox
-            if total is 0 then return ""
-            if total > 600 then
-                set found to (messages 1 thru 600 of sent mailbox whose \(filter))
-            else
-                set found to (messages of sent mailbox whose \(filter))
-            end if
-        """ : """
-            set found to {}
-            repeat with acc in accounts
-                repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
-                    set total to count of messages of box
-                    if total > 0 then
-                        if total > 600 then
-                            set hits to (messages 1 thru 600 of box whose \(filter))
-                        else
-                            set hits to (messages of box whose \(filter))
-                        end if
-                        repeat with h in hits
-                            if (count of found) >= 20 then exit repeat
-                            set end of found to contents of h
-                        end repeat
-                    end if
-                end repeat
-            end repeat
-        """
+        let collect = MailActions.collectScript(condition: filter, fields: sent ? [.subject] : [.subject, .sender],
+                                                sent: sent, limit: 20)
         let body = bodies ? """
                 try
                     set body to content of m
