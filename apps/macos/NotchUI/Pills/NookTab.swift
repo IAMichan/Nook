@@ -5,10 +5,11 @@ import UniformTypeIdentifiers
 /// The Nook tab: home and chat in one. An empty conversation shows your day and suggestions; a running one the thread.
 struct NookChatTab: View {
     @ObservedObject var viewModel: NotchViewModel
+    var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        NookChatView(viewModel: viewModel, chat: app.chat)
+        NookChatView(viewModel: viewModel, chat: app.chat, openOnAgents: openOnAgents)
     }
 }
 
@@ -17,6 +18,9 @@ struct NookChatView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var chat: NookChat
     var compact = true
+    /// Shows the panel footer under the list of Nooks, where Agents has it under its sessions, so the refresh and update
+    /// button sits in the same place on both tabs. A footer page (pull requests, usage) opens on Agents through it.
+    var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
     @State private var question = ""
     @State private var images: [ImageAttachment] = []
@@ -46,51 +50,63 @@ struct NookChatView: View {
     var body: some View {
         // The same split as the Agents tab: the list on the left, a thin line, the conversation on the right. With an app
         // open ("@open whatsapp") the app takes the list's place on the right, and the chat narrows beside it.
-        HStack(alignment: .top, spacing: 0) {
-            if (!chat.history.isEmpty || !compact) && !sideOpen {
-                NookList(chat: chat)
+        let listShown = (!chat.history.isEmpty || !compact) && !sideOpen
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                if listShown {
+                    VStack(alignment: .leading, spacing: 8) {
+                        NookList(chat: chat)
+                        footer
+                    }
                     .padding(.trailing, compact ? 4 : 8)
                     .resizablePanel(width: compact ? $listWidth : $windowListWidth,
                                     defaultWidth: compact ? PanelLayout.chatList : PanelLayout.chatListWindow,
                                     minimum: PanelLayout.minimumList, available: totalWidth,
                                     rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
                     .padding(.trailing, compact ? 4 : 8)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                if chat.isEmpty {
-                    emptyState
-                } else {
-                    header
-                        .padding(.bottom, 8)
-                    thread
                 }
-                inputBar
-                    .padding(.top, 10)
-            }
-            // In the main window the conversation keeps a readable width, centered in the room beside the list.
-            .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
-            .frame(maxWidth: compact ? nil : .infinity)
-            .frame(width: sideOpen ? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth) : nil)
-            if sideOpen {
-                EmbeddedSplitHandle(
-                    onDrag: { offset in
-                        let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)
-                        dragStartWidth = start
-                        chatWidth = EmbeddedSplit.chatWidth(start + offset, total: totalWidth)
-                    },
-                    onEnd: { dragStartWidth = nil },
-                    onReset: { chatWidth = EmbeddedSplit.defaultChatWidth }
-                )
-                if embedded.current != nil {
-                    EmbeddedAppPane()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    BrowserView(onClose: { viewModel.browserBesideChat = false })
-                        .background(NookTheme.field)
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(alignment: .leading, spacing: 0) {
+                    if chat.isEmpty {
+                        emptyState
+                    } else {
+                        header
+                            .padding(.bottom, 8)
+                        thread
+                    }
+                    inputBar
+                        .padding(.top, 10)
                 }
+                // In the main window the conversation keeps a readable width, centered in the room beside the list.
+                .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
+                .frame(maxWidth: compact ? nil : .infinity)
+                .frame(width: sideOpen ? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth) : nil)
+                if sideOpen {
+                    EmbeddedSplitHandle(
+                        onDrag: { offset in
+                            let start = dragStartWidth ?? EmbeddedSplit.chatWidth(chatWidth, total: totalWidth)
+                            dragStartWidth = start
+                            chatWidth = EmbeddedSplit.chatWidth(start + offset, total: totalWidth)
+                        },
+                        onEnd: { dragStartWidth = nil },
+                        onReset: { chatWidth = EmbeddedSplit.defaultChatWidth }
+                    )
+                    if embedded.current != nil {
+                        EmbeddedAppPane()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        BrowserView(onClose: { viewModel.browserBesideChat = false })
+                            .background(NookTheme.field)
+                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+            // No list beside the chat (a first chat, or an app open): the footer keeps the list's width at the bottom.
+            if !listShown && showsFooter {
+                footer
+                    .frame(width: min(compact ? listWidth : windowListWidth, max(totalWidth, PanelLayout.minimumList)))
+                    .padding(.top, 8)
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
@@ -110,6 +126,15 @@ struct NookChatView: View {
         .onAppear {
             // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
+        }
+    }
+
+    private var showsFooter: Bool { openOnAgents != nil && !app.demoMode }
+
+    @ViewBuilder
+    private var footer: some View {
+        if let openOnAgents, showsFooter {
+            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
         }
     }
 
