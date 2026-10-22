@@ -64,8 +64,9 @@ enum CompanionAgents {
                 excerpt: CompanionPolicy.excerpt(session.summary), items: items.map(item), canSend: false
             ))
         }
-        // Bridge requests, and any request whose terminal session is not in the list.
-        for (id, approvals) in waiting {
+        // Bridge requests, and any request whose terminal session is not in the list, newest first (a dictionary has no order).
+        let rest = waiting.sorted { ($0.value.last?.created ?? .distantPast) > ($1.value.last?.created ?? .distantPast) }
+        for (id, approvals) in rest {
             guard let first = approvals.first else { continue }
             digests.append(SessionDigest(
                 id: id, title: CompanionPolicy.excerpt(first.project), agent: first.agentName, attention: "approval",

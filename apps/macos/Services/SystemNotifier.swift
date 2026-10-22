@@ -32,11 +32,18 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
     private struct Handlers {
         var decide: ((ApprovalDecision) -> Void)?
         var show: () -> Void
+        /// Which post this is, so a request withdrawn while macOS is still answering is not posted after all.
+        var token = UUID()
     }
+
+    /// Notices (not approvals) kept clickable; older ones lose their action, so ignored banners do not pile up.
+    static let noticeLimit = 20
 
     private let center = UNUserNotificationCenter.current()
     /// What each delivered notification does when you act on it, by its id (the token of the card it stands in for).
     private var handlers: [String: Handlers] = [:]
+    /// The ids of notices with a handler, oldest first.
+    private var notices: [String] = []
 
     /// Becomes the delegate. Called once at launch.
     func start() {
@@ -51,17 +58,25 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
         let deny = UNNotificationAction(identifier: Action.deny.rawValue, title: tr("button.deny"), options: [.destructive])
         let show = UNNotificationAction(identifier: Action.show.rawValue, title: tr("noticeDelivery.show"), options: [.foreground])
         center.setNotificationCategories([
-            UNNotificationCategory(identifier: Category.approval, actions: [allow, deny], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.approvalAlways, actions: [allow, always, deny], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.review, actions: [show, deny], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.notice, actions: [], intentIdentifiers: []),
+            // A banner shows its first two buttons, so Deny is always one of them.
+            UNNotificationCategory(identifier: Category.approval, actions: [allow, deny], intentIdentifiers: [],
+                                   options: [.customDismissAction]),
+            UNNotificationCategory(identifier: Category.approvalAlways, actions: [allow, deny, always], intentIdentifiers: [],
+                                   options: [.customDismissAction]),
+            UNNotificationCategory(identifier: Category.review, actions: [show, deny], intentIdentifiers: [],
+                                   options: [.customDismissAction]),
+            UNNotificationCategory(identifier: Category.notice, actions: [], intentIdentifiers: [], options: [.customDismissAction]),
         ])
     }
 
     /// Asks macOS for permission to show notifications (only the first time does it ask you).
     func requestAccess() {
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            Task { @MainActor in SystemNotifier.shared.blocked = !granted }
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in
+            // Granted is not enough: alerts can be off in System Settings, and then no banner appears.
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                let shows = Self.showsBanners(settings)
+                Task { @MainActor in SystemNotifier.shared.blocked = !shows }
+            }
         }
     }
 
@@ -108,35 +123,71 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
         post(id: id, content: content, handlers: Handlers(decide: nil, show: open), fallback: fallback)
     }
 
-    /// The request was decided elsewhere or the agent moved on: its notification goes away.
+    /// The request was decided elsewhere or the agent moved on: its notification goes away, also one still being posted.
     func withdraw(_ id: String) {
-        guard handlers.removeValue(forKey: id) != nil else { return }
+        handlers[id] = nil
+        notices.removeAll { $0 == id }
         center.removeDeliveredNotifications(withIdentifiers: [id])
         center.removePendingNotificationRequests(withIdentifiers: [id])
+    }
+
+    /// macOS shows Nook's banners: notifications allowed with alerts on (not only quietly in Notification Center, which
+    /// is all provisional permission gives), so a request is seen and not left waiting unnoticed.
+    nonisolated static func showsBanners(_ settings: UNNotificationSettings) -> Bool {
+        settings.authorizationStatus == .authorized && settings.alertSetting == .enabled && settings.alertStyle != .none
     }
 
     private func post(id: String, content: UNMutableNotificationContent, handlers: Handlers, fallback: @escaping () -> Void) {
         // Nook plays its own (customizable) sounds, so the notification itself stays silent.
         content.sound = nil
         registerButtons()
+        // Registered now, so a withdrawal while macOS answers below cancels this post.
+        let token = handlers.token
+        self.handlers[id] = handlers
+        if handlers.decide == nil { keepNotice(id) }
         center.getNotificationSettings { settings in
-            let allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+            let allowed = Self.showsBanners(settings)
             Task { @MainActor in
                 self.blocked = !allowed
-                guard allowed else { fallback(); return }
-                self.handlers[id] = handlers
+                guard self.handlers[id]?.token == token else { return }
+                guard allowed else {
+                    self.forget(id)
+                    fallback()
+                    return
+                }
                 self.center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { error in
-                    guard error != nil else { return }
                     Task { @MainActor in
-                        self.handlers[id] = nil
-                        fallback()
+                        let current = self.handlers[id]?.token == token
+                        if error != nil {
+                            guard current else { return }
+                            self.forget(id)
+                            fallback()
+                        } else if !current, self.handlers[id] == nil {
+                            // Withdrawn while it was being added.
+                            self.center.removeDeliveredNotifications(withIdentifiers: [id])
+                        }
                     }
                 }
             }
         }
     }
 
+    private func forget(_ id: String) {
+        handlers[id] = nil
+        notices.removeAll { $0 == id }
+    }
+
+    /// Keeps at most `noticeLimit` notices clickable: macOS tells nothing about a banner that was simply ignored.
+    private func keepNotice(_ id: String) {
+        notices.removeAll { $0 == id }
+        notices.append(id)
+        while notices.count > Self.noticeLimit {
+            handlers[notices.removeFirst()] = nil
+        }
+    }
+
     private func respond(id: String, action: String) {
+        notices.removeAll { $0 == id }
         guard let handler = handlers.removeValue(forKey: id) else { return }
         switch action {
         case Action.allow.rawValue: handler.decide?(.allow)
