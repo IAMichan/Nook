@@ -28,6 +28,8 @@ struct NookOrb: View {
     var look: NookLook?
     /// Wears this instead of what Nook wears right now (`NookAppearance.outfit`): previews and moments.
     var outfit: [NookAccessory]?
+    /// Told where Nook moves each frame, so the task ring around him can follow like elastic.
+    var motion: NookMotion?
 
     @ObservedObject private var presence = NookPresence.shared
     @ObservedObject private var appearance = NookAppearance.shared
@@ -44,7 +46,8 @@ struct NookOrb: View {
         let awakeRate = frameRate ?? energy.plan.interactiveFrameRate
         TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, awakeRate) : 1.0 / Self.dozingFrameRate,
                                 paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
-            orb(pose(at: context.date))
+            let p = pose(at: context.date)
+            orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
         }
         .frame(width: size, height: size)
         .background(PointerProbe(tracker: tracker))
