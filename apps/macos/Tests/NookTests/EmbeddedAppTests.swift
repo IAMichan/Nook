@@ -165,10 +165,15 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertNil(EmbeddedAppCatalog.openQuery(in: "what does @open do", installed: macApps))
     }
 
-    func testListOffersTheWebVersion() {
+    func testListShowsEachWayOnItsOwnLine() {
         let rows = EmbeddedAppCatalog.openSuggestions(for: "whatsapp", installed: macApps)
-        XCTAssertEqual(rows.map { $0.app.id }, ["mac:whatsapp", "mac:whatsapp"])
-        XCTAssertEqual(rows.map { $0.mode }, [nil, .web])
+        XCTAssertEqual(rows.map { $0.app.id }, ["mac:whatsapp", "mac:whatsapp", "mac:whatsapp"])
+        XCTAssertEqual(rows.map { $0.mode }, [.mirror, .web, .window], "the Mac app, its web version, its own window")
+        XCTAssertTrue(EmbeddedAppCatalog.openSuggestions(for: "", installed: macApps).allSatisfy { $0.mode == nil },
+                      "nothing typed yet: one line per app")
+        for mode in EmbeddedAppMode.allCases {
+            XCTAssertEqual(EmbeddedAppMode.named(mode.word), mode, "the word a line puts in the box reads back")
+        }
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@open WhatsApp web", installed: macApps),
                        .open(EmbeddedAppCatalog.find("whatsapp", installed: [])!, .web), "what the web line puts in the box")
         XCTAssertFalse(EmbeddedAppCatalog.openSuggestions(for: "calendar", installed: macApps).contains { $0.app.id == "mac:calendar" && $0.mode == .web },

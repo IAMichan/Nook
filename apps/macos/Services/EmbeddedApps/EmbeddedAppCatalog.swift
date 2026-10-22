@@ -37,6 +37,18 @@ enum EmbeddedAppMode: String, CaseIterable, Sendable {
     /// The Mac app in its own window, outside Nook.
     case window
 
+    /// The word the `@` list puts after an app's name for this way; `named` reads it back. "window" is said in the app's
+    /// language ("venster").
+    var word: String {
+        switch self {
+        case .mirror: return "mac"
+        case .web: return "web"
+        case .window:
+            let local = tr("embedded.mode.word.window")
+            return Self.named(local) == .window ? local : "window"
+        }
+    }
+
     /// The words after an app's name that ask for a way: "@open whatsapp web", "… mac", "… venster".
     static func named(_ word: String) -> EmbeddedAppMode? {
         switch word.lowercased() {
@@ -243,11 +255,13 @@ enum EmbeddedAppCatalog {
         return query.trimmingCharacters(in: .whitespaces)
     }
 
-    /// The lines of the `@` list for what was typed: each matching app, and right after a Mac app its web version
-    /// ("@open WhatsApp web"), so the web app stays one choice away.
+    /// The lines of the `@` list for what was typed. With nothing typed yet, one line per app (it opens the way it did
+    /// last time). Once a name is on its way, a Mac app shows each of its ways as a line of its own ("@open WhatsApp
+    /// mac", "… web", "… window"), so the difference is in the list rather than a guess; a web app has one way.
     static func openSuggestions(for query: String, installed: [EmbeddedApp] = InstalledMacApps.all) -> [(app: EmbeddedApp, mode: EmbeddedAppMode?)] {
         matching(query, in: available(installed: installed)).flatMap { app -> [(app: EmbeddedApp, mode: EmbeddedAppMode?)] in
-            app.isMacApp && webVersion(of: app) != nil ? [(app, nil), (app, .web)] : [(app, nil)]
+            guard app.isMacApp, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [(app, nil)] }
+            return modes(for: app, installed: installed).map { (app, $0) }
         }
     }
 
