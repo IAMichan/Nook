@@ -1,8 +1,8 @@
 import Foundation
 import Combine
 
-/// Autocomplete's settings (UserDefaults, one JSON value), statistics and writing samples (small files in Application
-/// Support/Nook/Autocomplete, readable only by you), its models folder, and the pauses.
+/// Autocomplete's settings (UserDefaults, one JSON value), statistics, writing samples and turned-down phrases (small files
+/// in Application Support/Nook/Autocomplete, readable only by you), its models folder, and the pauses.
 @MainActor
 final class AutocompleteStore: ObservableObject {
     static let shared = AutocompleteStore()
@@ -10,6 +10,8 @@ final class AutocompleteStore: ObservableObject {
     @Published var prefs: CompletionPreferences { didSet { if prefs != oldValue { defaults.set(prefs.encoded(), forKey: Self.prefsKey) } } }
     @Published private(set) var stats: CompletionStats
     @Published private(set) var samples: CompletionSamples
+    /// Learned phrases turned down with Escape (see `CompletionPhrases.rejectionKey`) → how often.
+    @Published private(set) var phraseRejections: [String: Int]
 
     /// Paused until this moment, everywhere or per app.
     @Published private(set) var pausedUntil: Date?
@@ -65,6 +67,7 @@ final class AutocompleteStore: ObservableObject {
         self.prefs = prefs
         stats = Self.load(CompletionStats.self, "stats.json") ?? CompletionStats()
         samples = Self.load(CompletionSamples.self, "samples.json") ?? CompletionSamples()
+        phraseRejections = Self.load([String: Int].self, "rejected-phrases.json") ?? [:]
     }
 
     // MARK: Counting and learning
@@ -97,6 +100,13 @@ final class AutocompleteStore: ObservableObject {
     func forgetSamples() {
         samples.removeAll()
         save(samples, "samples.json")
+        phraseRejections = [:]
+        save(phraseRejections, "rejected-phrases.json")
+    }
+
+    func rejectPhrase(_ key: String) {
+        phraseRejections[key, default: 0] += 1
+        save(phraseRejections, "rejected-phrases.json")
     }
 
     /// Statistics change with every accepted word: write them at most every few seconds.

@@ -179,6 +179,8 @@ struct CompletionContext {
     var facts: [String] = []
     /// Earlier writing of the user, for their style.
     var samples: [String] = []
+    /// Phrases the user writes again and again (see `CompletionPhrases.frequent`).
+    var phrases: [String] = []
     var appName: String?
     var windowTitle: String?
     /// Placeholder of the field ("Write a reply…").
@@ -235,6 +237,10 @@ struct PromptBuilder {
         if !input.samples.isEmpty {
             let samples = input.samples.map { "- " + clip($0, to: maxSampleLength).replacingOccurrences(of: "\n", with: " ") }
             sections.append("Earlier writing by the author:\n" + samples.joined(separator: "\n"))
+        }
+        let phrases = input.phrases.compactMap(cleaned)
+        if !phrases.isEmpty {
+            sections.append("Phrases the author often uses:\n" + phrases.map { "- " + clip($0, to: 80) }.joined(separator: "\n"))
         }
         // The end of the screen text: what is closest to the field and newest (the last messages in a chat).
         if let screen = cleaned(input.screenText) {

@@ -11,7 +11,10 @@ struct CompletionSamples: Codable, Equatable {
     private(set) var samples: [Sample] = []
     var capacity = 400
     var maxLength = 2_000
-    var minLength = 40
+    /// Short chat messages ("Thanks, see you tomorrow!") count too: they hold the phrases written most often.
+    var minLength = 12
+    /// Shorter samples teach phrases (see `CompletionPhrases`) but say little about style in the prompt.
+    var minPromptLength = 40
 
     /// Text that only extends the last sample of the same app (still typing in that field) replaces it.
     mutating func add(_ text: String, app: String, date: Date = Date()) {
@@ -30,10 +33,11 @@ struct CompletionSamples: Codable, Equatable {
 
     var count: Int { samples.count }
 
-    /// The newest samples, from this app first.
+    /// The newest samples long enough to show a style, from this app first.
     func relevant(for app: String, limit: Int = 3) -> [String] {
-        let same = samples.reversed().filter { $0.app == app }
-        let others = samples.reversed().filter { $0.app != app }
+        let long = samples.reversed().filter { $0.text.count >= minPromptLength }
+        let same = long.filter { $0.app == app }
+        let others = long.filter { $0.app != app }
         return (same + others).prefix(limit).map(\.text)
     }
 
@@ -49,6 +53,148 @@ struct CompletionSamples: Codable, Equatable {
         guard let top = frequent.first?.value else { return [:] }
         let scale = log(Double(top) + 1)
         return Dictionary(uniqueKeysWithValues: frequent.map { ($0.key, log(Double($0.value) + 1) / scale) })
+    }
+}
+
+/// The phrases the user writes again and again, learned from their own writing (`CompletionSamples`): after "met vriendelijke"
+/// comes "groet", after "ik hoop dat" comes "het goed met je gaat". It counts which word follows the one to three words before
+/// it, newer writing counting more, and suggests the words that nearly always follow at once, without the model. A phrase
+/// turned down with Escape counts less from then on.
+struct CompletionPhrases: Sendable {
+    /// The words before (up to `order`, normalized, joined by spaces) → the word that came next, as written → weight.
+    private(set) var next: [String: [String: Double]] = [:]
+    /// `rejectionKey` → times turned down.
+    private(set) var rejected: [String: Int] = [:]
+
+    /// Words before the next one that are looked at.
+    static let order = 3
+    /// Words before a turned-down word that its rejection is kept for: "met vriendelijke" counts less after any greeting.
+    static let rejectionContext = 2
+    /// Writing this old counts half.
+    static let halfLife: TimeInterval = 60 * 24 * 3600
+    /// What one rejection takes off a word's weight (a fresh occurrence weighs 1).
+    static let rejectionWeight = 2.0
+
+    init() {}
+
+    init(samples: [CompletionSamples.Sample], rejected: [String: Int] = [:], now: Date = Date()) {
+        self.rejected = rejected
+        for sample in samples {
+            let weight = pow(0.5, max(0, now.timeIntervalSince(sample.date)) / Self.halfLife)
+            // Suggestions stay on one line: phrases are learned within a line.
+            for line in sample.text.split(whereSeparator: \.isNewline) {
+                let words = line.split(whereSeparator: \.isWhitespace).map(String.init)
+                guard words.count >= 2 else { continue }
+                let keys = words.map(Self.normalized)
+                for index in 1..<words.count where !keys[index].isEmpty {
+                    for length in 1...min(Self.order, index) {
+                        let context = keys[(index - length)..<index]
+                        // A dash or a lone symbol breaks the phrase.
+                        if context.contains("") { break }
+                        next[context.joined(separator: " "), default: [:]][words[index], default: 0] += weight
+                    }
+                }
+            }
+        }
+    }
+
+    var isEmpty: Bool { next.isEmpty }
+
+    mutating func reject(_ key: String) { rejected[key, default: 0] += 1 }
+
+    /// How the text before the cursor goes on, as far as the user's own phrases are sure of it: the rest of the word being
+    /// typed, then whole words, up to the end of a sentence. Starts with a space when it starts a new word. Nil when no phrase
+    /// fits well enough.
+    func predict(after before: String, maxWords: Int) -> String? {
+        guard maxWords > 0, !next.isEmpty else { return nil }
+        var (context, partial) = Self.split(before)
+        var result = ""
+        var count = 0
+        while count < maxWords, let word = choose(after: context, startingWith: partial, penalized: count == 0) {
+            result += partial.isEmpty ? " " + word : String(word.dropFirst(partial.count))
+            partial = ""
+            context.append(Self.normalized(word))
+            count += 1
+            if let last = word.last, ".!?".contains(last) { break }
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    /// Identifies the first word of a learned suggestion after `before`, to count less once it is turned down.
+    static func rejectionKey(before: String, suggestion: String) -> String? {
+        let (context, partial) = split(before)
+        let rest = partial.isEmpty ? suggestion.drop(while: \.isWhitespace) : Substring(suggestion)
+        let word = normalized(partial + String(rest.prefix { !$0.isWhitespace }))
+        guard !context.isEmpty, !word.isEmpty else { return nil }
+        return context.suffix(rejectionContext).joined(separator: " ") + "|" + word
+    }
+
+    /// The phrases written most often, for the prompt: three words or more, the last one nearly always following the others.
+    func frequent(limit: Int = 12) -> [String] {
+        var found: [(weight: Double, phrase: String)] = []
+        for (context, followers) in next where context.contains(" ") {
+            let total = followers.values.reduce(0, +)
+            guard let best = followers.max(by: { ($0.value, $1.key) < ($1.value, $0.key) }), best.value >= 3, best.value / total >= 0.6 else { continue }
+            found.append((best.value, context + " " + best.key))
+        }
+        var result: [(phrase: String, words: String)] = []
+        for entry in found.sorted(by: { ($0.weight, $1.phrase) > ($1.weight, $0.phrase) }) where result.count < limit {
+            let words = entry.phrase.split(separator: " ").map { Self.normalized(String($0)) }.joined(separator: " ")
+            // Not the same phrase again, one word shorter or longer.
+            if result.contains(where: { $0.words.contains(words) || words.contains($0.words) }) { continue }
+            result.append((entry.phrase, words))
+        }
+        return result.map(\.phrase)
+    }
+
+    /// The word that follows `context`, beginning with `partial` (the word being typed). The longest context with enough
+    /// writing behind it decides; when it has enough but no clear winner, there is no suggestion.
+    private func choose(after context: [String], startingWith partial: String, penalized: Bool) -> String? {
+        let typed = partial.lowercased()
+        let recent = context.suffix(Self.rejectionContext).joined(separator: " ")
+        for length in stride(from: min(Self.order, context.count), through: 1, by: -1) {
+            let key = context.suffix(length)
+            if key.contains("") { continue }
+            guard let followers = next[key.joined(separator: " ")] else { continue }
+            // Grouped by the word itself; the form written most often is the one typed.
+            var totals: [String: Double] = [:]
+            var forms: [String: (weight: Double, word: String)] = [:]
+            for (word, weight) in followers where word.count > partial.count && word.lowercased().hasPrefix(typed) {
+                let normal = Self.normalized(word)
+                totals[normal, default: 0] += weight
+                if let form = forms[normal], (form.weight, word) >= (weight, form.word) { continue }
+                forms[normal] = (weight, word)
+            }
+            let total = totals.values.reduce(0, +)
+            let (minimum, share) = length == 1 ? (4.0, 0.75) : (2.5, 0.6)
+            // Too little writing after these words to tell: fewer words before may know.
+            guard total >= minimum else { continue }
+            let scored = totals.map { entry -> (score: Double, normal: String) in
+                let penalty = penalized ? Double(rejected[recent + "|" + entry.key] ?? 0) * Self.rejectionWeight : 0
+                return (entry.value - penalty, entry.key)
+            }
+            guard let best = scored.max(by: { ($0.score, $1.normal) < ($1.score, $0.normal) }),
+                  best.score >= minimum, best.score / total >= share else { return nil }
+            return forms[best.normal]?.word
+        }
+        return nil
+    }
+
+    /// The words of the line the cursor is on, normalized, and the word the cursor is in (empty after a space). A word that
+    /// ends in punctuation ("groet,") is finished: the next one starts after a space.
+    private static func split(_ before: String) -> (context: [String], partial: String) {
+        let line = before.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).last.map(String.init) ?? ""
+        var words = line.split(whereSeparator: \.isWhitespace).map(String.init)
+        var partial = ""
+        if let last = line.last, !last.isWhitespace, let word = words.popLast() {
+            if last.isLetter || last.isNumber { partial = word } else { words.append(word) }
+        }
+        return (words.map(normalized), partial)
+    }
+
+    /// Lowercased, without punctuation or symbols around it: "Groet," and "groet" are the same word.
+    static func normalized(_ word: String) -> String {
+        word.lowercased().trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.symbols))
     }
 }
 

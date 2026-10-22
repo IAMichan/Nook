@@ -480,6 +480,70 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertNil(words["de"])
     }
 
+    func testShortMessagesAreKeptButNotUsedAsStyle() {
+        var samples = CompletionSamples()
+        samples.add("Top, tot morgen!", app: "chat")
+        XCTAssertEqual(samples.count, 1)
+        XCTAssertTrue(samples.relevant(for: "chat").isEmpty, "too short to show a style in the prompt")
+    }
+
+    private func phrases(_ texts: [String], age: TimeInterval = 0, now: Date = Date(timeIntervalSince1970: 1_800_000_000)) -> CompletionPhrases {
+        CompletionPhrases(samples: texts.map { CompletionSamples.Sample(app: "mail", text: $0, date: now.addingTimeInterval(-age)) }, now: now)
+    }
+
+    private let greetings = [
+        "Top, ik kijk ernaar. Met vriendelijke groet, Michan",
+        "Dank je wel! Met vriendelijke groet, Michan",
+        "Prima zo. Met vriendelijke groet, Michan",
+        "Ik hoop dat het lukt",
+        "Ik hoop dat je komt",
+        "Ik hoop dat we winnen",
+    ]
+
+    func testPhrasesWrittenOftenAreSuggested() {
+        let learned = phrases(greetings)
+        XCTAssertEqual(learned.predict(after: "Hoi Lisa, met vriendelijke ", maxWords: 5), " groet, Michan")
+        XCTAssertEqual(learned.predict(after: "Met vriendelijke gr", maxWords: 5), "oet, Michan")
+        XCTAssertEqual(learned.predict(after: "Met vriendelijke ", maxWords: 1), " groet,")
+        // Written often, but followed by something else each time: no suggestion.
+        XCTAssertNil(learned.predict(after: "Ik hoop dat ", maxWords: 5))
+        XCTAssertNil(learned.predict(after: "Iets heel anders ", maxWords: 5))
+    }
+
+    func testOldWritingCountsLess() {
+        XCTAssertNil(phrases(greetings, age: 180 * 24 * 3600).predict(after: "Met vriendelijke ", maxWords: 5))
+    }
+
+    func testTurnedDownPhraseCountsLess() {
+        var learned = phrases(greetings)
+        let key = CompletionPhrases.rejectionKey(before: "Hoi Lisa, met vriendelijke ", suggestion: "groet, Michan")
+        XCTAssertEqual(key, "met vriendelijke|groet")
+        learned.reject(key ?? "")
+        XCTAssertNil(learned.predict(after: "Hoi Piet, met vriendelijke ", maxWords: 5))
+        XCTAssertEqual(CompletionPhrases.rejectionKey(before: "Met vriendelijke gr", suggestion: "oet, Michan"), "met vriendelijke|groet")
+    }
+
+    func testFrequentPhrasesForThePrompt() {
+        let frequent = phrases(greetings).frequent()
+        XCTAssertEqual(frequent, ["ik hoop dat", "met vriendelijke groet Michan"])
+    }
+
+    func testCodeFieldsInEditorsAreToldFromChatInputs() {
+        // VS Code's editor (Monaco) and terminal (xterm.js).
+        XCTAssertTrue(CompletionFieldKind.isCode(classes: [["inputarea", "monaco-mouse-cursor-text"], ["overflow-guard"], ["monaco-editor"]],
+                                                 roleDescription: "editor"))
+        XCTAssertTrue(CompletionFieldKind.isCode(classes: [["xterm-helper-textarea"], ["xterm-helpers"], ["terminal", "xterm"]], roleDescription: nil))
+        // Copilot Chat's input is Monaco inside the chat; Claude Code's input is a plain field in a webview.
+        XCTAssertFalse(CompletionFieldKind.isCode(classes: [["inputarea"], ["monaco-editor"], ["interactive-input-editor"], ["chat-input-container"]],
+                                                  roleDescription: "editor"))
+        XCTAssertFalse(CompletionFieldKind.isCode(classes: [["messageInput"], ["inputContainer"]], roleDescription: "text entry area"))
+        XCTAssertTrue(CompletionPreferences.proseOnly.contains("com.microsoft.VSCode"))
+        XCTAssertFalse(CompletionPreferences.offByDefault.contains("com.microsoft.VSCode"))
+        var prefs = CompletionPreferences()
+        prefs.enabled = true
+        XCTAssertTrue(prefs.isEnabled(inApp: "com.microsoft.VSCode"))
+    }
+
     func testStats() {
         var stats = CompletionStats()
         let day = Date(timeIntervalSince1970: 1_800_000_000)

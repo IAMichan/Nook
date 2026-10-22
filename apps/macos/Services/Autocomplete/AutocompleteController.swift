@@ -56,6 +56,8 @@ final class AutocompleteController: ObservableObject {
         var app: NSRunningApplication
         var after: String
         var maxWords: Int
+        /// From the user's own phrases (see `CompletionPhrases`), not the model: Escape makes it count less.
+        var learned = false
     }
 
     /// The suggestion after the one on screen, written while that one is on screen (see `writeAhead`).
@@ -146,6 +148,10 @@ final class AutocompleteController: ObservableObject {
     private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
+    /// The phrases the user writes again and again, from their writing samples (see `applyPersonalization`).
+    private var phrases = CompletionPhrases()
+    /// The most frequent of them, for the prompt.
+    private var frequentPhrases: [String] = []
     /// Words (lowercased) the typo check leaves alone: the user's own vocabulary, and fixes turned down with Escape.
     private var knownWords: Set<String> = [] { didSet { typoVocabulary = nil } }
     private var ignoredTypos: Set<String> = [] { didSet { typoVocabulary = nil } }
@@ -209,6 +215,7 @@ final class AutocompleteController: ObservableObject {
             state = .off
             return
         }
+        if phrases.isEmpty { applyPersonalization() }
         Task {
             let folder = AutocompleteStore.modelsFolder
             let found = await Task.detached(priority: .utility) {
@@ -544,6 +551,12 @@ final class AutocompleteController: ObservableObject {
                     return false
                 }
             }
+            // A learned phrase sent away before any of it was taken or typed: it counts less from now on.
+            if plainEscape, case .completion(let completion) = proposal, completion.learned, completion.anchor == completion.snapshot.before,
+               let key = CompletionPhrases.rejectionKey(before: completion.anchor, suggestion: completion.suggestion.remaining) {
+                store.rejectPhrase(key)
+                phrases.reject(key)
+            }
             dismiss()
             if plainEscape {
                 // Sent away on purpose: not shown again from the memo either.
@@ -599,6 +612,7 @@ final class AutocompleteController: ObservableObject {
         next.suggestion = suggestion
         next.anchor = anchor
         next.fresh = true
+        next.learned = false
         next.snapshot.before = anchor
         upcoming = nil
         proposal = .completion(next)
@@ -719,8 +733,9 @@ final class AutocompleteController: ObservableObject {
         let height = NSScreen.screens.first?.frame.height ?? 0
         let screens = NSScreen.screens.map(\.frame)
         let pid = app.processIdentifier
+        let checkCode = CompletionPreferences.proseOnly.contains(app.bundleIdentifier ?? "")
         readQueue.async {
-            let snapshot = AutocompleteField.read(screenHeight: height, screens: screens)
+            let snapshot = AutocompleteField.read(screenHeight: height, screens: screens, checkCode: checkCode)
             // Chromium and Electron build their tree on request: ask again so the next key finds the field.
             if snapshot == nil { AutocompleteField.wake(app) }
             DispatchQueue.main.async {
@@ -838,10 +853,11 @@ final class AutocompleteController: ObservableObject {
         next.before = before
         let bundleID = app.bundleIdentifier
         let midLine = prefs.midLine(inApp: bundleID)
-        guard CompletionPolicy(midLine: midLine).shouldComplete(before: before, after: next.after, hasSelection: false),
+        guard !skipsCode(next, in: app), CompletionPolicy(midLine: midLine).shouldComplete(before: before, after: next.after, hasSelection: false),
               !(prefs.emoji && CompletionEmojiCatalog.query(in: before) != nil),
-              // Shown from the memo, without the model.
-              memo.recall(before: before, field: fieldKey(for: next, in: app)) == nil else { return }
+              // Shown from the memo or the user's own phrases, without the model.
+              memo.recall(before: before, field: fieldKey(for: next, in: app)) == nil,
+              learnedPhrase(before: before, app: bundleID, maxWords: prefs.maxWords) == nil else { return }
         let options = completionOptions(before: before, continuing: false)
         let prompt = self.prompt(for: next, in: app)
         let branches = rememberBranches(before: before, field: fieldKey(for: next, in: app))
@@ -888,7 +904,8 @@ final class AutocompleteController: ObservableObject {
     private func warmFocusedField() {
         guard completer != nil, let app = frontApp, isActive(in: app) else { return }
         read(in: app) { [weak self] snapshot in
-            guard let self, let snapshot, !snapshot.hasSelection, self.prefs.isEnabled(onSite: snapshot.site), let completer = self.completer else { return }
+            guard let self, let snapshot, !snapshot.hasSelection, self.prefs.isEnabled(onSite: snapshot.site), !self.skipsCode(snapshot, in: app),
+                  let completer = self.completer else { return }
             completer.warm(prompt: self.prompt(for: snapshot, in: app))
         }
     }
@@ -896,7 +913,7 @@ final class AutocompleteController: ObservableObject {
     /// - Parameter continuing: right after a whole suggestion was taken (see `CompletionOptions.continuing()`).
     private func propose(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, continuing: Bool = false) {
         lastSite = snapshot.site
-        guard prefs.isEnabled(onSite: snapshot.site) else { return }
+        guard prefs.isEnabled(onSite: snapshot.site), !skipsCode(snapshot, in: app) else { return }
         record(snapshot, app: app.bundleIdentifier)
         if snapshot.hasSelection { return }
         if !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
@@ -934,7 +951,7 @@ final class AutocompleteController: ObservableObject {
         let bundleID = app.bundleIdentifier
         let midLine = prefs.midLine(inApp: bundleID)
         let policy = CompletionPolicy(midLine: midLine)
-        guard let model = activeModel, policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
+        guard policy.shouldComplete(before: snapshot.before, after: snapshot.after, hasSelection: snapshot.hasSelection) else { return }
         let options = completionOptions(before: snapshot.before, continuing: continuing)
         let maxWords = options.maxWords
         let token = readToken
@@ -951,6 +968,13 @@ final class AutocompleteController: ObservableObject {
                 return
             }
         }
+        // A phrase the user nearly always writes this way: shown at once, without waiting for the model.
+        if let learned = learnedPhrase(before: snapshot.before, app: bundleID, maxWords: maxWords) {
+            upcoming = nil
+            present(learned, truncated: false, token: token, snapshot: snapshot, after: after, maxWords: maxWords, app: app, learned: true)
+            if proposal != nil { return }
+        }
+        guard let model = activeModel else { return }
         let prompt = self.prompt(for: snapshot, in: app)
         // Written ahead while the last suggestion was on screen, or started on the key just typed (see `speculate`): no need
         // to ask the model again.
@@ -989,11 +1013,12 @@ final class AutocompleteController: ObservableObject {
     /// Shows a suggestion for the text of `snapshot`, unless the user has done something since (`token`) or something else is
     /// on screen.
     private func present(_ text: String, truncated: Bool, unfinished: Bool = false, token: Int, snapshot: AutocompleteFieldSnapshot,
-                         after: String, maxWords: Int, app: NSRunningApplication) {
+                         after: String, maxWords: Int, app: NSRunningApplication, learned: Bool = false) {
         guard token == readToken, alternatives == nil, proposal == nil,
               let suggestion = CompletionSuggestion.make(raw: text, before: snapshot.before, after: after, maxWords: maxWords, truncated: truncated,
                                                          unfinished: unfinished) else { return }
-        let completion = Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords)
+        let completion = Completion(suggestion: suggestion, anchor: snapshot.before, snapshot: snapshot, app: app, after: after, maxWords: maxWords,
+                                    learned: learned)
         proposal = .completion(completion)
         show(suggestion, for: snapshot, in: app)
         store.recordShown()
@@ -1103,7 +1128,10 @@ final class AutocompleteController: ObservableObject {
             let concealed = board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ?? false
             if recent, !concealed { input.clipboard = board.string(forType: .string).map { CompletionPrivacy.sanitize($0) } }
         }
-        if prefs.learn, prefs.personalStrength > 0, let bundleID { input.samples = store.samples.relevant(for: bundleID, limit: 2) }
+        if prefs.learn, prefs.personalStrength > 0, let bundleID {
+            input.samples = store.samples.relevant(for: bundleID, limit: 2)
+            input.phrases = frequentPhrases
+        }
         fieldContext = (key, Date(), input)
         input.before = snapshot.before
         return builder.build(input)
@@ -1300,6 +1328,17 @@ final class AutocompleteController: ObservableObject {
 
     // MARK: Learning
 
+    /// A suggestion from the user's own phrases, when learning is on here.
+    private func learnedPhrase(before: String, app bundleID: String?, maxWords: Int) -> String? {
+        guard prefs.learn, prefs.app(bundleID).learn else { return nil }
+        return phrases.predict(after: before, maxWords: maxWords)
+    }
+
+    /// A code editor or terminal in VS Code and its forks: left to their own completion, and not learned from.
+    private func skipsCode(_ snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> Bool {
+        snapshot.isCode && CompletionPreferences.proseOnly.contains(app.bundleIdentifier ?? "")
+    }
+
     private func record(_ snapshot: AutocompleteFieldSnapshot, app bundleID: String?) {
         guard prefs.learn, let bundleID, prefs.app(bundleID).learn else { return }
         let text = snapshot.before + snapshot.after
@@ -1314,8 +1353,10 @@ final class AutocompleteController: ObservableObject {
         if store.addSample(sample.text, app: sample.app) { applyPersonalization() }
     }
 
-    /// Hands the words the user writes often to the model.
+    /// Hands the words the user writes often to the model, and learns the phrases they write again and again.
     func applyPersonalization() {
+        phrases = prefs.learn ? CompletionPhrases(samples: store.samples.samples, rejected: store.phraseRejections) : CompletionPhrases()
+        frequentPhrases = phrases.frequent()
         let vocabulary = prefs.learn ? store.samples.vocabulary() : [:]
         // Words the user writes again and again are theirs (names, jargon, slang), not typos.
         knownWords = Set(vocabulary.keys.map { $0.lowercased() })

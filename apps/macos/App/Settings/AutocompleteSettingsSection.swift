@@ -511,6 +511,7 @@ struct AutocompleteSettingsSection: View {
         if store.isPaused(app: bundleID) { return tr("autocomplete.apps.paused") }
         let rule = store.prefs.app(bundleID)
         if rule.enabled == .inherit, CompletionPreferences.offByDefault.contains(bundleID) { return tr("autocomplete.apps.defaultOff") }
+        if isOn(bundleID), CompletionPreferences.proseOnly.contains(bundleID) { return tr("autocomplete.apps.proseOnly") }
         if !rule.instructions.isEmpty { return tr("autocomplete.apps.hasInstructions") }
         return nil
     }
