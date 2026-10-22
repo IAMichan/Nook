@@ -7,6 +7,8 @@ struct PullRequestFilterMenu: View {
     @Binding var filter: PullRequestFilter
     /// How the list groups its rows; not a filter, so the badge and Reset leave it alone.
     @Binding var grouping: PullRequestGrouping
+    /// The order of the rows; not a filter either.
+    @Binding var sort: PullRequestSort
     /// The authors in the lists, for the Author choice.
     let authors: [String]
     /// Whether organizations or repositories are watched, for the Watched choice.
@@ -15,7 +17,7 @@ struct PullRequestFilterMenu: View {
     @State private var hovering = false
 
     enum Kind: CaseIterable, Identifiable {
-        case state, involvement, author, draft, checks, grouping
+        case state, involvement, author, draft, checks, grouping, sort
         var id: Self { self }
 
         var title: String {
@@ -26,6 +28,7 @@ struct PullRequestFilterMenu: View {
             case .draft: return tr("agents.pulls.filter.draft")
             case .checks: return tr("agents.pulls.filter.checks")
             case .grouping: return tr("agents.pulls.filter.grouping")
+            case .sort: return tr("agents.pulls.filter.sort")
             }
         }
 
@@ -37,6 +40,7 @@ struct PullRequestFilterMenu: View {
             case .draft: return "pencil.line"
             case .checks: return "checkmark.seal"
             case .grouping: return "rectangle.3.group"
+            case .sort: return "arrow.up.arrow.down"
             }
         }
     }
@@ -52,6 +56,7 @@ struct PullRequestFilterMenu: View {
                     ForEach([Kind.author, .draft, .checks]) { kindRow($0) }
                     DropdownDivider()
                     kindRow(.grouping)
+                    kindRow(.sort)
                     if filter.activeCount > 0 {
                         DropdownDivider()
                         DropdownRow(symbol: "arrow.uturn.backward", title: tr("agents.pulls.filter.reset"), staysOpen: true) {
@@ -125,6 +130,7 @@ struct PullRequestFilterMenu: View {
         case .draft: return filter.draft == .all
         case .checks: return filter.status == .any
         case .grouping: return grouping == .involvement
+        case .sort: return sort == .attention
         }
     }
 
@@ -136,6 +142,7 @@ struct PullRequestFilterMenu: View {
         case .draft: return tr("agents.pulls.draft." + filter.draft.rawValue)
         case .checks: return tr("agents.pulls.status." + filter.status.rawValue)
         case .grouping: return tr("agents.pulls.grouping." + grouping.rawValue)
+        case .sort: return tr("agents.pulls.sort." + sort.rawValue)
         }
     }
 
@@ -174,6 +181,11 @@ struct PullRequestFilterMenu: View {
                 FilterChoiceRow(symbol: option == .involvement ? "person.2" : "folder",
                                 title: tr("agents.pulls.grouping." + option.rawValue), chosen: grouping == option) { grouping = option }
             }
+        case .sort:
+            ForEach(PullRequestSort.allCases) { option in
+                FilterChoiceRow(symbol: Self.symbol(option), tint: option == .attention ? NookTheme.amber : nil,
+                                title: tr("agents.pulls.sort." + option.rawValue), chosen: sort == option) { sort = option }
+            }
         }
     }
 
@@ -183,6 +195,14 @@ struct PullRequestFilterMenu: View {
         case .reviews: return "eye"
         case .mine: return "person"
         case .watched: return "binoculars"
+        }
+    }
+
+    private static func symbol(_ sort: PullRequestSort) -> String {
+        switch sort {
+        case .attention: return "eye"
+        case .recent: return "arrow.down"
+        case .oldest: return "arrow.up"
         }
     }
 

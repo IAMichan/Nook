@@ -20,6 +20,8 @@ struct PullRequestsPanel: View {
     @AppStorage("nook.pulls.collapsedRepos") private var collapsedRepos = ""
     @AppStorage("nook.pulls.grouping") private var groupingRaw = PullRequestGrouping.involvement.rawValue
     private var grouping: PullRequestGrouping { PullRequestGrouping(rawValue: groupingRaw) ?? .involvement }
+    @AppStorage("nook.pulls.sort") private var sortRaw = PullRequestSort.attention.rawValue
+    private var sort: PullRequestSort { PullRequestSort(rawValue: sortRaw) ?? .attention }
     /// The accounts with only the pull requests that match the filter.
     private var shown: [AccountPullRequests] { accounts.map(filter.apply) }
     /// Watched entries that no account could search, still in the watch list.
@@ -139,6 +141,7 @@ struct PullRequestsPanel: View {
             }
 
             PullRequestFilterMenu(filter: $filter, grouping: Binding(get: { grouping }, set: { groupingRaw = $0.rawValue }),
+                                  sort: Binding(get: { sort }, set: { sortRaw = $0.rawValue }),
                                   authors: PullRequestFilter.authors(in: accounts), watching: !watching.entries.isEmpty)
         }
     }
@@ -192,16 +195,17 @@ struct PullRequestsPanel: View {
             switch grouping {
             case .involvement:
                 // The ones waiting for you first, then yours, then the rest of what you watch.
-                ForEach(account.byRole) { group in
+                ForEach(account.byRole(sort: sort)) { group in
                     rowGroup(key: account.id + " role:" + group.role.rawValue, symbol: Self.symbol(group.role),
                              title: tr("agents.pulls.group." + group.role.rawValue), rows: group.rows, account: account.id,
                              showRepo: true)
                 }
             case .repository:
-                // Every pull request of a repository together, whatever brought it into the list.
-                ForEach(account.byRepo) { repo in
+                // Every pull request of a repository together, whatever brought it into the list; the heading counts
+                // the ones waiting for your review.
+                ForEach(account.byRepo(sort: sort)) { repo in
                     rowGroup(key: account.id + " " + repo.repo, symbol: "folder", title: repo.repo, rows: repo.rows,
-                             account: account.id, showRepo: false)
+                             account: account.id, showRepo: false, waiting: repo.waiting)
                 }
             }
         }
@@ -245,7 +249,7 @@ struct PullRequestsPanel: View {
 
     /// A group of rows under a heading that folds it shut: the rows in one quiet card, a line between them.
     private func rowGroup(key: String, symbol: String, title: String, rows: [PullRequestRepoGroup.Row], account: String,
-                          showRepo: Bool) -> some View {
+                          showRepo: Bool, waiting: Int = 0) -> some View {
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button {
@@ -259,6 +263,7 @@ struct PullRequestsPanel: View {
                     Image(systemName: symbol).font(NookTheme.TextStyle.detail)
                     Text(title).font(NookTheme.TextStyle.label).lineLimit(1).truncationMode(.middle)
                     Text("\(rows.count)").font(NookTheme.TextStyle.detail)
+                    if waiting > 0 { PullRequestTag(text: tr("agents.pulls.toReview", waiting), color: NookTheme.amber) }
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(NookTheme.textTertiary)
@@ -339,9 +344,11 @@ private struct PullRequestRow: View {
                         }
                         Text("#\(item.number)").font(NookTheme.mono(11)).monospacedDigit()
                         if role != .mine, !item.author.isEmpty { Text("· @" + item.author).lineLimit(1) }
-                        if item.draft, item.state == .open { tag(tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary) }
+                        if item.draft, item.state == .open {
+                            PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
+                        }
                         // Grouped by role, the group's heading already says so.
-                        if role == .review, item.state == .open, !showRepo { tag(tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
+                        if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
                         Spacer(minLength: NookTheme.Spacing.sm)
                         if let updated = item.updated {
                             Text(AgentFormat.short(Date().timeIntervalSince(updated))).monospacedDigit().layoutPriority(1)
@@ -375,16 +382,6 @@ private struct PullRequestRow: View {
                 }
             }
         }
-    }
-
-    private func tag(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(color)
-            .padding(.horizontal, NookTheme.Spacing.xs)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.14)))
-            .fixedSize()
     }
 
     private var glyph: PullRequestBadge.Glyph {
@@ -427,5 +424,21 @@ private struct PullRequestRow: View {
         case .unknown:
             EmptyView()
         }
+    }
+}
+
+/// A small tinted capsule on a row or a group heading: "Draft", "Reviews", "2 to review".
+private struct PullRequestTag: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(color)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.14)))
+            .fixedSize()
     }
 }

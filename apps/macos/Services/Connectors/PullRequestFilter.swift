@@ -102,6 +102,13 @@ enum PullRequestGrouping: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+/// In what order the list shows its rows and repositories: what waits on you first (reviews asked of you, then your
+/// own pull requests with failing checks), or by when they last changed. Open ones always come before closed ones.
+enum PullRequestSort: String, CaseIterable, Identifiable, Sendable {
+    case attention, recent, oldest
+    var id: String { rawValue }
+}
+
 /// The pull requests of an account that are in the list for the same reason (see `AccountPullRequests.byRole`).
 struct PullRequestRoleGroup: Identifiable, Equatable, Sendable {
     let role: PullRequestRepoGroup.Role
@@ -118,19 +125,56 @@ struct PullRequestRepoGroup: Identifiable, Equatable, Sendable {
         let item: PullRequestItem
         let role: Role
         var id: String { item.id }
+
+        /// An open pull request someone asked you to review.
+        var waitsForReview: Bool { role == .review && item.state == .open }
+
+        /// How much it needs you: 0 waits for your review, 1 is yours with failing checks, 2 is another open one,
+        /// 3 is closed or merged.
+        var urgency: Int {
+            guard item.state == .open else { return 3 }
+            if role == .review { return 0 }
+            return role == .mine && item.ci == .failing ? 1 : 2
+        }
     }
 
     /// "owner/name".
     let repo: String
     var rows: [Row]
     var id: String { repo }
+
+    /// How many of its pull requests wait for your review.
+    var waiting: Int { rows.filter(\.waitsForReview).count }
+}
+
+extension Array where Element == PullRequestRepoGroup.Row {
+    /// The rows in `sort` order; rows that tie keep their order.
+    func sorted(by sort: PullRequestSort) -> [Element] {
+        enumerated().sorted { left, right in
+            Self.precedes(left.element, right.element, sort) ?? (left.offset < right.offset)
+        }.map(\.element)
+    }
+
+    /// Whether `left` comes before `right`, or nil when they tie.
+    static func precedes(_ left: Element, _ right: Element, _ sort: PullRequestSort) -> Bool? {
+        func key(_ row: Element) -> (Int, Double) {
+            let updated = row.item.updated?.timeIntervalSince1970 ?? 0
+            switch sort {
+            case .attention: return (row.urgency, -updated)
+            case .recent: return (row.item.state == .open ? 0 : 1, -updated)
+            case .oldest: return (row.item.state == .open ? 0 : 1, updated)
+            }
+        }
+        let (a, b) = (key(left), key(right))
+        return a == b ? nil : a < b
+    }
 }
 
 extension AccountPullRequests {
-    /// The account's pull requests by repository. Repositories keep the order they first appear in (the ones waiting
-    /// for your review first, then yours, then watched ones); within one, reviews come first, then yours, then the
-    /// watched ones, each in its list's order. A pull request in more than one list shows once, in the first.
-    var byRepo: [PullRequestRepoGroup] {
+    /// The account's pull requests by repository, each repository's rows in `sort` order. Repositories follow their
+    /// first row in the same order (so with `.attention` the ones with a review waiting for you lead), then their name.
+    /// A pull request in more than one list shows once: as a review, else as yours, else as watched.
+    func byRepo(sort: PullRequestSort = .attention) -> [PullRequestRepoGroup] {
         var groups: [PullRequestRepoGroup] = []
         var index: [String: Int] = [:]
         var seen = Set<String>()
@@ -144,29 +188,26 @@ extension AccountPullRequests {
                 groups.append(PullRequestRepoGroup(repo: item.repo, rows: [row]))
             }
         }
-        return groups
+        for at in groups.indices { groups[at].rows = groups[at].rows.sorted(by: sort) }
+        return groups.sorted { left, right in
+            [PullRequestRepoGroup.Row].precedes(left.rows[0], right.rows[0], sort)
+                ?? (left.repo.lowercased() < right.repo.lowercased())
+        }
     }
 }
 
 extension AccountPullRequests {
     /// The account's pull requests by why they are in the list: the ones waiting for your review, yours, then the
-    /// watched ones. Within a group open ones come first, then the most recently updated. A pull request in more than
-    /// one list shows once, in the first; a group without rows is left out.
-    var byRole: [PullRequestRoleGroup] {
+    /// watched ones, each group's rows in `sort` order. A pull request in more than one list shows once, in the first;
+    /// a group without rows is left out.
+    func byRole(sort: PullRequestSort = .attention) -> [PullRequestRoleGroup] {
         var seen = Set<String>()
-        func rank(_ item: PullRequestItem) -> (Int, Double) {
-            (item.state == .open ? 0 : 1, -(item.updated?.timeIntervalSince1970 ?? 0))
-        }
         let lists: [(PullRequestRepoGroup.Role, [PullRequestItem])] = [(.review, reviews), (.mine, mine), (.watched, watched)]
         return lists.compactMap { entry -> PullRequestRoleGroup? in
             let (role, items) = entry
             let rows = items.filter { seen.insert($0.id).inserted }
-                .enumerated()
-                .sorted {
-                    let (left, right) = (rank($0.element), rank($1.element))
-                    return (left.0, left.1, $0.offset) < (right.0, right.1, $1.offset)
-                }
-                .map { PullRequestRepoGroup.Row(item: $0.element, role: role) }
+                .map { PullRequestRepoGroup.Row(item: $0, role: role) }
+                .sorted(by: sort)
             return rows.isEmpty ? nil : PullRequestRoleGroup(role: role, rows: rows)
         }
     }
