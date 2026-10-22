@@ -9,7 +9,7 @@ can tell us something new.
 | `build.yml` | ubuntu (UI lint), then macOS (build + `NookTests`) | `apps/macos`, `packages/protocol`, `scripts/ui-lint.sh` |
 | `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol` |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
-| `tauri.yml` | ubuntu + Windows checks; installers and APK only on `main` | `apps/tauri` |
+| `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
 
 A workflow also runs when its own file changes (and `.github/actions/**` for the ones that use it).
@@ -33,8 +33,10 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
   with `setup-node`. Only `main` saves caches, so pull requests cannot push each other's entries out of the quota.
 - **One compile for build and tests.** `xcodebuild build-for-testing` builds the app and `NookTests` once;
   `test-without-building` runs the tests.
-- **Packaging on `main` only.** The Windows and Linux installers and the Android APK (64-bit ARM only) are built on
-  `main` and by hand, where they are worth downloading. Pull requests run Clippy and the tests on Linux and Windows.
+- **Windows builds for review.** After Linux and Windows checks pass, each ready Tauri PR builds unsigned EXE and MSI
+  installers. Download `nook-Windows` from the workflow's artifacts; it includes `SHA256SUMS.txt`, and the job summary
+  records the commit. Artifacts expire after 14 days. Linux installers and the Android APK (64-bit ARM only) build on
+  `main` and manual runs. Closing a PR cancels pending work; drafts do not build.
 
 ## What keeps it reliable
 

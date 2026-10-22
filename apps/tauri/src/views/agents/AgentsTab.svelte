@@ -261,7 +261,7 @@
 </div>
 
 <style>
-  .tab { display: grid; grid-template-columns: 280px 1fr; height: 100%; min-height: 0; }
+  .tab { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: 100%; min-height: 0; }
   .tab.compact { grid-template-columns: 250px 1fr; }
   aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; padding: 10px 8px; gap: 6px; }
   .head { display: flex; align-items: center; padding: 0 6px; gap: 6px; }
@@ -272,9 +272,9 @@
   .list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; flex: 1; }
   .section { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; padding: 8px 8px 4px; background: none; border: none; text-align: left; }
   .section.toggle:hover { color: var(--paper); background: none; }
-  .row { display: flex; flex-direction: column; gap: 3px; text-align: left; background: #09090a; border: none; border-radius: 12px; padding: 9px 12px; }
-  .row:hover { background: #111113; }
-  .row.on { background: #17171a; }
+  .row { display: flex; flex-direction: column; gap: 3px; text-align: left; background: var(--graphite); border: none; border-radius: 12px; padding: 9px 12px; }
+  .row:hover { background: var(--row-hover); }
+  .row.on { background: var(--smoke); }
   .row.slim { padding: 7px 12px; }
   .line0, .line2 { display: flex; gap: 6px; font-size: 12px; color: var(--text2); align-items: center; }
   .line2 { color: var(--text3); }
@@ -290,9 +290,17 @@
   .empty { padding: 8px; }
   .footer { display: flex; gap: 4px; align-items: center; padding-top: 4px; }
   .footer button { background: none; border: none; height: 30px; padding: 0 9px; border-radius: 8px; color: var(--text3); font-size: 12px; }
-  .footer button:hover, .footer button.on { color: var(--paper); background: #17171a; }
+  .footer button:hover, .footer button.on { color: var(--paper); background: var(--smoke); }
   .footer button.glyph { display: grid; place-items: center; }
   .vsep { width: 1px; height: 16px; background: var(--line2); margin: 0 4px; }
   .main { min-width: 0; min-height: 0; padding: 12px 16px; overflow: hidden; display: flex; flex-direction: column; }
   .err { color: var(--coral); font-size: 12px; margin: 0 0 6px; }
+  @media (max-width: 800px) {
+    .tab:not(.compact) { grid-template-columns: 210px minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    .tab:not(.compact) { grid-template-columns: minmax(0, 1fr); overflow-y: auto; display: flex; flex-direction: column; }
+    .tab:not(.compact) aside { max-height: 36%; flex-shrink: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+    .tab:not(.compact) .main { flex: 1; min-height: 280px; overflow-y: auto; }
+  }
 </style>

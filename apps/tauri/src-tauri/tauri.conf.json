@@ -20,6 +20,8 @@
         "height": 720,
         "minWidth": 360,
         "minHeight": 480,
+        "theme": "Dark",
+        "backgroundColor": "#19191e",
         "visible": false,
         "center": true
       }

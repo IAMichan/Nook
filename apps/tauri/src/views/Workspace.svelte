@@ -48,10 +48,11 @@
 {/if}
 
 <style>
-  .workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 10px 14px; gap: 10px; box-sizing: border-box; }
-  nav { display: flex; gap: 4px; }
-  nav button { background: none; border: none; font-size: 12.5px; padding: 5px 10px; border-radius: 8px; color: var(--text2); }
+  .workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 20px 24px; gap: 18px; box-sizing: border-box; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  nav button { background: none; border: none; font-size: 12.5px; padding: 8px 14px; border-radius: 8px; color: var(--text2); }
   nav button.on, nav button:hover { background: var(--smoke); color: var(--paper); }
+  .workspace.compact { padding: 10px 14px; gap: 10px; }
   .page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .empty { padding: 24px; text-align: center; max-width: 520px; margin: 0 auto; }
 </style>

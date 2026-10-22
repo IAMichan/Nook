@@ -66,7 +66,7 @@
 {/if}
 
 <style>
-  .settings { display: grid; grid-template-columns: 200px 1fr; height: 100%; }
+  .settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; }
   /* Op de telefoon één kolom: de secties als rij bovenaan (zie settings.css). */
   @media (max-width: 640px) {
     .settings { grid-template-columns: 1fr; grid-template-rows: auto 1fr; min-height: 0; }
