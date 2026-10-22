@@ -31,6 +31,7 @@ final class ChatComposerModel: ObservableObject {
     @Published var contactsDenied = false
 
     let recorder = ChatVoiceRecorder()
+    private var choosing = false
     private var bag = Set<AnyCancellable>()
 
     init() {
@@ -148,6 +149,10 @@ final class ChatComposerModel: ObservableObject {
 
     /// Picks files in the Mac's own panel, opened in front of the notch.
     func choose(_ kind: ChatMedia.Kind?, types: [UTType]) {
+        // One picker at a time: a second click while one is open would stack a modal on top of it.
+        guard !choosing else { return }
+        choosing = true
+        defer { choosing = false }
         let picker = NSOpenPanel()
         picker.canChooseFiles = true
         picker.canChooseDirectories = false
@@ -318,17 +323,17 @@ struct ChatAttachMenu: View {
         } content: {
             if sends.contains(.photo) || sends.contains(.video) {
                 DropdownRow(symbol: "photo.on.rectangle.angled", title: tr("chat.compose.photoVideo"), tile: NookTheme.blue) {
-                    model.choose(nil, types: [.image, .movie])
+                    pick(nil, [.image, .movie])
                 }
             }
             if sends.contains(.file) {
                 DropdownRow(symbol: "doc.fill", title: tr("chat.compose.file"), tile: NookTheme.violet) {
-                    model.choose(.file, types: [])
+                    pick(.file, [])
                 }
             }
             if sends.contains(.gif) {
                 DropdownRow(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tile: NookTheme.mint) {
-                    model.choose(.gif, types: [.gif, .mpeg4Movie, .quickTimeMovie])
+                    pick(.gif, [.gif, .mpeg4Movie, .quickTimeMovie])
                 }
             }
             if sends.contains(.sticker) {
@@ -338,7 +343,7 @@ struct ChatAttachMenu: View {
             }
             if sends.contains(.audio) {
                 DropdownRow(symbol: "headphones", title: tr("chat.media.audio"), tile: NookTheme.music) {
-                    model.choose(.audio, types: [.audio])
+                    pick(.audio, [.audio])
                 }
             }
             if sends.contains(.poll) || sends.contains(.location) || sends.contains(.contact) { DropdownDivider() }
@@ -367,6 +372,11 @@ struct ChatAttachMenu: View {
         }
         .help(tr("chat.compose.attach"))
         .accessibilityLabel(tr("chat.compose.attach"))
+    }
+
+    /// The file picker opens once the dropdown has closed: run from inside the open popover, its modal loop hangs it.
+    private func pick(_ kind: ChatMedia.Kind?, _ types: [UTType]) {
+        DispatchQueue.main.async { model.choose(kind, types: types) }
     }
 }
 
