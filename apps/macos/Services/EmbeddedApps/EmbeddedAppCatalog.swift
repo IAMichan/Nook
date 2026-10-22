@@ -53,9 +53,12 @@ enum EmbeddedAppCommand: Equatable, Sendable {
     /// The way asked for after the name, if any ("@open whatsapp web").
     case open(EmbeddedApp, EmbeddedAppMode?)
     case close
-    /// "@open chat Jan", "@open whatsapp Jan": one WhatsApp chat by its name, shown as its card in the notch (with a
-    /// linked phone), else opened in WhatsApp next to the chat.
+    /// "@open chat Jan", "@open whatsapp Jan": one chat by its name, from any chat app. A WhatsApp chat shows as its card
+    /// in the notch (with a linked phone); a chat collected from another app opens in the Chats tab; any other name
+    /// opens in WhatsApp next to the chat.
     case chat(String)
+    /// "@chats", "@chats telegram", "@chats anna": the Chats tab, on one app, one chat or a search when a word follows.
+    case chats(String)
     /// "@open something" that is no known app and no web address.
     case unknown(String)
 }
@@ -265,6 +268,10 @@ enum EmbeddedAppCatalog {
         }
         if lower.range(of: #"^@(close|sluit|schließe|schliesse|ferme|fermer|cierra|cerrar)\b"#, options: .regularExpression) != nil {
             return .close
+        }
+        // "@chats" and "@open chats", with what to show after it.
+        if let rest = groups(#"^@(?:(?:open|openen|öffne|oeffne|ouvre|ouvrir|abre|abrir)\s+)?chats(?:\s+(.*?))?[.!]?$"#)?.first {
+            return .chats(rest.trimmingCharacters(in: .whitespaces))
         }
         // The app for a name, with a way to open it when the name ends in one ("whatsapp web", "whatsapp venster").
         func app(_ raw: String) -> (EmbeddedApp, EmbeddedAppMode?)? {

@@ -4,11 +4,17 @@ import SwiftUI
 /// about it side by side; "@open chat Jan" shows Jan's chat the way a new message from Jan shows (with a linked phone),
 /// else opens it in WhatsApp beside the chat. "@close" puts it away again (it stays signed in).
 extension AppModel {
-    /// Handles "@open …", "@whatsapp", "@open chat Jan" and "@close" from the chat. False when the text is no such command.
+    /// Handles "@open …", "@whatsapp", "@open chat Jan", "@chats …" and "@close" from the chat. False when the text is no
+    /// such command.
     func handleEmbeddedAppCommand(_ text: String) -> Bool {
         guard let command = EmbeddedAppCatalog.command(in: text) else { return false }
         chat.append(ChatMessage(role: .user, text: text))
         switch command {
+        case .chats(let words):
+            let focus = chatsFocus(for: words)
+            chat.append(ChatMessage(role: .nook, text: words.isEmpty ? tr("chats.opened") : tr("chats.openedOn", words)))
+            showChats(focus)
+            return true
         case .open(let app, let mode):
             let opened = openEmbeddedApp(app, mode: mode)
             chat.append(ChatMessage(role: .nook, text: openedMessage(opened.app, opened.mode, chosen: opened.chosen)))
@@ -17,6 +23,13 @@ extension AppModel {
             Task { await closeEmbeddedApp() }
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
         case .chat(let name):
+            // A chat from another app (Telegram, LinkedIn…) has no card: it opens in the Chats tab.
+            if !WhatsAppLink.shared.isConnected || WhatsAppLink.shared.resolve(name) == nil,
+               let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.inbox.threads[id] {
+                chat.append(ChatMessage(role: .nook, text: tr("chats.openedChat", thread.name)))
+                showChats(ChatsFocus(chat: id))
+                return true
+            }
             openWhatsAppChat(name)
         case .unknown(let name):
             let names = EmbeddedAppCatalog.suggestions(for: name).map { "@open " + $0.title }.joined(separator: ", ")

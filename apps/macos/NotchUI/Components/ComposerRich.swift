@@ -40,7 +40,7 @@ struct ComposerConfig {
     var pullRequests: ((String) async -> [(number: Int, title: String)])? = nil
     /// Apps that open inside Nook, for `@` in the chat ("@open WhatsApp"): id, title and symbol.
     var apps: [(id: String, title: String, symbol: String)] = []
-    /// WhatsApp chats for "@open chat …", newest first: name and a short line about it ("2 new").
+    /// The chats of every chat app for "@open chat …", newest first: name and a short line about it ("Telegram · 2 new").
     var chats: () -> [(name: String, detail: String)] = { [] }
     /// Big pastes become a reference instead of filling the box.
     var keepsBigPastes = false
@@ -183,6 +183,11 @@ final class ComposerModel: ObservableObject {
             chat = [ComposerSuggestion(id: "chat", title: "@open chat", detail: tr("whatsapp.open.mentionDetail"),
                                        symbol: "bubble.left.and.bubble.right.fill",
                                        payload: .command(ComposerCommand(name: "chat", insertion: "@open chat", action: .insert)))]
+        }
+        // "@chats": every chat app in the Chats tab; a word after it picks an app, a chat or a search.
+        if typed.isEmpty || "chats".hasPrefix(typed) {
+            chat.append(ComposerSuggestion(id: "chats", title: "@chats", detail: tr("chats.mentionDetail"), symbol: "tray.full.fill",
+                                           payload: .command(ComposerCommand(name: "chats", insertion: "@chats", action: .insert))))
         }
         return chat + rows.prefix(10).map { row -> ComposerSuggestion in
             let insertion = "@open " + row.app.title + (row.web ? " web" : "")

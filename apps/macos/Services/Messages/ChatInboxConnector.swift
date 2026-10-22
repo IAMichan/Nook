@@ -73,7 +73,7 @@ final class ChatInboxConnector: ContextSource {
                 run: { input in
                     let inbox = ChatCaptureService.shared.inbox
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()
-                    let appID = app.isEmpty ? nil : (MessagingApps.all.first { $0.id == app || $0.name.lowercased() == app }?.id ?? app)
+                    let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
                     let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !chat.isEmpty else {
                         let threads = inbox.sorted.filter { appID == nil || $0.app == appID }

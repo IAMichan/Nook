@@ -20,6 +20,8 @@ final class ChatCaptureService: ObservableObject {
 
     @Published private(set) var inbox: ChatInbox
     @Published private(set) var status: Status = .off
+    /// Which apps feed the inbox (Settings › Chats): the known ones you did not switch off, and the ones you added.
+    @Published private(set) var sources = MessagingApps.sources
     @Published var enabled: Bool {
         didSet {
             guard enabled != oldValue else { return }
@@ -107,6 +109,45 @@ final class ChatCaptureService: ObservableObject {
         } catch {
             status = .failed(error.localizedDescription)
         }
+    }
+
+    // MARK: Sources
+
+    func setSource(_ id: String, on: Bool) {
+        changeSources { $0.set(id, on: on) }
+    }
+
+    /// Adds a website or a known app's name, as typed in Settings › Chats.
+    @discardableResult
+    func addSource(_ typed: String, name: String = "") -> ChatSources.Added {
+        var result = ChatSources.Added.invalid
+        changeSources { result = $0.add(typed, name: name) }
+        return result
+    }
+
+    /// Adds a Mac app chosen in Settings › Chats.
+    @discardableResult
+    func addSource(bundleID: String, name: String) -> ChatSources.Added {
+        var result = ChatSources.Added.invalid
+        changeSources { result = $0.add(bundleID: bundleID, name: name) }
+        return result
+    }
+
+    /// Forgets an app you added, and the chats collected from it.
+    func removeSource(_ id: String) {
+        changeSources { $0.remove(id) }
+        let gone = inbox.threads.values.filter { $0.app == id }.map(\.id)
+        guard !gone.isEmpty else { return }
+        for thread in gone { inbox.remove(thread) }
+        save()
+    }
+
+    private func changeSources(_ change: (inout ChatSources) -> Void) {
+        var next = sources
+        change(&next)
+        guard next != sources else { return }
+        MessagingApps.sources = next
+        sources = next
     }
 
     func markRead(_ id: String) {

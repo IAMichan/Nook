@@ -87,6 +87,9 @@ final class NotchViewModel: ObservableObject {
         didSet { if browserBesideChat != oldValue { resizeForChatSide() } }
     }
 
+    /// What the Chats tab shows next ("@chats telegram", "@open chat Anna"): it takes this once and clears it.
+    @Published var chatsFocus: ChatsFocus?
+
     /// Something is open next to the chat (an app or the browser): the chat gets the room for it.
     var chatSideOpen: Bool { embeddedAppOpen || browserBesideChat }
 

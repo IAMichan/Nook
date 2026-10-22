@@ -202,8 +202,9 @@ enum ChatLinks {
 }
 
 /// Your own message's ticks after its time, as WhatsApp draws them: a clock while it goes out, one grey tick on the
-/// server, two on their phone, two blue ones once read, a red mark when it could not be sent.
-private struct TicksView: View {
+/// server, two on their phone, two blue ones once read, a red mark when it could not be sent. Also in front of a chat's
+/// newest message in the Chats tab's list, when that message is yours.
+struct TicksView: View {
     let ticks: BubbleTicks
 
     var body: some View {

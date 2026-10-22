@@ -32,6 +32,107 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(MessagingApps.app(mentionedIn: ["github.com", "Build failed", ""]))
     }
 
+    func testLinkedInAndXFromTheBrowser() {
+        let notice = ChatCapture.notice(notification("com.google.Chrome", title: "Jan de Vries", subtitle: "www.linkedin.com",
+                                                     body: "Thanks for connecting!"))
+        XCTAssertEqual(notice, ChatNotice(app: "linkedin", chat: "Jan de Vries", sender: "", text: "Thanks for connecting!", date: now))
+        XCTAssertEqual(MessagingApps.app(mentionedIn: ["x.com", "Anna", "hi"])?.id, "x")
+        XCTAssertNil(MessagingApps.app(mentionedIn: ["box.com", "Anna", "hi"]), "x.com is no part of box.com")
+    }
+
+    // MARK: Sources
+
+    func testASwitchedOffAppIsNotCollected() {
+        var sources = ChatSources()
+        sources.set("telegram", on: false)
+        let telegram = notification("ru.keepcoder.Telegram", title: "Anna", body: "Hi")
+        XCTAssertNil(ChatCapture.notice(telegram, apps: sources.active))
+        sources.set("telegram", on: true)
+        XCTAssertEqual(ChatCapture.notice(telegram, apps: sources.active)?.app, "telegram")
+    }
+
+    func testAddingAWebsite() {
+        var sources = ChatSources()
+        guard case .added(let app) = sources.add("https://www.example-chat.io/inbox?x=1") else { return XCTFail("not added") }
+        XCTAssertEqual(app.id, "custom.example-chat.io")
+        XCTAssertEqual(app.name, "Example-chat")
+        XCTAssertEqual(app.domains, ["example-chat.io"])
+        XCTAssertTrue(sources.isOn(app.id))
+        let notice = ChatCapture.notice(notification("com.apple.Safari", title: "Bo", subtitle: "example-chat.io", body: "Hey"),
+                                        apps: sources.active)
+        XCTAssertEqual(notice?.app, app.id)
+        XCTAssertEqual(notice?.chat, "Bo")
+        XCTAssertEqual(sources.add("example-chat.io/other"), .known(app), "no second copy")
+        sources.remove(app.id)
+        XCTAssertTrue(sources.custom.isEmpty)
+    }
+
+    func testAddingAKnownAppSwitchesItOn() {
+        var sources = ChatSources()
+        sources.set("linkedin", on: false)
+        XCTAssertEqual(sources.add("linkedin.com/messaging"), .known(MessagingApps.app(named: "LinkedIn")!))
+        XCTAssertTrue(sources.isOn("linkedin"))
+        sources.set("telegram", on: false)
+        XCTAssertEqual(sources.add("Telegram").isKnown, true)
+        XCTAssertTrue(sources.isOn("telegram"))
+        XCTAssertEqual(sources.add("web.telegram.org").isKnown, true)
+        XCTAssertTrue(sources.custom.isEmpty)
+    }
+
+    func testAddingSomethingThatIsNoSource() {
+        var sources = ChatSources()
+        XCTAssertEqual(sources.add("my friends"), .invalid)
+        XCTAssertEqual(sources.add("localhost"), .invalid)
+        XCTAssertEqual(sources.add("a..b"), .invalid)
+        XCTAssertEqual(sources.add(bundleID: "com.google.Chrome", name: "Chrome"), .invalid, "a browser is no chat app")
+        XCTAssertTrue(sources.custom.isEmpty)
+    }
+
+    func testAddingAMacApp() {
+        var sources = ChatSources()
+        guard case .added(let app) = sources.add(bundleID: "com.example.Chatter", name: "Chatter") else { return XCTFail("not added") }
+        XCTAssertEqual(app.bundleIDs, ["com.example.Chatter"])
+        XCTAssertEqual(ChatCapture.notice(notification("com.example.Chatter", title: "Kim", body: "Yo"), apps: sources.active)?.app, app.id)
+        XCTAssertEqual(sources.add(bundleID: "ru.keepcoder.Telegram", name: "Telegram").isKnown, true)
+    }
+
+    func testHostOfWhatWasTyped() {
+        XCTAssertEqual(ChatSources.host("LinkedIn.com/messaging/"), "linkedin.com")
+        XCTAssertEqual(ChatSources.host("https://www.x.com"), "x.com")
+        XCTAssertNil(ChatSources.host("linkedin"))
+        XCTAssertNil(ChatSources.host("site.c0m"))
+        XCTAssertEqual(ChatSources.title(for: "app.example.org"), "Example")
+    }
+
+    func testSourcesSurviveAnEncode() throws {
+        var sources = ChatSources()
+        sources.set("signal", on: false)
+        _ = sources.add("example-chat.io")
+        let data = try JSONEncoder().encode(sources)
+        XCTAssertEqual(try JSONDecoder().decode(ChatSources.self, from: data), sources)
+    }
+
+    // MARK: Nook writes a message
+
+    func testNookInstruction() {
+        XCTAssertEqual(ChatDraft.instruction(in: "@nook say yes, short"), "say yes, short")
+        XCTAssertEqual(ChatDraft.instruction(in: "  @Nook: zeg dat ik later ben"), "zeg dat ik later ben")
+        XCTAssertEqual(ChatDraft.instruction(in: "@nook"), "")
+        XCTAssertNil(ChatDraft.instruction(in: "@nookie"))
+        XCTAssertNil(ChatDraft.instruction(in: "see you @nook"))
+    }
+
+    func testDraftPromptAndCleanAnswer() {
+        let prompt = ChatDraft.prompt(app: "Telegram", chat: "Anna", transcript: "[12:04] Anna: Dinner?", instruction: "")
+        XCTAssertTrue(prompt.contains("Telegram chat with Anna"))
+        XCTAssertTrue(prompt.contains("[12:04] Anna: Dinner?"))
+        XCTAssertTrue(prompt.contains("fitting answer"))
+        XCTAssertEqual(ChatDraft.clean("\"Sure, see you at 8!\""), "Sure, see you at 8!")
+        XCTAssertEqual(ChatDraft.clean("Message: Sounds good"), "Sounds good")
+        XCTAssertEqual(ChatDraft.clean("He said \"hi\" and \"bye\""), "He said \"hi\" and \"bye\"")
+        XCTAssertNil(ChatDraft.clean("  \"\" "))
+    }
+
     // MARK: What a notification says
 
     func testPrivateChat() {
@@ -285,5 +386,12 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertTrue(overview.hasPrefix("- Telegram · Family (1 unread) · "), overview)
         XCTAssertTrue(overview.hasSuffix(" · Jan: dinner?"), overview)
         XCTAssertTrue(ChatInbox.transcript(thread).hasSuffix("] Jan: dinner?"))
+    }
+}
+
+private extension ChatSources.Added {
+    var isKnown: Bool {
+        if case .known = self { return true }
+        return false
     }
 }
