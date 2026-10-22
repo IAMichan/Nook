@@ -178,6 +178,138 @@ struct SettingLabel: View {
     }
 }
 
+/// A short line under a setting or inside a form: a hint, a warning, or an error. A warning and an error carry their
+/// symbol, so they stand out by more than color alone. Every such line in Settings is one of these, so they all read
+/// the same.
+struct SettingNote: View {
+    enum Tone { case info, success, warning, error }
+
+    let text: String
+    var tone: Tone = .info
+
+    init<S: StringProtocol>(_ text: S, tone: Tone = .info) {
+        self.text = String(text)
+        self.tone = tone
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
+            if let symbol {
+                Image(systemName: symbol).accessibilityHidden(true)
+            }
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(color)
+    }
+
+    private var symbol: String? {
+        switch tone {
+        case .info: return nil
+        case .success: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .error: return "xmark.octagon.fill"
+        }
+    }
+
+    private var color: Color {
+        switch tone {
+        case .info: return NookTheme.textSecondary
+        case .success: return NookTheme.mint
+        case .warning: return NookTheme.amber
+        case .error: return NookTheme.coral
+        }
+    }
+}
+
+/// A row that leads somewhere else (another settings page, a list, a folder): an optional section tile, a title with a
+/// line under it, the state when it needs you, and a chevron. A done state stays quiet: only what is left to do shows
+/// a symbol, so a page of rows that all work reads calm.
+struct SettingsLinkRow: View {
+    let title: String
+    var detail: String? = nil
+    /// The tile of the page the row leads to.
+    var section: SettingsSection? = nil
+    var state: StatusState? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.lg) {
+                if let section {
+                    SettingsTile(section, size: 26)
+                }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(title).foregroundStyle(NookTheme.paper)
+                    if let detail {
+                        Text(detail)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(state == .warning || state == .error ? (state ?? .todo).color : NookTheme.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: NookTheme.Spacing.md)
+                if let state, state != .done {
+                    Image(systemName: state.symbol).foregroundStyle(state.color)
+                }
+                Image(systemName: "chevron.right")
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A row in a long list whose buttons show only under the pointer (or while `keepActions`, e.g. during an edit), so the
+/// list reads as content instead of a wall of icons. `idle` sits in their place at rest (a pin, a lock), so the row's
+/// state stays visible without the buttons.
+struct HoverActionsRow<Content: View, Idle: View, Actions: View>: View {
+    var keepActions = false
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var idle: () -> Idle
+    @ViewBuilder var actions: () -> Actions
+    @State private var hovering = false
+
+    var body: some View {
+        let shown = hovering || keepActions
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+            content()
+            Spacer(minLength: NookTheme.Spacing.md)
+            ZStack(alignment: .trailing) {
+                HStack(spacing: NookTheme.Spacing.xs) { idle() }
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .opacity(shown ? 0 : 1)
+                    .accessibilityHidden(shown)
+                HStack(spacing: NookTheme.Spacing.xs) { actions() }
+                    .opacity(shown ? 1 : 0)
+                    .allowsHitTesting(shown)
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+    }
+}
+
+/// "In use" on the row of the model, file or option that is chosen now: the same quiet mint check everywhere, in the
+/// place another row has its Use button.
+struct InUseLabel: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Label(title, systemImage: "checkmark.circle.fill")
+            .font(NookTheme.TextStyle.label)
+            .foregroundStyle(NookTheme.mint)
+            .lineLimit(1)
+            .fixedSize()
+    }
+}
+
 /// Keycap representation matching keyboard styling.
 struct Keycap: View {
     let label: String
@@ -224,11 +356,11 @@ struct WorkspaceSettingsSection: View {
             if ws.scheduledTasksEnabled {
                 TextField(tr("sched.settings.port"), value: $ws.scheduledWebhookPort, format: .number.grouping(.never))
                 if ws.scheduledWebhookPort != 0, !(1024...65535).contains(ws.scheduledWebhookPort) {
-                    Text(tr("sched.settings.portInvalid")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                    SettingNote(tr("sched.settings.portInvalid"), tone: .warning)
                 } else if case .listening(let port) = webhook.state {
-                    Text(tr("sched.settings.listening", Int(port))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(tr("sched.settings.listening", Int(port)), tone: .success)
                 } else if case .failed(let message) = webhook.state {
-                    Text(tr("sched.webhook.failed", message)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                    SettingNote(tr("sched.webhook.failed", message), tone: .warning)
                 }
                 Button(tr("sched.settings.open")) { showScheduled = true }
             }
@@ -250,13 +382,16 @@ struct WorkspaceSettingsSection: View {
                     Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
                 }
             }
-            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
-                Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
-                    get: { ws.model(for: provider) },
-                    set: { ws.setModel($0, for: provider) }
-                )) {
-                    ForEach(Array(Set(provider.suggestedModels + [ws.model(for: provider)])).sorted(), id: \.self) { model in
-                        Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+            // One model per agent: folded away, so the page opens on the choices you make most.
+            DisclosureGroup(tr("settings.ws.modelsPerAgent")) {
+                ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
+                    Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
+                        get: { ws.model(for: provider) },
+                        set: { ws.setModel($0, for: provider) }
+                    )) {
+                        ForEach(Array(Set(provider.suggestedModels + [ws.model(for: provider)])).sorted(), id: \.self) { model in
+                            Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                        }
                     }
                 }
             }
@@ -313,21 +448,22 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
-    /// How sessions behave and are tidied up.
+    /// How sessions behave and are tidied up, in three short groups: while a session runs, when it stops or Nook
+    /// restarts, and how the list keeps itself tidy.
+    @ViewBuilder
     private var behavior: some View {
         Section(tr("settings.ws.behavior")) {
-            Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
-                Text(tr("settings.ws.never")).tag(0)
-                Text(tr("settings.ws.days", 7)).tag(7)
-                Text(tr("settings.ws.days", 30)).tag(30)
-                Text(tr("settings.ws.days", 90)).tag(90)
-            }
+            Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
+            Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
             Toggle(tr("settings.ws.showCost"), isOn: $ws.showCost)
             Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
-            Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
+            LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
+        }
+        Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
-            Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
+        }
+        Section {
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)
             Toggle(tr("settings.ws.autoSettle"), isOn: $inbox.autoSettle.enabled)
             if inbox.autoSettle.enabled {
@@ -335,7 +471,12 @@ struct WorkspaceSettingsSection: View {
                 Stepper(tr("settings.ws.autoSettleDays", inbox.autoSettle.inactivityDays),
                         value: $inbox.autoSettle.inactivityDays, in: 1...30)
             }
-            LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
+            Picker(tr("settings.ws.autoArchive"), selection: $ws.autoArchiveDays) {
+                Text(tr("settings.ws.never")).tag(0)
+                Text(tr("settings.ws.days", 7)).tag(7)
+                Text(tr("settings.ws.days", 30)).tag(30)
+                Text(tr("settings.ws.days", 90)).tag(90)
+            }
         }
     }
 
@@ -412,9 +553,9 @@ struct WatchedPullRequestsSection: View {
                     .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty || watching.entries.count >= PullRequestWatchList.limit)
             }
             if invalid {
-                Text(tr("settings.pulls.invalid")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                SettingNote(tr("settings.pulls.invalid"), tone: .warning)
             } else if watching.entries.count >= PullRequestWatchList.limit {
-                Text(tr("settings.pulls.full", PullRequestWatchList.limit)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                SettingNote(tr("settings.pulls.full", PullRequestWatchList.limit))
             }
         } header: {
             Text(tr("settings.pulls.title"))

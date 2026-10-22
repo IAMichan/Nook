@@ -12,39 +12,44 @@ struct CompanionSettingsRows: View {
     @State private var copied = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // Three sections instead of one long row: the phone and its pairing, push notifications, and the key push
+        // needs from Apple (only while push is on).
+        Section {
             Toggle(tr("companion.enable"), isOn: Binding(get: { store.enabled }, set: { store.enabled = $0; server.apply() }))
-            Text(tr("companion.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
+            SettingNote(tr("companion.hint"))
             if store.enabled {
                 status
                 ForEach(store.devices) { device in
-                    HStack {
-                        Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary)
-                        VStack(alignment: .leading) {
-                            Text(device.name)
-                            Text(device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) }
-                                 ?? tr("companion.neverSeen"))
-                                .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                        }
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
+                        SettingLabel(device.name, detail: device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) }
+                                     ?? tr("companion.neverSeen"))
                         Spacer()
                         ConfirmedButton(tr("companion.remove"), question: tr("confirm.remove", device.name),
                                         detail: tr("confirm.removeDevice.detail")) { store.remove(device.id) }
                     }
                 }
-                if store.devices.isEmpty { Text(tr("companion.none")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+                if store.devices.isEmpty { SettingNote(tr("companion.none")) }
                 if let link {
                     pairing(link)
                 } else {
                     Button(tr("companion.pair")) { link = server.pairingLink() }
                         .disabled(!isListening)
                 }
-                Divider()
-                pushSection
             }
+        } header: {
+            Text(tr("settings.devices.iphone"))
         }
         // The window closes by itself; also when a phone completes it.
         .onChange(of: store.devices) { _, _ in link = nil }
         .onChange(of: store.enabled) { _, on in if !on { link = nil } }
+
+        if store.enabled {
+            Section { pushSection }
+            if store.push.enabled {
+                Section { apnsSetup } header: { Text(tr("companion.push.keyTitle")) }
+            }
+        }
     }
 
     // MARK: Push
@@ -60,8 +65,7 @@ struct CompanionSettingsRows: View {
 
     @ViewBuilder
     private var pushSection: some View {
-        Toggle(tr("companion.push.enable"), isOn: $store.push.enabled)
-        Text(tr("companion.push.hint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
+        SettingToggle(tr("companion.push.enable"), detail: tr("companion.push.hint"), isOn: $store.push.enabled)
         if store.push.enabled {
             Group {
                 Toggle(tr("companion.push.approval"), isOn: kindBinding(.approval))
@@ -70,7 +74,7 @@ struct CompanionSettingsRows: View {
                 Toggle(tr("companion.push.failed"), isOn: kindBinding(.failed))
                 Toggle(tr("companion.push.limited"), isOn: kindBinding(.limited))
             }
-            .padding(.leading, 12)
+            .padding(.leading, NookTheme.Spacing.lg)
             Toggle(tr("companion.push.onlyAway"), isOn: $store.push.onlyWhenAway)
             Toggle(tr("companion.push.titles"), isOn: $store.push.includeTitle)
             Toggle(tr("companion.push.quiet"), isOn: Binding(
@@ -83,21 +87,19 @@ struct CompanionSettingsRows: View {
                 }
                 Toggle(tr("companion.push.urgent"), isOn: $store.push.quietAllowsUrgent)
             }
-            apnsSetup
         }
     }
 
     @ViewBuilder
     private var apnsSetup: some View {
-        Text(tr("companion.push.keyTitle")).font(NookTheme.TextStyle.strong)
-        Text(tr("companion.push.keyHint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
+        SettingNote(tr("companion.push.keyHint"))
         HStack {
             TextField(tr("companion.push.keyID"), text: $store.apnsKeyID).textFieldStyle(.roundedBorder)
             TextField(tr("companion.push.teamID"), text: $store.apnsTeamID).textFieldStyle(.roundedBorder)
         }
         HStack {
             if store.hasAPNsKey {
-                Label(tr("companion.push.keySaved"), systemImage: "checkmark.seal").foregroundStyle(NookTheme.textSecondary)
+                InUseLabel(tr("companion.push.keySaved"))
                 ConfirmedButton(tr("companion.remove"), question: tr("confirm.removePush"), detail: tr("confirm.removePush.detail")) {
                     store.removeAPNsKey(); APNsClient.shared.forgetToken(); keyProblem = false
                 }
@@ -107,9 +109,9 @@ struct CompanionSettingsRows: View {
             Button(tr("companion.push.test")) { notifier.sendTest() }
                 .disabled(!store.canPush || !store.devices.contains { $0.pushToken != nil })
         }
-        if keyProblem { Text(tr("companion.push.keyInvalid")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral) }
-        if !store.canPush { Text(tr("companion.push.notReady")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
-        if let result = notifier.lastResult { Text(result).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+        if keyProblem { SettingNote(tr("companion.push.keyInvalid"), tone: .error) }
+        if !store.canPush { SettingNote(tr("companion.push.notReady")) }
+        if let result = notifier.lastResult { SettingNote(result) }
     }
 
     /// Reads the .p8 file the user downloaded from Apple; its contents go to the Keychain and are not shown.
@@ -128,8 +130,8 @@ struct CompanionSettingsRows: View {
     @ViewBuilder
     private var status: some View {
         switch server.state {
-        case .listening(let port): Text(tr("companion.listening", Int(port))).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-        case .failed(let message): Text(tr("companion.failed", message)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
+        case .listening(let port): SettingNote(tr("companion.listening", Int(port)), tone: .success)
+        case .failed(let message): SettingNote(tr("companion.failed", message), tone: .error)
         case .stopped: EmptyView()
         }
     }
@@ -141,7 +143,7 @@ struct CompanionSettingsRows: View {
                     .accessibilityLabel(tr("companion.qr"))
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).fixedSize(horizontal: false, vertical: true)
+                Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).fixedSize(horizontal: false, vertical: true)
                 Button(copied ? tr("companion.copied") : tr("companion.copyLink")) {
                     if let url = link.url {
                         Pasteboard.copy(url.absoluteString)

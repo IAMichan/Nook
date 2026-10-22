@@ -21,11 +21,9 @@ extension SettingsView {
                     .disabled(settings.localOnlySources.isEmpty)
                 Spacer()
             }
-            Text(settings.isLocalBrain
-                 ? tr("settings.private.activeLocal")
-                 : tr("settings.private.activeExternal", settings.privateSources.count))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+            SettingNote(settings.isLocalBrain
+                        ? tr("settings.private.activeLocal")
+                        : tr("settings.private.activeExternal", settings.privateSources.count))
         } header: {
             Text(tr("settings.private.title"))
         } footer: {

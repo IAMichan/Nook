@@ -29,7 +29,7 @@ struct LocalQualitySection: View {
                 }
             }
             if let failure = runner.failure {
-                Label(failure, systemImage: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
+                SettingNote(failure, tone: .error)
             }
             if !runner.results.isEmpty {
                 DisclosureGroup(tr("settings.quality.details"), isExpanded: $showDetails) {

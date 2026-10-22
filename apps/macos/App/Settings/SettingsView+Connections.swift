@@ -65,10 +65,7 @@ extension SettingsView {
             if !expired.isEmpty {
                 Section(tr("settings.connections.needsYou")) {
                     ForEach(expired) { config in
-                        HStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(NookTheme.amber)
-                            Text(tr("connect.expiredBanner", config.name)).font(NookTheme.TextStyle.body)
-                            Spacer(minLength: 8)
+                        StatusRow(title: config.name, detail: ConnectionHealth.needsYou.label, state: .warning) {
                             Button(tr("settings.connections.signInAgain")) { mcpSignIn.signIn(config, app: app) }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
@@ -113,15 +110,10 @@ extension SettingsView {
 
             if whatsApp {
                 Section {
-                    HStack(spacing: 10) {
-                        SettingsTile(symbol: SettingsSection.chats.tileSymbol, colors: SettingsSection.chats.tileColors)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(SettingsSection.chats.title)
-                            Text(tr("chats.settings.pointer")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
-                        }
-                        Spacer(minLength: 8)
-                        Button(tr("chats.settings.open")) { app.settingsSection = .chats }
+                    SettingsLinkRow(title: SettingsSection.chats.title, detail: tr("chats.settings.pointer"), section: .chats) {
+                        app.settingsSection = .chats
                     }
+                    .help(tr("chats.settings.open"))
                 }
             }
 
@@ -160,9 +152,7 @@ extension SettingsView {
                 }
             } else if !hasYours && !showWatchedPulls && local.isEmpty && !whatsApp {
                 Section {
-                    Text(tr("settings.connections.noMatch", connectionSearch))
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(tr("settings.connections.noMatch", connectionSearch))
                 }
             }
 
@@ -257,12 +247,21 @@ extension SettingsView {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
-                    Text(localDetail(source)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
+                    Text(localDetail(source))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(isFailing(source) ? NookTheme.coral : NookTheme.textSecondary)
+                        .lineLimit(1)
                 }
             }
             // The details (what Nook reads, what needs approval) on hover: the list itself stays quiet.
             .help(capabilityLine(source.id) + (source.status.updated.map { " · " + tr("context.updated", NookDates.ago($0)) } ?? ""))
         }
+    }
+
+    /// A source on this Mac that could not be read: its line says why, in the error color.
+    func isFailing(_ source: ContextSource) -> Bool {
+        if case .error = source.status.state { return true }
+        return false
     }
 
     func localDetail(_ source: ContextSource) -> String {

@@ -35,18 +35,18 @@ extension SettingsView {
 
     var startSection: some View {
         Group {
+            // How far setup is, said once: the count and the guided setup on top, then only the steps still open.
+            let openSteps = checklist.filter { !$0.done }
             Section {
                 StatusRow(title: tr("settings.overview.readyToUse"),
                           detail: tr("settings.overview.countOf", checklist.filter(\.done).count, checklist.count),
-                          state: checklist.allSatisfy(\.done) ? .done : .todo) {
-                    if !checklist.allSatisfy(\.done) {
+                          state: openSteps.isEmpty ? .done : .todo) {
+                    if !openSteps.isEmpty {
                         Button(tr("settings.setup.open")) { app.startOnboarding() }
-                            .buttonStyle(.borderedProminent)
                             .controlSize(.small)
                     }
                 }
             }
-            let openSteps = checklist.filter { !$0.done }
             if !openSteps.isEmpty {
                 Section(tr("settings.start.todo")) {
                     ForEach(openSteps) { step in
@@ -95,18 +95,8 @@ extension SettingsView {
                 Text(tr("settings.start.quickFooter"))
             }
             Section {
-                LabeledContent(tr("settings.overview.openPanel")) {
-                    Text(tr("settings.overview.pointToNotch")).foregroundStyle(NookTheme.textSecondary)
-                }
-                Button { app.settingsSection = .shortcuts } label: {
-                    HStack {
-                        Text(tr("settings.start.allShortcuts")).foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                SettingLabel(tr("settings.overview.openPanel"), detail: tr("settings.overview.pointToNotch"))
+                SettingsLinkRow(title: tr("settings.start.allShortcuts")) { app.settingsSection = .shortcuts }
             } header: {
                 Text(tr("settings.overview.howToUse"))
             } footer: {
@@ -116,25 +106,12 @@ extension SettingsView {
         }
     }
 
-    /// One line per part of Nook: its tile, how it is doing, and a button to go there.
+    /// One line per part of Nook: its tile, how it is doing, and a way to go there. What works stays quiet; only what
+    /// still needs you shows a symbol.
     func glanceRow(_ section: SettingsSection, detail: String, state: StatusState) -> some View {
-        Button { app.settingsSection = section } label: {
-            HStack(spacing: 12) {
-                SettingsTile(section, size: 26)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(section.title).foregroundStyle(.primary)
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(state == .warning ? state.color : NookTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: state.symbol).foregroundStyle(state.color)
-                Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            }
-            .contentShape(Rectangle())
+        SettingsLinkRow(title: section.title, detail: detail, section: section, state: state) {
+            app.settingsSection = section
         }
-        .buttonStyle(.plain)
     }
 
     /// A switch with, under its name, the section it belongs to.

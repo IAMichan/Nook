@@ -53,7 +53,7 @@ struct ConnectMethodBadge: View {
             ProgressView().controlSize(.small)
         } else {
             Text(text ?? method.label)
-                .font(NookTheme.font(11, .semibold))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(method == .signIn ? NookTheme.onIris : NookTheme.iris)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -86,10 +86,10 @@ struct ServiceCategoryChips: View {
         } label: {
             Text(title)
                 .font(NookTheme.TextStyle.label)
-                .foregroundStyle(active ? NookTheme.onIris : Color.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(active ? NookTheme.iris : Color.primary.opacity(0.07)))
+                .foregroundStyle(active ? NookTheme.onIris : NookTheme.textStrong)
+                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                .padding(.vertical, NookTheme.Spacing.xs + 1)
+                .background(Capsule().fill(active ? NookTheme.iris : NookTheme.smoke))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)

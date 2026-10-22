@@ -161,10 +161,7 @@ struct GitLabSetupSheet: View {
                     TextField(tr("gitlab.host"), text: $host)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
-                    Text(tr("gitlab.selfHostedDetail"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SettingNote(tr("gitlab.selfHostedDetail"))
                 }
                 .padding(.top, 6)
             } label: {
@@ -231,7 +228,7 @@ struct GitLabSetupSheet: View {
                 Spacer()
             }
             if let note {
-                Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
+                SettingNote(note, tone: .error)
             }
         }
     }
@@ -247,7 +244,7 @@ struct GitLabSetupSheet: View {
             switch check {
             case .valid(let username):
                 Label(tr("gitlab.checkOK", username, normalizedHost), systemImage: "checkmark.seal.fill")
-                    .font(NookTheme.font(13, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(ConnectionHealth.working.color)
             case .rejected:
                 Label(tr("gitlab.rejected"), systemImage: "exclamationmark.triangle.fill")
