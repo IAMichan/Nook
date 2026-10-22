@@ -171,6 +171,7 @@ targets:
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+ChatMedia.swift
+      - path: Core/I18n+PullRequests.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -184,12 +185,14 @@ targets:
       - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
+      - path: Brain/PlanArchive.swift
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ModelDownload.swift
       - path: Brain/ChatIntent.swift
       - path: Services/EmbeddedApps/EmbeddedAppCatalog.swift
       - path: Services/EmbeddedApps/WhatsAppWeb.swift
       - path: Services/Messages/ChatInbox.swift
+      - path: Services/Messages/ChatReceipts.swift
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift

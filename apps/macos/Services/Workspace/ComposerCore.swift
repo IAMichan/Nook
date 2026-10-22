@@ -233,6 +233,17 @@ enum ContextRefs {
         return "[\(label)](\(scheme)://\(version)/\(ref.kind.rawValue)/\(id))"
     }
 
+    /// The reference as words people read (a mail, a commit message): a file by its path, a pull request as `#12`, the
+    /// rest by its label.
+    static func plainText(_ ref: ContextRef) -> String {
+        switch ref.kind {
+        case .file: return ref.id
+        case .pullRequest: return "#" + ref.label
+        case .skill: return "$" + ref.label
+        case .session, .excerpt, .source, .paste: return ref.label
+        }
+    }
+
     struct Found: Equatable {
         var kind: ContextRef.Kind
         var id: String

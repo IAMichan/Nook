@@ -19,9 +19,11 @@ struct ChatsEntry: Identifiable, Equatable {
     let preview: String
     let last: Date
     let unread: Int
-    /// The newest message is yours: how far it got (sent, delivered, read). Nil for theirs, and for every chat collected
-    /// from notifications, which only ever show what came in.
+    /// The newest message is yours: how far it got (sent, delivered, read), as far as its app says. Nil for theirs, and
+    /// for every chat collected from notifications, which only ever show what came in.
     var ticks: BubbleTicks? = nil
+    /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
+    var members: [String]? = nil
     /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a Beeper chat
     /// and a chat collected from notifications, which are matched by name.
     var handle: String? = nil
@@ -60,7 +62,9 @@ extension ChatsEntry {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: whatsApp.unread(conversation.id), ticks: ticks, handle: handle(conversation.id),
+                                          unread: whatsApp.unread(conversation.id), ticks: ticks,
+                                          members: conversation.members == nil ? nil : conversation.memberNames,
+                                          handle: handle(conversation.id),
                                           avatar: whatsApp.avatars[conversation.id], waitsInApp: whatsApp.waitsInWhatsApp(conversation.id)))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
@@ -81,8 +85,11 @@ extension ChatsEntry {
                 let who = message.isMine ? tr("chat.you") : message.sender
                 return who.isEmpty ? message.summary : "\(who): \(message.summary)"
             } ?? ""
+            let newest = thread.messages.last
+            let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, unread: thread.unread, avatar: thread.avatar))
+                                      preview: preview, last: thread.last, unread: thread.unread, ticks: ticks,
+                                      members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
@@ -157,7 +164,7 @@ struct ChatsTab: View {
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
-                                        onMarkUnread: { markUnread(current) })
+                                        onMarkUnread: { markUnread(current) }, onClose: closeChat)
                                 .id(current.id)
                         } else {
                             // No chat open (none picked yet, closed with Escape, or not in what the list shows).
@@ -197,11 +204,6 @@ struct ChatsTab: View {
             })
         }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
-        // Escape closes the open chat; the list stays.
-        .onExitCommand {
-            guard selection != nil else { return }
-            withAnimation(NookTheme.reveal) { selection = nil }
-        }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
@@ -223,6 +225,12 @@ struct ChatsTab: View {
         if let openOnAgents, showsFooter {
             PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
         }
+    }
+
+    /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
+    private func closeChat() {
+        guard selection != nil else { return }
+        withAnimation(NookTheme.reveal) { selection = nil }
     }
 
     /// "Mark as read", by hand: its badge goes, and a WhatsApp chat is read in WhatsApp too, so the sender sees it.
@@ -766,7 +774,7 @@ private struct ChatsRow: View {
             row.accessibilityAction(named: Text(tr(entry.readable ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let onToggleRead {
-                ToolbarIconButton(entry.readable ? "checkmark.circle" : "circle.badge",
+                ToolbarIconButton(entry.readable ? "envelope.open" : "envelope.badge",
                                   tr(entry.readable ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
                     .pointerStyle(.link)
                     .padding(.top, NookTheme.Spacing.sm)
@@ -844,9 +852,7 @@ private struct ChatsAvatar: View {
     let photo: NSImage?
     let size: CGFloat
 
-    private static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
-
-    private var tint: Color { Self.colors[ChatTimeline.colorIndex(for: name, count: Self.colors.count)] }
+    private var tint: Color { ChatPersonBadge.tint(for: name) }
 
     var body: some View {
         face
@@ -888,10 +894,13 @@ private struct ChatsDetail: View {
     @ObservedObject var whatsApp: WhatsAppLink
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
     var onMarkUnread: () -> Void = {}
+    /// Escape: the tab closes the chat.
+    var onClose: () -> Void = {}
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
-    @State private var sending = false
+    /// The answer on its way to the chat, then briefly that it is there.
+    @State private var outgoing: ChatOutgoing?
     @FocusState private var replyFocused: Bool
     /// A photo shown big over the chat, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
@@ -916,7 +925,8 @@ private struct ChatsDetail: View {
         case .whatsApp(let jid):
             return whatsApp.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0) } ?? []
         case .captured(let id):
-            return (capture.inbox.threads[id]?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date)) }
+            let thread = capture.inbox.threads[id]
+            return (thread?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date), members: thread?.members ?? []) }
         }
     }
 
@@ -942,6 +952,19 @@ private struct ChatsDetail: View {
             }
         }
         .task(id: entry.id) { await loadWhatsApp() }
+        // Escape, also when nothing in the chat has the keyboard (a row in the list was clicked last).
+        .onEscapeKey(perform: escape)
+    }
+
+    /// Escape first shrinks an enlarged photo back and lets go of a quoted message; only then does it close the chat.
+    private func escape() {
+        if zoomed != nil {
+            withAnimation(NookTheme.reveal) { zoomed = nil }
+        } else if replyingTo != nil {
+            withAnimation(NookTheme.reveal) { replyingTo = nil }
+        } else {
+            onClose()
+        }
     }
 
     /// A photo enlarges over the chat, inside Nook; a photo Nook does not have yet opens as any file does.
@@ -997,11 +1020,21 @@ private struct ChatsDetail: View {
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
-                // A chat a bridge reads is the app's own; any other is what its notifications showed.
-                Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    // A chat a bridge reads is the app's own; any other is what its notifications showed.
+                    Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                    // A group whose app lists its people: how many, and a click lists them.
+                    if let members = entry.members, !members.isEmpty {
+                        Text("·")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .accessibilityHidden(true)
+                        ChatMembersButton(members: members)
+                    }
+                }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             // What you do most stays in sight (ask Nook, open the app); the rest waits in the "…" menu.
@@ -1050,9 +1083,11 @@ private struct ChatsDetail: View {
                        sendSymbol: whatsAppChat == nil ? "doc.on.doc" : "arrow.up",
                        sendLabel: whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
                        readyNotice: whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
-                       busy: sending,
+                       outgoing: outgoing,
+                       recipient: entry.name,
                        quote: replyingTo?.quote(contact: entry.name),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
+                       onEscape: escape,
                        draft: { instruction in
                            let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
                            return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,
@@ -1063,23 +1098,29 @@ private struct ChatsDetail: View {
                        })
     }
 
-    /// Your answer goes to the chat as typed (to the quoted message, when one is), after your own Return or click; when
-    /// it fails the text and the quote stay.
+    /// Your answer goes to the chat as typed (to the quoted message, when one is), after your own Return or click. It
+    /// leaves the field for the sending panel above it, which says when it is there; when it fails the text is back in
+    /// the field and the quote stays.
     private func send(to chat: String) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !sending else { return }
-        sending = true
-        notice = tr("whatsapp.card.sending")
+        guard !text.isEmpty, outgoing?.sent ?? true else { return }
+        outgoing = ChatOutgoing(text: text)
+        notice = nil
+        reply = ""
         let quoted = replyingTo?.id
         Task { @MainActor in
-            defer { sending = false }
             do {
                 try await app.sendWhatsAppFromChats(text, chat: chat, replyTo: quoted)
-                reply = ""
-                notice = nil
                 if replyingTo?.id == quoted { replyingTo = nil }
                 replyFocused = true
+                let sent = ChatOutgoing(text: text, sent: true)
+                outgoing = sent
+                try? await Task.sleep(for: .seconds(1.4))
+                // A newer message may be on its way by now; it keeps the panel.
+                if outgoing == sent { outgoing = nil }
             } catch {
+                outgoing = nil
+                if reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reply = text }
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
@@ -1126,6 +1167,8 @@ private struct ChatsDetail: View {
     private func loadWhatsApp() async {
         guard let chat = whatsAppChat else { return }
         _ = await whatsApp.loadHistory(chat)
+        // A group's people: its header lists them, and your messages' info says who does not have them yet.
+        await whatsApp.loadMembers(chat)
         guard let conversation = whatsApp.inbox.conversations[chat] else { return }
         let wanted = conversation.messages.filter { AppModel.whatsAppPreviews($0.media) }.suffix(AppModel.whatsAppPreviewCount)
             .filter { whatsApp.preview($0.id) == nil }.map(\.id)

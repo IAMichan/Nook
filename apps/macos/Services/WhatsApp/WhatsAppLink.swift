@@ -183,6 +183,8 @@ final class WhatsAppLink: ObservableObject {
     private var namingGroups: [String: Date] = [:]
     /// When each chat's messages were last fetched from the gateway for the notch card or the Chats tab.
     private var historyFetched: [String: Date] = [:]
+    /// When each group's members were last asked of the gateway.
+    private var membersLoaded: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
     private var previews: [String: WAPreview] = [:]
     private var previewOrder: [String] = []
@@ -253,6 +255,7 @@ final class WhatsAppLink: ObservableObject {
     private func stop(forget: Bool) {
         generation += 1
         historyFetched = [:]
+        membersLoaded = [:]
         previews = [:]
         previewOrder = []
         previewsLoading = []
@@ -413,6 +416,14 @@ final class WhatsAppLink: ObservableObject {
             ingest([message], announce: true)
         case .receipt(let ids, let chat, let status)?:
             if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(changed) }
+        case .memberReceipt(let ids, let chat, let member, let status)?:
+            if let changed = inbox.applyMemberReceipt(status, ids: ids, chat: chat, member: member) { onReceipt?(changed) }
+            // Who is in the group says when everyone has it: asked once, the first time a member answers.
+            if WAJID.isGroup(chat), membersLoaded[WAJID.normalized(chat)] == nil {
+                Task { @MainActor [weak self] in
+                    if let self, await self.loadMembers(chat) { self.onReceipt?(WAJID.normalized(chat)) }
+                }
+            }
         case .readElsewhere(let chat)?:
             let key = WAJID.normalized(chat)
             readInWhatsApp[key] = Date()
@@ -617,6 +628,19 @@ final class WhatsAppLink: ObservableObject {
         let before = inbox.conversations[key]?.messages
         _ = try? await messages(of: key, limit: WAInbox.keep)
         return inbox.conversations[key]?.messages != before
+    }
+
+    /// A group's members, asked of the gateway when the chat opens (again after ten minutes, for who joined or left),
+    /// so its info lists them and your messages' ticks wait for all of them. True when the conversation changed.
+    @discardableResult
+    func loadMembers(_ chat: String) async -> Bool {
+        let key = WAJID.normalized(chat)
+        guard isConnected, let provider, WAJID.isGroup(key),
+              membersLoaded[key].map({ Date().timeIntervalSince($0) > 600 }) ?? true else { return false }
+        membersLoaded[key] = Date()
+        let members = WAMembers.others(await provider.groupMembers(key), me: me)
+        guard !members.isEmpty else { return false }
+        return inbox.setMembers(members, chat: key)
     }
 
     // MARK: Files

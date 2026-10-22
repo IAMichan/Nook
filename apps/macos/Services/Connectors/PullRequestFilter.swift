@@ -96,10 +96,23 @@ struct PullRequestFilter: Equatable, Sendable {
     }
 }
 
+/// How the list groups its rows: by why they are in it (for your review, yours, watched), or by repository.
+enum PullRequestGrouping: String, CaseIterable, Identifiable, Sendable {
+    case involvement, repository
+    var id: String { rawValue }
+}
+
+/// The pull requests of an account that are in the list for the same reason (see `AccountPullRequests.byRole`).
+struct PullRequestRoleGroup: Identifiable, Equatable, Sendable {
+    let role: PullRequestRepoGroup.Role
+    var rows: [PullRequestRepoGroup.Row]
+    var id: String { role.rawValue }
+}
+
 /// The pull requests of one repository in an account, so the list shows every pull request of a repository together.
 struct PullRequestRepoGroup: Identifiable, Equatable, Sendable {
     /// Why a pull request is in the list: it waits for your review, you wrote it, or its repository is watched.
-    enum Role: Equatable, Sendable { case review, mine, watched }
+    enum Role: String, Equatable, Sendable { case review, mine, watched }
 
     struct Row: Identifiable, Equatable, Sendable {
         let item: PullRequestItem
@@ -132,5 +145,29 @@ extension AccountPullRequests {
             }
         }
         return groups
+    }
+}
+
+extension AccountPullRequests {
+    /// The account's pull requests by why they are in the list: the ones waiting for your review, yours, then the
+    /// watched ones. Within a group open ones come first, then the most recently updated. A pull request in more than
+    /// one list shows once, in the first; a group without rows is left out.
+    var byRole: [PullRequestRoleGroup] {
+        var seen = Set<String>()
+        func rank(_ item: PullRequestItem) -> (Int, Double) {
+            (item.state == .open ? 0 : 1, -(item.updated?.timeIntervalSince1970 ?? 0))
+        }
+        let lists: [(PullRequestRepoGroup.Role, [PullRequestItem])] = [(.review, reviews), (.mine, mine), (.watched, watched)]
+        return lists.compactMap { entry -> PullRequestRoleGroup? in
+            let (role, items) = entry
+            let rows = items.filter { seen.insert($0.id).inserted }
+                .enumerated()
+                .sorted {
+                    let (left, right) = (rank($0.element), rank($1.element))
+                    return (left.0, left.1, $0.offset) < (right.0, right.1, $1.offset)
+                }
+                .map { PullRequestRepoGroup.Row(item: $0.element, role: role) }
+            return rows.isEmpty ? nil : PullRequestRoleGroup(role: role, rows: rows)
+        }
     }
 }

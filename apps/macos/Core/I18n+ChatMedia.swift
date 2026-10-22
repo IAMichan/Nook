@@ -1,7 +1,7 @@
 import Foundation
 
-// Texts for the files in a chat (stickers, GIFs, audio messages), the same in every chat app, and the Chats tab without
-// an open chat.
+// Texts for the files in a chat (stickers, GIFs, audio messages), who has and who read your messages, and a group's
+// members, the same in every chat app, and the Chats tab without an open chat.
 
 let chatMediaTranslations: [AppLanguage: [String: String]] = [
     .nl: [
@@ -23,6 +23,13 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.audio": "Audio",
         "chat.media.play": "Afspelen",
         "chat.media.pause": "Pauzeren",
+        "chat.info.title": "Berichtinfo",
+        "chat.info.readBy": "Gelezen door",
+        "chat.info.deliveredTo": "Afgeleverd bij",
+        "chat.info.waiting": "Nog niet",
+        "chat.info.count": "%ld van %ld hebben het gelezen",
+        "chats.members": "%ld leden",
+        "chats.members.title": "Leden",
     ],
     .en: [
         "chats.waitsInApp": "Still unread in %@",
@@ -43,6 +50,13 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.audio": "Audio",
         "chat.media.play": "Play",
         "chat.media.pause": "Pause",
+        "chat.info.title": "Message info",
+        "chat.info.readBy": "Read by",
+        "chat.info.deliveredTo": "Delivered to",
+        "chat.info.waiting": "Not yet",
+        "chat.info.count": "%ld of %ld have read it",
+        "chats.members": "%ld members",
+        "chats.members.title": "Members",
     ],
     .de: [
         "chats.waitsInApp": "In %@ noch ungelesen",
@@ -63,6 +77,13 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.audio": "Audio",
         "chat.media.play": "Abspielen",
         "chat.media.pause": "Pausieren",
+        "chat.info.title": "Nachrichteninfo",
+        "chat.info.readBy": "Gelesen von",
+        "chat.info.deliveredTo": "Zugestellt an",
+        "chat.info.waiting": "Noch nicht",
+        "chat.info.count": "%ld von %ld haben es gelesen",
+        "chats.members": "%ld Mitglieder",
+        "chats.members.title": "Mitglieder",
     ],
     .fr: [
         "chats.waitsInApp": "Toujours non lu dans %@",
@@ -83,6 +104,13 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.audio": "Audio",
         "chat.media.play": "Lire",
         "chat.media.pause": "Pause",
+        "chat.info.title": "Infos du message",
+        "chat.info.readBy": "Lu par",
+        "chat.info.deliveredTo": "Distribué à",
+        "chat.info.waiting": "Pas encore",
+        "chat.info.count": "%ld sur %ld l’ont lu",
+        "chats.members": "%ld membres",
+        "chats.members.title": "Membres",
     ],
     .es: [
         "chats.waitsInApp": "Aún sin leer en %@",
@@ -103,5 +131,12 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chat.media.audio": "Audio",
         "chat.media.play": "Reproducir",
         "chat.media.pause": "Pausar",
+        "chat.info.title": "Info. del mensaje",
+        "chat.info.readBy": "Leído por",
+        "chat.info.deliveredTo": "Entregado a",
+        "chat.info.waiting": "Todavía no",
+        "chat.info.count": "%ld de %ld lo han leído",
+        "chats.members": "%ld miembros",
+        "chats.members.title": "Miembros",
     ],
 ]

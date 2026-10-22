@@ -12,10 +12,17 @@ import ImageIO
 extension ChatBubble {
     /// A message of any chat app as a bubble: its text, and its file as the chat shows it. While the file is not on this
     /// Mac the bubble names it (a button that opens the chat's app); once it is, it shows as itself.
-    init(_ message: InboxMessage, time: String) {
+    /// `members`: the group's other people, so your message's info also lists who does not have it yet.
+    init(_ message: InboxMessage, time: String, members: [String] = []) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)
         poll = message.poll
+        if message.isMine {
+            ticks = message.receipt.map(BubbleTicks.init)
+            if let readers = message.readers, ticks != nil {
+                self.readers = ChatReceipts.everyone(readers, members: members)
+            }
+        }
         guard let file = message.media else { return }
         attachment = file.label
         guard let url = file.url else { return }

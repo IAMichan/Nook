@@ -65,7 +65,7 @@ enum NookTheme {
     static let surface = Color(hex: 0x131315)
     /// The faintest divider between regions of a panel.
     static let hairline = Color(hex: 0x18181B)
-    /// The line between the items of a list (a Nook chat, an agent session, a chat): a step brighter than `line2`, so
+    /// The line between the items of a list (a chat in the Chats tab): a step brighter than `line2`, so
     /// each item reads as its own.
     static let separator = Color(hex: 0x2E2E34)
     /// The stroke of a text field or tray at rest.

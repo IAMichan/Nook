@@ -48,6 +48,8 @@ final class TakeoverState: ObservableObject {
 /// - End: the brain's summary lands in the chat; success only counts when it says so after checking (`STATUS: DONE`).
 extension AppModel {
     static let takeoverCardPrefix = "takeover-ask-"
+    /// A finished conversation's notice, followed by the conversation's id: its field answers that conversation.
+    static let nookReplyCardPrefix = "nookdone-reply-"
 
     /// Tools the brain uses during a task, as far as they are available.
     static let takeoverToolNames = ["read_ui", "control_ui", "open_url", "open_app", "search_web", "read_webpage", "recall_memory"]
@@ -149,6 +151,26 @@ extension AppModel {
         }
         chat.startNew()
         handleUserText(request, reveal: false)
+        followInNotch()
+    }
+
+    /// What was typed in the field of a finished conversation's notice (often the answer to a question Nook asked back):
+    /// the next message in that conversation, followed in the notch like the quick field, so the chat does not open.
+    func answerFromNotice(_ text: String, conversation id: UUID) {
+        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !answer.isEmpty else { return }
+        guard chat.conversation(id) != nil else {
+            askFromQuickField(answer)
+            return
+        }
+        guard settings.brainReady else {
+            presentSetupCard()
+            return
+        }
+        viewModel.show(.idle)
+        NookPresence.shared.heard()
+        chat.select(id)
+        ask(answer, in: id, reveal: false)
         followInNotch()
     }
 

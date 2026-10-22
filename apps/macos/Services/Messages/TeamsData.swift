@@ -13,6 +13,29 @@ enum TeamsData {
         var last: Date?
         /// Until when you read it, as Teams keeps it.
         var readUntil: Date?
+        /// A group chat's other people by name (you left out).
+        var members: [String] = []
+        /// Its newest message as the chat list shows it, so the chat has a line before its history is read.
+        var preview: InboxMessage? = nil
+    }
+
+    /// A Teams account you signed in with. Its refresh token is in the Keychain under `refreshAccount`; the rest is not
+    /// secret and kept in the user defaults.
+    struct Account: Codable, Equatable, Identifiable, Sendable {
+        /// Nook's own key for it; empty for the one account of a version that knew only one.
+        var id: String
+        /// Its Microsoft Graph user id, once known: signing in again with the same account replaces it.
+        var userID: String? = nil
+        var name: String = ""
+        /// Its sign-in address ("anna@contoso.com").
+        var email: String = ""
+
+        var refreshAccount: String { id.isEmpty ? "chats.teams.refresh" : "chats.teams.refresh." + id }
+        /// What tells it apart from your other accounts: its organization's domain, else its name.
+        var label: String {
+            let domain = email.split(separator: "@").last.map(String.init) ?? ""
+            return email.contains("@") && !domain.isEmpty ? domain : (name.isEmpty ? email : name)
+        }
     }
 
     /// What the sign-in page needs: the code to type and where.
@@ -82,31 +105,59 @@ enum TeamsData {
         return ISO8601DateFormatter().date(from: text)
     }
 
-    /// Your own id and name, from /me.
-    static func me(_ json: [String: Any]) -> (id: String, name: String)? {
+    /// Your own id, name and sign-in address, from /me.
+    static func me(_ json: [String: Any]) -> (id: String, name: String, email: String)? {
         guard let id = json["id"] as? String else { return nil }
-        return (id, (json["displayName"] as? String) ?? "")
+        let email = (json["userPrincipalName"] as? String) ?? (json["mail"] as? String) ?? ""
+        return (id, (json["displayName"] as? String) ?? "", email)
     }
 
-    /// The chats of /me/chats. A chat with a topic is called by it; any other after its people, yourself left out.
-    /// Meeting chats are left out unless they have a topic, as Teams lists them.
-    static func chats(_ json: [String: Any], me: String?) -> [Chat] {
+    /// The chats of /me/chats, every one you are in, whether anyone wrote in it or not. A chat with a topic is called by
+    /// it; any other after its people, yourself left out (by their address when Teams has no name for them), and the chat
+    /// with yourself after you. Meeting chats are left out unless they have a topic, as Teams lists them, and so are the
+    /// chats you hid in Teams.
+    static func chats(_ json: [String: Any], me: String?, myName: String = "") -> [Chat] {
         (json["value"] as? [[String: Any]] ?? []).compactMap { chat in
             guard let id = chat["id"] as? String else { return nil }
             let kind = (chat["chatType"] as? String) ?? "oneOnOne"
             let topic = ((chat["topic"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
             if kind == "meeting", topic.isEmpty { return nil }
-            let people = (chat["members"] as? [[String: Any]] ?? [])
+            let members = chat["members"] as? [[String: Any]] ?? []
+            let people = members
                 .filter { me == nil || ($0["userId"] as? String) != me }
-                .compactMap { ($0["displayName"] as? String)?.trimmingCharacters(in: .whitespaces) }
+                .compactMap { member -> String? in
+                    let name = ((member["displayName"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+                    return name.isEmpty ? (member["email"] as? String)?.trimmingCharacters(in: .whitespaces) : name
+                }
                 .filter { !$0.isEmpty }
-            let name = topic.isEmpty ? people.joined(separator: ", ") : topic
+            let alone = me != nil && !members.isEmpty && members.allSatisfy { ($0["userId"] as? String) == me }
+            let name = !topic.isEmpty ? topic : (people.isEmpty && alone ? myName : people.joined(separator: ", "))
             guard !name.isEmpty else { return nil }
             let preview = chat["lastMessagePreview"] as? [String: Any]
             let viewpoint = chat["viewpoint"] as? [String: Any]
             if viewpoint?["isHidden"] as? Bool == true { return nil }
-            return Chat(id: id, name: name, isGroup: kind != "oneOnOne", last: date(preview?["createdDateTime"]),
-                        readUntil: date(viewpoint?["lastMessageReadDateTime"]))
+            var result = Chat(id: id, name: name, isGroup: kind != "oneOnOne", last: date(preview?["createdDateTime"]),
+                              readUntil: date(viewpoint?["lastMessageReadDateTime"]), members: kind == "oneOnOne" ? [] : people)
+            if let preview { result.preview = messages(["value": [preview]], chat: result, me: me).first }
+            return result
+        }
+    }
+
+    /// The chats of several accounts, with a name that turns up in more than one account followed by the account
+    /// ("Anna (contoso.com)"), so two chats of different accounts never become one in the Chats tab.
+    static func distinguish(_ lists: [[Chat]], labels: [String]) -> [[Chat]] {
+        let fold = { (name: String) in name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        var accounts: [String: Set<Int>] = [:]
+        for (index, list) in lists.enumerated() {
+            for chat in list { accounts[fold(chat.name), default: []].insert(index) }
+        }
+        return lists.enumerated().map { index, list in
+            list.map { chat in
+                guard (accounts[fold(chat.name)]?.count ?? 0) > 1, index < labels.count, !labels[index].isEmpty else { return chat }
+                var named = chat
+                named.name = "\(chat.name) (\(labels[index]))"
+                return named
+            }
         }
     }
 
@@ -120,7 +171,7 @@ enum TeamsData {
     static func messages(_ json: [String: Any], chat: Chat, me: String?) -> [InboxMessage] {
         let messages: [InboxMessage] = (json["value"] as? [[String: Any]] ?? []).compactMap { message in
             guard let id = message["id"] as? String, (message["messageType"] as? String ?? "message") == "message",
-                  message["deletedDateTime"] as? String == nil, let sent = Self.date(message["createdDateTime"]) else { return nil }
+                  message["deletedDateTime"] as? String == nil, message["isDeleted"] as? Bool != true, let sent = Self.date(message["createdDateTime"]) else { return nil }
             let body = message["body"] as? [String: Any] ?? [:]
             var text = (body["content"] as? String) ?? ""
             if (body["contentType"] as? String)?.lowercased() == "html" { text = plain(html: text) }
@@ -132,7 +183,10 @@ enum TeamsData {
             let user = ((message["from"] as? [String: Any])?["user"] as? [String: Any]) ?? [:]
             let mine = me != nil && (user["id"] as? String) == me
             let sender = mine || !chat.isGroup ? "" : ((user["displayName"] as? String) ?? "")
-            return InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
+            var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
+            // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
+            if mine { inbox.receipt = .sent }
+            return inbox
         }
         return messages.sorted { $0.date < $1.date }
     }

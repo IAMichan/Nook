@@ -154,6 +154,7 @@ extension AppModel {
                                     sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
+            bubble.readers = Self.whatsAppReaders(message, in: conversation)
             bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
             bubble.poll = message.poll?.chatPoll
             bubble.reactions = Self.bubbleReactions(message.reactions)
@@ -204,14 +205,14 @@ extension AppModel {
     }
 
     /// Return in a WhatsApp card's field: the text goes to that chat as typed, as an answer to its message `replyTo`
-    /// when one was quoted. The card says it is sending; when that fails it says why and puts the text back, so nothing
-    /// typed is lost.
+    /// when one was quoted. The card shows it going out above its field; when that fails it says why and puts the text
+    /// back, so nothing typed is lost.
     func replyWhatsApp(_ text: String, chat: String, replyTo: String? = nil) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // "@nook …" is a request to Nook, never a message for the chat; the card's field lets Nook write it.
         guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil else { return }
         let token = Self.whatsAppCardPrefix + chat
-        editShownCard(token) { $0.notice = tr("whatsapp.card.sending"); $0.draft = nil }
+        editShownCard(token) { $0.notice = nil; $0.sending = reply; $0.draft = nil }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -221,6 +222,7 @@ extension AppModel {
                 self.viewModel.finish(tr("whatsapp.sent", name))
             } catch {
                 let shown = self.editShownCard(token) {
+                    $0.sending = nil
                     $0.notice = tr("whatsapp.card.notSent", error.localizedDescription)
                     $0.draft = reply
                 }
@@ -310,13 +312,18 @@ extension AppModel {
     }
 
     static func bubbleTicks(_ receipt: WAReceipt) -> BubbleTicks {
-        switch receipt {
-        case .failed: return .failed
-        case .pending: return .pending
-        case .sent: return .sent
-        case .delivered: return .delivered
-        case .read: return .read
+        BubbleTicks(receipt)
+    }
+
+    /// Your own message in a group: every member with how far it got with them, by the names the group knows them by.
+    /// Empty for theirs, in a private chat, and while no member answered and the members are not known either.
+    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation) -> [ChatReader] {
+        guard message.fromMe, message.receipt != nil, conversation.isGroup,
+              !message.readers.isEmpty || conversation.members != nil else { return [] }
+        let named = message.readers.map { id, reader in
+            ChatReader(name: conversation.memberName(id), receipt: reader.receipt, date: reader.date)
         }
+        return ChatReceipts.everyone(named, members: conversation.memberNames)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
