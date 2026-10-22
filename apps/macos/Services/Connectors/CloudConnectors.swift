@@ -2257,7 +2257,7 @@ enum GitHubPullRequests {
     }
 
     /// Tokens of all GitHub accounts, primary first.
-    private static var tokens: [String] {
+    static var tokens: [String] {
         AccountRegistry.shared.accounts(for: "github").compactMap { CloudHelp.secret($0.key("token")) }
     }
 

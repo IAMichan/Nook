@@ -39,7 +39,7 @@ struct UsageLimitBanner: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: 10, style: .continuous)
+            .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: NookTheme.Radius.card, style: .continuous)
         }
     }
 

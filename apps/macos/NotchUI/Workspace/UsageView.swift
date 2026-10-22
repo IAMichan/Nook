@@ -27,7 +27,7 @@ struct UsageView: View {
         Section {
             if app.connectedProfiles.isEmpty {
                 Text(tr("agents.noneConnected"))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(app.connectedProfiles) { profile in
                 accountRow(profile)
@@ -52,8 +52,8 @@ struct UsageView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(profile.kind.shortName)
                     Text(AccountLabel.name(profile, app: app))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -61,8 +61,8 @@ struct UsageView: View {
             Group {
                 if limits.isEmpty {
                     Text(fallbackSummary(profile))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
@@ -81,17 +81,17 @@ struct UsageView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(limit.label)
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
                     .lineLimit(1)
                 if let note = limit.note ?? AgentFormat.reset(limit.resetsAt) {
                     Text(note)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
                 Text("\(Int(limit.percent.rounded()))%")
-                    .font(.callout.weight(.semibold).monospacedDigit())
+                    .font(NookTheme.TextStyle.strong.monospacedDigit())
                     .foregroundStyle(UsageTone.text(limit.percent))
             }
             TimelineView(.periodic(from: .now, by: 60)) { context in
@@ -132,7 +132,7 @@ struct UsageView: View {
             }
             if report.sessions == 0 {
                 Text(tr("ws.usage.noData"))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(NookTheme.textSecondary)
             } else {
                 HStack(alignment: .top, spacing: 28) {
                     stat(tr("ws.usage.sessions"), "\(report.sessions)")
@@ -157,10 +157,10 @@ struct UsageView: View {
     private func stat(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(NookTheme.TextStyle.title)
                 .monospacedDigit()
         }
     }
@@ -206,8 +206,8 @@ struct UsageView: View {
                         Text(row.model == "default" ? tr("ws.model.default") : row.model)
                             .lineLimit(1)
                         Text("\(row.provider.displayName) · \(row.sessions) \(tr("ws.usage.sessions").lowercased())")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
@@ -216,8 +216,8 @@ struct UsageView: View {
                             .monospacedDigit()
                         if workspace.settings.showCost {
                             Text(costText(row))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.textSecondary)
                                 .monospacedDigit()
                         }
                     }

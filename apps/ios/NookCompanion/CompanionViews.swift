@@ -223,18 +223,24 @@ struct SessionDetailView: View {
                 if !session.excerpt.isEmpty {
                     Section("Latest reply") { Text(session.excerpt).font(.callout) }
                 }
-                Section("Send a message") {
-                    TextField("Message to the agent", text: $message, axis: .vertical).lineLimit(1...5)
-                    Button("Send") {
-                        let text = message
-                        message = ""
-                        Task { await client.send(session, text: text) }
+                if session.canSend != false {
+                    Section("Send a message") {
+                        TextField("Message to the agent", text: $message, axis: .vertical).lineLimit(1...5)
+                        Button("Send") {
+                            let text = message
+                            message = ""
+                            Task { await client.send(session, text: text) }
+                        }
+                        .disabled(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .disabled(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                if session.attention == "working" || session.attention == "approval" || session.attention == "input" {
+                    if session.attention == "working" || session.attention == "approval" || session.attention == "input" {
+                        Section {
+                            Button("Stop", role: .destructive) { confirmStop = true }
+                        }
+                    }
+                } else {
                     Section {
-                        Button("Stop", role: .destructive) { confirmStop = true }
+                        Text("This agent runs in a terminal on your Mac; answer it there.").font(.callout).foregroundStyle(.secondary)
                     }
                 }
             }

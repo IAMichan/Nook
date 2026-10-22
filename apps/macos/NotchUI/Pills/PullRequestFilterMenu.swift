@@ -81,7 +81,7 @@ struct PullRequestFilterMenu: View {
         .foregroundStyle(filter.activeCount > 0 || hovering ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: 9, style: .continuous)
+        .cardBackground(hovering ? NookTheme.smoke : NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -90,13 +90,13 @@ struct PullRequestFilterMenu: View {
         Button { kind = row } label: {
             HStack(spacing: 8) {
                 Image(systemName: row.symbol)
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 15)
                 Text(row.title).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 6)
                 Text(value(of: row))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(isDefault(row) ? NookTheme.textTertiary : NookTheme.paper)
                     .lineLimit(1)
                 Image(systemName: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
@@ -223,7 +223,7 @@ private struct FilterChoiceRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(tint ?? NookTheme.textSecondary)
                     .frame(width: 15)
                 Text(title).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.paper).lineLimit(1)

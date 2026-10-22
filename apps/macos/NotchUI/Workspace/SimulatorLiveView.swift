@@ -92,7 +92,7 @@ struct SimulatorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             if chosen != nil {
                 Text(stream.inputReady ? tr("sim.hint") : tr("sim.waitingInput"))
-                    .font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             }
         }
         .onAppear {
@@ -119,6 +119,8 @@ struct SimulatorView: View {
                     Task { await hub.shutdown(udid) }
                 }
             } label: { Image(systemName: "ellipsis") }
+            .help(tr("a11y.more"))
+            .accessibilityLabel(tr("a11y.more"))
             .menuStyle(.button)
             .buttonStyle(.borderless)
             .menuIndicator(.hidden)
@@ -480,6 +482,7 @@ struct SimulatorActionsPanel: View {
     @State private var longitude = "4.9041"
     @State private var permission = SimulatorPermission.camera
     @State private var payload = #"{"aps":{"alert":{"title":"Nook","body":"Hello"}}}"#
+    /// What is wrong with a field before an action can run; how the action went shows as a toast.
     @State private var result: String?
 
     var body: some View {
@@ -500,8 +503,8 @@ struct SimulatorActionsPanel: View {
             }
             HStack {
                 Text(tr("sim.action.location")).frame(width: 110, alignment: .leading)
-                TextField("lat", text: $latitude).frame(width: 70)
-                TextField("lon", text: $longitude).frame(width: 70)
+                TextField(tr("sim.latitude"), text: $latitude).frame(width: 70)
+                TextField(tr("sim.longitude"), text: $longitude).frame(width: 70)
                 Button(tr("sim.action.set")) {
                     if let lat = Double(latitude), let lon = Double(longitude), (-90...90).contains(lat), (-180...180).contains(lon) {
                         run(.location(latitude: lat, longitude: lon))
@@ -512,7 +515,7 @@ struct SimulatorActionsPanel: View {
             Divider()
             HStack {
                 Text(tr("sim.action.app")).frame(width: 110, alignment: .leading)
-                TextField("com.example.app", text: $bundleID).font(.system(.body, design: .monospaced))
+                TextField("com.example.app", text: $bundleID).font(NookTheme.TextStyle.code)
             }
             HStack {
                 Spacer().frame(width: 110)
@@ -553,7 +556,7 @@ struct SimulatorActionsPanel: View {
                 }
             }
             if let result {
-                Text(result).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(result).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .controlSize(.small)
@@ -581,7 +584,11 @@ struct SimulatorActionsPanel: View {
         Task {
             let failure = await Task.detached(priority: .userInitiated) { Simulators.perform(action, udid: udid) }.value
             cleanup?()
-            result = failure ?? tr("sim.action.done")
+            if let failure {
+                ToastCenter.shared.error(tr("sim.action.failed"), detail: failure)
+            } else {
+                ToastCenter.shared.success(tr("sim.action.done"))
+            }
         }
     }
 }

@@ -39,8 +39,8 @@ struct WhatsAppLinkSection: View {
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control))
                         Text(tr("whatsapp.settings.scan"))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.vertical, 4)
@@ -83,7 +83,7 @@ struct WhatsAppLinkSection: View {
                 }
 
                 if !webhookLine.isEmpty, webhookNeedsAttention {
-                    Text(webhookLine).font(.caption).foregroundStyle(.secondary)
+                    Text(webhookLine).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
             }
         } header: {
@@ -106,7 +106,7 @@ struct WhatsAppLinkSection: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tr("whatsapp.install.title"))
-                Text(installLine).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(installLine).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             if installer.busy {
@@ -168,10 +168,10 @@ struct WhatsAppChatModeList: View {
     var body: some View {
         DisclosureGroup(isExpanded: $open) {
             if link.chatsForSettings.isEmpty {
-                Text(tr("whatsapp.settings.noChats")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("whatsapp.settings.noChats")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             } else {
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textSecondary)
                     TextField(tr("whatsapp.settings.chatSearch"), text: $query).textFieldStyle(.plain)
                 }
                 ForEach(chats, id: \.jid) { chat in
@@ -180,8 +180,8 @@ struct WhatsAppChatModeList: View {
             }
             if !hidden.isEmpty {
                 Text(tr("whatsapp.settings.hidden"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.font(11, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
                     .padding(.top, 6)
                 ForEach(hidden, id: \.jid) { chat in
                     HStack(spacing: 10) {
@@ -204,7 +204,7 @@ struct WhatsAppChatModeList: View {
             avatar(name)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name).lineLimit(1)
-                Text(tr("whatsapp.kind.\(kind.rawValue)")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("whatsapp.kind.\(kind.rawValue)")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 8)
             Picker("", selection: Binding(get: { link.filters.mode(for: jid) }, set: { link.filters.setMode($0, for: jid) })) {

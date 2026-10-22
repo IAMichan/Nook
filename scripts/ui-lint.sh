@@ -8,8 +8,15 @@
 #   2. Colors come from NookTheme by name; a literal hex / RGB / gray is only allowed in the theme, in Nook's character
 #      drawings, and in the files listed in OWN_COLORS (brand marks, chart series, palettes that are named once).
 #   3. Corner radii come from NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20).
+#   4. Text uses NookTheme.TextStyle, never SwiftUI's own text styles (.caption, .callout, .headline, .system(.body …)),
+#      whose sizes do not line up with the scale.
+#   5. State and text colors come from NookTheme (coral, amber, mint, textSecondary …), never the system .red, .orange,
+#      .yellow, .green, .secondary, or .tertiary.
+#   6. Short UI animations use NookTheme.hover / reveal / scroll / swap, never an inline .easeOut(duration: 0.15).
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
+# `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
+shopt -s lastpipe
 cd "$(dirname "$0")/../apps/macos"
 
 OWN_COLORS=(
@@ -44,8 +51,20 @@ for file in "${OWN_COLORS[@]}"; do exclude+=(-e "^$file:"); done
 grep -rnE '\b(NS)?Color\(\s*(hex|red|white|\.sRGB)\b' NotchUI App --include='*.swift' | grep -v "${exclude[@]}" \
   | report "colors come from NookTheme by name (no literal Color(hex:/red:/white:))"
 
-grep -rnE 'cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)' NotchUI App --include='*.swift' \
+grep -rnE 'cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|cardBackground\(.*radius:\s*[0-9]' NotchUI App --include='*.swift' \
   | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)"
+
+grep -rnE '\.font\(\s*(Font)?\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Theme/NookTheme.swift' \
+  | report "text uses NookTheme.TextStyle (no .caption / .callout / .headline / .system(.body))"
+
+grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b|return \.(red|orange|yellow|green|secondary|tertiary)\b' \
+  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
+  | report "state and text colors come from NookTheme (no system .red / .orange / .green / .secondary)"
+
+grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:' \
+  NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
+  | report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))"
 
 exit $status

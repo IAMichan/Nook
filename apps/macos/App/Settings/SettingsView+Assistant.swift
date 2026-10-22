@@ -25,10 +25,10 @@ extension SettingsView {
                 // A switch that is greyed out without a word leaves you guessing: say why, and where to change it.
                 if settings.useLocal {
                     HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "info.circle").foregroundStyle(.secondary)
+                        Image(systemName: "info.circle").foregroundStyle(NookTheme.textSecondary)
                         Text(tr("settings.assistant.thinkAlongLocal"))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .font(NookTheme.TextStyle.body)
+                            .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                         Button(tr("settings.section.brain")) { app.settingsSection = .brain }
@@ -39,7 +39,7 @@ extension SettingsView {
                     LabeledContent(tr("settings.assistant.mutedIn")) {
                         HStack {
                             Text(app.thinkAlong.mutedApps.values.sorted().joined(separator: ", "))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(NookTheme.textSecondary)
                                 .lineLimit(2)
                             Button(tr("button.clear")) { app.thinkAlong.unmuteAll() }
                         }
@@ -69,8 +69,8 @@ extension SettingsView {
                 NookOrb(mood: .cozy, size: 26, animated: false, glow: false)
                     .frame(width: 30, height: 30)
                 Text(tr(BuddyPlanner.lineKey(BuddyMoment(kind: .morning, id: "preview", count: 3), tone: settings.buddyTone), 3))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .opacity(settings.buddyMoments ? 1 : 0.5)
@@ -132,7 +132,7 @@ private struct ScreenStatusText: View {
     let enabled: Bool
 
     var body: some View {
-        Text(text).foregroundStyle(.secondary)
+        Text(text).foregroundStyle(NookTheme.textSecondary)
     }
 
     private var text: String {

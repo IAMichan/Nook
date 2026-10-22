@@ -451,12 +451,29 @@ impl NookChat {
 
     pub fn save(&self) -> std::io::Result<()> {
         let Some(file) = &self.file else { return Ok(()) };
-        let stored = serde_json::json!({
-            "version": 2,
-            "active": self.active_id,
-            "conversations": self.conversations.iter().filter(|c| !c.messages.is_empty()).collect::<Vec<_>>(),
-        });
-        paths::write_atomic(file, &serde_json::to_vec(&stored).map_err(std::io::Error::other)?)
+        paths::write_atomic(file, &self.encoded()?)
+    }
+
+    /// What `save` writes, serialized straight from the conversations: going through `json!` would first copy every
+    /// conversation, attached images included, into a `Value`.
+    fn encoded(&self) -> std::io::Result<Vec<u8>> {
+        #[derive(Serialize)]
+        struct Stored<'a> {
+            version: u8,
+            active: &'a Option<String>,
+            conversations: Vec<&'a Conversation>,
+        }
+        let stored = Stored {
+            version: 2,
+            active: &self.active_id,
+            conversations: self.conversations.iter().filter(|c| !c.messages.is_empty()).collect(),
+        };
+        serde_json::to_vec(&stored).map_err(std::io::Error::other)
+    }
+
+    /// The file and its contents, so the caller can write it after releasing the lock around the chat.
+    pub fn snapshot(&self) -> Option<(std::path::PathBuf, std::io::Result<Vec<u8>>)> {
+        self.file.clone().map(|file| (file, self.encoded()))
     }
 
     pub fn get(&self, id: &str) -> Option<&Conversation> {

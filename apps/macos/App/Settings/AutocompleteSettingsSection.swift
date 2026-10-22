@@ -183,7 +183,7 @@ struct AutocompleteSettingsSection: View {
                 }
             }
             if let model = downloads.downloading, !CompletionCatalogModel.catalog.contains(model) { downloadRow(model) }
-            if let error = downloads.error { Text(error).font(.caption).foregroundStyle(.red) }
+            if let error = downloads.error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral) }
         } header: {
             Text(tr("autocomplete.section.download"))
         } footer: {
@@ -196,11 +196,11 @@ struct AutocompleteSettingsSection: View {
     private func presentRow(_ file: CompletionModelFile) -> some View {
         let inUse = autocomplete.activeModel?.identity == file.url.path
         return HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green).font(NookTheme.font(16))
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint).font(NookTheme.font(16))
             SettingLabel(file.title, detail: "\(file.sizeText) · \(sourceLabel(file.source))")
             Spacer()
             if inUse {
-                Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("autocomplete.download.inUse")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             } else {
                 Button(tr("autocomplete.use")) { store.prefs.modelPath = file.url.path }
                 // Not the model in use. Another app's file goes to the Trash rather than being deleted, so it can be put back.
@@ -244,23 +244,23 @@ struct AutocompleteSettingsSection: View {
         let inUse = here.map { autocomplete.activeModel?.identity == $0.path } ?? false
         return HStack(spacing: 10) {
             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
-                .foregroundStyle(installed ? Color.green : Color.secondary)
+                .foregroundStyle(installed ? NookTheme.mint : NookTheme.textSecondary)
                 .font(NookTheme.font(16))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(model.name)
                     if model == recommended {
                         Text(tr("autocomplete.recommended"))
-                            .font(.caption.weight(.medium))
+                            .font(NookTheme.TextStyle.label)
                             .padding(.horizontal, 6).padding(.vertical, 1)
                             .background(Capsule().fill(Color.accentColor.opacity(0.18)))
                     }
                 }
                 if downloads.downloading == model {
-                    Text(downloads.progressText).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Text(downloads.progressText).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
                 } else if model.sizeGB > 0 {
                     Text("\(String(format: "%.1f", model.sizeGB)) GB · \(tr(model.noteKey))\(model.minimumMemoryGB > EmbeddedModel.memoryGB ? " · " + tr("autocomplete.download.tooBig", model.minimumMemoryGB) : "")")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
             }
             Spacer()
@@ -269,7 +269,7 @@ struct AutocompleteSettingsSection: View {
                 Button(tr("button.cancel")) { downloads.cancel() }
             } else if installed {
                 if inUse {
-                    Text(tr("autocomplete.download.inUse")).font(.caption).foregroundStyle(.secondary)
+                    Text(tr("autocomplete.download.inUse")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 } else if let here {
                     Button(tr("autocomplete.use")) { store.prefs.modelPath = here.path }
                 }
@@ -329,16 +329,16 @@ struct AutocompleteSettingsSection: View {
             Stepper(tr("autocomplete.maxWords", store.prefs.maxWords), value: $store.prefs.maxWords, in: 1...20)
             LabeledContent(tr("autocomplete.eagerness")) {
                 HStack {
-                    Text(tr("autocomplete.eagerness.careful")).font(.caption).foregroundStyle(.secondary)
+                    Text(tr("autocomplete.eagerness.careful")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     Slider(value: $store.prefs.eagerness, in: 0...1).frame(width: 160)
-                    Text(tr("autocomplete.eagerness.eager")).font(.caption).foregroundStyle(.secondary)
+                    Text(tr("autocomplete.eagerness.eager")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 }
             }
             LabeledContent(tr("autocomplete.delay")) {
                 HStack {
                     Slider(value: Binding(get: { Double(store.prefs.delayMilliseconds) }, set: { store.prefs.delayMilliseconds = Int($0) }),
                            in: 0...600, step: 20).frame(width: 160)
-                    Text("\(store.prefs.delayMilliseconds) ms").monospacedDigit().foregroundStyle(.secondary)
+                    Text("\(store.prefs.delayMilliseconds) ms").monospacedDigit().foregroundStyle(NookTheme.textSecondary)
                 }
             }
             SettingToggle(tr("autocomplete.inline"), detail: tr("autocomplete.inlineDetail"), isOn: $store.prefs.inlineGhost)
@@ -358,10 +358,10 @@ struct AutocompleteSettingsSection: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(tr("autocomplete.section.keys")).foregroundStyle(.primary)
-                        Text(tr("settings.autocomplete.keysMoved")).font(.caption).foregroundStyle(.secondary)
+                        Text(tr("settings.autocomplete.keysMoved")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
                 }
                 .contentShape(Rectangle())
             }
@@ -391,10 +391,10 @@ struct AutocompleteSettingsSection: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(tr("autocomplete.instructions"))
                 TextEditor(text: $instructions)
-                    .font(.callout)
+                    .font(NookTheme.TextStyle.body)
                     .frame(minHeight: 70)
                     .onChange(of: instructions) { _, value in store.prefs.instructions = value }
-                Text(tr("autocomplete.instructionsHint")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("autocomplete.instructionsHint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             }
             SettingToggle(tr("autocomplete.learn"), detail: tr("autocomplete.learnDetail"), isOn: $store.prefs.learn)
                 .onChange(of: store.prefs.learn) { _, _ in autocomplete.applyPersonalization() }
@@ -422,7 +422,7 @@ struct AutocompleteSettingsSection: View {
             Section {
                 SettingToggle(tr("autocomplete.everywhere"), detail: tr("autocomplete.everywhereDetail"), isOn: $store.prefs.enabledByDefault)
                 HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textSecondary)
                     TextField(tr("autocomplete.apps.search"), text: $search).textFieldStyle(.plain)
                     Picker("", selection: $filter) {
                         ForEach(AppFilter.allCases) { Text(tr("autocomplete.apps.filter.\($0.rawValue)")).tag($0) }
@@ -436,7 +436,7 @@ struct AutocompleteSettingsSection: View {
             }
             Section {
                 if apps.isEmpty {
-                    Text(installed.isEmpty ? tr("autocomplete.loading.apps") : tr("autocomplete.apps.noMatch")).foregroundStyle(.secondary)
+                    Text(installed.isEmpty ? tr("autocomplete.loading.apps") : tr("autocomplete.apps.noMatch")).foregroundStyle(NookTheme.textSecondary)
                 }
                 ForEach(apps) { app in appRow(app) }
             } footer: {
@@ -494,12 +494,12 @@ struct AutocompleteSettingsSection: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(app.name)
                     if let note = note(for: app.bundleID) {
-                        Text(note).font(.caption).foregroundStyle(.secondary)
+                        Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                 }
                 Spacer()
                 if let uses = store.stats.apps[app.bundleID]?.takes, uses > 0 {
-                    Text(tr("autocomplete.stats.timesShort", uses)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Text(tr("autocomplete.stats.timesShort", uses)).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
                 }
                 Toggle("", isOn: enabledBinding(app.bundleID)).labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
@@ -549,7 +549,7 @@ struct AutocompleteSettingsSection: View {
             ForEach(store.prefs.sites.keys.sorted(), id: \.self) { site in
                 DisclosureGroup {
                     TextField(tr("autocomplete.app.instructions"), text: siteInstructions(site), axis: .vertical).lineLimit(1...4)
-                    Button(tr("autocomplete.apps.removeSite"), role: .destructive) { store.prefs.sites[site] = nil }
+                    ConfirmedButton(tr("autocomplete.apps.removeSite"), question: tr("confirm.remove", site)) { store.prefs.sites[site] = nil }
                 } label: {
                     HStack(spacing: 10) {
                         SiteIcon(domain: site, fallback: "globe", tint: .secondary, size: 18)
@@ -643,7 +643,7 @@ struct AutocompleteSettingsSection: View {
 
             Section(tr("autocomplete.stats.chart")) {
                 if stats.totalTakes == 0 {
-                    Text(tr("autocomplete.stats.empty")).foregroundStyle(.secondary)
+                    Text(tr("autocomplete.stats.empty")).foregroundStyle(NookTheme.textSecondary)
                 } else {
                     Chart(recent, id: \.date) { entry in
                         BarMark(x: .value("Dag", entry.date, unit: .day), y: .value("Keer", entry.day.takes))
@@ -676,7 +676,7 @@ struct AutocompleteSettingsSection: View {
                             AppIcon(url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: entry.bundleID))
                             Text(appName(entry.bundleID)).frame(width: 140, alignment: .leading).lineLimit(1)
                             ProgressView(value: Double(entry.count.takes), total: Double(most)).tint(SettingsSection.autocomplete.tileColors.1)
-                            Text(tr("autocomplete.stats.timesShort", entry.count.takes)).monospacedDigit().foregroundStyle(.secondary)
+                            Text(tr("autocomplete.stats.timesShort", entry.count.takes)).monospacedDigit().foregroundStyle(NookTheme.textSecondary)
                                 .frame(width: 60, alignment: .trailing)
                         }
                     }
@@ -719,9 +719,9 @@ private struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: symbol).font(.caption).foregroundStyle(.secondary)
+            Label(title, systemImage: symbol).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             Text(value).font(NookTheme.rounded(24, .semibold)).monospacedDigit()
-            Text(detail).font(.caption).foregroundStyle(.secondary)
+            Text(detail).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -736,7 +736,7 @@ private struct AppIcon: View {
     var body: some View {
         Group {
             if let url { Image(nsImage: FileIcons.icon(url.path)).resizable() }
-            else { Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary) }
+            else { Image(systemName: "app.dashed").resizable().foregroundStyle(NookTheme.textSecondary) }
         }
         .frame(width: 20, height: 20)
     }
@@ -788,9 +788,9 @@ struct CompletionKeyRecorder: View {
         LabeledContent(title) {
             HStack(spacing: 6) {
                 Button { recording ? stop() : start() } label: {
-                    if recording { Text(tr("shortcut.record")).foregroundStyle(.secondary) }
+                    if recording { Text(tr("shortcut.record")).foregroundStyle(NookTheme.textSecondary) }
                     else if let shortcut { Keycap(label: shortcut.label) }
-                    else { Text(tr("shortcut.off")).foregroundStyle(.secondary) }
+                    else { Text(tr("shortcut.off")).foregroundStyle(NookTheme.textSecondary) }
                 }
                 .buttonStyle(.borderless)
                 if shortcut != fallback, !recording {

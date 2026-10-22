@@ -786,7 +786,7 @@ pub fn mentions(lowered: &str, subject: &str) -> bool {
         return false;
     }
     let pattern = format!(r"(?<![\p{{L}}\d]){}(?![\p{{L}}\d])", fancy_regex::escape(&name));
-    fancy_regex::Regex::new(&pattern).ok().is_some_and(|re| matches(&re, lowered))
+    super::matches_pattern(&pattern, lowered)
 }
 
 /// Leert waar de antwoorden staan: verwijst een antwoord naar een mail over "factuur", dan krijgt mail punten voor dat woord.

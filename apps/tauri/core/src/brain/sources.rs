@@ -301,8 +301,8 @@ fn registered_intents() -> Vec<(String, Vec<String>)> {
     registry().read().unwrap_or_else(|e| e.into_inner()).intents.clone()
 }
 
-fn bounded(pattern: &str) -> Option<fancy_regex::Regex> {
-    fancy_regex::Regex::new(&format!(r"(?i)(?<![\p{{L}}\d])(?:{pattern})(?![\p{{L}}\d])")).ok()
+fn bounded(pattern: &str) -> Option<std::sync::Arc<fancy_regex::Regex>> {
+    super::cached(&format!(r"(?i)(?<![\p{{L}}\d])(?:{pattern})(?![\p{{L}}\d])"))
 }
 
 /// Alle bronnen die in de tekst genoemd worden, met hun plek (in bytes).
@@ -565,8 +565,7 @@ pub mod router {
         }
         let intents = INTENTS.iter().map(|(p, ids)| (p.to_string(), ids.iter().map(|s| s.to_string()).collect::<Vec<_>>()));
         for (pattern, ids) in intents.chain(registered_intents()) {
-            let Ok(re) = fancy_regex::Regex::new(&format!(r"(?i)(?<![\p{{L}}\d])(?:{pattern})")) else { continue };
-            if matches(&re, text) {
+            if crate::brain::matches_pattern(&format!(r"(?i)(?<![\p{{L}}\d])(?:{pattern})"), text) {
                 wanted.extend(ids);
             }
         }
@@ -718,7 +717,7 @@ pub mod prefetch {
     pub const PENDING: &str = r"open ?staa?n\w*|openstaand\w*|open (chats?|gesprekk?e?n?|berichten|appjes?|conversations?|threads?|messages?)|onbeantwoord\w*|unanswered|pending|outstanding|waiting|wacht\w* (op|nog)|nog (niet )?(gereageerd|geantwoord|beantwoord|teruggeappt|teruggestuurd)|unbeantwortet\w*|offene?n? (chats?|nachrichten)";
 
     pub fn has(pattern: &str, text: &str) -> bool {
-        fancy_regex::Regex::new(&format!(r"(?i)(?<![\p{{L}}\d])(?:{pattern})")).ok().is_some_and(|re| matches(&re, text))
+        crate::brain::matches_pattern(&format!(r"(?i)(?<![\p{{L}}\d])(?:{pattern})"), text)
     }
 
     /// De vraag wil de nieuwste of ongelezen dingen van deze bron, dus zijn overzicht helpt ook naast een zoekopdracht.

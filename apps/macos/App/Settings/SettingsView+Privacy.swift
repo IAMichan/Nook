@@ -33,9 +33,9 @@ extension SettingsView {
                 SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
                               isOn: $settings.onlineLyrics)
                 LabeledContent(tr("settings.privacy.screenText")) {
-                    Button(tr("settings.privacy.forgetScreenText")) {
+                    Button(tr("settings.privacy.forgetScreenText"), role: .destructive) {
                         app.screenContext.clear()
-                        status = tr("settings.privacy.screenTextForgotten")
+                        ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
                     }
                 }
             }
@@ -54,13 +54,13 @@ extension SettingsView {
             }
             .pickerStyle(.segmented)
             Text(tr(settings.privacyLevel.detailKey))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if settings.isLocalBrain {
                 Text(tr("settings.privacy.level.localBrain"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
         } header: {
             Text(tr("settings.privacy.levelTitle"))
@@ -123,7 +123,7 @@ extension SettingsView {
     func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
         StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
             if granted {
-                Text(tr("music.on")).foregroundStyle(.secondary)
+                Text(tr("music.on")).foregroundStyle(NookTheme.textSecondary)
             } else {
                 Button(tr("button.allow")) {
                     app.requestPermission { await request(); refreshTick += 1 }

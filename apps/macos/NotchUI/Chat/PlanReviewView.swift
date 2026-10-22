@@ -83,7 +83,7 @@ struct PlanReview: View {
             }
         }
         .padding(14)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 14)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
     }
 
     // MARK: Single step
@@ -105,7 +105,7 @@ struct PlanReview: View {
                 Spacer(minLength: 4)
                 if !step.tag.isEmpty {
                     Text(step.tag)
-                        .font(NookTheme.font(11.5, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(color(step.tone))
                 }
                 Button {
@@ -253,7 +253,6 @@ struct PlanReview: View {
             case .pending:
                 SmallPrimaryButton(title: tr("button.execute"), systemName: "checkmark") { app.runPlan(message.id) }
                     .disabled(blocked)
-                    .opacity(blocked ? 0.45 : 1)
                 SmallGhostButton(title: tr("button.cancel")) { app.cancelPlan(message.id) }
             case .running:
                 ProgressView().controlSize(.small)
@@ -276,7 +275,6 @@ struct PlanReview: View {
                             SmallPrimaryButton(title: onlyRetries ? tr("chat.retry") : tr("chat.plan.continue"),
                                                systemName: "arrow.clockwise") { app.runPlan(message.id) }
                                 .disabled(blocked)
-                                .opacity(blocked ? 0.45 : 1)
                         }
                         if !duplicates.isEmpty {
                             SmallGhostButton(title: tr("chat.plan.runAnyway")) { app.runPlan(message.id, force: duplicates) }

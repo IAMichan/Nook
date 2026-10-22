@@ -397,7 +397,7 @@ private struct TerminalTab: View {
                 .font(NookTheme.font(11.5, selected ? .medium : .regular))
                 .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
             if !session.running, let code = session.exitCode, code != 0 {
-                Text(tr("workbench.terminal.exit", code)).font(.caption2).foregroundStyle(NookTheme.coral)
+                Text(tr("workbench.terminal.exit", code)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
             }
             Button(action: close) {
                 Image(systemName: "xmark")

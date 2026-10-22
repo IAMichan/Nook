@@ -19,7 +19,7 @@ struct ApprovalView: View {
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                 if more > 0 {
-                    Text(tr("ws.approval.more", more)).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                    Text(tr("ws.approval.more", more)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                 }
                 Spacer(minLength: 0)
             }
@@ -41,7 +41,7 @@ struct ApprovalView: View {
             }
         }
         .padding(12)
-        .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 12)
+        .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.panel)
     }
 
     @ViewBuilder

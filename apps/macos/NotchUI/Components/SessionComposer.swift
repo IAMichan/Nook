@@ -300,7 +300,7 @@ struct SessionComposer<Controls: View>: View {
                     .allowsHitTesting(false)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: focused.wrappedValue)
+        .animation(NookTheme.reveal, value: focused.wrappedValue)
         .onDrop(of: imagesBinding == nil ? [] : [UTType.fileURL, UTType.image], isTargeted: $dropTargeted) { providers in
             guard let imagesBinding else { return false }
             return ImageAttachment.receive(providers, images: { imagesBinding.wrappedValue += $0 }, file: { url in

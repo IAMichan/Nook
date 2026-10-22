@@ -200,7 +200,7 @@ struct AgentSessionDetail: View {
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                 }
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .lineLimit(1)
             }
         }
@@ -219,7 +219,7 @@ struct AgentSessionDetail: View {
         .frame(maxHeight: 90)
         .fixedSize(horizontal: false, vertical: true)
         .padding(12)
-        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: 12)
+        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: NookTheme.Radius.panel)
     }
 
     /// The change an approval is about, scrollable so it can be read in full before deciding.
@@ -447,7 +447,7 @@ struct AgentSessionDetail: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: 12)
+        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: NookTheme.Radius.panel)
     }
 
     private func answer(_ request: AgentQuestionRequest, index: Int, labels: [String]) {
@@ -473,7 +473,7 @@ struct AgentSessionDetail: View {
         if let actionError {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coral)
                 Text(actionError)
                     .font(NookTheme.font(12))

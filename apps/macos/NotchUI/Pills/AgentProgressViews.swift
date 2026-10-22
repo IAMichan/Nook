@@ -73,7 +73,7 @@ struct VerificationChips: View {
                     Image(systemName: Self.symbol(check.outcome)).font(NookTheme.font(8.5, .bold))
                     Text(Self.text(check)).lineLimit(1)
                 }
-                .font(NookTheme.font(10.5, .medium))
+                .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(Self.color(check.outcome))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -121,7 +121,7 @@ struct TaskChecklistCard: View {
     var body: some View {
         let progress = RunTasks.progress(steps)
         VStack(alignment: .leading, spacing: 7) {
-            Button { withAnimation(.easeInOut(duration: 0.18)) { collapsed.toggle() } } label: {
+            Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "checklist").font(NookTheme.font(10.5, .semibold))
                     Text(tr("ws.tasks.title")).font(NookTheme.font(11.5, .semibold))
@@ -148,8 +148,8 @@ struct TaskChecklistCard: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 12, style: .continuous)
-        .animation(.easeInOut(duration: 0.2), value: steps)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.panel, style: .continuous)
+        .animation(NookTheme.reveal, value: steps)
     }
 }
 

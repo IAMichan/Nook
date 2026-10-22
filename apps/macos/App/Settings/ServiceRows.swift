@@ -53,7 +53,7 @@ struct ConnectMethodBadge: View {
             ProgressView().controlSize(.small)
         } else {
             Text(text ?? method.label)
-                .font(.caption.weight(.semibold))
+                .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(method == .signIn ? NookTheme.onIris : NookTheme.iris)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -85,7 +85,7 @@ struct ServiceCategoryChips: View {
             selection = category
         } label: {
             Text(title)
-                .font(.caption.weight(.medium))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(active ? NookTheme.onIris : Color.primary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -109,7 +109,7 @@ enum ServiceStatus: Equatable {
         case .expired: return NookTheme.amber
         case .unreachable: return NookTheme.coral
         case .connecting: return NookTheme.iris
-        case .notLinked, .off: return .secondary
+        case .notLinked, .off: return NookTheme.textSecondary
         }
     }
 }
@@ -126,8 +126,8 @@ struct ServiceStatusLabel: View {
                 Circle().fill(status.color).frame(width: 6, height: 6)
             }
             Text(status.label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(status == .notLinked || status == .off ? Color.secondary : status.color)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(status == .notLinked || status == .off ? NookTheme.textSecondary : status.color)
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
@@ -156,8 +156,8 @@ struct ServiceRowLayout<Actions: View>: View {
                     ServiceStatusLabel(status: status)
                 }
                 Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(detailIsError ? NookTheme.coral : Color.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(detailIsError ? NookTheme.coral : NookTheme.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }

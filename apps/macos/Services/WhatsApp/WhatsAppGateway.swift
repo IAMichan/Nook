@@ -8,6 +8,7 @@
 
 import Foundation
 import CryptoKit
+import UniformTypeIdentifiers
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
 /// (a photo, a video, a document) or you open it.
@@ -76,6 +77,27 @@ extension WAMedia {
         case .image, .video, .audio, .voice, .document: return true
         case .none, .sticker, .location, .contact, .other: return false
         }
+    }
+
+    /// A safe file name for this file: the document's own name when there is one, else one after its kind, with an
+    /// extension the Mac recognizes.
+    func safeFileName(given: String?, mimeType: String?) -> String {
+        var name: String
+        switch self {
+        case .document(let own): name = own ?? given ?? "document"
+        case .image: name = given ?? "photo"
+        case .video: name = given ?? "video"
+        case .audio, .voice: name = given ?? "voice message"
+        default: name = given ?? "attachment"
+        }
+        name = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        if name.isEmpty { name = "attachment" }
+        if (name as NSString).pathExtension.isEmpty, let mimeType,
+           let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension {
+            name += "." + ext
+        }
+        return String(name.suffix(120))
     }
 }
 

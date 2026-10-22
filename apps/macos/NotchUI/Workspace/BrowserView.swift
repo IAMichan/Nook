@@ -303,13 +303,19 @@ struct BrowserView: View {
             HStack(spacing: 8) {
                 Button { store.webView.goBack() } label: { Image(systemName: "chevron.left") }
                     .disabled(!store.canGoBack)
+                    .help(tr("a11y.back"))
+                    .accessibilityLabel(tr("a11y.back"))
                 Button { store.webView.goForward() } label: { Image(systemName: "chevron.right") }
                     .disabled(!store.canGoForward)
+                    .help(tr("a11y.forward"))
+                    .accessibilityLabel(tr("a11y.forward"))
                 Button {
                     if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
                 } label: {
                     Image(systemName: store.loading ? "xmark" : "arrow.clockwise")
                 }
+                .help(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
+                .accessibilityLabel(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
                 TextField(tr("workbench.browser.address"), text: $store.address)
                     .textFieldStyle(.plain)
                     .font(NookTheme.font(12.5))

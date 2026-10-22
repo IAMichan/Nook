@@ -560,7 +560,7 @@ pub async fn create_github_pull_request(
     if tokens.is_empty() {
         return Err("GitHub is niet gekoppeld. Koppel het bij Instellingen › Koppelingen.".into());
     }
-    let client = reqwest::Client::new();
+    let client = github_client();
     let mut last = String::new();
     for token in tokens {
         let request = github(client.post(format!("https://api.github.com/repos/{repo}/pulls")), token)
@@ -592,10 +592,24 @@ pub async fn create_github_pull_request(
     Err(last)
 }
 
+/// A client with timeouts: `Client::new()` has none, so a stalled connection would hang the command that waits on it.
+fn github_client() -> reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default()
+        })
+        .clone()
+}
+
 /// De open pull request met `branch` als bron, of `None` (niet gekoppeld, niet gevonden, offline).
 pub async fn open_github_pull_request(tokens: &[String], repo: &str, branch: &str) -> Option<String> {
     let owner = repo.split('/').next()?;
-    let client = reqwest::Client::new();
+    let client = github_client();
     for token in tokens {
         let request = github(client.get(format!("https://api.github.com/repos/{repo}/pulls")), token).query(&[
             ("state", "open"),

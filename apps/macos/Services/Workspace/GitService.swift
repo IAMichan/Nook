@@ -343,6 +343,16 @@ struct GitService: Sendable {
         return try run(arguments, in: directory)
     }
 
+    /// Lines added and removed per file between two snapshots (`to` nil: the files as they are now), keyed by the path
+    /// relative to `directory`; for the numbers on what a single turn changed.
+    func lineCounts(_ directory: String, paths: [String], from: String, to: String?) throws -> [String: (added: Int?, removed: Int?)] {
+        guard !paths.isEmpty else { return [:] }
+        var arguments = ["diff", "--numstat", "-z", "-M", "--relative", from]
+        if let to { arguments.append(to) }
+        arguments += ["--"] + paths
+        return Self.parseNumstat(try run(arguments, in: directory))
+    }
+
     static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
     // MARK: Worktrees
