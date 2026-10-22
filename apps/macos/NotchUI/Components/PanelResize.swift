@@ -57,6 +57,8 @@ enum PanelLayout {
     static let console: Double = 400
     /// The side panel with a session's terminal, browser or changes.
     static let tool: Double = 460
+    /// An artifact beside the app that made it (a Claude artifact next to Claude).
+    static let artifact: Double = 420
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260
