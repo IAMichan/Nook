@@ -11,7 +11,7 @@ extension AppModel {
         actions.enumerated().map { index, action in
             let spec = allTools.first { $0.name == action.tool }
             let tag = spec?.tag(action.input) ?? ("", .neutral)
-            return PlanStep(number: index + 1, text: spec?.summarize(action.input) ?? action.tool, tag: tag.0, tone: tag.1)
+            return PlanStep(number: index + 1, text: spec?.summarize(action.input) ?? action.summary ?? action.tool, tag: tag.0, tone: tag.1)
         }
     }
 
@@ -35,7 +35,7 @@ extension AppModel {
     /// Executes enabled plan steps. Resuming after an error picks up from where it stopped:
     /// already completed steps are skipped. `force`: allows running steps previously flagged as duplicate.
     func runPlan(_ id: UUID, force: Set<Int> = []) {
-        guard let message = chat.message(id), !message.actions.isEmpty, message.planState != .running, message.planState != .cancelled else { return }
+        guard let message = chat.message(id), !message.actions.isEmpty, !message.planArchived, message.planState != .running, message.planState != .cancelled else { return }
         if case .done = message.planState, force.isEmpty { return }
         let scope = chat.conversationID(of: id).flatMap { chat.conversation($0)?.scope } ?? .automatic
         let steps = message.actions.map { PlanRunner.Step(tool: $0.tool, input: $0.input) }

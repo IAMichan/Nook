@@ -50,6 +50,8 @@ struct ChatMessage: Identifiable {
     var actionStates: [ActionStepState] = []
     var actionIncluded: [Bool] = []
     var actionProblems: [[String]] = []
+    /// Restored from disk: the plan shows what was proposed and how each step ended, but can no longer run.
+    var planArchived = false
     /// Follow-up suggestions ("Add to my calendar"), shown as buttons below answer.
     var offers: [String] = []
 
@@ -114,7 +116,8 @@ struct ChatMessage: Identifiable {
                 case .running: outcome = "running"
                 case .pending: outcome = planState == .cancelled ? "cancelled" : "pending"
                 }
-                steps.append("\(index + 1). \(action.tool) \(Self.compactInput(action.input)) → \(outcome)")
+                let name = action.tool.isEmpty ? action.summary ?? "" : "\(action.tool) \(Self.compactInput(action.input))"
+                steps.append("\(index + 1). \(name) → \(outcome)")
             }
             parts.append("[proposed actions — \(state)]\n" + steps.joined(separator: "\n"))
         }
@@ -162,7 +165,7 @@ struct Conversation: Identifiable, ConversationListItem {
         // Only what Nook proposed since your last message: a plan or draft you moved past is not waiting for you anymore.
         let lastAsked = messages.lastIndex { $0.role == .user } ?? -1
         let waiting = messages[(lastAsked + 1)...].contains { message in
-            (!message.actions.isEmpty && message.planState == .pending)
+            (!message.actions.isEmpty && message.planState == .pending && !message.planArchived)
                 || message.mails.contains { $0.state == .draft }
         }
         if waiting { return .waiting }
@@ -532,7 +535,8 @@ final class NookChat: ObservableObject {
 
 // MARK: Disk Storage
 
-/// Persisted conversation representation. Pending actions are serialized as text lines rather than executable actions.
+/// Persisted conversation representation. A plan is kept with its steps and outcomes so it shows as a plan again,
+/// but a restored plan never runs (`ChatMessage.planArchived`).
 private struct StoredChats: Codable, Sendable {
     /// Format version, written since version 2. Files without it are version 1 and read the same way.
     var version: Int? = 2
@@ -616,32 +620,13 @@ private struct StoredMessage: Codable {
     var contextSources: [String]?
     var scopeLabel: String?
     var notices: [String]?
+    var plan: StoredPlan?
 
     @MainActor
     init?(_ message: ChatMessage) {
-        var text = message.text
-        if !message.actions.isEmpty {
-            // The plan is formatted into the text: what was proposed and each step's outcome.
-            // Executable actions are not restored after restart.
-            let steps = AppModel.shared.planSteps(message.actions)
-            var lines: [String] = []
-            for (index, step) in steps.enumerated() {
-                let state: String
-                switch index < message.actionStates.count ? message.actionStates[index] : .pending {
-                case .done(let result): state = "✓ " + result
-                case .verified(let result): state = "✓✓ " + result
-                case .approved: state = "not executed"
-                case .failed(let error): state = "✗ failed: \(error)"
-                case .duplicate(let when): state = "already completed on \(when)"
-                case .skipped: state = "skipped"
-                case .notRun, .running: state = "not executed"
-                case .pending: state = message.planState == .cancelled ? "cancelled" : "not executed"
-                }
-                lines.append("\(index + 1). \(step.text) · \(state)")
-            }
-            text += (text.isEmpty ? "" : "\n\n") + "_Plan:_\n" + lines.map { "_\($0)_" }.joined(separator: "\n")
-        }
-        guard !text.isEmpty || !message.charts.isEmpty || !message.mails.isEmpty else { return nil }
+        let text = message.text
+        plan = message.actions.isEmpty ? nil : StoredPlan(message)
+        guard !text.isEmpty || plan != nil || !message.charts.isEmpty || !message.mails.isEmpty else { return nil }
         user = message.role == .user
         self.text = text
         date = message.date
@@ -670,7 +655,61 @@ private struct StoredMessage: Codable {
         message.contextSources = contextSources ?? []
         message.scopeLabel = scopeLabel ?? ""
         message.notices = notices ?? []
+        if let plan {
+            plan.restore(into: &message)
+        } else if let legacy = StoredPlan.legacy(in: text) {
+            // Saved before plans were stored as steps: the plan was written into the text as italic lines.
+            message.text = legacy.text
+            legacy.plan.restore(into: &message)
+        }
         return message
+    }
+}
+
+/// Saving and restoring a plan with its message; the stored form itself is in `Brain/PlanArchive.swift`.
+extension StoredPlan {
+    @MainActor
+    init(_ message: ChatMessage) {
+        let summaries = AppModel.shared.planSteps(message.actions).map(\.text)
+        steps = message.actions.enumerated().map { index, action in
+            var state = message.actionStates[safe: index] ?? .pending
+            // Stopped mid-run (Nook quit): what happened is unknown, so it reads as not run rather than in progress.
+            if state == .running || state == .approved { state = .pending }
+            // Checked first: an input JSON cannot hold (a date, say) raises instead of throwing.
+            let json = JSONSerialization.isValidJSONObject(action.input)
+                ? (try? JSONSerialization.data(withJSONObject: action.input, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) }
+                : nil
+            return Step(tool: action.tool, summary: summaries[safe: index] ?? action.tool, input: json,
+                        state: state, included: message.actionIncluded[safe: index] ?? true)
+        }
+        switch message.planState {
+        case .pending, .running: outcome = "pending"; detail = nil
+        case .done(let result): outcome = "done"; detail = result
+        case .cancelled: outcome = "cancelled"; detail = nil
+        case .failed(let error): outcome = "failed"; detail = error
+        }
+    }
+
+    var planState: ChatMessage.PlanState {
+        switch outcome {
+        case "done": return .done(detail ?? "")
+        case "cancelled": return .cancelled
+        case "failed": return .failed(detail ?? "")
+        default: return .pending
+        }
+    }
+
+    func restore(into message: inout ChatMessage) {
+        message.actions = steps.map { step in
+            let input = step.input.flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            return PlannedAction(tool: step.tool, input: input, summary: step.summary)
+        }
+        message.actionStates = steps.map(\.state)
+        message.actionIncluded = steps.map(\.included)
+        message.actionProblems = steps.map { _ in [] }
+        message.planState = planState
+        message.planArchived = true
     }
 }
 
