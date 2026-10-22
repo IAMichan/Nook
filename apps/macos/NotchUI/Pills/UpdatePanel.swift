@@ -11,7 +11,7 @@ struct UpdatePanel: View {
     @State private var stashConsent = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             switch updater.phase {
             case .installing(let step): installing(step)
             case .readyToRestart: readyToRestart
@@ -36,7 +36,7 @@ struct UpdatePanel: View {
     // MARK: Available
 
     private func available(_ update: AppUpdater.Available) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "arrow.down.circle.fill", tint: NookTheme.mint, title: tr("update.title"),
                    detail: tr("update.subtitle", update.count, update.branch))
             commitRange(from: updater.source?.shortCommit ?? "", to: update.shortTarget, update: update)
@@ -52,7 +52,7 @@ struct UpdatePanel: View {
             case .needsStash(let files):
                 note(tr("update.warning.stash", files), symbol: "tray.and.arrow.down", tint: NookTheme.amber)
                 Toggle(isOn: $stashConsent) {
-                    Text(tr("update.stashConsent")).font(NookTheme.font(12)).foregroundStyle(NookTheme.paper)
+                    Text(tr("update.stashConsent")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.paper)
                 }
                 .toggleStyle(.checkbox)
             case .ready:
@@ -62,11 +62,11 @@ struct UpdatePanel: View {
                 note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)
             }
             Text(tr(updater.fromXcode ? "update.how.xcode" : "update.how"))
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Spacer(minLength: 0)
                 SmallGhostButton(title: tr("update.later"), action: close)
                 if case .blocked = preflight {
@@ -86,7 +86,7 @@ struct UpdatePanel: View {
     }
 
     private func commitRange(from: String, to: String, update: AppUpdater.Available) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             Text(verbatim: from).foregroundStyle(NookTheme.textSecondary)
             Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(verbatim: to).foregroundStyle(NookTheme.paper)
@@ -110,26 +110,26 @@ struct UpdatePanel: View {
     /// The merged pull requests, newest first; a row opens its pull request on GitHub.
     private func changeList(_ changes: [IncomingChange], total: Int, github: GitHubRepository?) -> some View {
         let shown = Array(changes.prefix(8))
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             ForEach(shown) { change in
                 ChangeRow(change: change, url: change.pullRequest.flatMap { github?.pullRequest($0) })
             }
             if total > shown.count {
                 Text(tr("update.more", total - shown.count))
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 2)
+                    .padding(.horizontal, NookTheme.Spacing.md)
+                    .padding(.top, NookTheme.Spacing.xxs)
             }
         }
-        .padding(4)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
+        .padding(NookTheme.Spacing.xs)
+        .panelCard()
     }
 
     // MARK: Installing
 
     private func installing(_ current: UpdateStep) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: nil, tint: NookTheme.iris, title: tr("update.installing.title"), detail: tr("update.keepWorking"))
             VStack(alignment: .leading, spacing: 7) {
                 // From Xcode the update ends with the project generated; Xcode does the build.
@@ -141,7 +141,7 @@ struct UpdatePanel: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if let activity = updater.activity {
                         ShimmerText(text: UpdateText.activity(activity))
-                            .font(NookTheme.font(11.5))
+                            .font(NookTheme.TextStyle.detail)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -151,13 +151,13 @@ struct UpdatePanel: View {
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                 }
-                .padding(.leading, 24)
+                .padding(.leading, NookTheme.Spacing.xxl)
             }
             HStack {
                 if let started = updater.installStarted {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text(tr("update.elapsed", Self.duration(context.date.timeIntervalSince(started))))
-                            .font(NookTheme.font(11.5))
+                            .font(NookTheme.TextStyle.detail)
                             .monospacedDigit()
                             .foregroundStyle(NookTheme.textTertiary)
                     }
@@ -171,7 +171,7 @@ struct UpdatePanel: View {
     }
 
     private func stepRow(_ step: UpdateStep, current: UpdateStep) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Group {
                 if step < current {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
@@ -184,7 +184,7 @@ struct UpdatePanel: View {
             .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
             Text(UpdateText.step(step))
-                .font(NookTheme.font(12.5, step == current ? .semibold : .regular))
+                .font(step == current ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
                 .foregroundStyle(step <= current ? NookTheme.paper : NookTheme.textTertiary)
         }
     }
@@ -197,10 +197,10 @@ struct UpdatePanel: View {
     // MARK: Ready, failed, done
 
     private var readyToRestart: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "arrow.clockwise.circle.fill", tint: NookTheme.mint, title: tr("update.ready.title"),
                    detail: tr("update.ready.detail", updater.runningSessions))
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Spacer(minLength: 0)
                 SmallGhostButton(title: tr("update.later"), action: close)
                 SmallPrimaryButton(title: tr("update.restartNow"), systemName: "arrow.clockwise") { updater.restart() }
@@ -210,13 +210,13 @@ struct UpdatePanel: View {
     }
 
     private var readyToBuildInXcode: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "hammer.circle.fill", tint: NookTheme.mint, title: tr("update.xcode.title"),
                    detail: tr("update.xcode.detail"))
             if updater.runningSessions > 0 {
                 note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Spacer(minLength: 0)
                 SmallGhostButton(title: tr("update.later"), action: close)
                 SmallPrimaryButton(title: tr("update.xcode.run"), systemName: "hammer") {
@@ -230,16 +230,16 @@ struct UpdatePanel: View {
 
     private func failed(_ failure: UpdateFailure) -> some View {
         let branch = updater.available?.branch ?? "main"
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "exclamationmark.triangle.fill", tint: failure.reason == .cancelled ? NookTheme.amber : NookTheme.coral,
                    title: tr("update.failed.title"), detail: tr("update.failed.step", UpdateText.step(failure.step)))
             Text(UpdateText.reason(failure.reason, branch: branch))
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if !failure.errors.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     ForEach(failure.errors, id: \.self) { error in
                         Text(verbatim: error)
                             .font(NookTheme.mono(11))
@@ -248,12 +248,12 @@ struct UpdatePanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(8)
+                .padding(NookTheme.Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
                 .textSelection(.enabled)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 if let log = failure.logPath {
                     SmallGhostButton(title: tr("update.showLog")) {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: log)])
@@ -277,7 +277,7 @@ struct UpdatePanel: View {
     }
 
     private func updated(_ receipt: UpdateReceipt) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "checkmark.circle.fill", tint: NookTheme.mint, title: tr("update.updated.title"),
                    detail: tr("update.updated.detail", receipt.changes.count, String(receipt.to.prefix(7))))
             if !receipt.changes.isEmpty {
@@ -310,11 +310,11 @@ struct UpdatePanel: View {
                 }
             }
             .frame(width: 24, height: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(NookTheme.font(14, .semibold)).foregroundStyle(NookTheme.paper)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(title).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
                 if !detail.isEmpty {
                     Text(detail)
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -323,14 +323,14 @@ struct UpdatePanel: View {
     }
 
     private func note(_ text: String, symbol: String, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             Image(systemName: symbol).font(NookTheme.font(12, .semibold)).foregroundStyle(tint).frame(width: 16)
             Text(text)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(8)
+        .padding(NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: NookTheme.Radius.control, style: .continuous)
     }
@@ -344,13 +344,13 @@ private struct ChangeRow: View {
 
     var body: some View {
         Button { if let url { NSWorkspace.shared.open(url) } } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
                 Text(verbatim: change.pullRequest.map { "#\($0)" } ?? change.shortSHA)
                     .font(NookTheme.mono(11, .medium))
                     .foregroundStyle(change.pullRequest == nil ? NookTheme.textTertiary : NookTheme.violet)
                     .frame(minWidth: 38, alignment: .leading)
                 Text(change.title)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -361,7 +361,7 @@ private struct ChangeRow: View {
                     .lineLimit(1)
                     .fixedSize()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && url != nil ? DropdownStyle.hover : .clear))
             .contentShape(Rectangle())

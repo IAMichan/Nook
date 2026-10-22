@@ -16,13 +16,13 @@ struct TimelineBlockView: View {
             eventRow(event)
         case .tools(let id, let events, let tally):
             let key = "group:" + id.uuidString
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 TimelineSummaryRow(symbol: tally.failed ? "exclamationmark.triangle" : Self.symbol(tally),
                                    text: ToolTallyText.sentence(tally), open: expanded.contains(key),
                                    tint: tally.failed ? NookTheme.coralSoft : nil, checks: tally.checks,
                                    lines: tally.lines) { toggle(key) }
                 if expanded.contains(key) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                         ForEach(events) { eventRow($0) }
                     }
                     .padding(.leading, 18)
@@ -36,12 +36,12 @@ struct TimelineBlockView: View {
                                    open: expanded.contains(key), tint: nil,
                                    checks: Verification.checks(TimelinePresentation.events(blocks))) { toggle(key) }
                 if expanded.contains(key) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                         ForEach(blocks) { inner in
                             TimelineBlockView(block: inner, expanded: expanded, toggle: toggle, eventRow: eventRow)
                         }
                     }
-                    .padding(.leading, 12)
+                    .padding(.leading, NookTheme.Spacing.lg)
                     .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 1) }
                 }
             }
@@ -86,7 +86,7 @@ struct TimelineSummaryRow: View {
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
-            .font(NookTheme.font(12))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(tint ?? (hovering ? NookTheme.textSecondary : NookTheme.textTertiary))
             .contentShape(Rectangle())
         }
@@ -103,7 +103,7 @@ struct EditLinesLabel: View {
     var size: CGFloat = 10.5
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             Text("+\(lines.added)").foregroundStyle(NookTheme.mint.opacity(0.85))
             Text("−\(lines.removed)").foregroundStyle(NookTheme.coral.opacity(0.85))
         }
@@ -147,11 +147,11 @@ struct LiveActivityRow: View {
         let headline = AgentActivityText.headline(activity, step: step)
         // The second line adds what the first does not say yet.
         let detail = [live.thought, step].compactMap { $0 }.first { !$0.isEmpty && $0 != headline }
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             PulseDot(color: waiting ? NookTheme.amber : accent, animated: !waiting)
                 .frame(width: 14, height: 14)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     if !waiting {
                         Image(systemName: AgentActivityText.symbol(activity))
                             .font(NookTheme.TextStyle.caption)
@@ -187,7 +187,7 @@ struct LiveActivityRow: View {
                         .lineLimit(1)
                 }
             }
-            .font(NookTheme.font(12))
+            .font(NookTheme.TextStyle.detail)
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
@@ -208,14 +208,14 @@ struct QueuedMessagesStrip: View {
     @State private var collapsed = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             Button { withAnimation(NookTheme.reveal) { collapsed.toggle() } } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Image(systemName: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(collapsed ? -90 : 0))
                     Text(tr("compose.queue.title", queue.count))
-                        .font(NookTheme.font(11.5, .semibold))
+                        .font(NookTheme.TextStyle.label)
                     Spacer(minLength: 8)
                     Text(queue.isHeld ? tr("compose.queue.held") : tr("compose.queue.note"))
                         .font(NookTheme.TextStyle.detail)
@@ -224,7 +224,7 @@ struct QueuedMessagesStrip: View {
                         .truncationMode(.tail)
                 }
                 .foregroundStyle(NookTheme.textSecondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, NookTheme.Spacing.md)
                 .padding(.vertical, 3)
                 .contentShape(Rectangle())
             }
@@ -242,7 +242,7 @@ struct QueuedMessagesStrip: View {
 
     private func row(_ message: QueuedMessage, index: Int) -> some View {
         let isEditing = editing == message.id
-        return HStack(spacing: 8) {
+        return HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: isEditing ? "pencil" : "clock").font(NookTheme.font(10, .semibold))
             Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120)).lineLimit(1)
             Spacer(minLength: 6)
@@ -256,8 +256,8 @@ struct QueuedMessagesStrip: View {
         }
         .font(NookTheme.font(12))
         .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, NookTheme.Spacing.xs)
         // The tray above the composer is the card; only the message open in the box stands out of it.
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(isEditing ? NookTheme.smoke : Color.clear))
     }
@@ -307,9 +307,9 @@ struct PlanCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(systemName: "list.bullet.clipboard").font(NookTheme.font(11, .semibold))
-                Text(tr("ws.plan.title")).font(NookTheme.font(12, .semibold))
+                Text(tr("ws.plan.title")).font(NookTheme.TextStyle.strong)
                 Spacer(minLength: 0)
                 iconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.plan.copy")) {
                     Pasteboard.copy(text)
@@ -319,17 +319,17 @@ struct PlanCard: View {
                 iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
             .foregroundStyle(NookTheme.iris)
-            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 12.5)
+            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 13.5)
             if collapsible {
                 Button { withAnimation(NookTheme.reveal) { open.toggle() } } label: {
                     Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
-                        .font(NookTheme.font(12, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
                 }
                 .buttonStyle(.plain)
             }
             if canAct {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Spacer()
                     if let implementInNew {
                         NookGhostButton(title: tr("ws.plan.implementNew"), action: implementInNew)
@@ -338,8 +338,8 @@ struct PlanCard: View {
                 }
             }
         }
-        .padding(12)
-        .cardBackground(NookTheme.iris.opacity(0.07), stroke: NookTheme.iris.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
+        .padding(NookTheme.Spacing.lg)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.iris.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
     }
 
     private func iconButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {

@@ -25,7 +25,7 @@ struct SimulatorView: View {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text(hub.state == .installing ? tr("sim.hub.installing") : tr("sim.hub.starting"))
-                        .font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary)
+                        .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .needsInstall:
@@ -52,7 +52,7 @@ struct SimulatorView: View {
     private func setupNotice(_ text: String, button: String?, action: @escaping () -> Void) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "iphone.gen3").foregroundStyle(NookTheme.textTertiary)
-            Text(text).font(NookTheme.font(12)).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let button { Button(button, action: action).controlSize(.small) }
         }
@@ -64,7 +64,7 @@ struct SimulatorView: View {
 
     private var live: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Picker("", selection: Binding<String?>(get: { chosen }, set: { if let id = $0 { choose(id) } })) {
                     ForEach(hub.devices) { device in
                         Text("\(device.name) · \(device.version)\(device.booted ? "" : " — " + tr("sim.off"))").tag(Optional(device.id))
@@ -77,7 +77,7 @@ struct SimulatorView: View {
                 if chosen != nil { controls }
             }
             if let message = error ?? stream.problem ?? hub.problem {
-                Text(message).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.amber).fixedSize(horizontal: false, vertical: true)
+                Text(message).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber).fixedSize(horizontal: false, vertical: true)
             }
             ZStack {
                 if chosen != nil, stream.frame != nil {
@@ -86,7 +86,7 @@ struct SimulatorView: View {
                     ProgressView()
                 } else {
                     Text(hub.devices.isEmpty ? tr("sim.noDevices") : tr("sim.pick"))
-                        .font(NookTheme.font(12.5)).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)
+                        .font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary).multilineTextAlignment(.center)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -101,7 +101,7 @@ struct SimulatorView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             iconButton("house", tr("sim.home")) { stream.press(.home) }
             iconButton("square.stack", tr("sim.appSwitcher")) { stream.press(.appSwitcher) }
             iconButton("lock", tr("sim.lock")) { stream.press(.lock) }
@@ -540,7 +540,7 @@ struct SimulatorActionsPanel: View {
             }
             HStack(alignment: .top) {
                 Text(tr("sim.action.push")).frame(width: 110, alignment: .leading)
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     TextEditor(text: $payload).font(NookTheme.mono(11)).frame(height: 54)
                     Button(tr("sim.action.send")) { sendPush() }
                 }

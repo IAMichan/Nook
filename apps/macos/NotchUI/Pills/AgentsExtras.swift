@@ -28,7 +28,7 @@ struct PanelFooter: View {
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             FooterIcon(label: tr("agents.footer.settings"), active: false,
                        action: openSettings) { ToolGlyph(symbol: "gearshape") }
             FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
@@ -49,7 +49,7 @@ struct PanelFooter: View {
                 .disabled(busy)
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, NookTheme.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

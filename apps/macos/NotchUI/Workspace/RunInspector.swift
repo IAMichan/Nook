@@ -22,7 +22,7 @@ struct RunInspector: View {
                     usageSection(run)
                     sessionSection(run)
                 }
-                .padding(16)
+                .padding(NookTheme.Spacing.xl)
             }
             .scrollIndicators(embedded ? .never : .automatic)
             .background(embedded ? Color.clear : WS.sidebar)
@@ -47,7 +47,7 @@ struct RunInspector: View {
     // MARK: Working directory
 
     private func workspaceSection(_ run: WorkspaceRun) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             WSSectionTitle(title: tr("ws.inspector.workspace"))
             InfoRow(label: tr("ws.inspector.project"), value: run.projectName)
             InfoRow(label: tr("ws.inspector.folder"), value: AgentPathFormat.tilde(run.workingDirectory), mono: true)
@@ -69,7 +69,7 @@ struct RunInspector: View {
                     InfoRow(label: "Upstream", value: "\(status.upstream ?? "") (↑\(status.ahead) ↓\(status.behind))", mono: true)
                 }
             }
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Button(tr("ws.action.openEditor")) { workspace.openInEditor(run.workingDirectory) }
                 Button(tr("ws.action.openTerminal")) { workspace.openTerminal(run.workingDirectory) }
                 Button { workspace.revealInFinder(run.workingDirectory) } label: { Image(systemName: "folder") }
@@ -87,24 +87,24 @@ struct RunInspector: View {
         if run.repoRoot != nil {
             let snapshot = workspace.git[runID]
             let files = snapshot?.status?.files ?? []
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 HStack {
                     WSSectionTitle(title: tr("ws.inspector.changes"), trailing: files.isEmpty ? nil : "\(files.count)")
                     ToolbarIconButton("arrow.clockwise", tr("ws.git.refresh"), height: 20, width: 20,
                                       enabled: snapshot?.loading != true) { workspace.refreshGit(runID) }
                 }
                 if let error = snapshot?.error {
-                    Text(error).font(NookTheme.font(11.5)).foregroundStyle(NookTheme.coralSoft)
+                    Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft)
                 } else if snapshot == nil || (snapshot?.loading == true && snapshot?.status == nil) {
                     ForEach(0..<3, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 4).fill(WS.subtle).frame(height: 14)
                     }
                 } else if files.isEmpty {
-                    Text(tr("ws.inspector.clean")).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
+                    Text(tr("ws.inspector.clean")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                 } else {
                     let added = files.compactMap(\.added).reduce(0, +)
                     let removed = files.compactMap(\.removed).reduce(0, +)
-                    HStack(spacing: 8) {
+                    HStack(spacing: NookTheme.Spacing.md) {
                         Text("+\(added)").foregroundStyle(NookTheme.mint)
                         Text("−\(removed)").foregroundStyle(NookTheme.coral)
                         Text(tr("ws.inspector.filesChanged", files.count)).foregroundStyle(WS.tertiary)
@@ -121,7 +121,7 @@ struct RunInspector: View {
                     }
                 }
                 GitQuickButton(runID: runID)
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Button(tr("ws.git.review")) {
                         if let first = files.first { review(first) }
                     }
@@ -157,7 +157,7 @@ struct RunInspector: View {
     private func usageSection(_ run: WorkspaceRun) -> some View {
         let caps = run.provider.capabilities
         let usage = run.usage
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             WSSectionTitle(title: tr("ws.inspector.usage"))
             InfoRow(label: tr("ws.usage.input"), value: WSFormat.tokens(usage.inputTokens))
             InfoRow(label: tr("ws.usage.output"), value: WSFormat.tokens(usage.outputTokens))
@@ -195,7 +195,7 @@ struct RunInspector: View {
     // MARK: Session
 
     private func sessionSection(_ run: WorkspaceRun) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             WSSectionTitle(title: tr("ws.inspector.session"))
             InfoRow(label: tr("ws.inspector.status"), value: run.status.label)
             InfoRow(label: tr("ws.inspector.agent"), value: run.provider.displayName)
@@ -212,8 +212,8 @@ struct RunInspector: View {
                     help: tr("ws.inspector.sessionIDHelp"))
             if !run.instructions.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(tr("ws.inspector.instructions")).font(NookTheme.font(12)).foregroundStyle(WS.tertiary)
-                    Text(run.instructions).font(NookTheme.font(12)).foregroundStyle(WS.secondary).textSelection(.enabled)
+                    Text(tr("ws.inspector.instructions")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
+                    Text(run.instructions).font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary).textSelection(.enabled)
                 }
             }
             Text(tr("ws.inspector.isolationNote"))
@@ -259,7 +259,7 @@ struct FileChangeRow: View {
     let file: GitFileChange
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             Text(file.kind.letter)
                 .font(NookTheme.mono(10.5, .bold))
                 .foregroundStyle(file.kind.color)
@@ -275,7 +275,7 @@ struct FileChangeRow: View {
         }
         .font(NookTheme.mono(10.5))
         .padding(.vertical, 3)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, NookTheme.Spacing.xs)
         .contentShape(Rectangle())
         .help(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
     }

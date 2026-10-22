@@ -95,11 +95,11 @@ struct UpdateFooterButton<Idle: View>: View {
                 Image(systemName: symbol).font(NookTheme.font(11.5, .semibold))
             }
             if showLabel {
-                Text(look.label).font(NookTheme.font(12, .semibold)).lineLimit(1).fixedSize()
+                Text(look.label).font(NookTheme.TextStyle.strong).lineLimit(1).fixedSize()
             }
             if let count = look.count {
                 Text("\(count)")
-                    .font(NookTheme.font(10.5, .bold))
+                    .font(NookTheme.TextStyle.caption)
                     .monospacedDigit()
                     .foregroundStyle(NookTheme.ink)
                     .padding(.horizontal, 5)
@@ -108,7 +108,7 @@ struct UpdateFooterButton<Idle: View>: View {
             }
         }
         .foregroundStyle(look.tint)
-        .padding(.leading, 8)
+        .padding(.leading, NookTheme.Spacing.md)
         .padding(.trailing, look.count == nil ? 9 : 5)
         .frame(height: 26)
         .cardBackground(look.tint.opacity(hovering || open ? 0.22 : 0.13), stroke: look.tint.opacity(0.32), radius: NookTheme.Radius.panel,

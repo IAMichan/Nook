@@ -46,7 +46,7 @@ struct OnboardingView: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24)
+        .padding(NookTheme.Spacing.xxl)
         .frame(width: 560, height: 440)
         .task { recommendations = await app.brainRecommendations() }
     }
@@ -54,14 +54,14 @@ struct OnboardingView: View {
     // MARK: 1 · Brain
 
     private var brainStep: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(tr("onboarding.brain.title")).font(NookTheme.TextStyle.strong)
             Text(tr("onboarding.brain.detail", EmbeddedModel.memoryGB)).foregroundStyle(NookTheme.textSecondary)
             if settings.brainReady {
                 Label(tr("settings.checklist.brain.ready", settings.activeModelName), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(NookTheme.mint)
             } else if let best = recommendations.first {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     Text(AppModel.title(of: best)).fontWeight(.semibold)
                     Text(best.reason).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     if best.choice != .unavailable {
@@ -73,7 +73,7 @@ struct OnboardingView: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(NookTheme.Spacing.lg)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
             } else {
                 ProgressView()
@@ -102,7 +102,7 @@ struct OnboardingView: View {
 
     private var permissionsStep: some View {
         let _ = tick
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(tr("onboarding.permissions.title")).font(NookTheme.TextStyle.strong)
             Text(tr("onboarding.permissions.detail")).foregroundStyle(NookTheme.textSecondary)
             permissionRow(tr("settings.checklist.screen"), granted: permissions.isGranted(.screen)) {
@@ -134,7 +134,7 @@ struct OnboardingView: View {
     // MARK: 3 · Connections
 
     private var connectionsStep: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(tr("onboarding.connections.title")).font(NookTheme.TextStyle.strong)
             Text(tr("onboarding.connections.detail", app.connectors.active.count)).foregroundStyle(NookTheme.textSecondary)
             Button(tr("onboarding.connections.open")) { app.openSettings(section: .connections) }

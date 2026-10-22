@@ -47,10 +47,10 @@ struct ChangesSheet: View {
             // Comments on the diff go to the agent together.
             if let comments = workspace.reviewComments[runID], !comments.isEmpty {
                 Divider()
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "text.bubble").foregroundStyle(NookTheme.amber)
                     Text(tr("ws.review.count", comments.count))
-                        .font(NookTheme.font(12.5))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer()
                     SmallGhostButton(title: tr("ws.review.discard")) { workspace.reviewComments[runID] = nil }
@@ -136,11 +136,11 @@ struct CommitSheet: View {
     private var files: [GitFileChange] { workspace.git[runID]?.status?.files ?? [] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !embedded { Text(tr("ws.commit.title")).font(NookTheme.TextStyle.title) }
             if let run = workspace.run(runID) {
                 Text(tr("ws.commit.where", run.branch ?? "HEAD", AgentPathFormat.tilde(run.workingDirectory)))
-                    .font(NookTheme.font(12)).foregroundStyle(WS.secondary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
             }
             List {
                 ForEach(files) { file in
@@ -155,20 +155,20 @@ struct CommitSheet: View {
             }
             .frame(minHeight: 160, maxHeight: 260)
             .listStyle(.bordered)
-            Text(tr("ws.commit.message")).font(NookTheme.font(12, .semibold))
+            Text(tr("ws.commit.message")).font(NookTheme.TextStyle.strong)
             TextEditor(text: $message)
                 .font(NookTheme.TextStyle.code)
                 .frame(height: 90)
                 .scrollContentBackground(.hidden)
-                .padding(6)
+                .padding(NookTheme.Spacing.sm)
                 .cardBackground(WS.surface, stroke: WS.border, radius: NookTheme.Radius.chip)
             if let run = workspace.run(runID), message.isEmpty {
                 Button(tr("ws.commit.useTitle")) { message = run.title }
                     .buttonStyle(.link)
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
             }
-            if let error { Text(error).font(NookTheme.font(12)).foregroundStyle(NookTheme.coralSoft) }
-            if let done { Text(tr("ws.commit.done", done)).font(NookTheme.font(12)).foregroundStyle(NookTheme.mint) }
+            if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
+            if let done { Text(tr("ws.commit.done", done)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint) }
             HStack {
                 Text(tr("ws.commit.note")).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                 Spacer()
@@ -221,12 +221,12 @@ struct PullRequestSheet: View {
     @State private var created: URL?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !embedded { Text(tr("ws.pr.title")).font(NookTheme.TextStyle.title) }
             if loading {
                 ProgressView()
             } else if repo == nil {
-                Text(tr("ws.pr.notGitHub")).font(NookTheme.font(12.5)).foregroundStyle(WS.secondary)
+                Text(tr("ws.pr.notGitHub")).font(NookTheme.TextStyle.body).foregroundStyle(WS.secondary)
             } else {
                 Form {
                     LabeledContent(tr("ws.pr.repo"), value: repo?.displayName ?? "")
@@ -239,14 +239,14 @@ struct PullRequestSheet: View {
                 }
                 .formStyle(.grouped)
                 Text(canCreate ? tr("ws.pr.viaConnector", repo?.hostName ?? "") : tr("ws.pr.viaBrowser", repo?.hostName ?? ""))
-                    .font(NookTheme.font(11.5)).foregroundStyle(WS.tertiary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let error { Text(error).font(NookTheme.font(12)).foregroundStyle(NookTheme.coralSoft) }
+            if let error { Text(error).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coralSoft) }
             if let created {
                 Button(tr("ws.pr.created")) { BrowserStore.show(created) }
                     .buttonStyle(.link)
-                    .font(NookTheme.font(12.5, .semibold))
+                    .font(NookTheme.TextStyle.strong)
             }
             HStack {
                 Spacer()

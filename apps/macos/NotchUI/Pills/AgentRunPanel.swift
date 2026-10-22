@@ -67,7 +67,7 @@ struct AgentRunPanel: View {
                                     rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     header(run, outputs: outputs)
                     timeline(run)
                     if let pending = workspace.approvals[runID], let first = pending.first {
@@ -198,9 +198,9 @@ struct AgentRunPanel: View {
 
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun, outputs: [SessionOutput]) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Text(run.projectName)
-                .foregroundStyle(NookTheme.textSecondary)
+                .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
                 .fixedSize()
                 .help(AgentPathFormat.tilde(run.workingDirectory))
@@ -208,7 +208,7 @@ struct AgentRunPanel: View {
             if renaming {
                 TextField(tr("ws.title.placeholder"), text: $titleDraft)
                     .textFieldStyle(.plain)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .onSubmit {
                         workspace.rename(runID, to: titleDraft)
@@ -217,7 +217,7 @@ struct AgentRunPanel: View {
                     .onExitCommand { renaming = false }
             } else {
                 Text(run.title)
-                    .font(NookTheme.font(13.5, .medium))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .onTapGesture(count: 2) {
@@ -230,7 +230,7 @@ struct AgentRunPanel: View {
             outputsButton(run, outputs)
             if let fraction = run.usage.contextFraction, fraction > 0.6 {
                 Text(tr("ws.header.context", Int((fraction * 100).rounded())))
-                    .font(NookTheme.mono(11, .medium))
+                    .font(NookTheme.TextStyle.label.monospacedDigit())
                     .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
                     .help(tr("ws.header.contextHelp"))
             }
@@ -238,7 +238,7 @@ struct AgentRunPanel: View {
                 // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
                 Button { openRemoteTerminal(remote) } label: {
                     Label(remote.name, systemImage: "server.rack")
-                        .font(NookTheme.font(12, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -259,7 +259,7 @@ struct AgentRunPanel: View {
                 .id(run.workingDirectory)
             }
         }
-        .font(NookTheme.font(13.5))
+        .font(NookTheme.TextStyle.body)
         .frame(height: 30)
     }
 
@@ -459,7 +459,7 @@ struct AgentRunPanel: View {
     /// The context ring, and the microphone next to it.
     @ViewBuilder
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
                 ComposerContextRing(used: used, window: window,
                                     onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
@@ -487,7 +487,7 @@ struct AgentRunPanel: View {
                     ForEach(blocks) { block in
                         TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
                             AnyView(
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     eventRow(event)
                                     if let turn = turnFiles[event.id] {
                                         TurnChangesChip(turn: turn, directory: run.workingDirectory) { path in
@@ -524,7 +524,7 @@ struct AgentRunPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -542,7 +542,7 @@ struct AgentRunPanel: View {
                         scroll.jumpedToEnd()
                         withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
-                    .padding(.bottom, 8)
+                    .padding(.bottom, NookTheme.Spacing.md)
                 }
             }
             .overlay(alignment: .top) {
@@ -551,8 +551,8 @@ struct AgentRunPanel: View {
                                     previous: { stepFind(found, blocks: blocks, proxy: proxy, forward: false) },
                                     next: { stepFind(found, blocks: blocks, proxy: proxy, forward: true) },
                                     close: closeFind)
-                        .padding(.horizontal, 4)
-                        .padding(.top, 4)
+                        .padding(.horizontal, NookTheme.Spacing.xs)
+                        .padding(.top, NookTheme.Spacing.xs)
                 }
             }
             // A mark per message of yours, to jump through a long session.
@@ -563,7 +563,7 @@ struct AgentRunPanel: View {
                         scroll.userScrolled()
                         withAnimation(NookTheme.scroll) { proxy.scrollTo(id, anchor: .top) }
                     }
-                    .padding(.top, 8)
+                    .padding(.top, NookTheme.Spacing.md)
                 }
             }
             .background {
@@ -621,12 +621,12 @@ struct AgentRunPanel: View {
         HStack(spacing: 10) {
             Image(systemName: run.status == .failed ? "exclamationmark.triangle" : "pause.circle")
                 .foregroundStyle(run.status.color)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(run.status == .failed ? tr("ws.recovery.failed") : tr("ws.recovery.stopped"))
-                    .font(NookTheme.font(12.5, .semibold))
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 Text(run.statusDetail.flatMap { $0 == "interrupted" ? nil : $0 } ?? (run.providerSessionID != nil ? tr("ws.recovery.canResume") : tr("ws.recovery.noResume")))
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(3)
                     .textSelection(.enabled)
@@ -706,13 +706,13 @@ struct AgentRunPanel: View {
     }
 
     private func revertConfirmation(_ target: RunEvent) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("ws.revert.confirm"))
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 Text(revertError ?? tr("ws.revert.detail", ToolSummary.oneLine(target.text, 60)))
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(revertError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -732,7 +732,7 @@ struct AgentRunPanel: View {
                 }
             }
         }
-        .padding(12)
+        .padding(NookTheme.Spacing.lg)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.amber.opacity(0.08)))
     }
 
@@ -779,14 +779,14 @@ struct AgentRunPanel: View {
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.
     private func deleteConfirmation(_ run: WorkspaceRun) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.md) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(tr("agents.run.deleteConfirm", run.title))
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Text(tr("agents.run.deleteDetail"))
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -798,7 +798,7 @@ struct AgentRunPanel: View {
                 app.viewModel.selectedAgentID = ""
             }
         }
-        .padding(12)
+        .padding(NookTheme.Spacing.lg)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.coral.opacity(0.08)))
     }
 
@@ -889,7 +889,7 @@ struct AgentRunPanel: View {
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
         if watch != nil || !waiting.isEmpty {
             ComposerTray(edge: .top) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if let watch {
                         PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
                     }

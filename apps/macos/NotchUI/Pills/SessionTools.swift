@@ -44,7 +44,7 @@ struct SessionToolSwitch: View {
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             if !directory.isEmpty { icon(.terminal) }
             icon(.browser)
             ToolbarGroupDivider()
@@ -133,7 +133,7 @@ private struct SessionToolIcon: View {
             .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(active ? NookTheme.smoke : Color.clear))
             .overlay(alignment: .topTrailing) {
                 if fresh {
-                    Circle().fill(NookTheme.iris).frame(width: 5, height: 5).padding(4)
+                    Circle().fill(NookTheme.iris).frame(width: 5, height: 5).padding(NookTheme.Spacing.xs)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
@@ -161,7 +161,7 @@ extension View {
 /// The thin line between buttons inside one group.
 struct ToolbarGroupDivider: View {
     var body: some View {
-        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 12).padding(.horizontal, 2)
+        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 12).padding(.horizontal, NookTheme.Spacing.xxs)
     }
 }
 
@@ -227,7 +227,7 @@ struct SessionWorkbench<Conversation: View>: View {
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
             if side != .conversation {
                 panel(.side, tool: side)
-                    .padding(.leading, 6)
+                    .padding(.leading, NookTheme.Spacing.sm)
                     .resizablePanel(width: $toolWidth, defaultWidth: PanelLayout.tool, minimum: PanelLayout.minimumPanel,
                                     available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
                                     edge: .leading, divider: true)
@@ -343,7 +343,7 @@ private struct SessionToolPanel: View {
     @ObservedObject private var bridge = WorkspaceBridge.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             header
             if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
@@ -371,7 +371,7 @@ private struct SessionToolPanel: View {
 
     /// The open tabs, + to open another, and the button that closes the panel.
     private var header: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             if !tabs.isEmpty {
                 NookTabBar(items: tabs.map { item in
                     NookTabBar<SessionTool>.Item(value: item, title: item.title, symbol: item.symbol,
@@ -431,18 +431,18 @@ private struct SessionToolPicker: View {
     let onOpen: (SessionTool) -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: NookTheme.Spacing.lg) {
             Text(tr("agents.tool.pick"))
-                .font(NookTheme.font(13, .medium))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
-            VStack(spacing: 2) {
+            VStack(spacing: NookTheme.Spacing.xxs) {
                 ForEach(SessionTool.panelTools, id: \.self) { tool in
                     SessionToolPickerRow(tool: tool, enabled: tool.available(in: directory)) { onOpen(tool) }
                 }
             }
             .frame(maxWidth: 260)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, NookTheme.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -485,7 +485,6 @@ struct ToolSurface<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.field))
             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
     }
 }
 
@@ -495,11 +494,8 @@ struct AgentsToolPage<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(NookTheme.paper)
-                .frame(height: 30)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            PanelListHeader(title)
             ToolSurface(content: content)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -518,7 +514,7 @@ struct DevServerStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             if !servers.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
                         Image(systemName: "dot.radiowaves.left.and.right")
                             .font(NookTheme.font(10, .semibold))
                             .foregroundStyle(NookTheme.textTertiary)

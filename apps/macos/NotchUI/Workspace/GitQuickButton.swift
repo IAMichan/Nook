@@ -12,12 +12,12 @@ struct GitQuickButton: View {
 
     var body: some View {
         let active = workspace.run(runID)?.status.isActive == true
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 switch state.map(GitQuickResolver.resolve) {
                 case .success(let action)?:
                     Button { start(action) } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
                             if progress != nil { ProgressView().controlSize(.mini) } else { Image(systemName: symbol(action)) }
                             Text(progress ?? tr(action.labelKey))
                         }
@@ -27,7 +27,7 @@ struct GitQuickButton: View {
                     .help(active ? tr("ws.error.busy") : tr("ws.quick.help"))
                 case .failure(let reason)?:
                     Text(tr(reason.key))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(WS.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 case nil:
