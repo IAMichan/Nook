@@ -155,7 +155,18 @@ final class TeamsBridge: ObservableObject, ChatBridge {
                 var messagesURL = URLComponents(string: "https://graph.microsoft.com/v1.0/me/chats/" + chat.id + "/messages")!
                 messagesURL.queryItems = [URLQueryItem(name: "$top", value: String(Self.history))]
                 guard let url = messagesURL.url else { continue }
-                let messages = TeamsData.messages(try await get(url, token: bearer), chat: chat, me: me)
+                // One chat Graph refuses (a chat you left, a moment's hiccup) must not lose the others' new messages:
+                // it stays unseen and is read again next time. A lost sign-in or a rate limit stops the round.
+                let answer: [String: Any]
+                do {
+                    answer = try await get(url, token: bearer)
+                } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
+                    if result.isEmpty { throw error }
+                    break
+                } catch {
+                    continue
+                }
+                let messages = TeamsData.messages(answer, chat: chat, me: me)
                 seen[chat.id] = chat.last ?? Date.distantPast
                 guard !messages.isEmpty else { continue }
                 result.append(BridgedChat(app: app, name: chat.name, messages: messages,
@@ -190,10 +201,10 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 { access = nil }
-        if code == 429 { throw NookError(tr("chats.teams.rateLimited")) }
+        if code == 429 { throw NookError(tr("chats.teams.rateLimited"), kind: .rateLimited) }
         guard (200..<300).contains(code), let json = TeamsData.object(data) else {
             let reason = (TeamsData.object(data)?["error"] as? [String: Any])?["message"] as? String
-            throw NookError(tr("chats.teams.refused", reason ?? "HTTP \(code)"))
+            throw NookError(tr("chats.teams.refused", reason ?? "HTTP \(code)"), kind: code == 401 ? .auth : .other)
         }
         return json
     }
