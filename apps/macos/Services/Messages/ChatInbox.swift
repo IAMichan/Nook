@@ -313,6 +313,10 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var media: ChatMedia? = nil
     /// A poll it asks, with the votes so far.
     var poll: ChatPoll? = nil
+    /// Your own message: how far it got (sent, delivered, read), as far as its app says. Nil for theirs.
+    var receipt: ChatReceipt? = nil
+    /// Your own message in a group: who has it and who read it, when the app says per person; nil when it does not.
+    var readers: [ChatReader]? = nil
 
     var isMine: Bool { fromMe == true }
 
@@ -336,6 +340,8 @@ struct BridgedChat: Equatable, Sendable {
     var unread: Int?
     /// The chat's picture on this Mac (a person's profile photo, a group's or a channel's), when the app has one.
     var avatar: String? = nil
+    /// A group's other members by name (you left out), when the app lists them; nil when it does not.
+    var members: [String]? = nil
 }
 
 /// One chat in one app, with its newest messages.
@@ -353,10 +359,12 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var appUnread: Int? = nil
     /// The chat's picture on this Mac, as its app shows it (a person, a group, a channel); nil when it has none.
     var avatar: String? = nil
+    /// A group's other members by name (you left out), as its app lists them; nil when it is not known.
+    var members: [String]? = nil
 
     var last: Date { messages.last?.date ?? .distantPast }
-    /// Someone else than the chat itself wrote in it: a group.
-    var isGroup: Bool { messages.contains { !$0.sender.isEmpty } }
+    /// Someone else than the chat itself wrote in it, or more than one other person is in it: a group.
+    var isGroup: Bool { (members?.count ?? 0) > 1 || messages.contains { !$0.sender.isEmpty } }
 }
 
 /// What a chat app's notification says: the chat, who wrote in it and what.
@@ -515,17 +523,25 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let known = threads[key]
         let gone = removed?[key]
         let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
-        // Without new messages a bridge can still bring the app's unread count for a chat Nook shows.
-        guard !messages.isEmpty || (known != nil && (chat.unread != nil || (chat.avatar != nil && chat.avatar != known?.avatar)))
+        // Without new messages a bridge can still bring the app's unread count (or the group's people) for a chat Nook shows.
+        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil
+                                                     || (chat.avatar != nil && chat.avatar != known?.avatar)))
         else { return false }
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
         let before = thread
         let newestBefore = known?.last
-        // A file a bridge fetched since it last brought this message, or new votes on a poll: the chat shows them now.
-        for message in messages where message.media != nil || message.poll != nil {
+        // A file a bridge fetched since it last brought this message, new votes on a poll, or your message's new ticks
+        // (delivered, read, by whom): the chat shows them now. Ticks only move forward.
+        for message in messages where message.media != nil || message.poll != nil || message.receipt != nil || message.readers != nil {
             guard let index = thread.messages.firstIndex(where: { $0.id == message.id }) else { continue }
-            if thread.messages[index].media != message.media { thread.messages[index].media = message.media }
-            if thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
+            if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
+            if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
+            if let receipt = message.receipt {
+                let kept = thread.messages[index].receipt
+                let next = kept.map { $0.advanced(to: receipt) } ?? receipt
+                if next != kept { thread.messages[index].receipt = next }
+            }
+            if let readers = message.readers, thread.messages[index].readers != readers { thread.messages[index].readers = readers }
         }
         for message in messages where !thread.messages.contains(where: {
             $0.id == message.id
@@ -544,6 +560,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         }
         thread.name = chat.name
         if let avatar = chat.avatar { thread.avatar = avatar }
+        if let members = chat.members { thread.members = members }
         guard thread != before else { return false }
         threads[key] = thread
         dropQuietest()

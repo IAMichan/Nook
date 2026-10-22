@@ -154,6 +154,7 @@ extension AppModel {
                                     sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
+            bubble.readers = Self.whatsAppReaders(message, in: conversation)
             bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
             bubble.poll = message.poll?.chatPoll
             bubble.reactions = Self.bubbleReactions(message.reactions)
@@ -310,13 +311,18 @@ extension AppModel {
     }
 
     static func bubbleTicks(_ receipt: WAReceipt) -> BubbleTicks {
-        switch receipt {
-        case .failed: return .failed
-        case .pending: return .pending
-        case .sent: return .sent
-        case .delivered: return .delivered
-        case .read: return .read
+        BubbleTicks(receipt)
+    }
+
+    /// Your own message in a group: every member with how far it got with them, by the names the group knows them by.
+    /// Empty for theirs, in a private chat, and while no member answered and the members are not known either.
+    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation) -> [ChatReader] {
+        guard message.fromMe, message.receipt != nil, conversation.isGroup,
+              !message.readers.isEmpty || conversation.members != nil else { return [] }
+        let named = message.readers.map { id, reader in
+            ChatReader(name: conversation.memberName(id), receipt: reader.receipt, date: reader.date)
         }
+        return ChatReceipts.everyone(named, members: conversation.memberNames)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
