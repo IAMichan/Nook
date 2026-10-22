@@ -289,6 +289,7 @@ targets:
       - path: Services/Autocomplete/CompletionEmoji.swift
       - path: Services/Autocomplete/CompletionPrivacy.swift
       - path: Services/Autocomplete/CompletionLearning.swift
+      - path: Services/Autocomplete/CompletionPlacement.swift
       - path: Services/Notes/NoteModels.swift
       - path: Brain/SpokenText.swift
       - path: Core/Shortcuts.swift

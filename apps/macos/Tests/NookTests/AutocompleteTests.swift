@@ -743,17 +743,67 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertEqual(top, [0, 5, 3, 2, 6])
     }
 
-    // MARK: Where a card goes
+    // MARK: Where suggestions go
 
     func testCardGoesUnderTheCursorOrASingleLineFieldButNeverUnderATallNote() {
-        var snapshot = AutocompleteFieldSnapshot(before: "Shopping list", after: "", hasSelection: false, caret: nil)
-        snapshot.fieldFrame = CGRect(x: 100, y: 200, width: 400, height: 24)
-        XCTAssertEqual(snapshot.cardAnchor, snapshot.fieldFrame)
+        let line = CGRect(x: 100, y: 200, width: 400, height: 24)
+        XCTAssertEqual(CompletionPlacement.cardAnchor(caret: nil, field: line, fontSize: 13), line)
         // A note: the whole page is one field, so under or above it is nowhere near the text.
-        snapshot.fieldFrame = CGRect(x: 100, y: 100, width: 600, height: 700)
-        XCTAssertNil(snapshot.cardAnchor)
+        let note = CGRect(x: 100, y: 100, width: 600, height: 700)
+        XCTAssertNil(CompletionPlacement.cardAnchor(caret: nil, field: note, fontSize: 13))
         let caret = CGRect(x: 240, y: 500, width: 0, height: 16)
-        snapshot.caret = caret
-        XCTAssertEqual(snapshot.cardAnchor, caret)
+        XCTAssertEqual(CompletionPlacement.cardAnchor(caret: caret, field: note, fontSize: 13), caret)
+    }
+
+    func testCaretOutsideItsWindowFieldOrScreenIsNotBelieved() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let window = CGRect(x: 200, y: 100, width: 800, height: 600)
+        let field = CGRect(x: 220, y: 120, width: 760, height: 500)
+        let caret = CGRect(x: 400, y: 300, width: 0, height: 16)
+        XCTAssertEqual(CompletionPlacement.checkedCaret(caret, field: field, window: window, screens: [screen], fontSize: 13), caret)
+        // The top left corner of the screen: an app that does not know.
+        let corner = CGRect(x: 0, y: 884, width: 0, height: 16)
+        XCTAssertNil(CompletionPlacement.checkedCaret(corner, field: nil, window: window, screens: [screen], fontSize: 13))
+        XCTAssertNil(CompletionPlacement.checkedCaret(caret.offsetBy(dx: 0, dy: 400), field: field, window: nil, screens: [screen], fontSize: 13))
+        XCTAssertNil(CompletionPlacement.checkedCaret(caret.offsetBy(dx: 2_000, dy: 0), field: nil, window: nil, screens: [screen], fontSize: 13))
+        XCTAssertNil(CompletionPlacement.checkedCaret(CGRect(x: 400, y: 300, width: 0, height: 2), field: field, window: window, screens: [screen], fontSize: 13))
+    }
+
+    func testTallCaretKeepsTheLineAtItsBottom() {
+        let paragraph = CGRect(x: 400, y: 300, width: 0, height: 80)
+        let caret = CompletionPlacement.checkedCaret(paragraph, field: nil, window: nil, screens: [], fontSize: 14)
+        XCTAssertEqual(caret?.minY, 300)
+        XCTAssertEqual(caret?.height, 18)
+    }
+
+    func testFieldAtTheCornerOrWithoutSizeIsDropped() {
+        let window = CGRect(x: 200, y: 100, width: 800, height: 600)
+        XCTAssertNil(CompletionPlacement.checkedField(CGRect(x: 0, y: 880, width: 10, height: 20), window: window))
+        XCTAssertNil(CompletionPlacement.checkedField(CGRect(x: 300, y: 300, width: 0, height: 0), window: window))
+        let field = CGRect(x: 220, y: 120, width: 760, height: 500)
+        XCTAssertEqual(CompletionPlacement.checkedField(field, window: window), field)
+    }
+
+    func testCaretIsCarriedAlongTheLineFromAnEarlierRead() {
+        let last = CGRect(x: 300, y: 200, width: 0, height: 16)
+        let field = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let width: (String) -> CGFloat = { CGFloat($0.count) * 7 }
+        XCTAssertEqual(CompletionPlacement.carried(from: last, before: "Hello wor", to: "Hello world", field: field, width: width)?.minX, 314)
+        XCTAssertEqual(CompletionPlacement.carried(from: last, before: "Hello", to: "Hello", field: field, width: width), last)
+        // A letter taken back, a new line, or past the edge (wrapped): not known.
+        XCTAssertNil(CompletionPlacement.carried(from: last, before: "Hello wor", to: "Hello wo", field: field, width: width))
+        XCTAssertNil(CompletionPlacement.carried(from: last, before: "Hello", to: "Hello\nA", field: field, width: width))
+        XCTAssertNil(CompletionPlacement.carried(from: last, before: "a", to: "a" + String(repeating: "b", count: 40), field: field, width: width))
+    }
+
+    func testDroppedCharactersAreFoundOnlyWhenSomeArrived() {
+        // The app took the first character of each key event.
+        XCTAssertEqual(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Good m"), 1)
+        XCTAssertEqual(CompletionPlacement.droppedCharacters(typed: "see you soon", base: "", actual: "sy"), 2)
+        XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Good morning "))
+        XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Good "))
+        // Changed, not dropped: autocorrect or the user.
+        XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Good x"))
+        XCTAssertNil(CompletionPlacement.droppedCharacters(typed: "morning ", base: "Good ", actual: "Bad m"))
     }
 }
