@@ -188,6 +188,8 @@ struct NotchRootView: View {
                     onDraft: { try await app.draftCardReply($0, card: card) },
                     onChoose: { viewModel.choose($0, $1) },
                     onOpen: { app.openCardAttachment($0, card: card) },
+                    onReplyTo: { app.replyCardMessage($0, to: $1, card: card) },
+                    onReact: { app.reactCardMessage($0, $1, card: card) },
                     paused: viewModel.pointerInside
                 )
             }

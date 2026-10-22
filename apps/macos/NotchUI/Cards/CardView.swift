@@ -12,6 +12,10 @@ struct CardView: View {
     var onChoose: (String, [String]) -> Void = { _, _ in }
     /// A chat bubble's attachment was clicked: the card stays open while the file opens.
     var onOpen: (ChatBubble) -> Void = { _ in }
+    /// The field's text as an answer to one message of a message card's chat (the field quoted it).
+    var onReplyTo: (String, ChatBubble) -> Void = { _, _ in }
+    /// An emoji put on a message of a message card's chat (the one already yours takes it back).
+    var onReact: (ChatBubble, String) -> Void = { _, _ in }
     /// The pointer is on the notch: a notice's countdown holds.
     var paused: Bool = false
 
@@ -21,6 +25,8 @@ struct CardView: View {
     @State private var chatNotice: String?
     /// A chat bubble's photo shown big over the card, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
+    /// The message the chat field answers, quoted above it until it is sent or let go.
+    @State private var replyingTo: ChatBubble?
 
     var body: some View {
         Group {
@@ -34,16 +40,17 @@ struct CardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay {
             if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
-                PhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
-                          onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
-                          onOpen: { self.zoomed = nil; onOpen(zoomed) })
+                ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
+                              onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
+                              onOpen: { self.zoomed = nil; onOpen(zoomed) })
                     .transition(.opacity)
             }
         }
-        .onChange(of: card.id) { _, _ in zoomed = nil; chatNotice = nil }
+        .onChange(of: card.id) { _, _ in zoomed = nil; chatNotice = nil; replyingTo = nil }
         .onExitCommand {
-            // Escape first shrinks an enlarged photo back; only then does it close the card.
+            // Escape first shrinks an enlarged photo back and lets go of a quoted message; only then does it close the card.
             if zoomed != nil { withAnimation(NookTheme.reveal) { zoomed = nil }; return }
+            if replyingTo != nil { withAnimation(NookTheme.reveal) { replyingTo = nil }; return }
             onAction(card.escape ?? card.primary)
         }
     }
@@ -203,6 +210,8 @@ struct CardView: View {
         ChatReplyField(text: $reply, notice: $chatNotice, focus: $replyFocused,
                        placeholder: card.inputPrompt ?? tr("chat.followupPrompt"),
                        sendSymbol: "arrow.up", sendLabel: tr("card.send"), readyNotice: tr("chats.draft.ready"),
+                       quote: replyingTo?.quote(contact: card.title),
+                       cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
     }
 
@@ -295,7 +304,12 @@ struct CardView: View {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         reply = ""
-        onReply(text)
+        if card.chatReply, let quoted = replyingTo {
+            replyingTo = nil
+            onReplyTo(text, quoted)
+        } else {
+            onReply(text)
+        }
     }
 
     @ViewBuilder
@@ -321,9 +335,19 @@ struct CardView: View {
         case .note(let text, let label):
             NoteDetail(text: text, label: label)
         case .chat(let bubbles):
-            ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen, onZoom: { bubble in
-                withAnimation(NookTheme.reveal) { zoomed = bubble }
-            })
+            // A message card's chat can be answered: each message can be quoted in the field, or get an emoji.
+            ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen,
+                           onZoom: { bubble in withAnimation(NookTheme.reveal) { zoomed = bubble } },
+                           onReply: quoteAction, onReact: card.chatReply ? onReact : nil)
+        }
+    }
+
+    /// Quotes a message of a message card's chat in its field; nil for any other card.
+    private var quoteAction: ((ChatBubble) -> Void)? {
+        guard card.chatReply else { return nil }
+        return { bubble in
+            withAnimation(NookTheme.reveal) { replyingTo = bubble }
+            replyFocused = true
         }
     }
 }
@@ -391,63 +415,6 @@ private struct CardAppIcon: View {
         }
         .frame(width: 16, height: 16)
         .accessibilityHidden(true)
-    }
-}
-
-/// A chat bubble's photo enlarged over the whole card, inside Nook: the bubble's picture at once, then the photo itself
-/// sharp from the file on this Mac. A click anywhere (or Escape) shrinks it back; the open button shows it in Quick Look.
-private struct PhotoZoom: View {
-    let url: URL
-    let preview: NSImage
-    let name: String
-    let onClose: () -> Void
-    let onOpen: () -> Void
-    @State private var sharp: NSImage?
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: onClose) {
-                ZStack {
-                    Color.black.opacity(0.94)
-                    Image(nsImage: sharp ?? preview)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
-                        .padding(8)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(tr("button.close"))
-            .accessibilityLabel("\(tr("button.close")): \(name)")
-
-            HStack(spacing: 6) {
-                zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
-                zoomButton("xmark", label: tr("button.close"), action: onClose)
-            }
-            .padding(12)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
-        .task(id: url) {
-            let url = self.url
-            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
-            sharp = data.flatMap { WhatsAppLink.thumbnail($0, side: 2400) }
-        }
-    }
-
-    private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(NookTheme.font(11, .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.black.opacity(0.55)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 }
 

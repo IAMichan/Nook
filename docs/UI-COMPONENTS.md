@@ -110,9 +110,10 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip |
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |
 | `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`) |
-| `ChatTranscript` | `ChatTranscript.swift` | A conversation as bubbles (a WhatsApp card, the Chats tab): day lines, runs per person, colored names in a group, links, media, copy menu. Never draw chat bubbles by hand |
+| `ChatTranscript` | `ChatTranscript.swift` | A conversation as bubbles (a WhatsApp card, the Chats tab): day lines, runs per person, colored names in a group, links, media, copy menu, the message a bubble answers quoted at its top and the emoji on it underneath. Given `onReply`/`onReact`, a bubble under the pointer offers to answer it or react with an emoji (also in its right-click menu). Never draw chat bubbles by hand |
+| `ChatPhotoZoom` | `ChatTranscript.swift` | A chat photo enlarged over the card or chat it is in, sharp once the file is read; a click or Escape shrinks it back, the open button shows it in Quick Look |
 | `TicksView` | `ChatTranscript.swift` | How far your own message got (clock, one grey tick, two grey, two blue, failed): after a bubble's time and in front of a chat's newest message in the Chats list. Never draw ticks by hand |
-| `ChatReplyField` | `ChatReplyField.swift` | The answer field under a chat (the Chats tab, a WhatsApp card in the notch): Return sends, "@" opens the menu with "@nook" and ready-made requests, "@nook …" lets Nook write the message into the field first. Never build a chat's answer field by hand |
+| `ChatReplyField` | `ChatReplyField.swift` | The answer field under a chat (the Chats tab, a WhatsApp card in the notch): Return sends, "@" opens the menu with "@nook" and ready-made requests, "@nook …" lets Nook write the message into the field first. With `quote` it answers one message, shown above the field until sent or let go (the cross, Escape). Never build a chat's answer field by hand |
 
 Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge`) live in
 `NotchUI/Workspace/WorkspaceComponents.swift`.

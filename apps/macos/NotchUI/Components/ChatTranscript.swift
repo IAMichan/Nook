@@ -5,8 +5,10 @@ import AVKit
 /// A line marks where a new day starts; messages one person sends in a row sit close together under their name (each
 /// person in a group in a color of their own); links open; a message of only emoji shows large; a long message folds
 /// open with "Read more". More than fits scrolls back through the history, starting at the newest message. Each
-/// message's text can be selected; right-click a bubble to copy the message or the whole chat. Used by the chat card in
-/// the notch and by the Chats tab.
+/// message's text can be selected; right-click a bubble to copy the message or the whole chat. A message that answers
+/// another quotes it at its top, and the emoji people put on it sit under it. Where the chat can be answered, the pointer
+/// on a bubble shows a button to answer that message and one to react with an emoji. Used by the chat card in the notch
+/// and by the Chats tab.
 struct ChatTranscript: View {
     let bubbles: [ChatBubble]
     /// Who the chat is with, for the copied chat's lines in a private chat.
@@ -16,6 +18,10 @@ struct ChatTranscript: View {
     var fills = false
     var onOpen: (ChatBubble) -> Void = { _ in }
     var onZoom: (ChatBubble) -> Void = { _ in }
+    /// Answering one message (the field then quotes it). Nil where the chat cannot be answered: no reply button.
+    var onReply: ((ChatBubble) -> Void)? = nil
+    /// Putting an emoji on a message; the one you already put there takes it back. Nil where the chat cannot be answered.
+    var onReact: ((ChatBubble, String) -> Void)? = nil
 
     var body: some View {
         if fills {
@@ -57,8 +63,19 @@ struct ChatTranscript: View {
                 case .message(_, let first, _):
                     if let bubble = byID[row.id] {
                         ChatBubbleView(bubble: bubble, first: first, newest: bubble.id == bubbles.last?.id,
-                                       onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) })
+                                       onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
+                                       onReply: replyAction(bubble), onReact: reactAction(bubble))
                             .contextMenu {
+                                if let onReply {
+                                    Button(tr("chat.reply")) { onReply(bubble) }
+                                }
+                                if let onReact {
+                                    Menu(tr("chat.react")) {
+                                        ForEach(ChatReactions.quick, id: \.self) { emoji in
+                                            Button(emoji) { onReact(bubble, emoji) }
+                                        }
+                                    }
+                                }
                                 if !bubble.copyText.isEmpty {
                                     Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
                                 }
@@ -72,6 +89,16 @@ struct ChatTranscript: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func replyAction(_ bubble: ChatBubble) -> (() -> Void)? {
+        guard let onReply else { return nil }
+        return { onReply(bubble) }
+    }
+
+    private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
+        guard let onReact else { return nil }
+        return { onReact(bubble, $0) }
     }
 
     private struct Row: Identifiable {
@@ -105,7 +132,12 @@ private struct ChatBubbleView: View {
     let newest: Bool
     let onOpen: () -> Void
     let onZoom: () -> Void
+    let onReply: (() -> Void)?
+    let onReact: ((String) -> Void)?
     @State private var expanded = false
+    @State private var hovering = false
+    /// The emoji to react with are open beside the bubble.
+    @State private var picking = false
 
     /// Each person in a group writes in a color of their own, the same every time.
     private static let senderColors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
@@ -116,61 +148,107 @@ private struct ChatBubbleView: View {
     private var long: Bool { bubble.text.count > 700 || bubble.text.filter { $0 == "\n" }.count >= Self.foldedLines }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if bubble.fromMe { Spacer(minLength: 70) }
-            VStack(alignment: .leading, spacing: 2) {
-                if first, !bubble.sender.isEmpty {
-                    Text(bubble.sender)
-                        .font(NookTheme.font(11.5, .semibold))
-                        .foregroundStyle(Self.senderColors[ChatTimeline.colorIndex(for: bubble.sender, count: Self.senderColors.count)])
-                        .lineLimit(1)
-                }
-                if let attachment = bubble.attachment {
-                    switch bubble.media {
-                    case .photo where bubble.image != nil:
-                        PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
-                    case .video(let url):
-                        VideoTile(url: url, poster: bubble.image, name: attachment)
-                    default:
-                        AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
-                    }
-                }
-                HStack(alignment: .lastTextBaseline, spacing: 8) {
-                    if !bubble.text.isEmpty {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                            Text(ChatLinks.attributed(bubble.text))
-                                .font(emojiOnly ? NookTheme.font(34) : NookTheme.font(14, newest ? .medium : .regular))
-                                .foregroundStyle(NookTheme.paper)
-                                .tint(NookTheme.blue)
-                                .lineLimit(long && !expanded ? Self.foldedLines : nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                            if long {
-                                Button(expanded ? tr("chat.showLess") : tr("chat.readMore")) {
-                                    withAnimation(NookTheme.swap) { expanded.toggle() }
-                                }
-                                .buttonStyle(.plain)
-                                .font(NookTheme.TextStyle.label)
-                                .foregroundStyle(NookTheme.blue)
-                            }
-                        }
-                    } else {
-                        Spacer(minLength: 0)
-                    }
-                    HStack(spacing: 3) {
-                        Text(bubble.time)
-                            .font(NookTheme.font(10.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                        if let ticks = bubble.ticks { TicksView(ticks: ticks) }
-                    }
-                    .fixedSize()
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if bubble.fromMe {
+                Spacer(minLength: 70)
+                actions
+            }
+            VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
+                content
+                if !bubble.reactions.isEmpty {
+                    ReactionChips(reactions: bubble.reactions, onReact: onReact)
+                        .padding(.horizontal, NookTheme.Spacing.sm)
                 }
             }
-            .padding(.horizontal, emojiOnly ? NookTheme.Spacing.xs : 12)
-            .padding(.vertical, emojiOnly ? NookTheme.Spacing.xxs : 7)
-            .background(shape.fill(emojiOnly ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)))
-            if !bubble.fromMe { Spacer(minLength: 70) }
+            if !bubble.fromMe {
+                actions
+                Spacer(minLength: 70)
+            }
         }
+        .onHover { hovering = $0 }
+    }
+
+    /// Answer this message and react to it: shown while the pointer is on the bubble, where the chat can be answered.
+    @ViewBuilder
+    private var actions: some View {
+        if onReply != nil || onReact != nil {
+            let shown = hovering || picking
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                if let onReact {
+                    BubbleActionButton(symbol: "face.smiling", label: tr("chat.react")) { picking = true }
+                        .popover(isPresented: $picking, arrowEdge: .top) {
+                            ReactionPicker(mine: bubble.reactions.first(where: \.mine)?.emoji) { emoji in
+                                picking = false
+                                onReact(emoji)
+                            }
+                        }
+                }
+                if let onReply {
+                    BubbleActionButton(symbol: "arrowshape.turn.up.left", label: tr("chat.reply"), action: onReply)
+                }
+            }
+            .opacity(shown ? 1 : 0)
+            .allowsHitTesting(shown)
+            .animation(NookTheme.hover, value: shown)
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if first, !bubble.sender.isEmpty {
+                Text(bubble.sender)
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(Self.senderColors[ChatTimeline.colorIndex(for: bubble.sender, count: Self.senderColors.count)])
+                    .lineLimit(1)
+            }
+            if let quote = bubble.quote {
+                QuotedMessage(quote: quote)
+                    .padding(.bottom, NookTheme.Spacing.xxs)
+            }
+            if let attachment = bubble.attachment {
+                switch bubble.media {
+                case .photo where bubble.image != nil:
+                    PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
+                case .video(let url):
+                    VideoTile(url: url, poster: bubble.image, name: attachment)
+                default:
+                    AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
+                }
+            }
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                if !bubble.text.isEmpty {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                        Text(ChatLinks.attributed(bubble.text))
+                            .font(emojiOnly ? NookTheme.font(34) : NookTheme.font(14, newest ? .medium : .regular))
+                            .foregroundStyle(NookTheme.paper)
+                            .tint(NookTheme.blue)
+                            .lineLimit(long && !expanded ? Self.foldedLines : nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                        if long {
+                            Button(expanded ? tr("chat.showLess") : tr("chat.readMore")) {
+                                withAnimation(NookTheme.swap) { expanded.toggle() }
+                            }
+                            .buttonStyle(.plain)
+                            .font(NookTheme.TextStyle.label)
+                            .foregroundStyle(NookTheme.blue)
+                        }
+                    }
+                } else {
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 3) {
+                    Text(bubble.time)
+                        .font(NookTheme.font(10.5))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    if let ticks = bubble.ticks { TicksView(ticks: ticks) }
+                }
+                .fixedSize()
+            }
+        }
+        .padding(.horizontal, emojiOnly ? NookTheme.Spacing.xs : 12)
+        .padding(.vertical, emojiOnly ? NookTheme.Spacing.xxs : 7)
+        .background(shape.fill(emojiOnly ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.16) : NookTheme.smoke)))
     }
 
     /// Round, with the first bubble of a run pointing at its writer the way a chat app's tail does.
@@ -180,6 +258,141 @@ private struct ChatBubbleView: View {
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
                                       style: .continuous)
+    }
+}
+
+/// The emoji the reaction buttons offer, as WhatsApp's own quick row.
+enum ChatReactions {
+    static let quick = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+}
+
+/// The message a bubble answers, at the bubble's top: a bar, who wrote it and the start of its text.
+private struct QuotedMessage: View {
+    let quote: BubbleQuote
+
+    private var tint: Color { quote.mine ? NookTheme.mint : NookTheme.blue }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 1) {
+                if !quote.sender.isEmpty {
+                    Text(quote.sender)
+                        .font(NookTheme.font(11.5, .semibold))
+                        .foregroundStyle(tint)
+                        .lineLimit(1)
+                }
+                Text(quote.text)
+                    .font(NookTheme.font(12.5))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .padding(.leading, NookTheme.Spacing.lg)
+        .padding(.trailing, NookTheme.Spacing.md)
+        .overlay(alignment: .leading) {
+            Capsule().fill(tint).frame(width: 3).padding(.vertical, NookTheme.Spacing.xs).padding(.leading, NookTheme.Spacing.xs)
+        }
+        .frame(maxWidth: PhotoButton.maxWidth, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(Color.white.opacity(0.06)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tr("chat.quote", quote.sender.isEmpty ? quote.text : "\(quote.sender): \(quote.text)"))
+    }
+}
+
+/// The emoji under a bubble, one chip each with how many put it there; yours is tinted, and a click on one puts that
+/// emoji there too, or takes yours back.
+private struct ReactionChips: View {
+    let reactions: [BubbleReaction]
+    let onReact: ((String) -> Void)?
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            ForEach(reactions) { reaction in
+                Button { onReact?(reaction.emoji) } label: {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Text(reaction.emoji).font(NookTheme.font(12.5))
+                        if reaction.count > 1 {
+                            Text("\(reaction.count)")
+                                .font(NookTheme.font(10.5, .semibold))
+                                .foregroundStyle(NookTheme.textSecondary)
+                        }
+                    }
+                    .padding(.horizontal, NookTheme.Spacing.sm)
+                    .padding(.vertical, NookTheme.Spacing.xxs)
+                    .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.18) : NookTheme.graphite))
+                    .overlay(Capsule().stroke(reaction.mine ? NookTheme.mint.opacity(0.4) : NookTheme.line2, lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(onReact == nil)
+                .help(reaction.mine ? tr("chat.react.takeBack") : tr("chat.react"))
+                .accessibilityLabel(tr("chat.reactions", reaction.emoji, reaction.count))
+            }
+        }
+    }
+}
+
+/// A small round button beside a bubble: answer it, react to it.
+private struct BubbleActionButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(NookTheme.smoke))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .hoverLift(hovering, scale: 1.06)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The emoji to react with, in a row; the one you already put there is marked, and choosing it again takes it back.
+private struct ReactionPicker: View {
+    let mine: String?
+    let choose: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            ForEach(ChatReactions.quick, id: \.self) { emoji in
+                ReactionPickerButton(emoji: emoji, chosen: emoji == mine) { choose(emoji) }
+            }
+        }
+        .padding(NookTheme.Spacing.sm)
+    }
+}
+
+private struct ReactionPickerButton: View {
+    let emoji: String
+    let chosen: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(emoji)
+                .font(NookTheme.font(22))
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(chosen ? NookTheme.mint.opacity(0.2) : (hovering ? NookTheme.smoke : Color.clear)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .hoverLift(hovering, scale: 1.12)
+        .help(chosen ? tr("chat.react.takeBack") : emoji)
+        .accessibilityLabel(emoji)
     }
 }
 
@@ -354,7 +567,66 @@ private struct InlinePlayer: NSViewRepresentable {
     }
 }
 
-/// A photo in a chat bubble, as it came: a click enlarges it in the card.
+/// A chat bubble's photo enlarged over the whole card or chat, inside Nook: the bubble's picture at once, then the photo
+/// itself sharp from the file on this Mac. A click anywhere (or Escape) shrinks it back; the open button shows it in
+/// Quick Look. Used by the chat card in the notch and by the Chats tab.
+struct ChatPhotoZoom: View {
+    let url: URL
+    let preview: NSImage
+    let name: String
+    let onClose: () -> Void
+    let onOpen: () -> Void
+    @State private var sharp: NSImage?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Button(action: onClose) {
+                ZStack {
+                    Color.black.opacity(0.94)
+                    Image(nsImage: sharp ?? preview)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous))
+                        .padding(8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("button.close"))
+            .accessibilityLabel("\(tr("button.close")): \(name)")
+
+            HStack(spacing: 6) {
+                zoomButton("arrow.up.forward.app", label: tr("card.attachment.open"), action: onOpen)
+                zoomButton("xmark", label: tr("button.close"), action: onClose)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
+        .task(id: url) {
+            let url = self.url
+            let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+            sharp = data.flatMap { WhatsAppLink.thumbnail($0, side: 2400) }
+        }
+    }
+
+    private func zoomButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A photo in a chat bubble, as it came: a click enlarges it in the card or chat.
 private struct PhotoButton: View {
     static let maxWidth: CGFloat = 240
     static let maxHeight: CGFloat = 180

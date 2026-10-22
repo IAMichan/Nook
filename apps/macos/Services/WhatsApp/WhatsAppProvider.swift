@@ -32,8 +32,11 @@ protocol WhatsAppProvider: Sendable {
     func recentMessages(since date: Date, me: String?) async throws -> [WAMessage]
     /// The latest `limit` messages of one chat, oldest first.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage]
-    /// Sends a text to an existing chat; returns the new message's id when the gateway gives it.
-    func send(text: String, to chat: String) async throws -> String?
+    /// Sends a text to an existing chat, as an answer to the message `replyTo` when set; returns the new message's id
+    /// when the gateway gives it.
+    func send(text: String, to chat: String, replyTo: String?) async throws -> String?
+    /// Puts `emoji` on a message in `chat`; an empty `emoji` takes back your reaction (`old`, the one you had).
+    func react(_ emoji: String, to message: String, chat: String, old: String?) async throws
     /// Marks the chat read up to `lastIncoming` (the newest message received in it).
     func markRead(chat: String, lastIncoming: String?) async throws
     /// A group's name, when the messages don't carry it.
@@ -204,7 +207,7 @@ actor GOWAProvider: WhatsAppProvider {
         let id: String
         if let deviceId { id = deviceId } else { id = try await device().id }
         let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
-            "webhook_url": url, "webhook_secret": secret, "webhook_events": "message,message.ack",
+            "webhook_url": url, "webhook_secret": secret, "webhook_events": "message,message.ack,message.reaction",
         ])
         try check(data, code)
     }
@@ -233,9 +236,15 @@ actor GOWAProvider: WhatsAppProvider {
         return WAGOWA.messages(data, me: me).sorted { $0.date < $1.date }
     }
 
-    func send(text: String, to chat: String) async throws -> String? {
-        let data = try await scoped("POST", "/send/message", json: ["phone": chat, "message": text])
+    func send(text: String, to chat: String, replyTo: String?) async throws -> String? {
+        var body: [String: any Sendable] = ["phone": chat, "message": text]
+        if let replyTo { body["reply_message_id"] = replyTo }
+        let data = try await scoped("POST", "/send/message", json: body)
         return (WAGOWA.results(data) as? [String: Any])?["message_id"] as? String
+    }
+
+    func react(_ emoji: String, to message: String, chat: String, old: String?) async throws {
+        _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(message))/reaction", json: ["phone": chat, "emoji": emoji])
     }
 
     func markRead(chat: String, lastIncoming: String?) async throws {
@@ -348,7 +357,8 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func registerWebhook(url: String, secret: String) async throws {
         let id = try await sid()
-        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack"], "secret": secret]
+        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack", "message.reaction"],
+                                            "secret": secret]
         let (list, listCode) = try await http.call("GET", "/api/sessions/\(id)/webhooks")
         try check(list, listCode)
         let hooks = (try? JSONSerialization.jsonObject(with: list)) as? [[String: Any]] ?? []
@@ -379,9 +389,16 @@ actor OpenWAProvider: WhatsAppProvider {
         return WAOpenWA.messages(data, me: me).sorted { $0.date < $1.date }
     }
 
-    func send(text: String, to chat: String) async throws -> String? {
-        let data = try await scoped("POST", "/messages/send-text", json: ["chatId": Self.openwaId(chat), "text": text])
+    func send(text: String, to chat: String, replyTo: String?) async throws -> String? {
+        var body: [String: any Sendable] = ["chatId": Self.openwaId(chat), "text": text]
+        if let replyTo { body["quotedMessageId"] = replyTo }
+        let data = try await scoped("POST", "/messages/send-text", json: body)
         return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["messageId"] as? String
+    }
+
+    /// An empty emoji takes the reaction back.
+    func react(_ emoji: String, to message: String, chat: String, old: String?) async throws {
+        _ = try await scoped("POST", "/messages/react", json: ["chatId": Self.openwaId(chat), "messageId": message, "emoji": emoji])
     }
 
     func markRead(chat: String, lastIncoming: String?) async throws {
@@ -479,9 +496,22 @@ actor BeeperProvider: WhatsAppProvider {
         return newest.sorted { $0.date < $1.date }
     }
 
-    func send(text: String, to chat: String) async throws -> String? {
-        let data = try await call("POST", chatPath(chat) + "/messages", json: ["text": text])
+    func send(text: String, to chat: String, replyTo: String?) async throws -> String? {
+        var body: [String: any Sendable] = ["text": text]
+        if let replyTo { body["replyToMessageID"] = replyTo }
+        let data = try await call("POST", chatPath(chat) + "/messages", json: body)
         return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["pendingMessageID"] as? String
+    }
+
+    /// Beeper adds a reaction by its key and removes one by its key: taking yours back names the one you had.
+    func react(_ emoji: String, to message: String, chat: String, old: String?) async throws {
+        let path = chatPath(chat) + "/messages/" + WAHTTP.pathComponent(message) + "/reactions"
+        if emoji.isEmpty {
+            guard let old, !old.isEmpty else { return }
+            _ = try await call("DELETE", path + "/" + WAHTTP.pathComponent(old))
+        } else {
+            _ = try await call("POST", path, json: ["reactionKey": emoji])
+        }
     }
 
     func markRead(chat: String, lastIncoming: String?) async throws {
