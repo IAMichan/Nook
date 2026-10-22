@@ -59,6 +59,11 @@ protocol WhatsAppProvider: Sendable {
     var canVote: Bool { get }
     /// Votes on a poll with `choice` (the options' texts; empty takes your vote back).
     func vote(chat: String, poll: String, choice: [String]) async throws
+    /// What this gateway can send besides text.
+    var sends: Set<ChatOutgoing.Kind> { get }
+    /// Sends a file, a poll, a place or a contact card to a chat, as an answer to `replyTo` where the gateway can;
+    /// returns the new message's id when the gateway gives it.
+    func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String?
 }
 
 extension WhatsAppProvider {
@@ -68,6 +73,17 @@ extension WhatsAppProvider {
     func channels() async -> [WAChannel] { [] }
     var canVote: Bool { false }
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
+    var sends: Set<ChatOutgoing.Kind> { [] }
+    func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String? { throw WAError.refused("send") }
+}
+
+extension ChatAttachment {
+    /// The file's bytes, read off the main thread by the gateway that sends it; refused when it is gone or too large.
+    func read() throws -> Data {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), !data.isEmpty else { throw WAError.refused("file") }
+        guard data.count <= ChatAttachment.maxBytes else { throw WAError.refused("too large") }
+        return data
+    }
 }
 
 /// A message's file as the gateway hands it over.
@@ -117,6 +133,16 @@ final class WAHTTP: Sendable {
         return (data, response.statusCode)
     }
 
+    /// A file to the gateway as multipart form data: the fields, then the file.
+    func upload(_ path: String, query: [URLQueryItem] = [], fields: [WAFormField], upload: WAUpload, data: Data,
+                timeout: TimeInterval = 120) async throws -> (Data, Int) {
+        let boundary = WAMultipart.boundary()
+        let body = WAMultipart.body(boundary: boundary, fields: fields, upload: upload, data: data)
+        let (answer, response) = try await perform("POST", path, query: query, json: nil, timeout: timeout, accept: "application/json",
+                                                   body: (body, WAMultipart.contentType(boundary: boundary)))
+        return (answer, response.statusCode)
+    }
+
     /// A file from the gateway: its bytes, status code and MIME type.
     func download(_ path: String, query: [URLQueryItem] = [], timeout: TimeInterval = 60) async throws -> (Data, Int, String?) {
         let (data, response) = try await perform("GET", path, query: query, json: nil, timeout: timeout, accept: "*/*")
@@ -124,7 +150,8 @@ final class WAHTTP: Sendable {
     }
 
     private func perform(_ method: String, _ path: String, query: [URLQueryItem], json: [String: any Sendable]?,
-                         timeout: TimeInterval, accept: String) async throws -> (Data, HTTPURLResponse) {
+                         timeout: TimeInterval, accept: String,
+                         body: (data: Data, type: String)? = nil) async throws -> (Data, HTTPURLResponse) {
         guard var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { throw WAError.unreachable }
         comps.percentEncodedPath = comps.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty
             ? path : "/" + comps.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path
@@ -137,6 +164,9 @@ final class WAHTTP: Sendable {
         if let json {
             req.httpBody = try JSONSerialization.data(withJSONObject: json)
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if let body {
+            req.httpBody = body.data
+            req.setValue(body.type, forHTTPHeaderField: "Content-Type")
         }
         do {
             let (data, response) = try await session.data(for: req)
@@ -270,6 +300,26 @@ actor GOWAProvider: WhatsAppProvider {
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(message))/reaction", json: ["phone": chat, "emoji": emoji])
     }
 
+    nonisolated var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.everything }
+
+    /// A file goes as form data with the device in the query, as every GOWA route takes it; the rest as JSON.
+    func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String? {
+        let request = WASend.gowa(outgoing, chat: chat, replyTo: replyTo)
+        let data: Data
+        if let upload = request.upload, case .file(let file) = outgoing {
+            let bytes = try file.read()
+            let id: String
+            if let deviceId { id = deviceId } else { id = try await device().id }
+            let (answer, code) = try await http.upload(request.path, query: [URLQueryItem(name: "device_id", value: id)],
+                                                       fields: request.fields, upload: upload, data: bytes)
+            try check(answer, code)
+            data = answer
+        } else {
+            data = try await scoped("POST", request.path, json: request.json, timeout: 30)
+        }
+        return (WAGOWA.results(data) as? [String: Any])?["message_id"] as? String
+    }
+
     func markRead(chat: String, lastIncoming: String?) async throws {
         guard let id = lastIncoming else { return }
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(id))/read", json: ["phone": chat])
@@ -394,9 +444,10 @@ actor OpenWAProvider: WhatsAppProvider {
         return try await session().id
     }
 
-    private func scoped(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil) async throws -> Data {
+    private func scoped(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil,
+                        timeout: TimeInterval = 10) async throws -> Data {
         let id = try await sid()
-        let (data, code) = try await http.call(method, "/api/sessions/\(id)" + path, query: query, json: json)
+        let (data, code) = try await http.call(method, "/api/sessions/\(id)" + path, query: query, json: json, timeout: timeout)
         try check(data, code)
         return data
     }
@@ -486,6 +537,16 @@ actor OpenWAProvider: WhatsAppProvider {
 
     nonisolated var canVote: Bool { true }
 
+    nonisolated var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.everything }
+
+    func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String? {
+        var bytes: Data?
+        if case .file(let file) = outgoing { bytes = try file.read() }
+        let request = WASend.openwa(outgoing, chatId: Self.openwaId(chat), replyTo: replyTo, data: bytes)
+        let data = try await scoped("POST", request.path, json: request.json, timeout: bytes == nil ? 30 : 120)
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["messageId"] as? String
+    }
+
     func vote(chat: String, poll: String, choice: [String]) async throws {
         _ = try await scoped("POST", "/messages/vote-poll", json: ["chatId": Self.openwaId(chat), "pollMessageId": poll, "options": choice])
     }
@@ -537,8 +598,9 @@ actor BeeperProvider: WhatsAppProvider {
         http = WAHTTP(base: base, headers: headers)
     }
 
-    private func call(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil) async throws -> Data {
-        let (data, code) = try await http.call(method, path, query: query, json: json)
+    private func call(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil,
+                      timeout: TimeInterval = 10) async throws -> Data {
+        let (data, code) = try await http.call(method, path, query: query, json: json, timeout: timeout)
         if code == 401 || code == 403 { throw WAError.unauthorized }
         guard (200..<300).contains(code) else { throw WAError.refused(WABeeper.errorMessage(data) ?? "HTTP \(code)") }
         return data
@@ -584,6 +646,26 @@ actor BeeperProvider: WhatsAppProvider {
         var body: [String: any Sendable] = ["text": text]
         if let replyTo { body["replyToMessageID"] = replyTo }
         let data = try await call("POST", chatPath(chat) + "/messages", json: body)
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["pendingMessageID"] as? String
+    }
+
+    /// Every network Beeper bridges takes files; a place or a contact goes as text, and polls are not in its API.
+    nonisolated var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
+
+    /// A file is first handed to Beeper, which answers with an upload id; the message then carries that upload.
+    func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String? {
+        var uploadID: String?
+        if case .file(let file) = outgoing {
+            let upload = WASend.beeperUpload(file, data: try file.read())
+            guard let id = WASend.beeperUploadID(try await call("POST", upload.path, json: upload.json, timeout: 120)) else {
+                throw WAError.refused("upload")
+            }
+            uploadID = id
+        } else if case .poll = outgoing {
+            throw WAError.refused("poll")
+        }
+        let request = WASend.beeperMessage(outgoing, path: chatPath(chat) + "/messages", uploadID: uploadID, replyTo: replyTo)
+        let data = try await call("POST", request.path, json: request.json, timeout: 30)
         return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["pendingMessageID"] as? String
     }
 

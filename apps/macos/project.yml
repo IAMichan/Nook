@@ -171,6 +171,7 @@ targets:
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+ChatMedia.swift
+      - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
@@ -200,6 +201,9 @@ targets:
       - path: Services/Messages/ChatMedia.swift
       - path: Services/Messages/ChatFormat.swift
       - path: Services/Messages/ChatPoll.swift
+      - path: Services/Messages/ChatOutgoing.swift
+      - path: Services/Messages/ChatStickers.swift
+      - path: Services/WhatsApp/WhatsAppSend.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift

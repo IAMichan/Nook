@@ -286,4 +286,106 @@ enum TelegramData {
         default: return nil
         }
     }
+
+    // MARK: Sending
+
+    /// Text as TDLib takes it.
+    static func formatted(_ text: String) -> [String: Any] {
+        ["@type": "formattedText", "text": text, "entities": [Any]()]
+    }
+
+    /// `sendMessage` for `content` in a chat, as an answer to its message `replyTo` (TDLib's own id) when set. `extra`
+    /// comes back with TDLib's answer, so a failure can be told apart.
+    static func sendMessage(chat: Int64, content: [String: Any], replyTo: Int64?, extra: String) -> [String: Any] {
+        var request: [String: Any] = ["@type": "sendMessage", "chat_id": chat, "input_message_content": content, "@extra": extra]
+        if let replyTo { request["reply_to"] = ["@type": "inputMessageReplyToMessage", "message_id": replyTo] as [String: Any] }
+        return request
+    }
+
+    /// Typed text as a message.
+    static func textContent(_ text: String) -> [String: Any] {
+        ["@type": "inputMessageText", "text": formatted(text), "clear_draft": true]
+    }
+
+    /// What is sent besides text, as TDLib takes it. `legacy`: the shape of TDLib before files came wrapped in their own
+    /// objects (`inputPhoto`…) and poll options in `inputPollOption`; a build of either age gets what it reads, as the
+    /// bridge asks again in the older shape when the newer one is refused. A sticker that is no WebP goes as a photo:
+    /// Telegram takes stickers as WebP only.
+    static func content(_ outgoing: ChatOutgoing, legacy: Bool = false) -> [String: Any] {
+        switch outgoing {
+        case .file(let file):
+            let local: [String: Any] = ["@type": "inputFileLocal", "path": file.path]
+            let caption = formatted(file.caption.trimmingCharacters(in: .whitespacesAndNewlines))
+            let seconds = Int(file.seconds ?? 0)
+            // The file, in its own object in a newer TDLib (with what describes it), or as it is in an older one, whose
+            // description then sits on the content itself.
+            var described: [String: Any] = [:]
+            let route: (type: String, field: String)
+            switch file.kind {
+            case .photo, .sticker where file.fileExtension != "webp":
+                route = ("inputMessagePhoto", "photo")
+            case .sticker:
+                route = ("inputMessageSticker", "sticker")
+            case .video:
+                route = ("inputMessageVideo", "video")
+                described["supports_streaming"] = true
+            case .gif:
+                route = ("inputMessageAnimation", "animation")
+            case .audio:
+                route = ("inputMessageAudio", "audio")
+                described["duration"] = seconds
+            case .voice:
+                route = ("inputMessageVoiceNote", "voice_note")
+                described["duration"] = seconds
+            case .file:
+                route = ("inputMessageDocument", "document")
+            }
+            var content: [String: Any] = ["@type": route.type]
+            if legacy {
+                content[route.field] = local
+                content.merge(described) { _, new in new }
+            } else {
+                var wrapped = described
+                wrapped["@type"] = wrappers[route.field] ?? "inputDocument"
+                wrapped[route.field] = local
+                content[route.field] = wrapped
+            }
+            // A sticker has no caption, only the emoji it stands for.
+            if route.type == "inputMessageSticker" { content["emoji"] = "" } else { content["caption"] = caption }
+            return content
+        case .poll(let poll):
+            var content: [String: Any] = ["@type": "inputMessagePoll", "question": formatted(poll.cleanQuestion),
+                                          "is_anonymous": false, "is_closed": false]
+            if legacy {
+                content["options"] = poll.cleanOptions.map(formatted)
+                content["type"] = ["@type": "pollTypeRegular", "allow_multiple_answers": poll.multiple] as [String: Any]
+            } else {
+                content["options"] = poll.cleanOptions.map { ["@type": "inputPollOption", "text": formatted($0)] as [String: Any] }
+                content["allows_multiple_answers"] = poll.multiple
+                content["type"] = ["@type": "inputPollTypeRegular", "allow_adding_options": false] as [String: Any]
+            }
+            return content
+        case .location(let place):
+            let location: [String: Any] = ["@type": "location", "latitude": place.latitude, "longitude": place.longitude]
+            return ["@type": "inputMessageLocation", "location": location]
+        case .contact(let card):
+            let words = card.name.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ", maxSplits: 1).map(String.init)
+            let contact: [String: Any] = [
+                "@type": "contact", "phone_number": card.cleanPhone, "first_name": words.first ?? card.name,
+                "last_name": words.count > 1 ? words[1] : "", "vcard": "", "user_id": 0,
+            ]
+            return ["@type": "inputMessageContact", "contact": contact]
+        }
+    }
+
+    /// The object a newer TDLib wraps each kind of file in, by the content's field for it.
+    private static let wrappers = [
+        "photo": "inputPhoto", "sticker": "inputSticker", "video": "inputVideo", "animation": "inputAnimation",
+        "audio": "inputAudio", "voice_note": "inputVoiceNote", "document": "inputDocument",
+    ]
+
+    /// Whether `sending_state` says a message is still on its way from this device: Nook shows it once Telegram has it.
+    static func isPending(_ message: [String: Any]) -> Bool {
+        type(message["sending_state"] as? [String: Any] ?? [:]) == "messageSendingStatePending"
+    }
 }

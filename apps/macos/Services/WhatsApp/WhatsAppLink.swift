@@ -920,6 +920,84 @@ final class WhatsAppLink: ObservableObject {
         }
     }
 
+    /// What the linked gateway can send besides text (files, polls, places, contacts); empty while it is not linked.
+    var sends: Set<ChatOutgoing.Kind> { isConnected ? provider?.sends ?? [] : [] }
+
+    /// Sends a file, a poll, a place or a contact card to a chat, as an answer to its message `replyTo` when set. A file
+    /// is first made to fit what WhatsApp takes (`ChatSendPrep`); once sent, the chat shows it at once, the file from
+    /// this Mac. Returns the chat's name. Throws with a sentence the user can act on.
+    @discardableResult
+    func send(_ outgoing: ChatOutgoing, to recipient: String, replyTo: String? = nil) async throws -> String {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.sends.contains(outgoing.kind) else { throw NookError(tr("chat.compose.unsupported")) }
+        guard let target = resolve(recipient) else {
+            throw NookError(tr("whatsapp.reply.unknown", recipient, chatNames().prefix(12).joined(separator: ", ")))
+        }
+        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
+        var outgoing = outgoing
+        if case .file(let file) = outgoing {
+            guard !file.tooLarge else { throw NookError(tr("chat.compose.tooLarge", file.name)) }
+            outgoing = .file(try await ChatSendPrep.forWhatsApp(file))
+        }
+        let gen = generation
+        do {
+            let id = try await provider.send(outgoing, to: target.jid, replyTo: replyTo) ?? "nook-\(UUID().uuidString)"
+            guard gen == generation else { return target.name }
+            var mine = WAMessage(id: id, chat: target.jid, sender: me ?? "", senderName: "", text: "", date: Date(), fromMe: true)
+            mine.chatName = target.name
+            mine.replyTo = replyTo
+            switch outgoing {
+            case .file(let file):
+                mine.text = file.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+                mine.media = Self.media(of: file)
+                await showSent(file, as: id, media: mine.media)
+            case .poll(let poll):
+                mine.poll = WAPoll(question: poll.cleanQuestion, options: poll.cleanOptions, multiple: poll.multiple)
+            case .location(let place):
+                mine.media = .location
+                mine.text = place.title
+            case .contact(let card):
+                mine.media = .contact
+                mine.text = card.name
+            }
+            inbox.add(mine, filters: filters, name: target.name)
+            Log.connectors.info("WhatsApp: \(outgoing.kind.rawValue) sent")
+            return target.name
+        } catch let error as WAError {
+            throw Self.sentence(error)
+        }
+    }
+
+    /// What a sent file is in WhatsApp's own terms; a GIF is the looping video it was sent as.
+    private static func media(of file: ChatAttachment) -> WAMedia {
+        let seconds = file.seconds.map { Int($0.rounded()) }
+        switch file.kind {
+        case .photo: return .image
+        case .video, .gif: return .video
+        case .sticker: return .sticker
+        case .audio: return .audio(seconds: seconds)
+        case .voice: return .voice(seconds: seconds)
+        case .file: return .document(name: file.name)
+        }
+    }
+
+    /// The file you sent shows in its bubble straight away, from a copy in Nook's temporary folder (the one a card's
+    /// previews are kept in, and cleared with them), so it never has to come back from the gateway.
+    private func showSent(_ file: ChatAttachment, as id: String, media: WAMedia) async {
+        guard let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) else { return }
+        let folder = Self.openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let copy = folder.appendingPathComponent(file.name)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: file.url, to: copy)
+        } catch {
+            return
+        }
+        let image = await Self.picture(of: copy, data: data, media: media)
+        previews[id] = WAPreview(file: copy, image: image)
+        previewOrder.append(id)
+    }
+
     /// Puts `emoji` on a message of a chat that is in the inbox, or takes it back when it is already yours. Returns the
     /// chat's name. Throws with a sentence the user can act on.
     @discardableResult
