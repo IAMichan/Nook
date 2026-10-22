@@ -46,7 +46,7 @@ struct ConfigPreview: View {
         switch kind {
         case .add: return NookTheme.mint
         case .remove: return NookTheme.coral
-        case .context: return .secondary
+        case .context: return NookTheme.textSecondary
         }
     }
 }

@@ -99,12 +99,15 @@ private struct BlinkingCursor: View {
         Rectangle()
             .fill(NookTheme.textSecondary)
             .frame(width: 7, height: 13)
-            .opacity(on ? 1 : 0)
-            .onAppear {
-                // With Reduce Motion the cursor stays lit instead of blinking.
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { on = false }
-            }
+            // With Reduce Motion the cursor stays lit instead of blinking, also when it is turned on while it blinks.
+            .opacity(on || reduceMotion ? 1 : 0)
+            .onAppear(perform: blink)
+            .onChange(of: reduceMotion) { blink() }
             .accessibilityHidden(true)
+    }
+
+    private func blink() {
+        guard !reduceMotion, on else { return }
+        withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { on = false }
     }
 }

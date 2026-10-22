@@ -109,7 +109,7 @@ enum ServiceStatus: Equatable {
         case .expired: return NookTheme.amber
         case .unreachable: return NookTheme.coral
         case .connecting: return NookTheme.iris
-        case .notLinked, .off: return .secondary
+        case .notLinked, .off: return NookTheme.textSecondary
         }
     }
 }

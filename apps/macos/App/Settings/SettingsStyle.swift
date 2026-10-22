@@ -119,10 +119,10 @@ enum ConnectionHealth: Equatable {
         switch self {
         case .working: return NookTheme.mint
         case .busy: return NookTheme.iris
-        case .off: return .secondary
+        case .off: return NookTheme.textSecondary
         case .needsYou: return NookTheme.amber
         case .broken: return NookTheme.coral
-        case .notLinked: return .secondary
+        case .notLinked: return NookTheme.textSecondary
         }
     }
 

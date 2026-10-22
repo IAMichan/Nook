@@ -15,6 +15,8 @@
 #   6. Short UI animations use NookTheme.hover / reveal / scroll / swap, never an inline .easeOut(duration: 0.15).
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
+# `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
+shopt -s lastpipe
 cd "$(dirname "$0")/../apps/macos"
 
 OWN_COLORS=(
@@ -53,11 +55,11 @@ grep -rnE 'cornerRadius:\s*(6|7|8|9|10|12|13|14|16|20)([^.0-9]|$)|cardBackground
   | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "corner radii come from NookTheme.Radius (no 6/7/8/9/10/12/13/14/16/20 literals)"
 
-grep -rnE '\.font\(\s*\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)' NotchUI App --include='*.swift' \
+grep -rnE '\.font\(\s*(Font)?\.(caption2?|footnote|body|headline|subheadline|callout|title[23]?|largeTitle|system\(\s*\.)' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Theme/NookTheme.swift' \
   | report "text uses NookTheme.TextStyle (no .caption / .callout / .headline / .system(.body))"
 
-grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b' \
+grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orange|yellow|green|secondary|tertiary)\b|(^|[^A-Za-z0-9_.])Color\.(red|orange|yellow|green|secondary|tertiary)\b|return \.(red|orange|yellow|green|secondary|tertiary)\b' \
   NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "state and text colors come from NookTheme (no system .red / .orange / .green / .secondary)"
 
