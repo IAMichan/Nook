@@ -112,6 +112,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`) |
 | `ChatTranscript` | `ChatTranscript.swift` | A conversation as bubbles (a WhatsApp card, the Chats tab): day lines, runs per person, colored names in a group, links, media, copy menu. Never draw chat bubbles by hand |
 | `TicksView` | `ChatTranscript.swift` | How far your own message got (clock, one grey tick, two grey, two blue, failed): after a bubble's time and in front of a chat's newest message in the Chats list. Never draw ticks by hand |
+| `ChatReplyField` | `ChatReplyField.swift` | The answer field under a chat (the Chats tab, a WhatsApp card in the notch): Return sends, "@" opens the menu with "@nook" and ready-made requests, "@nook …" lets Nook write the message into the field first. Never build a chat's answer field by hand |
 
 Workspace-only blocks (`InfoRow`, `WSEmptyState`, `WSSectionTitle`, `StatusBadge`) live in
 `NotchUI/Workspace/WorkspaceComponents.swift`.
