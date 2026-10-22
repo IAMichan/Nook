@@ -941,6 +941,9 @@ private struct ChatsDetail: View {
         return formatter
     }()
 
+    /// The key of a chat's unsent answer in `ComposerDraftStore`.
+    private static func draftKey(_ chatID: String) -> String { "chat:" + chatID }
+
     private var appName: String { MessagingApps.app(id: entry.app)?.name ?? entry.app }
 
     private var whatsAppChat: String? {
@@ -995,7 +998,15 @@ private struct ChatsDetail: View {
         }
         .task(id: entry.id) { await loadWhatsApp() }
         // Nothing waiting for one chat goes to the next.
-        .onChange(of: entry.id) { _, _ in composer.reset() }
+        .onChange(of: entry.id) { _, id in
+            composer.reset()
+            reply = ComposerDraftStore.shared.draft(for: Self.draftKey(id)) ?? ""
+        }
+        // What you were typing to this chat stays when the notch closes, and comes back when you open the chat again.
+        .onAppear {
+            if reply.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey(entry.id)) { reply = saved }
+        }
+        .onChange(of: reply) { _, text in ComposerDraftStore.shared.save(sessionID: Self.draftKey(entry.id), text: text) }
         // A file or picture dropped on the chat waits above the field, as one chosen with "+".
         .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
             !app.chatSends(route).isEmpty && composer.accept(providers)

@@ -26,8 +26,8 @@ final class TranscriptPresentationTests: XCTestCase {
     }
 
     func testFinishedTurnFoldsEverythingBeforeItsAnswer() {
-        let rows = TranscriptPresentation.rows(finishedTurn(), working: false)
-        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2"])
+        let rows = TranscriptPresentation.rows(finishedTurn() + [message("u2", .user, "Nog iets", at: 100)], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2", "u2"])
         guard case .fold(_, let seconds, let inner) = rows[1], case .assistant(let answer, let isFinal) = rows[2] else {
             return XCTFail("\(rows)")
         }
@@ -41,10 +41,19 @@ final class TranscriptPresentationTests: XCTestCase {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Hoi"),
             message("s1", .tools, steps: [step("a", "Read", "x.swift")]),
-            message("x1", .assistant, "Hallo")
+            message("x1", .assistant, "Hallo"),
+            message("u2", .user, "Nog iets")
         ], working: false)
         guard case .fold(_, let seconds, _) = rows[1] else { return XCTFail("\(rows)") }
         XCTAssertNil(seconds)
+    }
+
+    func testLastTurnStaysOpenOnceFinished() {
+        let rows = TranscriptPresentation.rows(finishedTurn(), working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "t1", "group:s1", "x1", "step:c", "x2"],
+                       "the turn you just watched reads as while it ran, without the working and live rows")
+        guard case .assistant(_, let isFinal) = rows[5] else { return XCTFail("\(rows)") }
+        XCTAssertTrue(isFinal)
     }
 
     func testTurnWithoutWorkDoesNotFold() {

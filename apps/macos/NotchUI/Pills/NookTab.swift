@@ -123,10 +123,18 @@ struct NookChatView: View {
             ImageAttachment.receive(Array(providers.prefix(6)), images: { images += $0 }, file: { app.askAbout($0) })
         }
         .onAppear {
+            // What you were typing when the notch closed is back, pictures included.
+            if question.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey) { question = saved }
+            if images.isEmpty { images = NookTabDraft.images }
             // Wait briefly for the panel to acquire keyboard focus.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { inputFocused = true }
         }
+        .onChange(of: question) { _, text in ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: text) }
+        .onDisappear { NookTabDraft.images = images }
     }
+
+    /// The key of the question you were typing in `ComposerDraftStore`.
+    static let draftKey = "nook-chat"
 
     private var showsFooter: Bool { openOnAgents != nil && !app.demoMode }
 
@@ -453,4 +461,10 @@ private struct ThreadScrollGeometry: Equatable {
     var content: Double
 
     var atEnd: Bool { offset + container >= content - 48 }
+}
+
+/// The pictures waiting in the chat's box when the notch closed; the text itself goes to `ComposerDraftStore`.
+@MainActor
+private enum NookTabDraft {
+    static var images: [ImageAttachment] = []
 }

@@ -22,8 +22,8 @@ final class TimelinePresentationTests: XCTestCase {
     }
 
     func testFinishedTurnFoldsBetweenQuestionAndAnswer() throws {
-        let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
-        XCTAssertEqual(blocks.count, 4)
+        let blocks = TimelinePresentation.blocks(finishedTurn() + [event(.user, "Nog iets", at: 200)], active: false)
+        XCTAssertEqual(blocks.count, 5)
         guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner) = blocks[1],
               case .event(let answer) = blocks[2], case .event(let result) = blocks[3] else { return XCTFail("\(blocks)") }
         XCTAssertEqual(user.text, "Fix de test")
@@ -39,6 +39,13 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertFalse(tally.failed)
     }
 
+    func testLastTurnStaysOpenOnceFinished() {
+        let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
+        XCTAssertFalse(blocks.contains { if case .fold = $0 { true } else { false } },
+                       "the turn you just watched reads the same once the agent is done")
+        XCTAssertEqual(TimelinePresentation.events(blocks).map(\.text), finishedTurn().map(\.text))
+    }
+
     func testBlockIdsAreUnique() {
         let events = finishedTurn() + finishedTurn() + [event(.user, "Nog iets", at: 300), event(.tool, "Read · x", tool: "Read")]
         let ids = TimelinePresentation.blocks(events, active: true).map(\.id)
@@ -50,7 +57,7 @@ final class TimelinePresentationTests: XCTestCase {
                        "the turn that is still running stays open")
         var failed = finishedTurn()
         failed.insert(event(.error, "Rate limit", at: 60), at: 5)
-        XCTAssertFalse(TimelinePresentation.blocks(failed, active: false).contains { if case .fold = $0 { true } else { false } },
+        XCTAssertFalse(TimelinePresentation.blocks(failed + [event(.user, "Nog iets", at: 200)], active: false).contains { if case .fold = $0 { true } else { false } },
                        "a turn with an error stays open")
         let earlier = finishedTurn()
         let blocks = TimelinePresentation.blocks(earlier + [event(.user, "Nog iets", at: 200)], active: true)
