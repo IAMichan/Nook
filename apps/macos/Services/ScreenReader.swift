@@ -464,6 +464,51 @@ final class ScreenReader {
         return ScreenSnapshot(appName: frontName, windowTitle: "all visible windows", text: sections.joined(separator: "\n\n"))
     }
 
+    /// The text lines in an app's largest window, with where each is on screen (points, top-left origin, the same space
+    /// as the accessibility layer), for clicking what the accessibility layer does not show: a canvas, a game, an app that
+    /// draws its own controls. Recognized on this Mac; empty without screen permission or for an app never to be read.
+    static func seenLines(of app: NSRunningApplication, limit: Int = 150) async -> [UIControl.Seen] {
+        guard ScreenAccess.isUsable, !excludedBundles.contains(app.bundleIdentifier ?? ""),
+              let window = await windows(of: app).first else { return [] }
+        let configuration = SCStreamConfiguration()
+        configuration.width = min(Int(window.frame.width * 2), 3000)
+        configuration.height = min(Int(window.frame.height * 2), 3000)
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
+              let found = try? await recognizeLines(image) else { return [] }
+        let frame = window.frame
+        return found.prefix(limit).map { line in
+            UIControl.Seen(text: line.text,
+                           x: Double(frame.minX + line.box.minX * frame.width),
+                           y: Double(frame.minY + (1 - line.box.maxY) * frame.height),
+                           width: Double(line.box.width * frame.width),
+                           height: Double(line.box.height * frame.height))
+        }
+    }
+
+    /// Like `recognize`, with each line's box (Vision's normalized rectangle, origin at the bottom left), in reading order.
+    nonisolated static func recognizeLines(_ image: CGImage) async throws -> [(text: String, box: CGRect)] {
+        try await withCheckedThrowingContinuation { continuation in
+            ocrQueue.async(flags: .noQoS) {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["nl-NL", "en-US"]
+                request.usesLanguageCorrection = true
+                let handler = VNImageRequestHandler(cgImage: image, options: [:])
+                do {
+                    try handler.perform([request])
+                    let lines = (request.results ?? []).compactMap { observation -> (text: String, box: CGRect)? in
+                        guard let text = observation.topCandidates(1).first?.string else { return nil }
+                        return (text, observation.boundingBox)
+                    }
+                    continuation.resume(returning: lines)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     private nonisolated static let ocrQueue = DispatchQueue(label: "nook.screen.ocr", attributes: .concurrent)
 
     /// `fast`: Vision fast recognition level (significantly faster, slightly less accurate), for background tracking.

@@ -126,4 +126,16 @@ final class DoubleTapTests: XCTestCase {
         let fields = DoubleTapLogic.candidates([field("field", "Notes", focused: true)])
         XCTAssertEqual(DoubleTapLogic.values(from: "{\"fields\": {\"1\": \"use 4111111111111111\"}}", fields: fields), [:])
     }
+
+    // MARK: Sending
+
+    func testTheSendButtonIsFoundButNeverAPaymentOrDelete() {
+        XCTAssertEqual(DoubleTapLogic.submitButton(labels: ["Cancel", "Send message", "Help"], defaultIndex: nil), 1)
+        XCTAssertEqual(DoubleTapLogic.submitButton(labels: ["Annuleren", "Volgende", "Verzenden"], defaultIndex: nil), 2, "send beats next")
+        XCTAssertEqual(DoubleTapLogic.submitButton(labels: ["Back", "Create account"], defaultIndex: 1), 1, "the default button")
+        XCTAssertNil(DoubleTapLogic.submitButton(labels: ["Back", "Pay now"], defaultIndex: 1))
+        XCTAssertNil(DoubleTapLogic.submitButton(labels: ["Bestellen en betalen", "Verwijderen"], defaultIndex: nil))
+        XCTAssertNil(DoubleTapLogic.submitButton(labels: ["Sender settings"], defaultIndex: nil), "whole words only")
+        XCTAssertEqual(DoubleTapLogic.submitButton(labels: ["Sign up"], defaultIndex: nil), 0)
+    }
 }

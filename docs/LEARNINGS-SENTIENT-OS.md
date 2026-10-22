@@ -40,10 +40,24 @@ Sentient's Double Tap drafts one reply. Nook's version goes further and **fills 
   question (local-only memories and a strict privacy level stay on the Mac).
 - The answer must be JSON; anything else fills nothing (fail-closed, as Sentient's triage). A Luhn/SSN backstop drops
   values that look like card or social security numbers (Sentient's `PIIScan` idea).
-- Values are written with `AXValue` and read back; the focused field falls back to paste. Nothing is submitted; the
-  result toast says so and offers **Undo**.
+- Values are written with `AXValue` and read back; the focused field falls back to paste. Nothing is submitted by
+  itself: a card in the notch lists what was filled, with **Undo** and, when the form has a send button (the window's
+  default button, or one labelled send/submit/sign up/…), that button. Buttons that pay, order or delete are never offered.
 
 Logic and tests: `Services/DoubleTap/DoubleTapLogic.swift`, `Tests/NookTests/DoubleTapTests.swift`.
+
+## Mouse and keyboard control, improved
+
+Taken from the same study, in `UIDriver` / `UIControl`:
+
+- `read_ui` wakes Chromium browsers and Electron apps (`AXEnhancedUserInterface` / `AXManualAccessibility`) and waits a
+  moment for the tree, so web forms in Chrome, Brave, Edge and Arc are visible.
+- Up to 900 elements are read; when they do not fit the brain's budget, fields and switches go first, then buttons, then
+  rows, links and text last (in their order on screen), so a page's navigation never pushes its form out.
+- When a window shows fewer than three controls (an app that draws its own interface), `read_ui` adds the text it
+  recognizes in a screenshot of the window (OCR on this Mac, the image never leaves it), with positions to click by x and y.
+- After typing, the field is read back: when the text is not in it, the step fails before anything else (such as a send
+  button) runs. A switch or checkbox that did not change after a click gives the brain a note to look again.
 
 ## Lessons worth adopting next
 

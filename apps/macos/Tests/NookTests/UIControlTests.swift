@@ -179,6 +179,37 @@ final class UIControlTests: XCTestCase {
         XCTAssertTrue(text.contains("window \"Displays\""))
     }
 
+    func testALongPageShowsItsFormBeforeItsLinks() {
+        let links = (0..<200).map { element("link", "Navigation link number \($0)", x: 0, y: Double($0)) }
+        let form = [element("field", "Email", x: 0, y: 900), element("button", "Send", x: 0, y: 950)]
+        let text = UIControl.describe(app: "Safari", window: "Contact", elements: links + form, limit: 2_000)
+        XCTAssertTrue(text.contains("field \"Email\""))
+        XCTAssertTrue(text.contains("button \"Send\""))
+        XCTAssertTrue(text.contains("more elements not shown"))
+        XCTAssertLessThan(text.range(of: "Navigation link number 0")!.lowerBound, text.range(of: "field \"Email\"")!.lowerBound,
+                          "shown lines keep their order on screen")
+        // Everything fits: nothing is dropped or reordered.
+        XCTAssertEqual(UIControl.shownLines([10, 10, 10], tiers: [3, 0, 1], budget: 100), [0, 1, 2])
+        XCTAssertEqual(UIControl.shownLines([10, 10, 10], tiers: [3, 0, 1], budget: 22), [1, 2])
+    }
+
+    func testFewControlsAddTheTextSeenOnScreen() {
+        XCTAssertTrue(UIControl.needsSeenText([element("text", "Hello", x: 0, y: 0), element("link", "More", x: 0, y: 20)]))
+        XCTAssertFalse(UIControl.needsSeenText((0..<3).map { element("button", "B\($0)", x: 0, y: Double($0)) }))
+        let seen = UIControl.describeSeen([UIControl.Seen(text: "Verzenden", x: 100, y: 200, width: 80, height: 20),
+                                           UIControl.Seen(text: "  ", x: 0, y: 0, width: 1, height: 1)])
+        XCTAssertTrue(seen.contains("- \"Verzenden\" @ 140,210"))
+        XCTAssertEqual(UIControl.describeSeen([]), "")
+    }
+
+    func testTypedTextMustLandInTheField() {
+        XCTAssertTrue(UIControl.typedLanded("0612345678", value: "06-12 34 56 78", replace: true), "a field that formats")
+        XCTAssertTrue(UIControl.typedLanded("Utrecht", value: "Ik woon in Utrecht", replace: false))
+        XCTAssertFalse(UIControl.typedLanded("Utrecht", value: "Ik woon in Utrecht", replace: true))
+        XCTAssertFalse(UIControl.typedLanded("michan@example.com", value: "", replace: false))
+        XCTAssertTrue(UIControl.typedLanded("\n", value: "", replace: false), "nothing to check")
+    }
+
     func testContinuationRounds() {
         XCTAssertEqual(UIControl.rounds(in: ["Zet Night Shift aan", "Ga verder", "Ga verder"], marker: "Ga verder"), 2)
         XCTAssertEqual(UIControl.rounds(in: ["Ga verder", "Zet Bluetooth uit"], marker: "Ga verder"), 0)

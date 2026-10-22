@@ -6,10 +6,11 @@ import Combine
 /// empty fields with what it remembers about you and the text on screen. See `DoubleTapLogic` for the rules.
 ///
 /// - The key is watched with NSEvent `flagsChanged` monitors only: no event tap, so no Input Monitoring prompt.
-/// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return, never
-///   clicks a submit button and never types into a password field or into apps that hold passwords or run commands
-///   (`UIControl.isBlocked`).
-/// - The result says what was filled and offers Undo, which empties the fields again.
+/// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return and never
+///   types into a password field or into apps that hold passwords or run commands (`UIControl.isBlocked`).
+/// - The result is a card in the notch with what was filled, Undo (which empties the fields again) and, when the form has
+///   a send button, Send: the form is only sent when the user presses it there. Buttons that pay, order or delete are
+///   never offered.
 @MainActor
 final class DoubleTap: ObservableObject {
     static let shared = DoubleTap()
@@ -29,6 +30,8 @@ final class DoubleTap: ObservableObject {
     var facts: () -> [String] = { [] }
     /// The text Nook read on screen in this app (bundle id), as the active brain may see it.
     var screenText: (String) -> String? = { _ in nil }
+    /// Shows the result as a card that waits for the user. Set by `AppModel`; without it the result is a toast.
+    var present: ((DoubleTapOutcome) -> Void)?
 
     /// A local model may take a while on a long form; past this the double tap gives up.
     static let deadline: Double = 60
@@ -161,12 +164,45 @@ final class DoubleTap: ObservableObject {
         }
         let count = written.count + (pasted ? 1 : 0)
         guard count > 0 else { return ToastCenter.shared.warning(tr("doubletap.writeFailed", appName)) }
-        let title = count == 1 ? tr("doubletap.filledOne", appName) : tr("doubletap.filled", count, appName)
-        let undo = written.isEmpty ? nil : NookToastAction(title: tr("doubletap.undo")) {
+        let filled = fields.compactMap { field in values[field.id].map { (label: field.label, value: $0) } }
+        let undo: (() -> Void)? = written.isEmpty ? nil : {
             for entry in written { _ = DoubleTapForm.write("", to: entry) }
         }
-        ToastCenter.shared.success(title, detail: tr("doubletap.notSent"), action: undo)
+        var submit: DoubleTapOutcome.Submit?
+        if let button = form.submit {
+            let pid = app.processIdentifier
+            submit = DoubleTapOutcome.Submit(label: button.label) {
+                // Pressed from the card: the same app must still run, and the button must still be there to press.
+                guard NSRunningApplication(processIdentifier: pid) != nil else { return false }
+                return AXUIElementPerformAction(button.element, kAXPressAction as CFString) == .success
+            }
+        }
+        let outcome = DoubleTapOutcome(app: appName, count: count, filled: filled, undo: undo, submit: submit)
+        if let present {
+            present(outcome)
+        } else {
+            let title = count == 1 ? tr("doubletap.filledOne", appName) : tr("doubletap.filled", count, appName)
+            ToastCenter.shared.success(title, detail: tr("doubletap.notSent"), action: undo.map { undo in
+                NookToastAction(title: tr("doubletap.undo"), perform: undo)
+            })
+        }
     }
+}
+
+/// What one double tap filled in, for the card that shows it.
+struct DoubleTapOutcome {
+    struct Submit {
+        /// The button's own label ("Send", "Sign up").
+        var label: String
+        /// Presses it; false when the app or the button is gone.
+        var perform: () -> Bool
+    }
+
+    var app: String
+    var count: Int
+    var filled: [(label: String, value: String)]
+    var undo: (() -> Void)?
+    var submit: Submit?
 }
 
 // MARK: - The form in front
@@ -179,13 +215,21 @@ struct DoubleTapForm {
         var element: AXUIElement
     }
 
+    struct Button {
+        var label: String
+        var element: AXUIElement
+    }
+
     var title: String
     var fields: [Entry]
     var focusIsSecure: Bool
+    /// The button that sends this form (`DoubleTapLogic.submitButton`), if there is one.
+    var submit: Button?
 
     private static let maxNodes = 4_000
     private static let maxDepth = 40
     private static let maxFields = 80
+    private static let maxButtons = 80
 
     /// Chromium and Electron build their accessibility tree only for a client that asks.
     static func wake(_ app: NSRunningApplication) {
@@ -199,16 +243,21 @@ struct DoubleTapForm {
         let focused: AXUIElement? = element(root, kAXFocusedUIElementAttribute)
         let focusIsSecure = focused.map { (string($0, kAXSubroleAttribute) ?? "") == kAXSecureTextFieldSubrole } ?? false
         guard let window = element(root, kAXFocusedWindowAttribute) ?? focused.flatMap({ element($0, kAXWindowAttribute) }) else {
-            return focusIsSecure ? DoubleTapForm(title: "", fields: [], focusIsSecure: true) : nil
+            return focusIsSecure ? DoubleTapForm(title: "", fields: [], focusIsSecure: true, submit: nil) : nil
         }
         var entries: [Entry] = []
+        var buttons: [Button] = []
         var visited = 0
-        collect(window, depth: 0, focused: focused, visited: &visited, into: &entries)
+        collect(window, depth: 0, focused: focused, visited: &visited, into: &entries, buttons: &buttons)
         guard !entries.isEmpty || focusIsSecure else { return nil }
-        return DoubleTapForm(title: string(window, kAXTitleAttribute) ?? "", fields: entries, focusIsSecure: focusIsSecure)
+        let defaultButton = element(window, kAXDefaultButtonAttribute)
+        let defaultIndex = defaultButton.flatMap { target in buttons.firstIndex { CFEqual($0.element, target) } }
+        let submit = DoubleTapLogic.submitButton(labels: buttons.map(\.label), defaultIndex: defaultIndex).map { buttons[$0] }
+        return DoubleTapForm(title: string(window, kAXTitleAttribute) ?? "", fields: entries, focusIsSecure: focusIsSecure, submit: submit)
     }
 
-    private static func collect(_ node: AXUIElement, depth: Int, focused: AXUIElement?, visited: inout Int, into entries: inout [Entry]) {
+    private static func collect(_ node: AXUIElement, depth: Int, focused: AXUIElement?, visited: inout Int, into entries: inout [Entry],
+                                buttons: inout [Button]) {
         guard depth <= maxDepth, visited < maxNodes, entries.count < maxFields else { return }
         visited += 1
         let axRole = string(node, kAXRoleAttribute) ?? ""
@@ -230,8 +279,15 @@ struct DoubleTapForm {
             }
             return
         }
+        if role == "button" {
+            if bool(node, kAXEnabledAttribute) ?? true, buttons.count < maxButtons {
+                let name = label(of: node)
+                if !name.isEmpty { buttons.append(Button(label: String(name.prefix(80)), element: node)) }
+            }
+            return
+        }
         for child in children(node) {
-            collect(child, depth: depth + 1, focused: focused, visited: &visited, into: &entries)
+            collect(child, depth: depth + 1, focused: focused, visited: &visited, into: &entries, buttons: &buttons)
             if visited >= maxNodes || entries.count >= maxFields { return }
         }
     }

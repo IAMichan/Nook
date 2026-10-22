@@ -393,30 +393,108 @@ enum UIControl {
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’:"))
     }
 
-    /// The window as the brain reads it: one line per element, with the label to name it by and where it is.
+    /// The window as the brain reads it: one line per element, with the label to name it by and where it is. When the
+    /// window holds more than `limit` characters of elements (a long web page), what you fill in and switch goes first,
+    /// then buttons, then rows, and links and plain text last, so a page's navigation never pushes its form out; the lines
+    /// that are shown keep their order on screen.
     static func describe(app: String, window: String?, elements: [Element], limit: Int = 9_000) -> String {
         var lines = ["App: \(app)" + (window.map { $0.isEmpty ? "" : " — window \"\($0)\"" } ?? "")]
         lines.append("Elements (role \"label\" [value] @ x,y). Name an element by its label in control_ui; add role or index when labels repeat.")
-        var used = lines.joined(separator: "\n").count
-        var shown = 0
-        for element in elements {
-            var line = "- \(element.role) \"\(element.label)\""
-            if element.secure {
-                line += " [password field]"
-            } else if let value = element.value, !value.isEmpty {
-                line += " [\(String(value.prefix(80)))]"
-            }
-            if !element.enabled { line += " (disabled)" }
-            if element.focused { line += " (focused)" }
-            line += " @ \(Int(element.centerX.rounded())),\(Int(element.centerY.rounded()))"
-            if used + line.count + 1 > limit { break }
-            lines.append(line)
-            used += line.count + 1
-            shown += 1
-        }
-        if shown < elements.count { lines.append("… \(elements.count - shown) more elements not shown (scroll, or use a search field).") }
+        let budget = limit - lines.joined(separator: "\n").count
+        let rendered = elements.map(describeLine)
+        let chosen = shownLines(rendered.map(\.count), tiers: elements.map { $0.focused ? 0 : tier($0.role) }, budget: budget)
+        lines += chosen.map { rendered[$0] }
+        if chosen.count < elements.count { lines.append("… \(elements.count - chosen.count) more elements not shown (scroll, or use a search field).") }
         if elements.isEmpty { lines.append("(no elements could be read; the window may still be loading)") }
         return lines.joined(separator: "\n")
+    }
+
+    private static func describeLine(_ element: Element) -> String {
+        var line = "- \(element.role) \"\(element.label)\""
+        if element.secure {
+            line += " [password field]"
+        } else if let value = element.value, !value.isEmpty {
+            line += " [\(String(value.prefix(80)))]"
+        }
+        if !element.enabled { line += " (disabled)" }
+        if element.focused { line += " (focused)" }
+        line += " @ \(Int(element.centerX.rounded())),\(Int(element.centerY.rounded()))"
+        return line
+    }
+
+    /// How much an element is worth when not all fit: 0 what you fill in and switch, 1 buttons and tabs, 2 rows and menu
+    /// items, 3 links and plain text.
+    static func tier(_ role: String) -> Int {
+        switch role {
+        case "field", "search", "textarea", "combobox", "password", "checkbox", "switch", "toggle", "radio", "popup",
+             "menubutton", "slider", "stepper", "date", "color":
+            return 0
+        case "button", "tab", "disclosure": return 1
+        case "row", "cell", "menuitem": return 2
+        default: return 3
+        }
+    }
+
+    /// The indices of the lines that fit in `budget` characters (each line also takes a newline): all of them when they
+    /// fit, else the best tiers first and within a tier the first on screen; returned in their original order.
+    static func shownLines(_ lengths: [Int], tiers: [Int], budget: Int) -> [Int] {
+        if lengths.reduce(0, { $0 + $1 + 1 }) <= budget { return Array(lengths.indices) }
+        var used = 0
+        var chosen: [Int] = []
+        for index in lengths.indices.sorted(by: { (tiers[$0], $0) < (tiers[$1], $1) }) {
+            guard used + lengths[index] + 1 <= budget else { continue }
+            used += lengths[index] + 1
+            chosen.append(index)
+        }
+        return chosen.sorted()
+    }
+
+    /// Fewer than this many controls to fill in or press, and the window is probably drawn by the app itself (a canvas, a
+    /// game, some Electron apps): Nook then also reads its text from a screenshot.
+    static let fewControls = 3
+
+    static func needsSeenText(_ elements: [Element]) -> Bool {
+        elements.filter { tier($0.role) <= 1 }.count < fewControls
+    }
+
+    /// A line of text Nook recognized in a screenshot of the window (on this Mac), with where it is on screen.
+    struct Seen: Equatable {
+        var text: String
+        var x: Double
+        var y: Double
+        var width: Double
+        var height: Double
+
+        var centerX: Double { x + width / 2 }
+        var centerY: Double { y + height / 2 }
+    }
+
+    /// The recognized text for the brain: what has no element to name, so it is clicked with x and y.
+    static func describeSeen(_ seen: [Seen], limit: Int = 4_000) -> String {
+        var lines = ["Text seen on screen (no accessibility element; to click one, use control_ui with its x and y):"]
+        var used = lines[0].count
+        for item in seen {
+            let text = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let line = "- \"\(String(text.prefix(80)))\" @ \(Int(item.centerX.rounded())),\(Int(item.centerY.rounded()))"
+            guard used + line.count + 1 <= limit else { break }
+            lines.append(line)
+            used += line.count + 1
+        }
+        return lines.count > 1 ? lines.joined(separator: "\n") : ""
+    }
+
+    /// Whether typed text shows up in the field afterwards. Letters and digits only, so a field that formats what you type
+    /// (a phone number with dashes, a date with slashes) still counts; with `replace` the field must hold nothing else.
+    static func typedLanded(_ text: String, value: String, replace: Bool) -> Bool {
+        let wanted = normalizedForCheck(text)
+        guard !wanted.isEmpty else { return true }
+        let now = normalizedForCheck(value)
+        return replace ? now == wanted : now.contains(wanted)
+    }
+
+    private static func normalizedForCheck(_ text: String) -> String {
+        String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
     }
 
     /// Value text for a checkbox, switch or radio button: on or off reads better than 1 or 0.

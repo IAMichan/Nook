@@ -227,6 +227,46 @@ enum DoubleTapLogic {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
+    // MARK: Sending
+
+    /// Words of the button that sends a form, in every language Nook speaks, best first.
+    static let submitWords: [String] = [
+        "send", "submit", "verzenden", "versturen", "verstuur", "verzend", "senden", "absenden", "envoyer", "soumettre", "enviar",
+        "sign up", "register", "registreren", "aanmelden", "registrieren", "inscription", "registrarse",
+        "apply", "solliciteren", "bewerben", "postuler", "solicitar",
+        "save", "opslaan", "bewaren", "speichern", "enregistrer", "guardar",
+        "post", "plaatsen", "publish", "reply", "antwoorden", "beantwoorden", "antworten", "répondre", "responder",
+        "continue", "doorgaan", "verder", "volgende", "next", "weiter", "suivant", "continuer", "siguiente", "continuar"
+    ]
+    /// Buttons that pay or order are never offered: those the user presses themselves.
+    static let paymentWords: [String] = [
+        "pay", "betalen", "betaal", "buy", "kopen", "koop", "order", "bestellen", "bestel", "checkout", "check out",
+        "afrekenen", "purchase", "bezahlen", "kaufen", "zahlungspflichtig", "payer", "acheter", "commander", "pagar",
+        "comprar", "subscribe", "abonneren", "donate", "doneren", "delete", "verwijderen", "löschen", "supprimer", "eliminar"
+    ]
+
+    /// Whether a label holds one of the words as whole words ("Send message" holds "send"; "Sender" does not).
+    static func mentions(_ label: String, _ words: [String]) -> String? {
+        let tokens = label.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        let joined = " " + tokens.joined(separator: " ") + " "
+        return words.first { joined.contains(" " + $0 + " ") }
+    }
+
+    /// The button that sends the form: the window's default button when it is not a payment, else the enabled button
+    /// whose label names sending best. Nil when there is none, or when the best candidate pays or deletes.
+    static func submitButton(labels: [String], defaultIndex: Int?) -> Int? {
+        if let defaultIndex, labels.indices.contains(defaultIndex), mentions(labels[defaultIndex], paymentWords) == nil,
+           !labels[defaultIndex].trimmingCharacters(in: .whitespaces).isEmpty {
+            return defaultIndex
+        }
+        var best: (index: Int, rank: Int)?
+        for (index, label) in labels.enumerated() where mentions(label, paymentWords) == nil {
+            guard let word = mentions(label, submitWords), let rank = submitWords.firstIndex(of: word) else { continue }
+            if best == nil || rank < best!.rank { best = (index, rank) }
+        }
+        return best?.index
+    }
+
     // MARK: Backstop
 
     /// A small model can slip a number it saw on screen into a field: a Luhn-valid card number (13–19 digits, spaces or

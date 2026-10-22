@@ -292,7 +292,51 @@ extension AppModel {
             let windows = self.screenContext.windows.filter { $0.bundleID == bundleID }
             return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
         }
+        doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
         doubleTap.refresh()
+    }
+
+    /// What a double tap filled in, as a card that waits for you: Send presses the form's own button (only from here,
+    /// never by itself), Undo empties the fields again. Esc closes the card and sends nothing.
+    func presentDoubleTap(_ outcome: DoubleTapOutcome) {
+        let token = "doubletap-" + UUID().uuidString
+        let shown = Array(outcome.filled.prefix(6))
+        var facts = shown.map { Fact(label: String(($0.label.isEmpty ? tr("doubletap.card.field") : $0.label).prefix(40)),
+                                     value: String($0.value.prefix(90))) }
+        if outcome.filled.count > shown.count { facts.append(Fact(label: "", value: tr("doubletap.card.more", outcome.filled.count - shown.count))) }
+        let close = CardAction(label: tr("app.ok"), outcome: .dismiss)
+        var primary = close
+        if let submit = outcome.submit {
+            viewModel.register("\(token)#send") {
+                if submit.perform() {
+                    ToastCenter.shared.success(tr("doubletap.sent", outcome.app))
+                } else {
+                    ToastCenter.shared.warning(tr("doubletap.sendFailed", submit.label))
+                }
+            }
+            primary = CardAction(label: submit.label, outcome: .callback("\(token)#send", ""), symbol: "paperplane")
+        }
+        var secondary = close
+        if let undo = outcome.undo {
+            viewModel.register("\(token)#undo") { undo() }
+            secondary = CardAction(label: tr("doubletap.undo"), outcome: .callback("\(token)#undo", tr("doubletap.undone")),
+                                   symbol: "arrow.uturn.backward")
+        }
+        let title = outcome.count == 1 ? tr("doubletap.filledOne", outcome.app) : tr("doubletap.filled", outcome.count, outcome.app)
+        let card = NookCard(
+            id: token,
+            mood: outcome.submit == nil ? .done : .waiting,
+            context: tr("doubletap.settings.title"),
+            title: title,
+            detail: .facts(facts),
+            primary: primary,
+            secondary: secondary,
+            contentHeight: 116 + CGFloat(facts.count) * 26,
+            escape: close,
+            notice: tr(outcome.submit == nil ? "doubletap.notSent" : "doubletap.card.check"),
+            status: outcome.submit == nil ? nil : CardStatus(text: tr("card.status.approval"), tone: .waiting)
+        )
+        viewModel.present(card)
     }
 }
 
