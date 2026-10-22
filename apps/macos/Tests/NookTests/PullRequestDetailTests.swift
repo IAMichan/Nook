@@ -167,4 +167,78 @@ final class PullRequestDetailTests: XCTestCase {
             .contains("Pull Request is not mergeable"))
         XCTAssertEqual(PullRequestDetailParser.mergeError(status: 500, object: [:]), "GitHub returned an error (500).")
     }
+
+    func testParsesReviewersLabelsAndCounts() throws {
+        var object = try json(pull)
+        object["requested_reviewers"] = [["login": "bob"]]
+        object["requested_teams"] = [["name": "core"]]
+        object["labels"] = [["name": "bug"], ["name": "ui"]]
+        object["commits"] = 3
+        object["comments"] = 120
+        object["review_comments"] = 0
+        let detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertEqual(detail.requestedReviewers, ["bob", "core"])
+        XCTAssertEqual(detail.labels, ["bug", "ui"])
+        XCTAssertEqual(detail.commitCount, 3)
+        XCTAssertEqual(detail.commentCount, 120)
+        XCTAssertEqual(detail.lineCommentCount, 0)
+    }
+
+    func testPagesFromCounts() {
+        XCTAssertNil(PullRequestDetailParser.pages(count: nil, limit: 3))
+        XCTAssertEqual(PullRequestDetailParser.pages(count: 0, limit: 3), 1)
+        XCTAssertEqual(PullRequestDetailParser.pages(count: 100, limit: 3), 1)
+        XCTAssertEqual(PullRequestDetailParser.pages(count: 101, limit: 3), 2)
+        XCTAssertEqual(PullRequestDetailParser.pages(count: 5000, limit: 30), 30)
+    }
+
+    func testVerdictsKeepEachReviewersLastSay() throws {
+        var detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        func review(_ id: String, _ author: String, _ state: String, _ minute: Int) -> PullRequestEvent {
+            PullRequestEvent(id: id, kind: .review(state), author: author, body: "", date: Date(timeIntervalSince1970: Double(minute * 60)), url: nil)
+        }
+        detail.events = [
+            review("1", "bob", "CHANGES_REQUESTED", 1), review("2", "cleo", "APPROVED", 2),
+            review("3", "bob", "COMMENTED", 3), review("4", "bob", "APPROVED", 4),
+            review("5", "dan", "APPROVED", 5), review("6", "dan", "DISMISSED", 6),
+        ]
+        XCTAssertEqual(detail.verdicts.map(\.author), ["bob", "cleo"])
+        XCTAssertEqual(detail.verdicts.map(\.approved), [true, true])
+    }
+
+    func testCheckCounts() throws {
+        var detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        detail.checks = [.failing, .pending, .passing, .passing, .skipped].enumerated().map {
+            PullRequestCheck(name: "c\($0.offset)", outcome: $0.element, detail: "", url: nil)
+        }
+        let counts = detail.checkCounts
+        XCTAssertEqual([counts.failing, counts.pending, counts.passing, counts.skipped], [1, 1, 2, 1])
+    }
+
+    func testASummaryKeepsTheActivityItHadUntilItsOwnArrives() throws {
+        var old = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        old.files = [PullRequestFile(path: "a.swift", status: "modified", additions: 1, deletions: 0, patch: nil, previousPath: nil)]
+        var fresh = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        fresh.activityLoaded = false
+        XCTAssertEqual(fresh.keepingActivity(of: nil).activityLoaded, false)
+        let kept = fresh.keepingActivity(of: old)
+        XCTAssertTrue(kept.activityLoaded)
+        XCTAssertEqual(kept.files.map(\.path), ["a.swift"])
+
+        var arrived = fresh
+        arrived.apply(PullRequestActivity(events: [], commits: [], files: []))
+        XCTAssertTrue(arrived.activityLoaded)
+        XCTAssertEqual(arrived.keepingActivity(of: old).files, [])
+    }
+
+    func testTimelineGroupsCommitsInRuns() {
+        func commit(_ sha: String, _ author: String) -> PullRequestEvent {
+            PullRequestEvent(id: "commit-" + sha, kind: .commit(sha: sha), author: author, body: sha, date: nil, url: nil)
+        }
+        let comment = PullRequestEvent(id: "comment-1", kind: .comment, author: "bob", body: "Hi", date: nil, url: nil)
+        let entries = PullRequestTimelineEntry.entries([commit("a", "ada"), commit("b", "ada"), commit("c", "bob"), comment, commit("d", "ada")])
+        XCTAssertEqual(entries.map(\.id), ["commits-commit-a", "commits-commit-c", "comment-1", "commits-commit-d"])
+        guard case .commits(let first) = entries[0] else { return XCTFail("not a run") }
+        XCTAssertEqual(first.map(\.author), ["ada", "ada"])
+    }
 }

@@ -35,9 +35,62 @@ struct PullRequestDetail: Equatable, Sendable {
     var methods: [PullRequestMergeMethod] = PullRequestMergeMethod.allCases
     /// Whether the account may push to the repository, and so merge. Nil when GitHub did not say.
     var canPush: Bool? = nil
+    /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
+    var requestedReviewers: [String] = []
+    var labels: [String] = []
+    /// GitHub's own counts, so the lists can be read page by page at once and a tab can say how many before they load.
+    var commitCount: Int? = nil
+    var commentCount: Int? = nil
+    var lineCommentCount: Int? = nil
+    /// False until the timeline, commits and files have arrived: the summary shows first, the rest follows.
+    var activityLoaded = true
 
     var id: String { "\(repo)#\(number)" }
     var isOpen: Bool { state == .open || state == .draft }
+
+    /// The timeline, commits and files of a later read, on top of this summary.
+    mutating func apply(_ activity: PullRequestActivity) {
+        events = activity.events
+        commits = activity.commits
+        files = activity.files
+        activityLoaded = true
+    }
+
+    /// The activity a fresh summary keeps from the read before it, until its own activity arrives.
+    func keepingActivity(of old: PullRequestDetail?) -> PullRequestDetail {
+        guard !activityLoaded, let old, old.activityLoaded else { return self }
+        var result = self
+        result.apply(PullRequestActivity(events: old.events, commits: old.commits, files: old.files))
+        return result
+    }
+
+    /// Each reviewer's last say: approved or changes requested, newest first. A plain comment does not change it, a
+    /// dismissal clears it.
+    var verdicts: [PullRequestVerdict] {
+        var latest: [String: PullRequestVerdict] = [:]
+        for event in events {
+            guard case .review(let state) = event.kind else { continue }
+            switch state {
+            case "APPROVED": latest[event.author] = PullRequestVerdict(author: event.author, approved: true, date: event.date)
+            case "CHANGES_REQUESTED": latest[event.author] = PullRequestVerdict(author: event.author, approved: false, date: event.date)
+            case "DISMISSED": latest[event.author] = nil
+            default: break
+            }
+        }
+        return latest.values.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+    }
+
+    /// The checks counted by outcome, for the summary line ("2 failing · 1 running · 14 passed").
+    var checkCounts: (failing: Int, pending: Int, passing: Int, skipped: Int) {
+        checks.reduce(into: (0, 0, 0, 0)) { counts, check in
+            switch check.outcome {
+            case .failing: counts.0 += 1
+            case .pending: counts.1 += 1
+            case .passing: counts.2 += 1
+            case .skipped: counts.3 += 1
+            }
+        }
+    }
     var conflicted: Bool { mergeable == false || mergeState == "dirty" }
 
     /// Whether the merge button can be pressed. GitHub has the last word (branch protection, an admin bypass), so only
@@ -71,6 +124,50 @@ struct PullRequestDetail: Equatable, Sendable {
         if mergeable == nil { return "agents.pr.note.checking" }
         return checkSummary == .failing ? "agents.pr.note.unstable" : nil
     }
+}
+
+/// The part of a pull request that takes the most requests to read: the timeline, the commits and the files.
+struct PullRequestActivity: Equatable, Sendable {
+    var events: [PullRequestEvent] = []
+    var commits: [PullRequestCommit] = []
+    var files: [PullRequestFile] = []
+}
+
+/// One entry on the timeline page: an event, or the commits one person added one after the other, shown as one.
+enum PullRequestTimelineEntry: Identifiable, Equatable, Sendable {
+    case event(PullRequestEvent)
+    case commits([PullRequestEvent])
+
+    var id: String {
+        switch self {
+        case .event(let event): return event.id
+        case .commits(let run): return "commits-" + (run.first?.id ?? "")
+        }
+    }
+
+    static func entries(_ events: [PullRequestEvent]) -> [PullRequestTimelineEntry] {
+        var result: [PullRequestTimelineEntry] = []
+        for event in events {
+            guard case .commit = event.kind else {
+                result.append(.event(event))
+                continue
+            }
+            if case .commits(var run)? = result.last, run.last?.author == event.author {
+                run.append(event)
+                result[result.count - 1] = .commits(run)
+            } else {
+                result.append(.commits([event]))
+            }
+        }
+        return result
+    }
+}
+
+/// One reviewer's standing verdict on the pull request.
+struct PullRequestVerdict: Equatable, Sendable {
+    let author: String
+    let approved: Bool
+    let date: Date?
 }
 
 /// One check or commit status on the latest commit.
@@ -160,6 +257,12 @@ enum PullRequestDetailParser {
             headSHA: (head["sha"] as? String) ?? "", additions: int(pull["additions"]) ?? 0, deletions: int(pull["deletions"]) ?? 0,
             changedFiles: int(pull["changed_files"]) ?? 0, created: date(pull["created_at"]), updated: date(pull["updated_at"]),
             mergeable: pull["mergeable"] as? Bool, mergeState: ((pull["mergeable_state"] as? String) ?? "unknown").lowercased())
+        detail.requestedReviewers = ((pull["requested_reviewers"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
+            + ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+        detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+        detail.commitCount = int(pull["commits"])
+        detail.commentCount = int(pull["comments"])
+        detail.lineCommentCount = int(pull["review_comments"])
         if let repository {
             detail.methods = methods(repository)
             detail.canPush = (repository["permissions"] as? [String: Any])?["push"] as? Bool
@@ -302,6 +405,13 @@ enum PullRequestDetailParser {
                                    deletions: int(item["deletions"]) ?? 0, patch: item["patch"] as? String,
                                    previousPath: item["previous_filename"] as? String)
         }
+    }
+
+    /// How many pages of 100 a list of `count` entries takes, at least one and at most `limit`; nil when GitHub gave
+    /// no count, so the pages are read one after the other until a short one.
+    static func pages(count: Int?, limit: Int) -> Int? {
+        guard let count else { return nil }
+        return min(limit, max(1, (count + 99) / 100))
     }
 
     /// The body of `PUT /repos/{repo}/pulls/{number}/merge`. With `sha`, GitHub only merges that exact head.
