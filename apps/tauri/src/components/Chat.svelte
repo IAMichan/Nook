@@ -42,26 +42,27 @@
   const lastId = $derived(nook.active?.messages[nook.active.messages.length - 1]?.id);
 </script>
 
-<div class="chat">
-  <div class="messages" bind:this={scroller} onscroll={onScroll}>
+<div class="chat" class:compact>
+  <div class="messages" bind:this={scroller} onscroll={onScroll}><div class="reading-column">
     {#if empty}
       <div class="empty">
-        <Orb size={44} />
+        <div class="welcome-orb"><Orb size={compact ? 44 : 64} /></div>
+        <div class="greeting"><span class="eyebrow">A LITTLE SPACE FOR EVERYTHING</span><h1>What is on your mind?</h1><p>Think it through. Make a plan. Take the next step.</p></div>
         {#if welcome}
           <div class="welcome">
-            <p>Ik ben je assistent. Ik ken je agenda, je open punten en wat je me vertelt, dus vraag me gewoon alles.</p>
+            <p>Connect a brain to get started. Add your tools when you're ready, so Nook can help with your day.</p>
             <dl>
-              <dt>1 · brein</dt><dd class:ok={nook.info?.brainReady}>{nook.info?.brainReady ? "klaar" : "kies een lokaal model (gratis) of een externe AI"}</dd>
-              {#if caps?.screenReading}<dt>2 · scherm lezen</dt><dd class:ok={nook.settings?.liveScreen}>{nook.settings?.liveScreen ? "aan" : "uit"}</dd>{/if}
-              <dt>{caps?.screenReading ? 3 : 2} · koppelingen</dt><dd>mail, GitHub, Stripe… (optioneel)</dd>
+              <dt>1 · Brain</dt><dd class:ok={nook.info?.brainReady}>{nook.info?.brainReady ? "Ready" : "Choose a free local model or an AI provider"}</dd>
+              {#if caps?.screenReading}<dt>2 · Screen context</dt><dd class:ok={nook.settings?.liveScreen}>{nook.settings?.liveScreen ? "On" : "Off"}</dd>{/if}
+              <dt>{caps?.screenReading ? 3 : 2} · Connections</dt><dd>Mail, GitHub, Stripe… (optional)</dd>
             </dl>
             <div class="buttons">
-              <button class="ghost" onclick={() => nook.saveSettings({ onboardingDone: true })}>Later</button>
-              <button class="primary" onclick={() => (onboarding = true)}>Instellen</button>
+              <button class="ghost" onclick={() => nook.saveSettings({ onboardingDone: true })}>Set up later</button>
+              <button class="primary" onclick={() => (onboarding = true)}>Set up Nook</button>
             </div>
           </div>
         {:else}
-          <p class="muted">Waar kan ik je mee helpen?</p>
+          <p class="empty-note">Your tools and ideas, one conversation away.</p>
         {/if}
         <div class="starters">
           {#each starters as s (s)}<button onclick={() => nook.ask(s)}>{s}</button>{/each}
@@ -73,18 +74,20 @@
       {/each}
     {/if}
     {#if nook.error}<div class="err">{nook.error}</div>{/if}
-  </div>
+  </div></div>
   <Composer {compact} {autofocus} />
   {#if onboarding}<Onboarding onclose={() => (onboarding = false)} />{/if}
 </div>
 
 <style>
   .chat { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .messages { flex: 1; overflow-y: auto; padding: 12px 16px; min-height: 0; }
-  .empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
-  .starters { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 460px; }
-  .starters button { border-radius: 999px; font-size: 12px; }
-  .welcome { max-width: 440px; border: 1px solid var(--line2); background: var(--field); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .messages { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 28px 32px; min-height: 0; overflow-wrap: anywhere; }
+  .reading-column { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 760px; margin: 0 auto; }
+  .empty { flex: 1; padding: 32px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+  .starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 520px; }
+  .starters button { border-radius: var(--radius-card); font-size: 12px; padding: 14px 16px; text-align: left; background: transparent; color: var(--text2); line-height: 1.5; }
+  .starters button:hover { color: var(--paper); }
+  .welcome { width: 100%; max-width: 520px; border: 1px solid var(--line2); background: var(--graphite); border-radius: var(--radius); padding: 18px; line-height: 1.6; display: flex; flex-direction: column; gap: 8px; }
   .welcome p { margin: 0; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
   dt { color: var(--text3); }
@@ -92,4 +95,21 @@
   dd.ok { color: var(--mint); }
   .buttons { display: flex; justify-content: flex-end; gap: 8px; }
   .err { color: var(--coral); padding: 6px 0; }
+  .welcome-orb { padding: 12px; }
+  .greeting { text-align: center; }
+  .eyebrow { font-size: 9px; font-weight: 600; letter-spacing: 2px; color: var(--text3); }
+  h1 { font-size: clamp(24px, 3vw, 34px); font-weight: 550; letter-spacing: -1.1px; margin: 12px 0 10px; }
+  .greeting p, .empty-note { font-size: 12px; line-height: 1.6; color: var(--text2); margin: 0; text-align: center; }
+  .empty-note { display: none; }
+  .compact .messages { padding: 12px 16px; }
+  .compact .empty { padding: 8px 0; gap: 10px; }
+  .compact .greeting, .compact .welcome-orb { display: none; }
+  .compact .empty-note { display: block; }
+  .compact .starters { display: flex; flex-wrap: wrap; justify-content: center; }
+  .compact .starters button { padding: 6px 12px; border-radius: 999px; }
+  @media (max-width: 640px) {
+    .messages { padding: 20px 16px; }
+    .empty { padding: 20px 0; }
+    .starters { grid-template-columns: minmax(0, 1fr); }
+  }
 </style>

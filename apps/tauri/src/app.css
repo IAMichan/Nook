@@ -1,16 +1,22 @@
-/* Nook-ontwerpsysteem, zelfde kleuren als NookTheme op de Mac.
-   iris = Nook zelf, mint = luistert of klaar, amber = wacht op jou, coral = fout. */
+/* Shared Nook tokens. State colors match NookTheme on macOS. */
 :root {
   --notch: #000;
+  --canvas: #19191e;
+  --sidebar: #121216;
+  --row-hover: #25252d;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --shadow-control: 0 1px 3px #0002;
+  --shadow-popover: 0 12px 36px #0005;
   --graphite: #16161b;
   --smoke: #22222a;
   --field: #0f0f13;
-  --line: #1a1a20;
-  --line2: #2c2c36;
+  --line: #ffffff0e;
+  --line2: #ffffff18;
   --paper: #f4f3f7;
   --ink: #0b0a12;
-  --text2: #9c9aa8;
-  --text3: #6f6d7c;
+  --text2: #aaa9b6;
+  --text3: #858391;
   --iris: #f4f3f7;
   --on-iris: #0b0a12;
   --mint: #46e0a6;
@@ -20,7 +26,7 @@
   --radius: 14px;
   --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Inter", "Cantarell", "Noto Sans", sans-serif;
   --mono: "Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace;
-  /* Veilige marges op de telefoon (notch, gebarenbalk) en de hoogte van het toetsenbord; Android zet ze precies. */
+  /* Safe areas and software keyboard insets supplied by Android. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -54,8 +60,10 @@ button {
   border-radius: 9px;
   padding: 6px 12px;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
-button:hover { background: #2a2a33; }
+button:hover:not(:disabled) { background: var(--row-hover); border-color: var(--line2); }
+button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--iris) 88%, var(--canvas)); }
 button:disabled { opacity: 0.45; cursor: default; }
 button.primary { background: var(--iris); color: var(--on-iris); border-color: transparent; font-weight: 600; }
 button.ghost { background: transparent; border-color: transparent; color: var(--text2); }
@@ -102,3 +110,19 @@ a { color: var(--iris); }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+button:focus-visible, [role="button"]:focus-visible, a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--iris);
+  outline-offset: 3px;
+}
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  border-color: var(--iris);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--iris) 12%, transparent);
+}
+input::placeholder, textarea::placeholder { color: var(--text3); }
+input[type="checkbox"], input[type="range"] { accent-color: var(--iris); }
+kbd { font-family: var(--font); }
+::selection { background: color-mix(in srgb, var(--iris) 25%, transparent); color: var(--paper); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
