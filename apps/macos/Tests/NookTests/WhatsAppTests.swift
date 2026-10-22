@@ -176,6 +176,25 @@ final class WhatsAppTests: XCTestCase {
                        WAPoll(question: "Q", options: ["a", "b"], multiple: true))
     }
 
+    func testAnOpenedChatFetchesItsMessagesAgainNotOnlyOnce() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(WAInbox.historyDue(last: nil, now: now))
+        XCTAssertFalse(WAInbox.historyDue(last: now.addingTimeInterval(-5), now: now), "opened twice in a row: fetched once")
+        XCTAssertTrue(WAInbox.historyDue(last: now.addingTimeInterval(-86_400), now: now), "opened yesterday: fetched again")
+
+        // Yesterday's history is kept; today's poll the live feed missed comes in with the next fetch.
+        let group = "120363000000000001@g.us"
+        var inbox = WAInbox()
+        inbox.add(message("Y1", chat: group, at: -86_400), filters: WAFilters(), history: true)
+        var poll = message("P1", chat: group, text: "")
+        poll.poll = WAPoll(question: "Lunch?", options: ["Pizza", "Sushi"])
+        let fetched = [message("Y1", chat: group, at: -86_400), poll]
+        for message in fetched { inbox.add(message, filters: WAFilters(), history: true) }
+        let kept = inbox.conversations[group]?.messages ?? []
+        XCTAssertEqual(WAInbox.newest(fetched, kept, limit: 20).map(\.id), ["Y1", "P1"])
+        XCTAssertEqual(inbox.conversations[group]?.unread, 0, "fetched history counts as read")
+    }
+
     func testChannelsGetTheirNameAndPicture() {
         let channel = "120363173134535056@newsletter"
         XCTAssertTrue(WAJID.isPlaceholderName(WAJID.displayNumber(channel), for: channel), "a channel known only by its number")

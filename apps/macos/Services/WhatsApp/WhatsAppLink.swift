@@ -181,8 +181,8 @@ final class WhatsAppLink: ObservableObject {
     private var lastChatList: Date = .distantPast
     /// When each unnamed group was last asked for its name: one the gateway could not name is asked again later.
     private var namingGroups: [String: Date] = [:]
-    /// Chats whose older messages were fetched for the notch card: once per chat while linked.
-    private var historyLoaded: Set<String> = []
+    /// When each chat's messages were last fetched from the gateway for the notch card or the Chats tab.
+    private var historyFetched: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
     private var previews: [String: WAPreview] = [:]
     private var previewOrder: [String] = []
@@ -252,7 +252,7 @@ final class WhatsAppLink: ObservableObject {
 
     private func stop(forget: Bool) {
         generation += 1
-        historyLoaded = []
+        historyFetched = [:]
         previews = [:]
         previewOrder = []
         previewsLoading = []
@@ -606,14 +606,17 @@ final class WhatsAppLink: ObservableObject {
         return WAInbox.newest(fetched, kept, limit: limit)
     }
 
-    /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
+    /// A chat's messages from the gateway, so its card can scroll back and shows what the live feed missed (the Mac
+    /// slept, a webhook got lost): fetched each time the chat opens, at most once per `WAInbox.historyRefresh`. True
+    /// when the conversation changed.
     func loadHistory(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
-        guard isConnected, !historyLoaded.contains(key) else { return false }
-        historyLoaded.insert(key)
-        let before = inbox.conversations[key]?.messages.count ?? 0
+        let now = Date()
+        guard isConnected, WAInbox.historyDue(last: historyFetched[key], now: now) else { return false }
+        historyFetched[key] = now
+        let before = inbox.conversations[key]?.messages
         _ = try? await messages(of: key, limit: WAInbox.keep)
-        return (inbox.conversations[key]?.messages.count ?? 0) != before
+        return inbox.conversations[key]?.messages != before
     }
 
     // MARK: Files
