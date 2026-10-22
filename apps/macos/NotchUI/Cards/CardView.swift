@@ -18,6 +18,8 @@ struct CardView: View {
     var onReact: (ChatBubble, String) -> Void = { _, _ in }
     /// The pointer is on the notch: a notice's countdown holds.
     var paused: Bool = false
+    /// A compact card's height as its field grows with the text, so the notch can follow it.
+    var onHeight: (CGFloat) -> Void = { _ in }
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
@@ -35,6 +37,7 @@ struct CardView: View {
             if card.compact {
                 // Only the field, level with Nook: the card asks one thing and waits for the answer.
                 inputField.padding(.top, NookTheme.Spacing.xs)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight($0) }
             } else {
                 fullCard
             }
@@ -273,14 +276,19 @@ struct CardView: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(NookTheme.field))
     }
 
-    /// The compact card's one field: Return or the arrow inside the field sends, Escape closes the card.
+    /// The compact card's one field: Return or the arrow inside the field sends, Escape closes the card. A long
+    /// message wraps and the field grows with it (the notch follows through `onHeight`), so all of it stays readable.
     private var promptField: some View {
         let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(spacing: NookTheme.Spacing.sm) {
-            TextField("", text: $reply, prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary))
+        return HStack(alignment: .bottom, spacing: NookTheme.Spacing.sm) {
+            TextField("", text: $reply, prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
+                      axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
+                .lineLimit(1...6)
+                // Centered on the send button while it is one line; further lines grow upward from there.
+                .frame(minHeight: 28)
                 .focused($replyFocused)
                 .onSubmit { if !mentionModel.isOpen { submitReply() } }
                 .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }

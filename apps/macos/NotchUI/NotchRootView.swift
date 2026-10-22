@@ -182,7 +182,8 @@ struct NotchRootView: View {
                     onOpen: { app.openCardAttachment($0, card: card) },
                     onReplyTo: { app.replyCardMessage($0, to: $1, card: card) },
                     onReact: { app.reactCardMessage($0, $1, card: card) },
-                    paused: viewModel.pointerInside
+                    paused: viewModel.pointerInside,
+                    onHeight: { viewModel.fitCompactCard(id: card.id, height: $0) }
                 )
             }
         case .panel(let tab):

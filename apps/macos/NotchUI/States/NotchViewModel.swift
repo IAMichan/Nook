@@ -370,6 +370,18 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// A compact card's field wraps a long message onto more lines: the notch grows with it and shrinks back once the
+    /// text is shorter again, never below the height the card asked for.
+    func fitCompactCard(id: String, height: CGFloat) {
+        guard case .card(var card) = state, card.id == id, card.compact else { return }
+        let base = card.compactBaseHeight ?? card.contentHeight
+        let fitted = max(base, ceil(height) + 6)
+        guard abs(fitted - card.contentHeight) >= 1 else { return }
+        card.compactBaseHeight = base
+        card.contentHeight = fitted
+        updateCard(card)
+    }
+
     /// Dismisses a card, whether currently visible or queued.
     func dismissCard(id: String) {
         pending.removeAll { $0.id == id }
