@@ -782,6 +782,48 @@ enum ChatDraft {
     }
 }
 
+// MARK: Steering a draft
+
+extension ChatDraft {
+    /// The one-click changes offered under a message Nook wrote: each is a text key for its button and the request the
+    /// brain gets, in English as every request Nook writes itself.
+    enum Tweak: String, CaseIterable, Identifiable {
+        case shorter, warmer, formal, again
+
+        var id: String { rawValue }
+        var titleKey: String { "chats.draft.tweak." + rawValue }
+        var symbol: String {
+            switch self {
+            case .shorter: "arrow.down.right.and.arrow.up.left"
+            case .warmer: "face.smiling"
+            case .formal: "briefcase"
+            case .again: "arrow.triangle.2.circlepath"
+            }
+        }
+        var request: String {
+            switch self {
+            case .shorter: "Make it shorter."
+            case .warmer: "Make it warmer and friendlier."
+            case .formal: "Make it more formal."
+            case .again: "Say the same in other words."
+            }
+        }
+    }
+
+    /// The request that rewrites the message in the field (Nook's draft, perhaps changed by you) as asked, so it can be
+    /// steered after it was written. The draft is the user's own text, so it may be quoted as such.
+    static func refinement(of draft: String, change: String) -> String {
+        let ask = change.trimmingCharacters(in: .whitespacesAndNewlines)
+        return """
+        Rewrite this message, which the user is about to send. Keep what it says unless the change asks otherwise:
+        <<<
+        \(draft.trimmingCharacters(in: .whitespacesAndNewlines))
+        >>>
+        The change: \(ask.isEmpty ? Tweak.again.request : ask)
+        """
+    }
+}
+
 // MARK: The menu under "@"
 
 extension ChatDraft {

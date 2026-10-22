@@ -130,6 +130,15 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatDraft.choices(for: "", presets: presets), [])
     }
 
+    func testSteeringADraft() {
+        let request = ChatDraft.refinement(of: "  Sure, see you at 8!\n", change: " Make it shorter. ")
+        XCTAssertTrue(request.contains("<<<\nSure, see you at 8!\n>>>"), "the draft as it is in the field, trimmed")
+        XCTAssertTrue(request.hasSuffix("The change: Make it shorter."))
+        XCTAssertTrue(ChatDraft.refinement(of: "Hi", change: "  ").hasSuffix("The change: " + ChatDraft.Tweak.again.request),
+                      "no change typed: other words")
+        XCTAssertEqual(Set(ChatDraft.Tweak.allCases.map(\.titleKey)).count, ChatDraft.Tweak.allCases.count)
+    }
+
     func testNookInstruction() {
         XCTAssertEqual(ChatDraft.instruction(in: "@nook say yes, short"), "say yes, short")
         XCTAssertEqual(ChatDraft.instruction(in: "  @Nook: zeg dat ik later ben"), "zeg dat ik later ben")
