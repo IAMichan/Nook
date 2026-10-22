@@ -191,6 +191,18 @@ final class ChatIntentTests: XCTestCase {
                        "Write a short reply to Opa Henk on WhatsApp that I can send.",
                        "Schreib eine kurze Antwort an Opa Henk auf WhatsApp, die ich senden kann."] {
             XCTAssertEqual(ChatIntent.detect(prompt).primaryAction, "whatsapp_send", prompt)
+            XCTAssertTrue(ChatIntent.detect(prompt).wantsDraft, prompt)
+        }
+    }
+
+    /// Asking for the text of a message (to send yourself, or as an example) is a draft; a plain send is not.
+    func testAskingForTheTextIsADraft() {
+        for text in ["Schrijf een voorbeeld van een appje aan Lisa dat ik later ben", "Write a draft WhatsApp reply to Jan",
+                     "Schrijf een WhatsApp aan Arjan die ik zelf kan versturen"] {
+            XCTAssertTrue(ChatIntent.detect(text).wantsDraft, text)
+        }
+        for text in ["App Lisa dat ik later ben", "Stuur via WhatsApp aan Jan dat het doorgaat", "Schrijf een mail aan Lisa die ik kan versturen"] {
+            XCTAssertFalse(ChatIntent.detect(text).wantsDraft, text)
         }
     }
     /// A follow-up that asks for a new message names no channel and may be mistyped: it continues the WhatsApp conversation.
