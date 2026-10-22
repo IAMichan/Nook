@@ -6,8 +6,6 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "takeover.title": "Nook neemt over",
         "takeover.prompt.title": "Wat kan Nook voor je doen?",
-        "takeover.prompt.placeholder": "Bijv. bestel nieuwe koffiefilters bij bol.com",
-        "takeover.prompt.chat": "Open chat",
         "takeover.plan": "Neemt over: %@",
         "takeover.tag": "werkt zelf, vraagt vóór betalen of versturen",
         "takeover.starting": "Nook begint…",
@@ -34,8 +32,6 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
     .en: [
         "takeover.title": "Nook takes over",
         "takeover.prompt.title": "What can Nook do for you?",
-        "takeover.prompt.placeholder": "E.g. order new coffee filters on Amazon",
-        "takeover.prompt.chat": "Open chat",
         "takeover.plan": "Takes over: %@",
         "takeover.tag": "works by itself, asks before paying or sending",
         "takeover.starting": "Nook is starting…",
@@ -62,8 +58,6 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
     .de: [
         "takeover.title": "Nook übernimmt",
         "takeover.prompt.title": "Was kann Nook für dich tun?",
-        "takeover.prompt.placeholder": "Z. B. bestelle neue Kaffeefilter bei Amazon",
-        "takeover.prompt.chat": "Chat öffnen",
         "takeover.plan": "Übernimmt: %@",
         "takeover.tag": "arbeitet selbst, fragt vor Bezahlen oder Senden",
         "takeover.starting": "Nook legt los…",
@@ -90,8 +84,6 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
     .fr: [
         "takeover.title": "Nook prend le relais",
         "takeover.prompt.title": "Que peut faire Nook pour vous ?",
-        "takeover.prompt.placeholder": "Ex. commande de nouveaux filtres à café sur Amazon",
-        "takeover.prompt.chat": "Ouvrir le chat",
         "takeover.plan": "Prend le relais : %@",
         "takeover.tag": "agit seul, demande avant de payer ou d’envoyer",
         "takeover.starting": "Nook commence…",
@@ -118,8 +110,6 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
     .es: [
         "takeover.title": "Nook toma el control",
         "takeover.prompt.title": "¿Qué puede hacer Nook por ti?",
-        "takeover.prompt.placeholder": "P. ej. pide filtros de café nuevos en Amazon",
-        "takeover.prompt.chat": "Abrir chat",
         "takeover.plan": "Toma el control: %@",
         "takeover.tag": "trabaja solo, pregunta antes de pagar o enviar",
         "takeover.starting": "Nook empieza…",

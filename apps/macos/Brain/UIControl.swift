@@ -287,6 +287,8 @@ enum UIControl {
         var focused = false
         /// A password field: its value is never read, typing into it is refused.
         var secure = false
+        /// Inside the window's visible area. A long web page lists what is scrolled out of view too; that goes last.
+        var visible = true
 
         var centerX: Double { x + width / 2 }
         var centerY: Double { y + height / 2 }
@@ -394,15 +396,16 @@ enum UIControl {
     }
 
     /// The window as the brain reads it: one line per element, with the label to name it by and where it is. When the
-    /// window holds more than `limit` characters of elements (a long web page), what you fill in and switch goes first,
-    /// then buttons, then rows, and links and plain text last, so a page's navigation never pushes its form out; the lines
-    /// that are shown keep their order on screen.
+    /// window holds more than `limit` characters of elements (a long web page), what is in view goes before what is
+    /// scrolled out of it, and within that what you fill in and switch goes first, then buttons, then rows, and links and
+    /// plain text last, so a page's navigation never pushes its form out and a long filter list never pushes out the
+    /// products in view; the lines that are shown keep their order on screen.
     static func describe(app: String, window: String?, elements: [Element], limit: Int = 9_000) -> String {
         var lines = ["App: \(app)" + (window.map { $0.isEmpty ? "" : " — window \"\($0)\"" } ?? "")]
         lines.append("Elements (role \"label\" [value] @ x,y). Name an element by its label in control_ui; add role or index when labels repeat.")
         let budget = limit - lines.joined(separator: "\n").count
         let rendered = elements.map(describeLine)
-        let chosen = shownLines(rendered.map(\.count), tiers: elements.map { $0.focused ? 0 : tier($0.role) }, budget: budget)
+        let chosen = shownLines(rendered.map(\.count), tiers: elements.map(shownTier), budget: budget)
         lines += chosen.map { rendered[$0] }
         if chosen.count < elements.count { lines.append("… \(elements.count - chosen.count) more elements not shown (scroll, or use a search field).") }
         if elements.isEmpty { lines.append("(no elements could be read; the window may still be loading)") }
@@ -418,8 +421,15 @@ enum UIControl {
         }
         if !element.enabled { line += " (disabled)" }
         if element.focused { line += " (focused)" }
+        if !element.visible { line += " (off screen)" }
         line += " @ \(Int(element.centerX.rounded())),\(Int(element.centerY.rounded()))"
         return line
+    }
+
+    /// Where an element goes when not all fit: the focused one first, then by `tier`, and everything scrolled out of view
+    /// after everything in it.
+    static func shownTier(_ element: Element) -> Int {
+        (element.focused ? 0 : tier(element.role)) + (element.visible ? 0 : 4)
     }
 
     /// How much an element is worth when not all fit: 0 what you fill in and switch, 1 buttons and tabs, 2 rows and menu

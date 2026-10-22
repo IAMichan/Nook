@@ -32,7 +32,7 @@ enum UIDriver {
         [
             ToolSpec(
                 name: readTool,
-                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again.",
+                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. In a web page, links carry the text a person sees (a product's name, a title) and prices are listed as text; elements marked (off screen) are on the page but scrolled out of view: scroll to reach them before clicking. A dropdown that is open lists its options as menu items. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again.",
                 schema: [
                     "type": "object",
                     "properties": ["app": ["type": "string", "description": "Name of the app, e.g. \"System Settings\" or \"Safari\". Without it: the app in front."]] as [String: Any],
@@ -193,8 +193,10 @@ enum UIDriver {
         switch step.action {
         case .click, .doubleClick, .rightClick:
             guard let point else { throw NookError(tr("control.error.noTarget")) }
-            // A control that can press itself does so: no mouse needed, nothing in between can catch the click.
-            if step.action == .click, let ref = element?.ref, !["row", "cell", "text"].contains(element?.element.role ?? ""),
+            // A control that can press itself does so: no mouse needed, nothing in between can catch the click. Not a
+            // web page's dropdown or menu button: its scripts open on the mouse going down, which a press never sends.
+            let webMenu = browsers.contains(app.bundleIdentifier ?? "") && element.map { opensMenu($0) } == true
+            if step.action == .click, !webMenu, let ref = element?.ref, !["row", "cell", "text"].contains(element?.element.role ?? ""),
                actions(of: ref).contains(kAXPressAction), AXUIElementPerformAction(ref, kAXPressAction as CFString) == .success {
                 return await toggleNote(element)
             }
@@ -273,6 +275,14 @@ enum UIDriver {
         guard let now = UIControl.stateText(role: element.element.role, value: raw) else { return nil }
         let unchanged = element.element.role == "radio" ? now != "on" : now == element.element.value
         return unchanged ? tr("control.note.unchanged", element.element.label, now) : nil
+    }
+
+    /// A dropdown, a menu button or a button that opens a popup (a web page's "Sort by").
+    private static func opensMenu(_ element: (element: UIControl.Element, ref: AXUIElement)) -> Bool {
+        if ["popup", "menubutton", "combobox"].contains(element.element.role) { return true }
+        if let popup: String = attribute(element.ref, "AXHasPopup"), !["", "false"].contains(popup.lowercased()) { return true }
+        if let popup: Bool = attribute(element.ref, "AXHasPopup"), popup { return true }
+        return false
     }
 
     private static func settable(_ element: AXUIElement) -> Bool {
@@ -362,6 +372,9 @@ enum UIDriver {
 
     /// Enough for a long web page; what reaches the brain is trimmed by `UIControl.describe`, fields and buttons first.
     private static let maxElements = 900
+    /// Of those, at most this many scrolled out of view: a long filter list above a shop's products must not use up
+    /// the room before the products in view are reached.
+    private static let maxOffscreen = 300
     private static let maxDepth = 40
 
     /// The elements of the app's windows, focused window first, in the order they appear in the tree.
@@ -376,14 +389,20 @@ enum UIDriver {
         let title: String? = windows.first.flatMap { attribute($0, kAXTitleAttribute) }
         var items: [(element: UIControl.Element, ref: AXUIElement)] = []
         let focusedElement: AXUIElement? = attribute(root, kAXFocusedUIElementAttribute)
+        // An open dropdown's menu (a web page's "Sort by") hangs off the app, not the window: its options come first.
+        for menu in (attribute(root, kAXChildrenAttribute) as [AXUIElement]?) ?? [] where (attribute(menu, kAXRoleAttribute) as String?) == kAXMenuRole {
+            collect(menu, depth: 0, focused: focusedElement, bounds: nil, into: &items)
+        }
         for window in windows.prefix(4) {
-            collect(window, depth: 0, focused: focusedElement, into: &items)
+            collect(window, depth: 0, focused: focusedElement, bounds: frame(of: window), into: &items)
             if items.count >= maxElements { break }
         }
         return Window(title: title, items: items)
     }
 
-    private static func collect(_ element: AXUIElement, depth: Int, focused: AXUIElement?, into items: inout [(element: UIControl.Element, ref: AXUIElement)]) {
+    /// `bounds` is the window's frame: an element outside it is scrolled out of view (nil: everything counts as in view).
+    private static func collect(_ element: AXUIElement, depth: Int, focused: AXUIElement?, bounds: CGRect?,
+                                into items: inout [(element: UIControl.Element, ref: AXUIElement)]) {
         guard depth <= maxDepth, items.count < maxElements else { return }
         let axRole: String = attribute(element, kAXRoleAttribute) ?? ""
         if axRole == kAXMenuBarRole { return }
@@ -397,25 +416,27 @@ enum UIDriver {
             var value = role == "text" ? nil : UIControl.stateText(role: role, value: rawValue)
             if role == "text" { name = UIControl.stateText(role: role, value: rawValue) ?? name }
             if value == name { value = nil }
-            if !name.isEmpty || ["field", "search", "textarea", "password", "combobox", "slider", "switch", "checkbox"].contains(role) {
+            let visible = bounds.map { $0.intersects(frame) } ?? true
+            let roomLeft = visible || items.filter { !$0.element.visible }.count < maxOffscreen
+            if roomLeft, !name.isEmpty || ["field", "search", "textarea", "password", "combobox", "slider", "switch", "checkbox"].contains(role) {
                 let enabled: Bool = attribute(element, kAXEnabledAttribute) ?? true
                 items.append((UIControl.Element(
                     role: role, label: name.isEmpty ? "(\(role))" : String(name.prefix(120)), value: value.map { String($0.prefix(200)) },
                     x: Double(frame.minX), y: Double(frame.minY), width: Double(frame.width), height: Double(frame.height),
-                    enabled: enabled, focused: focused.map { CFEqual($0, element) } ?? false, secure: secure
+                    enabled: enabled, focused: focused.map { CFEqual($0, element) } ?? false, secure: secure, visible: visible
                 ), element))
             }
             // A row's or cell's texts are its label already; a button holds nothing worth listing.
             if ["row", "cell", "button", "checkbox", "switch", "radio", "link", "text", "menuitem"].contains(role) { return }
         }
         for child in (attribute(element, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
-            collect(child, depth: depth + 1, focused: focused, into: &items)
+            collect(child, depth: depth + 1, focused: focused, bounds: bounds, into: &items)
             if items.count >= maxElements { return }
         }
     }
 
-    /// The name a person sees for an element: its title, its description, the text of the label next to it, or (for a
-    /// row) the first text inside it.
+    /// The name a person sees for an element: its title, its description, the text of the label next to it, the first
+    /// text inside a row, or the texts inside a link or button (a web page's product link holds its name and no title).
     private static func label(of element: AXUIElement, role: String) -> String {
         for name in [kAXTitleAttribute, kAXDescriptionAttribute] {
             if let text: String = attribute(element, name), !text.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -427,6 +448,11 @@ enum UIDriver {
             return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         if ["row", "cell"].contains(role), let text = firstText(in: element, depth: 0) { return text }
+        if ["link", "button", "menuitem"].contains(role) {
+            var texts: [String] = []
+            innerTexts(in: element, depth: 0, into: &texts)
+            if !texts.isEmpty { return texts.joined(separator: " ") }
+        }
         if let placeholder: String = attribute(element, "AXPlaceholderValue"), !placeholder.isEmpty { return placeholder }
         if let help: String = attribute(element, kAXHelpAttribute), !help.isEmpty, role != "text" { return help }
         return ""
@@ -443,6 +469,24 @@ enum UIDriver {
             if let text = firstText(in: child, depth: depth + 1) { return text }
         }
         return nil
+    }
+
+    /// The texts inside an element in reading order, until there is enough for a label.
+    private static func innerTexts(in element: AXUIElement, depth: Int, into texts: inout [String]) {
+        guard depth < 6, texts.count < 4, texts.joined(separator: " ").count < 120 else { return }
+        for child in (attribute(element, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            let role: String = attribute(child, kAXRoleAttribute) ?? ""
+            if role == kAXStaticTextRole, let text: String = attribute(child, kAXValueAttribute) {
+                let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty { texts.append(clean) }
+            } else if role == kAXImageRole, let alt: String = attribute(child, kAXDescriptionAttribute) {
+                let clean = alt.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty { texts.append(clean) }
+            } else {
+                innerTexts(in: child, depth: depth + 1, into: &texts)
+            }
+            if texts.count >= 4 { return }
+        }
     }
 
     private static func focusIsSecure(_ pid: pid_t) -> Bool {
