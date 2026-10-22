@@ -766,7 +766,8 @@ private struct ChatsRow: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            row
+            // VoiceOver reaches the row itself, so the action is named there; the hover button would only repeat it.
+            row.accessibilityAction(named: Text(tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let onToggleRead {
                 ToolbarIconButton(entry.unread > 0 ? "checkmark.circle" : "circle.badge",
@@ -776,11 +777,11 @@ private struct ChatsRow: View {
                     .padding(.trailing, NookTheme.Spacing.sm)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
+                    .accessibilityHidden(true)
             }
         }
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
-        .accessibilityAction(named: Text(tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
     }
 
     private var row: some View {
