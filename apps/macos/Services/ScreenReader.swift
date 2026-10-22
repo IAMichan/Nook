@@ -30,8 +30,14 @@ enum ScreenError: LocalizedError {
 /// The image never leaves your Mac; only recognized text may be sent to the model.
 @MainActor
 final class ScreenReader {
-    /// Password managers and Nook itself are never read, not by OCR, not through accessibility, not through scripting.
-    static let excludedBundles: Set<String> = [
+    /// Password managers and Nook itself, plus the apps the user picked in Settings › Privacy, are never read: not by OCR,
+    /// not through accessibility, not through scripting.
+    nonisolated static var excludedBundles: Set<String> {
+        builtInExcluded.union(UserDefaults.standard.stringArray(forKey: AppSettings.neverReadAppsKey) ?? [])
+    }
+
+    /// Password managers and Nook itself: always excluded, whatever the settings say.
+    nonisolated static let builtInExcluded: Set<String> = [
         "com.1password.1password", "com.agilebits.onepassword7", "com.agilebits.onepassword-osx", "com.apple.keychainaccess",
         "com.apple.Passwords", "com.bitwarden.desktop", "com.dashlane.dashlanephonefinal", "com.dashlane.Dashlane",
         "com.lastpass.LastPass", "com.lastpass.lastpassmacdesktop", "org.keepassxc.keepassxc", "com.keepassium.ios",
@@ -78,9 +84,10 @@ final class ScreenReader {
 
     /// Apps that are open now (regular Dock apps), excluding Nook and apps Nook never looks into.
     static func openApps() -> [NSRunningApplication] {
-        NSWorkspace.shared.runningApplications.filter { app in
+        let excluded = excludedBundles
+        return NSWorkspace.shared.runningApplications.filter { app in
             app.activationPolicy == .regular && app.processIdentifier != ProcessInfo.processInfo.processIdentifier
-                && !excludedBundles.contains(app.bundleIdentifier ?? "")
+                && !excluded.contains(app.bundleIdentifier ?? "")
         }
     }
 
@@ -264,6 +271,14 @@ final class ScreenReader {
         guard !trimmed.isEmpty else { throw NookError("Welke app wil je lezen?") }
         let canonicalName = Self.appAliases[trimmed.lowercased()] ?? trimmed
         let wanted = canonicalName.lowercased()
+        // An app the user asked Nook never to read stays closed to every route below, the scripted ones included. The
+        // built-in exclusions have no scripted route, so the app folders are only searched when the user picked apps.
+        let picked = Set(UserDefaults.standard.stringArray(forKey: AppSettings.neverReadAppsKey) ?? [])
+        if !picked.isEmpty {
+            let named = NSWorkspace.shared.runningApplications.first { ($0.localizedName ?? "").lowercased() == wanted }?.bundleIdentifier
+                ?? Self.installedApp(named: canonicalName).flatMap { Bundle(url: $0)?.bundleIdentifier }
+            if let named, picked.contains(named) { throw ScreenError.excluded(canonicalName) }
+        }
 
         // 1. Direct specialized native script reading (Notes, Safari, Chrome, Edge, Terminal, Finder, Music)
         if let scriptSections = await Self.readScriptableApp(wanted), !scriptSections.isEmpty {
@@ -412,10 +427,11 @@ final class ScreenReader {
         }
 
         let content = try await Self.shareableContent()
+        let excluded = Self.excludedBundles
         let candidates = content.windows.filter { window in
             guard window.windowLayer == 0, window.frame.width > 200, window.frame.height > 100,
                   let owner = window.owningApplication else { return false }
-            return !Self.excludedBundles.contains(owner.bundleIdentifier)
+            return !excluded.contains(owner.bundleIdentifier)
         }
         // Frontmost app first; within an app, largest windows first.
         let ordered = candidates.sorted { a, b in
