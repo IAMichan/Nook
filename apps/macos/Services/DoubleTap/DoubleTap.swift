@@ -3,8 +3,8 @@ import ApplicationServices
 import Combine
 
 /// Double Tap: tap the chosen key twice (right ⌘ by default) and a small field in the notch asks what Nook should do
-/// (`onAsk`). With "Fill in fields" chosen in Settings › Shortcuts, a double tap with the cursor in a form or a reply box
-/// fills the empty fields instead, with what Nook remembers about you and the text on screen. See `DoubleTapLogic` for
+/// (`onAsk`). Typing "fill in the form" there (`DoubleTapLogic.asksToFill`) fills the empty fields of the form or reply
+/// box in front with what Nook remembers about you and the text on screen (`fill(request:)`). See `DoubleTapLogic` for
 /// the rules of filling.
 ///
 /// - The key is watched with NSEvent `flagsChanged` monitors only: no event tap, so no Input Monitoring prompt.
@@ -37,11 +37,6 @@ final class DoubleTap: ObservableObject {
     /// The notch asks what Nook should do (`AppModel.presentTakeoverPrompt`): on a double tap, and on one tap when
     /// `taskOnTap` is on.
     var onAsk: (() -> Void)?
-    /// A double tap fills in the form in front instead of asking what Nook should do (Settings › Shortcuts). Off by
-    /// default: Nook asks first rather than guessing that you want a form filled in.
-    @Published var fillsOnDoubleTap: Bool {
-        didSet { defaults.set(fillsOnDoubleTap, forKey: "doubleTapFills") }
-    }
     /// One tap gives Nook a task (Settings › Shortcuts).
     @Published var taskOnTap: Bool {
         didSet { defaults.set(taskOnTap, forKey: "takeoverOnTap") }
@@ -62,7 +57,6 @@ final class DoubleTap: ObservableObject {
         enabled = defaults.object(forKey: "doubleTapEnabled") as? Bool ?? true
         key = FlowKey(rawValue: defaults.string(forKey: "doubleTapKey") ?? "") ?? .rightCommand
         taskOnTap = defaults.object(forKey: "takeoverOnTap") as? Bool ?? true
-        fillsOnDoubleTap = defaults.object(forKey: "doubleTapFills") as? Bool ?? false
     }
 
     /// Flow owns a key it dictates with: holding it and tapping it both mean something there.
@@ -115,11 +109,8 @@ final class DoubleTap: ObservableObject {
         switch gesture.update(down: down, alone: alone, at: now, lastKeyDown: now - sinceKey) {
         case .double:
             tapCount += 1
-            if fillsOnDoubleTap || onAsk == nil {
-                fill()
-            } else {
-                onAsk?()
-            }
+            // Nook asks what to do rather than guessing that a form must be filled in; "fill in the form" is one answer.
+            if let onAsk { onAsk() } else { fill() }
         case .tap:
             // One tap: give Nook a task, once it is clear no second tap follows.
             tapCount += 1
@@ -146,20 +137,23 @@ final class DoubleTap: ObservableObject {
 
     // MARK: Filling
 
-    /// One double tap. A tap while Nook is still filling is ignored: two answers would land in the same fields.
-    func fill() {
+    /// Fills the form in front. `request`: what the user typed in the notch ("vul het formulier in met mijn werkadres");
+    /// `delay`: time for the app the user was in to get the keyboard back after the notch's field closed. A request while
+    /// Nook is still filling is ignored: two answers would land in the same fields.
+    func fill(request: String = "", after delay: Double = 0) {
         guard task == nil else { return }
         task = Task { @MainActor [weak self] in
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard let self else { return }
             self.isFilling = true
-            await self.run()
+            await self.run(request: request)
             self.isFilling = false
             self.pill.hide()
             self.task = nil
         }
     }
 
-    private func run() async {
+    private func run(request: String) async {
         guard AXIsProcessTrusted() else {
             return ToastCenter.shared.warning(tr("doubletap.noAccess"), action: NookToastAction(title: tr("doubletap.openSettings")) {
                 SystemPermission.accessibility.openSettings()
@@ -179,7 +173,8 @@ final class DoubleTap: ObservableObject {
 
         pill.show(.message(tr("doubletap.working")))
         let screen = screenText(app.bundleIdentifier ?? "") ?? ""
-        let prompt = DoubleTapLogic.prompt(app: appName, window: form.title, fields: fields, facts: facts(), screen: screen)
+        let prompt = DoubleTapLogic.prompt(app: appName, window: form.title, fields: fields, facts: facts(), screen: screen,
+                                           request: request)
         guard let reply = await ask(DoubleTapLogic.system, prompt, Self.deadline), !Task.isCancelled else {
             return ToastCenter.shared.warning(tr("doubletap.failed"))
         }
