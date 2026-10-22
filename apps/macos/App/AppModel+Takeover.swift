@@ -143,6 +143,7 @@ extension AppModel {
             DoubleTap.shared.write(request: request, after: 0.3) { [weak self] in
                 self?.chat.startNew()
                 self?.handleUserText(request, reveal: false)
+                self?.followInNotch()
             }
             return
         }
