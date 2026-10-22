@@ -29,6 +29,8 @@ struct AutocompleteFieldSnapshot {
     /// The font of the text at the cursor, so the suggestion looks like the text it continues.
     var fontName: String?
     var fontSize: CGFloat?
+    /// A code editor or terminal inside an editor app (see `CompletionFieldKind`); only checked where it matters.
+    var isCode = false
 
     /// Where a card or the emoji picker goes (see `CompletionPlacement.cardAnchor`).
     var cardAnchor: CGRect? { CompletionPlacement.cardAnchor(caret: caret, field: fieldFrame, fontSize: fontSize) }
@@ -60,7 +62,8 @@ enum AutocompleteField {
     /// - Parameters:
     ///   - screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.
     ///   - screens: every screen's frame, taken on the main thread: a cursor on none of them is not believed.
-    static func read(screenHeight: CGFloat, screens: [CGRect] = []) -> AutocompleteFieldSnapshot? {
+    ///   - checkCode: tell a code editor or terminal from a chat input (code editors like VS Code, see `isCode`).
+    static func read(screenHeight: CGFloat, screens: [CGRect] = [], checkCode: Bool = false) -> AutocompleteFieldSnapshot? {
         guard AXIsProcessTrusted(), let element = focusedElement(), isEditable(element) else { return nil }
         let role: String? = attribute(element, kAXRoleAttribute)
         let subrole: String? = attribute(element, kAXSubroleAttribute)
@@ -109,7 +112,21 @@ enum AutocompleteField {
                                                           fontSize: snapshot.fontSize)
         snapshot.placeholder = attribute(element, kAXPlaceholderValueAttribute)
         snapshot.site = site(containing: element)
+        if checkCode { snapshot.isCode = isCode(element) }
         return snapshot
+    }
+
+    /// Whether the field is a code editor or terminal, from the web classes of the field and the elements around it (Electron
+    /// editors are web pages: Monaco, xterm.js) and its role description.
+    private static func isCode(_ element: AXUIElement) -> Bool {
+        var classes: [[String]] = []
+        var current = element
+        for _ in 0..<CompletionFieldKind.depth {
+            classes.append(attribute(current, "AXDOMClassList") ?? [])
+            guard let parent: AXUIElement = attribute(current, kAXParentAttribute) else { break }
+            current = parent
+        }
+        return CompletionFieldKind.isCode(classes: classes, roleDescription: attribute(element, kAXRoleDescriptionAttribute))
     }
 
     // MARK: Which element

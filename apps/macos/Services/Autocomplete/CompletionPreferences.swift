@@ -149,9 +149,15 @@ struct CompletionPreferences: Codable, Equatable {
     /// password managers.
     static let offByDefault: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
-        "org.alacritty", "com.github.wez.wezterm", "com.apple.dt.Xcode", "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92",
-        "dev.zed.Zed", "com.jetbrains.intellij", "com.sublimetext.4", "com.1password.1password", "com.agilebits.onepassword7",
-        "com.bitwarden.desktop", "com.apple.keychainaccess", "com.apple.Passwords"
+        "org.alacritty", "com.github.wez.wezterm", "com.apple.dt.Xcode", "dev.zed.Zed", "com.jetbrains.intellij", "com.sublimetext.4",
+        "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.apple.keychainaccess",
+        "com.apple.Passwords"
+    ]
+
+    /// Code editors built on the web (VS Code and its forks): suggestions in their chat inputs and other prose fields (Claude
+    /// Code, Copilot Chat), never in the code or the terminal, which have their own completion (see `CompletionFieldKind`).
+    static let proseOnly: Set<String> = [
+        "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium", "com.todesktop.230313mzl4w4u92", "com.exafunction.windsurf"
     ]
 
     static func decode(_ data: Data) -> CompletionPreferences {
@@ -194,5 +200,28 @@ struct CompletionPreferences: Codable, Equatable {
     private static func entries(_ stored: Any?, defaults: [String: Any]) -> [String: Any] {
         guard let entries = stored as? [String: Any] else { return [:] }
         return entries.compactMapValues { ($0 as? [String: Any]).map { defaults.merging($0) { _, new in new } } }
+    }
+}
+
+/// Tells a code editor or terminal from a chat input inside the same app (see `CompletionPreferences.proseOnly`). Electron
+/// editors are web pages: the field and the elements around it carry web classes (`AXDOMClassList`).
+enum CompletionFieldKind {
+    /// How far up from the field to look.
+    static let depth = 12
+    /// Classes of Monaco (VS Code's editor), xterm.js (its terminal), CodeMirror and Ace.
+    static let codeClasses: Set<String> = [
+        "monaco-editor", "inputarea", "xterm", "xterm-helper-textarea", "cm-editor", "cm-content", "ace_editor", "ace_text-input"
+    ]
+    /// Parts of class names around a chat input: Copilot Chat's input is a Monaco editor too, and is still prose.
+    static let chatWords = ["chat", "interactive-input", "composer", "prompt"]
+
+    /// - Parameters:
+    ///   - classes: the field's web classes, then those of each element around it, nearest first.
+    ///   - roleDescription: the field's (Monaco's is "editor").
+    static func isCode(classes: [[String]], roleDescription: String?) -> Bool {
+        let names = classes.joined().map { $0.lowercased() }
+        if names.contains(where: { name in chatWords.contains { name.contains($0) } }) { return false }
+        if names.contains(where: { codeClasses.contains($0) }) { return true }
+        return ["editor", "terminal"].contains(roleDescription?.lowercased() ?? "")
     }
 }
