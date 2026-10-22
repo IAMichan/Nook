@@ -43,6 +43,9 @@ final class CompanionClient: ObservableObject {
     private(set) var pushToken: String?
 
     private var link: PairingLink?
+    /// Whether a `hello` or `list` answer told us what the Mac can do. An old Mac sends no `features`: then the
+    /// empty set is known too, so a screen does not keep asking.
+    private var featuresKnown = false
     private var poll: Task<Void, Never>?
 
     init() {
@@ -67,6 +70,7 @@ final class CompanionClient: ObservableObject {
                 macName = response.macName ?? parsed.macName
                 sessions = response.sessions ?? []
                 features = Set(response.features ?? [])
+                featuresKnown = true
                 phase = .connected
                 startPolling()
                 await Notifications.requestAndRegister()
@@ -83,6 +87,7 @@ final class CompanionClient: ObservableObject {
         link = nil
         sessions = []
         features = []
+        featuresKnown = false
         launchOptions = nil
         timelines = [:]
         conversations = []
@@ -156,8 +161,15 @@ final class CompanionClient: ObservableObject {
 
     func can(_ feature: String) -> Bool { features.contains(feature) }
 
+    /// `can`, after asking the Mac first when its features are not known yet (a screen that loads right after launch,
+    /// before the first `list` came back).
+    private func supports(_ feature: String) async -> Bool {
+        if !featuresKnown, link != nil { await refresh() }
+        return can(feature)
+    }
+
     func loadLaunchOptions() async {
-        guard can(CompanionFeature.start) else { return }
+        guard await supports(CompanionFeature.start) else { return }
         await perform(CompanionRequest(op: .options))
     }
 
@@ -169,19 +181,19 @@ final class CompanionClient: ObservableObject {
     // MARK: A session's conversation
 
     func loadTimeline(_ sessionID: String) async {
-        guard can(CompanionFeature.timeline) else { return }
+        guard await supports(CompanionFeature.timeline) else { return }
         await perform(CompanionRequest(op: .timeline, session: sessionID), quiet: true)
     }
 
     // MARK: Nook's own chats
 
     func loadChats() async {
-        guard can(CompanionFeature.chat) else { return }
+        guard await supports(CompanionFeature.chat) else { return }
         await perform(CompanionRequest(op: .chats), quiet: true)
     }
 
     func loadChat(_ conversationID: String) async {
-        guard can(CompanionFeature.chat) else { return }
+        guard await supports(CompanionFeature.chat) else { return }
         await perform(CompanionRequest(op: .chat, conversation: conversationID), quiet: true)
     }
 
@@ -195,19 +207,19 @@ final class CompanionClient: ObservableObject {
     // MARK: Home and usage
 
     func loadHome() async {
-        guard can(CompanionFeature.home) else { return }
+        guard await supports(CompanionFeature.home) else { return }
         await perform(CompanionRequest(op: .home), quiet: true)
     }
 
     /// `range`: "today", "week" or "month".
     func loadUsage(range: String) async {
-        guard can(CompanionFeature.usage) else { return }
+        guard await supports(CompanionFeature.usage) else { return }
         await perform(CompanionRequest(op: .usage, item: range), quiet: true)
     }
 
     /// "playpause", "next" or "previous".
     func music(_ command: String) async {
-        guard can(CompanionFeature.music) else { return }
+        guard await supports(CompanionFeature.music) else { return }
         await perform(CompanionRequest(op: .music, text: command), quiet: true)
     }
 
@@ -261,6 +273,7 @@ final class CompanionClient: ObservableObject {
         if let list = response.sessions { sessions = list; Notifications.setBadge(list.needingYou) }
         if let name = response.macName { macName = name }
         if let features = response.features { self.features = Set(features) }
+        if req.op == .list || req.op == .hello { featuresKnown = true }
         if let options = response.launch { launchOptions = options }
         if let timeline = response.timeline, let session = req.session { timelines[session] = timeline }
         if let list = response.conversations { conversations = list }

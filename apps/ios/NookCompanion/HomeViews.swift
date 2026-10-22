@@ -259,21 +259,27 @@ private struct NowPlayingCard: View {
                     }
                 }
             }
-            HStack(spacing: 36) {
-                Spacer()
-                control("backward.fill", "previous", label: "Previous track")
-                Button { press("playpause") } label: {
-                    Image(systemName: track.playing ? "pause.fill" : "play.fill")
-                        .font(.title2.weight(.bold)).foregroundStyle(Theme.canvas)
-                        .frame(width: 56, height: 56).background(Theme.text, in: Circle())
+            // The buttons only where the Mac takes them; the track itself is shown either way.
+            if client.can(CompanionFeature.music) {
+                HStack(spacing: 36) {
+                    Spacer()
+                    control("backward.fill", "previous", label: "Previous track")
+                    Button { press("playpause") } label: {
+                        Image(systemName: track.playing ? "pause.fill" : "play.fill")
+                            .font(.title2.weight(.bold)).foregroundStyle(Theme.canvas)
+                            .frame(width: 56, height: 56).background(Theme.text, in: Circle())
+                    }
+                    .accessibilityLabel(playLabel)
+                    control("forward.fill", "next", label: "Next track")
+                    Spacer()
                 }
-                .accessibilityLabel(track.playing ? "Pause" : "Play")
-                control("forward.fill", "next", label: "Next track")
-                Spacer()
             }
         }
         .card()
     }
+
+    /// Typed, so both words go through the String Catalog.
+    private var playLabel: LocalizedStringKey { track.playing ? "Pause" : "Play" }
 
     private func control(_ symbol: String, _ command: String, label: LocalizedStringKey) -> some View {
         Button { press(command) } label: {

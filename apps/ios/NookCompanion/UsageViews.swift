@@ -7,7 +7,8 @@ struct UsageScreen: View {
     @EnvironmentObject private var client: CompanionClient
     @State private var range = "week"
 
-    private var usage: UsageDigest? { client.usage }
+    /// Only the answer for the range on screen: right after switching, the previous range's numbers are not shown as this one's.
+    private var usage: UsageDigest? { client.usage.flatMap { $0.range == range ? $0 : nil } }
 
     var body: some View {
         ScrollView {

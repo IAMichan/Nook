@@ -15,13 +15,15 @@ extension CompanionServer {
         let events = app.upcoming.filter { $0.end > now }.prefix(8).map { event in
             HomeDigest.Event(id: event.id, title: CompanionPolicy.clip(event.title, limit: 200), start: event.start.timeIntervalSince1970,
                              end: event.end.timeIntervalSince1970, location: CompanionPolicy.clip(event.location, limit: 120),
-                             calendar: event.calendar)
+                             calendar: CompanionPolicy.clip(event.calendar, limit: 120))
         }
         let track = app.nowPlaying.current.map { info in
-            HomeDigest.Track(title: info.title, artist: info.artist, album: info.album, app: info.app, playing: info.isPlaying,
+            HomeDigest.Track(title: CompanionPolicy.clip(info.title, limit: 200), artist: CompanionPolicy.clip(info.artist, limit: 200),
+                             album: CompanionPolicy.clip(info.album, limit: 200), app: CompanionPolicy.clip(info.app, limit: 60),
+                             playing: info.isPlaying,
                              position: info.estimatedPosition(at: now), duration: Double(info.duration))
         }
-        let digest = HomeDigest(lines: Array(lines), events: Array(events), suggestions: app.startSuggestions.prefix(4).map(\.text),
+        let digest = HomeDigest(lines: Array(lines), events: Array(events), suggestions: app.startSuggestions.prefix(4).map { CompanionPolicy.clip($0.text, limit: 200) },
                                 track: track, accounts: accounts(app))
         return CompanionResponse(id: request.id, ok: true, sessions: digests(app.workspace), home: digest)
     }
@@ -71,7 +73,7 @@ extension CompanionServer {
             cacheTokens: report.cacheReadTokens + report.cacheWriteTokens, cost: report.reportedCostUSD,
             days: report.days.map { .init(day: $0.day.timeIntervalSince1970, agent: $0.provider.displayName, tokens: $0.tokens) },
             models: report.rows.prefix(20).map { row in
-                .init(agent: row.provider.displayName, model: row.model, sessions: row.sessions,
+                .init(agent: row.provider.displayName, model: CompanionPolicy.clip(row.model, limit: 120), sessions: row.sessions,
                       tokens: row.inputTokens + row.outputTokens + row.cacheReadTokens, cost: row.reportedCostUSD)
             })
         return CompanionResponse(id: request.id, ok: true, usage: digest)
