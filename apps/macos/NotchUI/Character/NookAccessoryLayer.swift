@@ -688,7 +688,7 @@ enum NookAccessoryArt {
         shadowPath.addPath(temples)
         castShadow(ctx, head, shadowPath.strokedPath(StrokeStyle(lineWidth: width)).offsetBy(dx: R * 0.03, dy: R * 0.05), opacity: 0.3, blur: 0.03)
 
-        var glass = ctx
+        let glass = ctx
         for c in [left, right] {
             let l = lens(c)
             glass.fill(l, with: .color(Color(hex: 0xBFD8FF).opacity(0.1)))
@@ -742,7 +742,7 @@ enum NookAccessoryArt {
         for l in lenses { all.addPath(l) }
         castShadow(ctx, head, all.offsetBy(dx: R * 0.04, dy: R * 0.08), opacity: 0.4, blur: 0.08)
 
-        var glass = ctx
+        let glass = ctx
         for (l, c) in zip(lenses, [left, right]) {
             glass.fill(l, with: .linearGradient(Gradient(colors: [Color(hex: 0x1A1B26), Color(hex: 0x2E2A44), Color(hex: 0x4B3A5E)]),
                                                 startPoint: CGPoint(x: c.x, y: c.y - h), endPoint: CGPoint(x: c.x, y: c.y + h)))

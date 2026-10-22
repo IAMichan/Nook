@@ -215,7 +215,7 @@ struct BeeperSettingsRows: View {
     @State private var saved = BeeperBridge.token != nil
 
     var body: some View {
-        if WhatsAppLink.enabled && WhatsAppLink.gateway == .beeper {
+        if WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper {
             // Its chats already come in through the WhatsApp link, with answering in place.
             StatusRow(title: tr("chats.beeper.viaGateway"), detail: tr("chats.beeper.viaGatewayDetail"), state: .done) { EmptyView() }
         } else {

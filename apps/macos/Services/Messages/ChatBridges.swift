@@ -305,7 +305,7 @@ final class BeeperBridge: ChatBridge {
     static var token: String? { CloudHelp.secret(tokenAccount) }
 
     var isReady: Bool {
-        !(WhatsAppLink.enabled && WhatsAppLink.gateway == .beeper) && Self.token != nil
+        !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.token != nil
     }
 
     func reset() {

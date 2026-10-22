@@ -46,13 +46,16 @@ final class CalendarService {
     /// (or a background refresh) should not wait for it.
     func loadEvents(from start: Date, to end: Date) async -> [CalEvent] {
         guard hasEventAccess else { return [] }
-        let store = store
+        // EKEventStore is documented thread-safe for reads but not marked Sendable.
+        let box = StoreBox(store: store)
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: Self.eventList(store, from: start, to: end))
+                continuation.resume(returning: Self.eventList(box.store, from: start, to: end))
             }
         }
     }
+
+    private struct StoreBox: @unchecked Sendable { let store: EKEventStore }
 
     private nonisolated static func eventList(_ store: EKEventStore, from start: Date, to end: Date) -> [CalEvent] {
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
