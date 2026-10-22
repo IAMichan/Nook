@@ -152,6 +152,16 @@ final class NotchController {
         ) { [weak self] _ in
             Task { @MainActor in self?.screenChanged() }
         }
+
+        // After a Space or full-screen switch, sleep or a locked screen, the window server can drop the notch from the
+        // screen while AppKit still counts it visible: put it back each time.
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didWakeNotification,
+                     NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.reassertPanels() }
+            }
+        }
     }
 
     // MARK: Keyboard focus
@@ -234,6 +244,20 @@ final class NotchController {
         }
     }
 
+    /// Puts every notch that should show back on screen, on its own level and on every Space.
+    private func reassertPanels() {
+        // Lowered on purpose for the emoji picker or a file picker (`runAboveNotch`): those put the level back themselves.
+        let lowered = CharacterPaletteWatch.shared.lowersNotch || NSApp.modalWindow != nil
+        for panel in allPanels {
+            if panel.collectionBehavior != NotchPanel.notchBehavior { panel.collectionBehavior = NotchPanel.notchBehavior }
+            if !lowered, panel.level != NotchPanel.notchLevel { panel.level = NotchPanel.notchLevel }
+        }
+        if let panel, !hidesWhileResting || !viewModel.state.isResting { panel.orderFrontRegardless() }
+        if !hidesWhileResting {
+            for mirror in mirrors.values { mirror.panel.orderFrontRegardless() }
+        }
+    }
+
     // MARK: Position
 
     private func positionPanel() {
@@ -249,6 +273,7 @@ final class NotchController {
         viewModel.geometry = geometry
         positionPanel()
         refreshMirrors()
+        reassertPanels()
     }
 
     /// Floating: shape tracks mouse while dragging, also onto another connected screen.
