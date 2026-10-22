@@ -82,6 +82,20 @@ final class AppDataTests: XCTestCase {
         XCTAssertFalse(text.contains("bericht 30"), "messages far from the match are not sent")
     }
 
+    func testAThreadSaysHowOldItsNewestMessageIs() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let old = [AppData.Message(chat: "7", chatName: "Arjan", sender: "Arjan", fromMe: false,
+                                   date: now.addingTimeInterval(-40 * 86_400), text: "Kun je de taak oppakken?")]
+        let text = AppData.formatThread(old, terms: Research.Terms(), app: "WhatsApp", other: "whatsapp_live", now: now)
+        XCTAssertTrue(text.contains("(40 days ago)"), text)
+        XCTAssertTrue(text.contains("Nothing newer is in this source"), "an old chat is never answered as if it were new")
+        XCTAssertTrue(text.contains("whatsapp_live"), "the other source is named")
+        let fresh = AppData.freshness(newest: now.addingTimeInterval(-60), now: now)
+        XCTAssertTrue(fresh.hasSuffix("(today)."), fresh)
+        XCTAssertFalse(AppData.freshness(newest: now.addingTimeInterval(-10 * 86_400), now: now).contains("read the chat with"),
+                       "no other source to name")
+    }
+
     func testBearNotesOpenLikeAppleNotes() {
         let text = AppData.formatNotes([
             ["id": "A1-B2", "title": "Verbouwing", "date": 700_000_000, "text": String(repeating: "keuken en badkamer ", count: 60)],

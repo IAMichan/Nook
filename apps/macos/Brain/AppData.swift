@@ -53,6 +53,24 @@ enum AppData {
         NookDates.formatter(time ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd", locale: "en_US_POSIX").string(from: date)
     }
 
+    /// How old a conversation's newest message is, said plainly: a chat read from a source that stopped syncing ends
+    /// weeks ago, and a reply must never answer that message as if it just came in.
+    /// `other` names the tool that reads the same chat from elsewhere, when there is one.
+    static func freshness(newest: Date, other: String? = nil, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: newest), to: calendar.startOfDay(for: now)).day ?? 0
+        let age = days <= 0 ? "today" : days == 1 ? "yesterday" : "\(days) days ago"
+        var line = "Newest message in this chat: \(stamp(newest)) (\(age))."
+        if days >= staleDays {
+            line += " Nothing newer is in this source."
+            if let other { line += " Before writing a reply, read the chat with \(other) too, which may have newer messages." }
+            line += " Tell the user how old the last message is instead of answering it as if it were new."
+        }
+        return line
+    }
+
+    /// From this many days a chat's newest message counts as old.
+    static let staleDays = 3
+
     // MARK: Messages' attributed text
 
     /// Since macOS Ventura, Messages often keeps the text of a message only in `attributedBody`, an archived
@@ -194,7 +212,8 @@ enum AppData {
 
     /// One conversation to read: the passages around messages that match (a few before and after each), plus the most
     /// recent messages, in time order. `messages` is newest first, as the query returns it.
-    static func formatThread(_ newestFirst: [Message], terms: Research.Terms, app: String, around: Int = 4, matches: Int = 6, recent: Int = 20) -> String {
+    static func formatThread(_ newestFirst: [Message], terms: Research.Terms, app: String, around: Int = 4, matches: Int = 6, recent: Int = 20,
+                             other: String? = nil, now: Date = Date()) -> String {
         let messages = Array(newestFirst.reversed())
         guard let last = messages.last else { return "" }
         var keep = Set(max(0, messages.count - recent)..<messages.count)
@@ -210,6 +229,7 @@ enum AppData {
             lines.append("\(stamp(message.date)) · \(message.sender): \(String(message.text.prefix(600)))")
             previous = index
         }
+        lines.append(freshness(newest: last.date, other: other, now: now))
         lines.append(ReferenceParser.line(title: "\(app): \(last.chatName)", url: nil, detail: stamp(last.date, time: false)))
         return lines.joined(separator: "\n")
     }
