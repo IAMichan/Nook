@@ -83,6 +83,8 @@ struct DropdownRow: View {
     var trailing: String? = nil
     var chosen = false
     var tint: Color? = nil
+    /// Draws the symbol in a small tile of this color instead of on its own (the chat composer's "+" menu).
+    var tile: Color? = nil
     var disabledReason: String? = nil
     /// Keeps the panel open after the click (several choices in a row).
     var staysOpen = false
@@ -96,11 +98,18 @@ struct DropdownRow: View {
             action()
             if !staysOpen { close() }
         } label: {
-            HStack(alignment: detail == nil ? .center : .top, spacing: 8) {
+            HStack(alignment: detail == nil ? .center : .top, spacing: tile == nil ? 8 : NookTheme.Spacing.md) {
                 if let agent {
                     AgentMark(agent: agent, account: account, size: 15, ring: DropdownStyle.panel)
                 } else if let brand {
                     BrandMark(logo: brand, size: 14)
+                } else if let symbol, let tile {
+                    Image(systemName: symbol)
+                        .font(NookTheme.font(12, .semibold))
+                        .foregroundStyle(tile)
+                        .frame(width: 26, height: 26)
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                            .fill(tile.opacity(hovering ? 0.24 : 0.16)))
                 } else if let symbol {
                     Image(systemName: symbol)
                         .font(NookTheme.TextStyle.label)
@@ -125,8 +134,8 @@ struct DropdownRow: View {
                     Text(trailing).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 }
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, detail == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
+            .padding(.horizontal, tile == nil ? NookTheme.Spacing.md : NookTheme.Spacing.sm)
+            .padding(.vertical, detail == nil ? (tile == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.xs) : NookTheme.Spacing.md)
             .frame(minHeight: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)

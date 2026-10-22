@@ -298,57 +298,73 @@ final class ChatVoiceRecorder: ObservableObject {
 
 // MARK: - The buttons beside the field
 
-/// "+" before the field: everything a chat can take besides text, as far as this chat's app can send it.
+/// "+" before the field: everything a chat can take besides text, as far as this chat's app can send it, in Nook's own
+/// dropdown: each kind behind a tinted tile, files and media first, then what you share from a form.
 struct ChatAttachMenu: View {
     @ObservedObject var model: ChatComposerModel
     let sends: Set<ChatOutgoing.Kind>
+    @State private var hovering = false
 
     var body: some View {
-        Menu {
+        ComposerDropdown(width: 224) {
+            Image(systemName: "plus")
+                .font(NookTheme.font(13, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(hovering ? NookTheme.smoke : .clear))
+                .contentShape(Circle())
+                .onHover { hovering = $0 }
+                .animation(NookTheme.hover, value: hovering)
+        } content: {
             if sends.contains(.photo) || sends.contains(.video) {
-                Button { model.choose(nil, types: [.image, .movie]) } label: {
-                    Label(tr("chat.compose.photoVideo"), systemImage: "photo.on.rectangle")
+                DropdownRow(symbol: "photo.on.rectangle.angled", title: tr("chat.compose.photoVideo"), tile: NookTheme.blue) {
+                    model.choose(nil, types: [.image, .movie])
                 }
             }
             if sends.contains(.file) {
-                Button { model.choose(.file, types: []) } label: { Label(tr("chat.compose.file"), systemImage: "doc") }
+                DropdownRow(symbol: "doc.fill", title: tr("chat.compose.file"), tile: NookTheme.violet) {
+                    model.choose(.file, types: [])
+                }
             }
             if sends.contains(.gif) {
-                Button { model.choose(.gif, types: [.gif, .mpeg4Movie, .quickTimeMovie]) } label: {
-                    Label(tr("chat.media.gif"), systemImage: "play.square.stack")
+                DropdownRow(symbol: "play.square.stack.fill", title: tr("chat.media.gif"), tile: NookTheme.mint) {
+                    model.choose(.gif, types: [.gif, .mpeg4Movie, .quickTimeMovie])
                 }
             }
             if sends.contains(.sticker) {
-                Button { model.open(.stickers) } label: { Label(tr("chat.compose.stickers"), systemImage: "face.smiling.inverse") }
+                DropdownRow(symbol: "face.smiling.inverse", title: tr("chat.compose.stickers"), tile: NookTheme.amber) {
+                    model.open(.stickers)
+                }
             }
             if sends.contains(.audio) {
-                Button { model.choose(.audio, types: [.audio]) } label: { Label(tr("chat.media.audio"), systemImage: "music.note") }
+                DropdownRow(symbol: "headphones", title: tr("chat.media.audio"), tile: NookTheme.music) {
+                    model.choose(.audio, types: [.audio])
+                }
             }
-            if sends.contains(.poll) || sends.contains(.location) || sends.contains(.contact) { Divider() }
+            if sends.contains(.poll) || sends.contains(.location) || sends.contains(.contact) { DropdownDivider() }
             if sends.contains(.poll) {
-                Button { model.open(.poll) } label: { Label(tr("chat.compose.poll"), systemImage: "chart.bar.xaxis") }
+                DropdownRow(symbol: "chart.bar.fill", title: tr("chat.compose.poll"), tile: NookTheme.amber) {
+                    model.open(.poll)
+                }
             }
             if sends.contains(.location) {
-                Button { model.open(.place) } label: { Label(tr("chat.compose.place"), systemImage: "mappin.and.ellipse") }
+                DropdownRow(symbol: "mappin.and.ellipse", title: tr("chat.compose.place"), tile: NookTheme.coral) {
+                    model.open(.place)
+                }
             }
             if sends.contains(.contact) {
-                Button {
+                DropdownRow(symbol: "person.crop.circle.fill", title: tr("chat.compose.contact"), tile: NookTheme.blue) {
                     model.open(.contact)
                     Task { await model.lookUpContacts() }
-                } label: { Label(tr("chat.compose.contact"), systemImage: "person.crop.circle") }
+                }
             }
             if sends.contains(.photo), model.canPastePicture {
-                Divider()
-                Button { _ = model.paste() } label: { Label(tr("chat.compose.pastePicture"), systemImage: "doc.on.clipboard") }
+                DropdownDivider()
+                DropdownRow(symbol: "doc.on.clipboard", title: tr("chat.compose.pastePicture"), tile: NookTheme.textSecondary) {
+                    _ = model.paste()
+                }
             }
-        } label: {
-            Image(systemName: "plus")
-                .font(NookTheme.font(13, .semibold))
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .contentShape(Circle())
         }
-        .composerMenu()
         .help(tr("chat.compose.attach"))
         .accessibilityLabel(tr("chat.compose.attach"))
     }
