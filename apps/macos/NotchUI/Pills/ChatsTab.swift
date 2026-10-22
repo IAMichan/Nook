@@ -22,6 +22,9 @@ struct ChatsEntry: Identifiable, Equatable {
     /// The newest message is yours: how far it got (sent, delivered, read). Nil for theirs, and for every chat collected
     /// from notifications, which only ever show what came in.
     var ticks: BubbleTicks? = nil
+    /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a Beeper chat
+    /// and a chat collected from notifications, which are matched by name.
+    var handle: String? = nil
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -42,6 +45,7 @@ struct ChatsTab: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppLink.shared
+    @ObservedObject private var photos = ContactPhotos.shared
     @State private var selection: String?
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
@@ -61,6 +65,7 @@ struct ChatsTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if capture.status == .needsAccess { accessBar }
+            if case .failed(let why) = capture.status { failedBar(why) }
             if all.isEmpty {
                 empty
             } else {
@@ -73,7 +78,7 @@ struct ChatsTab: View {
                                         edge: .trailing, divider: true)
                     Group {
                         if let current {
-                            ChatsDetail(entry: current, capture: capture, whatsApp: whatsApp)
+                            ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp)
                                 .id(current.id)
                         } else {
                             // Nothing matches the search: the list says so, this side stays quiet.
@@ -91,7 +96,10 @@ struct ChatsTab: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
-        .onAppear { takeFocus() }
+        .onAppear {
+            takeFocus()
+            photos.refresh()
+        }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
         .onChange(of: selection) { _, id in
             // Reading a collected chat here is reading it; a WhatsApp chat is only read by what you do with it.
@@ -126,7 +134,7 @@ struct ChatsTab: View {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: conversation.unread, ticks: ticks))
+                                          unread: conversation.unread, ticks: ticks, handle: Self.handle(conversation.id)))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
             // when one is opened.
@@ -137,7 +145,7 @@ struct ChatsTab: View {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, unread: 0))
+                                          preview: "", last: chat.last, unread: 0, handle: Self.handle(chat.jid)))
             }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
@@ -146,6 +154,15 @@ struct ChatsTab: View {
                                       preview: preview, last: thread.last, unread: thread.unread))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
+    }
+
+    /// A private WhatsApp chat's phone number; nil for groups, channels and Beeper chats, which have none.
+    private static func handle(_ jid: String) -> String? {
+        WAJID.kind(jid) == .person && !WAJID.isBeeper(jid) ? jid : nil
+    }
+
+    private func photo(_ entry: ChatsEntry) -> NSImage? {
+        photos.photo(handle: entry.handle, name: entry.name)
     }
 
     /// The chats that match the filter and the search, in the list's order: group by group, newest first in each.
@@ -185,12 +202,35 @@ struct ChatsTab: View {
     }
 
     /// The apps that have chats here, the busiest first, and the one filtered on even when it has none yet.
+    /// After them every source that is on and on this Mac (its app is installed, or you added it yourself), also before it
+    /// brought in a message: a source you switched on shows up here, not only once it has chats.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
-        let busy = counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
-        guard let filter, !busy.contains(filter) else { return busy }
-        return busy + [filter]
+        var result = counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
+        if capture.enabled {
+            for source in capture.sources.active where !result.contains(source.id) && Self.isPresent(source) {
+                result.append(source.id)
+            }
+        }
+        if let filter, !result.contains(filter) { result.append(filter) }
+        return result
     }
+
+    /// Whether a source belongs on this Mac: one you added, or a known app that is installed. The known web-only apps
+    /// (LinkedIn, X…) wait until they bring in a chat, or the row would list every app Nook knows.
+    @MainActor
+    private static func isPresent(_ source: MessagingApp) -> Bool {
+        if !MessagingApps.builtIn.contains(where: { $0.id == source.id }) { return true }
+        return source.bundleIDs.contains { bundleID in
+            if let known = installed[bundleID] { return known }
+            let found = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+            installed[bundleID] = found
+            return found
+        }
+    }
+
+    /// Which apps are installed, looked up once per launch.
+    @MainActor private static var installed: [String: Bool] = [:]
 
     /// The list's title, as the Agents tab has it: how many messages wait for you, and the list's two actions.
     private var listHeader: some View {
@@ -269,20 +309,43 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
-                                ChatsRow(entry: entry, selected: entry.id == selected) { selection = entry.id }
+                                ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected) { selection = entry.id }
                             }
                         }
                     }
                 }
             }
             if shown.isEmpty {
-                ListEmptyNote(tr("chats.noMatch"))
+                if !searching, let filter {
+                    // A source that is on but brought in nothing yet: say so, and offer to open it.
+                    let name = MessagingApps.app(id: filter)?.name ?? filter
+                    VStack(spacing: NookTheme.Spacing.sm) {
+                        ListEmptyNote(tr("chats.source.empty", name))
+                        SmallGhostButton(title: tr("chats.openApp", name)) { app.openChatApp(filter) }
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(.top, NookTheme.Spacing.xl)
+                } else {
+                    ListEmptyNote(tr("chats.noMatch"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, NookTheme.Spacing.xl)
+                }
+            }
+            if capture.enabled, capture.status == .running, capture.inbox.threads.isEmpty {
+                // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
+                Label(tr("chats.status.waiting"), systemImage: "tray")
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, NookTheme.Spacing.md)
             }
             if !capture.enabled {
                 // Only WhatsApp so far: the other chat apps are one switch away.
                 SmallGhostButton(title: tr("chats.addMore")) { app.openSettings(section: .chats) }
+            }
+            if photos.canAsk {
+                // Photos come from Contacts on this Mac; macOS asks only after this click.
+                SmallGhostButton(title: tr("chats.photos.allow")) { photos.requestAccess() }
             }
         }
     }
@@ -319,6 +382,31 @@ struct ChatsTab: View {
     private func turnOn() {
         capture.enabled = true
         if let source = app.connectors.source(id: ChatInboxConnector.sourceID) { app.connectors.refresh(source) }
+    }
+
+    /// The notifications could not be read: why, and a way to try again.
+    private func failedBar(_ why: String) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(NookTheme.font(12))
+                .foregroundStyle(NookTheme.coral)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(tr("chats.status.failed"))
+                    .font(NookTheme.font(12.5, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                Text(why)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            NookNoticeActions(primary: NookNoticeAction(tr("chats.status.retry")) { capture.start() })
+                .fixedSize()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .cardBackground(NookTheme.field, stroke: NookTheme.coral.opacity(0.4), radius: NookTheme.Radius.card)
     }
 
     /// macOS keeps its notifications behind Full Disk Access.
@@ -453,6 +541,7 @@ private struct ChatsFilterChip: View {
 /// A chat in the list: its app's icon, its name, when and the newest message, and how many you have not read.
 private struct ChatsRow: View {
     let entry: ChatsEntry
+    let photo: NSImage?
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
@@ -473,7 +562,7 @@ private struct ChatsRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                ChatsAvatar(name: entry.name, app: entry.app, size: 34)
+                ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 34)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     HStack(spacing: NookTheme.Spacing.sm) {
                         Text(entry.name)
@@ -519,11 +608,12 @@ private struct ChatsRow: View {
     }
 }
 
-/// Who a chat is with: their initials on a tint of their own (the same color their name has in a group's bubbles), with
-/// the app the chat is in as a small badge on the corner.
+/// Who a chat is with: their photo from Contacts, else their initials on a tint of their own (the same color their name
+/// has in a group's bubbles), with the app the chat is in as a small badge on the corner.
 private struct ChatsAvatar: View {
     let name: String
     let app: String
+    let photo: NSImage?
     let size: CGFloat
 
     private static let colors: [Color] = [NookTheme.mint, NookTheme.blue, NookTheme.violet, NookTheme.music]
@@ -531,14 +621,7 @@ private struct ChatsAvatar: View {
     private var tint: Color { Self.colors[ChatTimeline.colorIndex(for: name, count: Self.colors.count)] }
 
     var body: some View {
-        Circle()
-            .fill(tint.opacity(0.16))
-            .overlay(Circle().stroke(tint.opacity(0.28), lineWidth: 1))
-            .overlay(
-                Text(WAJID.initials(name))
-                    .font(NookTheme.rounded(size * 0.36, .semibold))
-                    .foregroundStyle(tint)
-            )
+        face
             .frame(width: size, height: size)
             .overlay(alignment: .bottomTrailing) {
                 SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: size * 0.42, source: app)
@@ -548,11 +631,33 @@ private struct ChatsAvatar: View {
             }
             .accessibilityHidden(true)
     }
+
+    @ViewBuilder
+    private var face: some View {
+        if let photo {
+            Image(nsImage: photo)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .clipShape(Circle())
+                .overlay(Circle().stroke(NookTheme.line2, lineWidth: 1))
+        } else {
+            Circle()
+                .fill(tint.opacity(0.16))
+                .overlay(Circle().stroke(tint.opacity(0.28), lineWidth: 1))
+                .overlay(
+                    Text(WAJID.initials(name))
+                        .font(NookTheme.rounded(size * 0.36, .semibold))
+                        .foregroundStyle(tint)
+                )
+        }
+    }
 }
 
 /// The chat on the right: who and which app on top, the messages as bubbles, and how to answer below.
 private struct ChatsDetail: View {
     let entry: ChatsEntry
+    let photo: NSImage?
     @ObservedObject var capture: ChatCaptureService
     @ObservedObject var whatsApp: WhatsAppLink
     @EnvironmentObject private var app: AppModel
@@ -605,7 +710,7 @@ private struct ChatsDetail: View {
 
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            ChatsAvatar(name: entry.name, app: entry.app, size: 32)
+            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 32)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(entry.name)
                     .font(NookTheme.TextStyle.title)
