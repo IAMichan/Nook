@@ -805,13 +805,24 @@ final class WhatsAppLink: ObservableObject {
 
     // MARK: Sending
 
-    /// Who a name, number or chat id means: a chat on the phone or one that wrote to you. Never a new number: Nook is no
-    /// bulk sender and a wrong guess must not reach a stranger.
-    func resolve(_ recipient: String) -> (jid: String, name: String)? {
+    /// Who a name, number or chat id means: a chat on the phone or one that wrote to you, or one of `also` (chats that
+    /// WhatsApp on this Mac has, which also name the groups the gateway only knows by their id). Never a new number:
+    /// Nook is no bulk sender and a wrong guess must not reach a stranger.
+    func resolve(_ recipient: String, also: [(jid: String, name: String)] = []) -> (jid: String, name: String)? {
         let wanted = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !wanted.isEmpty else { return nil }
         var chats: [(jid: String, name: String)] = inbox.sorted.map { ($0.id, $0.name) }
         for chat in knownChats where !chats.contains(where: { $0.jid == chat.jid }) {
+            chats.append((chat.jid, chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name))
+        }
+        let extra = also.map { (jid: WAJID.normalized($0.jid), name: $0.name) }
+            .filter { !$0.jid.isEmpty && !WAJID.isStatus($0.jid) && !$0.jid.contains("broadcast") }
+        for index in chats.indices where WAJID.isPlaceholderName(chats[index].name, for: chats[index].jid) {
+            if let named = extra.first(where: { $0.jid == chats[index].jid && !WAJID.isPlaceholderName($0.name, for: $0.jid) }) {
+                chats[index].name = named.name
+            }
+        }
+        for chat in extra where !chats.contains(where: { $0.jid == chat.jid }) {
             chats.append((chat.jid, chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name))
         }
         return WhatsAppRecipients.match(wanted, in: chats)
@@ -844,12 +855,13 @@ final class WhatsAppLink: ObservableObject {
 
     /// Sends a text to a chat, as an answer to its message `replyTo` when set. Throws with a sentence the user can act on.
     @discardableResult
-    func send(_ text: String, to recipient: String, replyTo: String? = nil) async throws -> String {
+    func send(_ text: String, to recipient: String, replyTo: String? = nil,
+              also: [(jid: String, name: String)] = []) async throws -> String {
         guard let provider, isConnected else { throw NookError(statusLine) }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard body.count <= WAReply.maxLength else { throw NookError(tr("whatsapp.reply.tooLong")) }
-        guard let target = resolve(recipient) else {
+        guard let target = resolve(recipient, also: also) else {
             throw NookError(tr("whatsapp.reply.unknown", recipient, chatNames().prefix(12).joined(separator: ", ")))
         }
         guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Contacts
+import os
 
 // MARK: Apps without an API of their own
 
@@ -339,11 +340,66 @@ final class WhatsAppConnector: AppDatabaseConnector {
     }
 
     private static let select = """
-    SELECT m.ZCHATSESSION AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname, COALESCE(m.ZFROMJID, '') AS handle,
+    SELECT m.ZCHATSESSION AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname, COALESCE(s.ZCONTACTJID, '') AS jid,
+           COALESCE(m.ZFROMJID, '') AS handle,
            m.ZISFROMME AS me, m.ZMESSAGEDATE AS date, m.ZTEXT AS text, '' AS body
     FROM ZWAMESSAGE m
     LEFT JOIN ZWACHATSESSION s ON s.Z_PK = m.ZCHATSESSION
     """
+
+    /// A chat in WhatsApp's data on this Mac: its WhatsApp id and the name WhatsApp shows.
+    struct MacChat: Sendable {
+        let jid: String
+        let name: String
+    }
+
+    /// The chats search_whatsapp, whatsapp_open_chats and read_whatsapp showed, by their chat id, so that id also works
+    /// for whatsapp_send and whatsapp_live and the plan names the chat instead of a number.
+    nonisolated private static let shown = OSAllocatedUnfairLock(initialState: [String: MacChat]())
+
+    nonisolated private static func remember(_ rows: [[String: Any]]) {
+        let chats = rows.compactMap { row -> (String, MacChat)? in
+            let id = AppData.string(row["chat"]), jid = AppData.string(row["jid"])
+            return id.isEmpty || jid.isEmpty ? nil : (id, MacChat(jid: jid, name: AppData.string(row["chatname"])))
+        }
+        shown.withLock { for (id, chat) in chats { $0[id] = chat } }
+    }
+
+    /// A chat id from this Mac ("533"): only digits and far too short for a phone number.
+    nonisolated private static func isMacID(_ text: String) -> Bool {
+        !text.isEmpty && text.count < 8 && text.allSatisfy(\.isNumber)
+    }
+
+    /// The name to show for a chat the model named: a chat id from this Mac becomes the chat's name.
+    nonisolated static func shownName(_ chat: String) -> String {
+        let trimmed = chat.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isMacID(trimmed), let known = shown.withLock({ $0[trimmed] }), !known.name.isEmpty else { return chat }
+        return known.name
+    }
+
+    /// What the linked phone should look for when the model names `chat`, plus the chats WhatsApp on this Mac has for
+    /// it: a chat id from this Mac becomes that chat's WhatsApp id, and a name the phone's list doesn't know (a group
+    /// the gateway only knows as "Group 1203…") is looked up by name on this Mac.
+    func recipient(_ chat: String) async -> (wanted: String, also: [(jid: String, name: String)]) {
+        let wanted = chat.trimmingCharacters(in: .whitespacesAndNewlines)
+        if Self.isMacID(wanted) {
+            if Self.shown.withLock({ $0[wanted] }) == nil, super.isActive, let rows = try? await run("""
+            SELECT Z_PK AS chat, COALESCE(ZCONTACTJID, '') AS jid, COALESCE(ZPARTNERNAME, '') AS chatname
+            FROM ZWACHATSESSION WHERE Z_PK = \(wanted) LIMIT 1
+            """) {
+                Self.remember(rows)
+            }
+            guard let known = Self.shown.withLock({ $0[wanted] }) else { return (wanted, []) }
+            return (known.jid, [(known.jid, known.name)])
+        }
+        guard !wanted.isEmpty, super.isActive, WhatsAppLink.shared.resolve(wanted) == nil else { return (wanted, []) }
+        let words = Research.words(of: wanted).isEmpty ? [wanted] : Research.words(of: wanted)
+        guard let rows = try? await run("""
+        SELECT COALESCE(ZCONTACTJID, '') AS jid, COALESCE(ZPARTNERNAME, '') AS chatname FROM ZWACHATSESSION
+        WHERE \(AppData.anyLike(["ZPARTNERNAME"], words)) ORDER BY ZLASTMESSAGEDATE DESC LIMIT 40
+        """) else { return (wanted, []) }
+        return (wanted, rows.map { (AppData.string($0["jid"]), AppData.string($0["chatname"])) })
+    }
 
     /// WhatsApp counts as on when its data on this Mac can be read, or when the phone is linked through the gateway.
     override var isActive: Bool { super.isActive || WhatsAppLink.shared.isConnected }
@@ -379,10 +435,10 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 kind: .read,
                 summarize: { input in
                     let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespaces)
-                    return chat.isEmpty ? "WhatsApp: recente chats" : "WhatsApp: chat met \(chat)"
+                    return chat.isEmpty ? "WhatsApp: recente chats" : "WhatsApp: chat met \(WhatsAppConnector.shownName(chat))"
                 },
                 tag: { _ in ("", .neutral) },
-                run: { input in
+                run: { [weak self] input in
                     let link = WhatsAppLink.shared
                     let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !chat.isEmpty else {
@@ -394,7 +450,8 @@ final class WhatsAppConnector: AppDatabaseConnector {
                         }
                         return "Recent WhatsApp conversations (newest first):\n" + WhatsAppRecipients.overview(conversations)
                     }
-                    guard let target = link.resolve(chat) else {
+                    let (wanted, also) = await self?.recipient(chat) ?? (wanted: chat, also: [])
+                    guard let target = link.resolve(wanted, also: also) else {
                         throw NookError(tr("whatsapp.reply.unknown", chat, link.knownChats.prefix(12).map(\.name).joined(separator: ", ")))
                     }
                     let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
@@ -409,18 +466,19 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 name: "whatsapp_send",
                 description: "Sends a WhatsApp message from the user's own account to an existing chat (a contact or group on their phone), through the linked phone. Use when the user asks to app, WhatsApp or message someone on WhatsApp. Write the message as the user would, in their language and tone, without a signature. A reply answers the chat's newest messages: read the chat first, and when its newest message is days old, tell the user so instead of answering it as if it were new. The user sees the exact text and recipient and approves before anything is sent.",
                 schema: ["type": "object", "properties": [
-                    "to": ["type": "string", "description": "The chat: a contact or group name as on the phone, a phone number, or a chat id from whatsapp_live."],
+                    "to": ["type": "string", "description": "The chat: a contact or group name exactly as WhatsApp shows it, a phone number, or a chat id from whatsapp_live, search_whatsapp or whatsapp_open_chats."],
                     "message": ["type": "string", "description": "The full text to send."]
                 ], "required": ["to", "message"]],
                 kind: .action,
                 summarize: { input in
                     let to = AppData.string(input["to"]).trimmingCharacters(in: .whitespaces)
-                    return "WhatsApp → \(to): \(AppData.string(input["message"]))"
+                    return "WhatsApp → \(WhatsAppConnector.shownName(to)): \(AppData.string(input["message"]))"
                 },
                 tag: { _ in ("sends", .caution) },
-                run: { input in
-                    let to = AppData.string(input["to"])
-                    let name = try await WhatsAppLink.shared.send(AppData.string(input["message"]), to: to)
+                run: { [weak self] input in
+                    let chat = AppData.string(input["to"])
+                    let (to, also) = await self?.recipient(chat) ?? (wanted: chat, also: [])
+                    let name = try await WhatsAppLink.shared.send(AppData.string(input["message"]), to: to, also: also)
                     return "WhatsApp message sent to \(name)."
                 }
             )
@@ -447,6 +505,7 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     let filter = AppData.anyLike(["m.ZTEXT", "s.ZPARTNERNAME"], words)
                         + (handles.isEmpty ? "" : " OR " + AppData.anyLike(["m.ZFROMJID", "s.ZCONTACTJID"], handles))
                     let rows = try await self.run(Self.select + " WHERE m.ZTEXT IS NOT NULL AND (\(filter)) ORDER BY m.ZMESSAGEDATE DESC LIMIT 300")
+                    Self.remember(rows)
                     let messages = AppData.messages(rows, names: await ContactDirectory.names())
                     let text = AppData.formatSearch(messages, terms: Research.Terms(words: words), app: "WhatsApp")
                     return text.isEmpty ? "Geen WhatsApp-berichten gevonden voor \"\(query)\"." : text
@@ -467,7 +526,8 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     // WhatsApp counts dates in seconds since 2001.
                     let since = Int(Date().timeIntervalSinceReferenceDate) - days * 86_400
                     let rows = try await self.run("""
-                    SELECT s.Z_PK AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname, COALESCE(s.ZUNREADCOUNT, 0) AS unread,
+                    SELECT s.Z_PK AS chat, COALESCE(s.ZPARTNERNAME, '') AS chatname, COALESCE(s.ZCONTACTJID, '') AS jid,
+                           COALESCE(s.ZUNREADCOUNT, 0) AS unread,
                            CASE WHEN s.ZSESSIONTYPE = 1 OR s.ZCONTACTJID LIKE '%@g.us' THEN 1 ELSE 0 END AS \"group\",
                            COALESCE(m.ZFROMJID, '') AS handle, COALESCE(m.ZISFROMME, 0) AS me,
                            COALESCE(m.ZMESSAGEDATE, s.ZLASTMESSAGEDATE) AS date, COALESCE(m.ZTEXT, '') AS text, '' AS body
@@ -477,6 +537,7 @@ final class WhatsAppConnector: AppDatabaseConnector {
                           AND COALESCE(s.ZCONTACTJID, '') NOT LIKE '%broadcast%'
                     ORDER BY s.ZLASTMESSAGEDATE DESC LIMIT 60
                     """)
+                    Self.remember(rows)
                     let chats = AppData.openChats(rows, names: await ContactDirectory.names())
                     return AppData.formatOpenChats(chats, app: "WhatsApp", days: days)
                 }
@@ -495,6 +556,7 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     guard let self else { throw NookError("WhatsApp is niet beschikbaar.") }
                     guard let chat = Int(AppData.string(input["chat"]).trimmingCharacters(in: .whitespaces)) else { throw NookError("Het chat-id ontbreekt.") }
                     let rows = try await self.run(Self.select + " WHERE m.ZCHATSESSION = \(chat) AND m.ZTEXT IS NOT NULL ORDER BY m.ZMESSAGEDATE DESC LIMIT 500")
+                    Self.remember(Array(rows.prefix(1)))
                     let messages = AppData.messages(rows, names: await ContactDirectory.names())
                     guard !messages.isEmpty else { throw NookError("Deze chat is niet gevonden of heeft geen tekst.") }
                     return AppData.formatThread(messages, terms: Research.Terms(words: Research.words(of: AppData.string(input["query"]))), app: "WhatsApp",
