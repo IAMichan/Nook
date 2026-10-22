@@ -181,8 +181,8 @@ final class WhatsAppLink: ObservableObject {
     private var lastChatList: Date = .distantPast
     /// When each unnamed group was last asked for its name: one the gateway could not name is asked again later.
     private var namingGroups: [String: Date] = [:]
-    /// Chats whose older messages were fetched for the notch card: once per chat while linked.
-    private var historyLoaded: Set<String> = []
+    /// When each chat's messages were last fetched from the gateway for the notch card or the Chats tab.
+    private var historyFetched: [String: Date] = [:]
     /// When each group's members were last asked of the gateway.
     private var membersLoaded: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
@@ -254,7 +254,7 @@ final class WhatsAppLink: ObservableObject {
 
     private func stop(forget: Bool) {
         generation += 1
-        historyLoaded = []
+        historyFetched = [:]
         membersLoaded = [:]
         previews = [:]
         previewOrder = []
@@ -607,18 +607,27 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         let fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
         for message in fetched { inbox.add(message, filters: filters, history: true) }
+        // An opened chat keeps the name the chat list showed: the gateway's history may only know it by its id.
+        if let shown = inbox.conversations[key]?.name, WAJID.isPlaceholderName(shown, for: key),
+           let known = knownChats.first(where: { $0.jid == key }), !WAJID.isPlaceholderName(known.name, for: key) {
+            inbox.rename(key, to: known.name)
+        }
+        nameGroupIfNeeded(key)
         let kept = inbox.conversations[key]?.messages ?? []
         return WAInbox.newest(fetched, kept, limit: limit)
     }
 
-    /// The older messages of a chat, fetched once so its card can scroll back. True when the conversation changed.
+    /// A chat's messages from the gateway, so its card can scroll back and shows what the live feed missed (the Mac
+    /// slept, a webhook got lost): fetched each time the chat opens, at most once per `WAInbox.historyRefresh`. True
+    /// when the conversation changed.
     func loadHistory(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
-        guard isConnected, !historyLoaded.contains(key) else { return false }
-        historyLoaded.insert(key)
-        let before = inbox.conversations[key]?.messages.count ?? 0
+        let now = Date()
+        guard isConnected, WAInbox.historyDue(last: historyFetched[key], now: now) else { return false }
+        historyFetched[key] = now
+        let before = inbox.conversations[key]?.messages
         _ = try? await messages(of: key, limit: WAInbox.keep)
-        return (inbox.conversations[key]?.messages.count ?? 0) != before
+        return inbox.conversations[key]?.messages != before
     }
 
     /// A group's members, asked of the gateway when the chat opens (again after ten minutes, for who joined or left),
@@ -823,13 +832,24 @@ final class WhatsAppLink: ObservableObject {
 
     // MARK: Sending
 
-    /// Who a name, number or chat id means: a chat on the phone or one that wrote to you. Never a new number: Nook is no
-    /// bulk sender and a wrong guess must not reach a stranger.
-    func resolve(_ recipient: String) -> (jid: String, name: String)? {
+    /// Who a name, number or chat id means: a chat on the phone or one that wrote to you, or one of `also` (chats that
+    /// WhatsApp on this Mac has, which also name the groups the gateway only knows by their id). Never a new number:
+    /// Nook is no bulk sender and a wrong guess must not reach a stranger.
+    func resolve(_ recipient: String, also: [(jid: String, name: String)] = []) -> (jid: String, name: String)? {
         let wanted = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !wanted.isEmpty else { return nil }
         var chats: [(jid: String, name: String)] = inbox.sorted.map { ($0.id, $0.name) }
         for chat in knownChats where !chats.contains(where: { $0.jid == chat.jid }) {
+            chats.append((chat.jid, chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name))
+        }
+        let extra = also.map { (jid: WAJID.normalized($0.jid), name: $0.name) }
+            .filter { !$0.jid.isEmpty && !WAJID.isStatus($0.jid) && !$0.jid.contains("broadcast") }
+        for index in chats.indices where WAJID.isPlaceholderName(chats[index].name, for: chats[index].jid) {
+            if let named = extra.first(where: { $0.jid == chats[index].jid && !WAJID.isPlaceholderName($0.name, for: $0.jid) }) {
+                chats[index].name = named.name
+            }
+        }
+        for chat in extra where !chats.contains(where: { $0.jid == chat.jid }) {
             chats.append((chat.jid, chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name))
         }
         return WhatsAppRecipients.match(wanted, in: chats)
@@ -843,7 +863,7 @@ final class WhatsAppLink: ObservableObject {
         return unique
     }
 
-    /// The chats "@open chat …" offers, newest first: those that wrote lately (with how many are new), then the
+    /// The chats "@chat …" offers, newest first: those that wrote lately (with how many are new), then the
     /// others on the phone. Never the ones you chose never to see.
     func chatChoices() -> [(name: String, detail: String)] {
         var seen: Set<String> = []
@@ -862,12 +882,13 @@ final class WhatsAppLink: ObservableObject {
 
     /// Sends a text to a chat, as an answer to its message `replyTo` when set. Throws with a sentence the user can act on.
     @discardableResult
-    func send(_ text: String, to recipient: String, replyTo: String? = nil) async throws -> String {
+    func send(_ text: String, to recipient: String, replyTo: String? = nil,
+              also: [(jid: String, name: String)] = []) async throws -> String {
         guard let provider, isConnected else { throw NookError(statusLine) }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard body.count <= WAReply.maxLength else { throw NookError(tr("whatsapp.reply.tooLong")) }
-        guard let target = resolve(recipient) else {
+        guard let target = resolve(recipient, also: also) else {
             throw NookError(tr("whatsapp.reply.unknown", recipient, chatNames().prefix(12).joined(separator: ", ")))
         }
         guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }

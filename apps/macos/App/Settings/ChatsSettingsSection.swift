@@ -67,7 +67,7 @@ struct ChatsSettingsSection: View {
             }
 
             Section {
-                TeamsSettingsRows(teams: capture.teamsBridge) { capture.bridgeChanged(capture.teamsBridge.app) }
+                TeamsSettingsRows(teams: capture.teamsBridge, problem: capture.bridgeProblems[capture.teamsBridge.app]) { capture.bridgeChanged(capture.teamsBridge.app) }
             } header: {
                 Text(tr("chats.teams.title"))
             } footer: {

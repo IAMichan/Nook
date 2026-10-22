@@ -100,6 +100,23 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAJID.isPlaceholderName(WAJID.displayNumber(old), for: old))
         XCTAssertTrue(WAJID.isPlaceholderName("120363000000000001@g.us", for: "120363000000000001@g.us"))
         XCTAssertFalse(WAJID.isPlaceholderName("Familie", for: old))
+        XCTAssertTrue(WAJID.isPlaceholderName("+31 6 12345678, +31 6 87654321", for: old), "only the members' numbers")
+        XCTAssertFalse(WAJID.isPlaceholderName("2024", for: old), "a short number is a name")
+        XCTAssertFalse(WAJID.isPlaceholderName("🎉", for: old))
+    }
+
+    func testOpeningAGroupKeepsItsRealName() {
+        let group = "31622360496-1542111077@g.us"
+        var inbox = WAInbox()
+        inbox.add(message("a", chat: group, from: "2@s.whatsapp.net"), filters: WAFilters(), name: "Familie")
+        var history = message("b", chat: group, from: "3@s.whatsapp.net", at: 1)
+        history.chatName = "Group 31622360496-1542111077"
+        inbox.add(history, filters: WAFilters(), history: true)
+        XCTAssertEqual(inbox.conversations[group]?.name, "Familie", "the gateway's stand-in never replaces the real name")
+        var renamed = message("c", chat: group, from: "3@s.whatsapp.net", at: 2)
+        renamed.chatName = "Familie 2026"
+        inbox.add(renamed, filters: WAFilters())
+        XCTAssertEqual(inbox.conversations[group]?.name, "Familie 2026", "a real new name still comes through")
     }
 
     func testTheListOfYourGroupsNamesEveryGroupAtOnce() {
@@ -116,6 +133,16 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(names["120363000000000002@g.us"], "Buurt", "a community's announcement group takes its community's name")
         XCTAssertNil(names["120363000000000004@g.us"])
         XCTAssertTrue(WAGOWA.groupNames(Data("{}".utf8)).isEmpty)
+    }
+
+    func testOneGroupsInfoNamesItOrItsCommunity() {
+        let flat = #"{"results":{"JID":"120363000000000001@g.us","Name":"Familie"}}"#
+        XCTAssertEqual(WAGOWA.groupInfo(Data(flat.utf8)).name, "Familie")
+        let wrapped = #"{"results":{"data":{"JID":"120363000000000002@g.us","Name":"","LinkedParentJID":"120363000000000003@g.us"}}}"#
+        let info = WAGOWA.groupInfo(Data(wrapped.utf8))
+        XCTAssertNil(info.name)
+        XCTAssertEqual(info.parent, "120363000000000003@g.us", "an announcement group points at its community")
+        XCTAssertNil(WAGOWA.groupInfo(Data("{}".utf8)).name)
     }
 
     func testVotesMoveTheirPollInsteadOfShowingAsMessages() {
@@ -147,6 +174,26 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertFalse(WAPollData.isVoteText("Poll: Lunch?"))
         XCTAssertEqual(WAPollData.openwa(["name": "Q", "options": ["a", "b"], "allowMultipleAnswers": true]),
                        WAPoll(question: "Q", options: ["a", "b"], multiple: true))
+    }
+
+    func testAnOpenedChatFetchesItsMessagesAgainNotOnlyOnce() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(WAInbox.historyDue(last: nil, now: now))
+        XCTAssertFalse(WAInbox.historyDue(last: now.addingTimeInterval(-5), now: now), "opened twice in a row: fetched once")
+        XCTAssertTrue(WAInbox.historyDue(last: now.addingTimeInterval(-86_400), now: now), "opened yesterday: fetched again")
+        XCTAssertTrue(WAInbox.historyDue(last: now.addingTimeInterval(3_600), now: now), "the clock was set back")
+
+        // Yesterday's history is kept; today's poll the live feed missed comes in with the next fetch.
+        let group = "120363000000000001@g.us"
+        var inbox = WAInbox()
+        inbox.add(message("Y1", chat: group, at: -86_400), filters: WAFilters(), history: true)
+        var poll = message("P1", chat: group, text: "")
+        poll.poll = WAPoll(question: "Lunch?", options: ["Pizza", "Sushi"])
+        let fetched = [message("Y1", chat: group, at: -86_400), poll]
+        for message in fetched { inbox.add(message, filters: WAFilters(), history: true) }
+        let kept = inbox.conversations[group]?.messages ?? []
+        XCTAssertEqual(WAInbox.newest(fetched, kept, limit: 20).map(\.id), ["Y1", "P1"])
+        XCTAssertEqual(inbox.conversations[group]?.unread, 0, "fetched history counts as read")
     }
 
     func testChannelsGetTheirNameAndPicture() {

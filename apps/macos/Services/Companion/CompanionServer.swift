@@ -261,6 +261,14 @@ final class CompanionServer: ObservableObject {
             return usage(request, app: app)
         case .music:
             return music(request, app: app)
+        case .inbox:
+            return inbox(request, app: app)
+        case .inboxChat:
+            return await inboxChat(request, app: app)
+        case .inboxSend:
+            return await inboxSend(request, app: app)
+        case .inboxMark:
+            return inboxMark(request, app: app)
         }
     }
 

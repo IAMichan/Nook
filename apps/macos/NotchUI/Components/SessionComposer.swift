@@ -161,7 +161,12 @@ struct SessionComposer<Controls: View>: View {
 
     private func choose(_ suggestion: ComposerSuggestion) {
         guard let extras else { return }
-        assign(extras.model.accept(suggestion, in: text, extras.config))
+        let value = extras.model.accept(suggestion, in: text, extras.config)
+        assign(value)
+        // A line that fills the box can lead to a list of its own ("@chat " lists the chats): show it straight away.
+        if case .command(let command) = suggestion.payload, command.action == .insert {
+            extras.model.update(for: value, extras.config)
+        }
         (focus ?? $ownFocus).wrappedValue = true
     }
 

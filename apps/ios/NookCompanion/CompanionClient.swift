@@ -38,6 +38,14 @@ final class CompanionClient: ObservableObject {
     /// Nook's home (what waits, agenda, player, limits) and the usage page, once asked.
     @Published private(set) var home: HomeDigest?
     @Published private(set) var usage: UsageDigest?
+    /// The Mac's Chats tab: every chat app in one inbox, and the messages of each chat that was opened, by chat id.
+    @Published private(set) var inbox: [InboxChatDigest] = []
+    @Published private(set) var inboxLines: [String: [InboxLine]] = [:]
+    /// Unread messages in every chat, for the badge on the Chats tab.
+    var inboxUnread: Int { inbox.reduce(0) { $0 + $1.unread } }
+    /// Why the inbox may be empty: "chatsoff" (nothing is collected on the Mac) or "chatsaccess" (macOS does not let
+    /// Nook read the notifications); nil when it is fine.
+    @Published private(set) var inboxStatus: String?
     /// When `home` was read: the player's position runs on from here.
     @Published private(set) var homeRead = Date()
     private(set) var pushToken: String?
@@ -95,6 +103,9 @@ final class CompanionClient: ObservableObject {
         chatLines = [:]
         home = nil
         usage = nil
+        inbox = []
+        inboxLines = [:]
+        inboxStatus = nil
         phase = .unpaired
     }
 
@@ -120,6 +131,8 @@ final class CompanionClient: ObservableObject {
     func refresh() async {
         guard link != nil else { return }
         await perform(CompanionRequest(op: .list))
+        // The chats too, for the badge on the Chats tab.
+        if phase == .connected, can(CompanionFeature.inbox) { await perform(CompanionRequest(op: .inbox), quiet: true) }
     }
 
     /// The token iOS gave this app for pushes: kept, and sent to the Mac (sealed) so it can notify this phone.
@@ -228,6 +241,30 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .music, text: command), quiet: true)
     }
 
+    // MARK: The Chats tab
+
+    func loadInbox() async {
+        guard await supports(CompanionFeature.inbox) else { return }
+        await perform(CompanionRequest(op: .inbox), quiet: true)
+    }
+
+    func loadInboxChat(_ chatID: String) async {
+        guard await supports(CompanionFeature.inbox) else { return }
+        await perform(CompanionRequest(op: .inboxChat, item: chatID), quiet: true)
+    }
+
+    /// Your own words to a chat (a WhatsApp chat on the Mac), as an answer to `replyTo` when one is quoted. Whether it went.
+    func sendInbox(_ text: String, to chatID: String, replyTo: String? = nil) async -> Bool {
+        let sent = await perform(CompanionRequest(op: .inboxSend, item: chatID, text: text, replyTo: replyTo)) != nil
+        if sent { await loadInbox() }
+        return sent
+    }
+
+    /// Read (`read`) or unread by hand; read tells WhatsApp too.
+    func markInbox(_ chatID: String, read: Bool) async {
+        await perform(CompanionRequest(op: .inboxMark, item: chatID, allow: read))
+    }
+
     func stopChat(_ conversationID: String) async {
         await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
     }
@@ -255,9 +292,14 @@ final class CompanionClient: ObservableObject {
                 return response
             }
             if quiet, response.error == .unknownSession { return nil }
+            if quiet, response.error == .unknownItem, req.op == .inboxChat { return nil }
             switch response.error {
+            case .notAllowedFromPhone where req.op == .inboxSend:
+                notice = String(localized: "Nook can only read this chat: answer it in its own app.")
             case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
             case .unknownSession where req.conversation != nil: notice = String(localized: "This chat is gone."); await loadChats()
+            case .unknownItem where req.op == .inboxSend || req.op == .inboxMark:
+                notice = String(localized: "This chat is gone."); await loadInbox()
             case .unknownItem, .unknownSession: notice = String(localized: "That has already been handled."); await refresh()
             case .stale: notice = String(localized: "The clocks of your phone and your Mac are too far apart.")
             case .rateLimited: notice = String(localized: "Slow down a little.")
@@ -297,6 +339,11 @@ final class CompanionClient: ObservableObject {
             homeRead = Date()
         }
         if let usage = response.usage, usage != self.usage { self.usage = usage }
+        if let chats = response.inbox {
+            if chats != inbox { inbox = chats }
+            if response.message != inboxStatus { inboxStatus = response.message }
+        }
+        if let lines = response.inboxLines, let chat = req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
     }
 
     // MARK: Transport

@@ -2,7 +2,7 @@ import WebKit
 
 /// whatsapp_send through WhatsApp Web open next to the chat, for when no phone is linked through a gateway: the user
 /// approves the recipient and the exact text in the plan, then Nook opens that chat in the pane, types the text and sends
-/// it (see `WhatsAppWeb` for the script and its checks). "@open chat Jan" opens a chat there the same way.
+/// it (see `WhatsAppWeb` for the script and its checks). "@chat Jan" opens a chat there the same way.
 extension EmbeddedAppStore {
     /// WhatsApp Web is the app beside the chat and has loaded, so a message can go through it.
     var whatsAppWebOpen: Bool {
@@ -32,7 +32,7 @@ extension EmbeddedAppStore {
         }
     }
 
-    /// Opens the chat named `chat` in WhatsApp Web beside the chat ("@open chat Jan"); returns its name as WhatsApp shows
+    /// Opens the chat named `chat` in WhatsApp Web beside the chat ("@chat Jan"); returns its name as WhatsApp shows
     /// it. Right after "@open" the page is often still loading or syncing, so it keeps trying for a while.
     @discardableResult
     func openWhatsAppChat(_ chat: String) async throws -> String {

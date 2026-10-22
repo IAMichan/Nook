@@ -325,12 +325,15 @@ enum WAJID {
         return digits.allSatisfy(\.isNumber) && !digits.isEmpty ? "+" + digits : digits
     }
 
-    /// Whether a group's name is only a stand-in for its id: empty, the id itself, or what a gateway makes of it
-    /// ("Group 31622360496-1542111077"). Such a group is asked for its real name.
+    /// Whether a group's name is only a stand-in for its id: empty, the id itself, what a gateway makes of it
+    /// ("Group 31622360496-1542111077"), or only numbers without a letter (the members' phone numbers in a row).
+    /// Such a group is asked for its real name.
     static func isPlaceholderName(_ name: String, for jid: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let user = jid.split(separator: "@").first.map(String.init) ?? jid
+        let onlyNumbers = !trimmed.contains { $0.isLetter } && trimmed.filter(\.isNumber).count >= 7
         return trimmed.isEmpty || trimmed == jid || trimmed == displayNumber(jid) || (!user.isEmpty && trimmed.contains(user))
+            || onlyNumbers
     }
 
     /// Two letters for the avatar: "Marie Dupont" → "MD", "+33 6…" → "#".
@@ -371,6 +374,17 @@ enum WAJID {
 struct WAInbox: Equatable, Sendable {
     /// Messages kept per chat (in memory only): enough for the notch card to scroll back a while.
     static let keep = 50
+    /// An opened chat fetches its messages from the gateway again once the last fetch is this old.
+    static let historyRefresh: TimeInterval = 30
+
+    /// Whether a chat last fetched at `last` (nil: never) is fetched again on open. Not only once: what came in while
+    /// the live feed was down (yesterday's chat, open again today) would otherwise never show. A clock set back
+    /// since then counts as due too.
+    static func historyDue(last: Date?, now: Date) -> Bool {
+        guard let last else { return true }
+        let elapsed = now.timeIntervalSince(last)
+        return elapsed < 0 || elapsed >= historyRefresh
+    }
 
     /// A chat's newest `limit` messages from the gateway's history and what Nook kept, each once (the kept copy wins:
     /// it has the ticks and reactions that came in since), oldest first.
@@ -433,8 +447,11 @@ struct WAInbox: Equatable, Sendable {
         var conversation = conversations[chat] ?? WAConversation(
             id: chat, name: name ?? message.chatName ?? personName ?? number,
             isGroup: isGroup, lastActivity: message.date)
-        if let name = name ?? message.chatName, !name.isEmpty { conversation.name = name }
-        else if conversation.name == number, let personName { conversation.name = personName }
+        // A stand-in for the id ("Group 3162…", the id itself) never replaces a real name the chat already has.
+        if let name = name ?? message.chatName, !name.isEmpty,
+           !WAJID.isPlaceholderName(name, for: chat) || WAJID.isPlaceholderName(conversation.name, for: chat) {
+            conversation.name = name
+        } else if conversation.name == number, let personName { conversation.name = personName }
         var msg = message
         msg.chat = chat
         if msg.fromMe {
@@ -753,7 +770,7 @@ enum WAGatewayKind: String, CaseIterable, Sendable {
     }
     /// Whether the gateway posts new messages to Nook's webhook. Beeper does not: Nook asks its local API instead.
     var hasWebhook: Bool { self != .beeper }
-    /// What a chat is listed under in "@open chat …": the network for WhatsApp's own gateways, Beeper for Beeper's.
+    /// What a chat is listed under in "@chat …": the network for WhatsApp's own gateways, Beeper for Beeper's.
     var chatLabel: String { self == .beeper ? "Beeper" : "WhatsApp" }
 }
 
@@ -1100,6 +1117,18 @@ enum WAGOWA {
             names[jid] = name
         }
         return names
+    }
+
+    /// `GET /group/info` → `results: {JID, Name, LinkedParentJID, …}` (whatsmeow's GroupInfo), or the same under
+    /// `results.data` in newer versions. The group's own name, and the community it belongs to (whose name a group
+    /// without one of its own takes).
+    static func groupInfo(_ data: Data) -> (name: String?, parent: String?) {
+        guard var info = results(data) as? [String: Any] else { return (nil, nil) }
+        if let inner = info["data"] as? [String: Any] { info = inner }
+        func field(_ key: String) -> String? { nonEmpty(info[key]) ?? nonEmpty(info[key.lowercased()]) }
+        let name = (field("Name") ?? nonEmpty((info["GroupName"] as? [String: Any])?["Name"]))?
+            .trimmingCharacters(in: .whitespaces)
+        return (name?.isEmpty == false ? name : nil, field("LinkedParentJID").map(WAJID.normalized))
     }
 
     /// `GET /chat/{jid}/messages` → `results: {data: [{id, chat_jid, sender_jid, sender_display_name,

@@ -743,6 +743,18 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TeamsData.unread(messages, readUntil: chats[0].readUntil), 1)
     }
 
+    func testTeamsChatReadBeforeGraphListsItsNewestMessage() {
+        let last = TeamsData.date("2026-10-22T09:00:00.123Z")
+        let early: [String: Any] = ["value": [["id": "m1", "createdDateTime": "2026-10-22T08:59:00Z"]]]
+        XCTAssertFalse(TeamsData.caughtUp(early, last: last), "the announced message is not listed yet: read the chat again")
+        XCTAssertFalse(TeamsData.caughtUp(["value": []], last: last))
+        let listed: [String: Any] = ["value": [["id": "m2", "createdDateTime": "2026-10-22T09:00:00Z"], ["id": "m1", "createdDateTime": "2026-10-22T08:59:00Z"]]]
+        XCTAssertTrue(TeamsData.caughtUp(listed, last: last), "the same moment without its milliseconds")
+        let notice: [String: Any] = ["value": [["id": "s1", "messageType": "systemEventMessage", "createdDateTime": "2026-10-22T09:00:00.123Z"]]]
+        XCTAssertTrue(TeamsData.caughtUp(notice, last: last), "a system notice the list announced counts too")
+        XCTAssertTrue(TeamsData.caughtUp(early, last: nil))
+    }
+
     // MARK: Beeper
 
     func testBeeperNetworksGoToTheirApps() {

@@ -176,6 +176,18 @@ struct NookDivider: View {
     }
 }
 
+/// The line between two items of a list (a Nook chat, an agent session, a chat): clearer than a `NookDivider`, inset
+/// to the rows' text, with a little room above and below. Put it before every item but the first.
+struct NookRowSeparator: View {
+    var body: some View {
+        Rectangle().fill(NookTheme.separator)
+            .frame(height: 1)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .accessibilityHidden(true)
+    }
+}
+
 /// A notice that comes in while the panel is open (a permission request, an agent's question, a short note): one quiet
 /// bar under the tabs with an optional symbol, a title and a line under it, and its actions on the right. `tone` tints
 /// the edge for something risky.

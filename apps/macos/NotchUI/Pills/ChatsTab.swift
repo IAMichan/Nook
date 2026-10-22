@@ -45,6 +45,61 @@ struct ChatsFocus: Equatable {
     var query = ""
 }
 
+extension ChatsEntry {
+    /// Every chat, newest first. Of WhatsApp every chat you did not hide, quiet groups included: they are all here.
+    /// The Chats tab and the iPhone companion read the same list.
+    @MainActor
+    static func all(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
+        var entries: [ChatsEntry] = []
+        if whatsApp.isConnected {
+            for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
+                let preview = conversation.messages.last.map { message in
+                    let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
+                    let who = message.fromMe ? tr("chat.you") : (conversation.isGroup ? message.senderName : "")
+                    return who.isEmpty ? text : "\(who): \(text)"
+                } ?? ""
+                let newest = conversation.messages.last
+                let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
+                entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
+                                          name: conversation.name, preview: preview, last: conversation.lastActivity,
+                                          unread: whatsApp.unread(conversation.id), ticks: ticks,
+                                          members: conversation.members == nil ? nil : conversation.memberNames,
+                                          handle: handle(conversation.id),
+                                          avatar: whatsApp.avatars[conversation.id], waitsInApp: whatsApp.waitsInWhatsApp(conversation.id)))
+            }
+            // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
+            // when one is opened.
+            var listed = Set(entries.map(\.id))
+            for chat in whatsApp.knownChats
+            where WAJID.kind(chat.jid) != .status && !whatsApp.filters.ignored.contains(chat.jid) {
+                let id = "wa|" + chat.jid
+                guard listed.insert(id).inserted else { continue }
+                entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
+                                          name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
+                                          preview: "", last: chat.last, unread: whatsApp.unread(chat.jid), handle: handle(chat.jid),
+                                          avatar: whatsApp.avatars[chat.jid], waitsInApp: whatsApp.waitsInWhatsApp(chat.jid)))
+            }
+        }
+        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
+            let preview = thread.messages.last.map { message in
+                let who = message.isMine ? tr("chat.you") : message.sender
+                return who.isEmpty ? message.summary : "\(who): \(message.summary)"
+            } ?? ""
+            let newest = thread.messages.last
+            let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
+            entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
+                                      preview: preview, last: thread.last, unread: thread.unread, ticks: ticks,
+                                      members: thread.members, avatar: thread.avatar))
+        }
+        return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
+    }
+
+    /// A private WhatsApp chat's phone number; nil for groups, channels and Beeper chats, which have none.
+    static func handle(_ jid: String) -> String? {
+        WAJID.kind(jid) == .person && !WAJID.isBeeper(jid) ? jid : nil
+    }
+}
+
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
 /// "All" and "Unread" on top, one row of app filters (icons, the rest behind "+N") with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
@@ -194,7 +249,7 @@ struct ChatsTab: View {
         }
     }
 
-    /// Shows what "@chats …" or "@open chat …" asked for.
+    /// Shows what "@chat …" asked for.
     private func takeFocus() {
         guard let focus = viewModel.chatsFocus else { return }
         viewModel.chatsFocus = nil
@@ -207,56 +262,8 @@ struct ChatsTab: View {
 
     // MARK: The chats
 
-    /// Every chat, newest first. Of WhatsApp every chat you did not hide, quiet groups included: they are all here.
-    private var all: [ChatsEntry] {
-        var entries: [ChatsEntry] = []
-        if whatsApp.isConnected {
-            for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
-                let preview = conversation.messages.last.map { message in
-                    let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
-                    let who = message.fromMe ? tr("chat.you") : (conversation.isGroup ? message.senderName : "")
-                    return who.isEmpty ? text : "\(who): \(text)"
-                } ?? ""
-                let newest = conversation.messages.last
-                let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
-                entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
-                                          name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: whatsApp.unread(conversation.id), ticks: ticks,
-                                          members: conversation.members == nil ? nil : conversation.memberNames,
-                                          handle: Self.handle(conversation.id),
-                                          avatar: whatsApp.avatars[conversation.id], waitsInApp: whatsApp.waitsInWhatsApp(conversation.id)))
-            }
-            // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
-            // when one is opened.
-            var listed = Set(entries.map(\.id))
-            for chat in whatsApp.knownChats
-            where WAJID.kind(chat.jid) != .status && !whatsApp.filters.ignored.contains(chat.jid) {
-                let id = "wa|" + chat.jid
-                guard listed.insert(id).inserted else { continue }
-                entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
-                                          name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, unread: whatsApp.unread(chat.jid), handle: Self.handle(chat.jid),
-                                          avatar: whatsApp.avatars[chat.jid], waitsInApp: whatsApp.waitsInWhatsApp(chat.jid)))
-            }
-        }
-        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
-            let preview = thread.messages.last.map { message in
-                let who = message.isMine ? tr("chat.you") : message.sender
-                return who.isEmpty ? message.summary : "\(who): \(message.summary)"
-            } ?? ""
-            let newest = thread.messages.last
-            let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
-            entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, unread: thread.unread, ticks: ticks,
-                                      members: thread.members, avatar: thread.avatar))
-        }
-        return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
-    }
-
-    /// A private WhatsApp chat's phone number; nil for groups, channels and Beeper chats, which have none.
-    private static func handle(_ jid: String) -> String? {
-        WAJID.kind(jid) == .person && !WAJID.isBeeper(jid) ? jid : nil
-    }
+    /// Every chat, newest first, as `ChatsEntry.all` lists them.
+    private var all: [ChatsEntry] { ChatsEntry.all(whatsApp: whatsApp, capture: capture) }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
         if let avatar = entry.avatar, FileManager.default.fileExists(atPath: avatar),
@@ -423,6 +430,7 @@ struct ChatsTab: View {
                         .disabled(searching)
                         if open {
                             ForEach(section.entries) { entry in
+                                if entry.id != section.entries.first?.id { NookRowSeparator() }
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
                                          onToggleRead: { entry.readable ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
                                     .contextMenu {

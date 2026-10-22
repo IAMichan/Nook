@@ -40,8 +40,10 @@ struct ComposerConfig {
     var pullRequests: ((String) async -> [(number: Int, title: String)])? = nil
     /// Apps that open inside Nook, for `@` in the chat ("@open WhatsApp"): id, title and symbol.
     var apps: [(id: String, title: String, symbol: String)] = []
-    /// The chats of every chat app for "@open chat …", newest first: name and a short line about it ("Telegram · 2 new").
+    /// The chats of every chat app for "@chat …", newest first: name and a short line about it ("Telegram · 2 new").
     var chats: () -> [(name: String, detail: String)] = { [] }
+    /// The app open next to the chat, if any: "@close" is offered only then.
+    var openApp: () -> String? = { nil }
     /// Big pastes become a reference instead of filling the box.
     var keepsBigPastes = false
 
@@ -96,13 +98,13 @@ final class ComposerModel: ObservableObject {
     /// Looks at the end of the text and fills the list.
     func update(for text: String, _ config: ComposerConfig) {
         search?.cancel()
-        // "@open chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
+        // "@chat Ja…": the chats whose name fits, so you choose the right one; choosing fills in its whole name.
         if let query = EmbeddedAppCatalog.chatQuery(in: text), case let chats = config.chats(), !chats.isEmpty {
             let names = EmbeddedAppCatalog.chatMatches(query, in: chats.map(\.name))
             guard !names.isEmpty else { return close() }
             trigger = ComposerTrigger(kind: .mention, query: query, token: text)
             return publish(names.map { name in
-                let insertion = "@open chat " + name
+                let insertion = "@chat " + name
                 return ComposerSuggestion(id: "chat:" + name, title: name, detail: chats.first { $0.name == name }?.detail,
                                           symbol: "bubble.left.and.bubble.right.fill",
                                           payload: .command(ComposerCommand(name: "chat:" + name, insertion: insertion, action: .insert)))
@@ -170,30 +172,31 @@ final class ComposerModel: ObservableObject {
         }
     }
 
-    /// "@open WhatsApp" as a line to choose, and "@open WhatsApp web" under a Mac app: Return puts it in the box, Return
-    /// again opens it.
+    /// The `@` list: "@close" while an app is open, "@chat" when there are chats, then "@open WhatsApp" for each app.
+    /// Once a name is typed, a Mac app shows each way as its own line ("@open WhatsApp mac", "… web", "… venster"),
+    /// each saying what it is. Return puts a line in the box, Return again runs it.
     private func appRows(_ query: String, _ config: ComposerConfig) -> [ComposerSuggestion] {
-        let rows = EmbeddedAppCatalog.openSuggestions(for: query).compactMap { match in
-            config.apps.first { $0.id == match.app.id }.map { (app: $0, web: match.mode == .web) }
-        }
-        // "@open chat" first, when there are chats to open: choosing it lists them.
+        let rows = EmbeddedAppCatalog.openSuggestions(for: query).filter { match in config.apps.contains { $0.id == match.app.id } }
         let typed = query.lowercased()
-        var chat: [ComposerSuggestion] = []
-        if typed.isEmpty || "chat".hasPrefix(typed) || "whatsapp".hasPrefix(typed), !config.chats().isEmpty {
-            chat = [ComposerSuggestion(id: "chat", title: "@open chat", detail: tr("whatsapp.open.mentionDetail"),
-                                       symbol: "bubble.left.and.bubble.right.fill",
-                                       payload: .command(ComposerCommand(name: "chat", insertion: "@open chat", action: .insert)))]
+        var commands: [ComposerSuggestion] = []
+        if let open = config.openApp(), typed.isEmpty || "close".hasPrefix(typed) {
+            commands.append(ComposerSuggestion(id: "close", title: "@close", detail: tr("embedded.close.mentionDetail", open),
+                                               symbol: "xmark.circle",
+                                               payload: .command(ComposerCommand(name: "close", insertion: "@close", action: .insert))))
         }
-        // "@chats": every chat app in the Chats tab; a word after it picks an app, a chat or a search.
-        if typed.isEmpty || "chats".hasPrefix(typed) {
-            chat.append(ComposerSuggestion(id: "chats", title: "@chats", detail: tr("chats.mentionDetail"), symbol: "tray.full.fill",
-                                           payload: .command(ComposerCommand(name: "chats", insertion: "@chats", action: .insert))))
+        // "@chat": choosing it lists the chats straight away.
+        if typed.isEmpty || "chat".hasPrefix(typed), !config.chats().isEmpty {
+            commands.append(ComposerSuggestion(id: "chat", title: "@chat", detail: tr("whatsapp.open.mentionDetail"),
+                                               symbol: "bubble.left.and.bubble.right.fill",
+                                               payload: .command(ComposerCommand(name: "chat", insertion: "@chat", action: .insert))))
         }
-        return chat + rows.prefix(10).map { row -> ComposerSuggestion in
-            let insertion = "@open " + row.app.title + (row.web ? " web" : "")
-            let detail = row.web ? tr("embedded.mode.web") : row.app.id.hasPrefix("mac:") ? tr("embedded.mentionDetailMac") : tr("embedded.mentionDetail")
-            return ComposerSuggestion(id: "app:" + row.app.id + (row.web ? ":web" : ""), title: insertion, detail: detail,
-                                      symbol: row.web ? "globe" : row.app.symbol,
+        return commands + rows.prefix(10).map { row -> ComposerSuggestion in
+            let insertion = "@open " + row.app.title + (row.mode.map { " " + $0.word } ?? "")
+            // Without a way named, the line opens the way the app opened last time (else its own way): say which.
+            let way = row.mode ?? EmbeddedAppCatalog.resolve(row.app, mode: row.app.isMacApp ? EmbeddedAppPreference.mode(for: row.app) : nil).mode
+            let symbol = row.mode == .web ? "globe" : row.mode == .window ? "macwindow" : row.app.symbol
+            return ComposerSuggestion(id: "app:" + row.app.id + (row.mode.map { ":" + $0.rawValue } ?? ""), title: insertion,
+                                      detail: tr("embedded.mode.detail." + way.rawValue), symbol: symbol,
                                       payload: .command(ComposerCommand(name: row.app.id, insertion: insertion, action: .insert)))
         }
     }
