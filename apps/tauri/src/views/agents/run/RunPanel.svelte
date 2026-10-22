@@ -1,6 +1,7 @@
 <script lang="ts">
   // Een sessie die Nook zelf draait, in de tab Agents (`AgentRunPanel` op de Mac): het hele gesprek, toestemming,
   // stoppen, vervolgberichten en de keuzes voor de volgende beurt. Alles wat je anders in een terminal doet, gebeurt hier.
+  import { untrack } from "svelte";
   import { agents } from "../../../lib/agents.svelte";
   import { projectName, workspaceApi, type RunEvent } from "../../../lib/workspace/api";
   import { workspace } from "../../../lib/workspace/store.svelte";
@@ -29,10 +30,16 @@
   const question = $derived(agents.questionFor(sessionKey));
   const fraction = $derived(run?.usage.contextWindow && run.usage.contextTokens ? run.usage.contextTokens / run.usage.contextWindow : 0);
 
+  // Only another run (or one that just got a repository) loads again: reading the run itself here would re-run this,
+  // with a full git refresh, on every workspace update.
+  const hasRepo = $derived(!!run?.repoRoot);
   $effect(() => {
-    void runId;
-    workspace.loadTimeline(runId);
-    if (workspace.run(runId)?.repoRoot) workspaceApi.git(runId, true).catch(() => {});
+    const id = runId;
+    const repo = hasRepo;
+    untrack(() => {
+      workspace.loadTimeline(id);
+      if (repo) workspaceApi.git(id, true).catch(() => {});
+    });
   });
 
   async function rename() {

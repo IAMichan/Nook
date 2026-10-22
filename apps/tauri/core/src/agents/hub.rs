@@ -271,15 +271,22 @@ impl AgentHub {
         if mode == "statusline" {
             if let Some(usage) = PlanUsage::parse(&event, Utc::now()) {
                 let home = self.account_home(&env, &agent_id);
-                {
+                // Claude Code reports this on nearly every update of a session; the file only needs writing when the
+                // windows themselves changed.
+                let changed = {
                     let mut s = self.lock();
+                    let old = if home.is_empty() { s.plan_usage.as_ref() } else { s.profile_plan_usage.get(&home) };
+                    let changed = old.is_none_or(|o| o.five_hour != usage.five_hour || o.seven_day != usage.seven_day);
                     if home.is_empty() {
                         s.plan_usage = Some(usage);
                     } else {
                         s.profile_plan_usage.insert(home, usage);
                     }
+                    changed
+                };
+                if changed {
+                    self.save_usage();
                 }
-                self.save_usage();
                 (self.notify)(HubEvent::PlanUsage);
             }
             responder.reply(None);

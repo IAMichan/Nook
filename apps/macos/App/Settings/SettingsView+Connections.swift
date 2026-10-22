@@ -55,11 +55,11 @@ extension SettingsView {
         return Group {
             Section {
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textSecondary)
                     TextField(tr("settings.connections.search"), text: $connectionSearch, prompt: Text(tr("settings.connections.searchPrompt")))
                         .textFieldStyle(.plain)
                     if !connectionSearch.isEmpty {
-                        Button { connectionSearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
+                        Button { connectionSearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(NookTheme.textTertiary) }
                             .buttonStyle(.plain)
                             .help(tr("button.close"))
                     }
@@ -74,7 +74,7 @@ extension SettingsView {
                     ForEach(expired) { config in
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(NookTheme.amber)
-                            Text(tr("connect.expiredBanner", config.name)).font(.callout)
+                            Text(tr("connect.expiredBanner", config.name)).font(NookTheme.TextStyle.body)
                             Spacer(minLength: 8)
                             Button(tr("settings.connections.signInAgain")) { mcpSignIn.signIn(config, app: app) }
                                 .buttonStyle(.borderedProminent)
@@ -158,8 +158,8 @@ extension SettingsView {
             } else if !hasYours && !showWatchedPulls && local.isEmpty && !whatsApp {
                 Section {
                     Text(tr("settings.connections.noMatch", connectionSearch))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(NookTheme.textSecondary)
                 }
             }
 
@@ -177,7 +177,7 @@ extension SettingsView {
                                     }
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.name)
-                                        Text(item.how).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                        Text(item.how).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
                                 .padding(.vertical, 2)
@@ -218,7 +218,7 @@ extension SettingsView {
     }
 
     func localSources(_ capabilityLine: (String) -> String) -> [ContextSource] {
-        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "bear", "things"]
+        let ids = ["calendar", "reminders", "notes", "mail", "browser", "files", "clipboard", "messages", "whatsapp", "chats", "bear", "things"]
         // Apps that are not on this Mac are not worth a row.
         return ids.compactMap { app.connectors.source(id: $0) }
             .filter { ($0 as? AppDatabaseConnector)?.isInstalled ?? true }
@@ -239,7 +239,8 @@ extension SettingsView {
     }
 
     func localRow(_ source: ContextSource, _ capabilityLine: @escaping (String) -> String) -> some View {
-        let fallback = source.id != "clipboard"
+        // The clipboard and the chats from every notification are yours to turn on.
+        let fallback = source.id != "clipboard" && source.id != ChatInboxConnector.sourceID
         return Toggle(isOn: Binding(
             get: { let _ = refreshTick; return ConnectorToggle.isOn(source.id, default: fallback) },
             set: { on in
@@ -253,7 +254,7 @@ extension SettingsView {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.title)
-                    Text(localDetail(source)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(localDetail(source)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
                 }
             }
             // The details (what Nook reads, what needs approval) on hover: the list itself stays quiet.

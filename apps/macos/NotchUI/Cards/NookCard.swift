@@ -54,11 +54,13 @@ struct Fact: Equatable, Identifiable {
     var value: String
 }
 
-/// A message in a chat card (WhatsApp): incoming on the left, your own on the right.
+/// A message in a chat card (WhatsApp) or the Chats tab: incoming on the left, your own on the right.
 struct ChatBubble: Equatable, Identifiable {
     var id: String
     var text: String
     var time: String
+    /// When it was sent, for the line where a new day starts; nil when it is not known.
+    var date: Date? = nil
     /// In a group: who wrote it. Empty in a private chat, where the card's title already says who.
     var sender: String = ""
     var fromMe: Bool = false

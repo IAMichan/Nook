@@ -338,6 +338,8 @@ final class AutocompleteController: ObservableObject {
     private func isActive(in app: NSRunningApplication?) -> Bool {
         guard let app, !ownAppInFront, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
         let bundleID = app.bundleIdentifier
+        // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
+        if let bundleID, ScreenReader.excludedBundles.contains(bundleID) { return false }
         return prefs.isEnabled(inApp: bundleID) && !store.isPaused(app: bundleID) && !(prefs.pauseOnBattery && onBattery)
     }
 
@@ -1038,7 +1040,7 @@ final class AutocompleteController: ObservableObject {
             let recent = clipboardSeen.map { Date().timeIntervalSince($0.date) < Self.clipboardSeconds } ?? false
             // Password managers mark secrets as concealed: leave those alone.
             let concealed = board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ?? false
-            if recent, !concealed { input.clipboard = board.string(forType: .string).map(CompletionPrivacy.sanitize) }
+            if recent, !concealed { input.clipboard = board.string(forType: .string).map { CompletionPrivacy.sanitize($0) } }
         }
         if prefs.learn, prefs.personalStrength > 0, let bundleID { input.samples = store.samples.relevant(for: bundleID, limit: 2) }
         fieldContext = (key, Date(), input)

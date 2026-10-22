@@ -126,7 +126,7 @@ private struct LyricRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(.spring(duration: 0.45, bounce: 0.1), value: state)
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .help(tr("music.lyrics.seekHint"))
     }
 
@@ -278,7 +278,7 @@ private struct MusicShelf: View {
                 }
                 Text(note).lineLimit(1).truncationMode(.tail)
             }
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
             .help(note)
             ScrollView(.vertical, showsIndicators: false) {
@@ -336,7 +336,7 @@ private struct MusicCoverCard: View {
                         .lineLimit(1)
                     if !item.subtitle.isEmpty {
                         Text(item.subtitle)
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }
@@ -346,7 +346,7 @@ private struct MusicCoverCard: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.spring(duration: 0.25, bounce: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .help(item.help)
         .accessibilityLabel(item.subtitle.isEmpty ? item.title : "\(item.title), \(item.subtitle)")
         .accessibilityHint(item.help)

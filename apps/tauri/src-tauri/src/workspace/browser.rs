@@ -216,10 +216,18 @@ impl Browser {
             r#"(function () {{
   var r = '';
   try {{ r = String((function () {{ return {expression}; }})()); }} catch (e) {{ r = ''; }}
-  var size = 30000, total = Math.max(1, Math.ceil(r.length / size));
+  var size = 30000, chunks = [];
+  for (var at = 0; at < r.length || chunks.length === 0; ) {{
+    var end = Math.min(at + size, r.length), last = r.charCodeAt(end - 1);
+    // Never end a piece inside a surrogate pair (an emoji): encodeURIComponent throws on half of one.
+    if (end < r.length && last >= 0xD800 && last <= 0xDBFF) end--;
+    chunks.push(r.slice(at, end));
+    at = end;
+  }}
+  var total = chunks.length;
   for (var i = 0; i < total; i++) {{
     (function (i) {{
-      setTimeout(function () {{ location.href = '{SCHEME}://{nonce}/' + i + '/' + total + '?' + encodeURIComponent(r.slice(i * size, (i + 1) * size)); }}, i * 40);
+      setTimeout(function () {{ location.href = '{SCHEME}://{nonce}/' + i + '/' + total + '?' + encodeURIComponent(chunks[i]); }}, i * 40);
     }})(i);
   }}
 }})();"#

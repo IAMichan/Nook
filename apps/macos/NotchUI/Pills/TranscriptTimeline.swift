@@ -78,7 +78,7 @@ struct TranscriptConversation: View {
             }
             if let preview {
                 FilePreviewPanel(path: preview, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(.easeInOut(duration: 0.2)) { self.preview = nil }
+                    withAnimation(NookTheme.reveal) { self.preview = nil }
                 }
                 .id(preview)
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
@@ -86,7 +86,7 @@ struct TranscriptConversation: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if outputsOpen.wrappedValue {
                 SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(.easeInOut(duration: 0.2)) { outputsOpen.wrappedValue = false }
+                    withAnimation(NookTheme.reveal) { outputsOpen.wrappedValue = false }
                 }
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
                                 available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
@@ -97,7 +97,7 @@ struct TranscriptConversation: View {
         .preference(key: TranscriptOutputCount.self, value: outputs.count)
         // The outputs button in the header asks for the outputs, also while a file is open.
         .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
-            if isOpen { withAnimation(.easeInOut(duration: 0.2)) { preview = nil } }
+            if isOpen { withAnimation(NookTheme.reveal) { preview = nil } }
         }
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
@@ -265,14 +265,14 @@ struct TranscriptConversation: View {
     }
 
     private func toggle(_ key: String) {
-        withAnimation(.easeInOut(duration: 0.18)) {
+        withAnimation(NookTheme.reveal) {
             if open.contains(key) { open.remove(key) } else { open.insert(key) }
         }
     }
 
     /// Opens a file in the side panel; the file that is open already closes again.
     private func show(_ file: String) {
-        withAnimation(.easeInOut(duration: 0.2)) { preview = preview == file ? nil : file }
+        withAnimation(NookTheme.reveal) { preview = preview == file ? nil : file }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -317,10 +317,10 @@ struct TranscriptUserBubble: View {
                         text(parts.text)
                         if long {
                             Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
-                                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                                withAnimation(NookTheme.reveal) { expanded.toggle() }
                             }
                             .buttonStyle(.plain)
-                            .font(NookTheme.font(11.5, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
@@ -467,7 +467,7 @@ struct TranscriptWorkLine: View {
     var body: some View {
         let content = HStack(spacing: 6) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(NookTheme.font(11.5, .medium))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
                 .frame(width: 20)
             if live {

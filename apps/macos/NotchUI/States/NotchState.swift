@@ -1,16 +1,16 @@
 import Foundation
 
 enum PanelTab: String, CaseIterable, Identifiable {
-    case nook, chat, agents, connect, music, shelf
+    case nook, chat, agents, inbox, connect, music, shelf
 
     var id: String { rawValue }
 
-    /// Tabs in the notch: Nook (home and chat together), Agents, and Music only while a player is open. Terminals, the
-    /// browser and worktrees live with the agents that use them. Everything you do happens here; configuration lives in
-    /// Settings.
+    /// Tabs in the notch: Nook (home and chat together), Agents, Chats (every chat app in one inbox), and Music only
+    /// while a player is open. Terminals, the browser and worktrees live with the agents that use them. Everything you
+    /// do happens here; configuration lives in Settings.
     @MainActor
     static func visible(musicAvailable: Bool) -> [PanelTab] {
-        musicAvailable ? [.chat, .agents, .music] : [.chat, .agents]
+        musicAvailable ? [.chat, .agents, .inbox, .music] : [.chat, .agents, .inbox]
     }
 
     var title: String {
@@ -18,6 +18,7 @@ enum PanelTab: String, CaseIterable, Identifiable {
         case .nook: return tr("tab.nook")
         case .chat: return tr("tab.nook")
         case .agents: return tr("tab.agents")
+        case .inbox: return tr("tab.chats")
         case .connect: return tr("tab.connect")
         case .music: return tr("tab.music")
         case .shelf: return tr("tab.shelf")

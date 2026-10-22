@@ -25,7 +25,7 @@ struct EqualizerBars: View {
                 }
             }
             .frame(height: height, alignment: .bottom)
-            .animation(.easeOut(duration: 0.2), value: isPlaying)
+            .animation(NookTheme.reveal, value: isPlaying)
         }
         .accessibilityHidden(true)
         // Real levels are only measured while some equalizer is on screen.

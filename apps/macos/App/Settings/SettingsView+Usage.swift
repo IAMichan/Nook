@@ -45,7 +45,7 @@ extension SettingsView {
         switch state {
         case .notInstalled: return target.detail
         case .installed: return "\(tr("agents.status.done")) · \(target.displayPath)"
-        case .outdated: return "Connected with an older version: update for permissions and prompts in the notch"
+        case .outdated: return tr("agents.status.outdated")
         case .unreadable(let message): return message
         }
     }

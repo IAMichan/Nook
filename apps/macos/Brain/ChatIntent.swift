@@ -280,7 +280,7 @@ struct ChatIntent: Equatable {
         .memory: ["remember", "forget", "recall_memory"],
         .web: ["get_weather", "search_web", "read_webpage"],
         .chatWrite: ["whatsapp_send", "whatsapp_live", "send_to_source", "search_contacts"],
-        .chats: ["whatsapp_live", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
+        .chats: ["whatsapp_live", "chat_inbox", "search_whatsapp", "read_whatsapp", "whatsapp_open_chats", "search_messages", "read_messages", "messages_open_chats", "read_app"]
     ]
 
     /// Order of kinds when several match: the thing to make first, then what it is about.

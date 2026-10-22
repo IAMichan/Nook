@@ -368,7 +368,7 @@ struct AgentsTab: View {
                 .font(NookTheme.font(16, .semibold))
                 .foregroundStyle(NookTheme.paper)
             Text(tr("agents.nothingRunningDetail"))
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -514,7 +514,7 @@ struct AgentListRow: View {
         HStack(spacing: 8) {
             AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: true, ring: background)
             Text(item.title)
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
             Spacer(minLength: 6)

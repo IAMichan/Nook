@@ -17,7 +17,8 @@ enum SourceBrand {
         case "files": return ["com.apple.finder"]
         case "terminal": return ["com.apple.Terminal"]
         case "contacts": return ["com.apple.AddressBook"]
-        default: return []
+        // The chat apps of the Chats tab (Telegram, Signal…).
+        default: return MessagingApps.app(id: id)?.bundleIDs ?? []
         }
     }
 
@@ -34,7 +35,7 @@ enum SourceBrand {
         case "whatsapp": return "whatsapp.com"
         case "bear": return "bear.app"
         case "things": return "culturedcode.com"
-        default: return nil
+        default: return MessagingApps.app(id: id)?.site
         }
     }
 

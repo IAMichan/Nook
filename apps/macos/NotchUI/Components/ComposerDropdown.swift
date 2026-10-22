@@ -103,7 +103,7 @@ struct DropdownRow: View {
                     BrandMark(logo: brand, size: 14)
                 } else if let symbol {
                     Image(systemName: symbol)
-                        .font(NookTheme.font(11.5, .medium))
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(tint ?? NookTheme.textSecondary)
                         .frame(width: 15)
                         .padding(.top, detail == nil ? 0 : 1)
@@ -115,14 +115,14 @@ struct DropdownRow: View {
                         .lineLimit(1)
                     if let detail, !detail.isEmpty {
                         Text(detail)
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 6)
                 if let trailing {
-                    Text(trailing).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+                    Text(trailing).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 }
             }
             .padding(.horizontal, 8)
@@ -148,7 +148,7 @@ struct DropdownSearch: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+            Image(systemName: "magnifyingglass").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(NookTheme.font(12.5))

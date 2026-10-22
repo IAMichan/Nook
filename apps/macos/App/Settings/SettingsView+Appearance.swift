@@ -113,7 +113,7 @@ extension SettingsView {
                         Text(tr(item.key))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
-                            .font(.callout.weight(selected ? .semibold : .regular))
+                            .font(NookTheme.font(13, selected ? .semibold : .regular))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 4)
                             .foregroundStyle(selected ? NookTheme.onIris : Color.primary)
@@ -154,14 +154,14 @@ extension SettingsView {
     /// One style as a card: a still Nook in that style, its name, and a ring when chosen.
     private func lookPresetCard(_ id: String, _ look: NookLook) -> some View {
         let selected = settings.nookLook == look
-        return Button { withAnimation(.easeOut(duration: 0.15)) { settings.nookLook = look } } label: {
+        return Button { withAnimation(NookTheme.reveal) { settings.nookLook = look } } label: {
             VStack(spacing: 8) {
                 NookOrb(mood: .rest, size: 44, animated: false, glow: false, look: look)
                     .frame(width: 60, height: 56)
-                Text(Self.presetTitle(id)).font(.callout.weight(.semibold))
+                Text(Self.presetTitle(id)).font(NookTheme.TextStyle.strong)
                 Text(tr("settings.appearance.preset.\(id)"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2, reservesSpace: true)
             }

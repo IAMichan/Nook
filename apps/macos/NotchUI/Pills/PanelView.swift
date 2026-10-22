@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The expanded panel: Nook (home and chat in one), Agents, Workspace, and Music while something plays.
+/// The expanded panel: Nook (home and chat in one), Agents, Chats, and Music while something plays.
 /// Everything you do happens here; tasks such as a new session or reviewing changes open inside the panel, never in
 /// a separate window. Settings (the gear) is the one place for configuration. The main window shows this same panel
 /// (`inWindow`), with the window's own tab and task and more room.
@@ -13,6 +13,9 @@ struct PanelView: View {
     /// header's empty space moves the window, and the traffic lights take the place of the close button.
     var inWindow = false
     @EnvironmentObject private var app: AppModel
+    /// For the dot on Chats when a message comes in.
+    @ObservedObject private var chats = ChatCaptureService.shared
+    @ObservedObject private var whatsApp = WhatsAppLink.shared
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
     static let headerHeight: CGFloat = 32
@@ -75,9 +78,11 @@ struct PanelView: View {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
         let unread = tab != .chat && app.chat.list(query: "", showArchived: false).contains { $0.status == .unread }
+        let chatsUnread = tab != .inbox && ChatsTab.unread > 0
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
-                                      fresh: value == .chat && unread, count: value == .agents ? waiting : 0,
+                                      fresh: (value == .chat && unread) || (value == .inbox && chatsUnread),
+                                      count: value == .agents ? waiting : 0,
                                       help: inWindow ? "\(value.title) (⌘\(index + 1))" : nil)
         }
     }
@@ -149,6 +154,7 @@ struct PanelView: View {
         case .nook, .chat, .connect, .shelf:
             if inWindow { NookChatView(viewModel: viewModel, chat: app.chat, compact: false) } else { NookChatTab(viewModel: viewModel) }
         case .agents: AgentsTab(viewModel: viewModel)
+        case .inbox: ChatsTab(viewModel: viewModel)
         case .music: MusicTab()
         }
     }
@@ -177,7 +183,7 @@ struct PanelApprovalBar: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(subtitle(approval, more: waiting.count - 1))
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
@@ -197,7 +203,7 @@ struct PanelApprovalBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 10)
+            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.card)
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
@@ -227,7 +233,7 @@ struct PanelApprovalBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .padding(.top, 10)
         .transition(.opacity.combined(with: .offset(y: -4)))
     }
@@ -236,7 +242,7 @@ struct PanelApprovalBar: View {
     private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "questionmark.bubble.fill")
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.amber)
             VStack(alignment: .leading, spacing: 1) {
                 Text(request.items.first?.question ?? "")
@@ -244,7 +250,7 @@ struct PanelApprovalBar: View {
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Text(subtitle(request, more: more))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
             }
@@ -261,7 +267,7 @@ struct PanelApprovalBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .padding(.top, 10)
         .transition(.opacity.combined(with: .offset(y: -4)))
     }
@@ -340,7 +346,7 @@ struct NotchSheetView: View {
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
                 Text(sheet.title)
-                    .font(NookTheme.font(15, .semibold))
+                    .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                 if let subtitle {
                     Text(subtitle)

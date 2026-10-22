@@ -56,7 +56,7 @@ struct TimelineFindBar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 32)
-        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: 10, style: .continuous)
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
         .onAppear { focused = true }
         .onKeyPress(.escape) { close(); return .handled }
     }
@@ -71,15 +71,7 @@ struct TimelineFindBar: View {
     }
 
     private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(NookTheme.font(10.5, .semibold))
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(NookTheme.textSecondary)
-        .help(help)
-        .accessibilityLabel(help)
+        ToolbarIconButton(symbol, help, height: 20, width: 20, action)
     }
 }
 
