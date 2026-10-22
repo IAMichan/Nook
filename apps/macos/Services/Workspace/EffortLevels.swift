@@ -26,6 +26,9 @@ enum EffortLevels {
     }
 
     static func label(_ level: String?) -> String { "effort.level.\(level ?? "default")" }
+
+    /// The label of a model's level (see `ModelVariants`): the member without a level reads "Default".
+    static func label(variant level: String) -> String { label(level.isEmpty ? nil : level) }
 }
 
 enum EffortStep {
