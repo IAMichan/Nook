@@ -64,7 +64,7 @@ struct PullRequestsPanel: View {
                     }
                 } else {
                     ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
                             ForEach(shown) { account in
                                 // An account without matches stays out of a filtered list, unless it has an error to show.
                                 if !filter.isActive || !account.isEmpty || account.error != nil {
@@ -109,13 +109,15 @@ struct PullRequestsPanel: View {
 
     /// A watched organization or repository GitHub would not search: a typo, or none of your accounts has access.
     private var unreadableNote: some View {
+        // Something to fix in your watch list, so amber: it waits on you.
         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail)
+            Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
             Text(tr("agents.pulls.unreadable", unreadable.joined(separator: ", ")))
                 .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(NookTheme.coralSoft)
+        .padding(.horizontal, NookTheme.Spacing.xs)
     }
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
@@ -134,20 +136,22 @@ struct PullRequestsPanel: View {
 
     @ViewBuilder
     private func accountSection(_ account: AccountPullRequests, showName: Bool) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if showName {
                 HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "person.crop.circle").font(NookTheme.font(12))
-                    Text(account.name).font(NookTheme.TextStyle.strong)
-                    if !account.login.isEmpty { Text("@" + account.login).font(NookTheme.TextStyle.detail) }
+                    Image(systemName: "person.crop.circle").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
+                    Text(account.name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                    if !account.login.isEmpty {
+                        Text("@" + account.login).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                    }
                 }
-                .foregroundStyle(NookTheme.textSecondary)
+                .padding(.horizontal, NookTheme.Spacing.xs)
             }
             if let error = account.error {
                 if account.errorKind == .auth {
                     expiredCard
                 } else {
-                    Text(error)
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.coralSoft)
                         .fixedSize(horizontal: false, vertical: true)
@@ -185,38 +189,25 @@ struct PullRequestsPanel: View {
         }
         .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
+        .cardBackground(NookTheme.surface, stroke: NookTheme.coral.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
     }
 
+    /// A repository: its name as a quiet label, then its pull requests together in one card, split by hairlines.
     private func repoGroup(_ group: PullRequestRepoGroup, account: String) -> some View {
         let key = account + " " + group.repo
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            Button {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            RepoGroupHeader(repo: group.repo, count: group.rows.count, open: open) {
                 withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
-            } label: {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "chevron.down")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(open ? 0 : -90))
-                        .frame(width: 10)
-                    Image(systemName: "folder").font(NookTheme.TextStyle.detail)
-                    Text(group.repo).font(NookTheme.TextStyle.label).lineLimit(1).truncationMode(.middle)
-                    Text("\(group.rows.count)").font(NookTheme.TextStyle.detail)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(NookTheme.textTertiary)
-                .padding(.horizontal, NookTheme.Spacing.xs)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
-            .accessibilityValue(open ? tr("compose.queue.expanded") : "")
-            .padding(.bottom, NookTheme.Spacing.xs)
             if open {
-                ForEach(group.rows) { row in
-                    PullRequestRow(item: row.item, role: row.role) { opened = (account, row.item) }
+                VStack(spacing: 0) {
+                    ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 { NookDivider(inset: PullRequestRow.textInset) }
+                        PullRequestRow(item: row.item, role: row.role) { opened = (account, row.item) }
+                    }
                 }
+                .panelCard()
             }
         }
     }
@@ -228,39 +219,81 @@ struct PullRequestsPanel: View {
     }
 }
 
+/// A repository's name over its pull requests: a click folds it. The chevron shows under the pointer, or while folded.
+private struct RepoGroupHeader: View {
+    let repo: String
+    let count: Int
+    let open: Bool
+    let toggle: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(repo)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(hovering ? NookTheme.textStrong : NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(count)")
+                    .font(NookTheme.TextStyle.caption.monospacedDigit())
+                    .foregroundStyle(NookTheme.textTertiary)
+                Image(systemName: "chevron.down")
+                    .font(NookTheme.font(8.5, .bold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .opacity(hovering || !open ? 1 : 0)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
+        .accessibilityValue(open ? tr("compose.queue.expanded") : "")
+    }
+}
+
+/// One pull request in the list: what it is (its state as GitHub's mark), the title, one quiet line with number, author
+/// and age, and on the right only what asks for attention: a review that waits for you, and how its checks went.
 private struct PullRequestRow: View {
     let item: PullRequestItem
     let role: PullRequestRepoGroup.Role
     let onOpen: () -> Void
     @State private var hovering = false
 
+    /// Where a row's text starts, so the hairlines between rows begin under the text, not under the mark.
+    static let textInset = NookTheme.Spacing.lg + 16 + NookTheme.Spacing.md
+
     var body: some View {
         Button(action: onOpen) {
-            HStack(alignment: .center, spacing: 10) {
-                ci.frame(width: 16)
+            HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                stateMark.frame(width: 16)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
                         .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
+                        .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                         .lineLimit(1)
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        // The repository is the group's heading, so the number is enough here.
-                        Text("#\(item.number)")
-                        if role != .mine, !item.author.isEmpty { Text("· @" + item.author) }
-                        if item.draft { Text("· " + tr("agents.pulls.draft")) }
-                        if role == .review, item.state == .open {
-                            Text("· " + tr("agents.pulls.scope.reviews")).foregroundStyle(NookTheme.amber)
-                        }
-                    }
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                if let updated = item.updated {
-                    Text(AgentFormat.short(Date().timeIntervalSince(updated)))
+                    Text(meta)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: NookTheme.Spacing.md)
+                if role == .review, item.state == .open {
+                    Text(tr("agents.pulls.scope.reviews"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.amber)
+                        .padding(.horizontal, NookTheme.Spacing.sm)
+                        .frame(height: 20)
+                        .background(Capsule().fill(NookTheme.amber.opacity(0.14)))
+                        .fixedSize()
+                }
+                if item.state == .open {
+                    ciMark.frame(width: 14)
                 }
                 Image(systemName: "chevron.right")
                     .font(NookTheme.font(10, .semibold))
@@ -269,11 +302,12 @@ private struct PullRequestRow: View {
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
+            .background(hovering ? NookTheme.rowHover : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
         .help(tr("agents.pulls.view"))
         .contextMenu {
             if let url = item.url {
@@ -282,28 +316,50 @@ private struct PullRequestRow: View {
         }
     }
 
-    @ViewBuilder
-    private var ci: some View {
-        switch item.state {
-        case .merged:
-            Image(systemName: "arrow.triangle.merge").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.violet)
-                .help(tr("agents.pulls.state.merged"))
-        case .closed:
-            Image(systemName: "xmark.circle").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coralSoft)
-                .help(tr("agents.pulls.state.closed"))
-        case .open:
-            ciMark
-        }
+    /// "#123 · @author · draft · 2h". The repository is the group's heading, so the number is enough here; your own
+    /// pull requests leave out your name.
+    private var meta: String {
+        var parts = ["#\(item.number)"]
+        if role != .mine, !item.author.isEmpty { parts.append("@" + item.author) }
+        if item.draft { parts.append(tr("agents.pulls.draft")) }
+        if let updated = item.updated { parts.append(AgentFormat.short(Date().timeIntervalSince(updated))) }
+        return parts.joined(separator: " · ")
     }
 
+    /// GitHub's own mark for the state. An open one stays neutral (it is the normal case); merged is violet, closed coral.
+    private var stateMark: some View {
+        let glyph: PullRequestBadge.Glyph
+        let color: Color
+        let state: String
+        switch item.state {
+        case .merged: glyph = .merged; color = NookTheme.violet; state = "merged"
+        case .closed: glyph = .closed; color = NookTheme.coralSoft; state = "closed"
+        case .open:
+            glyph = item.draft ? .draft : .open
+            color = item.draft ? NookTheme.textTertiary : NookTheme.textSecondary
+            state = item.draft ? "draft" : "open"
+        }
+        return PullRequestStateGlyph(glyph: glyph, size: 16)
+            .foregroundStyle(color)
+            .help(tr("agents.pr.state." + state))
+    }
+
+    /// How the checks went: a tick or a cross, a grey dot while they run (they wait on CI, not on you), nothing known
+    /// as a faint ring.
     @ViewBuilder
     private var ciMark: some View {
         switch item.ci {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral)
-        // Running checks wait on CI, not on you: no amber.
-        case .pending: Circle().fill(NookTheme.textSecondary).frame(width: 7, height: 7)
-        case .unknown: Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
+        case .passing:
+            Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
+                .help(tr("agents.pulls.status.passing"))
+        case .failing:
+            Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
+                .help(tr("agents.pulls.status.failing"))
+        case .pending:
+            Circle().fill(NookTheme.textSecondary).frame(width: 7, height: 7)
+                .help(tr("agents.pulls.status.pending"))
+        case .unknown:
+            Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
         }
     }
 }
