@@ -143,8 +143,10 @@ final class BrainService {
                                      images: images, onText: onText)
 
         // The request clearly asks for one action, but the model answered without proposing it (small models often say
-        // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out.
-        if profile.isSmall, let action = intent.primaryAction, !runner.trace.contains(action),
+        // "done!" or ask for permission instead). Ask once more, with only that tool and the dates spelled out. A larger
+        // model gets the same second chance when it claims the action is done or prepared without proposing it.
+        let claimsReady = Self.claimsDone(plan.text) || ChatIntent.claimsPrepared(plan.text)
+        if profile.isSmall || (plan.actions.isEmpty && claimsReady), let action = intent.primaryAction, !runner.trace.contains(action),
            let spec = allTools.first(where: { $0.name == action }), !Self.asksBack(plan.text) {
             if let focused = try await fillIn(spec, request: userText, history: history, context: fitted[1],
                                                screen: untrusted.map { _ in fitted[2] }, profile: profile, onText: onText) {
