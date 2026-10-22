@@ -11,6 +11,13 @@ import Foundation
 import CryptoKit
 import UniformTypeIdentifiers
 
+/// One chat as the gateway lists it.
+struct WAChatInfo: Equatable, Sendable {
+    var jid: String
+    var name: String
+    var last: Date
+}
+
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
 /// (a photo, a video, a document) or you open it.
 enum WAMedia: Equatable, Sendable {

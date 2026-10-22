@@ -56,13 +56,6 @@ struct WAFile: Sendable {
     static let maxBytes = 50 * 1024 * 1024
 }
 
-/// One chat as the gateway lists it.
-struct WAChatInfo: Equatable, Sendable {
-    var jid: String
-    var name: String
-    var last: Date
-}
-
 /// Never follows a redirect: a request (with its credentials and, for a send, the reply's
 /// text) goes to the configured gateway and nowhere else.
 final class WANoRedirect: NSObject, URLSessionTaskDelegate, Sendable {
