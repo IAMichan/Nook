@@ -21,7 +21,14 @@ extension AppModel {
         }
         let workspace = NSWorkspace.shared
         guard let url = MessagingApps.app(id: appID)?.bundleIDs.lazy
-            .compactMap({ workspace.urlForApplication(withBundleIdentifier: $0) }).first else { return }
+            .compactMap({ workspace.urlForApplication(withBundleIdentifier: $0) }).first else {
+            // No Mac app: a website you added (or a known app's web version) opens in the browser.
+            if let source = MessagingApps.app(id: appID), let host = source.domains.first ?? source.site,
+               let site = URL(string: "https://" + host) {
+                workspace.open(site)
+            }
+            return
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         workspace.openApplication(at: url, configuration: configuration) { _, _ in }

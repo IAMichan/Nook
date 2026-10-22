@@ -202,12 +202,35 @@ struct ChatsTab: View {
     }
 
     /// The apps that have chats here, the busiest first, and the one filtered on even when it has none yet.
+    /// After them every source that is on and on this Mac (its app is installed, or you added it yourself), also before it
+    /// brought in a message: a source you switched on shows up here, not only once it has chats.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
-        let busy = counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
-        guard let filter, !busy.contains(filter) else { return busy }
-        return busy + [filter]
+        var result = counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
+        if capture.enabled {
+            for source in capture.sources.active where !result.contains(source.id) && Self.isPresent(source) {
+                result.append(source.id)
+            }
+        }
+        if let filter, !result.contains(filter) { result.append(filter) }
+        return result
     }
+
+    /// Whether a source belongs on this Mac: one you added, or a known app that is installed. The known web-only apps
+    /// (LinkedIn, X…) wait until they bring in a chat, or the row would list every app Nook knows.
+    @MainActor
+    private static func isPresent(_ source: MessagingApp) -> Bool {
+        if !MessagingApps.builtIn.contains(where: { $0.id == source.id }) { return true }
+        return source.bundleIDs.contains { bundleID in
+            if let known = installed[bundleID] { return known }
+            let found = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil
+            installed[bundleID] = found
+            return found
+        }
+    }
+
+    /// Which apps are installed, looked up once per launch.
+    @MainActor private static var installed: [String: Bool] = [:]
 
     /// The list's title, as the Agents tab has it: how many messages wait for you, and the list's two actions.
     private var listHeader: some View {
@@ -293,9 +316,20 @@ struct ChatsTab: View {
                 }
             }
             if shown.isEmpty {
-                ListEmptyNote(tr("chats.noMatch"))
+                if !searching, let filter {
+                    // A source that is on but brought in nothing yet: say so, and offer to open it.
+                    let name = MessagingApps.app(id: filter)?.name ?? filter
+                    VStack(spacing: NookTheme.Spacing.sm) {
+                        ListEmptyNote(tr("chats.source.empty", name))
+                        SmallGhostButton(title: tr("chats.openApp", name)) { app.openChatApp(filter) }
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(.top, NookTheme.Spacing.xl)
+                } else {
+                    ListEmptyNote(tr("chats.noMatch"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, NookTheme.Spacing.xl)
+                }
             }
             if capture.enabled, capture.status == .running, capture.inbox.threads.isEmpty {
                 // Collecting is on but no other app showed a message yet: say so, or the list looks like it ignores them.
