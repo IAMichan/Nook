@@ -298,11 +298,11 @@ private struct MCPServerDetailSheet: View {
                                         .font(NookTheme.TextStyle.label)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                                        .background(Capsule().fill(NookTheme.smoke))
                                         .foregroundStyle(NookTheme.textSecondary)
                                 }
                                 .padding(10)
-                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(Color.primary.opacity(0.03)))
+                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.surface))
                             }
                         }
                     }
@@ -378,9 +378,7 @@ struct AddMCPServerWizardSheet: View {
                             .controlSize(.small)
                         }
 
-                        Text(tr("mcp.wizard.smartPasteHelp"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
+                        SettingNote(tr("mcp.wizard.smartPasteHelp"))
                     }
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))

@@ -32,10 +32,10 @@ enum UIDriver {
         [
             ToolSpec(
                 name: readTool,
-                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. In a web page, links carry the text a person sees (a product's name, a title) and prices are listed as text; elements marked (off screen) are on the page but scrolled out of view: scroll to reach them before clicking. A dropdown that is open lists its options as menu items. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again.",
+                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. In a web page, links carry the text a person sees (a product's name, a title) and prices are listed as text; elements marked (off screen) are on the page but scrolled out of view: scroll to reach them before clicking. A dropdown that is open lists its options as menu items. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again. For Focus (Do Not Disturb), Wi-Fi, Bluetooth, sound and display brightness: read \"Control Center\", click its menu bar item (Control Center, or Focus when it is in the menu bar), then read again to see the panel. App names work in any language: \"System Settings\" also finds \"Systeeminstellingen\".",
                 schema: [
                     "type": "object",
-                    "properties": ["app": ["type": "string", "description": "Name of the app, e.g. \"System Settings\" or \"Safari\". Without it: the app in front."]] as [String: Any],
+                    "properties": ["app": ["type": "string", "description": "Name of the app, e.g. \"System Settings\", \"Control Center\" or \"Safari\". Without it: the app in front."]] as [String: Any],
                     "required": [String]()
                 ],
                 kind: .read,
@@ -56,7 +56,7 @@ enum UIDriver {
             ),
             ToolSpec(
                 name: controlTool,
-                description: "Uses the mouse and keyboard in one Mac app, the way the user would: click buttons, switches, checkboxes, sidebar rows and menu items, type in fields, press keys and shortcuts, scroll. Use it when the user asks to change a setting or do something in an app that no other tool or menu command (app_menu_command) can do, e.g. turn on Night Shift or change the appearance in System Settings. Read the window with read_ui first and name elements by their exact label (add role or index when labels repeat; x and y only when an element has no label). Steps run in order after the user approved them; propose only the steps you can see or are sure will appear (a menu that opens after a click). After they ran, Nook reads the window again and you continue with the next steps until the goal is reached.",
+                description: "Uses the mouse and keyboard in one Mac app, the way the user would: click buttons, switches, checkboxes, sidebar rows and menu items, type in fields, press keys and shortcuts, scroll. Use it when the user asks to change a setting or do something in an app that no other tool or menu command (app_menu_command) can do, e.g. turn on Night Shift or change the appearance in System Settings, or turn on Do Not Disturb in Control Center (app \"Control Center\": System Settings has no switch that turns a Focus on now). Read the window with read_ui first and name elements by their exact label (add role or index when labels repeat; x and y only when an element has no label). Steps run in order after the user approved them; propose only the steps you can see or are sure will appear (a menu that opens after a click). After they ran, Nook reads the window again and you continue with the next steps until the goal is reached.",
                 schema: controlSchema,
                 kind: .action,
                 summarize: { input in summary(app: (input["app"] as? String) ?? "", steps: UIControl.steps(input["steps"])) },
@@ -87,7 +87,7 @@ enum UIDriver {
             "required": ["action"]
         ]
         let steps: [String: Any] = ["type": "array", "description": "The steps, in order (at most \(UIControl.maxSteps)).", "items": step]
-        let app: [String: Any] = ["type": "string", "description": "Name of the app to control, e.g. \"System Settings\"."]
+        let app: [String: Any] = ["type": "string", "description": "Name of the app to control, e.g. \"System Settings\" or \"Control Center\"."]
         return ["type": "object", "properties": ["app": app, "steps": steps] as [String: Any], "required": ["app", "steps"]]
     }
 
@@ -360,6 +360,8 @@ enum UIDriver {
 
     private static func bringToFront(_ app: NSRunningApplication) async throws {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier { return }
+        // A system agent never comes to the front: its panel shows over the app that is.
+        if app.activationPolicy != .regular { return }
         app.activate()
         for _ in 0..<20 {
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -419,6 +421,14 @@ enum UIDriver {
         for window in windows.prefix(4) {
             collect(window, depth: 0, focused: focusedElement, bounds: frame(of: window), into: &items)
             if items.count >= maxElements { break }
+        }
+        // A system agent (Control Center) has no window until one of its menu bar items is clicked: those items come
+        // after its open panel, so Focus, Wi-Fi and Bluetooth can be reached from the menu bar.
+        if AppNames.systemAgents.contains(app.bundleIdentifier ?? ""),
+           let extras: AXUIElement = attribute(root, kAXExtrasMenuBarAttribute) {
+            for item in (attribute(extras, kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+                collect(item, depth: 1, focused: focusedElement, bounds: nil, into: &items)
+            }
         }
         return Window(title: title, items: items)
     }

@@ -37,17 +37,17 @@ struct TimelineFindBar: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
                 .foregroundStyle(NookTheme.textTertiary)
             TextField(tr("timeline.search.placeholder"), text: $query)
                 .textFieldStyle(.plain)
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .focused($focused)
                 .onSubmit(next)
             Text(label)
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(result.state == .noResults || result.state == .failed ? NookTheme.coralSoft : NookTheme.textTertiary)
                 .monospacedDigit()
             button("chevron.up", tr("timeline.search.previous"), previous)
@@ -83,10 +83,10 @@ struct TimelineToEndPill: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.down").font(NookTheme.font(10, .bold))
-                Text(tr("timeline.toEnd")).font(NookTheme.font(12, .medium))
+                Text(tr("timeline.toEnd")).font(NookTheme.TextStyle.label)
             }
             .foregroundStyle(NookTheme.paper)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .frame(height: 28)
             .background(Capsule().fill(NookTheme.smoke))
             .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))

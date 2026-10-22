@@ -33,10 +33,10 @@ enum AppMenu {
     }
 
     /// Lists every enabled item as "Top > Item" or "Top > Sub > Item", one per line, separators and the Apple menu left out.
-    static func listScript(process: String) -> String {
+    static func listScript(process: String, pid: Int32? = nil) -> String {
         """
         tell application "System Events"
-            tell process \(quote(process))
+            tell \(processReference(process, pid: pid))
                 set out to ""
                 repeat with top in (menu bar items of menu bar 1)
                     set topName to name of top
@@ -70,7 +70,7 @@ enum AppMenu {
     }
 
     /// Clicks the item. The caller brings the app to the front first: menu commands act on its front window.
-    static func clickScript(process: String, path: [String]) -> String {
+    static func clickScript(process: String, path: [String], pid: Int32? = nil) -> String {
         var reference = "menu bar item \(quote(path[0])) of menu bar 1"
         for title in path.dropFirst() {
             reference = "menu item \(quote(title)) of menu 1 of " + reference
@@ -78,7 +78,7 @@ enum AppMenu {
         return """
         delay 0.4
         tell application "System Events"
-            tell process \(quote(process))
+            tell \(processReference(process, pid: pid))
                 set target to \(reference)
                 if not (enabled of target) then return "DISABLED"
                 click target
@@ -103,6 +103,12 @@ enum AppMenu {
         let more = lines.count > limit ? "\n… \(lines.count - limit) more; pass a filter word to narrow the list." : ""
         return "Menu commands of \(app) (use app_menu_command with one of these paths):\n"
             + shown.map { "- \($0)" }.joined(separator: "\n") + more
+    }
+
+    /// The process in System Events: by its process id when known, since System Events may name a process differently
+    /// from the name the app shows on a Mac in another language.
+    static func processReference(_ process: String, pid: Int32?) -> String {
+        pid.map { "(first process whose unix id is \($0))" } ?? "process \(quote(process))"
     }
 
     static func quote(_ text: String) -> String {

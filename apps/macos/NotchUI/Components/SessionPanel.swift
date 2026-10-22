@@ -104,15 +104,15 @@ struct SessionPanel: View {
             // A failed action shows as a toast; this is only the script form's own problem.
             if let message = error {
                 Text(message)
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, NookTheme.Spacing.sm)
             }
         }
-        .padding(6)
+        .padding(NookTheme.Spacing.sm)
         .frame(width: 300, alignment: .leading)
         .background(DropdownStyle.panel)
         .task(id: directory) {
@@ -132,7 +132,7 @@ struct SessionPanel: View {
     // MARK: Machine and folder
 
     private var machineRow: some View {
-        PanelRow(icon: AnyView(HStack(spacing: 2) {
+        PanelRow(icon: AnyView(HStack(spacing: NookTheme.Spacing.xxs) {
             Image(systemName: "laptopcomputer")
             Image(systemName: "folder")
         }.font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary).fixedSize()),
@@ -193,16 +193,16 @@ struct SessionPanel: View {
     }
 
     private var scriptForm: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TextField(tr("agents.panel.scriptName"), text: $scriptName)
                 .textFieldStyle(.roundedBorder)
             TextField(tr("agents.panel.scriptCommand"), text: $scriptCommand)
                 .textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
                 .onSubmit(saveScript)
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Text(tr("agents.panel.scriptFile"))
-                    .font(NookTheme.font(10.5))
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(2)
                 Spacer(minLength: 4)
@@ -211,8 +211,8 @@ struct SessionPanel: View {
                     .disabled(scriptCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .font(NookTheme.font(12.5))
-        .padding(8)
+        .font(NookTheme.TextStyle.body)
+        .padding(NookTheme.Spacing.md)
     }
 
     private func saveScript() {
@@ -380,18 +380,18 @@ struct SessionPanel: View {
 
     /// Pushing to the default branch asks first, right here in the panel.
     private func defaultBranchConfirmation(_ action: GitQuickAction) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Text(tr("ws.quick.defaultMessage", quick?.branch ?? ""))
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.amber)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Spacer(minLength: 0)
                 SmallGhostButton(title: tr("button.cancel")) { confirmDefault = nil }
                 SmallPrimaryButton(title: tr("ws.quick.confirm")) { perform(action) }
             }
         }
-        .padding(8)
+        .padding(NookTheme.Spacing.md)
     }
 
     // MARK: Changes
@@ -481,7 +481,7 @@ private struct PanelRow: View {
             icon.frame(width: iconWidth)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(NookTheme.font(13, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -497,7 +497,7 @@ private struct PanelRow: View {
             if let trailing { trailing.foregroundStyle(NookTheme.textTertiary) }
         }
         .padding(.leading, 10)
-        .padding(.trailing, 8)
+        .padding(.trailing, NookTheme.Spacing.md)
         .frame(minHeight: 34)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())

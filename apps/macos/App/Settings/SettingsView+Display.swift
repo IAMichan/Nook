@@ -31,7 +31,7 @@ extension SettingsView {
                     Text(tr("settings.notch.placementFloating")).tag("floating")
                 }
                 if settings.placement == "floating" {
-                    Text(tr("settings.notch.placementHint")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(tr("settings.notch.placementHint"))
                 } else {
                     SettingToggle(tr("settings.notch.allScreens"), detail: tr("settings.notch.allScreensDetail"), isOn: $settings.notchOnAllScreens)
                 }
@@ -75,10 +75,7 @@ extension SettingsView {
                 SettingLabel(tr("settings.energy.mode"), detail: tr("settings.energy.modeDetail"))
             }
             .pickerStyle(.segmented)
-            Text(tr(settings.energyMode.detailKey))
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
                 HStack(spacing: 6) {
                     Image(systemName: energySymbol)

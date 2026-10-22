@@ -131,7 +131,7 @@ struct MarkdownView: View {
     var body: some View {
         let blocks = MarkdownCache.blocks(text)
         let choices = onChoose == nil ? nil : MarkdownBlock.trailingChoices(blocks)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             ForEach(MarkdownSegment.split(blocks, keeping: choices?.index), id: \.offset) { segment in
                 if let choices, choices.index == segment.offset {
                     ChoiceList(options: choices.options, size: size) { onChoose?($0) }
@@ -170,7 +170,7 @@ struct MarkdownView: View {
                 } else {
                     ForEach(Array(options.enumerated()), id: \.offset) { _, option in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("•").foregroundStyle(NookTheme.iris)
+                            Text("•").foregroundStyle(NookTheme.textSecondary)
                             paragraph(option)
                         }
                     }
@@ -180,8 +180,8 @@ struct MarkdownView: View {
             if let callout = Callout.detect(text) {
                 CalloutBlock(callout: callout, size: size)
             } else {
-                HStack(spacing: 10) {
-                    Rectangle().fill(NookTheme.line2).frame(width: 3)
+                HStack(spacing: NookTheme.Spacing.lg) {
+                    Capsule().fill(NookTheme.line2).frame(width: 3)
                     paragraph(text, color: NookTheme.textSecondary)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -196,7 +196,7 @@ struct MarkdownView: View {
     private func paragraph(_ text: String, color: Color = NookTheme.paper) -> some View {
         Text(MarkdownBlock.inline(text, size: size))
             .font(NookTheme.font(size))
-            .lineSpacing(3)
+            .lineSpacing(4)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -220,26 +220,27 @@ private struct CalloutBlock: View {
     let size: CGFloat
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
             Image(systemName: callout.kind.symbol)
-                .font(NookTheme.font(size))
+                .font(NookTheme.font(size - 1, .medium))
                 .foregroundStyle(callout.kind.color)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                 Text(callout.title)
-                    .font(NookTheme.font(size - 1.5, .semibold))
+                    .font(NookTheme.font(size - 1, .semibold))
                     .foregroundStyle(callout.kind.color)
                 if !callout.body.isEmpty {
                     Text(MarkdownBlock.inline(callout.body, size: size))
                         .font(NookTheme.font(size))
-                        .lineSpacing(3)
+                        .lineSpacing(4)
                         .foregroundStyle(NookTheme.paper)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
-        .cardBackground(callout.kind.color.opacity(0.09), stroke: callout.kind.color.opacity(0.25), radius: NookTheme.Radius.card)
+        .padding(NookTheme.Spacing.lg)
+        // Tinted, without an edge: the color says what kind of note it is, the fill keeps it apart from the text.
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(callout.kind.color.opacity(0.08)))
     }
 }
 
@@ -255,34 +256,25 @@ private struct MarkdownCodeBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            // The language on the left, preview and copy as quiet symbol buttons on the right.
+            HStack(spacing: NookTheme.Spacing.xxs) {
                 Text(language.isEmpty ? "code" : language)
-                    .font(NookTheme.mono(size - 3))
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textTertiary)
                 Spacer()
                 if CodeRenderView.canRender(language) {
-                    Button { rendered.toggle() } label: {
-                        Label(rendered ? tr("code.source") : tr("code.preview"),
-                              systemImage: rendered ? "chevron.left.forwardslash.chevron.right" : "eye")
-                            .font(NookTheme.font(size - 3, .medium))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 8)
+                    ToolbarIconButton(rendered ? "chevron.left.forwardslash.chevron.right" : "eye",
+                                      rendered ? tr("code.source") : tr("code.preview")) { rendered.toggle() }
                 }
-                Button {
+                ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", copied ? tr("button.copied") : tr("button.copy")) {
                     Pasteboard.copy(code)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-                } label: {
-                    Label(copied ? tr("button.copied") : tr("button.copy"), systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(NookTheme.font(size - 3, .medium))
-                        .foregroundStyle(NookTheme.textTertiary)
                 }
-                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
+            .padding(.leading, NookTheme.Spacing.lg)
+            .padding(.trailing, NookTheme.Spacing.sm)
+            .padding(.top, NookTheme.Spacing.sm)
             if rendered {
                 CodeRenderView(language: language, code: code)
                     .frame(height: 280)
@@ -292,15 +284,16 @@ private struct MarkdownCodeBlock: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(code)
                         .font(NookTheme.mono(size - 1.5))
-                        .foregroundStyle(NookTheme.paper)
+                        .lineSpacing(3)
+                        .foregroundStyle(NookTheme.textStrong)
                         .fixedSize(horizontal: true, vertical: true)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 6)
-                        .padding(.bottom, 12)
+                        .padding(.horizontal, NookTheme.Spacing.lg)
+                        .padding(.top, NookTheme.Spacing.xs)
+                        .padding(.bottom, NookTheme.Spacing.lg)
                 }
             }
         }
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: NookTheme.Radius.card)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.well))
     }
 }
 
@@ -313,31 +306,11 @@ struct ChoiceList: View {
     let choose: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                Button { choose(Self.plain(option)) } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(String(UnicodeScalar(UInt8(65 + min(index, 25)))))
-                            .font(NookTheme.font(size - 2, .bold))
-                            .foregroundStyle(NookTheme.iris)
-                            .frame(width: 20, height: 20)
-                            .background(Circle().fill(NookTheme.iris.opacity(0.16)))
-                        Text(MarkdownBlock.inline(option, size: size))
-                            .font(NookTheme.font(size, .medium))
-                            .foregroundStyle(NookTheme.paper)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.right")
-                            .font(NookTheme.font(10, .semibold))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
-                    .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card))
+                ChoiceRow(letter: String(UnicodeScalar(UInt8(65 + min(index, 25)))), option: option, size: size) {
+                    choose(Self.plain(option))
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -345,6 +318,45 @@ struct ChoiceList: View {
     /// The reply is the option without its Markdown markers.
     static func plain(_ option: String) -> String {
         option.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+    }
+}
+
+/// One option of a question: its letter, the option, and an arrow that shows under the pointer.
+private struct ChoiceRow: View {
+    let letter: String
+    let option: String
+    let size: CGFloat
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+                Text(letter)
+                    .font(NookTheme.rounded(size - 2.5, .semibold))
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(NookTheme.smoke))
+                Text(MarkdownBlock.inline(option, size: size))
+                    .font(NookTheme.font(size))
+                    .foregroundStyle(NookTheme.paper)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+                .fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
     }
 }
 
@@ -390,10 +402,10 @@ private struct TableBlock: View {
                     bodyRow(row, index: rowIndex)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 2)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.xxs)
         }
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2.opacity(0.6), radius: NookTheme.Radius.card)
+        .panelCard()
     }
 
     private var headerRow: some View {
@@ -408,19 +420,17 @@ private struct TableBlock: View {
         let alignment: HorizontalAlignment = numeric(column) ? .trailing : .leading
         return Text(MarkdownBlock.inline(cell, size: size))
             .font(NookTheme.font(size - 1.5, .semibold))
-            .foregroundStyle(NookTheme.textSecondary)
+            .foregroundStyle(NookTheme.textTertiary)
             .gridColumnAlignment(alignment)
-            .padding(.vertical, 8)
+            .padding(.vertical, NookTheme.Spacing.md)
     }
 
     private func bodyRow(_ row: [String], index: Int) -> some View {
-        let shade: Color = index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.02)
         return GridRow {
             ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
                 bodyCell(cell, column: column)
             }
         }
-        .background(shade)
     }
 
     private func bodyCell(_ cell: String, column: Int) -> some View {
@@ -430,6 +440,6 @@ private struct TableBlock: View {
             .monospacedDigit()
             .foregroundStyle(NookTheme.paper)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, 7)
+            .padding(.vertical, NookTheme.Spacing.md)
     }
 }

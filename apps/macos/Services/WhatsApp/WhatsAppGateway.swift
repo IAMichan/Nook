@@ -1004,6 +1004,26 @@ enum WAGOWA {
         }
     }
 
+    /// `GET /user/my/groups` → `results: {data: [{JID, Name, LinkedParentJID, …}]}` (whatsmeow's GroupInfo). A
+    /// community's announcement group without a name of its own takes its community's.
+    static func groupNames(_ data: Data) -> [String: String] {
+        guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return [:] }
+        // whatsmeow writes its own field names; a gateway that renames them writes them in lower case.
+        func field(_ group: [String: Any], _ key: String) -> String? { nonEmpty(group[key]) ?? nonEmpty(group[key.lowercased()]) }
+        var names: [String: String] = [:]
+        for group in list {
+            if let jid = field(group, "JID"), let name = field(group, "Name")?.trimmingCharacters(in: .whitespaces), !name.isEmpty {
+                names[WAJID.normalized(jid)] = name
+            }
+        }
+        for group in list {
+            guard let jid = field(group, "JID").map(WAJID.normalized), names[jid] == nil,
+                  let parent = field(group, "LinkedParentJID").map(WAJID.normalized), let name = names[parent] else { continue }
+            names[jid] = name
+        }
+        return names
+    }
+
     /// `GET /chat/{jid}/messages` → `results: {data: [{id, chat_jid, sender_jid, sender_display_name,
     /// content, timestamp, is_from_me, media_type, filename}], chat_info}`. Newest first there.
     static func messages(_ data: Data, me: String?) -> [WAMessage] {

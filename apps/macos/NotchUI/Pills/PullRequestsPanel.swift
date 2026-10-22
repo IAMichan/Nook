@@ -37,7 +37,7 @@ struct PullRequestsPanel: View {
     }
 
     private var list: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             PanelListHeader(tr("agents.footer.pullRequests")) {
                 if store.loading { ProgressView().controlSize(.small) }
                 NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .connections) }
@@ -95,7 +95,7 @@ struct PullRequestsPanel: View {
     // MARK: Search and filters
 
     private var filterBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             NookSearchField(prompt: tr("agents.pulls.search"), text: $filter.query, focus: $searching,
                             onEscape: { searching = false })
             .background {
@@ -109,37 +109,37 @@ struct PullRequestsPanel: View {
 
     /// A watched organization or repository GitHub would not search: a typo, or none of your accounts has access.
     private var unreadableNote: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill").font(NookTheme.TextStyle.detail)
             Text(tr("agents.pulls.unreadable", unreadable.joined(separator: ", ")))
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(NookTheme.coralSoft)
     }
 
     private func empty(title: String, detail: String, action: (String, () -> Void)?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Text(title).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
             Text(detail)
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let action {
-                NookPrimaryButton(title: action.0, action: action.1).padding(.top, 4)
+                NookPrimaryButton(title: action.0, action: action.1).padding(.top, NookTheme.Spacing.xs)
             }
         }
-        .padding(.top, 8)
+        .padding(.top, NookTheme.Spacing.md)
     }
 
     @ViewBuilder
     private func accountSection(_ account: AccountPullRequests, showName: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if showName {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Image(systemName: "person.crop.circle").font(NookTheme.font(12))
-                    Text(account.name).font(NookTheme.font(12.5, .semibold))
-                    if !account.login.isEmpty { Text("@" + account.login).font(NookTheme.font(12)) }
+                    Text(account.name).font(NookTheme.TextStyle.strong)
+                    if !account.login.isEmpty { Text("@" + account.login).font(NookTheme.TextStyle.detail) }
                 }
                 .foregroundStyle(NookTheme.textSecondary)
             }
@@ -148,7 +148,7 @@ struct PullRequestsPanel: View {
                     expiredCard
                 } else {
                     Text(error)
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.coralSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -162,56 +162,57 @@ struct PullRequestsPanel: View {
 
     /// The token was rejected: say so in plain words and offer the fix right here.
     private var expiredCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Label(tr("agents.pulls.expired"), systemImage: "exclamationmark.triangle.fill")
-                .font(NookTheme.font(14, .semibold))
+                .font(NookTheme.TextStyle.title)
                 .foregroundStyle(NookTheme.paper)
             Text(tr("agents.pulls.expiredDetail"))
-                .font(NookTheme.font(12.5))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 4) {
+            HStack(spacing: NookTheme.Spacing.xs) {
                 NookPrimaryButton(title: tr("agents.pulls.useCLI")) { gitHubSignIn.useGitHubCLI() }
                     .disabled(gitHubSignIn.phase == .checkingCLI)
                 NookGhostButton(title: tr("agents.pulls.openSettings")) { app.openSettings(section: .connections) }
             }
-            .padding(.top, 2)
+            .padding(.top, NookTheme.Spacing.xxs)
             if case .failed(let message) = gitHubSignIn.phase {
                 Text(message)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(14)
+        .padding(NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coralSoft.opacity(0.1)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
     }
 
     private func repoGroup(_ group: PullRequestRepoGroup, account: String) -> some View {
         let key = account + " " + group.repo
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Button {
                 withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Image(systemName: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(open ? 0 : -90))
                         .frame(width: 10)
                     Image(systemName: "folder").font(NookTheme.TextStyle.detail)
-                    Text(group.repo).font(NookTheme.font(11.5, .semibold)).lineLimit(1).truncationMode(.middle)
-                    Text("\(group.rows.count)").font(NookTheme.font(11.5))
+                    Text(group.repo).font(NookTheme.TextStyle.label).lineLimit(1).truncationMode(.middle)
+                    Text("\(group.rows.count)").font(NookTheme.TextStyle.detail)
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(NookTheme.textTertiary)
+                .padding(.horizontal, NookTheme.Spacing.xs)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
             .accessibilityValue(open ? tr("compose.queue.expanded") : "")
-            .padding(.bottom, 3)
+            .padding(.bottom, NookTheme.Spacing.xs)
             if open {
                 ForEach(group.rows) { row in
                     PullRequestRow(item: row.item, role: row.role) { opened = (account, row.item) }
@@ -237,12 +238,12 @@ private struct PullRequestRow: View {
         Button(action: onOpen) {
             HStack(alignment: .center, spacing: 10) {
                 ci.frame(width: 16)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
-                        .font(NookTheme.font(13.5, .medium))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
                         // The repository is the group's heading, so the number is enough here.
                         Text("#\(item.number)")
                         if role != .mine, !item.author.isEmpty { Text("· @" + item.author) }
@@ -251,14 +252,14 @@ private struct PullRequestRow: View {
                             Text("· " + tr("agents.pulls.scope.reviews")).foregroundStyle(NookTheme.amber)
                         }
                     }
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 if let updated = item.updated {
                     Text(AgentFormat.short(Date().timeIntervalSince(updated)))
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                 }
                 Image(systemName: "chevron.right")
@@ -266,8 +267,8 @@ private struct PullRequestRow: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering ? NookTheme.rowHover : Color.clear))
             .contentShape(Rectangle())
         }
@@ -300,7 +301,8 @@ private struct PullRequestRow: View {
         switch item.ci {
         case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.mint)
         case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral)
-        case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
+        // Running checks wait on CI, not on you: no amber.
+        case .pending: Circle().fill(NookTheme.textSecondary).frame(width: 7, height: 7)
         case .unknown: Circle().stroke(NookTheme.textTertiary, lineWidth: 1.2).frame(width: 7, height: 7)
         }
     }

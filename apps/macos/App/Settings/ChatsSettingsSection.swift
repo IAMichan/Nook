@@ -11,12 +11,18 @@ struct ChatsSettingsSection: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @State private var typed = ""
     @State private var notice: String?
+    /// The last thing typed could not be added: its note reads as a warning.
+    @State private var noticeIsProblem = false
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
 
     var body: some View {
+        // WhatsApp first, the app most chats come from; then the other apps and the list of them; then the bridges
+        // that need a token or a login, each in its own short section.
         Group {
+            WhatsAppLinkSection()
+
             Section {
                 SettingToggle(tr("chats.settings.collect"), detail: tr("chats.settings.collectDetail"),
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
@@ -34,10 +40,10 @@ struct ChatsSettingsSection: View {
             }
 
             Section {
-                addRow
                 ForEach(capture.sources.apps) { source in
                     row(source)
                 }
+                addRow
             } header: {
                 Text(tr("chats.settings.sources"))
             } footer: {
@@ -75,8 +81,6 @@ struct ChatsSettingsSection: View {
             } footer: {
                 Text(tr("chats.beeper.footer"))
             }
-
-            WhatsAppLinkSection()
         }
     }
 
@@ -167,9 +171,7 @@ struct ChatsSettingsSection: View {
                 Button(tr("chats.settings.chooseApp")) { chooseMacApp() }
             }
             if let notice {
-                Text(notice)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
+                SettingNote(notice, tone: noticeIsProblem ? .warning : .success)
             }
         }
         .padding(.vertical, NookTheme.Spacing.xxs)
@@ -238,14 +240,17 @@ struct ChatsSettingsSection: View {
     private func report(_ added: ChatSources.Added) {
         switch added {
         case .added(let source):
+            noticeIsProblem = false
             typed = ""
             notice = tr("chats.settings.added", source.name)
             if !capture.enabled { setCollecting(true) }
         case .known(let source):
+            noticeIsProblem = false
             typed = ""
             notice = tr("chats.settings.known", source.name)
             if !capture.enabled { setCollecting(true) }
         case .invalid:
+            noticeIsProblem = true
             notice = tr("chats.settings.invalid")
         }
     }

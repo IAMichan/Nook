@@ -33,7 +33,7 @@ struct EmojiBrowser: View {
                                     grid(group.emoji)
                                 } header: {
                                     Text(tr(group.id))
-                                        .font(NookTheme.TextStyle.caption)
+                                        .font(NookTheme.TextStyle.label)
                                         .foregroundStyle(NookTheme.textTertiary)
                                         .padding(.vertical, NookTheme.Spacing.xxs)
                                         .frame(maxWidth: .infinity, alignment: .leading)

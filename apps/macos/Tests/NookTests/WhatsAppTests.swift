@@ -102,6 +102,22 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertFalse(WAJID.isPlaceholderName("Familie", for: old))
     }
 
+    func testTheListOfYourGroupsNamesEveryGroupAtOnce() {
+        let json = """
+        {"code":"SUCCESS","results":{"data":[
+          {"JID":"120363000000000001@g.us","Name":"Familie"},
+          {"JID":"120363000000000002@g.us","Name":"","LinkedParentJID":"120363000000000003@g.us"},
+          {"JID":"120363000000000003@g.us","Name":"Buurt","IsParent":true},
+          {"JID":"120363000000000004@g.us","Name":""}
+        ]}}
+        """
+        let names = WAGOWA.groupNames(Data(json.utf8))
+        XCTAssertEqual(names["120363000000000001@g.us"], "Familie")
+        XCTAssertEqual(names["120363000000000002@g.us"], "Buurt", "a community's announcement group takes its community's name")
+        XCTAssertNil(names["120363000000000004@g.us"])
+        XCTAssertTrue(WAGOWA.groupNames(Data("{}".utf8)).isEmpty)
+    }
+
     func testVotesMoveTheirPollInsteadOfShowingAsMessages() {
         let group = "120363000000000001@g.us"
         let creation = WAPollData.gowa(["type": "creation", "poll_id": "P1", "question": "Lunch?",

@@ -19,7 +19,7 @@ struct AcpAgentsSection: View {
                 HStack(spacing: 10) {
                     AgentLogo(agent: agent.name, size: 22)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(agent.name).font(NookTheme.font(13, .medium))
+                        Text(agent.name).font(NookTheme.TextStyle.strong)
                         Text(([agent.command] + agent.arguments).joined(separator: " "))
                             .font(NookTheme.mono(11))
                             .foregroundStyle(NookTheme.textSecondary)
@@ -120,12 +120,12 @@ private struct AcpRegistrySheet: View {
                     List(shown, selection: Binding<String?>(get: { chosen?.id }, set: { id in chosen = entries.first { $0.id == id } })) { entry in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(entry.name).font(NookTheme.font(13, .medium))
+                                Text(entry.name).font(NookTheme.TextStyle.strong)
                                 Text(entry.version).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                                 if entry.command == nil, entry.binary != nil {
                                     Text(tr("acp.registry.download")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                                 } else if !entry.isSupported {
-                                    Text(tr("acp.registry.unavailable")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                                    SettingNote(tr("acp.registry.unavailable"), tone: .warning)
                                 }
                             }
                             if !entry.description.isEmpty {
@@ -151,7 +151,7 @@ private struct AcpRegistrySheet: View {
                     .textSelection(.enabled)
             }
             if let installError {
-                Text(installError).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                SettingNote(installError, tone: .warning)
             }
             HStack {
                 if installing {
@@ -221,7 +221,7 @@ private struct AcpManualSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
             if !command.isEmpty, parsed == nil {
-                Text(tr("acp.manual.badCommand")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                SettingNote(tr("acp.manual.badCommand"), tone: .warning)
             }
             HStack {
                 Spacer()

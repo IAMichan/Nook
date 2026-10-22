@@ -183,12 +183,12 @@ struct FolderGitButton: View {
                     if model.isRepository, !model.changes.isEmpty {
                         ToolbarGroupDivider()
                         Button(action: showChanges) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: NookTheme.Spacing.sm) {
                                 Text("+\(model.added)").foregroundStyle(NookTheme.mint)
                                 Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
                             }
                             .font(NookTheme.TextStyle.label)
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, NookTheme.Spacing.sm)
                             .frame(height: ToolbarGroup.itemHeight)
                             .contentShape(Rectangle())
                         }
@@ -212,7 +212,7 @@ struct FolderGitButton: View {
     }
 
     private func label(icon: String, text: String) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             if model.working {
                 ProgressView().controlSize(.mini)
             } else if model.error != nil {
@@ -250,11 +250,11 @@ struct FolderChangesSheet: View {
         let layout = stacked ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
         layout {
             ScrollView(showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(model.changes) { file in
                         Button { selected = file.path } label: {
                             FileChangeRow(file: file)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, NookTheme.Spacing.md)
                                 .padding(.vertical, 5)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected == file.path ? NookTheme.smoke : Color.clear))
@@ -264,9 +264,9 @@ struct FolderChangesSheet: View {
                     }
                     if model.changes.isEmpty {
                         Text(tr("agents.git.noChanges"))
-                            .font(NookTheme.font(12.5))
+                            .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.textTertiary)
-                            .padding(8)
+                            .padding(NookTheme.Spacing.md)
                     }
                 }
             }

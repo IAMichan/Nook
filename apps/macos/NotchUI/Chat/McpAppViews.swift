@@ -33,7 +33,7 @@ struct McpAppBlock: View {
             } else if session.closed || session.left {
                 HStack(spacing: 8) {
                     Text(session.left ? tr("ws.mcpApp.left") : tr("ws.mcpApp.closed", session.reference.tool))
-                        .font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textTertiary)
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                     Button(tr("ws.mcpApp.show")) { session.reload() }.controlSize(.small)
                 }
             } else if session.html != nil {
@@ -42,7 +42,7 @@ struct McpAppBlock: View {
                     if session.mode == .fullscreen {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.up.left.and.arrow.down.right").font(NookTheme.TextStyle.detail)
-                            Text(tr("ws.mcpApp.isFullscreen")).font(NookTheme.font(11.5))
+                            Text(tr("ws.mcpApp.isFullscreen")).font(NookTheme.TextStyle.detail)
                             Button(tr("ws.mcpApp.exitFullscreen")) { session.exitFullscreen() }.controlSize(.small)
                         }
                         .foregroundStyle(NookTheme.textTertiary)
@@ -72,7 +72,7 @@ struct McpAppBlock: View {
         HStack(spacing: 6) {
             Image(systemName: "square.on.square.dashed").font(NookTheme.font(10, .semibold))
             Text(session.reference.server.map { "\($0) · \(session.reference.tool)" } ?? tr("ws.mcpApp.title"))
-                .font(NookTheme.font(11, .medium))
+                .font(NookTheme.TextStyle.label)
             Text(resource.uri).font(NookTheme.mono(10.5)).lineLimit(1).truncationMode(.middle)
                 .foregroundStyle(NookTheme.textTertiary)
             Spacer(minLength: 4)
@@ -493,7 +493,7 @@ private struct McpAppFullscreenView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(session.reference.server ?? session.reference.tool).font(NookTheme.font(13, .medium)).lineLimit(1)
+                Text(session.reference.server ?? session.reference.tool).font(NookTheme.TextStyle.body).lineLimit(1)
                 Spacer()
                 Button { session.exitFullscreen() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }
                     .buttonStyle(.borderless)

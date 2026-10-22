@@ -42,7 +42,7 @@ struct AgentsTab: View {
             .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
         HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 listHeader(selection)
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
                 if !app.demoMode {
@@ -50,7 +50,7 @@ struct AgentsTab: View {
                                 openSettings: { app.openSettings() }, history: app.history)
                 }
             }
-            .padding(.trailing, 4)
+            .padding(.trailing, NookTheme.Spacing.xs)
             .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
                             available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
                             edge: .trailing, divider: true)
@@ -185,7 +185,7 @@ struct AgentsTab: View {
         let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
         let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
 
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 AgentInboxList(items: running, past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
                                current: current, now: context.date) { viewModel.selectedAgentID = $0 }
@@ -345,9 +345,9 @@ struct AgentsTab: View {
 
     /// Sample data only: nothing to start.
     private var nothingRunning: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Text(tr("agents.noneWorkingNow"))
-                .font(NookTheme.font(16, .semibold))
+                .font(NookTheme.TextStyle.title)
                 .foregroundStyle(NookTheme.paper)
             Text(tr("agents.nothingRunningDetail"))
                 .font(NookTheme.TextStyle.body)
@@ -409,7 +409,7 @@ struct AgentRowActions {
     var onWake: (() -> Void)? = nil
 }
 
-/// The folder and the time on top, the name of the session, and its branch with the agent's logo underneath. A row that
+/// The name of the session with its status, and where it works with the agent's logo underneath. A row that
 /// asks nothing of you recedes (lighter text, normal weight, working rows dimmed) so what needs you is the only loud thing.
 struct AgentListRow: View {
     let item: AgentListItem
@@ -438,8 +438,8 @@ struct AgentListRow: View {
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
-                    .padding(.top, slim ? 8 : 9)
-                    .padding(.trailing, 10)
+                    .padding(.top, slim ? NookTheme.Spacing.sm : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+                    .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
                     .allowsHitTesting(hovering)
             }
@@ -453,47 +453,53 @@ struct AgentListRow: View {
         Group {
             if slim { slimBody } else { fullBody }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, slim ? 8 : 10)
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, slim ? NookTheme.Spacing.md : NookTheme.Spacing.md + NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(background))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(background))
         .contentShape(Rectangle())
         .opacity(restOpacity)
     }
 
+    /// Two lines: the session's name with its status on the right, and where it works (folder and branch) with the
+    /// agent's logo underneath. One quiet line of context is enough to tell sessions apart; the hover card has the rest.
     private var fullBody: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(item.folder)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if pinned {
+                    Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                Text(item.title)
+                    .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)
+                    .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
                     .lineLimit(1)
-                    .help(AgentPathFormat.tilde(item.path))
-                if pinned { Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary) }
-                Spacer(minLength: 6)
+                Spacer(minLength: NookTheme.Spacing.sm)
                 slot.opacity(hovering && actions != nil ? 0 : 1)
             }
-            .font(NookTheme.font(12))
-            .foregroundStyle(receded ? NookTheme.textTertiary : NookTheme.textSecondary)
 
-            Text(item.title)
-                .font(NookTheme.font(14.5, receded ? .regular : .medium))
-                .foregroundStyle(dimmed || receded ? NookTheme.textSecondary : NookTheme.paper)
-                .lineLimit(1)
-
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10, .medium))
-                Text(item.branch ?? tr("agents.noBranch")).lineLimit(1).truncationMode(.middle)
-                if let pullRequest { PullRequestPill(badge: pullRequest) }
-                Spacer(minLength: 6)
-                AgentMark(agent: item.agent, account: item.account, size: 15, dimmed: dimmed, ring: background)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(contextLine)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(AgentPathFormat.tilde(item.path))
+                if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                AgentMark(agent: item.agent, account: item.account, size: 14, dimmed: dimmed, ring: background)
                     .padding(.trailing, item.account == nil ? 0 : 3)
             }
-            .font(NookTheme.font(12))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
         }
     }
 
+    /// "nook · feature/calm-ui": the folder, and the branch when there is one.
+    private var contextLine: String {
+        guard let branch = item.branch, !branch.isEmpty else { return item.folder }
+        return item.folder + " · " + branch
+    }
+
     private var slimBody: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             AgentMark(agent: item.agent, account: item.account, size: 13, dimmed: true, ring: background)
             Text(item.title)
                 .font(NookTheme.TextStyle.body)
@@ -519,7 +525,7 @@ struct AgentListRow: View {
 
     @ViewBuilder
     private func hoverActions(_ actions: AgentRowActions) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             if let onSnooze = actions.onSnooze {
                 Menu {
                     ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
@@ -573,7 +579,7 @@ struct AgentListRow: View {
         case .idle, .finished:
             if let started = item.started {
                 Text(AgentFormat.short(now.timeIntervalSince(started)))
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .fixedSize()
             }
@@ -593,14 +599,14 @@ struct AgentHoverCard: View {
                 HoverCardRow(symbol: "laptopcomputer", text: item.machine)
             }
             HoverCardRow(symbol: "arrow.triangle.branch", text: item.branch ?? tr("agents.noBranch"))
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 AgentMark(agent: item.agent, account: item.account, size: 14, ring: DropdownStyle.panel)
                     .frame(width: 16)
                 Text(modelLine)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .font(NookTheme.font(12.5))
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.textTertiary)
         }
     }

@@ -63,14 +63,14 @@ struct AgentSessionDetail: View {
 
     /// "nook / Agents-pagina rustiger maken" with the branch button on the right.
     private func header(folder: String, title: String, directory: String, agentWorking: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Text(folder)
-                .foregroundStyle(NookTheme.textSecondary)
+                .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
                 .fixedSize()
             Text("/").foregroundStyle(NookTheme.textTertiary)
             Text(title)
-                .font(NookTheme.font(13.5, .medium))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
             Spacer(minLength: 8)
@@ -90,7 +90,7 @@ struct AgentSessionDetail: View {
                 .id(directory)
             }
         }
-        .font(NookTheme.font(13.5))
+        .font(NookTheme.TextStyle.body)
         .frame(height: 30)
     }
 
@@ -135,7 +135,7 @@ struct AgentSessionDetail: View {
 
     private func liveDetail(_ session: AgentSession) -> some View {
         let shown = withTranscript(session)
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(folder: session.project, title: title(for: session), directory: session.cwd,
                    agentWorking: session.status == .running || session.status == .waiting)
 
@@ -186,7 +186,7 @@ struct AgentSessionDetail: View {
 
     /// The last few steps, for agents whose conversation Nook cannot read (it only hears their progress).
     private func steps(_ session: AgentSession) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(session.steps.suffix(3)) { step in
                 let current = step.id == session.steps.last?.id && step.mark == .running && session.status == .running
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -210,7 +210,7 @@ struct AgentSessionDetail: View {
     private func waitingNote(_ session: AgentSession) -> some View {
         ScrollView(showsIndicators: true) {
             Text(session.summary)
-                .font(NookTheme.font(13, .medium))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -218,8 +218,8 @@ struct AgentSessionDetail: View {
         }
         .frame(maxHeight: 90)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(12)
-        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: NookTheme.Radius.panel)
+        .padding(NookTheme.Spacing.lg)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
     }
 
     /// The change an approval is about, scrollable so it can be read in full before deciding.
@@ -228,7 +228,7 @@ struct AgentSessionDetail: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(session.file)
                     .foregroundStyle(NookTheme.textTertiary)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, NookTheme.Spacing.xs)
                 ForEach(session.diff) { line in
                     Text(line.text)
                         .foregroundStyle(line.color)
@@ -238,7 +238,7 @@ struct AgentSessionDetail: View {
             .font(NookTheme.mono(11.5))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
@@ -380,21 +380,21 @@ struct AgentSessionDetail: View {
         var context = tr("agents.question.asks", request.agentName)
         if !item.header.isEmpty { context += " · " + item.header }
         if request.items.count > 1 { context += " · \(index + 1)/\(request.items.count)" }
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Image(systemName: "questionmark.bubble.fill").foregroundStyle(NookTheme.amber)
                 Text(context)
-                    .font(NookTheme.font(11.5, .semibold))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
             }
             Text(item.question)
-                .font(NookTheme.font(13.5, .semibold))
+                .font(NookTheme.TextStyle.strong)
                 .foregroundStyle(NookTheme.paper)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             ScrollView(showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     ForEach(Array(item.options.enumerated()), id: \.offset) { _, option in
                         let chosen = picks.contains(option.label)
                         Button {
@@ -405,18 +405,18 @@ struct AgentSessionDetail: View {
                                 answer(request, index: index, labels: [option.label])
                             }
                         } label: {
-                            HStack(alignment: .top, spacing: 8) {
+                            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
                                 Image(systemName: item.multiSelect ? (chosen ? "checkmark.square.fill" : "square") : "arrow.right.circle")
                                     .font(NookTheme.font(12, .semibold))
                                     .foregroundStyle(chosen ? NookTheme.iris : NookTheme.textTertiary)
                                     .frame(width: 14)
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                                     Text(option.label)
-                                        .font(NookTheme.font(12.5, .semibold))
+                                        .font(NookTheme.TextStyle.strong)
                                         .foregroundStyle(NookTheme.paper)
                                     if !option.description.isEmpty {
                                         Text(option.description)
-                                            .font(NookTheme.font(11.5))
+                                            .font(NookTheme.TextStyle.detail)
                                             .foregroundStyle(NookTheme.textSecondary)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
@@ -445,9 +445,9 @@ struct AgentSessionDetail: View {
                 }
             }
         }
-        .padding(12)
+        .padding(NookTheme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(NookTheme.amber.opacity(0.07), stroke: NookTheme.amber.opacity(0.22), radius: NookTheme.Radius.panel)
+        .cardBackground(NookTheme.surface, stroke: NookTheme.amber.opacity(0.25), radius: NookTheme.Radius.panel, style: .continuous)
     }
 
     private func answer(_ request: AgentQuestionRequest, index: Int, labels: [String]) {
@@ -471,12 +471,12 @@ struct AgentSessionDetail: View {
     @ViewBuilder
     private var errorLine: some View {
         if let actionError {
-            HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coral)
                 Text(actionError)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -514,7 +514,7 @@ struct AgentSessionDetail: View {
                 choice = nil
             }
         }
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(folder: session.project, title: AgentFormat.title(session.title), directory: session.cwd, agentWorking: false)
 
             // The whole conversation, with the agent's thinking, read from its transcript.

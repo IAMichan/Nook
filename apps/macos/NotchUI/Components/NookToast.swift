@@ -248,7 +248,7 @@ struct NookToastView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail = toast.detail {
                     Text(detail)
-                        .font(NookTheme.TextStyle.label)
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -275,7 +275,8 @@ struct NookToastView: View {
         .padding(.trailing, NookTheme.Spacing.sm)
         .padding(.vertical, NookTheme.Spacing.md)
         .frame(maxWidth: 440, alignment: .leading)
-        .cardBackground(NookTheme.surface, stroke: toast.kind.color.opacity(0.3), radius: NookTheme.Radius.card, style: .continuous)
+        // Lifted a step above the panel it floats over; its kind shows in the symbol and a faint edge, not a loud frame.
+        .cardBackground(NookTheme.graphite, stroke: toast.kind.color.opacity(0.22), radius: NookTheme.Radius.panel, style: .continuous)
         .shadow(color: NookTheme.notch.opacity(0.45), radius: 14, y: 6)
         .accessibilityElement(children: .contain)
     }

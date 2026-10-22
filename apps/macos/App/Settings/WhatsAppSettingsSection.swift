@@ -40,25 +40,10 @@ struct WhatsAppLinkSection: View {
                             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control))
                         Text(tr("whatsapp.settings.scan"))
                             .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(NookTheme.textSecondary)
+                            .foregroundStyle(NookTheme.textStrong)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.vertical, 4)
-                }
-
-                if link.isConnected {
-                    SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: $notify)
-                        .onChange(of: notify) { _, value in WhatsAppSettings.notify = value }
-                    if notify {
-                        // The rule per kind of chat, then every chat on its own: louder or quieter than its kind.
-                        SettingToggle(tr("whatsapp.settings.muteGroups"), detail: tr("whatsapp.settings.muteGroupsDetail"),
-                                      isOn: Binding(get: { link.filters.muteGroups }, set: { link.filters.muteGroups = $0 }))
-                        SettingToggle(tr("whatsapp.settings.muteStatus"), detail: tr("whatsapp.settings.muteStatusDetail"),
-                                      isOn: Binding(get: { link.filters.muteStatus }, set: { link.filters.muteStatus = $0 }))
-                        SettingToggle(tr("whatsapp.settings.muteChannels"), detail: tr("whatsapp.settings.muteChannelsDetail"),
-                                      isOn: Binding(get: { link.filters.muteChannels }, set: { link.filters.muteChannels = $0 }))
-                        WhatsAppChatModeList()
-                    }
                 }
 
                 DisclosureGroup(tr("whatsapp.settings.advanced")) {
@@ -75,10 +60,7 @@ struct WhatsAppLinkSection: View {
                     TextField(tr("whatsapp.settings.address"), text: $address, prompt: Text(gateway.defaultURL))
                         .onSubmit { WhatsAppSettings.url = address; link.settingsChanged() }
                     if gateway == .beeper {
-                        Text(tr("whatsapp.settings.beeperHelp"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        SettingNote(tr("whatsapp.settings.beeperHelp"))
                     }
                     SecureField(credentialLabel, text: $credential)
                         .onSubmit { WhatsAppSettings.setCredential(credential); link.settingsChanged() }
@@ -89,13 +71,31 @@ struct WhatsAppLinkSection: View {
                 }
 
                 if !webhookLine.isEmpty, webhookNeedsAttention {
-                    Text(webhookLine).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(webhookLine, tone: .warning)
                 }
             }
         } header: {
             Text(tr("whatsapp.settings.title"))
         } footer: {
             Text(tr("whatsapp.settings.footer"))
+        }
+
+        // Once linked, what reaches you gets a section of its own: the main switch, the rule per kind of chat, then
+        // every chat on its own (louder or quieter than its kind).
+        if enabled, link.isConnected {
+            Section {
+                SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: $notify)
+                    .onChange(of: notify) { _, value in WhatsAppSettings.notify = value }
+                if notify {
+                    SettingToggle(tr("whatsapp.settings.muteGroups"), detail: tr("whatsapp.settings.muteGroupsDetail"),
+                                  isOn: Binding(get: { link.filters.muteGroups }, set: { link.filters.muteGroups = $0 }))
+                    SettingToggle(tr("whatsapp.settings.muteStatus"), detail: tr("whatsapp.settings.muteStatusDetail"),
+                                  isOn: Binding(get: { link.filters.muteStatus }, set: { link.filters.muteStatus = $0 }))
+                    SettingToggle(tr("whatsapp.settings.muteChannels"), detail: tr("whatsapp.settings.muteChannelsDetail"),
+                                  isOn: Binding(get: { link.filters.muteChannels }, set: { link.filters.muteChannels = $0 }))
+                    WhatsAppChatModeList()
+                }
+            }
         }
     }
 
@@ -117,11 +117,8 @@ struct WhatsAppLinkSection: View {
     }
 
     @ViewBuilder private var installRow: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("whatsapp.install.title"))
-                Text(installLine).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
-            }
+        HStack(spacing: NookTheme.Spacing.md) {
+            SettingLabel(tr("whatsapp.install.title"), detail: installLine)
             Spacer()
             if installer.busy {
                 ProgressView().controlSize(.small)
@@ -182,7 +179,7 @@ struct WhatsAppChatModeList: View {
     var body: some View {
         DisclosureGroup(isExpanded: $open) {
             if link.chatsForSettings.isEmpty {
-                Text(tr("whatsapp.settings.noChats")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                SettingNote(tr("whatsapp.settings.noChats"))
             } else {
                 NookSearchField(prompt: tr("whatsapp.settings.chatSearch"), text: $query, style: .inline)
                 ForEach(chats, id: \.jid) { chat in
@@ -191,9 +188,9 @@ struct WhatsAppChatModeList: View {
             }
             if !hidden.isEmpty {
                 Text(tr("whatsapp.settings.hidden"))
-                    .font(NookTheme.font(11, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .padding(.top, 6)
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .padding(.top, NookTheme.Spacing.sm)
                 ForEach(hidden, id: \.jid) { chat in
                     HStack(spacing: 10) {
                         avatar(chat.name)

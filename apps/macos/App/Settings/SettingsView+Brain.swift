@@ -58,6 +58,23 @@ extension SettingsView {
 
     var brainSection: some View {
         Group {
+            // What Nook thinks with right now, and the one way to check it works, said once at the top.
+            Section {
+                StatusRow(title: settings.brainReady ? tr("settings.checklist.brain.ready", settings.activeModelName) : tr("settings.checklist.brain"),
+                          detail: settings.brainReady
+                              ? (settings.isLocalBrain ? tr("settings.brain.localChoice") : tr("settings.brain.externalChoice"))
+                              : tr("settings.checklist.brain.notReady"),
+                          state: settings.brainReady ? .done : .todo) {
+                    if testing { ProgressView().controlSize(.small) }
+                    Button(tr("button.testConnection")) { Task { await testConnection() } }
+                        .disabled(!settings.brainReady || testing)
+                }
+                if let result = testResult {
+                    SettingNote(result.message, tone: result.ok ? .success : .error)
+                        .textSelection(.enabled)
+                }
+            }
+
             Section {
                 Picker(tr("settings.brain.where"), selection: brainKind) {
                     Text(tr("settings.brain.localChoice")).tag(BrainKind.local)
@@ -94,21 +111,6 @@ extension SettingsView {
 
             if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }
 
-            Section {
-                HStack {
-                    Button(tr("button.testConnection")) { Task { await testConnection() } }
-                        .disabled(!settings.brainReady || testing)
-                    if testing { ProgressView().controlSize(.small) }
-                    Spacer()
-                }
-                if let result = testResult {
-                    Label(result.message, systemImage: result.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(result.ok ? NookTheme.mint : NookTheme.coral)
-                        .textSelection(.enabled)
-                }
-            }
-
             // The answer language and the sources kept on this Mac have one home each: General and Privacy.
             Section {
                 settingsLink(.general, title: tr("settings.brain.answerLanguage"), detail: tr("settings.brain.languageMoved"))
@@ -121,8 +123,7 @@ extension SettingsView {
     /// The models Nook proposes for this Mac, best first, with one button to use or install each.
     var adviceRows: some View {
         Group {
-            Text(tr("brain.advice.memory", EmbeddedModel.memoryGB))
-                .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+            SettingNote(tr("brain.advice.memory", EmbeddedModel.memoryGB))
             ForEach(Array(recommendations.prefix(3).enumerated()), id: \.offset) { index, recommendation in
                 HStack(alignment: .firstTextBaseline) {
                     ModelLogo(name: AppModel.title(of: recommendation))
@@ -151,10 +152,10 @@ extension SettingsView {
         case .mlx(let option) where installing == option.id:
             ProgressView(value: installFraction).frame(width: 90)
         case .mlx(let option) where settings.useLocal && settings.localModel == option.id:
-            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+            InUseLabel(tr("brain.advice.inUse"))
         case .server(let model) where !settings.useLocal && settings.activeProviderModel == model.name
                 && settings.provider == (model.server == .ollama ? .ollama : .lmstudio):
-            Label(tr("brain.advice.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+            InUseLabel(tr("brain.advice.inUse"))
         case .mlx(let option) where !recommendation.ready:
             Button(tr("brain.advice.install")) { Task { await install(option.id) } }
                 .disabled(installing != nil)
@@ -213,7 +214,7 @@ extension SettingsView {
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                     } else {
-                        Text(tr("settings.brain.keyStaysInKeychain")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                        SettingNote(tr("settings.brain.keyStaysInKeychain"))
                     }
                     Spacer()
                     if let url = settings.provider.keyURL {
@@ -222,7 +223,7 @@ extension SettingsView {
                 }
             } else if let url = settings.provider.keyURL {
                 HStack {
-                    Text(tr("settings.brain.providerMustRun", settings.provider.title)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                    SettingNote(tr("settings.brain.providerMustRun", settings.provider.title))
                     Spacer()
                     Link(tr("button.download"), destination: url).font(NookTheme.TextStyle.detail)
                 }
@@ -248,9 +249,7 @@ extension SettingsView {
                 if !settings.provider.seesImages(model: settings.activeProviderModel) { NoImagesBadge() }
             }
             if settings.provider == .claude {
-                Text(tr("settings.brain.haikuHint"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
+                SettingNote(tr("settings.brain.haikuHint"))
             }
         }
     }
@@ -259,17 +258,12 @@ extension SettingsView {
     var claudeCodeStatus: some View {
         let _ = refreshTick
         let path = ClaudeCodeBrain.executable
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let path {
-                Label(tr("settings.brain.claudeFound", path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")), systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(NookTheme.mint)
-                Text(tr("settings.brain.claudeLoginHint"))
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                StatusRow(title: tr("settings.brain.claudeFound", path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")),
+                          detail: tr("settings.brain.claudeLoginHint"), state: .done) { EmptyView() }
             } else {
-                Label(tr("settings.brain.claudeNotFound"), systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(NookTheme.amber)
-                Text(tr("settings.brain.claudeInstallHint"))
-                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                StatusRow(title: tr("settings.brain.claudeNotFound"), detail: tr("settings.brain.claudeInstallHint"), state: .warning) { EmptyView() }
                     .textSelection(.enabled)
                 HStack {
                     Button(tr("button.searchAgain")) { ClaudeCodeBrain.resetLocation(); refreshTick += 1; settings.objectWillChange.send() }
@@ -308,7 +302,7 @@ extension SettingsView {
                     }
                     Spacer()
                     if settings.localModel == AppleModel.id {
-                        Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                        InUseLabel(tr("settings.brain.inUse"))
                     } else if AppleIntelligence.isAvailable {
                         Button(tr("settings.brain.use")) { settings.localModel = AppleModel.id; testResult = nil }
                     }
@@ -330,21 +324,19 @@ extension SettingsView {
                         Text("\(Int(installFraction * 100))%").font(NookTheme.TextStyle.detail.monospacedDigit())
                     } else if local.installed.contains(option.id) {
                         if settings.localModel == option.id {
-                            Label(tr("settings.brain.inUse"), systemImage: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
+                            InUseLabel(tr("settings.brain.inUse"))
                         } else {
                             Button(tr("settings.brain.use")) { settings.localModel = option.id; testResult = nil }
                         }
                     } else if !option.fits {
-                        Text(tr("settings.brain.tooHeavyForMemory", EmbeddedModel.memoryGB)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
+                        SettingNote(tr("settings.brain.tooHeavyForMemory", EmbeddedModel.memoryGB), tone: .warning)
                     } else {
                         Button(tr("button.download")) { Task { await install(option.id) } }
                             .disabled(installing != nil)
                     }
                 }
             }
-            Text(tr("settings.brain.localModelDownloadHint", EmbeddedModel.memoryGB))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+            SettingNote(tr("settings.brain.localModelDownloadHint", EmbeddedModel.memoryGB))
         }
     }
 

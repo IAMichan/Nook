@@ -46,10 +46,10 @@ struct TranscriptConversation: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: true) {
                     // Lazy: a long conversation only lays out what is on screen.
-                    LazyVStack(alignment: .leading, spacing: 6) {
+                    LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
                             Text(loaded || (path.isEmpty && load == nil) ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
-                                .font(NookTheme.font(12.5))
+                                .font(NookTheme.TextStyle.body)
                                 .foregroundStyle(NookTheme.textTertiary)
                         }
                         ForEach(rows) { row in
@@ -57,14 +57,14 @@ struct TranscriptConversation: View {
                         }
                         if let footer {
                             Text(footer)
-                                .font(NookTheme.font(11.5))
+                                .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textTertiary)
-                                .padding(.top, 4)
+                                .padding(.top, NookTheme.Spacing.xs)
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, NookTheme.Spacing.xs)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
@@ -123,18 +123,18 @@ struct TranscriptConversation: View {
     private func row(_ row: TranscriptRow, answerable: String?) -> some View {
         if case .fold(let id, let seconds, let inner) = row {
             let key = "fold:" + id
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 TranscriptFoldLine(text: seconds.map { tr("ws.fold.worked", AgentPathFormat.duration($0)) } ?? tr("agents.timeline.worked"),
                                    open: open.contains(key),
                                    checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
                 if open.contains(key) {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         ForEach(inner) { flatRow($0, answerable: nil).id($0.id) }
                     }
-                    .padding(.bottom, 4)
+                    .padding(.bottom, NookTheme.Spacing.xs)
                 }
             }
-            .padding(.bottom, 2)
+            .padding(.bottom, NookTheme.Spacing.xxs)
         } else {
             flatRow(row, answerable: answerable)
         }
@@ -145,13 +145,14 @@ struct TranscriptConversation: View {
     private func flatRow(_ row: TranscriptRow, answerable: String?) -> some View {
         switch row {
         case .user(let message):
+            // Space above your message: each turn starts as its own block.
             TranscriptUserBubble(message: message)
-                .padding(.top, 8)
-                .padding(.bottom, 2)
+                .padding(.top, NookTheme.Spacing.lg)
+                .padding(.bottom, NookTheme.Spacing.xxs)
         case .assistant(let message, let isFinal):
             TranscriptAnswer(message: message, isFinal: isFinal,
                              onChoose: message.id == answerable ? onReply : nil)
-                .padding(.bottom, isFinal ? 8 : 2)
+                .padding(.bottom, isFinal ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs)
         case .thinking(let message):
             thinking(message)
         case .step(let step):
@@ -166,7 +167,7 @@ struct TranscriptConversation: View {
             // The agent's task list, live, and what it does now in words rather than a bare "Thinking…".
             let tasks = TranscriptPresentation.tasks(shown)
             let activity = step.map { AgentActivity.of($0) } ?? TranscriptPresentation.activity(shown)
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 if let tasks { TaskChecklistCard(steps: tasks) }
                 TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
                                    label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
@@ -175,23 +176,23 @@ struct TranscriptConversation: View {
             }
         case .interrupted:
             TranscriptWorkLine(symbol: "stop.circle", label: tr("agents.transcript.interrupted"))
-                .padding(.bottom, 8)
+                .padding(.bottom, NookTheme.Spacing.md)
         }
     }
 
     private func group(id: String, steps: [AgentToolStep]) -> some View {
         let key = "group:" + id
         let tally = ToolTally(steps: steps)
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: ToolTallyText.sentence(tally),
                                failed: tally.failed, checks: tally.checks, lines: tally.lines, open: open.contains(key)) { toggle(key) }
             if open.contains(key) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(steps) { step in
                         stepLine(step)
                     }
                 }
-                .padding(.leading, 12)
+                .padding(.leading, NookTheme.Spacing.lg)
                 .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 1).padding(.leading, 9) }
             }
         }
@@ -205,7 +206,7 @@ struct TranscriptConversation: View {
         let file = tasks == nil ? directory.flatMap { folder in step.file.map { SessionOutputs.resolve($0, in: folder) } } : nil
         let text = TranscriptStepText.parts(step)
         let error = step.state == .failed ? step.error : nil
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
                                lines: step.state == .failed ? nil : step.lines,
@@ -216,22 +217,22 @@ struct TranscriptConversation: View {
             // Why it failed, right under it: what the agent ran into before it tried something else.
             if let error {
                 Text(error)
-                    .font(NookTheme.font(11.5))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coral.opacity(0.85))
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 26)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, NookTheme.Spacing.xxs)
                     .help(error)
             }
             if let tasks, open.contains(key) {
                 TaskListRows(steps: tasks)
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.field))
+                    .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
                     .padding(.leading, 26)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, NookTheme.Spacing.xs)
             }
         }
     }
@@ -241,19 +242,19 @@ struct TranscriptConversation: View {
         let key = "think:" + message.id
         let headline = TranscriptPresentation.headline(message.text)
         let more = headline != message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
             TranscriptWorkLine(symbol: "brain", label: headline.isEmpty ? tr("agents.thought") : headline,
                                open: more ? open.contains(key) : nil) { if more { toggle(key) } }
             if more, open.contains(key) {
                 Text(message.text)
-                    .font(NookTheme.font(12.5))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 26)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, NookTheme.Spacing.xs)
             }
         }
     }
@@ -306,14 +307,14 @@ struct TranscriptUserBubble: View {
 
     var body: some View {
         let parts = parts
-        VStack(alignment: .trailing, spacing: 4) {
+        VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
             if !parts.images.isEmpty {
                 MessagePictures(urls: parts.images)
             }
             if !parts.text.isEmpty {
                 HStack(spacing: 0) {
                     Spacer(minLength: 48)
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         text(parts.text)
                         if long {
                             Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
@@ -324,12 +325,12 @@ struct TranscriptUserBubble: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, NookTheme.Spacing.lg)
+                    .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.smoke))
                 }
             }
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 if let date = message.date { TranscriptTime(date: date) }
                 TranscriptCopyButton(text: message.text)
             }
@@ -343,7 +344,7 @@ struct TranscriptUserBubble: View {
     @ViewBuilder
     private func text(_ string: String) -> some View {
         let label = Text(string)
-            .font(NookTheme.font(13.5))
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
@@ -373,17 +374,17 @@ struct TranscriptAnswer: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             MarkdownView(text: message.text, size: 13.5, onChoose: onChoose)
             if isFinal {
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     TranscriptCopyButton(text: message.text)
                     if let date = message.updated ?? message.date { TranscriptTime(date: date) }
                 }
                 .opacity(hovering ? 1 : 0)
             }
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, NookTheme.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -399,7 +400,7 @@ struct TranscriptTime: View {
             ? date.formatted(date: .omitted, time: .shortened)
             : date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
         Text(text)
-            .font(NookTheme.font(11.5))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
             .help(date.formatted(date: .complete, time: .shortened))
@@ -460,12 +461,12 @@ struct TranscriptWorkLine: View {
         let head = Text(label).foregroundStyle(color)
         guard let detail, !detail.isEmpty else { return head }
         return head + Text("  ") + Text(detail)
-            .font(mono ? NookTheme.mono(11.5) : NookTheme.font(12.5))
+            .font(mono ? NookTheme.mono(11.5) : NookTheme.TextStyle.detail)
             .foregroundStyle(reveals == true ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
     }
 
     var body: some View {
-        let content = HStack(spacing: 6) {
+        let content = HStack(spacing: NookTheme.Spacing.sm) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
@@ -494,7 +495,7 @@ struct TranscriptWorkLine: View {
             if !checks.isEmpty { VerificationChips(checks: checks) }
             Spacer(minLength: 0)
         }
-        .font(NookTheme.font(12.5))
+        .font(NookTheme.TextStyle.detail)
         .frame(minHeight: 22)
         .contentShape(Rectangle())
 
@@ -520,7 +521,7 @@ struct TranscriptFoldLine: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Text(text)
                 Image(systemName: "chevron.right")
                     .font(NookTheme.font(9, .bold))
@@ -528,10 +529,10 @@ struct TranscriptFoldLine: View {
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
-            .font(NookTheme.font(12.5))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
-            .padding(.top, 2)
-            .padding(.bottom, 8)
+            .padding(.top, NookTheme.Spacing.xxs)
+            .padding(.bottom, NookTheme.Spacing.md)
             .overlay(alignment: .bottom) { NookDivider() }
             .contentShape(Rectangle())
         }
@@ -556,11 +557,11 @@ struct TranscriptWorkingLine: View {
                 Text(tr("ws.timeline.working"))
             }
         }
-        .font(NookTheme.font(12.5))
+        .font(NookTheme.TextStyle.detail)
         .foregroundStyle(NookTheme.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 2)
-        .padding(.bottom, 8)
+        .padding(.top, NookTheme.Spacing.xxs)
+        .padding(.bottom, NookTheme.Spacing.md)
         .overlay(alignment: .bottom) { NookDivider() }
     }
 }

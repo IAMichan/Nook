@@ -175,6 +175,7 @@ targets:
       - path: Brain/MailStats.swift
       - path: Brain/MailActions.swift
       - path: Brain/AppMenu.swift
+      - path: Brain/AppNames.swift
       - path: Brain/Retrieval.swift
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift

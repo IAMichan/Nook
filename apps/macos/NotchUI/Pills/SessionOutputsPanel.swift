@@ -16,17 +16,17 @@ struct SessionOutputsPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             header
             if outputs.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(tr("ws.outputs.empty.title")).font(NookTheme.font(12.5, .medium)).foregroundStyle(NookTheme.textSecondary)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    Text(tr("ws.outputs.empty.title")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
                     Text(tr("ws.outputs.empty.body"))
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(12)
+                .padding(NookTheme.Spacing.lg)
                 Spacer(minLength: 0)
             } else {
                 if outputs.count > 1 { list }
@@ -39,7 +39,7 @@ struct SessionOutputsPanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "tray.full").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(tr("ws.outputs.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
             if !outputs.isEmpty {
@@ -57,11 +57,11 @@ struct SessionOutputsPanel: View {
     /// One row per output, newest first; the list scrolls when it is long.
     private var list: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 ForEach(outputs) { output in
                     let chosen = output.id == current?.id
                     Button { selection = output.id } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: NookTheme.Spacing.md) {
                             Image(systemName: OutputText.symbol(output.kind))
                                 .font(NookTheme.font(11, .medium))
                                 .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textTertiary)
@@ -71,8 +71,8 @@ struct SessionOutputsPanel: View {
                             Spacer(minLength: 6)
                             Text(OutputText.kind(output.kind)).foregroundStyle(NookTheme.textTertiary)
                         }
-                        .font(NookTheme.font(12))
-                        .padding(.horizontal, 8)
+                        .font(NookTheme.TextStyle.detail)
+                        .padding(.horizontal, NookTheme.Spacing.md)
                         .frame(height: 26)
                         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(chosen ? NookTheme.smoke : Color.clear))
                         .contentShape(Rectangle())
@@ -136,9 +136,9 @@ private struct OutputViewer: View {
     private var content: some View {
         switch output.kind {
         case .tasks(let steps):
-            ScrollView { TaskListRows(steps: steps).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { TaskListRows(steps: steps).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
         case .plan(let text):
-            ScrollView { MarkdownView(text: text, size: 12.5).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { MarkdownView(text: text, size: 13.5).padding(NookTheme.Spacing.xl).frame(maxWidth: .infinity, alignment: .leading) }
         case .design:
             if let path = output.path {
                 // Written again: the page loads again.
@@ -156,11 +156,11 @@ private struct OutputViewer: View {
     }
 
     private var missing: some View {
-        Text(tr("ws.outputs.missing")).font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary).padding(14)
+        Text(tr("ws.outputs.missing")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).padding(14)
     }
 
     private var actions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             if let path = output.path {
                 Text(AgentPathFormat.tilde(path))
                     .font(NookTheme.mono(10.5))
@@ -205,7 +205,7 @@ struct FilePreviewPanel: View {
     @State private var opened = Date()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             header
             ToolSurface {
                 VStack(spacing: 0) {
@@ -219,7 +219,7 @@ struct FilePreviewPanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Image(systemName: "doc.text").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             Text(URL(fileURLWithPath: path).lastPathComponent)
                 .font(NookTheme.TextStyle.strong)
@@ -253,7 +253,7 @@ struct FilePreviewPanel: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             Text(AgentPathFormat.tilde(path))
                 .font(NookTheme.mono(10.5))
                 .foregroundStyle(NookTheme.textTertiary)
@@ -291,7 +291,7 @@ private struct FileTextPreview: View {
                     let digits = String(lines.count).count
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                            HStack(alignment: .top, spacing: 12) {
+                            HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
                                 Text(String(index + 1))
                                     .foregroundStyle(NookTheme.textTertiary)
                                     .frame(width: CGFloat(digits) * 7.5, alignment: .trailing)
@@ -303,7 +303,7 @@ private struct FileTextPreview: View {
                     }
                     .font(NookTheme.mono(11.5))
                     .textSelection(.enabled)
-                    .padding(12)
+                    .padding(NookTheme.Spacing.lg)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -321,7 +321,7 @@ private struct FileTextPreview: View {
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(NookTheme.font(12))
+            .font(NookTheme.TextStyle.detail)
             .foregroundStyle(NookTheme.textTertiary)
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -337,7 +337,7 @@ private struct DocumentPreview: View {
     var body: some View {
         ScrollView {
             Group {
-                if let text { MarkdownView(text: text, size: 12.5) } else { ProgressView().controlSize(.small) }
+                if let text { MarkdownView(text: text, size: 13.5) } else { ProgressView().controlSize(.small) }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -392,7 +392,7 @@ struct TaskListRows: View {
     let steps: [RunTaskStep]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
                 TaskStepRow(step: step)
             }

@@ -41,6 +41,8 @@ protocol WhatsAppProvider: Sendable {
     func markRead(chat: String, lastIncoming: String?) async throws
     /// A group's name, when the messages don't carry it.
     func groupName(_ chat: String) async -> String?
+    /// The names of every group you are in, by JID, in one call: empty when the gateway cannot list them.
+    func groupNames() async -> [String: String]
     /// The chats on the phone, newest first: who Nook may send to, by name.
     func chats(limit: Int) async throws -> [WAChatInfo]
     /// The file of one message (a document, photo, video or voice note), only when you open it.
@@ -58,6 +60,7 @@ protocol WhatsAppProvider: Sendable {
 
 extension WhatsAppProvider {
     func avatar(_ chat: String) async -> URL? { nil }
+    func groupNames() async -> [String: String] { [:] }
     func channels() async -> [WAChannel] { [] }
     var canVote: Bool { false }
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
@@ -276,6 +279,11 @@ actor GOWAProvider: WhatsAppProvider {
         return name
     }
 
+    func groupNames() async -> [String: String] {
+        guard let data = try? await scoped("GET", "/user/my/groups", timeout: 30) else { return [:] }
+        return WAGOWA.groupNames(data)
+    }
+
     func chats(limit: Int) async throws -> [WAChatInfo] {
         WAGOWA.chats(try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(limit))]))
             .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
@@ -287,9 +295,15 @@ actor GOWAProvider: WhatsAppProvider {
     }
 
     func avatar(_ chat: String) async -> URL? {
+        // A community's picture is only given when asked as one: a group without a picture is asked that way too.
+        if let url = await avatar(chat, community: false) { return url }
+        return WAJID.isGroup(chat) ? await avatar(chat, community: true) : nil
+    }
+
+    private func avatar(_ chat: String, community: Bool) async -> URL? {
         guard let data = try? await scoped("GET", "/user/avatar", query: [
             URLQueryItem(name: "phone", value: chat), URLQueryItem(name: "is_preview", value: "true"),
-            URLQueryItem(name: "is_community", value: "false"),
+            URLQueryItem(name: "is_community", value: community ? "true" : "false"),
         ]) else { return nil }
         return WAAvatar.url(data)
     }

@@ -54,12 +54,12 @@ struct AutocompletePlaygroundSection: View {
                     LabeledContent(tr("autocomplete.playground.time")) { Text(tr("autocomplete.playground.ms", last.milliseconds)).monospacedDigit() }
                     LabeledContent(tr("autocomplete.playground.answer")) {
                         Text(last.raw.isEmpty ? tr("autocomplete.playground.noAnswer") : "“\(last.raw)”")
-                            .foregroundStyle(last.raw.isEmpty ? NookTheme.textSecondary : Color.primary)
+                            .foregroundStyle(last.raw.isEmpty ? NookTheme.textSecondary : NookTheme.paper)
                             .textSelection(.enabled)
                     }
                     LabeledContent(tr("autocomplete.playground.shown")) {
                         Text(last.suggestion.map { "“\($0.remaining)”" } ?? tr("autocomplete.playground.nothingShown"))
-                            .foregroundStyle(last.suggestion == nil ? NookTheme.textSecondary : Color.primary)
+                            .foregroundStyle(last.suggestion == nil ? NookTheme.textSecondary : NookTheme.paper)
                     }
                     LabeledContent(tr("autocomplete.playground.taken")) { Text(tr("autocomplete.stats.words", playground.wordsTaken)).monospacedDigit() }
                     DisclosureGroup(tr("autocomplete.playground.prompt")) {

@@ -182,7 +182,8 @@ final class WhatsAppLink: ObservableObject {
     private var lastWebhook: Date?
     private var lastPoll = Date()
     private var lastChatList: Date = .distantPast
-    private var namingGroups: Set<String> = []
+    /// When each unnamed group was last asked for its name: one the gateway could not name is asked again later.
+    private var namingGroups: [String: Date] = [:]
     /// Chats whose older messages were fetched for the notch card: once per chat while linked.
     private var historyLoaded: Set<String> = []
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
@@ -271,7 +272,7 @@ final class WhatsAppLink: ObservableObject {
         me = nil
         backfilled = false
         lastWebhook = nil
-        namingGroups = []
+        namingGroups = [:]
         failures = 0
         if !WhatsAppSettings.enabled { WhatsAppGOWAProcess.shared.stopNow() }
         if forget {
@@ -470,14 +471,35 @@ final class WhatsAppLink: ObservableObject {
                 inbox.rename(chat.jid, to: chat.name)
             }
         }
-        // Groups the gateway only knows by their id ("Group 3162…"): asked for their name, once each while linked.
-        for chat in knownChats where WAJID.isGroup(chat.jid) && WAJID.isPlaceholderName(chat.name, for: chat.jid)
-            && !namingGroups.contains(chat.jid) {
-            namingGroups.insert(chat.jid)
-            guard let name = await provider.groupName(chat.jid), gen == generation else { continue }
-            if let index = knownChats.firstIndex(where: { $0.jid == chat.jid }) { knownChats[index].name = name }
-            inbox.rename(chat.jid, to: name)
+        // Groups the gateway only knows by their id ("Group 3162…"): named from the list of your groups (one call),
+        // and any left over asked one by one; one still unnamed is asked again a while later.
+        let unnamed = knownChats.filter { WAJID.isGroup($0.jid) && WAJID.isPlaceholderName($0.name, for: $0.jid) }.map(\.jid)
+            + inbox.conversations.values.filter { WAJID.isGroup($0.id) && WAJID.isPlaceholderName($0.name, for: $0.id) }.map(\.id)
+        guard !unnamed.isEmpty else { return }
+        let listed = await provider.groupNames()
+        guard gen == generation else { return }
+        for jid in Set(unnamed) {
+            if let name = listed[jid] {
+                nameGroup(jid, name)
+            } else if shouldAskName(jid) {
+                guard let name = await provider.groupName(jid), gen == generation else { continue }
+                nameGroup(jid, name)
+            }
         }
+    }
+
+    /// Whether an unnamed group may be asked for its name now: never twice within half an hour.
+    private func shouldAskName(_ jid: String) -> Bool {
+        if let asked = namingGroups[jid], Date().timeIntervalSince(asked) < 1800 { return false }
+        namingGroups[jid] = Date()
+        return true
+    }
+
+    /// A group the gateway could name is reachable now: its picture, if it had none, is asked for again too.
+    private func nameGroup(_ jid: String, _ name: String) {
+        if avatars[jid] == nil { avatarAsked[jid] = nil }
+        if let index = knownChats.firstIndex(where: { $0.jid == jid }) { knownChats[index].name = name }
+        if let shown = inbox.conversations[jid]?.name, WAJID.isPlaceholderName(shown, for: jid) { inbox.rename(jid, to: name) }
     }
 
     private func poll() {
@@ -509,11 +531,16 @@ final class WhatsAppLink: ObservableObject {
     /// Groups arrive under their id (GOWA's webhook carries no group name): asked once.
     private func nameGroupIfNeeded(_ chat: String) {
         guard WAJID.isGroup(chat), let provider, let conversation = inbox.conversations[chat],
-              WAJID.isPlaceholderName(conversation.name, for: chat), !namingGroups.contains(chat) else { return }
-        namingGroups.insert(chat)
+              WAJID.isPlaceholderName(conversation.name, for: chat) else { return }
+        // A name the chat list already learned comes first: no call at all.
+        if let known = knownChats.first(where: { $0.jid == chat }), !WAJID.isPlaceholderName(known.name, for: chat) {
+            inbox.rename(chat, to: known.name)
+            return
+        }
+        guard shouldAskName(chat) else { return }
         let gen = generation
         Task {
-            if let name = await provider.groupName(chat), gen == generation { inbox.rename(chat, to: name) }
+            if let name = await provider.groupName(chat), gen == generation { nameGroup(chat, name) }
         }
     }
 

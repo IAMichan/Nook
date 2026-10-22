@@ -26,9 +26,9 @@ struct MusicDock: View {
         .frame(maxWidth: .infinity, maxHeight: expanded ? .infinity : Self.barHeight)
         .frame(height: expanded ? nil : Self.barHeight)
         .background {
+            // A soft fill, no edge: the bar sits in the panel like every other card.
             RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
                 .fill(NookTheme.graphite)
-                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).strokeBorder(Color.white.opacity(0.04), lineWidth: 1))
                 .opacity(expanded ? 0 : 1)
         }
         // The position and volume shown here need the player polled every couple of seconds; nothing else does.
@@ -47,25 +47,25 @@ private struct MusicBar: View {
     @State private var hoveringTrack = false
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: NookTheme.Spacing.xl) {
             Button(action: onExpand) {
-                HStack(spacing: 11) {
+                HStack(spacing: NookTheme.Spacing.lg) {
                     MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: NookTheme.Radius.card)
                         .frame(width: 50, height: 50)
-                        .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
-                    VStack(alignment: .leading, spacing: 2) {
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(info.title)
-                            .font(NookTheme.font(13.5, .semibold))
+                            .font(NookTheme.TextStyle.strong)
                             .foregroundStyle(NookTheme.paper)
                             .lineLimit(1)
                         Text(subtitle)
-                            .font(NookTheme.font(11.5))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }
                 }
-                .padding(4)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(Color.white.opacity(hoveringTrack ? 0.05 : 0)))
+                .padding(NookTheme.Spacing.xs)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.paper.opacity(hoveringTrack ? 0.05 : 0)))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -75,19 +75,18 @@ private struct MusicBar: View {
             .accessibilityHint(tr("music.expand"))
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(spacing: 2) {
+            VStack(spacing: NookTheme.Spacing.xxs) {
                 MusicTransport(info: info, service: service)
                 MusicScrubBar(info: info, style: .inline) { service.seek(to: $0) }
             }
             .frame(width: 330)
 
-            HStack(spacing: 4) {
+            HStack(spacing: NookTheme.Spacing.xs) {
                 if let volume = info.volume {
                     MusicVolumeControl(volume: volume, width: 70) { service.setVolume($0) }
-                    Rectangle()
-                        .fill(NookTheme.line2)
-                        .frame(width: 1, height: 16)
-                        .padding(.horizontal, 6)
+                    NookDivider(vertical: true)
+                        .frame(height: 16)
+                        .padding(.horizontal, NookTheme.Spacing.sm)
                 }
                 NookIconButton(systemName: "arrow.up.forward.app", label: tr("music.openPlayer", musicPlayerName(info)), size: 30) {
                     openMusicPlayer(info)
@@ -98,8 +97,8 @@ private struct MusicBar: View {
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 12)
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.lg)
         .animation(NookTheme.hover, value: hoveringTrack)
     }
 
@@ -144,8 +143,7 @@ private struct MusicFullPlayer: View {
     private func cover(side: CGFloat) -> some View {
         MusicArtwork(url: info.artworkURL, seed: info.title, cornerRadius: NookTheme.Radius.sheet)
             .frame(width: side, height: side)
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
-            .shadow(color: .black.opacity(0.55), radius: 26, y: 14)
+            .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
             .scaleEffect(info.isPlaying ? 1 : 0.95)
             .animation(.spring(duration: 0.45, bounce: 0.15), value: info.isPlaying)
             .background {
@@ -163,39 +161,37 @@ private struct MusicFullPlayer: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 EqualizerBars(color: NookTheme.mint, height: 10, isPlaying: info.isPlaying)
                     .scaleEffect(0.8, anchor: .leading)
                     .frame(width: 26, alignment: .leading)
-                Text(tr("music.playingIn", musicPlayerName(info)).uppercased())
-                    .font(NookTheme.font(10.5, .bold))
-                    .tracking(0.9)
-                    .foregroundStyle(NookTheme.paper.opacity(0.55))
+                Text(tr("music.playingIn", musicPlayerName(info)))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
                     .lineLimit(1)
             }
             Text(info.title)
-                .font(NookTheme.font(26, .bold))
-                .tracking(-0.4)
+                .font(NookTheme.TextStyle.display)
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
                 .help(info.title)
-                .padding(.top, 10)
+                .padding(.top, NookTheme.Spacing.md)
                 // Clear of the open and fold buttons in the corner.
                 .padding(.trailing, 72)
             subtitleText
-                .font(NookTheme.font(13.5))
+                .font(NookTheme.TextStyle.body)
                 .lineLimit(1)
-                .padding(.top, 5)
+                .padding(.top, NookTheme.Spacing.xs)
             MusicScrubBar(info: info, style: .stacked) { service.seek(to: $0) }
-                .padding(.top, 20)
-            HStack(spacing: 12) {
+                .padding(.top, NookTheme.Spacing.xl + NookTheme.Spacing.xs)
+            HStack(spacing: NookTheme.Spacing.lg) {
                 MusicTransport(info: info, service: service, large: true)
-                Spacer(minLength: 8)
+                Spacer(minLength: NookTheme.Spacing.md)
                 if let volume = info.volume {
                     MusicVolumeControl(volume: volume, width: 96) { service.setVolume($0) }
                 }
             }
-            .padding(.top, 10)
+            .padding(.top, NookTheme.Spacing.md)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -225,16 +221,16 @@ private struct MusicUpcomingStrip: View {
     private var tracks: [MusicTrack] { showsQueue ? (service.upNext?.tracks ?? []) : service.recent.tracks }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text((showsQueue ? tr("music.section.upNext") : tr("music.recent.title")).uppercased())
-                    .font(NookTheme.font(10.5, .bold))
-                    .tracking(0.9)
-                    .foregroundStyle(NookTheme.paper.opacity(0.45))
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                // A group's name, as everywhere else in the panel: no capitals, no tracking.
+                Text(showsQueue ? tr("music.section.upNext") : tr("music.recent.title"))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textSecondary)
                 if showsQueue, let playlist = service.upNext?.playlist, !playlist.isEmpty {
                     Text(tr("music.upNext.from", playlist))
-                        .font(NookTheme.font(11.5))
-                        .foregroundStyle(NookTheme.paper.opacity(0.38))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
                 if showsQueue && info.shuffle {
@@ -244,21 +240,21 @@ private struct MusicUpcomingStrip: View {
                         .help(tr("music.upNext.shuffleNote"))
                         .accessibilityLabel(tr("music.upNext.shuffleNote"))
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: NookTheme.Spacing.md)
                 if !tracks.isEmpty {
                     MusicShowAllButton { onShowAll(showsQueue ? .upNext : .recent) }
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, NookTheme.Spacing.xs)
             Group {
                 if tracks.isEmpty {
                     Text(emptyText)
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, NookTheme.Spacing.xs)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    HStack(spacing: 6) {
+                    HStack(spacing: NookTheme.Spacing.sm) {
                         ForEach(Array(tracks.prefix(Self.count).enumerated()), id: \.offset) { _, track in
                             MusicUpcomingChip(track: track) { service.play(track, fromQueue: showsQueue) }
                                 .frame(maxWidth: .infinity)
@@ -272,20 +268,10 @@ private struct MusicUpcomingStrip: View {
             }
             .frame(height: 50)
         }
-        .padding(.top, 12)
-        .padding(.bottom, 2)
+        .padding(.top, NookTheme.Spacing.lg)
+        .padding(.bottom, NookTheme.Spacing.xxs)
         .overlay(alignment: .top) {
-            LinearGradient(
-                stops: [
-                    .init(color: .white.opacity(0), location: 0),
-                    .init(color: .white.opacity(0.09), location: 0.2),
-                    .init(color: .white.opacity(0.09), location: 0.8),
-                    .init(color: .white.opacity(0), location: 1),
-                ],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .frame(height: 1)
-            .padding(.horizontal, 4)
+            NookDivider().padding(.horizontal, NookTheme.Spacing.xs)
         }
     }
 
@@ -302,7 +288,7 @@ private struct MusicUpcomingChip: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 MusicArtwork(url: track.artworkURL, seed: track.title, cornerRadius: NookTheme.Radius.control)
                     .frame(width: 38, height: 38)
                     .overlay {
@@ -312,23 +298,22 @@ private struct MusicUpcomingChip: View {
                         }
                         .opacity(hovering ? 1 : 0)
                     }
-                    .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(track.title)
-                        .font(NookTheme.font(12.5, .semibold))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     if !track.artist.isEmpty {
                         Text(track.artist)
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.paper.opacity(0.45))
+                            .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(Color.white.opacity(hovering ? 0.06 : 0)))
+            .padding(NookTheme.Spacing.sm)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper.opacity(hovering ? 0.06 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -346,14 +331,14 @@ private struct MusicShowAllButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 3) {
-                Text(tr("music.showAll")).font(NookTheme.font(11.5, .semibold))
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text(tr("music.showAll")).font(NookTheme.TextStyle.label)
                 Image(systemName: "chevron.right").font(NookTheme.font(9, .bold))
             }
-            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.paper.opacity(0.6))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(Color.white.opacity(hovering ? 0.07 : 0)))
+            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.paper.opacity(hovering ? 0.07 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

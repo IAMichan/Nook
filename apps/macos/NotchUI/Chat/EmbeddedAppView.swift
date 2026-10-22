@@ -305,7 +305,6 @@ struct EmbeddedAppPane: View {
             }
             .background(NookTheme.field)
             .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
         }
     }
 
