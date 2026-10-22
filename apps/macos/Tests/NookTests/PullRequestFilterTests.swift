@@ -15,7 +15,7 @@ final class PullRequestFilterTests: XCTestCase {
     func testSearchNeedsEveryWord() {
         var filter = PullRequestFilter(query: "  Merge  ACME ")
         XCTAssertTrue(filter.isActive)
-        XCTAssertTrue(filter.matches(item(1, "Add merging")))
+        XCTAssertTrue(filter.matches(item(1, "Add merge queue")))
         XCTAssertFalse(filter.matches(item(1, "Add merging", repo: "other/app")))
         filter.query = "@bob"
         XCTAssertTrue(filter.matches(item(1, "Fix", author: "bob")))

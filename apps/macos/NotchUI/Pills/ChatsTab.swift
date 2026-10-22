@@ -51,7 +51,8 @@ struct ChatsTab: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @ObservedObject private var photos = ContactPhotos.shared
-    @State private var selection: String?
+    /// The open chat: the one you opened last, also after the tab was closed or Nook restarted; nil shows none.
+    @State private var selection: String? = ChatsTab.lastOpened
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
     /// Only the chats with something unread; the chat you opened stays while you read it.
@@ -61,6 +62,12 @@ struct ChatsTab: View {
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
     @State private var totalWidth: Double = 0
+
+    /// The chat you opened last, kept for the next time the tab opens.
+    static var lastOpened: String? {
+        get { UserDefaults.standard.string(forKey: "nook.chats.lastOpened") }
+        set { UserDefaults.standard.set(newValue, forKey: "nook.chats.lastOpened") }
+    }
 
     /// Unread messages in every chat, for the dot on the tab.
     @MainActor
@@ -93,12 +100,21 @@ struct ChatsTab: View {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp)
                                 .id(current.id)
                         } else {
-                            // Nothing matches the search: the list says so, this side stays quiet.
-                            Image(systemName: "bubble.left.and.bubble.right")
-                                .font(NookTheme.font(26, .light))
-                                .foregroundStyle(NookTheme.textMuted)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .accessibilityHidden(true)
+                            // No chat open (none picked yet, closed with Escape, or not in what the list shows).
+                            VStack(spacing: NookTheme.Spacing.sm) {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(NookTheme.font(26, .light))
+                                    .foregroundStyle(NookTheme.textMuted)
+                                    .accessibilityHidden(true)
+                                Text(tr("chats.placeholder"))
+                                    .font(NookTheme.TextStyle.body)
+                                    .foregroundStyle(NookTheme.textSecondary)
+                                Text(tr("chats.placeholderDetail"))
+                                    .font(NookTheme.TextStyle.caption)
+                                    .foregroundStyle(NookTheme.textTertiary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
                     .padding(.leading, NookTheme.Spacing.lg)
@@ -112,8 +128,21 @@ struct ChatsTab: View {
             takeFocus()
             photos.refresh()
         }
+        // The pictures of the WhatsApp chats in the list, newest first, as their app shows them.
+        .task(id: whatsApp.isConnected) {
+            await whatsApp.loadAvatars(all.filter { $0.app == "whatsapp" }.prefix(60).compactMap { entry in
+                if case .whatsApp(let jid) = entry.origin { return jid }
+                return nil
+            })
+        }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
+        // Escape closes the open chat; the list stays.
+        .onExitCommand {
+            guard selection != nil else { return }
+            withAnimation(NookTheme.reveal) { selection = nil }
+        }
         .onChange(of: selection) { _, id in
+            ChatsTab.lastOpened = id
             // Reading a collected chat here is reading it; a WhatsApp chat is only read by what you do with it.
             guard let id, let entry = all.first(where: { $0.id == id }), case .captured(let thread) = entry.origin else { return }
             capture.markRead(thread)
@@ -148,7 +177,7 @@ struct ChatsTab: View {
         if whatsApp.isConnected {
             for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
                 let preview = conversation.messages.last.map { message in
-                    let text = AppModel.whatsAppFileLabel(message.media) ?? AppModel.whatsAppText(message)
+                    let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
                     let who = message.fromMe ? tr("chat.you") : (conversation.isGroup ? message.senderName : "")
                     return who.isEmpty ? text : "\(who): \(text)"
                 } ?? ""
@@ -156,7 +185,8 @@ struct ChatsTab: View {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: conversation.unread, ticks: ticks, handle: Self.handle(conversation.id)))
+                                          unread: conversation.unread, ticks: ticks, handle: Self.handle(conversation.id),
+                                          avatar: whatsApp.avatars[conversation.id]))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
             // when one is opened.
@@ -167,7 +197,8 @@ struct ChatsTab: View {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, unread: 0, handle: Self.handle(chat.jid)))
+                                          preview: "", last: chat.last, unread: 0, handle: Self.handle(chat.jid),
+                                          avatar: whatsApp.avatars[chat.jid]))
             }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
@@ -226,10 +257,10 @@ struct ChatsTab: View {
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    /// The chat on the right: the one you picked, else the newest.
+    /// The chat on the right: the one you opened, as long as the list shows it; none until you open one.
     private var current: ChatsEntry? {
-        let visible = shown
-        return visible.first { $0.id == selection } ?? visible.first
+        guard let selection else { return nil }
+        return shown.first { $0.id == selection }
     }
 
     /// Unread messages per app, as the list shows them.

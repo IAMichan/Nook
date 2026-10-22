@@ -142,6 +142,18 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
     @Published private(set) var knownChats: [WAChatInfo] = []
+    /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
+    @Published private(set) var avatars: [String: String] = [:]
+    /// When a chat's picture was last asked for: a chat without one is asked again after a while, not at every look.
+    private var avatarAsked: [String: Date] = [:]
+    /// Pictures come from WhatsApp's own picture server: no cookies, no cache, never the gateway's credentials.
+    private static let avatarSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.timeoutIntervalForRequest = 20
+        return URLSession(configuration: config)
+    }()
     @Published var filters = WhatsAppSettings.filters {
         didSet { WhatsAppSettings.filters = filters }
     }
@@ -435,6 +447,20 @@ final class WhatsAppLink: ObservableObject {
         lastChatList = Date()
         guard let chats = try? await provider.chats(limit: 200), gen == generation else { return }
         knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last) }
+        // A chat that came in under its id takes the name the phone has for it.
+        for chat in knownChats where !WAJID.isPlaceholderName(chat.name, for: chat.jid) {
+            if let shown = inbox.conversations[chat.jid]?.name, WAJID.isPlaceholderName(shown, for: chat.jid) {
+                inbox.rename(chat.jid, to: chat.name)
+            }
+        }
+        // Groups the gateway only knows by their id ("Group 3162…"): asked for their name, once each while linked.
+        for chat in knownChats where WAJID.isGroup(chat.jid) && WAJID.isPlaceholderName(chat.name, for: chat.jid)
+            && !namingGroups.contains(chat.jid) {
+            namingGroups.insert(chat.jid)
+            guard let name = await provider.groupName(chat.jid), gen == generation else { continue }
+            if let index = knownChats.firstIndex(where: { $0.jid == chat.jid }) { knownChats[index].name = name }
+            inbox.rename(chat.jid, to: name)
+        }
     }
 
     private func poll() {
@@ -466,11 +492,35 @@ final class WhatsAppLink: ObservableObject {
     /// Groups arrive under their id (GOWA's webhook carries no group name): asked once.
     private func nameGroupIfNeeded(_ chat: String) {
         guard WAJID.isGroup(chat), let provider, let conversation = inbox.conversations[chat],
-              conversation.name == WAJID.displayNumber(chat), !namingGroups.contains(chat) else { return }
+              WAJID.isPlaceholderName(conversation.name, for: chat), !namingGroups.contains(chat) else { return }
         namingGroups.insert(chat)
         let gen = generation
         Task {
             if let name = await provider.groupName(chat), gen == generation { inbox.rename(chat, to: name) }
+        }
+    }
+
+    /// Fetches the pictures of these chats that Nook does not have yet: the gateway says where each one is on WhatsApp's
+    /// own picture server, and only that server is asked for it. One that has none is asked again after six hours.
+    func loadAvatars(_ chats: [String]) async {
+        guard let provider, isConnected else { return }
+        let gen = generation
+        for chat in chats.map(WAJID.normalized) where !WAJID.isBeeper(chat) && WAJID.kind(chat) != .status {
+            if avatars[chat] != nil { continue }
+            let target = ChatMedia.destination(key: "wa-avatar-" + chat, name: "avatar.jpg")
+            if FileManager.default.fileExists(atPath: target.path) {
+                avatars[chat] = target.path
+                continue
+            }
+            if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
+            avatarAsked[chat] = Date()
+            guard let url = await provider.avatar(chat), gen == generation, WAAvatar.isWhatsApp(url),
+                  let answer = try? await Self.avatarSession.data(from: url), gen == generation,
+                  (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000,
+                  Self.thumbnail(answer.0, side: 8) != nil else { continue }
+            try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard (try? answer.0.write(to: target, options: .atomic)) != nil else { continue }
+            avatars[chat] = target.path
         }
     }
 
