@@ -234,4 +234,44 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(EmbeddedAppCatalog.command(in: "@chat Lisa", installed: []), .chat("Lisa"), "one chat stays @chat")
         XCTAssertNotEqual(EmbeddedAppCatalog.command(in: "@chatsapp", installed: []), .chats("app"))
     }
+
+    func testArtifactsBelongToTheAppThatMadeThem() {
+        let owner = { (raw: String) in URL(string: raw).flatMap(EmbeddedArtifact.app(for:))?.id }
+        XCTAssertEqual(owner("https://claude.ai/artifact/abc123"), "claude")
+        XCTAssertEqual(owner("https://claude.ai/code/artifact/0b1c"), "claude")
+        XCTAssertEqual(owner("https://claude.ai/public/artifacts/0b1c"), "claude")
+        XCTAssertEqual(owner("https://claude.site/artifacts/0b1c"), "claude")
+        XCTAssertEqual(owner("https://www.claudeusercontent.com/x"), "claude")
+        XCTAssertEqual(owner("https://chatgpt.com/canvas/shared/abc"), "chatgpt")
+        XCTAssertNil(owner("https://claude.ai/chat/abc"))
+        XCTAssertNil(owner("https://example.com/artifact/abc"))
+        XCTAssertNil(owner("https://notclaude.ai/artifact/abc"))
+        XCTAssertNil(owner("http://localhost/artifact"))
+        XCTAssertNil(owner("file:///tmp/artifact.html"))
+    }
+
+    func testNewWindowsFromAnAppOpenBesideItOnlyForItsOwnPages() throws {
+        let claude = try XCTUnwrap(EmbeddedAppCatalog.all.first { $0.id == "claude" })
+        let whatsApp = try XCTUnwrap(EmbeddedAppCatalog.all.first { $0.id == "whatsapp" })
+        XCTAssertTrue(EmbeddedArtifact.opensBeside(URL(string: "https://claude.ai/artifact/abc"), from: claude))
+        XCTAssertTrue(EmbeddedArtifact.opensBeside(URL(string: "https://claude.site/artifacts/abc"), from: claude))
+        XCTAssertTrue(EmbeddedArtifact.opensBeside(URL(string: "https://claude.ai/new"), from: claude))
+        XCTAssertTrue(EmbeddedArtifact.opensBeside(URL(string: "about:blank"), from: claude))
+        XCTAssertTrue(EmbeddedArtifact.opensBeside(nil, from: claude))
+        XCTAssertFalse(EmbeddedArtifact.opensBeside(URL(string: "https://github.com/x/y"), from: claude))
+        // A Claude artifact shared in WhatsApp is no page of WhatsApp: it goes to the browser.
+        XCTAssertFalse(EmbeddedArtifact.opensBeside(URL(string: "https://claude.ai/artifact/abc"), from: whatsApp))
+        XCTAssertFalse(EmbeddedArtifact.opensBeside(URL(string: "mailto:a@b.c"), from: claude))
+        let mac = EmbeddedApp(id: "mac:claude", title: "Claude", url: URL(fileURLWithPath: "/Applications/Claude.app"),
+                              symbol: "sparkle", aliases: ["claude"])
+        XCTAssertFalse(EmbeddedArtifact.opensBeside(URL(string: "https://claude.ai/artifact/abc"), from: mac))
+    }
+
+    func testOpeningAnArtifactAddressIsAnOpenCommand() {
+        guard case .open(let app, _) = EmbeddedAppCatalog.command(in: "@open claude.ai/artifact/AbC", installed: []) else {
+            return XCTFail("not opened")
+        }
+        XCTAssertEqual(EmbeddedArtifact.app(for: app.url)?.id, "claude")
+        XCTAssertEqual(app.url.absoluteString, "https://claude.ai/artifact/AbC")
+    }
 }

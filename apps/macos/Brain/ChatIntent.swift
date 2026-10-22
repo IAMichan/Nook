@@ -54,6 +54,9 @@ struct ChatIntent: Equatable {
     private(set) var recalls = false
     /// "Wat staat er in mijn notitie over…", "vat mijn notities samen": notes are where the answer is, not what to make.
     private(set) var readsNotes = false
+    /// "Schrijf een antwoord aan Arjan op WhatsApp dat ik kan versturen", "geef een voorbeeld": the user wants the text of
+    /// the chat message itself. Nook still proposes sending it, but the text is the answer even when no action comes.
+    private(set) var wantsDraft = false
 
     // MARK: Recognition
 
@@ -114,6 +117,7 @@ struct ChatIntent: Equatable {
         let makesNote = has(#"\b(zet|schrijf|sla|bewaar|voeg|put|save|add|write|speicher)[^.?!]{0,40}\b(in|als|naar|to|into|as) (een |mijn |de |a |my )?(nieuwe |new )?(notitie|notities|note|notes)\b|\bals notitie|\bas a note|(maak|create|make|nieuwe|new|erstelle) (een |a |eine )?(nieuwe |new |neue )?(notitie|note|notiz)\b|\bnoteer|schrijf (dit|het|dat) op|write (this|it|that) down|neue notiz"#)
         let readsNote = has(#"(in|uit|from|aus) (mijn|de|m'n|my|the|meine?n?) (\w+ )?(notitie|notities|notes?|notiz\w*)|(lees|zoek|vind|vat|samenvat\w*|wat staat|wat stond|read|search|find|summari[sz]e|what does|lies|such|finde)[^.?!]{0,40}(notitie|notities|notes?|notiz\w*)"#)
         intent.readsNotes = readsNote && !makesNote
+        intent.wantsDraft = writesChat && has(Self.draftPattern)
 
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
@@ -169,6 +173,9 @@ struct ChatIntent: Equatable {
         intent.isSmallTalk = false
         return intent
     }
+
+    /// Asking for the text itself, to send yourself or as an example.
+    private static let draftPattern = #"\b(dat|die|wat) ik (zelf )?(kan|kun|mag) (ver)?(sturen|versturen|verzenden|gebruiken|plakken)\b|\b(voorbeeld|concept|opzet)(tekst|bericht|je)?\b|\b(suggestie|voorstel) (voor|van) (een )?(antwoord|bericht|tekst|reactie)|\b(that|which) i can (send|use|paste|copy)\b|\b(example|sample|draft)\b|\bsuggest (a|an) (reply|message|answer|text)\b|\b(die|das|den) ich (selbst )?(senden|schicken|verschicken|verwenden) kann|\b(beispiel|entwurf|vorschlag)\b|\bque je (peux|puisse) envoyer|\b(exemple|brouillon)\b|\bque (pueda|puedo) enviar|\b(ejemplo|borrador)\b"#
 
     /// The channel the conversation is about: the newest turn that names chats or mail.
     private static func channel(of recent: [ChatTurn]) -> Kind? {

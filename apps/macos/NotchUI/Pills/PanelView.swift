@@ -37,8 +37,8 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .offset(y: 6)))
                     .padding(.top, headerInset > 0 ? 20 : 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                // Agents keeps the footer under its session list.
-                if tab != .agents && !app.demoMode {
+                // Agents and the chat keep the footer under their list.
+                if !footerUnderList && !app.demoMode {
                     PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() },
                                 history: app.history)
                         .padding(.top, 8)
@@ -48,6 +48,14 @@ struct PanelView: View {
         .animation(NookTheme.swap, value: sheet)
         // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge.
         .nookToastHost()
+    }
+
+    /// Agents and the chat show the footer under their own list instead of along the bottom.
+    private var footerUnderList: Bool {
+        switch tab {
+        case .nook, .chat, .connect, .shelf, .agents: return true
+        case .inbox, .music: return false
+        }
     }
 
     /// The task open over the tab: the notch's, or the main window's.
@@ -154,7 +162,11 @@ struct PanelView: View {
     private var content: some View {
         switch tab {
         case .nook, .chat, .connect, .shelf:
-            if inWindow { NookChatView(viewModel: viewModel, chat: app.chat, compact: false) } else { NookChatTab(viewModel: viewModel) }
+            if inWindow {
+                NookChatView(viewModel: viewModel, chat: app.chat, compact: false, openOnAgents: openOnAgents)
+            } else {
+                NookChatTab(viewModel: viewModel, openOnAgents: openOnAgents)
+            }
         case .agents: AgentsTab(viewModel: viewModel)
         case .inbox: ChatsTab(viewModel: viewModel)
         case .music: MusicTab()

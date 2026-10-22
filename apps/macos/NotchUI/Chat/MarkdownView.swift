@@ -145,7 +145,11 @@ struct MarkdownView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
         .environment(\.openURL, OpenURLAction { url in
-            MarkdownBlock.isSafeLink(url) ? .systemAction : .discarded
+            guard MarkdownBlock.isSafeLink(url) else { return .discarded }
+            // An artifact opens beside the chat, next to the app that made it.
+            guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
+            Task { @MainActor in AppModel.shared.openArtifact(url) }
+            return .handled
         })
     }
 
