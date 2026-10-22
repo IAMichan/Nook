@@ -74,9 +74,9 @@ class NookState {
   }
 
   async ask(text: string, images?: { mediaType: string; base64: string }[], attachment?: { name: string; text: string }) {
-    await this.ensureActive();
     this.error = null;
     try {
+      await this.ensureActive();
       await api.ask(this.activeId!, text, images, attachment);
     } catch (e) {
       this.error = String(e);
