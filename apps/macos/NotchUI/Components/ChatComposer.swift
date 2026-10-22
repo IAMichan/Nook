@@ -227,8 +227,8 @@ enum ChatContactsAccess {
     }
 }
 
-/// A voice message recorded on this Mac's microphone, as AAC in an .m4a file; the gateways turn it into WhatsApp's own
-/// voice note format when they send it.
+/// A voice message recorded on this Mac's microphone, as AAC in an .m4a file, and handed over as Ogg Opus, WhatsApp's own
+/// voice note format (`ChatVoiceOpus`), so no gateway needs ffmpeg to send it.
 @MainActor
 final class ChatVoiceRecorder: ObservableObject {
     @Published private(set) var recording = false
@@ -249,7 +249,7 @@ final class ChatVoiceRecorder: ObservableObject {
         }
         let url = try ChatSendPrep.destination(name: tr("chat.compose.voice.fileName") + ".m4a")
         let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1,
+            AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: ChatVoiceOpus.sampleRate, AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
@@ -280,7 +280,10 @@ final class ChatVoiceRecorder: ObservableObject {
             try? FileManager.default.removeItem(at: recorder.url)
             return nil
         }
-        return ChatAttachment(url: recorder.url, as: .voice, seconds: seconds)
+        // The .m4a still goes when the Opus encoder is not there: a gateway with ffmpeg can turn it into a voice note.
+        guard let ogg = ChatVoiceOpus.convert(recorder.url) else { return ChatAttachment(url: recorder.url, as: .voice, seconds: seconds) }
+        try? FileManager.default.removeItem(at: recorder.url)
+        return ChatAttachment(url: ogg, as: .voice, seconds: seconds)
     }
 
     /// Stops and throws the recording away.
@@ -298,6 +301,61 @@ final class ChatVoiceRecorder: ObservableObject {
         recording = false
         started = nil
         level = 0
+    }
+}
+
+/// A recorded voice message turned into Ogg Opus: Core Audio's own Opus encoder makes the packets, `OggOpus` the file.
+enum ChatVoiceOpus {
+    /// Opus runs at 48 kHz; the recording is made at the same rate so it needs no resampling.
+    static let sampleRate = 48_000.0
+
+    /// The .ogg next to `source`, or nil when it cannot be made (no Opus encoder, an unreadable recording).
+    static func convert(_ source: URL) -> URL? {
+        guard let packets = encode(source), !packets.isEmpty else { return nil }
+        let target = source.deletingPathExtension().appendingPathExtension("ogg")
+        do {
+            try OggOpus.file(packets: packets).write(to: target, options: .atomic)
+            return target
+        } catch {
+            return nil
+        }
+    }
+
+    private static func encode(_ source: URL) -> [Data]? {
+        guard let input = try? AVAudioFile(forReading: source), input.processingFormat.sampleRate == sampleRate,
+              input.processingFormat.channelCount == 1, input.length > 0,
+              let pcm = AVAudioPCMBuffer(pcmFormat: input.processingFormat, frameCapacity: AVAudioFrameCount(input.length)),
+              (try? input.read(into: pcm)) != nil else { return nil }
+        var description = AudioStreamBasicDescription(mSampleRate: sampleRate, mFormatID: kAudioFormatOpus, mFormatFlags: 0,
+                                                      mBytesPerPacket: 0, mFramesPerPacket: 960, mBytesPerFrame: 0,
+                                                      mChannelsPerFrame: 1, mBitsPerChannel: 0, mReserved: 0)
+        guard let opus = AVAudioFormat(streamDescription: &description),
+              let converter = AVAudioConverter(from: input.processingFormat, to: opus) else { return nil }
+        let output = AVAudioCompressedBuffer(format: opus, packetCapacity: 64,
+                                             maximumPacketSize: max(converter.maximumOutputPacketSize, 1500))
+        var packets: [Data] = []
+        var fed = false
+        while true {
+            var error: NSError?
+            let status = converter.convert(to: output, error: &error) { _, inputStatus in
+                if fed {
+                    inputStatus.pointee = .endOfStream
+                    return nil
+                }
+                fed = true
+                inputStatus.pointee = .haveData
+                return pcm
+            }
+            if status == .error { return nil }
+            if let descriptions = output.packetDescriptions {
+                for index in 0..<Int(output.packetCount) {
+                    let packet = descriptions[index]
+                    packets.append(Data(bytes: output.data.advanced(by: Int(packet.mStartOffset)), count: Int(packet.mDataByteSize)))
+                }
+            }
+            if status != .haveData || output.packetCount == 0 { break }
+        }
+        return packets
     }
 }
 

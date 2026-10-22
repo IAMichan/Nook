@@ -1211,6 +1211,14 @@ enum WAGOWA {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["code"] as? String
     }
 
+    /// Why a call was refused, as GOWA words it ("ffmpeg not installed (required for PTT voice notes)"), else its code:
+    /// `INTERNAL_SERVER_ERROR` alone says nothing you can act on.
+    static func errorReason(_ data: Data) -> String? {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if let message = object?["message"] as? String, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return message }
+        return errorCode(data)
+    }
+
     /// `GET /chats` → `results: {data: [{jid, name, last_message_time, …}], pagination}`.
     static func chats(_ data: Data) -> [(jid: String, name: String, last: Date)] {
         guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return [] }
