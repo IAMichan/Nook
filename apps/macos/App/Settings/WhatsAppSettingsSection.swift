@@ -184,10 +184,7 @@ struct WhatsAppChatModeList: View {
             if link.chatsForSettings.isEmpty {
                 Text(tr("whatsapp.settings.noChats")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
             } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textSecondary)
-                    TextField(tr("whatsapp.settings.chatSearch"), text: $query).textFieldStyle(.plain)
-                }
+                NookSearchField(prompt: tr("whatsapp.settings.chatSearch"), text: $query, style: .inline)
                 ForEach(chats, id: \.jid) { chat in
                     row(chat.jid, name: chat.name)
                 }

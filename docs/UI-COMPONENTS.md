@@ -17,12 +17,23 @@ copying it again.
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |
 | `NookTheme.Radius.chip`, `control`, `card`, `panel`, `sheet`, `pill` | Corner radii: 6, 8, 10, 12, 14, 20. Name the element, not the number |
-| `NookTheme.Spacing.xxs … xxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24 |
+| `NookTheme.Spacing.xxs … xxxl` | Padding and stack spacing on a 4 pt grid: 2, 4, 6, 8, 12, 16, 24, 32 (`xxxl` between the sections of a page) |
 | `NookTheme.open`, `close`, `swap`, `hover`, `reveal`, `scroll` | Animations: opening and closing the notch, switching tabs, hover feedback, showing or hiding part of a panel (a section, a preview, a selection), and scrolling to a line. Never an inline `.easeOut(duration:)` |
 | `.hoverLift(_:scale:)` | The shared hover lift of buttons and chips |
 
 Workspace views use the `WS` palette in `NotchUI/Workspace/WorkspaceComponents.swift`, which is built from these
 tokens (`WS.background` is `NookTheme.canvas`, `WS.sidebar` is `NookTheme.surface`).
+
+### Calm by default
+
+Nook should feel quiet. The surfaces sit on one neutral grey ramp a step apart, so regions read by their fill and need
+almost no strokes; a stroke is only a shade lighter than what it edges; state colors are softened a little so a badge
+informs without shouting; motion settles without overshoot. When you add a view:
+
+- Group with space and fill, not with lines: a `panelCard()` for rows that belong together, `NookDivider` between them.
+- One accent per view at most. Buttons in a header are the same quiet round `NookIconButton`; only a notice's main
+  action is filled.
+- Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
 ## Keeping it one design
 
@@ -33,6 +44,8 @@ Nook has one visual language, and the repository guards it in three places:
    `.callout`, `.headline`, `.system(.body)`), a literal `Color(hex:)` / `Color(red:)` / `NSColor(white:)`, a system
    state or text color (`.red`, `.orange`, `.green`, `.secondary`), or a corner radius written as a number from the scale. It runs with the Xcode tests and with
    `./scripts/core-tests.sh`.
+   It also fails when a search field or a 1 pt divider is built inline instead of with `NookSearchField` or
+   `NookDivider`, so these look and behave the same everywhere.
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` runs it on every pull request.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.
@@ -64,6 +77,9 @@ The checklist for a new or changed view:
   or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
+- A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
+  something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider`, and a notice under
+  the tabs a `PanelNoticeBar`. Change one of these and every tab follows.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a coral-tinted `.cardBackground` notice with a retry.
 
@@ -95,6 +111,13 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookActionBar` | `NookButtons.swift` | A notice's other actions in one dark bar with thin dividers, next to its OK |
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
 | `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
+| `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
+| `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
+| `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
+| `NookSectionLabel` | `PanelBlocks.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
+| `NookDivider` | `PanelBlocks.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
+| `PanelNoticeBar` | `PanelBlocks.swift` | A notice under the tabs (a permission request, an agent's question, a short note): symbol, title, a line, and its `NookNoticeActions`; `tone` tints a risky one |
+| `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |
 | `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |

@@ -402,7 +402,7 @@ private struct BubbleActionButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .hoverLift(hovering, scale: 1.06)
+        .hoverLift(hovering, scale: 1.03)
         .help(label)
         .accessibilityLabel(label)
     }

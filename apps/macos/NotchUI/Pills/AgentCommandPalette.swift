@@ -57,18 +57,10 @@ struct AgentCommandPalette: View {
     var body: some View {
         let list = entries
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textTertiary)
-                TextField(tr("palette.placeholder"), text: $query)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.font(14))
-                    .foregroundStyle(NookTheme.paper)
-                    .focused($focused)
-                    .onSubmit { run(list) }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            Rectangle().fill(NookTheme.line2).frame(height: 1)
+            NookSearchField(prompt: tr("palette.placeholder"), text: $query, style: .large, focus: $focused,
+                            onSubmit: { run(list) }, onEscape: close)
+                .padding(.horizontal, NookTheme.Spacing.xs)
+            NookDivider()
             if list.isEmpty {
                 ListEmptyNote(tr("palette.none"), padding: NookTheme.Spacing.xl)
             } else {

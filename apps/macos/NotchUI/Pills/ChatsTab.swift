@@ -367,47 +367,18 @@ struct ChatsTab: View {
 
     /// The list's title, as the Agents tab has it: how many messages wait for you, and the list's two actions.
     private var listHeader: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            Text(tr("tab.chats"))
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(NookTheme.paper)
-            let unread = unreadTotal
-            if unread > 0 {
-                Text("\(unread)")
-                    .font(NookTheme.font(10.5, .bold))
-                    .foregroundStyle(NookTheme.ink)
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    .frame(minWidth: 18, minHeight: 18)
-                    .background(Capsule().fill(NookTheme.amber))
-                    .accessibilityLabel("\(tr("chats.group.unread")): \(unread)")
-            }
-            Spacer(minLength: NookTheme.Spacing.xs)
+        PanelListHeader(tr("tab.chats"), count: unreadTotal) {
             // WhatsApp's unread marks belong to the phone: a chat there is read by what you do with it.
             if capture.inbox.totalUnread > 0 {
                 ToolbarIconButton("checkmark.circle", tr("chats.markAllRead")) { capture.markAllRead() }
             }
             ToolbarIconButton("plus", tr("chats.addSource")) { app.openSettings(section: .chats) }
         }
-        .padding(.leading, NookTheme.Spacing.lg)
-        .padding(.trailing, NookTheme.Spacing.xxs)
+        .accessibilityValue(unreadTotal > 0 ? "\(tr("chats.group.unread")): \(unreadTotal)" : "")
     }
 
     private var searchField: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
-                .font(NookTheme.font(11.5))
-                .foregroundStyle(NookTheme.textTertiary)
-            TextField(tr("chats.search"), text: $query)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-            if !query.isEmpty {
-                ToolbarIconButton("xmark.circle.fill", tr("button.clear"), height: 20, width: 20) { query = "" }
-            }
-        }
-        .padding(.horizontal, NookTheme.Spacing.md)
-        .frame(height: 30)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
+        NookSearchField(prompt: tr("chats.search"), text: $query)
     }
 
     private var list: some View {
@@ -924,7 +895,7 @@ private struct ChatsDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.bottom, NookTheme.Spacing.md)
-            Rectangle().fill(NookTheme.hairline).frame(height: 1)
+            NookDivider()
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { zoom($0) },
                            onReply: whatsAppChat == nil ? nil : quote, onReact: whatsAppChat == nil ? nil : react,

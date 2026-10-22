@@ -146,32 +146,27 @@ struct NookChatView: View {
         let items = Array(app.todayItems.prefix(compact ? 3 : 6))
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(Self.dateLine())
-                        .font(NookTheme.font(11, .semibold))
-                        .tracking(0.6)
+                        .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(items.isEmpty ? Greeting.quiet() : Greeting.line(count: items.count))
-                        .font(NookTheme.font(22, .semibold))
+                        .font(NookTheme.font(20, .semibold))
                         .foregroundStyle(NookTheme.paper)
-                    Text(tr("chat.emptySubtitle"))
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.textSecondary)
                 }
+                .padding(.horizontal, NookTheme.Spacing.xxs)
 
                 if !items.isEmpty {
                     homeSection(tr("home.section.forYou"))
                     VStack(spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             if index > 0 {
-                                Rectangle().fill(NookTheme.line).frame(height: 1).padding(.leading, 56)
+                                NookDivider(inset: 56)
                             }
                             TodayRow(item: item) { open(item) }
                         }
                     }
-                    .background(NookTheme.field)
-                    .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).stroke(NookTheme.line2.opacity(0.6), lineWidth: 1))
+                    .panelCard()
                 }
 
                 homeSection(tr("home.section.start"))
@@ -183,17 +178,15 @@ struct NookChatView: View {
     }
 
     private func homeSection(_ title: String) -> some View {
-        Text(title)
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(.leading, 2)
-            .padding(.top, 22)
-            .padding(.bottom, 8)
+        NookSectionLabel(title, inset: NookTheme.Spacing.xxs)
+            .padding(.top, NookTheme.Spacing.xxl)
+            .padding(.bottom, NookTheme.Spacing.md)
     }
 
-    /// "MONDAY 19 OCTOBER", in the app's language.
+    /// "Monday 19 October", in the app's language.
     private static func dateLine() -> String {
-        NookDates.formatter("EEEE d MMMM", locale: I18n.shared.currentLanguage.rawValue).string(from: Date()).uppercased()
+        let line = NookDates.formatter("EEEE d MMMM", locale: I18n.shared.currentLanguage.rawValue).string(from: Date())
+        return line.prefix(1).uppercased() + line.dropFirst()
     }
 
     private func open(_ item: TodayItem) {

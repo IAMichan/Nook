@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The row of capsule tabs at the top of the panel (Nook, Agents, Music): the selected tab sits on a lifted capsule
-/// that slides to the next one. Also used for tabs inside a page, such as a pull request's Conversation, Commits and Files,
-/// and the side panel's Terminal, Browser and Changes next to a session.
+/// The row of tabs at the top of the panel (Nook, Agents, Music): plain words, the selected one on a soft capsule that
+/// slides to the next one; no track behind them, so the header stays quiet. Also used for tabs inside a page, such as a
+/// pull request's Conversation, Commits and Files, and the side panel's Terminal, Browser and Changes next to a session.
 struct NookTabBar<Value: Hashable>: View {
     struct Item: Identifiable {
         let value: Value
@@ -26,7 +26,7 @@ struct NookTabBar<Value: Hashable>: View {
     @State private var hovered: Value?
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: NookTheme.Spacing.xxs) {
             ForEach(items) { item in
                 let closable = onClose != nil
                 Button {
@@ -36,12 +36,7 @@ struct NookTabBar<Value: Hashable>: View {
                         if let symbol = item.symbol { Image(systemName: symbol).font(NookTheme.font(11, .medium)) }
                         Text(item.title).lineLimit(1)
                         if item.count > 0 {
-                            Text("\(item.count)")
-                                .font(NookTheme.font(10, .bold))
-                                .foregroundStyle(NookTheme.ink)
-                                .padding(.horizontal, 5)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .background(Capsule().fill(NookTheme.amber))
+                            NookCountBadge(count: item.count)
                         } else if item.fresh {
                             Circle().fill(NookTheme.iris).frame(width: 5, height: 5)
                         }
@@ -49,7 +44,7 @@ struct NookTabBar<Value: Hashable>: View {
                         if closable { Color.clear.frame(width: 12, height: 12) }
                     }
                     .font(NookTheme.font(13, .medium))
-                    .foregroundStyle(item.value == selected ? NookTheme.paper : NookTheme.textTertiary)
+                    .foregroundStyle(item.value == selected || hovered == item.value ? NookTheme.paper : NookTheme.textTertiary)
                     .padding(.leading, 12)
                     .padding(.trailing, closable ? 8 : 12)
                     .padding(.vertical, 5)
@@ -87,7 +82,6 @@ struct NookTabBar<Value: Hashable>: View {
                 }
             }
         }
-        .padding(3)
-        .background(Capsule().fill(Color.white.opacity(0.04)))
+        .animation(NookTheme.hover, value: hovered)
     }
 }

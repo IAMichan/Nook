@@ -354,7 +354,7 @@ struct BrowserView: View {
                 .padding(.bottom, 6)
             }
             // A line only above a page; the empty browser runs on into the background.
-            Rectangle().fill(NookTheme.line).frame(height: 1)
+            NookDivider()
                 .opacity(store.webView.url == nil && !store.loading ? 0 : 1)
             if store.webView.url == nil && !store.loading {
                 WSEmptyState(symbol: "safari", title: tr("workbench.browser.emptyTitle"), message: tr("workbench.browser.emptyMessage"), action: nil)

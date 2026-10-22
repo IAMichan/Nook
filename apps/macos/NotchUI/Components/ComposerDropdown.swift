@@ -67,7 +67,7 @@ struct DropdownHeader: View {
 /// A thin line between groups.
 struct DropdownDivider: View {
     var body: some View {
-        Rectangle().fill(NookTheme.line2).frame(height: 1).padding(.horizontal, 8).padding(.vertical, 4)
+        NookDivider().padding(.horizontal, 8).padding(.vertical, 4)
     }
 }
 
@@ -147,17 +147,11 @@ struct DropdownSearch: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.plain)
-                .font(NookTheme.font(12.5))
-                .focused($focused)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line2).frame(height: 1) }
-        .onAppear { focused = true }
+        NookSearchField(prompt: placeholder, text: $text, style: .inline, focus: $focused)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .overlay(alignment: .bottom) { NookDivider() }
+            .onAppear { focused = true }
     }
 }
 
@@ -220,7 +214,7 @@ struct RailDropdown<Place: Hashable, Icon: View, Footer: View, Detail: View>: Vi
         .padding(6)
         .frame(width: 44)
         .background(NookTheme.paper.opacity(0.03))
-        .overlay(alignment: .trailing) { Rectangle().fill(NookTheme.line2).frame(width: 1) }
+        .overlay(alignment: .trailing) { NookDivider(vertical: true) }
     }
 
     private func railButton(_ place: Place) -> some View {

@@ -115,7 +115,7 @@ struct SourcesDisclosure: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(list.enumerated()), id: \.element.id) { index, group in
                             if index > 0 {
-                                Rectangle().fill(NookTheme.line2.opacity(0.6)).frame(height: 1).padding(.horizontal, 8)
+                                NookDivider().padding(.horizontal, 8)
                             }
                             groupView(group)
                         }

@@ -114,57 +114,20 @@ struct NookList: View {
 
     /// "Nook" with the button that starts a new one, as "Agents" has.
     private var header: some View {
-        HStack(spacing: 8) {
-            Text(tr("tab.nook"))
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(NookTheme.paper)
-            Spacer(minLength: 4)
-            Button { app.newChat() } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(NookTheme.font(13, .medium))
-                    .foregroundStyle(chat.isEmpty ? NookTheme.paper : NookTheme.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(chat.isEmpty ? NookTheme.smoke : Color.clear))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("n", modifiers: .command)
-            .help(tr("nooks.newHelp"))
-            .accessibilityLabel(tr("nooks.new"))
+        PanelListHeader(tr("tab.nook")) {
+            PanelNewButton(label: tr("nooks.newHelp"), active: chat.isEmpty) { app.newChat() }
+                .keyboardShortcut("n", modifiers: .command)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 2)
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
-            TextField(tr("nooks.search"), text: $query)
-                .textFieldStyle(.plain)
-                .font(NookTheme.font(12.5))
-                .foregroundStyle(NookTheme.paper)
-                .onExitCommand { query = "" }
-            if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.detail) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tr("button.clear"))
-            }
-        }
-        .foregroundStyle(NookTheme.textTertiary)
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
-        .padding(.horizontal, 2)
+        NookSearchField(prompt: tr("nooks.search"), text: $query)
     }
 
     // MARK: Sections
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 2)
+        NookSectionLabel(title).padding(.bottom, NookTheme.Spacing.xxs)
     }
 
     /// The archive as a shelf docked at the foot of the list, like the settled sessions: a line with its count, opened
@@ -186,7 +149,7 @@ struct NookList: View {
                         .font(NookTheme.font(12, .medium))
                         .foregroundStyle(NookTheme.textTertiary)
                         .fixedSize()
-                    Rectangle().fill(NookTheme.line2).frame(height: 1)
+                    NookDivider()
                     // The shelf opens upwards: its chevron points up while closed, down while open.
                     Image(systemName: "chevron.down")
                         .font(NookTheme.font(8.5, .bold))

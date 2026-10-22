@@ -13,23 +13,27 @@ extension Color {
 
 /// Nook design system. Color consistently represents state:
 /// iris = Nook itself, mint = listening or done, amber = waiting on you, coral = error.
+///
+/// Calm by design: every surface sits on one neutral grey ramp, a step apart, so regions read by their fill and need
+/// almost no strokes; strokes are only a shade lighter than what they edge; state colors are a little softened so a
+/// badge informs without shouting. Change a token here and every panel, card and setting follows.
 enum NookTheme {
-    // Colors
+    // Colors: the surface ramp, darkest to lightest.
     static let notch = Color.black
-    static let graphite = Color(hex: 0x16161B)
-    static let smoke = Color(hex: 0x22222A)
-    static let field = Color(hex: 0x0F0F13)
-    static let line = Color(hex: 0x1A1A20)
-    static let line2 = Color(hex: 0x2C2C36)
+    static let graphite = Color(hex: 0x17171A)
+    static let smoke = Color(hex: 0x1F1F23)
+    static let field = Color(hex: 0x111113)
+    static let line = Color(hex: 0x18181B)
+    static let line2 = Color(hex: 0x232327)
 
-    static let paper = Color(hex: 0xF4F3F7)
-    static let ink = Color(hex: 0x0B0A12)
+    static let paper = Color(hex: 0xF2F2F4)
+    static let ink = Color(hex: 0x0B0B0D)
     static let eyeInk = Color(hex: 0x050507)
-    static let textSecondary = Color(hex: 0x9C9AA8)
-    static let textTertiary = Color(hex: 0x6F6D7C)
+    static let textSecondary = Color(hex: 0x98989F)
+    static let textTertiary = Color(hex: 0x6C6C74)
 
     /// Nook's own color. Soft white by default; the user can pick another in Settings › Appearance.
-    static let defaultAccentHex: UInt32 = 0xF4F3F7
+    static let defaultAccentHex: UInt32 = 0xF2F2F4
     /// Current accent (kept in sync by `AppSettings.accentHex`).
     static var accentHex: UInt32 = defaultAccentHex
     static var iris: Color { Color(hex: accentHex) }
@@ -44,36 +48,36 @@ enum NookTheme {
         }
         return 0.2126 * channel(hex >> 16) + 0.7152 * channel(hex >> 8) + 0.0722 * channel(hex)
     }
-    static let mint = Color(hex: 0x46E0A6)
-    static let amber = Color(hex: 0xFFB84D)
-    static let coral = Color(hex: 0xFF6B6B)
-    static let coralSoft = Color(hex: 0xFF8A8A)
+    static let mint = Color(hex: 0x5ED6A6)
+    static let amber = Color(hex: 0xF2B866)
+    static let coral = Color(hex: 0xEF7B73)
+    static let coralSoft = Color(hex: 0xF29A92)
     /// A merged pull request, as forges show it.
-    static let violet = Color(hex: 0xB48CFF)
-    static let mintSoft = Color(hex: 0x5FE3B0)
-    static let music = Color(hex: 0xFF8A5B)
+    static let violet = Color(hex: 0xAE94F2)
+    static let mintSoft = Color(hex: 0x74DDB3)
+    static let music = Color(hex: 0xF0936A)
 
     /// The canvas behind every window: the Workspace, Settings, and the Today window share it.
-    static let canvas = Color(hex: 0x0B0B0D)
+    static let canvas = Color(hex: 0x0C0C0E)
     /// A sunken well inside a card: code, logs, and the composer tray.
-    static let well = Color(hex: 0x0A0A0D)
+    static let well = Color(hex: 0x0A0A0C)
     /// A lifted surface: sidebars, menus, the composer.
-    static let surface = Color(hex: 0x121214)
+    static let surface = Color(hex: 0x131315)
     /// The faintest divider between regions of a panel.
-    static let hairline = Color(hex: 0x19191B)
+    static let hairline = Color(hex: 0x18181B)
     /// The stroke of a text field or tray at rest.
-    static let fieldStroke = Color(hex: 0x222226)
+    static let fieldStroke = Color(hex: 0x1D1D21)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
-    static let textStrong = Color(hex: 0xD9D7E0)
+    static let textStrong = Color(hex: 0xD4D4D9)
     /// Muted text that shimmers or sits in a disabled control.
-    static let textMuted = Color(hex: 0x8A8896)
+    static let textMuted = Color(hex: 0x86868E)
     /// Links, renamed files, and diff hunk headers.
-    static let blue = Color(hex: 0x8AB4F8)
+    static let blue = Color(hex: 0x8FB3F0)
 
     // List rows and cards: at rest, under the pointer, and selected.
-    static let rowRest = Color(hex: 0x09090A)
-    static let rowHover = Color(hex: 0x111113)
-    static let rowSelected = Color(hex: 0x17171A)
+    static let rowRest = Color(hex: 0x0A0A0B)
+    static let rowHover = Color(hex: 0x141416)
+    static let rowSelected = Color(hex: 0x1A1A1D)
 
     /// The fill of a list row: `rowSelected` when selected, `rowHover` under the pointer, `rest` otherwise.
     static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
@@ -106,6 +110,8 @@ enum NookTheme {
         static let lg: CGFloat = 12
         static let xl: CGFloat = 16
         static let xxl: CGFloat = 24
+        /// Between the sections of a page (home, a settings page): room that groups without a line.
+        static let xxxl: CGFloat = 32
     }
 
     /// The type scale: each kind of text with its size and weight, so two panels never show the same kind of text at
@@ -146,12 +152,12 @@ enum NookTheme {
     // Animation. Every curve is a spring: a spring keeps its velocity when it is interrupted (hover off before the
     // hover in finished, a tab picked while the last one still slides), where a timing curve restarts from rest and
     // visibly jerks. Opening has a subtle overshoot; closing is smooth without bounce.
-    static let open = Animation.spring(duration: 0.44, bounce: 0.16)
-    static let close = Animation.spring(duration: 0.32, bounce: 0)
-    /// Tab switching within the same panel: tighter and snappier.
-    static let swap = Animation.spring(duration: 0.3, bounce: 0.06)
-    /// Hover feedback on buttons and chips: quick, with a hint of spring.
-    static let hover = Animation.spring(duration: 0.22, bounce: 0.06)
+    static let open = Animation.spring(duration: 0.42, bounce: 0.08)
+    static let close = Animation.spring(duration: 0.3, bounce: 0)
+    /// Tab switching within the same panel: tighter, and without overshoot so the content does not wobble.
+    static let swap = Animation.spring(duration: 0.28, bounce: 0)
+    /// Hover feedback on buttons and chips: quick and settled.
+    static let hover = Animation.spring(duration: 0.2, bounce: 0)
     /// Showing or hiding part of a panel: a section that expands, a preview or side panel, a selection that changes.
     static let reveal = Animation.spring(duration: 0.24, bounce: 0)
     /// Scrolling a list to a message or a line.
@@ -159,7 +165,7 @@ enum NookTheme {
     static let spring = open
 }
 
-/// Lifts a control a little while the pointer is on it (see `View.hoverLift`). With Reduce Motion on it stays put: the
+/// Lifts a control a hair while the pointer is on it (see `View.hoverLift`). With Reduce Motion on it stays put: the
 /// color change alone says that it is live.
 private struct HoverLift: ViewModifier {
     var hovering: Bool
@@ -175,7 +181,7 @@ private struct HoverLift: ViewModifier {
 
 extension View {
     /// The shared hover state of Nook's buttons and chips: a slight lift with `NookTheme.hover`, none with Reduce Motion.
-    func hoverLift(_ hovering: Bool, scale: CGFloat = 1.02) -> some View {
+    func hoverLift(_ hovering: Bool, scale: CGFloat = 1.01) -> some View {
         modifier(HoverLift(hovering: hovering, scale: scale))
     }
 }

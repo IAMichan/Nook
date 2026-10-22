@@ -126,30 +126,12 @@ struct AgentsTab: View {
     /// "Agents" with the button that starts a new session.
     private func listHeader(_ selection: Selection) -> some View {
         let isNew: Bool = { if case .new = selection { return true }; return false }()
-        return HStack(spacing: 8) {
-            Text(tr("tab.agents"))
-                .font(NookTheme.font(14, .semibold))
-                .foregroundStyle(NookTheme.paper)
-            Spacer(minLength: 4)
+        return PanelListHeader(tr("tab.agents")) {
             if !app.demoMode {
-                Button {
-                    viewModel.selectedAgentID = "new"
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(NookTheme.font(13, .medium))
-                        .foregroundStyle(isNew ? NookTheme.paper : NookTheme.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(isNew ? NookTheme.smoke : Color.clear))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(tr("agents.newSession"))
-                .accessibilityLabel(tr("agents.newSession"))
+                PanelNewButton(label: tr("agents.newSession"), active: isNew) { viewModel.selectedAgentID = "new" }
             }
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 2)
-        .padding(.bottom, 4)
+        .padding(.bottom, NookTheme.Spacing.xs)
     }
 
     // MARK: Selection

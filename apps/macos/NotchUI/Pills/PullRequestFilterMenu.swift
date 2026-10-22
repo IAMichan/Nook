@@ -54,7 +54,7 @@ struct PullRequestFilterMenu: View {
                     }
                 }
                 .frame(width: 200)
-                Rectangle().fill(NookTheme.line2).frame(width: 1).padding(.horizontal, 4)
+                NookDivider(vertical: true).padding(.horizontal, 4)
                 VStack(alignment: .leading, spacing: 0) {
                     DropdownHeader(title: kind.title)
                     choices

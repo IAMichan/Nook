@@ -59,21 +59,20 @@ struct SettingsHeader: View {
     let mood: NookMood
 
     var body: some View {
-        HStack(spacing: 14) {
+        // Title and one line, as a sheet heads itself; only the start page shows Nook. No icon tile: the sidebar already
+        // shows where you are.
+        HStack(spacing: NookTheme.Spacing.lg) {
             if section == .start {
-                NookOrb(mood: mood, size: 30, animated: false)
-                    .frame(width: 44, height: 44)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.smoke))
-            } else {
-                SettingsTile(section, size: 44)
+                NookOrb(mood: mood, size: 28, animated: false)
+                    .frame(width: 36, height: 36)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(section.title).font(NookTheme.font(22, .semibold))
-                Text(section.subtitle).foregroundStyle(NookTheme.textSecondary)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(section.title).font(NookTheme.font(20, .semibold)).foregroundStyle(NookTheme.paper)
+                Text(section.subtitle).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 0)
         }
-        .padding(.bottom, 4)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 }
 

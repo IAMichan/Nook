@@ -37,7 +37,7 @@ struct PanelView: View {
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
-                    .padding(.top, headerInset > 0 ? 20 : 16)
+                    .padding(.top, headerInset > 0 ? NookTheme.Spacing.xl + NookTheme.Spacing.xs : NookTheme.Spacing.xl)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
                 // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents.
@@ -113,18 +113,13 @@ struct PanelView: View {
             } else {
                 Spacer()
             }
-            // The gear sits in the footer instead, which every tab shows outside demo mode.
+            // The gear sits in the footer instead, which every tab shows outside demo mode. All header buttons are the
+            // same quiet round button, so the header reads as one calm row next to the tabs.
             let gear = app.demoMode
-            HStack(spacing: 2) {
-                talkButton
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
                 // What Nook told you lately, for a notice that closed before you looked.
                 if !app.demoMode { NoticeBellButton() }
-                if gear || !inWindow {
-                    Rectangle()
-                        .fill(NookTheme.textTertiary.opacity(0.35))
-                        .frame(width: 1, height: 14)
-                        .padding(.horizontal, 6)
-                }
                 if !inWindow {
                     // Go on in the main window, on this tab, with more room.
                     NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
@@ -142,24 +137,6 @@ struct PanelView: View {
         }
         .frame(minHeight: Self.headerHeight)
         .padding(.leading, headerInset)
-    }
-
-    /// The one filled action in the header; the other buttons stay quiet until hovered.
-    private var talkButton: some View {
-        Button { viewModel.startListening() } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "mic").font(NookTheme.font(12, .semibold))
-                Text(tr("button.talkShort")).font(NookTheme.font(12.5, .medium))
-            }
-            .foregroundStyle(NookTheme.paper)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(Capsule().fill(NookTheme.smoke))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(tr("button.talk"))
-        .help(tr("button.talk"))
     }
 
     @ViewBuilder
@@ -194,19 +171,9 @@ struct PanelApprovalBar: View {
     var body: some View {
         let waiting = app.approvals.pending
         if let approval = waiting.first(where: { !onScreen($0) }) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(approval.title)
-                        .font(NookTheme.font(12.5, .medium))
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                    Text(subtitle(approval, more: waiting.count - 1))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                }
-                .help(approval.command)
-                Spacer(minLength: 6)
+            PanelNoticeBar(title: approval.title, detail: subtitle(approval, more: waiting.count - 1),
+                           symbol: approval.danger ? "exclamationmark.triangle.fill" : "hand.raised.fill",
+                           tone: approval.danger ? NookTheme.coral : NookTheme.amber, help: approval.command) {
                 NookNoticeActions(
                     primary: NookNoticeAction(tr("button.allow")) { decide(approval, .allow) },
                     secondary: NookNoticeAction(tr("button.deny")) { decide(approval, .deny) },
@@ -219,11 +186,6 @@ struct PanelApprovalBar: View {
                 )
                 .fixedSize()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.card)
-            .padding(.top, 10)
-            .transition(.opacity.combined(with: .offset(y: -4)))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
             questionBar(question, more: hub.questions.count - 1)
         } else if let notice = viewModel.panelNotice {
@@ -233,13 +195,7 @@ struct PanelApprovalBar: View {
 
     /// A short notice (a session Nook runs asks something, a note is ready), with its one action.
     private func noticeBar(_ notice: PanelNotice) -> some View {
-        HStack(spacing: 8) {
-            Text(notice.message)
-                .font(NookTheme.font(12.5, .medium))
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1)
-                .help(notice.message)
-            Spacer(minLength: 6)
+        PanelNoticeBar(title: notice.message) {
             if let action = notice.action {
                 NookNoticeActions(primary: NookNoticeAction(notice.button) {
                     viewModel.dismissPanelNotice()
@@ -249,31 +205,12 @@ struct PanelApprovalBar: View {
             }
             NookIconButton(systemName: "xmark", label: tr("button.close"), size: 24) { viewModel.dismissPanelNotice() }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
-        .padding(.top, 10)
-        .transition(.opacity.combined(with: .offset(y: -4)))
     }
 
     /// The agent's question, with View to answer it in the session itself (one question at a time, as on the card).
     private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "questionmark.bubble.fill")
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.amber)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(request.items.first?.question ?? "")
-                    .font(NookTheme.font(12.5, .medium))
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(1)
-                Text(subtitle(request, more: more))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-            }
-            .help(request.items.first?.question ?? "")
-            Spacer(minLength: 6)
+        PanelNoticeBar(title: request.items.first?.question ?? "", detail: subtitle(request, more: more),
+                       symbol: "questionmark.bubble.fill", tone: NookTheme.amber) {
             NookNoticeActions(
                 primary: NookNoticeAction(tr("button.view")) {
                     viewModel.selectedAgentID = request.sessionKey
@@ -283,11 +220,6 @@ struct PanelApprovalBar: View {
             )
             .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
-        .padding(.top, 10)
-        .transition(.opacity.combined(with: .offset(y: -4)))
     }
 
     private func subtitle(_ request: AgentQuestionRequest, more: Int) -> String {

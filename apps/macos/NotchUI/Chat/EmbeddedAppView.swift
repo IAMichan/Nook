@@ -280,7 +280,7 @@ struct EmbeddedAppPane: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 38)
-                Rectangle().fill(NookTheme.line).frame(height: 1)
+                NookDivider()
                 if current.isMacApp {
                     MacAppMirrorPane(app: current)
                 } else if let webView = store.webView {
@@ -370,7 +370,7 @@ private struct EmbeddedArtifactPanel: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 32)
-            Rectangle().fill(NookTheme.line).frame(height: 1)
+            NookDivider()
             WebViewHost(webView: webView)
         }
         .background(NookTheme.field)
@@ -392,7 +392,7 @@ struct EmbeddedSplitHandle: View {
 
     var body: some View {
         ZStack {
-            if divider { Rectangle().fill(NookTheme.hairline).frame(width: 1) }
+            if divider { NookDivider(vertical: true) }
             Capsule()
                 .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
                 .frame(width: 4, height: 36)

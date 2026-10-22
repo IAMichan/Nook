@@ -422,8 +422,7 @@ struct AutocompleteSettingsSection: View {
             Section {
                 SettingToggle(tr("autocomplete.everywhere"), detail: tr("autocomplete.everywhereDetail"), isOn: $store.prefs.enabledByDefault)
                 HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textSecondary)
-                    TextField(tr("autocomplete.apps.search"), text: $search).textFieldStyle(.plain)
+                    NookSearchField(prompt: tr("autocomplete.apps.search"), text: $search, style: .inline)
                     Picker("", selection: $filter) {
                         ForEach(AppFilter.allCases) { Text(tr("autocomplete.apps.filter.\($0.rawValue)")).tag($0) }
                     }

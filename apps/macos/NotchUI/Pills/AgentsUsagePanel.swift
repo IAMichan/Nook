@@ -95,7 +95,7 @@ struct AgentsUsagePanel: View {
             VStack(spacing: 0) {
                 ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
                     if index > 0 {
-                        Rectangle().fill(NookTheme.line2.opacity(0.5)).frame(height: 1)
+                        NookDivider()
                     }
                     account(profile)
                 }
@@ -151,7 +151,7 @@ struct AgentsUsagePanel: View {
                 }
             }
 
-            Rectangle().fill(NookTheme.line2.opacity(0.35)).frame(height: 1)
+            NookDivider()
 
             if let usage {
                 HStack(alignment: .bottom, spacing: 14) {

@@ -499,8 +499,8 @@ private struct CommandDetail: View {
             .font(NookTheme.mono(13.5))
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .top) { Rectangle().fill(NookTheme.line).frame(height: 1) }
-            .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line).frame(height: 1) }
+            .overlay(alignment: .top) { NookDivider() }
+            .overlay(alignment: .bottom) { NookDivider() }
 
             Text(note)
                 .font(NookTheme.font(12.5))

@@ -532,7 +532,7 @@ struct TranscriptFoldLine: View {
             .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
             .padding(.top, 2)
             .padding(.bottom, 8)
-            .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line2.opacity(0.8)).frame(height: 1) }
+            .overlay(alignment: .bottom) { NookDivider() }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -561,7 +561,7 @@ struct TranscriptWorkingLine: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 2)
         .padding(.bottom, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line2.opacity(0.8)).frame(height: 1) }
+        .overlay(alignment: .bottom) { NookDivider() }
     }
 }
 
