@@ -15,8 +15,8 @@ enum ScriptText {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
-    /// Runs AppleScript off the main thread with a timeout and returns text plus error number.
-    static func run(_ source: String, timeout: TimeInterval = 4.0) async -> (text: String?, errorNumber: Int?) {
+    /// Runs AppleScript off the main thread with a timeout and returns text, or the error number and message.
+    static func run(_ source: String, timeout: TimeInterval = 4.0) async -> (text: String?, errorNumber: Int?, errorMessage: String?) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: SystemControl.appleScriptResult(source, timeout: timeout))
@@ -267,6 +267,7 @@ final class MailConnector: ContextSource {
         try? await Task.sleep(nanoseconds: 300_000_000)
     }
     var refreshInterval: TimeInterval { 60 }
+    private static let loadTimeout: TimeInterval = 15
 
     /// Fresh enough to answer from memory.
     var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
@@ -285,13 +286,16 @@ final class MailConnector: ContextSource {
     }
 
     private func load() async {
-        let result = await ScriptText.run(MailStats.recentScript())
+        // Every enabled account's inbox in one go: with several accounts, or while Mail syncs, that easily takes more
+        // than a few seconds.
+        let result = await ScriptText.run(MailStats.recentScript(), timeout: Self.loadTimeout)
         if result.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation."))
             return
         }
         guard let text = result.text else {
-            status = ConnectorStatus(state: .error("Mail did not respond."))
+            status = ConnectorStatus(state: .error(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage,
+                                                                     timeout: Self.loadTimeout)))
             return
         }
         let parsed = MailStats.recent(text)
@@ -301,7 +305,7 @@ final class MailConnector: ContextSource {
         let waiting = MailStats.select(rows, now: Date(), days: 14, unansweredOnly: true, limit: 10)
         let missing = waiting.filter { bodies[$0.key] == nil }
         if !missing.isEmpty {
-            let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(missing))).text ?? "")
+            let texts = MailStats.bodies((await ScriptText.run(MailStats.bodiesScript(missing), timeout: 6)).text ?? "")
             for (n, row) in missing.enumerated() { bodies[row.key] = texts[n] ?? "" }
         }
         let keys = Set(rows.map(\.key))
@@ -326,7 +330,10 @@ final class MailConnector: ContextSource {
     func inbox(days: Int, unansweredOnly: Bool) async throws -> String {
         try await Self.ensureRunning()
         if !isFresh { await refresh() }
-        if case .error(let message) = status.state { throw NookError(message) }
+        // A failed refresh shortly after a good one still leaves the inbox of a few minutes ago, which beats no answer.
+        if case .error(let message) = status.state, recent.isEmpty || loadedAt.map({ Date().timeIntervalSince($0) > 900 }) ?? true {
+            throw NookError(message)
+        }
         let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
         guard !rows.isEmpty else {
             return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
@@ -383,7 +390,7 @@ final class MailConnector: ContextSource {
                         if let self, self.loadedAt != nil {
                             return "Mail was too slow to count per day and sender. Unread in the inbox (last refresh): \(self.unreadCount)."
                         }
-                        throw NookError("Mail did not respond.")
+                        throw NookError(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage, timeout: 20))
                     }
                     return MailStats.unread(raw, now: Date())
                 }
@@ -438,7 +445,9 @@ final class MailConnector: ContextSource {
                         result = await ScriptText.run(MailConnector.searchScript(filter: filter, sent: sent, bodies: false), timeout: 20)
                     }
                     if result.errorNumber == -1712 { throw NookError("Searching Mail took too long. Try a more specific keyword.") }
-                    if result.text == nil { throw NookError("Mail did not respond.") }
+                    if result.text == nil {
+                        throw NookError(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage, timeout: 20))
+                    }
                     let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "No mail found for \"\(query)\"" + (sent ? " in sent." : ".") }
                     let now = Date()
@@ -530,7 +539,10 @@ final class MailConnector: ContextSource {
                     if result.errorNumber == -1743 {
                         throw NookError("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation.")
                     }
-                    guard let raw = result.text, raw != "NOT_FOUND" else { throw NookError("Message not found in Mail.") }
+                    guard let raw = result.text else {
+                        throw NookError(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage, timeout: 8))
+                    }
+                    guard raw != "NOT_FOUND" else { throw NookError("Message not found in Mail.") }
                     let parts = raw.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
                     let header = String(parts.first ?? "").components(separatedBy: "|||")
                     guard header.count >= 4 else { throw NookError("Mail gave no readable message.") }
@@ -598,7 +610,9 @@ final class MailConnector: ContextSource {
                     throw NookError("Grant Nook permission to control Mail: System Settings › Privacy & Security › Automation.")
                 }
                 if result.errorNumber == -1712 { throw NookError("Mail took too long. Some messages may already have changed; check Mail.") }
-                guard let raw = result.text else { throw NookError("Mail did not respond.") }
+                guard let raw = result.text else {
+                    throw NookError(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage, timeout: 60))
+                }
                 self?.loadedAt = nil
                 return MailActions.describe(change, raw: raw)
             }

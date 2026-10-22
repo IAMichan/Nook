@@ -9,8 +9,9 @@ enum SystemControl {
         appleScriptResult(source, timeout: timeout).text
     }
 
-    /// Like `appleScript`, but also returns the error number. -1743 means: macOS has not granted Nook permission.
-    nonisolated static func appleScriptResult(_ source: String, timeout: TimeInterval = 4.0) -> (text: String?, errorNumber: Int?) {
+    /// Like `appleScript`, but also returns the error number and AppleScript's own message. -1743 means: macOS has not
+    /// granted Nook permission.
+    nonisolated static func appleScriptResult(_ source: String, timeout: TimeInterval = 4.0) -> (text: String?, errorNumber: Int?, errorMessage: String?) {
         let wrapped = wrapTimeout(source, seconds: max(1, Int(ceil(timeout))))
 
         // Fast path: if scriptQueue is free, execute in-process via NSAppleScript (~5ms overhead).
@@ -21,6 +22,7 @@ enum SystemControl {
                 let lock = NSLock()
                 var text: String?
                 var errorNumber: Int?
+                var errorMessage: String?
             }
             let box = Box()
             let semaphore = DispatchSemaphore(value: 0)
@@ -36,6 +38,7 @@ enum SystemControl {
                 box.lock.lock()
                 if let error {
                     box.errorNumber = error[NSAppleScript.errorNumber] as? Int
+                    box.errorMessage = error[NSAppleScript.errorMessage] as? String
                 } else {
                     box.text = result.stringValue
                 }
@@ -44,11 +47,11 @@ enum SystemControl {
             }
 
             if semaphore.wait(timeout: .now() + timeout) == .timedOut {
-                return (nil, -1712) // errAETimeout
+                return (nil, -1712, nil) // errAETimeout
             }
             box.lock.lock()
             defer { box.lock.unlock() }
-            return (box.text, box.errorNumber)
+            return (box.text, box.errorNumber, box.errorMessage)
         } else {
             return runOsaScript(wrapped, timeout: timeout)
         }
@@ -85,7 +88,7 @@ enum SystemControl {
     }
 
     /// Parallel out-of-process AppleScript runner with hard process termination on timeout.
-    private nonisolated static func runOsaScript(_ source: String, timeout: TimeInterval) -> (text: String?, errorNumber: Int?) {
+    private nonisolated static func runOsaScript(_ source: String, timeout: TimeInterval) -> (text: String?, errorNumber: Int?, errorMessage: String?) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", source]
@@ -96,7 +99,7 @@ enum SystemControl {
         do {
             try process.run()
         } catch {
-            return (nil, nil)
+            return (nil, nil, error.localizedDescription)
         }
 
         final class DataBox: @unchecked Sendable {
@@ -118,23 +121,33 @@ enum SystemControl {
 
         if group.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
-            return (nil, -1712)
+            return (nil, -1712, nil)
         }
         process.waitUntilExit()
         if process.terminationStatus == 0 {
             var text = String(data: dataBox.out, encoding: .utf8) ?? ""
             if text.hasSuffix("\n") { text.removeLast() }
-            return (text, nil)
+            return (text, nil, nil)
         } else {
             let errText = String(data: dataBox.err, encoding: .utf8) ?? ""
-            if errText.contains("-1743") { return (nil, -1743) }
-            if errText.contains("-1712") { return (nil, -1712) }
+            let message = osaScriptMessage(errText)
+            if errText.contains("-1743") { return (nil, -1743, message) }
+            if errText.contains("-1712") { return (nil, -1712, message) }
             if let range = errText.range(of: #"\(-?\d+\)"#, options: .regularExpression) {
                 let numStr = errText[range].dropFirst().dropLast()
-                if let code = Int(numStr) { return (nil, code) }
+                if let code = Int(numStr) { return (nil, code, message) }
             }
-            return (nil, Int(process.terminationStatus))
+            return (nil, Int(process.terminationStatus), message)
         }
+    }
+
+    /// osascript's stderr without its position prefix and trailing number:
+    /// "12:40: execution error: Mail got an error: AppleEvent handler failed. (-10000)" → "Mail got an error: AppleEvent handler failed."
+    private nonisolated static func osaScriptMessage(_ stderr: String) -> String? {
+        var text = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = text.range(of: "execution error: ") { text = String(text[range.upperBound...]) }
+        if let range = text.range(of: #"\s*\(-?\d+\)$"#, options: .regularExpression) { text.removeSubrange(range) }
+        return text.isEmpty ? nil : text
     }
 
     private final class AtomicFlag: @unchecked Sendable {

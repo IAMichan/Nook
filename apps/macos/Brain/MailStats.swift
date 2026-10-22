@@ -234,6 +234,22 @@ enum MailStats {
         return result
     }
 
+    /// Why Mail's AppleScript gave no answer, in words that say what to do about it, with the error code so a report can be
+    /// traced. -1712 is a timeout, -600 and -609 mean Mail is gone or its connection broke; anything else carries
+    /// AppleScript's own message.
+    static func failure(errorNumber: Int?, message: String?, timeout: TimeInterval) -> String {
+        let detail = (message ?? "").trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        let text: String
+        switch errorNumber {
+        case -1712: text = tr("connect.mail.timeout", Int(timeout.rounded(.up)))
+        case -600, -609: text = tr("connect.mail.notRunning")
+        // The message goes in by hand: a String is no CVarArg on Linux, where these tests also run.
+        default: text = detail.isEmpty ? tr("connect.mail.noAnswer") : tr("connect.mail.scriptError").replacingOccurrences(of: "%@", with: detail)
+        }
+        guard let errorNumber else { return text }
+        return text + " (" + tr("connect.mail.code", errorNumber) + ")"
+    }
+
     /// "Lisa de Vries <lisa@…>" → "Lisa de Vries"
     static func senderName(_ sender: String) -> String {
         if let range = sender.range(of: " <") { return String(sender[..<range.lowerBound]).replacingOccurrences(of: "\"", with: "") }
