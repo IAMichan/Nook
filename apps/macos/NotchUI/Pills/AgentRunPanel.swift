@@ -575,6 +575,13 @@ struct AgentRunPanel: View {
                 if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            // Opened from a search hit: find what it matched.
+            .onReceive(app.viewModel.$sessionFind) { wanted in
+                guard let wanted, !wanted.isEmpty else { return }
+                app.viewModel.sessionFind = nil
+                openFind()
+                findQuery = wanted
+            }
             .onChange(of: events.count) { _, _ in
                 if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }

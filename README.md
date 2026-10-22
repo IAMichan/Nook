@@ -281,6 +281,7 @@ Want to explore Nook with sample data first? Enable **Demo data** in **Settings 
 - **No Notch / Multiple Displays:**
   - Prefer a floating widget? Go to **Settings › General › Notch › Placement** and choose **Floating on screen** to drag Nook anywhere on any display.
   - Using multiple monitors? Enable **Show notch on every display** so Nook opens on whichever screen your cursor is on.
+- **Search Everything:** Press **`⇧⌘F`** (or the magnifying glass in the panel header) to search your Nook conversations, agent sessions and their transcripts, chats, call notes, memories, notices, settings and actions at once, with typo tolerance and filters such as `in:agents`, `from:me`, `after:7d` and `"exact words"`. See [`docs/SEARCH.md`](docs/SEARCH.md).
 - **Full Window:** Press **`⌥⌘W`** (or choose **Open in Window** from the menu bar) for the full desktop workspace, and **`⌘,`** for **Settings**.
 
 ---
@@ -324,6 +325,7 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 | System-wide autocomplete | [`docs/AUTOCOMPLETE.md`](docs/AUTOCOMPLETE.md) |
 | iPhone companion & protocol | [`docs/COMPANION.md`](docs/COMPANION.md) |
 | Monorepo structure | [`docs/MONOREPO.md`](docs/MONOREPO.md) |
+| Search everything (query language & ranking) | [`docs/SEARCH.md`](docs/SEARCH.md) |
 | Shared macOS UI components | [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) |
 | Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md) |
 | Fine-tuning local models | [`scripts/finetune/README.md`](scripts/finetune/README.md) |
