@@ -162,23 +162,7 @@ struct AgentInboxList: View {
     // MARK: Search
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
-            TextField(tr("inbox.search.placeholder"), text: $store.query)
-                .textFieldStyle(.plain)
-                .font(NookTheme.font(12.5))
-                .foregroundStyle(NookTheme.paper)
-            if !store.query.isEmpty {
-                Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.detail) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tr("button.clear"))
-            }
-        }
-        .foregroundStyle(NookTheme.textTertiary)
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
-        .padding(.horizontal, 2)
+        NookSearchField(prompt: tr("inbox.search.placeholder"), text: $store.query)
     }
 
     // MARK: Sections
@@ -247,7 +231,7 @@ struct AgentInboxList: View {
                 Text(tr("inbox.section." + section.kind.rawValue, count))
                     .font(NookTheme.font(12, .medium))
                     .foregroundStyle(section.kind == .snoozed ? NookTheme.textSecondary : NookTheme.textTertiary)
-                Rectangle().fill(NookTheme.line2).frame(height: 1)
+                NookDivider()
                 if let ghost {
                     Text(ghost)
                         .font(NookTheme.font(11, .semibold))

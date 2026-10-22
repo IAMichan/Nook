@@ -41,7 +41,8 @@ extension SettingsSection {
     }
 }
 
-/// A colored rounded square with a white symbol: the one icon style of Settings.
+/// A flat rounded square with a soft symbol: the one icon style of Settings. No gradient and no edge, so a column of
+/// them reads as quiet markers rather than a row of buttons.
 struct SettingsTile: View {
     let symbol: String
     let colors: (Color, Color)
@@ -60,15 +61,11 @@ struct SettingsTile: View {
     /// `colors` is kept for the callers that still pass one: every tile has the same quiet look now.
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-            .fill(LinearGradient(colors: [NookTheme.smoke, NookTheme.graphite], startPoint: .top, endPoint: .bottom))
-            .overlay(
-                RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                    .strokeBorder(NookTheme.line2, lineWidth: 0.5)
-            )
+            .fill(NookTheme.smoke)
             .overlay(
                 Image(systemName: symbol)
-                    .font(NookTheme.font(size * 0.5, .medium))
-                    .foregroundStyle(NookTheme.paper.opacity(0.92))
+                    .font(NookTheme.font(size * 0.48, .medium))
+                    .foregroundStyle(NookTheme.textStrong)
             )
             .frame(width: size, height: size)
     }

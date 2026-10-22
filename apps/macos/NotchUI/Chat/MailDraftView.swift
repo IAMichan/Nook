@@ -119,6 +119,6 @@ struct MailDraftView: View {
                 .disabled(locked)
         }
         .padding(.vertical, 6)
-        .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line2).frame(height: 1) }
+        .overlay(alignment: .bottom) { NookDivider() }
     }
 }

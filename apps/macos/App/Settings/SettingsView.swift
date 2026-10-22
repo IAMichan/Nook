@@ -100,7 +100,7 @@ struct SettingsView: View {
             }
             .searchable(text: $searchQuery, placement: .sidebar, prompt: Text(tr("settings.search.prompt")))
             .scrollContentBackground(.hidden)
-            .background(NookTheme.graphite)
+            .background(NookTheme.surface)
             .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 250)
         } detail: {
             Form {

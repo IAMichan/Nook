@@ -125,7 +125,7 @@ struct NookMoreMenu: View {
                 .frame(width: size, height: size)
                 .background(Circle().fill(hovering ? NookTheme.smoke : Color.clear))
                 .contentShape(Circle())
-                .hoverLift(hovering, scale: 1.06)
+                .hoverLift(hovering, scale: 1.03)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)

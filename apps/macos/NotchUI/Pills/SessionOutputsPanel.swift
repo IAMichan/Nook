@@ -127,7 +127,7 @@ private struct OutputViewer: View {
     var body: some View {
         VStack(spacing: 0) {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
-            Rectangle().fill(NookTheme.line2.opacity(0.6)).frame(height: 1)
+            NookDivider()
             actions
         }
     }
@@ -210,7 +210,7 @@ struct FilePreviewPanel: View {
             ToolSurface {
                 VStack(spacing: 0) {
                     content.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    Rectangle().fill(NookTheme.line2.opacity(0.6)).frame(height: 1)
+                    NookDivider()
                     actions
                 }
             }

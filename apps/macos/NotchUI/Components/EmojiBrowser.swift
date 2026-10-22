@@ -64,24 +64,8 @@ struct EmojiBrowser: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
-                .font(NookTheme.font(11, .semibold))
-                .foregroundStyle(NookTheme.textTertiary)
-                .accessibilityHidden(true)
-            TextField("", text: $query, prompt: Text(tr("emoji.search")).foregroundStyle(NookTheme.textTertiary))
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-                .focused($searching)
-                .onSubmit { if let first = results.first { choose(first.character) } }
-            if !query.isEmpty {
-                ToolbarIconButton("xmark.circle.fill", tr("emoji.clear")) { query = "" }
-            }
-        }
-        .padding(.horizontal, NookTheme.Spacing.md)
-        .padding(.vertical, NookTheme.Spacing.sm)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.control)
+        NookSearchField(prompt: tr("emoji.search"), text: $query, focus: $searching,
+                        onSubmit: { if let first = results.first { choose(first.character) } })
     }
 
     /// A tab per group: a click jumps to it.

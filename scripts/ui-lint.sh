@@ -13,6 +13,8 @@
 #   5. State and text colors come from NookTheme (coral, amber, mint, textSecondary …), never the system .red, .orange,
 #      .yellow, .green, .secondary, or .tertiary.
 #   6. Short UI animations use NookTheme.hover / reveal / scroll / swap, never an inline .easeOut(duration: 0.15).
+#   7. A search field is a NookSearchField and a divider a NookDivider (NotchUI/Components/PanelBlocks.swift), so both
+#      look and behave the same everywhere.
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
 # `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
@@ -66,5 +68,13 @@ grep -rnE '\b(foregroundStyle|foregroundColor|fill|tint|stroke)\(\s*\.(red|orang
 grep -rnE 'withAnimation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\)\)|\.animation\(\.(easeOut|easeInOut|easeIn)\(duration: 0\.[12][0-9]*\), value:' \
   NotchUI App --include='*.swift' | grep -v -e '^NotchUI/Character/' -e '^NotchUI/Theme/NookTheme.swift' \
   | report "short animations use NookTheme.hover / reveal / scroll / swap (no inline .easeOut(duration: 0.15))"
+
+grep -rnE 'Image\(systemName: "magnifyingglass"\)' NotchUI App --include='*.swift' \
+  | grep -v -e '^NotchUI/Components/PanelBlocks.swift:' -e '^NotchUI/Pills/TimelineFind.swift:' \
+  | report "search fields are a NookSearchField (no magnifying glass and text field built inline)"
+
+grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
+  | grep -v '^NotchUI/Components/PanelBlocks.swift:' \
+  | report "dividers are a NookDivider (no 1 pt Rectangle drawn inline)"
 
 exit $status

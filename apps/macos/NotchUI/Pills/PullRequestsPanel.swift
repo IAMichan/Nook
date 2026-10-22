@@ -38,16 +38,11 @@ struct PullRequestsPanel: View {
 
     private var list: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text(tr("agents.footer.pullRequests"))
-                    .font(NookTheme.font(14, .semibold))
-                    .foregroundStyle(NookTheme.paper)
-                Spacer()
+            PanelListHeader(tr("agents.footer.pullRequests")) {
                 if store.loading { ProgressView().controlSize(.small) }
                 NookIconButton(systemName: "binoculars", label: tr("agents.pulls.watch"), size: 28) { app.openSettings(section: .connections) }
                 NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
             }
-            .frame(height: 30)
 
             if store.loaded && !store.available && accounts.isEmpty {
                 empty(title: tr("agents.pulls.notConnected"), detail: tr("agents.pulls.notConnectedDetail"), action: (tr("agents.pulls.connect"), {
@@ -101,24 +96,8 @@ struct PullRequestsPanel: View {
 
     private var filterBar: some View {
         HStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(NookTheme.font(11, .medium))
-                TextField(tr("agents.pulls.search"), text: $filter.query)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.font(12.5))
-                    .foregroundStyle(NookTheme.paper)
-                    .focused($searching)
-                    .onExitCommand { filter.query = ""; searching = false }
-                if !filter.query.isEmpty {
-                    Button { filter.query = "" } label: { Image(systemName: "xmark.circle.fill").font(NookTheme.TextStyle.detail) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(tr("button.clear"))
-                }
-            }
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
+            NookSearchField(prompt: tr("agents.pulls.search"), text: $filter.query, focus: $searching,
+                            onEscape: { searching = false })
             .background {
                 // ⌘F jumps to the search field.
                 Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)

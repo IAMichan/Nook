@@ -240,7 +240,7 @@ struct NookIconButton: View {
                 .background(
                     Circle().fill(filled ? NookTheme.paper : (hovering ? NookTheme.smoke : Color.clear))
                 )
-                .hoverLift(hovering, scale: 1.06)
+                .hoverLift(hovering, scale: 1.03)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

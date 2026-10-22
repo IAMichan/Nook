@@ -297,7 +297,7 @@ private struct BottomSplitHandle: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(NookTheme.hairline).frame(height: 1)
+            NookDivider()
             Capsule()
                 .fill(hovering || dragging ? NookTheme.textSecondary : NookTheme.line2)
                 .frame(width: 36, height: 4)

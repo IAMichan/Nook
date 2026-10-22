@@ -189,7 +189,7 @@ struct MarkdownView: View {
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, size: size)
         case .rule:
-            Rectangle().fill(NookTheme.line2).frame(height: 1).padding(.vertical, 4)
+            NookDivider().padding(.vertical, 4)
         }
     }
 

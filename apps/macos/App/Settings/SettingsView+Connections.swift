@@ -56,16 +56,7 @@ extension SettingsView {
 
         return Group {
             Section {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(NookTheme.textSecondary)
-                    TextField(tr("settings.connections.search"), text: $connectionSearch, prompt: Text(tr("settings.connections.searchPrompt")))
-                        .textFieldStyle(.plain)
-                    if !connectionSearch.isEmpty {
-                        Button { connectionSearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(NookTheme.textTertiary) }
-                            .buttonStyle(.plain)
-                            .help(tr("button.close"))
-                    }
-                }
+                NookSearchField(prompt: tr("settings.connections.searchPrompt"), text: $connectionSearch, style: .inline)
                 ServiceCategoryChips(selection: $connectionCategory)
             } footer: {
                 Text(tr("connect.intro"))

@@ -38,12 +38,10 @@ private struct SuggestionCard: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.md)
             .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .stroke(hovering ? NookTheme.line2 : NookTheme.line2.opacity(0.6), lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -133,16 +131,14 @@ struct TodayRow: View {
                         Image(systemName: "chevron.right")
                             .font(NookTheme.font(9.5, .semibold))
                     }
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-                    .padding(.horizontal, 10)
+                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                     .frame(height: 26)
-                    .background(Capsule().fill(hovering ? NookTheme.smoke : NookTheme.paper.opacity(0.05)))
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            .padding(.horizontal, NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
+            .padding(.vertical, NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity)
-            .background(hovering ? NookTheme.paper.opacity(0.03) : Color.clear)
+            .background(hovering ? NookTheme.rowHover : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -111,13 +111,31 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookTheme.hover / reveal / scroll / swap")
     }
 
+    /// A search looks and behaves the same everywhere (clear button, Escape, height): it is a `NookSearchField`, never a
+    /// magnifying glass and a text field put together on the spot. The timeline's find bar, with its own next and
+    /// previous, is the one exception.
+    func testSearchFieldsAreTheSharedComponent() {
+        let found = offenders(#"Image\(systemName: "magnifyingglass"\)"#) {
+            $0 == "NotchUI/Components/PanelBlocks.swift" || $0 == "NotchUI/Pills/TimelineFind.swift"
+        }
+        XCTAssertEqual(found, [], "use NookSearchField (NotchUI/Components/PanelBlocks.swift)")
+    }
+
+    /// A line between rows or regions is a `NookDivider`, so every divider has the same weight and color.
+    func testDividersAreTheSharedComponent() {
+        let found = offenders(#"Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline)[^)]*\)\.frame\(height: 1\)"#) {
+            $0 == "NotchUI/Components/PanelBlocks.swift"
+        }
+        XCTAssertEqual(found, [], "use NookDivider (NotchUI/Components/PanelBlocks.swift)")
+    }
+
     /// Every token the scale promises exists, so the names in the docs and in the lint script stay true.
     func testThemeDefinesTheScales() {
         guard let theme = Self.sources.first(where: { $0.path == "NotchUI/Theme/NookTheme.swift" })?.text else {
             return XCTFail("NookTheme.swift not found")
         }
         for name in ["enum Radius", "enum Spacing", "enum TextStyle", "static let canvas", "static let well", "static let surface",
-                     "static let hairline", "static let fieldStroke", "static func rounded(", "static var detail", "static var heading", "static let reveal", "static let scroll"] {
+                     "static let hairline", "static let fieldStroke", "static func rounded(", "static let xxxl", "static var detail", "static var heading", "static let reveal", "static let scroll"] {
             XCTAssertTrue(theme.contains(name), "NookTheme lost \(name)")
         }
     }
