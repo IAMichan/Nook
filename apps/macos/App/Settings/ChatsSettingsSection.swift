@@ -13,7 +13,7 @@ struct ChatsSettingsSection: View {
     @State private var notice: String?
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
-    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = false
+    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
 
     var body: some View {
         Group {

@@ -16,6 +16,8 @@ struct WAChatInfo: Equatable, Sendable {
     var jid: String
     var name: String
     var last: Date
+    /// How many messages WhatsApp itself counts unread, when the gateway says (OpenWA, Beeper); 0 when it does not.
+    var unread: Int = 0
 }
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
@@ -1268,7 +1270,8 @@ enum WABeeper {
               let id = nonEmpty(c["id"]) else { return nil }
         return WAChatInfo(jid: WAJID.beeper(id, group: c["type"] as? String == "group"),
                           name: (c["title"] as? String) ?? "",
-                          last: WADate.rfc3339(c["lastActivity"] as? String) ?? .distantPast)
+                          last: WADate.rfc3339(c["lastActivity"] as? String) ?? .distantPast,
+                          unread: (c["unreadCount"] as? Int) ?? 0)
     }
 
     /// `GET /v1/chats` → `{items: [Chat]}`, newest first.
