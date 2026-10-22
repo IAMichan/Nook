@@ -27,6 +27,11 @@ struct ChatsEntry: Identifiable, Equatable {
     var handle: String? = nil
     /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
     var avatar: String? = nil
+    /// Read in Nook but still unread in the app itself (WhatsApp): "Mark as read" can still tell the app.
+    var waitsInApp = false
+
+    /// Whether "Mark as read" applies: unread in Nook, or still unread in the app.
+    var readable: Bool { unread > 0 || waitsInApp }
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -170,11 +175,11 @@ struct ChatsTab: View {
         }
     }
 
-    /// "Mark as read", by hand: its badge goes.
+    /// "Mark as read", by hand: its badge goes, and a WhatsApp chat is read in WhatsApp too, so the sender sees it.
     private func markRead(_ entry: ChatsEntry) {
         switch entry.origin {
         case .captured(let thread): capture.markRead(thread)
-        case .whatsApp(let jid): whatsApp.markRead(jid)
+        case .whatsApp(let jid): whatsApp.markReadInWhatsApp(jid)
         }
     }
 
@@ -215,7 +220,7 @@ struct ChatsTab: View {
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           unread: whatsApp.unread(conversation.id), ticks: ticks, handle: Self.handle(conversation.id),
-                                          avatar: whatsApp.avatars[conversation.id]))
+                                          avatar: whatsApp.avatars[conversation.id], waitsInApp: whatsApp.waitsInWhatsApp(conversation.id)))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
             // when one is opened.
@@ -227,7 +232,7 @@ struct ChatsTab: View {
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
                                           preview: "", last: chat.last, unread: whatsApp.unread(chat.jid), handle: Self.handle(chat.jid),
-                                          avatar: whatsApp.avatars[chat.jid]))
+                                          avatar: whatsApp.avatars[chat.jid], waitsInApp: whatsApp.waitsInWhatsApp(chat.jid)))
             }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
@@ -412,9 +417,9 @@ struct ChatsTab: View {
                         if open {
                             ForEach(section.entries) { entry in
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
-                                         onToggleRead: { entry.unread > 0 ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
+                                         onToggleRead: { entry.readable ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
                                     .contextMenu {
-                                        if entry.unread > 0 {
+                                        if entry.readable {
                                             Button(tr("chats.markRead")) { markRead(entry) }
                                         } else {
                                             Button(tr("chats.markUnread")) { markUnread(entry) }
@@ -750,11 +755,11 @@ private struct ChatsRow: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             // VoiceOver reaches the row itself, so the action is named there; the hover button would only repeat it.
-            row.accessibilityAction(named: Text(tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
+            row.accessibilityAction(named: Text(tr(entry.readable ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let onToggleRead {
-                ToolbarIconButton(entry.unread > 0 ? "checkmark.circle" : "circle.badge",
-                                  tr(entry.unread > 0 ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
+                ToolbarIconButton(entry.readable ? "checkmark.circle" : "circle.badge",
+                                  tr(entry.readable ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
                     .pointerStyle(.link)
                     .padding(.top, NookTheme.Spacing.sm)
                     .padding(.trailing, NookTheme.Spacing.sm)
@@ -797,6 +802,14 @@ private struct ChatsRow: View {
                         Spacer(minLength: NookTheme.Spacing.xs)
                         NookCountBadge(count: entry.unread)
                             .fixedSize()
+                        // Read in Nook, still unread in the app: a ring where the count was, until "Mark as read".
+                        if entry.unread == 0, entry.waitsInApp {
+                            Circle()
+                                .stroke(NookTheme.amber, lineWidth: 1.5)
+                                .frame(width: 8, height: 8)
+                                .help(tr("chats.waitsInApp", MessagingApps.app(id: entry.app)?.name ?? entry.app))
+                                .accessibilityLabel(tr("chats.waitsInApp", MessagingApps.app(id: entry.app)?.name ?? entry.app))
+                        }
                     }
                 }
             }
@@ -995,11 +1008,11 @@ private struct ChatsDetail: View {
     /// Read or unread by hand, for every chat, and removing a chat collected from notifications.
     private var moreMenu: some View {
         Menu {
-            if entry.unread > 0 {
+            if entry.readable {
                 Button(tr("chats.markRead")) {
                     switch entry.origin {
                     case .captured(let id): capture.markRead(id)
-                    case .whatsApp(let jid): whatsApp.markRead(jid)
+                    case .whatsApp(let jid): whatsApp.markReadInWhatsApp(jid)
                     }
                 }
             } else {

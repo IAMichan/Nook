@@ -142,6 +142,8 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
     @Published private(set) var knownChats: [WAChatInfo] = []
+    /// When a chat was last read in WhatsApp itself: marked read from Nook (by hand), or read on the phone.
+    @Published private(set) var readInWhatsApp: [String: Date] = [:]
     /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows.
     @Published private(set) var readInNook: [String: Date] = [:]
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
@@ -418,6 +420,7 @@ final class WhatsAppLink: ObservableObject {
             if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(changed) }
         case .readElsewhere(let chat)?:
             let key = WAJID.normalized(chat)
+            readInWhatsApp[key] = Date()
             guard inbox.conversations[key] != nil else { return }
             inbox.markRead(key)
             onReadElsewhere?(key)
@@ -744,6 +747,32 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         inbox.markRead(key)
         readInNook[key] = Date()
+    }
+
+    /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's, it came in unread (or
+    /// was read in Nook only since), and it was not read in WhatsApp after it arrived. Then "Mark as read" can still
+    /// tell WhatsApp, also when Nook shows no badge any more.
+    func waitsInWhatsApp(_ chat: String) -> Bool {
+        let key = WAJID.normalized(chat)
+        let readThere = readInWhatsApp[key] ?? .distantPast
+        if let conversation = inbox.conversations[key], let last = conversation.messages.last {
+            guard !last.fromMe, last.date > readThere else { return false }
+            return conversation.unread > 0 || (readInNook[key].map { $0 >= last.date } ?? false)
+        }
+        guard let known = knownChats.first(where: { $0.jid == key }) else { return false }
+        return known.unread > 0 && known.last > readThere
+    }
+
+    /// "Mark as read", by hand: read in Nook and in WhatsApp, so the people who wrote see that you read it (blue ticks
+    /// where they have them). Always sent: you chose to.
+    func markReadInWhatsApp(_ chat: String) {
+        let key = WAJID.normalized(chat)
+        readInNook[key] = Date()
+        readInWhatsApp[key] = Date()
+        inbox.markRead(key)
+        guard let provider, isConnected else { return }
+        let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
+        Task { try? await provider.markRead(chat: key, lastIncoming: last) }
     }
 
     /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the
