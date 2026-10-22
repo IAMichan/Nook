@@ -366,7 +366,9 @@ final class WhatsAppConnector: AppDatabaseConnector {
     }
 
     private var liveTools: [ToolSpec] {
-        [
+        // WhatsApp on this Mac is the other place a chat can be read, when Nook may read it.
+        let readsMac = super.isActive
+        return [
             ToolSpec(
                 name: "whatsapp_live",
                 description: "WhatsApp through the user's linked phone (live, includes what arrived a minute ago). Without chat: the recent conversations with unread counts and the newest message. With chat (a name, number or chat id): the newest messages of that chat.",
@@ -397,13 +399,15 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     }
                     let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
                     let messages = try await link.messages(of: target.jid, limit: limit)
-                    guard !messages.isEmpty else { return "No messages found in the WhatsApp chat with \(target.name)." }
+                    guard let newest = messages.map(\.date).max() else { return "No messages found in the WhatsApp chat with \(target.name)." }
+                    let other = readsMac ? "search_whatsapp / read_whatsapp (WhatsApp on this Mac)" : nil
                     return "WhatsApp chat with \(target.name) (chat id \(target.jid)):\n" + WhatsAppRecipients.lines(messages, chatName: target.name)
+                        + "\n" + AppData.freshness(newest: newest, other: other)
                 }
             ),
             ToolSpec(
                 name: "whatsapp_send",
-                description: "Sends a WhatsApp message from the user's own account to an existing chat (a contact or group on their phone), through the linked phone. Use when the user asks to app, WhatsApp or message someone on WhatsApp. Write the message as the user would, in their language and tone, without a signature. The user sees the exact text and recipient and approves before anything is sent.",
+                description: "Sends a WhatsApp message from the user's own account to an existing chat (a contact or group on their phone), through the linked phone. Use when the user asks to app, WhatsApp or message someone on WhatsApp. Write the message as the user would, in their language and tone, without a signature. A reply answers the chat's newest messages: read the chat first, and when its newest message is days old, tell the user so instead of answering it as if it were new. The user sees the exact text and recipient and approves before anything is sent.",
                 schema: ["type": "object", "properties": [
                     "to": ["type": "string", "description": "The chat: a contact or group name as on the phone, a phone number, or a chat id from whatsapp_live."],
                     "message": ["type": "string", "description": "The full text to send."]
@@ -493,7 +497,8 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     let rows = try await self.run(Self.select + " WHERE m.ZCHATSESSION = \(chat) AND m.ZTEXT IS NOT NULL ORDER BY m.ZMESSAGEDATE DESC LIMIT 500")
                     let messages = AppData.messages(rows, names: await ContactDirectory.names())
                     guard !messages.isEmpty else { throw NookError("Deze chat is niet gevonden of heeft geen tekst.") }
-                    return AppData.formatThread(messages, terms: Research.Terms(words: Research.words(of: AppData.string(input["query"]))), app: "WhatsApp")
+                    return AppData.formatThread(messages, terms: Research.Terms(words: Research.words(of: AppData.string(input["query"]))), app: "WhatsApp",
+                                                other: WhatsAppLink.shared.isConnected ? "whatsapp_live (the linked phone)" : nil)
                 }
             )
         ]
