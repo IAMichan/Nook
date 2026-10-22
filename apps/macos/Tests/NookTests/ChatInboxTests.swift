@@ -457,6 +457,39 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(messages.first?.text, "New push to acme/app\nmain\nFix the build\n\nWorkflow passed")
     }
 
+    // MARK: Polls
+
+    func testVotingOnAPoll() {
+        let one = ChatPoll(question: "Lunch?", options: [.init(text: "Pizza", votes: 2), .init(text: "Sushi", votes: 1, chosen: true)])
+        XCTAssertEqual(one.choice(afterTapping: "Pizza"), ["Pizza"], "one answer: a new one replaces yours")
+        XCTAssertEqual(one.choice(afterTapping: "Sushi"), [], "a second click takes it back")
+        let moved = one.voting(["Pizza"])
+        XCTAssertEqual(moved.options.map(\.votes), [3, 0])
+        XCTAssertEqual(moved.chosen, ["Pizza"])
+        var many = one
+        many.multiple = true
+        XCTAssertEqual(many.choice(afterTapping: "Pizza"), ["Sushi", "Pizza"])
+        XCTAssertEqual(InboxMessage(id: "p", text: "", date: now, poll: one).summary, "📊 Lunch?")
+    }
+
+    func testTelegramPolls() {
+        let content: [String: Any] = ["@type": "messagePoll", "poll": [
+            "question": ["text": "Where?"], "type": ["@type": "pollTypeRegular", "allow_multiple_answers": true],
+            "options": [["text": ["text": "Here"], "voter_count": 3, "is_chosen": true], ["text": "There", "voter_count": 1]]
+        ]]
+        XCTAssertEqual(TelegramData.poll(content), ChatPoll(question: "Where?", options: [
+            .init(text: "Here", votes: 3, chosen: true), .init(text: "There", votes: 1)
+        ], multiple: true))
+        let chat = TelegramData.Chat(id: -100123, title: "Club", isGroup: true, unread: 0, order: 0)
+        let message = TelegramData.message(["@type": "message", "id": 45, "date": 1_700_000_000, "content": content],
+                                           chat: chat, users: [:])
+        XCTAssertEqual(message?.text, "")
+        XCTAssertEqual(message?.poll?.question, "Where?")
+        XCTAssertEqual(TelegramData.ids("telegram--100123-45")?.chat, -100123)
+        XCTAssertEqual(TelegramData.ids("telegram--100123-45")?.message, 45)
+        XCTAssertNil(TelegramData.ids("slack-C1-1"))
+    }
+
     // MARK: Files in chats
 
     func testWhatAFileIs() {

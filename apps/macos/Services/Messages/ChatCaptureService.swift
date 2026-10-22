@@ -287,6 +287,12 @@ final class ChatCaptureService: ObservableObject {
         save()
     }
 
+    func markUnread(_ id: String) {
+        guard inbox.threads[id]?.unread == 0 else { return }
+        inbox.markUnread(id)
+        save()
+    }
+
     func markAllRead() {
         inbox.markAllRead()
         save()

@@ -185,6 +185,18 @@ final class TelegramBridge: ObservableObject, ChatBridge {
                let name = TelegramData.userName(user) {
                 users[id] = name
             }
+        case "updateMessageContent":
+            // A poll's votes moved (or a message was edited): the chat shows the new content.
+            if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
+               let content = object["new_content"] as? [String: Any],
+               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
+                if let poll = TelegramData.poll(content) {
+                    messages[chat]?[index].poll = poll
+                } else if let text = TelegramData.text(content), !text.isEmpty, TelegramData.file(content) == nil {
+                    messages[chat]?[index].text = text
+                }
+                changed.insert(chat)
+            }
         case "updateNewMessage":
             if let message = object["message"] as? [String: Any], let id = TelegramData.int64(message["chat_id"]) {
                 add([message], to: id)
@@ -274,6 +286,16 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         if known.count > ChatInbox.keep { known.removeFirst(known.count - ChatInbox.keep) }
         messages[id] = known
         changed.insert(id)
+    }
+
+    /// Your vote on a poll, after your own click (an empty choice takes it back); the poll shows it at once.
+    func vote(_ choice: [String], message id: String) {
+        guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }),
+              let poll = messages[ids.chat]?[index].poll else { return }
+        let options = poll.options.indices.filter { choice.contains(poll.options[$0].text) }
+        send(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options])
+        messages[ids.chat]?[index].poll = poll.voting(choice)
+        changed.insert(ids.chat)
     }
 
     /// A chat's picture, downloaded once when TDLib does not have it yet.

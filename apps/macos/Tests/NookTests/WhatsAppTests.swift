@@ -102,6 +102,47 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertFalse(WAJID.isPlaceholderName("Familie", for: old))
     }
 
+    func testVotesMoveTheirPollInsteadOfShowingAsMessages() {
+        let group = "120363000000000001@g.us"
+        let creation = WAPollData.gowa(["type": "creation", "poll_id": "P1", "question": "Lunch?",
+                                        "options": [["name": "Pizza"], ["name": "Sushi"]], "selectable_options_count": 1])
+        XCTAssertEqual(creation.poll, WAPoll(question: "Lunch?", options: ["Pizza", "Sushi"]))
+        var inbox = WAInbox()
+        var poll = message("P1", chat: group, text: "")
+        poll.poll = creation.poll
+        inbox.add(poll, filters: WAFilters(), history: true)
+        var vote = message("V1", chat: group, from: "316@s.whatsapp.net", text: "")
+        vote.pollVote = WAPollData.gowa(["type": "vote", "poll_id": "P1", "selected_options": ["Sushi"]]).vote
+        XCTAssertEqual(inbox.add(vote, filters: WAFilters()), .quiet)
+        var mine = message("V2", chat: group, text: "", fromMe: true)
+        mine.pollVote = WAPollVote(poll: "P1", choice: ["Sushi"])
+        inbox.add(mine, filters: WAFilters())
+        let shown = inbox.conversations[group]?.messages
+        XCTAssertEqual(shown?.map(\.id), ["P1"], "a vote is no message of its own")
+        XCTAssertEqual(shown?.first?.poll?.chatPoll.options, [
+            ChatPoll.Option(text: "Pizza", votes: 0, chosen: false), ChatPoll.Option(text: "Sushi", votes: 2, chosen: true)
+        ])
+        var cleared = message("V3", chat: group, from: "316@s.whatsapp.net", text: "")
+        cleared.pollVote = WAPollVote(poll: "P1", choice: [])
+        inbox.add(cleared, filters: WAFilters())
+        XCTAssertEqual(inbox.conversations[group]?.messages.first?.poll?.chatPoll.total, 1, "a cleared vote takes theirs back")
+        XCTAssertTrue(WAPollData.isVoteText("Poll vote cleared"))
+        XCTAssertTrue(WAPollData.isVoteText("Poll vote: Nee"))
+        XCTAssertFalse(WAPollData.isVoteText("Poll: Lunch?"))
+        XCTAssertEqual(WAPollData.openwa(["name": "Q", "options": ["a", "b"], "allowMultipleAnswers": true]),
+                       WAPoll(question: "Q", options: ["a", "b"], multiple: true))
+    }
+
+    func testChannelsGetTheirNameAndPicture() {
+        let channel = "120363173134535056@newsletter"
+        XCTAssertTrue(WAJID.isPlaceholderName(WAJID.displayNumber(channel), for: channel), "a channel known only by its number")
+        let gowa = Data(#"{"results":{"data":[{"id":"120363173134535056@newsletter","thread_metadata":{"name":{"text":"Tech News"},"preview":{"url":"","direct_path":"/v/t61/abc.jpg?x=1"}}}]}}"#.utf8)
+        XCTAssertEqual(WAAvatar.gowaChannels(gowa), [WAChannel(jid: channel, name: "Tech News",
+                                                                 picture: URL(string: "https://mmg.whatsapp.net/v/t61/abc.jpg?x=1"))])
+        XCTAssertEqual(WAAvatar.openwaChannels(Data(#"[{"id":"1@newsletter","name":"Updates"}]"#.utf8)),
+                       [WAChannel(jid: "1@newsletter", name: "Updates", picture: nil)])
+    }
+
     func testChatPicturesOnlyFromWhatsApp() {
         let gowa = Data(#"{"code":"SUCCESS","results":{"url":"https://pps.whatsapp.net/v/t61/abc.jpg?oh=1","type":"preview"}}"#.utf8)
         XCTAssertEqual(WAAvatar.url(gowa)?.host, "pps.whatsapp.net")

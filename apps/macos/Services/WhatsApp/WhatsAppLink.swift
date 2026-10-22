@@ -146,6 +146,8 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var avatars: [String: String] = [:]
     /// When a chat's picture was last asked for: a chat without one is asked again after a while, not at every look.
     private var avatarAsked: [String: Date] = [:]
+    /// Where each followed channel's picture is, from the channel list (channels have no avatar route of their own).
+    private var channelPictures: [String: URL] = [:]
     /// Pictures come from WhatsApp's own picture server: no cookies, no cache, never the gateway's credentials.
     private static let avatarSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -447,6 +449,19 @@ final class WhatsAppLink: ObservableObject {
         lastChatList = Date()
         guard let chats = try? await provider.chats(limit: 200), gen == generation else { return }
         knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last) }
+        // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
+        for channel in await provider.channels() where gen == generation {
+            let jid = WAJID.normalized(channel.jid)
+            if let picture = channel.picture { channelPictures[jid] = picture }
+            guard !channel.name.isEmpty else { continue }
+            if let index = knownChats.firstIndex(where: { $0.jid == jid }), WAJID.isPlaceholderName(knownChats[index].name, for: jid) {
+                knownChats[index].name = channel.name
+            }
+            if let shown = inbox.conversations[jid]?.name, WAJID.isPlaceholderName(shown, for: jid) {
+                inbox.rename(jid, to: channel.name)
+            }
+        }
+        guard gen == generation else { return }
         // A chat that came in under its id takes the name the phone has for it.
         for chat in knownChats where !WAJID.isPlaceholderName(chat.name, for: chat.jid) {
             if let shown = inbox.conversations[chat.jid]?.name, WAJID.isPlaceholderName(shown, for: chat.jid) {
@@ -500,6 +515,21 @@ final class WhatsAppLink: ObservableObject {
         }
     }
 
+    /// Whether a poll can be voted on from Nook: the gateway has to be able to (OpenWA can, GOWA cannot yet).
+    var canVote: Bool { isConnected && provider?.canVote == true }
+
+    /// Your vote on a poll, after your own click: sent through the gateway, and the poll shows it at once.
+    func vote(_ choice: [String], poll: String, chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        let key = WAJID.normalized(chat)
+        do {
+            try await provider.vote(chat: key, poll: poll, choice: choice)
+        } catch {
+            throw NookError(tr("chat.poll.failed"))
+        }
+        inbox.applyVote(WAPollVote(poll: poll, choice: choice), chat: key, voter: WAPoll.me)
+    }
+
     /// Fetches the pictures of these chats that Nook does not have yet: the gateway says where each one is on WhatsApp's
     /// own picture server, and only that server is asked for it. One that has none is asked again after six hours.
     func loadAvatars(_ chats: [String]) async {
@@ -512,9 +542,17 @@ final class WhatsAppLink: ObservableObject {
                 avatars[chat] = target.path
                 continue
             }
-            if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
-            avatarAsked[chat] = Date()
-            guard let url = await provider.avatar(chat), gen == generation, WAAvatar.isWhatsApp(url),
+            let address: URL?
+            if WAJID.kind(chat) == .channel {
+                // A channel's picture comes with the channel list; until that list is read there is nothing to ask.
+                address = channelPictures[chat]
+                if address == nil { continue }
+            } else {
+                if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
+                avatarAsked[chat] = Date()
+                address = await provider.avatar(chat)
+            }
+            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url),
                   let answer = try? await Self.avatarSession.data(from: url), gen == generation,
                   (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000,
                   Self.thumbnail(answer.0, side: 8) != nil else { continue }
@@ -672,6 +710,11 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// Marks the chat read here and on WhatsApp (up to its newest received message).
+    /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
+    func markUnread(_ chat: String) {
+        inbox.markUnread(chat)
+    }
+
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
         guard let provider, let conversation = inbox.conversations[key] else { return }

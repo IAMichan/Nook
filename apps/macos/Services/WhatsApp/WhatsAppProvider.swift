@@ -48,10 +48,19 @@ protocol WhatsAppProvider: Sendable {
     /// Where a chat's picture is (a person's profile photo, a group's), on WhatsApp's own picture server; nil when it
     /// has none, hides it, or the gateway cannot say.
     func avatar(_ chat: String) async -> URL?
+    /// The channels you follow, with their names (and pictures, when the gateway says).
+    func channels() async -> [WAChannel]
+    /// Whether this gateway can vote on a poll for you.
+    var canVote: Bool { get }
+    /// Votes on a poll with `choice` (the options' texts; empty takes your vote back).
+    func vote(chat: String, poll: String, choice: [String]) async throws
 }
 
 extension WhatsAppProvider {
     func avatar(_ chat: String) async -> URL? { nil }
+    func channels() async -> [WAChannel] { [] }
+    var canVote: Bool { false }
+    func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
 }
 
 /// A message's file as the gateway hands it over.
@@ -272,6 +281,11 @@ actor GOWAProvider: WhatsAppProvider {
             .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
     }
 
+    func channels() async -> [WAChannel] {
+        guard let data = try? await scoped("GET", "/user/my/newsletters") else { return [] }
+        return WAAvatar.gowaChannels(data)
+    }
+
     func avatar(_ chat: String) async -> URL? {
         guard let data = try? await scoped("GET", "/user/avatar", query: [
             URLQueryItem(name: "phone", value: chat), URLQueryItem(name: "is_preview", value: "true"),
@@ -426,6 +440,17 @@ actor OpenWAProvider: WhatsAppProvider {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let name = obj["name"] as? String, !name.isEmpty else { return nil }
         return name
+    }
+
+    func channels() async -> [WAChannel] {
+        guard let data = try? await scoped("GET", "/channels") else { return [] }
+        return WAAvatar.openwaChannels(data)
+    }
+
+    nonisolated var canVote: Bool { true }
+
+    func vote(chat: String, poll: String, choice: [String]) async throws {
+        _ = try await scoped("POST", "/messages/vote-poll", json: ["chatId": Self.openwaId(chat), "pollMessageId": poll, "options": choice])
     }
 
     func avatar(_ chat: String) async -> URL? {

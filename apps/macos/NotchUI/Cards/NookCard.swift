@@ -78,6 +78,8 @@ struct ChatBubble: Equatable, Identifiable {
     var quote: BubbleQuote? = nil
     /// The emoji on it, the most used first.
     var reactions: [BubbleReaction] = []
+    /// A poll this message asks, with the votes so far.
+    var poll: ChatPoll? = nil
 }
 
 /// The message a bubble answers, as a chat app shows it above the answer: who wrote it and the start of its text.

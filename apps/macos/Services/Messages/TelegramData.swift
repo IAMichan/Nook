@@ -123,14 +123,39 @@ enum TelegramData {
         guard type(object) == "message", let id = int64(object["id"]) else { return nil }
         let content = object["content"] as? [String: Any] ?? [:]
         let attached = file(content)
-        // A file shows as itself, with its caption as the text; anything else as its text.
-        let text: String? = attached == nil ? Self.text(content) : Optional(caption(content))
-        guard let text, !text.isEmpty || attached != nil else { return nil }
+        let asked = poll(content)
+        // A file shows as itself, with its caption as the text; a poll as itself; anything else as its text.
+        let text: String? = asked != nil ? "" : (attached == nil ? Self.text(content) : Optional(caption(content)))
+        guard let text, !text.isEmpty || attached != nil || asked != nil else { return nil }
         let mine = object["is_outgoing"] as? Bool == true
         let sender = mine || !chat.isGroup ? "" : senderUser(object).flatMap { users[$0] } ?? ""
         let date = Date(timeIntervalSince1970: Double(int64(object["date"]) ?? 0))
         return InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
-                            media: attached?.media)
+                            media: attached?.media, poll: asked)
+    }
+
+    /// A `messagePoll`'s poll: its question, each option with its votes and whether you chose it, and whether more
+    /// than one may be chosen. Texts are plain strings in older TDLib, formatted text since 1.8.33.
+    static func poll(_ content: [String: Any]) -> ChatPoll? {
+        guard type(content) == "messagePoll", let poll = content["poll"] as? [String: Any] else { return nil }
+        func plain(_ value: Any?) -> String { (value as? String) ?? ((value as? [String: Any])?["text"] as? String) ?? "" }
+        let options = (poll["options"] as? [[String: Any]] ?? []).map { option in
+            ChatPoll.Option(text: plain(option["text"]), votes: Int(int64(option["voter_count"]) ?? 0),
+                            chosen: option["is_chosen"] as? Bool == true)
+        }
+        let kind = poll["type"] as? [String: Any] ?? [:]
+        return ChatPoll(question: plain(poll["question"]), options: options,
+                        multiple: type(kind) == "pollTypeRegular" && kind["allow_multiple_answers"] as? Bool == true)
+    }
+
+    /// The chat and message ids in Nook's id of a Telegram message ("telegram-<chat>-<message>"); a chat id can be
+    /// negative ("telegram--100123-45").
+    static func ids(_ messageID: String) -> (chat: Int64, message: Int64)? {
+        guard messageID.hasPrefix("telegram-") else { return nil }
+        let rest = messageID.dropFirst("telegram-".count)
+        guard let split = rest.lastIndex(of: "-"), let chat = Int64(rest[..<split]),
+              let message = Int64(rest[rest.index(after: split)...]) else { return nil }
+        return (chat, message)
     }
 
     /// A file TDLib has, or can download: its id in TDLib, and what it is.

@@ -194,6 +194,7 @@ targets:
       - path: Services/Messages/BeeperData.swift
       - path: Services/Messages/ChatMedia.swift
       - path: Services/Messages/ChatFormat.swift
+      - path: Services/Messages/ChatPoll.swift
       - path: NotchUI/Window/NotchResize.swift
       - path: Brain/Research.swift
       - path: Brain/QueryPlan.swift

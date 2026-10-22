@@ -132,6 +132,7 @@ extension AppModel {
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
             bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
+            bubble.poll = message.poll?.chatPoll
             bubble.reactions = Self.bubbleReactions(message.reactions)
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image
@@ -296,7 +297,7 @@ extension AppModel {
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
-        [WhatsAppRecipients.label(message.media), message.text.isEmpty ? nil : message.text]
+        [WhatsAppRecipients.label(message.media), message.poll?.chatPoll.line, message.text.isEmpty ? nil : message.text]
             .compactMap { $0 }.joined(separator: " ")
     }
 
