@@ -82,6 +82,7 @@ extension AppModel {
             inputPrompt: tr("whatsapp.card.answer", conversation.name),
             // A new message never takes the keyboard from what you are doing; a chat you opened yourself does.
             focusesInput: opened,
+            chatReply: true,
             extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", ""), symbol: "sparkles")],
             more: [CardAction(label: tr("whatsapp.card.quiet"), outcome: .callback("\(token)#quiet", ""), symbol: "bell.slash"),
                    CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""), symbol: "eye.slash")],
@@ -144,7 +145,8 @@ extension AppModel {
     /// fails it says why and puts the text back, so nothing typed is lost.
     func replyWhatsApp(_ text: String, chat: String) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !reply.isEmpty else { return }
+        // "@nook …" is a request to Nook, never a message for the chat; the card's field lets Nook write it.
+        guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil else { return }
         let token = Self.whatsAppCardPrefix + chat
         editShownCard(token) { $0.notice = tr("whatsapp.card.sending"); $0.draft = nil }
         Task { @MainActor [weak self] in

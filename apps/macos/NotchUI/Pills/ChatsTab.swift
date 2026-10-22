@@ -37,8 +37,8 @@ struct ChatsFocus: Equatable {
 }
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
-/// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), in groups (unread first, then by day) that fold
-/// shut, with a filter per app and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there, any other opens in its own app.
+/// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
+/// "All" and "Unread" on top, a filter per app with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there, any other opens in its own app.
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -52,6 +52,8 @@ struct ChatsTab: View {
     @State private var selection: String?
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
+    /// Only the chats with something unread; the chat you opened stays while you read it.
+    @State private var unreadOnly = false
     @State private var query = ""
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
@@ -130,6 +132,7 @@ struct ChatsTab: View {
         guard let focus = viewModel.chatsFocus else { return }
         viewModel.chatsFocus = nil
         filter = focus.app
+        unreadOnly = false
         query = focus.query
         selection = focus.chat
         collapsed = []
@@ -183,11 +186,13 @@ struct ChatsTab: View {
     }
 
     /// The chats that match the filter and the search, in the list's order: group by group, newest first in each.
+    /// A chat keeps its place when it is read, so nothing jumps while you read it.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         let now = Date()
         return all.filter { entry in
             (filter == nil || entry.app == filter)
+                && (!unreadOnly || entry.unread > 0 || entry.id == selection)
                 && (needle.isEmpty || entry.name.localizedCaseInsensitiveContains(needle) || entry.preview.localizedCaseInsensitiveContains(needle))
         }
         .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
@@ -218,12 +223,25 @@ struct ChatsTab: View {
         return visible.first { $0.id == selection } ?? visible.first
     }
 
-    /// The apps that have chats here, the busiest first, and the one filtered on even when it has none yet.
-    /// After them every source that is on and on this Mac (its app is installed, or you added it yourself), also before it
-    /// brought in a message: a source you switched on shows up here, not only once it has chats.
+    /// Unread messages per app, as the list shows them.
+    private var unreadByApp: [String: Int] {
+        Dictionary(grouping: all, by: \.app).mapValues { $0.reduce(0) { $0 + $1.unread } }
+    }
+
+    /// Unread messages in the listed chats: the number on top always adds up to the counts in the list.
+    private var unreadTotal: Int { all.reduce(0) { $0 + $1.unread } }
+
+    /// The apps that have chats here: the ones with unread messages first, then the busiest, and the one filtered on
+    /// even when it has none yet. After them every source that is on and on this Mac (its app is installed, or you added
+    /// it yourself), also before it brought in a message: a source you switched on shows up here, not only once it has chats.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
-        var result = counts.keys.sorted { counts[$0]! != counts[$1]! ? counts[$0]! > counts[$1]! : $0 < $1 }
+        let unread = unreadByApp
+        var result = counts.keys.sorted { a, b in
+            let (ua, ub) = (unread[a] ?? 0, unread[b] ?? 0)
+            if (ua > 0) != (ub > 0) { return ua > 0 }
+            return counts[a]! != counts[b]! ? counts[a]! > counts[b]! : a < b
+        }
         if capture.enabled {
             for source in capture.sources.active where !result.contains(source.id) && Self.isPresent(source) {
                 result.append(source.id)
@@ -255,7 +273,7 @@ struct ChatsTab: View {
             Text(tr("tab.chats"))
                 .font(NookTheme.font(14, .semibold))
                 .foregroundStyle(NookTheme.paper)
-            let unread = Self.unread
+            let unread = unreadTotal
             if unread > 0 {
                 Text("\(unread)")
                     .font(NookTheme.font(10.5, .bold))
@@ -299,14 +317,19 @@ struct ChatsTab: View {
             listHeader
             searchField
 
+            NookTabBar(items: [.init(value: false, title: tr("chats.filter.all")),
+                               .init(value: true, title: tr("chats.group.unread"), count: unreadTotal)],
+                       selected: unreadOnly) { unreadOnly = $0 }
+
             if apps.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        ChatsFilterChip(title: tr("chats.filter.all"), app: nil, selected: filter == nil) { filter = nil }
-                        ForEach(apps, id: \.self) { id in
-                            ChatsFilterChip(title: MessagingApps.app(id: id)?.name ?? id, app: id, selected: filter == id) {
-                                filter = filter == id ? nil : id
-                            }
+                // Every source in sight, also with many: the chips wrap onto a next line instead of scrolling away.
+                let unread = unreadByApp
+                ChatsChipFlow(spacing: NookTheme.Spacing.xs) {
+                    ChatsFilterChip(title: tr("chats.filter.allSources"), app: nil, selected: filter == nil) { filter = nil }
+                    ForEach(apps, id: \.self) { id in
+                        ChatsFilterChip(title: MessagingApps.app(id: id)?.name ?? id, app: id, unread: unread[id] ?? 0,
+                                        selected: filter == id) {
+                            filter = filter == id ? nil : id
                         }
                     }
                 }
@@ -333,7 +356,15 @@ struct ChatsTab: View {
                 }
             }
             if shown.isEmpty {
-                if !searching, let filter {
+                if unreadOnly, !searching {
+                    // Everything read: one click back to every chat.
+                    VStack(spacing: NookTheme.Spacing.sm) {
+                        ListEmptyNote(tr("chats.unread.none"))
+                        SmallGhostButton(title: tr("chats.unread.showAll")) { unreadOnly = false }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, NookTheme.Spacing.xl)
+                } else if !searching, let filter {
                     // A source that is on but brought in nothing yet: say so, and offer to open it.
                     let name = MessagingApps.app(id: filter)?.name ?? filter
                     VStack(spacing: NookTheme.Spacing.sm) {
@@ -450,15 +481,15 @@ struct ChatsTab: View {
     }
 }
 
-/// A group of the list: the chats waiting for you first, then by when they last moved.
+/// A group of the list: by when a chat last moved, as every chat app has it. What is unread stands out in its row and
+/// under "Unread", so reading a chat never moves it.
 enum ChatsGroup: Int, Comparable, CaseIterable {
-    case unread, today, yesterday, week, month, earlier
+    case today, yesterday, week, month, earlier
 
     static func < (lhs: ChatsGroup, rhs: ChatsGroup) -> Bool { lhs.rawValue < rhs.rawValue }
 
     var title: String {
         switch self {
-        case .unread: return tr("chats.group.unread")
         case .today: return tr("chats.group.today")
         case .yesterday: return tr("chats.group.yesterday")
         case .week: return tr("chats.group.week")
@@ -467,9 +498,8 @@ enum ChatsGroup: Int, Comparable, CaseIterable {
         }
     }
 
-    /// Where a chat goes: unread chats on top whatever their age, the others by their newest message.
+    /// Where a chat goes: by its newest message.
     static func of(_ entry: ChatsEntry, now: Date, calendar: Calendar = .current) -> ChatsGroup {
-        if entry.unread > 0 { return .unread }
         let today = calendar.startOfDay(for: now)
         if entry.last >= today { return .today }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: today), entry.last >= yesterday { return .yesterday }
@@ -525,10 +555,11 @@ private struct ChatsGroupHeader: View {
     }
 }
 
-/// An app in the filter row: its icon and name.
+/// An app in the filter row: its icon, its name and how many messages there are unread; a second click shows all again.
 private struct ChatsFilterChip: View {
     let title: String
     let app: String?
+    var unread = 0
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
@@ -542,6 +573,15 @@ private struct ChatsFilterChip: View {
                 Text(title)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
+                    .lineLimit(1)
+                if unread > 0 {
+                    Text("\(unread)")
+                        .font(NookTheme.font(10, .bold))
+                        .foregroundStyle(NookTheme.ink)
+                        .padding(.horizontal, NookTheme.Spacing.xs)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Capsule().fill(NookTheme.amber))
+                }
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .frame(height: 24)
@@ -551,7 +591,53 @@ private struct ChatsFilterChip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .fixedSize()
+        .accessibilityLabel(unread > 0 ? "\(title), \(tr("chats.group.unread")): \(unread)" : title)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The source chips, as many on a line as fit and the rest on the next, so no source hides off to the side.
+private struct ChatsChipFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        let width = rows.map { $0.width }.max() ?? 0
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for index in row.items {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = rows[rows.count - 1].items.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width, !rows[rows.count - 1].items.isEmpty {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows.filter { !$0.items.isEmpty }
     }
 }
 
@@ -681,9 +767,6 @@ private struct ChatsDetail: View {
     @State private var reply = ""
     @State private var notice: String?
     @State private var sending = false
-    @State private var drafting = false
-    /// The menu "@" opens above the field, as in Nook's own chat: "@nook" and ready-made requests.
-    @StateObject private var menu = ComposerModel()
     @FocusState private var replyFocused: Bool
 
     private static let time: DateFormatter = {
@@ -719,7 +802,7 @@ private struct ChatsDetail: View {
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { open($0) })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) { footer }
+            footer
                 .padding(.top, NookTheme.Spacing.md)
         }
         .task(id: entry.id) { await loadWhatsApp() }
@@ -751,129 +834,23 @@ private struct ChatsDetail: View {
         }
     }
 
-    /// "@nook …" at the start of the field: Nook writes the message instead of sending what is typed.
-    private var asksNook: Bool { ChatDraft.instruction(in: reply) != nil }
-
     /// One field for every chat: what you type goes to a WhatsApp chat, or is copied for the app of any other chat;
     /// "@nook …" lets Nook write the message first, into this field, for you to read before it goes anywhere.
-    @ViewBuilder
     private var footer: some View {
-        if let notice {
-            HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                if drafting || sending {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: "info.circle")
-                        .font(NookTheme.font(10.5))
-                        .foregroundStyle(NookTheme.textTertiary)
-                }
-                Text(notice)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-            }
-            .padding(.horizontal, NookTheme.Spacing.xs)
-            .transition(.opacity)
-        }
-        if menu.isOpen {
-            ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
-        }
-        HStack(spacing: NookTheme.Spacing.sm) {
-            TextField(whatsAppChat == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
-                      text: $reply, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1...6)
-                .focused($replyFocused)
-                .onSubmit { menu.isOpen ? chooseSelected() : submit() }
-                .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
-                .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
-                .onKeyPress(.tab) { () -> KeyPress.Result in
-                    guard menu.isOpen else { return .ignored }
-                    chooseSelected()
-                    return .handled
-                }
-                .onKeyPress(.escape) { () -> KeyPress.Result in
-                    guard menu.isOpen else { return .ignored }
-                    menu.close()
-                    return .handled
-                }
-                .onChange(of: reply) { _, text in updateMenu(text) }
-                .disabled(sending || drafting)
-            NookIconButton(systemName: asksNook ? "sparkles" : (whatsAppChat == nil ? "doc.on.doc" : "arrow.up"),
-                           label: submitLabel, filled: true, size: 28) { submit() }
-                .disabled(sending || drafting || (!asksNook && reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-                .help(submitLabel)
-        }
-        .padding(.leading, NookTheme.Spacing.md)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
-    }
-
-    /// The menu for what is typed: "@" offers "@nook" and the ready-made requests, in the user's language.
-    private func updateMenu(_ text: String) {
-        let presets = ChatDraft.presetKeys.map { tr($0) }
-        menu.show(ChatDraft.choices(for: text, presets: presets).map { choice in
-            ComposerSuggestion(id: "nook:" + choice.insertion, title: choice.title,
-                               detail: tr(choice.isNook ? "chats.nook.detail" : "chats.nook.presetDetail"), symbol: "sparkles",
-                               payload: .command(ComposerCommand(name: choice.insertion, insertion: choice.insertion, action: .insert)))
-        })
-    }
-
-    /// A line of the menu fills the field; Return then lets Nook write.
-    private func choose(_ row: ComposerSuggestion) {
-        guard case .command(let command) = row.payload else { return }
-        reply = command.insertion
-        menu.close()
-        replyFocused = true
-    }
-
-    private func chooseSelected() {
-        guard menu.suggestions.indices.contains(menu.selection) else { return }
-        choose(menu.suggestions[menu.selection])
-    }
-
-    private func moveInMenu(_ delta: Int) -> KeyPress.Result {
-        guard menu.isOpen else { return .ignored }
-        menu.move(delta)
-        return .handled
-    }
-
-    private var submitLabel: String {
-        if asksNook { return tr("chats.draft.button") }
-        return whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send")
-    }
-
-    /// Return or the button: Nook writes for "@nook …", a WhatsApp chat gets the text, any other chat's app gets it on
-    /// the clipboard and comes to the front.
-    private func submit() {
-        if let instruction = ChatDraft.instruction(in: reply) {
-            draft(instruction)
-        } else if let chat = whatsAppChat {
-            send(to: chat)
-        } else {
-            copyForApp()
-        }
-    }
-
-    /// Nook writes the message from this chat's newest messages and what you asked, and puts it in the field.
-    private func draft(_ instruction: String) {
-        guard !drafting else { return }
-        drafting = true
-        notice = tr("chats.draft.writing")
-        let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
-        Task { @MainActor in
-            defer { drafting = false }
-            do {
-                reply = try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript, instruction: instruction)
-                notice = whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready")
-                replyFocused = true
-            } catch {
-                notice = error.localizedDescription
-            }
-        }
+        ChatReplyField(text: $reply, notice: $notice, focus: $replyFocused,
+                       placeholder: whatsAppChat == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
+                       sendSymbol: whatsAppChat == nil ? "doc.on.doc" : "arrow.up",
+                       sendLabel: whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
+                       readyNotice: whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
+                       busy: sending,
+                       draft: { instruction in
+                           let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
+                           return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,
+                                                                 instruction: instruction)
+                       },
+                       send: {
+                           if let chat = whatsAppChat { send(to: chat) } else { copyForApp() }
+                       })
     }
 
     /// Your answer goes to the chat as typed, after your own Return or click; when it fails the text stays.
