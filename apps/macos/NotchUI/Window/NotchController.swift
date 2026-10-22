@@ -177,6 +177,7 @@ final class NotchController {
             // Already typing in this card (a click in its field): a new message updating it keeps the keyboard.
             if panel.isKeyWindow, card.id == previousCard { return }
             wantsKeys = card.focusesInput
+            if card.focusesInput { focusField(of: card.id, in: panel) }
         }
         if wantsKeys {
             guard !panel.isKeyWindow else { return }
@@ -197,6 +198,32 @@ final class NotchController {
             (previousApp ?? (own ? nil : front))?.activate(options: [])
             previousApp = nil
         }
+    }
+
+    /// Puts the cursor in the card's field, so you type right away instead of clicking it first. The card's own focus
+    /// request can come before the panel is key (a double tap from another app), and SwiftUI then drops it: until the
+    /// field has the keyboard, it is given it here, a few times while the card opens.
+    private func focusField(of card: String, in panel: NotchPanel) {
+        for delay in [0.05, 0.25, 0.5, 0.9] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak panel] in
+                // Only while the card is up and the panel has the keyboard: a click elsewhere in the meantime wins.
+                guard let self, let panel, self.shownCard == card, panel.isKeyWindow else { return }
+                // Typing already goes to a field (the field editor, or the field itself): leave it there.
+                if let responder = panel.firstResponder as? NSText, responder.isEditable { return }
+                if let field = Self.firstEditable(in: panel.contentView) { panel.makeFirstResponder(field) }
+            }
+        }
+    }
+
+    /// The first field you can type in, in view order.
+    private static func firstEditable(in view: NSView?) -> NSView? {
+        guard let view, !view.isHidden else { return nil }
+        if let field = view as? NSTextField, field.isEditable, field.isEnabled { return field }
+        if let text = view as? NSTextView, text.isEditable { return text }
+        for child in view.subviews {
+            if let found = firstEditable(in: child) { return found }
+        }
+        return nil
     }
 
     // MARK: Meetings and screen sharing

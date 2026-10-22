@@ -185,6 +185,11 @@ struct CardView: View {
             guard card.focusesInput else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
+        // The panel can take the keyboard after the card appeared (a double tap from another app): the field asks again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard card.focusesInput, note.object is NotchPanel, !replyFocused else { return }
+            replyFocused = true
+        }
         .onChange(of: card.draft) { _, draft in
             guard let draft else { return }
             reply = draft
