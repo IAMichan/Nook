@@ -274,6 +274,7 @@ struct NotchRootView: View {
         let wing = (viewModel.size.width - nw) / 2
         let button = min(24, nh - 8)
         let tone = viewModel.doneTone
+        let ok: (() -> Void)? = viewModel.noticeSeconds == nil ? nil : { viewModel.acknowledgeNotice() }
         return HStack(spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: tone.symbol)
@@ -293,19 +294,16 @@ struct NotchRootView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: NookTheme.Spacing.xs) {
+            HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                if viewModel.doneHasAction {
-                    NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
-                        viewModel.doneButtonPressed()
+                // The same end as every notice, sized to the notch's own row.
+                NookNoticeEnd(countdown: viewModel.noticeSeconds, paused: noticePaused, restart: viewModel.noticeStamp,
+                              height: button, onOK: ok) {
+                    if viewModel.doneHasAction {
+                        NookGhostButton(title: viewModel.doneButtonTitle, compact: true, height: button) {
+                            viewModel.doneButtonPressed()
+                        }
                     }
-                }
-                if let seconds = viewModel.noticeSeconds {
-                    NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: seconds,
-                                          paused: noticePaused, height: button) {
-                        viewModel.acknowledgeNotice()
-                    }
-                    .id(viewModel.noticeStamp)
                 }
             }
             .padding(.trailing, 10)

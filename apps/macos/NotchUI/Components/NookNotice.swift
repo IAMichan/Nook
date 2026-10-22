@@ -50,17 +50,42 @@ struct NookNotice<Actions: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: NookTheme.Spacing.xs) {
-                actions()
-                if let countdown {
-                    NookAcknowledgeButton(title: tr("button.ok"), compact: true, countdown: countdown, paused: paused,
-                                          action: onOK)
-                        .id(restart)
-                }
-            }
-            .fixedSize()
+            NookNoticeEnd(countdown: countdown, paused: paused, restart: restart, onOK: countdown == nil ? nil : onOK,
+                          actions: actions)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// The end of every notice, short or large: the notice's own actions, then the OK that closes it at once, with the
+/// countdown ring of it closing by itself. `NookNotice` ends in it, and so do the compact agent notice in the notch's
+/// own row and a card with an OK (`CardView`), so the OK and its ring are the same everywhere.
+struct NookNoticeEnd<Actions: View>: View {
+    var title: String = tr("button.ok")
+    /// Seconds until the notice closes by itself, as a ring on the OK; nil for an OK without a ring.
+    var countdown: TimeInterval? = nil
+    /// The pointer is on the notice: the ring holds, as the notice's clock does (`NoticeClock`).
+    var paused: Bool = false
+    /// A new value starts the ring over.
+    var restart: AnyHashable? = nil
+    var compact: Bool = true
+    /// A fixed height for the OK, e.g. to fit inside the notch's own row; nil follows `compact`.
+    var height: CGFloat? = nil
+    var spacing: CGFloat = NookTheme.Spacing.xs
+    /// What the OK does; nil: no OK, the notice waits for you and its actions decide.
+    var onOK: (() -> Void)? = nil
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            actions()
+            if let onOK {
+                NookAcknowledgeButton(title: title, compact: compact, countdown: countdown, paused: paused,
+                                      height: height, action: onOK)
+                    .id(restart)
+            }
+        }
+        .fixedSize()
     }
 }
 
