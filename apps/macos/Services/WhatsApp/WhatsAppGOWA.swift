@@ -188,10 +188,24 @@ final class WhatsAppGOWAInstaller: ObservableObject {
     func install() {
         guard !busy else { return }
         step = .checking
-        Task { await run() }
+        Task { await run(update: false) }
     }
 
-    private func run() async {
+    /// The GOWA Nook installed, when it is the one Nook runs.
+    static var isNooksOwn: Bool {
+        WhatsAppGOWAProcess.binaryPath == binaryURL.path && FileManager.default.isExecutableFile(atPath: binaryURL.path)
+    }
+
+    /// Nook's own GOWA brought to GOWA's newest release, when there is a newer one (see `ToolUpdates`): the same
+    /// download and checks as installing, without touching the settings. The link stays; GOWA keeps its session in its
+    /// own folder. One installed before Nook noted versions is updated once.
+    func update() async {
+        guard !busy, Self.isNooksOwn, WhatsAppSettings.gateway == .gowa else { return }
+        step = .checking
+        await run(update: true)
+    }
+
+    private func run(update: Bool) async {
         do {
             // 1. Which build: GOWA's latest release, the zip for this Mac.
             var req = URLRequest(url: WAGOWARelease.latestURL)
@@ -201,6 +215,10 @@ final class WhatsAppGOWAInstaller: ObservableObject {
                   let release = WAGOWARelease.parse(meta),
                   let picked = WAGOWARelease.pick(release.assets, arch: Self.arch) else {
                 throw Failure(tr("whatsapp.install.no-build"))
+            }
+            if update, let installed = Self.installedVersion, !WAGOWARelease.isOlder(installed, than: release.version) {
+                step = .idle
+                return
             }
             var checksums: String? = nil
             if let sums = picked.checksums {
@@ -235,14 +253,16 @@ final class WhatsAppGOWAInstaller: ObservableObject {
                 try Self.unpack(zip: tmp, binaryName: binary)
             }.value
             Self.installedVersion = version
-            WhatsAppSettings.gateway = .gowa
-            WhatsAppSettings.url = ""   // back to http://127.0.0.1:3000
+            if !update {
+                WhatsAppSettings.gateway = .gowa
+                WhatsAppSettings.url = ""   // back to http://127.0.0.1:3000
+                WhatsAppGOWAProcess.autoStart = true
+            }
             WhatsAppGOWAProcess.binaryPath = Self.binaryURL.path
-            WhatsAppGOWAProcess.autoStart = true
             WhatsAppGOWAProcess.shared.stopNow()                     // an older one gives way
             WhatsAppLink.shared.settingsChanged()              // starts it; the QR follows
             step = .done(version: version)
-            Log.connectors.info("WhatsApp: GOWA \(version) installed (\(Self.arch))")
+            Log.connectors.info("WhatsApp: GOWA \(version) \(update ? "updated" : "installed") (\(Self.arch))")
         } catch let failure as Failure {
             step = .failed(failure.message)
             Log.connectors.info("WhatsApp: GOWA install failed: \(failure.message)")

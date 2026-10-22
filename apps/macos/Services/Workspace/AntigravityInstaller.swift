@@ -57,6 +57,14 @@ final class AntigravityInstaller: ObservableObject {
         }
     }
 
+    /// The release Nook pins now, in place of an earlier one you installed (see `ToolUpdates`): an update of Nook that
+    /// moves the pin would otherwise leave Antigravity uninstalled until you install it again.
+    func updateIfEarlier() {
+        guard !isBusy, installed == nil, let asset = AntigravityRelease.current,
+              let active = paths.activeRelease(asset), active != asset.sha256 else { return }
+        install()
+    }
+
     func uninstall() {
         guard !isBusy else { return }
         try? FileManager.default.removeItem(at: paths.tools)
@@ -94,6 +102,8 @@ final class AntigravityInstaller: ObservableObject {
         try FileManager.default.moveItem(at: staging, to: release)
         let record = try JSONSerialization.data(withJSONObject: ["releaseId": asset.sha256, "version": AntigravityRelease.version])
         try record.write(to: paths.active(asset), options: .atomic)
+        // The release this one replaces: nothing runs from it any more.
+        for folder in paths.earlierReleases(asset) { try? FileManager.default.removeItem(at: folder) }
     }
 
     private func download(_ asset: AntigravityRelease.Asset) async throws -> URL {

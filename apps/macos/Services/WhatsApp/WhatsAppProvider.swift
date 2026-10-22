@@ -180,13 +180,6 @@ actor GOWAProvider: WhatsAppProvider {
         }
     }
 
-    /// The running GOWA's version: "0" from a GOWA before 9.0, which has no `/app/info`; nil when it could not be asked.
-    func version() async -> String? {
-        guard let answer = try? await http.call("GET", "/app/info") else { return nil }
-        if answer.1 == 404 { return "0" }
-        return answer.1 == 200 ? WAGOWARelease.runningVersion(answer.0) : nil
-    }
-
     /// The device to work on; created ("nook") when the gateway has none.
     private func device() async throws -> (id: String, status: WAStatus) {
         let (data, code) = try await http.call("GET", "/devices")

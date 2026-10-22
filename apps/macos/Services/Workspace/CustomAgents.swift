@@ -213,6 +213,47 @@ enum AcpRegistry {
                            command: command, arguments: entry.arguments, environment: entry.environment)
     }
 
+    /// What an agent from the registry needs once the registry has a newer version of it.
+    enum Update: Equatable {
+        case none
+        /// Its npx or uvx line at the new version.
+        case runner(CustomAgent)
+        /// The new download: Nook installs it, then makes the agent with `agent(from:installedIn:profileID:)`.
+        case download(Entry)
+    }
+
+    /// An agent keeps the way it starts: a download stays a download, an npx or uvx agent stays one. One the registry no
+    /// longer offers that way stays as it is.
+    static func update(for agent: CustomAgent, in entries: [Entry]) -> Update {
+        guard let id = agent.registryID, let current = agent.version,
+              let entry = entries.first(where: { $0.id == id }), isOlder(current, than: entry.version) else { return .none }
+        if agent.installedAt != nil {
+            return entry.command == nil && entry.binary != nil ? .download(entry) : .none
+        }
+        guard let command = entry.command else { return .none }
+        var updated = agent
+        updated.version = entry.version
+        updated.command = command
+        updated.arguments = entry.arguments
+        updated.environment = entry.environment
+        return .runner(updated)
+    }
+
+    /// "1.2.3" comes before "1.10.0", by number; a leading "v" and a "-beta" part do not count.
+    static func isOlder(_ version: String, than other: String) -> Bool {
+        func numbers(_ text: String) -> [Int] {
+            let plain = text.hasPrefix("v") ? String(text.dropFirst()) : text
+            let core = plain.split(separator: "-", maxSplits: 1).first.map(String.init) ?? plain
+            return core.split(separator: ".").map { Int($0.prefix(while: \.isNumber)) ?? 0 }
+        }
+        let a = numbers(version), b = numbers(other)
+        for index in 0..<max(a.count, b.count) {
+            let x = index < a.count ? a[index] : 0, y = index < b.count ? b[index] : 0
+            if x != y { return x < y }
+        }
+        return false
+    }
+
     /// The registry, fetched (at most 1 MB).
     static func fetch(session: URLSession = .shared) async throws -> [Entry] {
         var request = URLRequest(url: url)

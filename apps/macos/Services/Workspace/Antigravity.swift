@@ -80,6 +80,20 @@ struct AntigravityPaths {
     var browserHelper: URL { support.appendingPathComponent("tools/antigravity-acp/open-sign-in.sh") }
     var temp: URL { support.appendingPathComponent("tools/antigravity-acp/tmp", isDirectory: true) }
 
+    /// The release that was set up last, by its id; nil when none was.
+    func activeRelease(_ asset: AntigravityRelease.Asset) -> String? {
+        guard let data = try? Data(contentsOf: active(asset)),
+              let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return record["releaseId"] as? String
+    }
+
+    /// Release folders next to `asset`'s own: left behind when Nook moved to a newer pin.
+    func earlierReleases(_ asset: AntigravityRelease.Asset, fileManager: FileManager = .default) -> [URL] {
+        let names = (try? fileManager.contentsOfDirectory(atPath: versions(asset).path)) ?? []
+        return names.filter { $0 != asset.sha256 && !$0.hasPrefix(".") }.sorted()
+            .map { versions(asset).appendingPathComponent($0, isDirectory: true) }
+    }
+
     /// The installed server and harness, when the active release is complete.
     func installed(_ asset: AntigravityRelease.Asset? = AntigravityRelease.current,
                    fileManager: FileManager = .default) -> (executable: String, harness: String)? {

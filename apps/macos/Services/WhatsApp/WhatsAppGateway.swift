@@ -1376,17 +1376,6 @@ enum WAGOWARelease {
         return nil
     }
 
-    /// The first GOWA that hands polls over: in its webhook (`poll`) and in its database (`poll_definitions`). Before it
-    /// a poll reaches Nook as nothing at all.
-    static let pollsSince = "9.3.0"
-
-    /// `GET /app/info` → `results: {version: "v9.6.0", …}`, without the "v".
-    static func runningVersion(_ data: Data) -> String? {
-        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let version = (obj["results"] as? [String: Any])?["version"] as? String, !version.isEmpty else { return nil }
-        return version.hasPrefix("v") ? String(version.dropFirst()) : version
-    }
-
     /// "9.2.2" comes before "9.3.0", by number ("9.10" after "9.9"); a leading "v" does not count.
     static func isOlder(_ version: String, than other: String) -> Bool {
         func numbers(_ text: String) -> [Int] {

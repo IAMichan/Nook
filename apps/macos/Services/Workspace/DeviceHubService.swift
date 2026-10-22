@@ -60,11 +60,24 @@ final class DeviceHubService: ObservableObject {
             state = .unavailable(tr("sim.hub.noNode"))
             return
         }
-        guard installed(hubFolder, version: DeviceHub.hubVersion, entry: DeviceHub.hubEntry(hubFolder)) else {
+        let hubReady = installed(hubFolder, version: DeviceHub.hubVersion, entry: DeviceHub.hubEntry(hubFolder))
+        let agentReady = installed(agentFolder, version: DeviceHub.agentVersion, entry: DeviceHub.agentEntry(agentFolder))
+        // Nook moved to newer tools than the ones you installed: those replace them without asking again.
+        if !(hubReady && agentReady), !earlierInstalls.isEmpty {
+            await install()
+            return
+        }
+        guard hubReady else {
             state = .needsInstall
             return
         }
         await start()
+    }
+
+    /// The tools' earlier versions still on disk.
+    private var earlierInstalls: [URL] {
+        DeviceHub.earlierInstalls(root: toolsRoot, package: DeviceHub.hubPackage, version: DeviceHub.hubVersion)
+            + DeviceHub.earlierInstalls(root: toolsRoot, package: DeviceHub.agentPackage, version: DeviceHub.agentVersion)
     }
 
     private var isFailed: Bool { if case .failed = state { return true } else { return false } }
@@ -84,6 +97,8 @@ final class DeviceHubService: ObservableObject {
                 return
             }
         }
+        // The versions these replace: nothing runs from them any more.
+        for folder in earlierInstalls { try? FileManager.default.removeItem(at: folder) }
         await start()
     }
 

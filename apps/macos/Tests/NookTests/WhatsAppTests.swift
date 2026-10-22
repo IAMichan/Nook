@@ -237,13 +237,11 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[group]?.messages.compactMap(\.poll?.question), ["Lunch?", "Wanneer?"])
     }
 
-    func testAGOWATooOldForPollsIsUpdated() {
-        XCTAssertEqual(WAGOWARelease.runningVersion(Data(#"{"results":{"version":"v9.6.0","os":"darwin"}}"#.utf8)), "9.6.0")
-        XCTAssertNil(WAGOWARelease.runningVersion(Data("{}".utf8)))
-        XCTAssertTrue(WAGOWARelease.isOlder("9.2.2", than: WAGOWARelease.pollsSince), "no polls before 9.3")
-        XCTAssertTrue(WAGOWARelease.isOlder("0", than: WAGOWARelease.pollsSince), "a GOWA without /app/info is older still")
-        XCTAssertFalse(WAGOWARelease.isOlder("9.3.0", than: WAGOWARelease.pollsSince))
+    func testGOWAVersionsCompareByNumber() {
+        XCTAssertTrue(WAGOWARelease.isOlder("9.2.2", than: "9.3.0"))
+        XCTAssertFalse(WAGOWARelease.isOlder("9.3.0", than: "9.3.0"))
         XCTAssertFalse(WAGOWARelease.isOlder("v9.10.1", than: "9.9.0"), "by number, not by text")
+        XCTAssertTrue(WAGOWARelease.isOlder("9.6", than: "9.6.1"))
     }
 
     func testAnEditedPollIsNoNewPoll() {

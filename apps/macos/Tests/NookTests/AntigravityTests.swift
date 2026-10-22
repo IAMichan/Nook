@@ -63,6 +63,10 @@ final class AntigravityTests: XCTestCase {
         XCTAssertEqual(paths.installed(asset)?.executable, executable.path)
         try JSONSerialization.data(withJSONObject: ["releaseId": "other"]).write(to: paths.active(asset))
         XCTAssertNil(paths.installed(asset), "another release is not this one")
+        XCTAssertEqual(paths.activeRelease(asset), "other", "an earlier release was set up: the pinned one replaces it")
+        let earlier = paths.versions(asset).appendingPathComponent("other", isDirectory: true)
+        try FileManager.default.createDirectory(at: earlier, withIntermediateDirectories: true)
+        XCTAssertEqual(paths.earlierReleases(asset).map(\.lastPathComponent), ["other"], "only the release it replaces")
         XCTAssertTrue(paths.profile("antigravity:werk/x").lastPathComponent == "antigravity_werk_x")
     }
 

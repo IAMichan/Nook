@@ -177,8 +177,6 @@ final class WhatsAppLink: ObservableObject {
     private var backfilled = false
     private var qrExpiry: Date = .distantPast
     private var lastWebhook: Date?
-    /// Whether Nook's own GOWA was checked this launch for being new enough (see `updateGatewayIfOld`).
-    private var gatewayChecked = false
     private var lastPoll = Date()
     private var lastChatList: Date = .distantPast
     /// When each unnamed group was last asked for its name: one the gateway could not name is asked again later.
@@ -323,7 +321,6 @@ final class WhatsAppLink: ObservableObject {
                     link = .connected
                     if webhook == .listening { await register(provider, gen: gen) }
                     if !backfilled, gen == generation { await backfill(provider, gen: gen) }
-                    if gen == generation { await updateGatewayIfOld(provider) }
                     if Date().timeIntervalSince(lastChatList) > 300 { await loadChats(provider, gen: gen) }
                 case .needsQR:
                     link = .needsQR
@@ -441,18 +438,6 @@ final class WhatsAppLink: ObservableObject {
         default:
             break
         }
-    }
-
-    /// Nook's own GOWA, installed once and not updated by itself, may be too old to hand over polls (before
-    /// `WAGOWARelease.pollsSince`): then it is updated, once per launch, from GOWA's own releases as "Install" does. The
-    /// link stays: GOWA keeps its session in its own folder.
-    private func updateGatewayIfOld(_ provider: WhatsAppProvider) async {
-        guard !gatewayChecked, let gowa = provider as? GOWAProvider, WhatsAppGOWAProcess.shared.isRunning,
-              WhatsAppGOWAProcess.binaryPath == WhatsAppGOWAInstaller.binaryURL.path else { return }
-        gatewayChecked = true
-        guard let version = await gowa.version(), WAGOWARelease.isOlder(version, than: WAGOWARelease.pollsSince) else { return }
-        Log.connectors.info("WhatsApp: GOWA \(version) shows no polls; updating it")
-        WhatsAppGOWAInstaller.shared.install()
     }
 
     private var webhookAlive: Bool {
