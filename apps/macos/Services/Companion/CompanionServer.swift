@@ -165,7 +165,7 @@ final class CompanionServer: ObservableObject {
         send(response, key: key, deviceID: claimed, on: connection)
     }
 
-    private func audit(_ action: String, _ detail: String) {
+    func audit(_ action: String, _ detail: String) {
         app?.store.audit(tool: "companion_" + action, args: detail, result: "ok")
     }
 
@@ -176,10 +176,9 @@ final class CompanionServer: ObservableObject {
         let workspace = app.workspace
         let macName = MachineName.local
         switch request.op {
-        case .hello:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app))
-        case .list:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app))
+        case .hello, .list:
+            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
+                                     features: CompanionFeature.all)
         case .register:
             // The token goes into a URL on Apple's host: only hex is accepted.
             guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
@@ -242,6 +241,26 @@ final class CompanionServer: ObservableObject {
             workspace.stop(runID)
             audit("stop", run.title)
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
+        case .options:
+            return await launchOptions(request, app: app)
+        case .start:
+            return await launch(request, app: app)
+        case .timeline:
+            return timeline(request, workspace: workspace)
+        case .chats:
+            return chats(request, app: app)
+        case .chat:
+            return chat(request, app: app)
+        case .ask:
+            return ask(request, app: app)
+        case .chatStop:
+            return stopChat(request, app: app)
+        case .home:
+            return home(request, app: app)
+        case .usage:
+            return usage(request, app: app)
+        case .music:
+            return music(request, app: app)
         }
     }
 
@@ -254,7 +273,7 @@ final class CompanionServer: ObservableObject {
     }
 
     /// Workspace sessions, then agents running in a terminal and bridge requests (`CompanionAgents`).
-    private func digests(_ app: AppModel) -> [SessionDigest] {
+    func digests(_ app: AppModel) -> [SessionDigest] {
         digests(app.workspace) + CompanionAgents.digests(app)
     }
 
