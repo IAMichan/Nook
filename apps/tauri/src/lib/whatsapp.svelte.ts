@@ -2,6 +2,7 @@
 // answer. What you type goes to that chat when you press Enter or click the arrow (your own words, your own click);
 // "Laat Nook antwoorden" hands only that chat to Nook, who proposes an answer as a plan you approve.
 import { connectorEvents, connectorsApi, type WhatsAppCard } from "./connectors";
+import { toast } from "./toast.svelte";
 
 class WhatsAppCardState {
   /** The chat whose card shows, or null. */
@@ -13,8 +14,6 @@ class WhatsAppCardState {
   sending = $state(false);
   /** The photo shown large over the chat (a message id). */
   enlarged = $state<string | null>(null);
-  /** A short confirmation after the card closed ("Verstuurd naar Lisa"). */
-  confirmation = $state("");
   private started = false;
 
   start() {
@@ -131,9 +130,9 @@ class WhatsAppCardState {
     }
   }
 
+  /** A short confirmation after the card closed ("Verstuurd naar Lisa"), in the bar's toast. */
   private confirm(text: string) {
-    this.confirmation = text;
-    setTimeout(() => this.confirmation === text && (this.confirmation = ""), 2400);
+    toast.success(text);
   }
 }
 

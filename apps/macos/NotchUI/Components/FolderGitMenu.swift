@@ -99,13 +99,17 @@ final class FolderGitModel: ObservableObject {
 
     func checkout(_ branch: String) {
         guard let git, let root, !working, branch != status?.branch else { return }
-        perform { try git.checkout(root, branch: branch) }
+        perform(done: tr("ws.git.checkedOut", branch), failed: tr("ws.git.checkoutFailed", branch)) {
+            try git.checkout(root, branch: branch)
+        }
     }
 
     func push() {
         guard let git, let root, canPush, let branch = status?.branch else { return }
         let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-        perform { try git.push(root, remote: remote, branch: branch) }
+        perform(done: tr("ws.quick.done.push"), failed: tr("toast.failed", tr("ws.quick.push"))) {
+            try git.push(root, remote: remote, branch: branch)
+        }
     }
 
     func diff(_ file: GitFileChange) async throws -> String {
@@ -117,14 +121,17 @@ final class FolderGitModel: ObservableObject {
         }.value
     }
 
-    private func perform(_ action: @escaping @Sendable () throws -> Void) {
+    /// Runs a git action off the main thread and reports how it went as a toast; a failure also marks the button.
+    private func perform(done: String, failed: String, _ action: @escaping @Sendable () throws -> Void) {
         working = true
         error = nil
         Task {
             do {
                 try await Task.detached(priority: .userInitiated) { try action() }.value
+                ToastCenter.shared.success(done)
             } catch let failure {
                 error = failure.localizedDescription
+                ToastCenter.shared.error(failure, title: failed)
             }
             working = false
             // A checkout or push moves refs: read them again.

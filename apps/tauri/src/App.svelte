@@ -6,6 +6,7 @@
   import RecordingBadge from "./views/services/RecordingBadge.svelte";
   import ScreenPart from "./views/services/ScreenPart.svelte";
   import Ghost from "./views/services/Ghost.svelte";
+  import Toast from "./components/Toast.svelte";
   import { nook, accentCss, onAccent } from "./lib/state.svelte";
   import { quiet } from "./lib/quiet.svelte";
 
@@ -39,3 +40,5 @@
 {:else}
   <Main />
 {/if}
+<!-- Every window shows its own results in the same toast. -->
+<Toast />

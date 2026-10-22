@@ -480,6 +480,7 @@ struct SimulatorActionsPanel: View {
     @State private var longitude = "4.9041"
     @State private var permission = SimulatorPermission.camera
     @State private var payload = #"{"aps":{"alert":{"title":"Nook","body":"Hello"}}}"#
+    /// What is wrong with a field before an action can run; how the action went shows as a toast.
     @State private var result: String?
 
     var body: some View {
@@ -581,7 +582,11 @@ struct SimulatorActionsPanel: View {
         Task {
             let failure = await Task.detached(priority: .userInitiated) { Simulators.perform(action, udid: udid) }.value
             cleanup?()
-            result = failure ?? tr("sim.action.done")
+            if let failure {
+                ToastCenter.shared.error(tr("sim.action.failed"), detail: failure)
+            } else {
+                ToastCenter.shared.success(tr("sim.action.done"))
+            }
         }
     }
 }

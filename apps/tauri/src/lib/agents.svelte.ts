@@ -2,14 +2,13 @@
 import { agentApi, agentEvents, type AgentApproval, type AgentSession, type HistoryResult, type Overview, type QuestionRequest } from "./agents";
 import { playSound } from "./sound";
 import { nook } from "./state.svelte";
+import { toast } from "./toast.svelte";
 
 class AgentsStore {
   overview = $state<Overview | null>(null);
   history = $state<HistoryResult | null>(null);
   /// Het kaartje "klaar / mislukt / wacht op je" in de balk.
   attention = $state<AgentSession | null>(null);
-  /// Een korte bevestiging na een antwoord vanuit Nook ("Toegestaan").
-  confirmation = $state<string | null>(null);
   /// Welke sessie rechts in de tab Agents open staat.
   selectedId = $state<string | null>(localStorage.getItem("agents.selected"));
   error = $state<string | null>(null);
@@ -59,11 +58,9 @@ class AgentsStore {
     if (this.sounds && nook.settings?.sounds) playSound(kind);
   }
 
+  /// A short confirmation ("Toegestaan", "Worktree verwijderd") in this window's toast.
   confirm(message: string) {
-    this.confirmation = message;
-    setTimeout(() => {
-      if (this.confirmation === message) this.confirmation = null;
-    }, 1800);
+    toast.success(message);
   }
 
   async refresh() {
