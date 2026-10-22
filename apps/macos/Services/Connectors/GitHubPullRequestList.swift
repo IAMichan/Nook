@@ -14,11 +14,13 @@ enum GitHubPullRequestList {
     }
 
     /// All accounts, in the order they are set up. One failing account does not hide the others. Each account also
-    /// searches the watched organizations and repositories; a pull request shows once, under the first account that has it.
+    /// searches the watched organizations and repositories, and (unless turned off) the organizations it belongs to;
+    /// a pull request shows once, under the first account that has it.
     @MainActor
     static func load() async -> [AccountPullRequests] {
         guard ConnectorToggle.isOn("github") else { return [] }
         let watching = PullRequestWatchSettings.shared.entries
+        let ownOrganizations = PullRequestWatchSettings.shared.includeOrganizations
         let targets = accounts.compactMap { account -> (id: String, name: String, login: String, token: String)? in
             guard let token = CloudHelp.secret(account.key("token")) else { return nil }
             return (account.id, GitHubConnector.accountName(account), account.identity ?? "", token)
@@ -27,12 +29,16 @@ enum GitHubPullRequestList {
             for (index, target) in targets.enumerated() {
                 group.addTask {
                     do {
-                        async let watched = fetchWatched(token: target.token, entries: watching)
-                        let list = try await fetch(token: target.token)
-                        let extra = await watched
+                        async let fetched = fetch(token: target.token)
+                        var organizations: [String] = []
+                        if ownOrganizations { organizations = await fetchOrganizations(token: target.token) }
+                        let extra = await fetchWatched(token: target.token, entries: PullRequestWatchList.including(organizations, in: watching))
+                        let list = try await fetched
+                        // Only a typed entry is worth a note; an organization found on its own that cannot be searched stays quiet.
+                        let unreadable = (extra?.unreadable ?? []).filter { watching.contains($0) }
                         var account = AccountPullRequests(id: target.id, name: target.name, login: list.login.isEmpty ? target.login : list.login,
                                                           mine: list.mine, reviews: list.reviews, error: nil,
-                                                          watched: extra?.items ?? [], unreadable: extra?.unreadable ?? [])
+                                                          watched: extra?.items ?? [], unreadable: unreadable)
                         account.watchedFailed = extra == nil
                         return (index, account)
                     } catch {
@@ -85,6 +91,24 @@ enum GitHubPullRequestList {
         }
     }
 
+    /// The organizations this account belongs to (see PullRequestGraphQL.organizationBodies). Best effort: a request
+    /// that fails only means fewer organizations, never a failed list.
+    private static func fetchOrganizations(token: String) async -> [String] {
+        let answers = await withTaskGroup(of: (Int, [String]).self) { group in
+            for (index, body) in PullRequestGraphQL.organizationBodies().enumerated() {
+                group.addTask {
+                    guard let data = try? await send(body, token: token) else { return (index, []) }
+                    return (index, PullRequestGraphQL.parseOrganizations(data))
+                }
+            }
+            var parts: [(Int, [String])] = []
+            for await part in group { parts.append(part) }
+            return parts.sorted { $0.0 < $1.0 }.flatMap(\.1)
+        }
+        var seen = Set<String>()
+        return answers.filter { seen.insert($0.lowercased()).inserted }
+    }
+
     private static func fetch(token: String) async throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
         try PullRequestGraphQL.parse(try await post(PullRequestGraphQL.body(), token: token))
     }
@@ -131,8 +155,19 @@ final class PullRequestWatchSettings: ObservableObject {
         }
     }
 
+    /// Whether the organizations of each connected account show as well, without typing them. On by default.
+    @Published var includeOrganizations: Bool {
+        didSet {
+            UserDefaults.standard.set(includeOrganizations, forKey: Self.organizationsKey)
+            PullRequestStore.shared.markStale()
+        }
+    }
+
+    private static let organizationsKey = "pulls.watchOrganizations"
+
     private init() {
         entries = UserDefaults.standard.stringArray(forKey: PullRequestWatchList.defaultsKey) ?? []
+        includeOrganizations = UserDefaults.standard.object(forKey: Self.organizationsKey) as? Bool ?? true
     }
 
     /// Adds what was typed (one or more entries, separated by commas or spaces); false when nothing in it was a valid new entry.

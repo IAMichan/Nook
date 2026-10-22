@@ -385,6 +385,8 @@ struct WatchedPullRequestsSection: View {
 
     var body: some View {
         Section {
+            SettingToggle(tr("settings.pulls.myOrganizations"), detail: tr("settings.pulls.myOrganizationsDetail"),
+                          isOn: $watching.includeOrganizations)
             ForEach(watching.entries, id: \.self) { entry in
                 HStack(spacing: 8) {
                     Image(systemName: PullRequestWatchList.isRepository(entry) ? "book.closed" : "building.2")

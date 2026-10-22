@@ -195,7 +195,7 @@ final class GitHubConnector: CloudConnectorConfig {
         [ConnectorField(account: GitHubConnector.tokenAccount, label: tr("connect.field.token"), placeholder: "ghp_… / github_pat_…", secret: true)]
     }
     static var helpText: String { tr("connect.github.help") }
-    static let signupURL = URL(string: "https://github.com/settings/tokens/new?scopes=repo,read:user&description=Nook")
+    static let signupURL = URL(string: "https://github.com/settings/tokens/new?scopes=repo,read:org,read:user&description=Nook")
 
     private enum CI { case unknown, pending, passing, failing }
 
