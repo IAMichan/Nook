@@ -155,6 +155,6 @@ final class AppUpdateTests: XCTestCase {
     func testProjectPathAndAppleScriptQuoting() {
         let source = BuildSource(info: ["NookSourceCommit": commit, "NookSourceRoot": "/Users/me/nook/apps/macos"])
         XCTAssertEqual(source?.projectPath, "/Users/me/nook/apps/macos/Nook.xcodeproj")
-        XCTAssertEqual(AppUpdater.appleScriptString(#"/Users/me/my "nook"\x"#), #""/Users/me/my \"nook\"\\x""#)
+        XCTAssertEqual(UpdateAppleScript.quoted(#"/Users/me/my "nook"\x"#), #""/Users/me/my \"nook\"\\x""#)
     }
 }

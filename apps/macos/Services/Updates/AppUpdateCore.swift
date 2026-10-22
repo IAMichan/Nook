@@ -285,3 +285,12 @@ struct UpdateReceipt: Codable, Equatable, Sendable {
     let changes: [IncomingChange]
     let installedAt: Date
 }
+
+/// Text the updater puts into AppleScript source (opening the project in Xcode).
+enum UpdateAppleScript {
+    /// A quoted AppleScript string literal.
+    static func quoted(_ text: String) -> String {
+        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+}

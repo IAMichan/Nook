@@ -351,11 +351,11 @@ final class AppUpdater: ObservableObject {
             .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
         Task.detached(priority: .userInitiated) {
-            let target = xcode.map { "application \(Self.appleScriptString($0.path))" } ?? "application id \"com.apple.dt.Xcode\""
+            let target = xcode.map { "application \(UpdateAppleScript.quoted($0.path))" } ?? "application id \"com.apple.dt.Xcode\""
             let script = """
             tell \(target)
                 activate
-                set doc to open (POSIX file \(Self.appleScriptString(project)))
+                set doc to open (POSIX file \(UpdateAppleScript.quoted(project)))
                 repeat 120 times
                     if loaded of doc is true then exit repeat
                     delay 0.5
@@ -373,12 +373,6 @@ final class AppUpdater: ObservableObject {
                 }
             }
         }
-    }
-
-    /// A quoted AppleScript string literal.
-    nonisolated static func appleScriptString(_ text: String) -> String {
-        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        return "\"\(escaped)\""
     }
 
     private func loadReceipt(for source: BuildSource) {
