@@ -33,7 +33,7 @@ final class TakeoverState: ObservableObject {
 
 /// Taking over a task (`TakeoverPolicy`): "finish this for me", "order more coffee filters", "unsubscribe me from this".
 ///
-/// - Start: one tap of the Double Tap key opens a field in the notch (typing the task is the go-ahead), or the brain
+/// - Start: a double tap (or one tap) of the Double Tap key opens a field in the notch (typing the task is the go-ahead), or the brain
 ///   proposes `take_over` in the chat and the user approves it like any plan.
 /// - Work: the chosen brain reads windows with `read_ui`, acts with `control_ui`, opens pages and apps, and reads again,
 ///   on its own. Nook's own violet cursor shows where it acts; most actions happen in the background (`UIDriver`).
@@ -91,7 +91,8 @@ extension AppModel {
 
     // MARK: Starting from the notch
 
-    /// One tap of the Double Tap key: a field in the notch asks what Nook should do. A tap while a task runs stops it.
+    /// A double tap (or one tap) of the Double Tap key: a field in the notch asks what Nook should do. A tap while a task
+    /// runs stops it.
     func presentTakeoverPrompt() {
         if TakeoverState.shared.isRunning {
             TakeoverState.shared.stop()

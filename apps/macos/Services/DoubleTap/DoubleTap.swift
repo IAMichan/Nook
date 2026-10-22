@@ -2,8 +2,10 @@ import AppKit
 import ApplicationServices
 import Combine
 
-/// Double Tap: tap the chosen key twice (right ⌘ by default) with the cursor in a form or a reply box, and Nook fills the
-/// empty fields with what it remembers about you and the text on screen. See `DoubleTapLogic` for the rules.
+/// Double Tap: tap the chosen key twice (right ⌘ by default) and a small field in the notch asks what Nook should do
+/// (`onAsk`). With "Fill in fields" chosen in Settings › Shortcuts, a double tap with the cursor in a form or a reply box
+/// fills the empty fields instead, with what Nook remembers about you and the text on screen. See `DoubleTapLogic` for
+/// the rules of filling.
 ///
 /// - The key is watched with NSEvent `flagsChanged` monitors only: no event tap, so no Input Monitoring prompt.
 /// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return and never
@@ -32,8 +34,14 @@ final class DoubleTap: ObservableObject {
     var screenText: (String) -> String? = { _ in nil }
     /// Shows the result as a card that waits for the user. Set by `AppModel`; without it the result is a toast.
     var present: ((DoubleTapOutcome) -> Void)?
-    /// One tap of the key: the notch asks what Nook should do (`AppModel.presentTakeoverPrompt`).
-    var onTap: (() -> Void)?
+    /// The notch asks what Nook should do (`AppModel.presentTakeoverPrompt`): on a double tap, and on one tap when
+    /// `taskOnTap` is on.
+    var onAsk: (() -> Void)?
+    /// A double tap fills in the form in front instead of asking what Nook should do (Settings › Shortcuts). Off by
+    /// default: Nook asks first rather than guessing that you want a form filled in.
+    @Published var fillsOnDoubleTap: Bool {
+        didSet { defaults.set(fillsOnDoubleTap, forKey: "doubleTapFills") }
+    }
     /// One tap gives Nook a task (Settings › Shortcuts).
     @Published var taskOnTap: Bool {
         didSet { defaults.set(taskOnTap, forKey: "takeoverOnTap") }
@@ -54,6 +62,7 @@ final class DoubleTap: ObservableObject {
         enabled = defaults.object(forKey: "doubleTapEnabled") as? Bool ?? true
         key = FlowKey(rawValue: defaults.string(forKey: "doubleTapKey") ?? "") ?? .rightCommand
         taskOnTap = defaults.object(forKey: "takeoverOnTap") as? Bool ?? true
+        fillsOnDoubleTap = defaults.object(forKey: "doubleTapFills") as? Bool ?? false
     }
 
     /// Flow owns a key it dictates with: holding it and tapping it both mean something there.
@@ -106,16 +115,20 @@ final class DoubleTap: ObservableObject {
         switch gesture.update(down: down, alone: alone, at: now, lastKeyDown: now - sinceKey) {
         case .double:
             tapCount += 1
-            fill()
+            if fillsOnDoubleTap || onAsk == nil {
+                fill()
+            } else {
+                onAsk?()
+            }
         case .tap:
             // One tap: give Nook a task, once it is clear no second tap follows.
             tapCount += 1
             let tap = tapCount
-            guard taskOnTap, onTap != nil else { return }
+            guard taskOnTap, onAsk != nil else { return }
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(DoubleTapGesture.window * 1_000_000_000) + 50_000_000)
                 guard let self, self.tapCount == tap else { return }
-                self.onTap?()
+                self.onAsk?()
             }
         case .none:
             break
