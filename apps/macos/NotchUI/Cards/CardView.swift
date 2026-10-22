@@ -18,6 +18,8 @@ struct CardView: View {
     var onReact: (ChatBubble, String) -> Void = { _, _ in }
     /// The pointer is on the notch: a notice's countdown holds.
     var paused: Bool = false
+    /// A compact card's height as its field grows with the text, so the notch can follow it.
+    var onHeight: (CGFloat) -> Void = { _ in }
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
@@ -35,6 +37,7 @@ struct CardView: View {
             if card.compact {
                 // Only the field, level with Nook: the card asks one thing and waits for the answer.
                 inputField.padding(.top, NookTheme.Spacing.xs)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight($0) }
             } else {
                 fullCard
             }
@@ -184,15 +187,17 @@ struct CardView: View {
         }
     }
 
-    /// The card's field: a chat's answer field for a message card, else a follow-up question. A draft from the model
-    /// (text put back after a failed send) fills it.
+    /// The card's field: the compact card's one line, else the Chats tab's answer field, so a message card and a follow-up
+    /// to Nook type the same way. A draft from the model (text put back after a failed send) fills it.
     private var inputField: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            // The chat's answer field has its own `@` menu ("@nook").
-            if !card.chatReply {
+            // The answer field has its own `@` menu ("@nook"); the compact field offers people from your chats.
+            if card.compact {
                 MentionSuggestions(model: mentionModel, text: $reply, config: mentionConfig, focus: $replyFocused)
+                promptField
+            } else {
+                chatField
             }
-            if card.compact { promptField } else if card.chatReply { chatField } else { replyField }
         }
         .onAppear {
             if let draft = card.draft { reply = draft }
@@ -212,8 +217,8 @@ struct CardView: View {
         }
     }
 
-    /// A message card answers its chat as the Chats tab does: Return sends, "@" opens the menu, "@nook …" lets Nook
-    /// write the message into the field.
+    /// Every full card answers as the Chats tab does: Cmd+Return sends, "@" opens the menu, "@nook …" lets Nook write the
+    /// message into the field.
     private var chatField: some View {
         ChatReplyField(text: $reply, notice: $chatNotice, focus: $replyFocused,
                        placeholder: card.inputPrompt ?? tr("chat.followupPrompt"),
@@ -221,66 +226,25 @@ struct CardView: View {
                        sendLabel: card.replyCopiesTo.map { tr("chats.reply.copy", $0) } ?? tr("card.send"),
                        readyNotice: card.replyCopiesTo.map { tr("chats.draft.readyCopy", $0) } ?? tr("chats.draft.ready"),
                        outgoing: card.sending.map { ChatSending(text: $0) },
-                       recipient: card.title,
+                       recipient: card.chatReply ? card.title : nil,
                        quote: replyingTo?.quote(contact: card.title),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
     }
 
-    /// Follow-up questions via text: always ready to type. Return starts a new line and the field grows with it;
-    /// Cmd+Return sends. Wrapping instead of scrolling sideways keeps the text still while a long sentence is typed.
-    private var replyField: some View {
-        HStack(alignment: .bottom, spacing: NookTheme.Spacing.md) {
-            TextField(
-                "",
-                text: $reply,
-                prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
-                axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(NookTheme.TextStyle.body)
-            .foregroundStyle(NookTheme.paper)
-            .lineLimit(1...6)
-            .focused($replyFocused)
-            .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
-            // In the non-activating notch panel the binding can lag behind the field until Return commits it,
-            // which left the send arrow looking disabled; take every keystroke straight from the field itself.
-            .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
-                guard replyFocused, let field = note.object as? NSTextField, field.window is NotchPanel,
-                      field.stringValue != reply else { return }
-                reply = field.stringValue
-            }
-            .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in replyReturn(press) }
-            .mentions(mentionModel, text: $reply, config: mentionConfig)
-            .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-            // Cmd+Return sends, and so does a click on the arrow; an empty field sends nothing.
-            let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            Button(action: submitReply) {
-                Image(systemName: ready ? "arrow.up.circle.fill" : "command")
-                    .font(NookTheme.font(ready ? 18 : 11, .medium))
-                    .foregroundStyle(ready ? NookTheme.mint : NookTheme.textTertiary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, NookTheme.Spacing.md)
-            .help(tr("card.sendShortcut"))
-            .accessibilityLabel(tr("card.send"))
-        }
-        .padding(.leading, NookTheme.Spacing.xl)
-        .padding(.trailing, NookTheme.Spacing.md)
-        .frame(minHeight: 38)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(NookTheme.field))
-    }
-
-    /// The compact card's one field: Return or the arrow inside the field sends, Escape closes the card.
+    /// The compact card's one field: Return or the arrow inside the field sends, Escape closes the card. A long
+    /// message wraps and the field grows with it (the notch follows through `onHeight`), so all of it stays readable.
     private var promptField: some View {
         let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(spacing: NookTheme.Spacing.sm) {
-            TextField("", text: $reply, prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary))
+        return HStack(alignment: .bottom, spacing: NookTheme.Spacing.sm) {
+            TextField("", text: $reply, prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
+                      axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
+                .lineLimit(1...6)
+                // One line sits level with the send button; each further line makes the field (and the notch) taller.
+                .frame(minHeight: 28)
                 .focused($replyFocused)
                 .onSubmit { if !mentionModel.isOpen { submitReply() } }
                 .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
@@ -305,18 +269,6 @@ struct CardView: View {
     }
 
     private var mentionConfig: ComposerConfig { .mentions() }
-
-    /// Return adds a line where the cursor is; with Cmd it sends.
-    private func replyReturn(_ press: KeyPress) -> KeyPress.Result {
-        // With the `@` list open, Return chooses a line there.
-        if mentionModel.isOpen { return .ignored }
-        if press.modifiers.contains(.command) {
-            submitReply()
-        } else {
-            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
-        }
-        return .handled
-    }
 
     private func submitReply() {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)

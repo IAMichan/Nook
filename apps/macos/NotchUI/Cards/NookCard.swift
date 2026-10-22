@@ -221,6 +221,8 @@ struct NookCard: Equatable, Identifiable {
     /// Only the field, with its send button inside it: a small card that asks one thing (the double tap's "what should
     /// Nook do?"). The title stays for VoiceOver and the buttons for Escape, but neither is drawn.
     var compact: Bool = false
+    /// The height a compact card started with, kept while its field grows so it can shrink back to it.
+    var compactBaseHeight: CGFloat? = nil
     /// Additional muted buttons alongside the two standard buttons (e.g. "Always" and "In terminal").
     var extra: [CardAction] = []
     /// Less common actions, tucked away in a "…" menu at the end of the button row so the row stays calm.
