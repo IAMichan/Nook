@@ -85,6 +85,14 @@ final class AppActionsTests: XCTestCase {
         XCTAssertTrue(script.contains("menu item \"Archive\" of menu 1 of menu item \"Move to\" of menu 1 of menu bar item \"Message\" of menu bar 1"))
     }
 
+    func testMenuScriptsFindTheProcessByItsIdWhenKnown() {
+        // On a Dutch Mac the app shows as "Systeeminstellingen"; its process id never changes with the language.
+        let click = AppMenu.clickScript(process: "Systeeminstellingen", path: ["View", "Search"], pid: 512)
+        XCTAssertTrue(click.contains("tell (first process whose unix id is 512)"))
+        XCTAssertFalse(click.contains("tell process"))
+        XCTAssertTrue(AppMenu.listScript(process: "Finder", pid: 77).contains("tell (first process whose unix id is 77)"))
+    }
+
     func testMenuListingFiltersAndDeduplicates() {
         let raw = "File > New Folder\nFile > New Folder\nEdit > Move to Trash\nView > as List\n"
         let all = AppMenu.describe(raw, app: "Finder", filter: nil)

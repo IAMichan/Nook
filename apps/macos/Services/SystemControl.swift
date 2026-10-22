@@ -193,6 +193,11 @@ enum SystemControl {
         guard !clean.isEmpty, !clean.hasPrefix("-"), !clean.contains("/") else {
             throw NookError("Invalid app name.")
         }
+        // Apple's apps by the English name people use, whatever language the Mac runs in ("System Settings").
+        if let bundle = AppNames.aliasBundleID(clean) ?? (clean.hasPrefix("com.") ? clean : nil),
+           (try? runProcess("/usr/bin/open", ["-b", bundle])) != nil {
+            return
+        }
         if (try? runProcess("/usr/bin/open", ["-a", clean])) != nil { return }
         // Not by that name: the installed app it is closest to, also by its name in your language ("Rekenmachine").
         let apps = installedApps()
