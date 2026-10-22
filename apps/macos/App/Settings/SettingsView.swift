@@ -66,6 +66,7 @@ struct SettingsView: View {
     /// The mood the large preview under Appearance shows.
     @State var lookPreviewMood: NookMood = .rest
     @ObservedObject var flowStore = FlowStore.shared
+    @ObservedObject var doubleTap = DoubleTap.shared
     @ObservedObject var mcpStore = MCPServerStore.shared
     @ObservedObject var mcpSignIn = MCPSignIn.shared
 

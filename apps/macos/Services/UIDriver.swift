@@ -21,7 +21,7 @@ enum UIDriver {
         [
             ToolSpec(
                 name: readTool,
-                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again.",
+                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again.",
                 schema: [
                     "type": "object",
                     "properties": ["app": ["type": "string", "description": "Name of the app, e.g. \"System Settings\" or \"Safari\". Without it: the app in front."]] as [String: Any],
@@ -33,8 +33,14 @@ enum UIDriver {
                 run: { input in
                     try checkAccess()
                     let app = try await target((input["app"] as? String) ?? "")
-                    let window = read(app)
-                    return UIControl.describe(app: app.localizedName ?? "", window: window.title, elements: window.items.map(\.element))
+                    let window = await settledRead(app)
+                    let elements = window.items.map(\.element)
+                    var text = UIControl.describe(app: app.localizedName ?? "", window: window.title, elements: elements)
+                    if UIControl.needsSeenText(elements) {
+                        let seen = UIControl.describeSeen(await ScreenReader.seenLines(of: app))
+                        if !seen.isEmpty { text += "\n\n" + seen }
+                    }
+                    return text
                 }
             ),
             ToolSpec(
@@ -112,10 +118,11 @@ enum UIDriver {
         if steps.count > UIControl.maxSteps { problems.append("At most \(UIControl.maxSteps) steps at a time.") }
         guard problems.isEmpty else { throw NookError(problems.joined(separator: "; ")) }
         var done: [String] = []
+        var notes: [String] = []
         for (offset, step) in steps.enumerated() {
             try Task.checkCancellation()
             do {
-                try await run(step, in: app)
+                if let note = try await run(step, in: app) { notes.append(note) }
             } catch {
                 let finished = done.isEmpty ? "" : " " + tr("control.result.before", done.joined(separator: " → "))
                 throw NookError(tr("control.error.step", offset + 1, error.localizedDescription) + finished)
@@ -124,10 +131,13 @@ enum UIDriver {
             try? await Task.sleep(nanoseconds: settle)
         }
         let window = read(app).title ?? ""
-        return tr("control.result", appName, done.joined(separator: " → "), window)
+        let result = tr("control.result", appName, done.joined(separator: " → "), window)
+        return notes.isEmpty ? result : result + " " + notes.joined(separator: " ")
     }
 
-    private static func run(_ step: UIControl.Step, in app: NSRunningApplication) async throws {
+    /// One step. Afterwards it checks what it can: typed text must show up in the field (else the step fails, so a form is
+    /// never sent with something else in it); a switch or checkbox that did not change gives a note for the brain.
+    private static func run(_ step: UIControl.Step, in app: NSRunningApplication) async throws -> String? {
         let name = app.localizedName ?? ""
         if step.action == .open {
             if let url = step.url.flatMap(URL.init(string:)), UIControl.isSettingsPane(url.absoluteString) {
@@ -139,11 +149,11 @@ enum UIDriver {
                 if !read(app).items.isEmpty { break }
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
-            return
+            return nil
         }
         if step.action == .wait {
             try? await Task.sleep(nanoseconds: UInt64(min(max(step.seconds ?? 1, 0.1), UIControl.maxWait) * 1_000_000_000))
-            return
+            return nil
         }
         try await bringToFront(app)
         let pid = app.processIdentifier
@@ -173,21 +183,22 @@ enum UIDriver {
             // A control that can press itself does so: no mouse needed, nothing in between can catch the click.
             if step.action == .click, let ref = element?.ref, !["row", "cell", "text"].contains(element?.element.role ?? ""),
                actions(of: ref).contains(kAXPressAction), AXUIElementPerformAction(ref, kAXPressAction as CFString) == .success {
-                return
+                return await toggleNote(element)
             }
             if step.action == .rightClick, let ref = element?.ref, actions(of: ref).contains(kAXShowMenuAction),
                AXUIElementPerformAction(ref, kAXShowMenuAction as CFString) == .success {
-                return
+                return nil
             }
             guard owns(point, pid: pid) else {
                 // A sidebar row under another window (Nook's own panel) can still be selected directly.
                 if step.action == .click, let found = element, ["row", "cell"].contains(found.element.role),
                    AXUIElementSetAttributeValue(found.ref, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success {
-                    return
+                    return nil
                 }
                 throw NookError(tr("control.error.covered", name))
             }
             await click(at: point, right: step.action == .rightClick, count: step.action == .doubleClick ? 2 : 1)
+            if step.action == .click { return await toggleNote(element) }
         case .type:
             if let found = element {
                 if found.element.secure { throw NookError(tr("control.error.secure")) }
@@ -202,6 +213,16 @@ enum UIDriver {
                 try await press(all, in: app)
             }
             try await type(step.text ?? "", in: app)
+            // Check the field itself (also the focused one when no element was named): the text must be in it now.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            // Only real text fields: an editor the app draws itself often reports no value at all.
+            let field = element?.ref ?? focusedElement(pid)
+            let fieldRole: String? = field.flatMap { attribute($0, kAXRoleAttribute) }
+            if let field, ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(fieldRole ?? ""),
+               let value: String = attribute(field, kAXValueAttribute),
+               !UIControl.typedLanded(step.text ?? "", value: value, replace: step.replace) {
+                throw NookError(tr("control.error.notTyped", element?.element.label ?? tr("control.focusedField"), String(value.prefix(80))))
+            }
         case .key:
             guard let combo = step.keys.flatMap(UIControl.parseKeys) else { throw NookError(tr("control.error.noTarget")) }
             try await press(combo, in: app)
@@ -212,6 +233,22 @@ enum UIDriver {
         case .open, .wait:
             break
         }
+        return nil
+    }
+
+    /// After a click on a checkbox, switch or radio button: a note when it still shows what it showed before (or a radio
+    /// button that is still off), so the brain looks again instead of assuming it worked.
+    private static func toggleNote(_ element: (element: UIControl.Element, ref: AXUIElement)?) async -> String? {
+        guard let element, ["checkbox", "switch", "toggle", "radio"].contains(element.element.role) else { return nil }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let raw: CFTypeRef? = attribute(element.ref, kAXValueAttribute)
+        guard let now = UIControl.stateText(role: element.element.role, value: raw) else { return nil }
+        let unchanged = element.element.role == "radio" ? now != "on" : now == element.element.value
+        return unchanged ? tr("control.note.unchanged", element.element.label, now) : nil
+    }
+
+    private static func focusedElement(_ pid: pid_t) -> AXUIElement? {
+        attribute(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute)
     }
 
     // MARK: The app
@@ -236,6 +273,8 @@ enum UIDriver {
             || UIControl.isBlocked(app: label, bundleID: app.bundleIdentifier) {
             throw NookError(tr("control.error.blocked", label))
         }
+        // Chromium browsers and Electron apps build the tree of a web page only for a client that asks for it.
+        AutocompleteField.wake(app)
         return app
     }
 
@@ -273,12 +312,23 @@ enum UIDriver {
 
     // MARK: Reading the window
 
+    /// A read that gives a just-woken browser or a window that is still loading a moment to fill in its tree.
+    static func settledRead(_ app: NSRunningApplication) async -> Window {
+        var window = read(app)
+        for _ in 0..<4 where window.items.filter({ UIControl.tier($0.element.role) <= 1 }).count < UIControl.fewControls {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            window = read(app)
+        }
+        return window
+    }
+
     struct Window {
         var title: String?
         var items: [(element: UIControl.Element, ref: AXUIElement)]
     }
 
-    private static let maxElements = 350
+    /// Enough for a long web page; what reaches the brain is trimmed by `UIControl.describe`, fields and buttons first.
+    private static let maxElements = 900
     private static let maxDepth = 40
 
     /// The elements of the app's windows, focused window first, in the order they appear in the tree.

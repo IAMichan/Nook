@@ -161,6 +161,7 @@ targets:
       - path: Core/I18n+Quiet.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
+      - path: Core/I18n+DoubleTap.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -289,6 +290,7 @@ targets:
       - path: Brain/ChatImage.swift
       - path: Services/WhatsApp/WhatsAppGateway.swift
       - path: Services/Flow/FlowLogic.swift
+      - path: Services/DoubleTap/DoubleTapLogic.swift
       - path: Services/Autocomplete/GGUFReader.swift
       - path: Services/Autocomplete/CompletionModels.swift
       - path: Services/Autocomplete/CompletionSuggestion.swift

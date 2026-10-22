@@ -253,6 +253,7 @@ extension AppModel {
         }
         FlowDictation.shared.refresh()
         startAutocomplete()
+        startDoubleTap()
         // From now on every permission is checked again whenever Nook comes to the front.
         PermissionMonitor.shared.refresh()
     }
@@ -270,6 +271,72 @@ extension AppModel {
             return (windows.first { $0.isFront } ?? windows.first)?.text
         }
         autocomplete.refresh()
+    }
+
+    /// Double Tap: the form in front filled with your memory and the screen, on the brain you chose. What goes to an
+    /// external brain follows the same rules as a question: memories kept on this Mac stay here, and the screen only when
+    /// the privacy level allows it.
+    func startDoubleTap() {
+        let doubleTap = DoubleTap.shared
+        doubleTap.ask = { [weak self] system, prompt, timeout in
+            await self?.brain.rewrite(system: system, prompt: prompt, timeout: timeout)
+        }
+        doubleTap.facts = { [weak self] in
+            guard let self, self.settings.useMemory, !self.settings.privateSources.contains(SourceCatalog.memory) else { return [] }
+            let local = self.settings.isLocalBrain
+            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil && (local || !$0.localOnly) }
+                .sorted { $0.strength > $1.strength }.prefix(30).map(\.text)
+        }
+        doubleTap.screenText = { [weak self] bundleID in
+            guard let self, self.settings.liveScreen, !self.settings.privateSources.contains(SourceCatalog.screen) else { return nil }
+            let windows = self.screenContext.windows.filter { $0.bundleID == bundleID }
+            return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
+        }
+        doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
+        doubleTap.refresh()
+    }
+
+    /// What a double tap filled in, as a card that waits for you: Send presses the form's own button (only from here,
+    /// never by itself), Undo empties the fields again. Esc closes the card and sends nothing.
+    func presentDoubleTap(_ outcome: DoubleTapOutcome) {
+        let token = "doubletap-" + UUID().uuidString
+        let shown = Array(outcome.filled.prefix(6))
+        var facts = shown.map { Fact(label: String(($0.label.isEmpty ? tr("doubletap.card.field") : $0.label).prefix(40)),
+                                     value: String($0.value.prefix(90))) }
+        if outcome.filled.count > shown.count { facts.append(Fact(label: "", value: tr("doubletap.card.more", outcome.filled.count - shown.count))) }
+        let close = CardAction(label: tr("app.ok"), outcome: .dismiss)
+        var primary = close
+        if let submit = outcome.submit {
+            viewModel.register("\(token)#send") {
+                if submit.perform() {
+                    ToastCenter.shared.success(tr("doubletap.sent", outcome.app))
+                } else {
+                    ToastCenter.shared.warning(tr("doubletap.sendFailed", submit.label))
+                }
+            }
+            primary = CardAction(label: submit.label, outcome: .callback("\(token)#send", ""), symbol: "paperplane")
+        }
+        var secondary = close
+        if let undo = outcome.undo {
+            viewModel.register("\(token)#undo") { undo() }
+            secondary = CardAction(label: tr("doubletap.undo"), outcome: .callback("\(token)#undo", tr("doubletap.undone")),
+                                   symbol: "arrow.uturn.backward")
+        }
+        let title = outcome.count == 1 ? tr("doubletap.filledOne", outcome.app) : tr("doubletap.filled", outcome.count, outcome.app)
+        let card = NookCard(
+            id: token,
+            mood: outcome.submit == nil ? .done : .waiting,
+            context: tr("doubletap.settings.title"),
+            title: title,
+            detail: .facts(facts),
+            primary: primary,
+            secondary: secondary,
+            contentHeight: 116 + CGFloat(facts.count) * 26,
+            escape: close,
+            notice: tr(outcome.submit == nil ? "doubletap.notSent" : "doubletap.card.check"),
+            status: outcome.submit == nil ? nil : CardStatus(text: tr("card.status.approval"), tone: .waiting)
+        )
+        viewModel.present(card)
     }
 }
 
