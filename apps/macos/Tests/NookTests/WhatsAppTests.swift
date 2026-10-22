@@ -100,6 +100,23 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAJID.isPlaceholderName(WAJID.displayNumber(old), for: old))
         XCTAssertTrue(WAJID.isPlaceholderName("120363000000000001@g.us", for: "120363000000000001@g.us"))
         XCTAssertFalse(WAJID.isPlaceholderName("Familie", for: old))
+        XCTAssertTrue(WAJID.isPlaceholderName("+31 6 12345678, +31 6 87654321", for: old), "only the members' numbers")
+        XCTAssertFalse(WAJID.isPlaceholderName("2024", for: old), "a short number is a name")
+        XCTAssertFalse(WAJID.isPlaceholderName("🎉", for: old))
+    }
+
+    func testOpeningAGroupKeepsItsRealName() {
+        let group = "31622360496-1542111077@g.us"
+        var inbox = WAInbox()
+        inbox.add(message("a", chat: group, from: "2@s.whatsapp.net"), filters: WAFilters(), name: "Familie")
+        var history = message("b", chat: group, from: "3@s.whatsapp.net", at: 1)
+        history.chatName = "Group 31622360496-1542111077"
+        inbox.add(history, filters: WAFilters(), history: true)
+        XCTAssertEqual(inbox.conversations[group]?.name, "Familie", "the gateway's stand-in never replaces the real name")
+        var renamed = message("c", chat: group, from: "3@s.whatsapp.net", at: 2)
+        renamed.chatName = "Familie 2026"
+        inbox.add(renamed, filters: WAFilters())
+        XCTAssertEqual(inbox.conversations[group]?.name, "Familie 2026", "a real new name still comes through")
     }
 
     func testTheListOfYourGroupsNamesEveryGroupAtOnce() {
