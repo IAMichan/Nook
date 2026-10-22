@@ -209,6 +209,7 @@ extension AppModel {
             secondary: no,
             contentHeight: min(470, height),
             input: true,
+            focusesInput: false,
             extra: [CardAction(label: tr("app.nudge.mute"), outcome: .callback("\(token)#mute", tr("app.nudge.muted", appName)))],
             sources: [appName],
             offers: offers,
