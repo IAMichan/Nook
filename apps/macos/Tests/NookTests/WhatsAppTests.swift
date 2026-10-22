@@ -135,6 +135,13 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAGOWA.groupNames(Data("{}".utf8)).isEmpty)
     }
 
+    func testARefusedSendSaysWhyNotOnlyItsCode() {
+        let refused = #"{"status":500,"code":"INTERNAL_SERVER_ERROR","message":"ffmpeg not installed (required for PTT voice notes)","results":null}"#
+        XCTAssertEqual(WAGOWA.errorReason(Data(refused.utf8)), "ffmpeg not installed (required for PTT voice notes)")
+        XCTAssertEqual(WAGOWA.errorReason(Data(#"{"code":"DEVICE_ID_REQUIRED","message":" "}"#.utf8)), "DEVICE_ID_REQUIRED")
+        XCTAssertNil(WAGOWA.errorReason(Data("<html>".utf8)))
+    }
+
     func testOneGroupsInfoNamesItOrItsCommunity() {
         let flat = #"{"results":{"JID":"120363000000000001@g.us","Name":"Familie"}}"#
         XCTAssertEqual(WAGOWA.groupInfo(Data(flat.utf8)).name, "Familie")

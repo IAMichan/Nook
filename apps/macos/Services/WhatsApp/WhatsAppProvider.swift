@@ -206,7 +206,7 @@ actor GOWAProvider: WhatsAppProvider {
         if code == 401 && WAGOWA.errorCode(data) != "AUTHENTICATION_ERROR" { throw WAError.unauthorized }
         if code == 401 { throw WAError.notLoggedIn }
         guard (200..<300).contains(code) else {
-            throw WAError.refused(WAGOWA.errorCode(data) ?? "HTTP \(code)")
+            throw WAError.refused(WAGOWA.errorReason(data) ?? "HTTP \(code)")
         }
     }
 
