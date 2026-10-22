@@ -94,6 +94,7 @@ struct PullRequestsPanel: View {
             if phase == .done { Task { await store.refresh(force: true) } }
         }
         .onChange(of: watching.entries) { _, _ in Task { await store.refresh(force: true) } }
+        .onChange(of: watching.includeOrganizations) { _, _ in Task { await store.refresh(force: true) } }
     }
 
     // MARK: Search and filters

@@ -98,6 +98,35 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(variables["w1"], "is:pr is:open archived:false repo:a/b sort:updated-desc")
     }
 
+    func testOwnOrganizationsJoinTheWatchList() {
+        XCTAssertEqual(PullRequestWatchList.including(["Acme", "globex", "", "bad name"], in: ["acme", "initech/web"]),
+                       ["acme", "initech/web", "globex"], "typed entries first, an organization already typed once, invalid ones skipped")
+        let full = (0..<PullRequestWatchList.limit).map { "org\($0)" }
+        XCTAssertEqual(PullRequestWatchList.including(["globex"], in: full), full)
+    }
+
+    func testOrganizationQueries() throws {
+        let queries = try PullRequestGraphQL.organizationBodies().map { body in
+            try XCTUnwrap((JSONSerialization.jsonObject(with: body) as? [String: Any])?["query"] as? String)
+        }
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertTrue(queries[0].contains("organizations(first: 100)"))
+        XCTAssertTrue(queries[1].contains("affiliations: [ORGANIZATION_MEMBER]"))
+        XCTAssertFalse(queries[1].contains("\\"), "the line breaks in the source are not part of the query")
+    }
+
+    func testParseOrganizations() {
+        let memberships = #"{"data":{"viewer":{"login":"ada","organizations":{"nodes":[{"login":"acme"},{"login":"Globex"}]}}}}"#
+        XCTAssertEqual(PullRequestGraphQL.parseOrganizations(Data(memberships.utf8)), ["acme", "Globex"])
+        let owners = #"""
+        {"data":{"viewer":{"login":"Ada","repositories":{"nodes":[{"owner":{"login":"acme"}},{"owner":{"login":"ACME"}},
+          {"owner":{"login":"ada"}},{"owner":{"login":"initech"}}]}}}}
+        """#
+        XCTAssertEqual(PullRequestGraphQL.parseOrganizations(Data(owners.utf8)), ["acme", "initech"], "each once, never your own login")
+        let refused = #"{"data":null,"errors":[{"type":"INSUFFICIENT_SCOPES","message":"needs read:org"}]}"#
+        XCTAssertEqual(PullRequestGraphQL.parseOrganizations(Data(refused.utf8)), [])
+    }
+
     func testParseWatched() throws {
         let answer = #"""
         {"data":{

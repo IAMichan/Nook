@@ -190,7 +190,7 @@ final class GitHubSignIn: ObservableObject {
     private func requestCode() async throws -> DeviceCode {
         let json = try await post("https://github.com/login/device/code", items: [
             ("client_id", Self.clientID),
-            ("scope", "repo read:user")
+            ("scope", "repo read:org read:user")
         ])
         guard let deviceCode = json["device_code"] as? String,
               let userCode = json["user_code"] as? String,

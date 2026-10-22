@@ -108,6 +108,18 @@ enum PullRequestWatchList {
 
     static func isRepository(_ entry: String) -> Bool { entry.contains("/") }
 
+    /// The typed entries, then the organizations you belong to that none of them names yet (GitHub names ignore case),
+    /// up to `limit` in all: what one account searches when your organizations are watched as well.
+    static func including(_ organizations: [String], in list: [String]) -> [String] {
+        var result = list
+        for organization in organizations where result.count < limit {
+            guard normalize(organization) == organization, !isRepository(organization),
+                  !result.contains(where: { $0.lowercased() == organization.lowercased() }) else { continue }
+            result.append(organization)
+        }
+        return result
+    }
+
     /// The search for one entry's open or closed pull requests.
     static func search(_ entry: String, closed: Bool) -> String {
         let scope = isRepository(entry) ? "repo:" + entry : "org:" + entry
@@ -201,6 +213,34 @@ enum PullRequestGraphQL {
         var seen = Set<String>()
         let items = (open.sorted(by: newest) + closed.sorted(by: newest)).filter { seen.insert($0.id).inserted }
         return (items, unreadable)
+    }
+
+    /// The organizations you belong to, as two requests: your memberships, which need the `read:org` scope, and the
+    /// owners of the organization repositories you can reach, which only need `repo`. A token without `read:org` (one
+    /// made before Nook asked for it, or a fine-grained one) still finds the organizations it can read that way.
+    static func organizationBodies() -> [Data] {
+        let queries = [
+            "query NookOrganizations { viewer { login organizations(first: 100) { nodes { login } } } }",
+            """
+            query NookOrganizationRepositories { viewer { login repositories(first: 100, affiliations: [ORGANIZATION_MEMBER], \
+            ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: {field: PUSHED_AT, direction: DESC}) \
+            { nodes { owner { login } } } } }
+            """
+        ]
+        return queries.map { (try? JSONSerialization.data(withJSONObject: ["query": $0])) ?? Data() }
+    }
+
+    /// The organization logins in one of those answers, in order, each once and never your own login. Empty when the
+    /// request was refused (a missing scope), so it never stands in the way of the list.
+    static func parseOrganizations(_ data: Data) -> [String] {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let viewer = (root["data"] as? [String: Any])?["viewer"] as? [String: Any] else { return [] }
+        let me = ((viewer["login"] as? String) ?? "").lowercased()
+        func nodes(_ field: String) -> [[String: Any]] { ((viewer[field] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? [] }
+        let logins = nodes("organizations").compactMap { $0["login"] as? String }
+            + nodes("repositories").compactMap { ($0["owner"] as? [String: Any])?["login"] as? String }
+        var seen: Set<String> = [me]
+        return logins.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
     }
 
     /// GitHub's own message for a query that failed as a whole. One that ran out of time is worth asking again.
