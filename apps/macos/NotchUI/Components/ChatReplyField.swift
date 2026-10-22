@@ -5,10 +5,11 @@ import SwiftUI
 /// Nook write the message into this field first, through `draft`, for you to read before it goes anywhere. While Nook
 /// writes, and once its message is in the field, a panel above the field shows it as Nook's draft: stop it, go back to
 /// your request, or steer it (shorter, friendlier, more formal, other words, or a change you type) before you send it.
+/// While a message is on its way, the same place shows it going out, and briefly that it arrived.
 struct ChatReplyField: View {
     @Binding var text: String
     /// The status line above the field: Nook writing, the draft ready, or why something failed. The host may set it too
-    /// (sending, a file opening).
+    /// (a file opening).
     @Binding var notice: String?
     var focus: FocusState<Bool>.Binding
     let placeholder: String
@@ -17,8 +18,10 @@ struct ChatReplyField: View {
     let sendLabel: String
     /// What the status line says once Nook's message is in the field.
     let readyNotice: String
-    /// The host is busy with the text (sending it): the field and its button wait.
-    var busy = false
+    /// The message the host is sending, or has just sent: a panel above the field shows it, and the field waits.
+    var outgoing: ChatOutgoing? = nil
+    /// Who the message goes to, named in that panel ("Sending to Arjan…"); nil says "Sending…".
+    var recipient: String? = nil
     /// The message what is typed answers, quoted above the field; nil for an ordinary message.
     var quote: BubbleQuote? = nil
     /// The cross on the quote, or Escape in the field: the message goes as an ordinary one.
@@ -50,9 +53,15 @@ struct ChatReplyField: View {
     /// The panel above the field: Nook writing, or its draft in the field.
     private var showsDraft: Bool { drafting || drafted != nil }
 
+    /// A message is on its way: the field and its button wait until it is there or failed.
+    private var busy: Bool { outgoing.map { !$0.sent } ?? false }
+
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if showsDraft {
+            if let outgoing {
+                SendingPanel(message: outgoing.text, sent: outgoing.sent, recipient: recipient)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else if showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
                            edited: drafted.map { $0 != text } ?? false, readyNotice: readyNotice,
                            steer: $steer, steerFocused: $steerFocused,
@@ -60,16 +69,13 @@ struct ChatReplyField: View {
                            rewrite: { rewrite(steer) })
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            // Nook's own progress is in its panel; any other notice (a failed rewrite, sending) stays a line above.
-            if let notice, !drafting {
+            // Nook's own progress and a message on its way have their panel; any other notice (a failed rewrite or send)
+            // stays a line above.
+            if let notice, !drafting, outgoing == nil {
                 HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.xs) {
-                    if busy {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: "info.circle")
-                            .font(NookTheme.font(10.5))
-                            .foregroundStyle(NookTheme.textTertiary)
-                    }
+                    Image(systemName: "info.circle")
+                        .font(NookTheme.font(10.5))
+                        .foregroundStyle(NookTheme.textTertiary)
                     Text(notice)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
@@ -89,6 +95,7 @@ struct ChatReplyField: View {
         }
         .animation(NookTheme.reveal, value: showsDraft)
         .animation(NookTheme.reveal, value: drafting)
+        .animation(NookTheme.reveal, value: outgoing)
     }
 
     private var field: some View {
@@ -133,7 +140,7 @@ struct ChatReplyField: View {
                     text = field.stringValue
                 }
                 .disabled(busy || drafting)
-                .opacity(drafting ? 0.55 : 1)
+                .opacity(drafting || busy ? 0.55 : 1)
             if drafting {
                 NookIconButton(systemName: "stop.fill", label: tr("chats.draft.stop"), filled: true, size: 28) { stopWriting() }
             } else {
@@ -145,7 +152,7 @@ struct ChatReplyField: View {
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.vertical, NookTheme.Spacing.xs)
         // Nook's draft in the field: the field takes Nook's color, so it is clear whose words are about to go out.
-        .cardBackground(NookTheme.field, stroke: showsDraft ? NookTheme.iris.opacity(0.45) : NookTheme.fieldStroke,
+        .cardBackground(NookTheme.field, stroke: showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45) : NookTheme.fieldStroke,
                         radius: NookTheme.Radius.sheet)
     }
 
@@ -410,6 +417,114 @@ private struct DraftChip: View {
         .onHover { hovering = $0 }
         .animation(NookTheme.hover, value: hovering)
         .help(title)
+    }
+}
+
+/// A message on its way to the chat, and briefly once it is there.
+struct ChatOutgoing: Equatable {
+    let text: String
+    /// The chat has it: the panel says so for a moment before the host lets it go.
+    var sent = false
+}
+
+/// Above the field while a message is sent: a paper plane that glides, who it goes to, and the message itself; once
+/// it is there, a check in its place.
+private struct SendingPanel: View {
+    let message: String
+    let sent: Bool
+    let recipient: String?
+
+    private var title: String {
+        if let recipient, !recipient.isEmpty { return tr(sent ? "whatsapp.sent" : "chats.sending.to", recipient) }
+        return tr(sent ? "chats.sent" : "whatsapp.card.sending")
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+            Group {
+                if sent {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(NookTheme.font(13, .semibold))
+                        .foregroundStyle(NookTheme.mint)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    GlidingPlane()
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: 18, height: 18)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                if sent {
+                    Text(title)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                } else {
+                    ShimmerText(text: title)
+                        .font(NookTheme.TextStyle.label)
+                        .lineLimit(1)
+                }
+                Text(message)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(NookTheme.Spacing.md)
+        .overlay(alignment: .bottom) {
+            if !sent { SendingSweep().padding(.horizontal, NookTheme.Spacing.md) }
+        }
+        .cardBackground(NookTheme.mint.opacity(0.07), stroke: NookTheme.mint.opacity(0.2), radius: NookTheme.Radius.panel,
+                        style: .continuous)
+        .animation(NookTheme.reveal, value: sent)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title + ": " + message)
+    }
+}
+
+/// A paper plane that lifts off, flies out and comes back in, over and over while a message is sent; still with
+/// Reduce Motion.
+private struct GlidingPlane: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            let phase = reduceMotion ? 0.35 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+            // Out to the top right while it fades, then in again from the bottom left.
+            let travel = (phase - 0.35) * 14
+            let fade = 1 - pow(abs(phase - 0.35) / 0.65, 2)
+            Image(systemName: "paperplane.fill")
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(NookTheme.mint)
+                .offset(x: travel, y: -travel * 0.6)
+                .opacity(max(0, fade))
+        }
+        .clipped()
+    }
+}
+
+/// A short light that runs along the bottom of the sending panel, so it reads as under way even for a slow send.
+private struct SendingSweep: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { proxy in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+                let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                let width = proxy.size.width * 0.3
+                Capsule()
+                    .fill(LinearGradient(colors: [NookTheme.mint.opacity(0), NookTheme.mint.opacity(0.7), NookTheme.mint.opacity(0)],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(width: width, height: 2)
+                    .offset(x: (proxy.size.width + width) * phase - width)
+            }
+        }
+        .frame(height: 2)
+        .clipped()
+        .accessibilityHidden(true)
     }
 }
 

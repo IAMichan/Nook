@@ -896,7 +896,8 @@ private struct ChatsDetail: View {
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
-    @State private var sending = false
+    /// The answer on its way to the chat, then briefly that it is there.
+    @State private var outgoing: ChatOutgoing?
     @FocusState private var replyFocused: Bool
     /// A photo shown big over the chat, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
@@ -1066,7 +1067,8 @@ private struct ChatsDetail: View {
                        sendSymbol: whatsAppChat == nil ? "doc.on.doc" : "arrow.up",
                        sendLabel: whatsAppChat == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
                        readyNotice: whatsAppChat == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
-                       busy: sending,
+                       outgoing: outgoing,
+                       recipient: entry.name,
                        quote: replyingTo?.quote(contact: entry.name),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: { instruction in
@@ -1079,23 +1081,29 @@ private struct ChatsDetail: View {
                        })
     }
 
-    /// Your answer goes to the chat as typed (to the quoted message, when one is), after your own Return or click; when
-    /// it fails the text and the quote stay.
+    /// Your answer goes to the chat as typed (to the quoted message, when one is), after your own Return or click. It
+    /// leaves the field for the sending panel above it, which says when it is there; when it fails the text is back in
+    /// the field and the quote stays.
     private func send(to chat: String) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !sending else { return }
-        sending = true
-        notice = tr("whatsapp.card.sending")
+        guard !text.isEmpty, outgoing?.sent ?? true else { return }
+        outgoing = ChatOutgoing(text: text)
+        notice = nil
+        reply = ""
         let quoted = replyingTo?.id
         Task { @MainActor in
-            defer { sending = false }
             do {
                 try await app.sendWhatsAppFromChats(text, chat: chat, replyTo: quoted)
-                reply = ""
-                notice = nil
                 if replyingTo?.id == quoted { replyingTo = nil }
                 replyFocused = true
+                let sent = ChatOutgoing(text: text, sent: true)
+                outgoing = sent
+                try? await Task.sleep(for: .seconds(1.4))
+                // A newer message may be on its way by now; it keeps the panel.
+                if outgoing == sent { outgoing = nil }
             } catch {
+                outgoing = nil
+                if reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reply = text }
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
