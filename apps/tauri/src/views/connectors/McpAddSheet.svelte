@@ -6,7 +6,10 @@
     detail: string;
     domain: string | null;
     command: string;
-    env: { name: string; label: string; placeholder: string }[];
+    /** The command is an address of a server on this computer or the internet, not a program to start. */
+    remote?: boolean;
+    /** `prefix` goes before the typed value, such as "Bearer " for an Authorization header. */
+    env: { name: string; label: string; placeholder: string; prefix?: string }[];
     help: string | null;
     /** The category chip it is listed under. */
     category: string;
@@ -17,6 +20,7 @@
     { id: "filesystem", name: "Bestanden & mappen", detail: "Laat Nook documenten en mappen op deze computer direct doorzoeken en lezen.", domain: null, command: "npx -y @modelcontextprotocol/server-filesystem ~/Desktop ~/Documents ~/Downloads", env: [], help: null, category: "local" },
     { id: "github", name: "GitHub MCP", detail: "Beheer repositories, issues en commits via de officiële MCP-server.", domain: "github.com", command: "npx -y @modelcontextprotocol/server-github", env: [{ name: "GITHUB_PERSONAL_ACCESS_TOKEN", label: "GitHub Personal Access Token", placeholder: "ghp_..." }], help: "https://github.com/settings/tokens/new", category: "development" },
     { id: "brave-search", name: "Brave Search", detail: "Laat Nook live op het internet zoeken naar actuele informatie.", domain: "brave.com", command: "npx -y @modelcontextprotocol/server-brave-search", env: [{ name: "BRAVE_API_KEY", label: "Brave Search API-sleutel", placeholder: "BSA..." }], help: "https://brave.com/search/api/", category: "work" },
+    { id: "beeper", name: "Beeper", detail: "Laat Nook je chats uit WhatsApp, Signal en andere netwerken zoeken en lezen via Beeper Desktop op deze computer.", domain: "beeper.com", command: "http://localhost:23373/v0/mcp", remote: true, env: [{ name: "Authorization", label: "Beeper-toegangstoken", placeholder: "Plak je token", prefix: "Bearer " }], help: "https://developers.beeper.com/desktop-api/", category: "automation" },
     { id: "puppeteer", name: "Web Browser (Puppeteer)", detail: "Laat Nook webpagina's openen, formulieren bekijken en data extraheren.", domain: "pptr.dev", command: "npx -y @modelcontextprotocol/server-puppeteer", env: [], help: null, category: "automation" },
     { id: "postgres", name: "PostgreSQL Database", detail: "Lees tabellen, schema's en voer queries uit op je database.", domain: "postgresql.org", command: "npx -y @modelcontextprotocol/server-postgres postgresql://localhost/mydb", env: [], help: null, category: "development" },
   ];
@@ -35,7 +39,7 @@
   const preset = untrack(() => initial);
   let name = $state(preset?.name ?? "");
   let target = $state(preset?.command ?? "");
-  let remote = $state(false);
+  let remote = $state(preset?.remote ?? false);
   let secrets = $state("");
   let envDrafts = $state<Record<string, string>>({});
   let problem = $state("");
@@ -60,7 +64,7 @@
 
   async function add() {
     problem = "";
-    const extra = Object.entries(envDrafts).filter(([, v]) => v.trim()).map(([k, v]) => `${k}=${v.trim()}`);
+    const extra = Object.entries(envDrafts).filter(([, v]) => v.trim()).map(([k, v]) => `${k}=${preset?.env.find((e) => e.name === k)?.prefix ?? ""}${v.trim()}`);
     try {
       await connectorsApi.mcpAdd(name.trim() || "MCP-server", target, remote, [secrets, ...extra].filter(Boolean).join("\n"));
       onchange();
