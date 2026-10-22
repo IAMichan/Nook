@@ -164,7 +164,7 @@ struct ChatsTab: View {
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
-                                        onMarkUnread: { markUnread(current) })
+                                        onMarkUnread: { markUnread(current) }, onClose: closeChat)
                                 .id(current.id)
                         } else {
                             // No chat open (none picked yet, closed with Escape, or not in what the list shows).
@@ -204,11 +204,6 @@ struct ChatsTab: View {
             })
         }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
-        // Escape closes the open chat; the list stays.
-        .onExitCommand {
-            guard selection != nil else { return }
-            withAnimation(NookTheme.reveal) { selection = nil }
-        }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
@@ -230,6 +225,12 @@ struct ChatsTab: View {
         if let openOnAgents, showsFooter {
             PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
         }
+    }
+
+    /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
+    private func closeChat() {
+        guard selection != nil else { return }
+        withAnimation(NookTheme.reveal) { selection = nil }
     }
 
     /// "Mark as read", by hand: its badge goes, and a WhatsApp chat is read in WhatsApp too, so the sender sees it.
@@ -893,6 +894,8 @@ private struct ChatsDetail: View {
     @ObservedObject var whatsApp: WhatsAppLink
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
     var onMarkUnread: () -> Void = {}
+    /// Escape: the tab closes the chat.
+    var onClose: () -> Void = {}
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
@@ -948,6 +951,19 @@ private struct ChatsDetail: View {
             }
         }
         .task(id: entry.id) { await loadWhatsApp() }
+        // Escape, also when nothing in the chat has the keyboard (a row in the list was clicked last).
+        .onEscapeKey(perform: escape)
+    }
+
+    /// Escape first shrinks an enlarged photo back and lets go of a quoted message; only then does it close the chat.
+    private func escape() {
+        if zoomed != nil {
+            withAnimation(NookTheme.reveal) { zoomed = nil }
+        } else if replyingTo != nil {
+            withAnimation(NookTheme.reveal) { replyingTo = nil }
+        } else {
+            onClose()
+        }
     }
 
     /// A photo enlarges over the chat, inside Nook; a photo Nook does not have yet opens as any file does.
@@ -1069,6 +1085,7 @@ private struct ChatsDetail: View {
                        busy: sending,
                        quote: replyingTo?.quote(contact: entry.name),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
+                       onEscape: escape,
                        draft: { instruction in
                            let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
                            return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,

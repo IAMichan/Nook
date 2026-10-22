@@ -23,6 +23,8 @@ struct ChatReplyField: View {
     var quote: BubbleQuote? = nil
     /// The cross on the quote, or Escape in the field: the message goes as an ordinary one.
     var cancelQuote: () -> Void = {}
+    /// Escape in the field with no menu or quote to let go of: the host closes what the field is in (the open chat).
+    var onEscape: (() -> Void)? = nil
     /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. Throws with a sentence
     /// you can act on.
     let draft: (String) async throws -> String
@@ -112,8 +114,12 @@ struct ChatReplyField: View {
                         menu.close()
                         return .handled
                     }
-                    guard quote != nil else { return .ignored }
-                    cancelQuote()
+                    if quote != nil {
+                        cancelQuote()
+                        return .handled
+                    }
+                    guard let onEscape else { return .ignored }
+                    onEscape()
                     return .handled
                 }
                 .onChange(of: text) { _, new in
