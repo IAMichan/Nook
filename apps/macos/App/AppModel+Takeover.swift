@@ -143,11 +143,36 @@ extension AppModel {
             DoubleTap.shared.write(request: request, after: 0.3) { [weak self] in
                 self?.chat.startNew()
                 self?.handleUserText(request, reveal: false)
+                self?.followInNotch()
             }
             return
         }
         chat.startNew()
         handleUserText(request, reveal: false)
+        followInNotch()
+    }
+
+    /// While Nook answers what was typed in the quick field, the notch shows how it gets there in one slim line with
+    /// Stop: what it looks at, then the answer as it is written. The answer itself arrives as a card with View, as before.
+    private func followInNotch() {
+        guard let conversation = chat.activeID, chat.isBusy(conversation) else { return }
+        Task { @MainActor [weak self] in
+            var shown = ""
+            while !Task.isCancelled {
+                guard let self, self.chat.isBusy(conversation) else { break }
+                if let id = self.replies[conversation], let message = self.chat.message(id) {
+                    let line = DoubleTapLogic.progressLine(text: message.text, status: message.status)
+                    if !line.isEmpty, line != shown {
+                        shown = line
+                        self.viewModel.showWork(line) { [weak self] in self?.stop(conversation: conversation) }
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            // Only the line goes: the card with the answer, or anything else shown since, stays.
+            guard let self, case .done(let current) = self.viewModel.state, current == shown else { return }
+            self.viewModel.endWork()
+        }
     }
 
     // MARK: Running
