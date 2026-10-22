@@ -214,8 +214,8 @@ struct NewSessionComposer: View {
         return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296, takesRoom: true) {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
                          text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                            + (config.model.isEmpty ? "" : " · " + app.modelName(config.model, for: config.provider)),
-                         short: config.model.isEmpty ? config.provider.displayName : app.modelName(config.model, for: config.provider))
+                            + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider)),
+                         short: config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider))
         } content: {
             if app.connectedProviders.isEmpty {
                 DropdownHeader(title: tr("agents.noneConnected"))
@@ -261,7 +261,9 @@ struct NewSessionComposer: View {
     @ViewBuilder
     private var effortMenu: some View {
         let levels = EffortLevels.levels(for: config.provider, model: config.model.isEmpty ? nil : config.model)
-        if !levels.isEmpty {
+        if let family = app.modelFamily(config.model, for: config.provider) {
+            levelMenu(family)
+        } else if !levels.isEmpty {
             ComposerDivider()
             ComposerDropdown(width: 220) {
                 ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(config.effort)))
@@ -275,6 +277,28 @@ struct NewSessionComposer: View {
                     DropdownRow(symbol: Self.effortSymbol(level, in: levels), title: tr(EffortLevels.label(level)),
                                 chosen: config.effort == level) {
                         config.effort = level
+                        remember()
+                    }
+                }
+            }
+            .help(tr("compose.effort.help"))
+        }
+    }
+
+    /// For an agent that lists one model per thinking level, the level picks the model of that family.
+    private func levelMenu(_ family: ModelVariants.Family) -> some View {
+        let levels = family.members.map(\.level)
+        let current = family.members.first { $0.id == config.model }?.level ?? ""
+        return Group {
+            ComposerDivider()
+            ComposerDropdown(width: 220) {
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(variant: current)))
+            } content: {
+                DropdownHeader(title: tr("compose.effort"))
+                ForEach(family.members, id: \.self) { member in
+                    DropdownRow(symbol: member.level.isEmpty ? "circle.dashed" : Self.effortSymbol(member.level, in: levels),
+                                title: tr(EffortLevels.label(variant: member.level)), chosen: member.id == config.model) {
+                        config.model = member.id
                         remember()
                     }
                 }

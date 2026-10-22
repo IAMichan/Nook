@@ -329,20 +329,23 @@ struct AgentModelPicker: View {
         let shownModels = filtered(current)
         DropdownList(emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil) {
             ForEach(shownModels, id: \.self) { option in
-                let name = app.modelName(option, for: current)
-                DropdownRow(title: name, detail: option.isEmpty || name == option ? nil : option,
-                            chosen: current == provider && option == model) {
-                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, option)
+                // A model that comes in thinking levels shows once; its level is picked with the effort control.
+                let family = app.modelFamily(option, for: current)
+                let name = app.modelMenuName(option, for: current)
+                DropdownRow(title: name, detail: family != nil || option.isEmpty || name == option ? nil : option,
+                            chosen: current == provider && (option == model || family?.contains(model) == true)) {
+                    let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current)
+                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, picked)
                 }
             }
         }
     }
 
     private func filtered(_ current: RunProvider) -> [String] {
-        let all = app.models(for: current)
+        let all = app.menuModels(for: current)
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !needle.isEmpty else { return all }
-        return all.filter { $0.lowercased().contains(needle) || app.modelName($0, for: current).lowercased().contains(needle) }
+        return all.filter { $0.lowercased().contains(needle) || app.modelMenuName($0, for: current).lowercased().contains(needle) }
     }
 }
 
