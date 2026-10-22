@@ -334,7 +334,7 @@ extension AppModel {
             } else if outcome.results.count == 1 {
                 viewModel.finish(outcome.results[0])
             } else {
-                viewModel.finish("\(outcome.results.count) acties uitgevoerd")
+                viewModel.finish(tr("chat.plan.allDone", outcome.results.count))
             }
         }
     }

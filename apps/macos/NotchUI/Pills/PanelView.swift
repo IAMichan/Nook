@@ -43,6 +43,8 @@ struct PanelView: View {
             }
         }
         .animation(NookTheme.swap, value: sheet)
+        // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge.
+        .nookToastHost()
     }
 
     /// The task open over the tab: the notch's, or the main window's.

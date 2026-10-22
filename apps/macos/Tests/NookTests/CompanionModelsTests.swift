@@ -103,6 +103,15 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertEqual([a, b].needingYou, 1)
     }
 
+    func testSessionDigestCanSendIsOptional() throws {
+        // A Mac from before terminal sessions reached the phone leaves it out: the phone then offers send and stop.
+        let old = #"{"id":"1","title":"","agent":"","attention":"idle","folder":"","updated":0,"excerpt":"","items":[]}"#
+        XCTAssertNil(try JSONDecoder().decode(SessionDigest.self, from: Data(old.utf8)).canSend)
+        let terminal = SessionDigest(id: "terminal:a", title: "", agent: "", attention: "approval", folder: "", branch: nil,
+                                     updated: 0, excerpt: "", items: [], canSend: false)
+        XCTAssertEqual(try JSONDecoder().decode(SessionDigest.self, from: JSONEncoder().encode(terminal)), terminal)
+    }
+
     func testRequestResponseCodable() throws {
         let request = CompanionRequest(op: .decide, session: "s", item: "i", allow: true)
         XCTAssertEqual(try JSONDecoder().decode(CompanionRequest.self, from: JSONEncoder().encode(request)), request)

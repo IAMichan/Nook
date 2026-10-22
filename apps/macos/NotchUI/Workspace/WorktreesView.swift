@@ -5,7 +5,6 @@ struct WorktreesView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var workspace: WorkspaceManager
     @State private var confirm: WorktreeRow?
-    @State private var error: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,9 +76,6 @@ struct WorktreesView: View {
         } message: { row in
             Text((row.changedFiles ?? 0) > 0 ? tr("ws.worktree.removeDirty", row.changedFiles ?? 0) : tr("ws.worktree.removeClean"))
         }
-        .alert(tr("ws.git.errorTitle"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button(tr("button.close"), role: .cancel) {}
-        } message: { Text(error ?? "") }
     }
 
     @ViewBuilder
@@ -128,8 +124,12 @@ struct WorktreesView: View {
 
     private func remove(_ row: WorktreeRow, force: Bool) {
         Task {
-            do { try await workspace.removeWorktree(repo: row.repoRoot, path: row.worktree.path, force: force) }
-            catch let failure { error = failure.localizedDescription }
+            do {
+                try await workspace.removeWorktree(repo: row.repoRoot, path: row.worktree.path, force: force)
+                ToastCenter.shared.success(tr("ws.worktree.removed"))
+            } catch let failure {
+                ToastCenter.shared.error(failure, title: tr("ws.worktree.removeFailed"))
+            }
         }
     }
 }
