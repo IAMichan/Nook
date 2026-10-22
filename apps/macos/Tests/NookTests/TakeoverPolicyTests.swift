@@ -42,6 +42,33 @@ final class TakeoverPolicyTests: XCTestCase {
         XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: point, summary: "point"), "a point could be any button")
     }
 
+    func testACookieBannerIsAcceptedWithoutAsking() {
+        for label in ["Alles accepteren", "Accept all cookies", "Alle akzeptieren", "Tout accepter"] {
+            let input = controlInput([["action": "click", "element": label]])
+            XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: input, summary: "x"), label)
+        }
+        let plain = controlInput([["action": "click", "element": "Akkoord"]])
+        XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: plain, summary: "x", cookieBanner: true), "on a cookie banner")
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: plain, summary: "x"), "anywhere else it asks")
+        let order = controlInput([["action": "click", "element": "Bestelling plaatsen"]])
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: order, summary: "x", cookieBanner: true))
+
+        XCTAssertTrue(TakeoverPolicy.showsCookieBanner("- text \"Wij gebruiken cookies\" @ 400,600\n- button \"Akkoord\" @ 400,650"))
+        XCTAssertFalse(TakeoverPolicy.showsCookieBanner("- link \"Cookiebeleid\" @ 400,2000"), "a footer link is no banner")
+    }
+
+    func testTypingAWebAddressAndReturnOnlyNavigates() {
+        let address = controlInput([
+            ["action": "key", "keys": "cmd+l"],
+            ["action": "type", "text": "https://www.bol.com/nl/nl/s/?searchtext=koffiefilters", "replace": true],
+            ["action": "key", "keys": "return"]
+        ])
+        XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: address, summary: "x"))
+        XCTAssertTrue(TakeoverPolicy.isWebAddress("bol.com/nl"))
+        XCTAssertFalse(TakeoverPolicy.isWebAddress("Hoi Anna, tot morgen."))
+        XCTAssertFalse(TakeoverPolicy.isWebAddress("anna@example.com"))
+    }
+
     func testCardNumbersAreNeverTyped() {
         let card = controlInput([["action": "type", "element": "Kaartnummer", "text": "4111 1111 1111 1111"]])
         XCTAssertNotNil(TakeoverPolicy.refusal(tool: "control_ui", input: card))

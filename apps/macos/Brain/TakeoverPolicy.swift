@@ -48,6 +48,50 @@ enum TakeoverPolicy {
         "address", "adres", "adresse", "url", "location", "where to", "waarheen"
     ]
 
+    /// Buttons that only agree to a site's cookies, in every language Nook speaks: whole labels, compared after
+    /// `UIControl.normalize`. A cookie banner commits nothing outside the Mac, so Nook clicks these on its own.
+    static let consentLabels: Set<String> = [
+        "accept all", "accept all cookies", "accept cookies", "allow all", "allow all cookies", "allow cookies",
+        "alles accepteren", "alle cookies accepteren", "cookies accepteren", "accepteer alle cookies", "alles toestaan",
+        "alle cookies toestaan", "cookies toestaan",
+        "alle akzeptieren", "alle cookies akzeptieren", "cookies akzeptieren", "alle zulassen", "alle cookies zulassen",
+        "tout accepter", "accepter tout", "accepter les cookies", "accepter tous les cookies", "autoriser tous les cookies",
+        "aceptar todo", "aceptar todas", "aceptar cookies", "aceptar todas las cookies", "permitir todas"
+    ]
+
+    /// A plain "Accept" or "OK": consent only while the window shows a cookie banner.
+    static let plainConsentLabels: Set<String> = [
+        "accept", "accepteren", "accepteer", "akkoord", "agree", "i agree", "i accept", "ik ga akkoord",
+        "akzeptieren", "zustimmen", "einverstanden", "accepter", "j'accepte", "aceptar", "de acuerdo", "got it", "begrepen"
+    ]
+
+    /// Whether clicking `label` only accepts cookies. `cookieBanner`: the last read of the window mentions cookies.
+    static func isCookieConsent(_ label: String, cookieBanner: Bool) -> Bool {
+        let clean = UIControl.normalize(label)
+        return consentLabels.contains(clean) || (cookieBanner && plainConsentLabels.contains(clean))
+    }
+
+    /// Whether a window, as `read_ui` describes it, shows a cookie banner: a text, heading or button about cookies. A
+    /// "Cookies" link in a page's footer alone does not count.
+    static func showsCookieBanner(_ read: String) -> Bool {
+        read.split(whereSeparator: \.isNewline).contains { line in
+            let lower = line.lowercased()
+            return lower.contains("cookie") && !lower.hasPrefix("- link ") && !lower.contains("(off screen)")
+        }
+    }
+
+    /// Typed text that is a web address: Return after it opens a page, whatever field it went into (the address bar
+    /// after cmd+L has no label).
+    static func isWebAddress(_ text: String) -> Bool {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !clean.isEmpty, !clean.contains(" "), !clean.contains("@") else { return false }
+        if clean.hasPrefix("https://") || clean.hasPrefix("http://") { return true }
+        // "www.bol.com", "bol.com/nl/s/?searchtext=koffiefilters"
+        let host = clean.split(separator: "/", maxSplits: 1).first.map(String.init) ?? clean
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count >= 2 && parts.allSatisfy { !$0.isEmpty } && (parts.last?.allSatisfy(\.isLetter) ?? false)
+    }
+
     /// Whether a label holds one of the words (or phrases) as whole words.
     static func mentions(_ label: String, _ words: [String]) -> Bool {
         let tokens = label.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "'" }.map(String.init)
@@ -60,8 +104,9 @@ enum TakeoverPolicy {
     static let freeTools: Set<String> = ["open_url", "open_app", waitTool]
 
     /// Nil when the call may run on its own; otherwise the line the user approves ("Click “Place order” in Safari").
-    /// `summary` is how the tool describes the call to the user.
-    static func checkpoint(tool: String, input: [String: Any], summary: String) -> String? {
+    /// `summary` is how the tool describes the call to the user. `cookieBanner`: the last read of the window mentions
+    /// cookies, so a plain "Accept" there only accepts cookies and runs on its own.
+    static func checkpoint(tool: String, input: [String: Any], summary: String, cookieBanner: Bool = false) -> String? {
         if freeTools.contains(tool) { return nil }
         guard tool == "control_ui" else { return summary }
         let steps = UIControl.steps(input["steps"])
@@ -70,10 +115,12 @@ enum TakeoverPolicy {
             switch step.action {
             case .click, .doubleClick:
                 // A point without a label could be any button: it waits too.
-                guard let label = step.element, !mentions(label, commitWords) else { return summary }
+                guard let label = step.element,
+                      isCookieConsent(label, cookieBanner: cookieBanner) || !mentions(label, commitWords) else { return summary }
                 searching = false
             case .type:
                 searching = step.role == "search" || step.element.map { mentions($0, searchWords) } ?? false
+                    || isWebAddress(step.text ?? "")
             case .key:
                 let keys = (step.keys ?? "").lowercased().replacingOccurrences(of: " ", with: "")
                 // Return sends a form, unless it follows typing into a search or address field.
@@ -117,6 +164,10 @@ enum TakeoverPolicy {
     (signing in, payment details, a captcha, a choice only they can make), call wait_for_user with what they should do.
     - Steps that pay, order, send, submit, delete, book or sign: just propose them with control_ui. Nook shows that step \
     to the user and only runs it after their yes. If the user declines, stop and report what is done and what is left.
+    - A cookie banner: accept it yourself (click "Accept all" or the site's accept button) and carry on; it needs no \
+    question to the user.
+    - Use the browser named under "The user's browser" for every web page (open_url opens it there; read_ui and \
+    control_ui with that app). Never switch to another browser.
     - Stay within the task. Do not open unrelated apps or change settings the task does not ask for.
 
     End with a short summary in the user's language of what you did and where things stand, and a last line that is \
@@ -125,9 +176,10 @@ enum TakeoverPolicy {
 
     /// The task with what Nook already knows: the app in front, the text on screen, the user's memories, the dates.
     static func prompt(task: String, frontApp: String, window: String, screen: String, memories: [String], dates: String,
-                       screenLimit: Int = 5_000) -> String {
+                       browser: String = "", screenLimit: Int = 5_000) -> String {
         var lines = ["THE TASK: \(task)", ""]
         lines.append("In front now: \(frontApp)" + (window.isEmpty ? "" : " — \"\(window)\""))
+        if !browser.isEmpty { lines.append("The user's browser: \(browser)") }
         lines.append(dates)
         if !memories.isEmpty {
             lines.append("")

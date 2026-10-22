@@ -185,6 +185,11 @@ struct CardView: View {
             guard card.focusesInput else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
         }
+        // The panel can take the keyboard after the card appeared (a double tap from another app): the field asks again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard card.focusesInput, note.object is NotchPanel, !replyFocused else { return }
+            replyFocused = true
+        }
         .onChange(of: card.draft) { _, draft in
             guard let draft else { return }
             reply = draft
@@ -313,6 +318,8 @@ struct CardView: View {
             DiffDetail(title: title, lines: lines, note: note)
         case .facts(let facts):
             FactsDetail(facts: facts)
+        case .note(let text, let label):
+            NoteDetail(text: text, label: label)
         case .chat(let bubbles):
             ChatTranscript(bubbles: bubbles, contact: card.title, onOpen: onOpen, onZoom: { bubble in
                 withAnimation(NookTheme.reveal) { zoomed = bubble }
@@ -717,6 +724,29 @@ private struct DiffDetail: View {
             Text(note)
                 .font(NookTheme.font(12.5))
                 .foregroundStyle(NookTheme.textSecondary)
+        }
+    }
+}
+
+/// A longer text, never cut off: it wraps, and a very long one scrolls. The label names it below.
+private struct NoteDetail: View {
+    let text: String
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            ScrollView(showsIndicators: false) {
+                Text(text)
+                    .font(NookTheme.font(14, .semibold))
+                    .foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 160)
+            Text(label)
+                .font(NookTheme.font(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
         }
     }
 }
