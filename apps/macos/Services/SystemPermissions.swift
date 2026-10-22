@@ -167,6 +167,7 @@ final class PermissionMonitor: ObservableObject {
         // Also when their own copy of the answer went stale, whatever this monitor saw before.
         if keysChanged || AutocompleteController.shared.trusted != trusted { AutocompleteController.shared.refresh() }
         if keysChanged || FlowDictation.shared.trusted != trusted { FlowDictation.shared.refresh() }
+        if keysChanged { DoubleTap.shared.refresh() }
     }
 
     /// Asks for a permission and records the answer.

@@ -21,11 +21,29 @@ extension SettingsView {
                         Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
                     }
                 }
-                .onChange(of: flowStore.key) { _, _ in FlowDictation.shared.refresh() }
+                .onChange(of: flowStore.key) { _, _ in FlowDictation.shared.refresh(); DoubleTap.shared.refresh() }
             } header: {
                 Text(tr("flow.settings.title"))
             } footer: {
                 Text(tr("flow.settings.enableDetail", flowStore.key.symbol))
+            }
+            Section {
+                Toggle(tr("doubletap.settings.enable"), isOn: $doubleTap.enabled)
+                Picker(tr("doubletap.settings.key"), selection: $doubleTap.key) {
+                    ForEach(FlowKey.allCases) { key in
+                        Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
+                    }
+                }
+                .disabled(!doubleTap.enabled)
+            } header: {
+                Text(tr("doubletap.settings.title"))
+            } footer: {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                    Text(tr("doubletap.settings.detail", doubleTap.key.symbol))
+                    if doubleTap.enabled && doubleTap.conflictsWithFlow {
+                        Text(tr("doubletap.settings.conflict")).foregroundStyle(NookTheme.amber)
+                    }
+                }
             }
             AutocompleteKeysSection()
         }

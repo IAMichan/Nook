@@ -253,6 +253,7 @@ extension AppModel {
         }
         FlowDictation.shared.refresh()
         startAutocomplete()
+        startDoubleTap()
         // From now on every permission is checked again whenever Nook comes to the front.
         PermissionMonitor.shared.refresh()
     }
@@ -270,6 +271,28 @@ extension AppModel {
             return (windows.first { $0.isFront } ?? windows.first)?.text
         }
         autocomplete.refresh()
+    }
+
+    /// Double Tap: the form in front filled with your memory and the screen, on the brain you chose. What goes to an
+    /// external brain follows the same rules as a question: memories kept on this Mac stay here, and the screen only when
+    /// the privacy level allows it.
+    func startDoubleTap() {
+        let doubleTap = DoubleTap.shared
+        doubleTap.ask = { [weak self] system, prompt, timeout in
+            await self?.brain.rewrite(system: system, prompt: prompt, timeout: timeout)
+        }
+        doubleTap.facts = { [weak self] in
+            guard let self, self.settings.useMemory, !self.settings.privateSources.contains(SourceCatalog.memory) else { return [] }
+            let local = self.settings.isLocalBrain
+            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil && (local || !$0.localOnly) }
+                .sorted { $0.strength > $1.strength }.prefix(30).map(\.text)
+        }
+        doubleTap.screenText = { [weak self] bundleID in
+            guard let self, self.settings.liveScreen, !self.settings.privateSources.contains(SourceCatalog.screen) else { return nil }
+            let windows = self.screenContext.windows.filter { $0.bundleID == bundleID }
+            return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
+        }
+        doubleTap.refresh()
     }
 }
 
