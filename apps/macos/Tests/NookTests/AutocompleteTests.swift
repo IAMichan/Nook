@@ -742,4 +742,18 @@ final class AutocompleteTests: XCTestCase {
         let top = logits.withUnsafeBufferPointer { sampler.top($0.baseAddress!, k: 5) }
         XCTAssertEqual(top, [0, 5, 3, 2, 6])
     }
+
+    // MARK: Where a card goes
+
+    func testCardGoesUnderTheCursorOrASingleLineFieldButNeverUnderATallNote() {
+        var snapshot = AutocompleteFieldSnapshot(before: "Shopping list", after: "", hasSelection: false, caret: nil)
+        snapshot.fieldFrame = CGRect(x: 100, y: 200, width: 400, height: 24)
+        XCTAssertEqual(snapshot.cardAnchor, snapshot.fieldFrame)
+        // A note: the whole page is one field, so under or above it is nowhere near the text.
+        snapshot.fieldFrame = CGRect(x: 100, y: 100, width: 600, height: 700)
+        XCTAssertNil(snapshot.cardAnchor)
+        let caret = CGRect(x: 240, y: 500, width: 0, height: 16)
+        snapshot.caret = caret
+        XCTAssertEqual(snapshot.cardAnchor, caret)
+    }
 }

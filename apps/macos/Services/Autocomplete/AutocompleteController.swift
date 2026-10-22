@@ -841,7 +841,7 @@ final class AutocompleteController: ObservableObject {
         if snapshot.hasSelection { return }
         if !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
 
-        if prefs.emoji, let anchor = snapshot.caret ?? snapshot.fieldFrame, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
+        if prefs.emoji, let anchor = snapshot.cardAnchor, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
             let context = String(snapshot.before.dropLast(query.count + 1))
             let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4, context: context)
             // A colon with no emoji by that name is just a colon.
@@ -1110,7 +1110,7 @@ final class AutocompleteController: ObservableObject {
             }
         }
         // No room in the line, no cursor position, or the card style chosen: a card under the cursor or the field.
-        if let anchor = snapshot.caret ?? snapshot.fieldFrame {
+        if let anchor = snapshot.cardAnchor {
             overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
         } else {
             proposal = nil
@@ -1202,7 +1202,7 @@ final class AutocompleteController: ObservableObject {
             anchor = snapshot.selectionRect ?? snapshot.caret
             current = snapshot.selectedText.trimmingCharacters(in: .whitespaces)
         } else {
-            anchor = snapshot.caret ?? snapshot.fieldFrame
+            anchor = snapshot.cardAnchor
             current = suggested
         }
         guard let anchor, let model = activeModel else { return }

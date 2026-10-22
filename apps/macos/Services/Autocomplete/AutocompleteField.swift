@@ -29,6 +29,15 @@ struct AutocompleteFieldSnapshot {
     /// The font of the text at the cursor, so the suggestion looks like the text it continues.
     var fontName: String?
     var fontSize: CGFloat?
+
+    /// Where a card or the emoji picker goes: under the cursor, or under the field when it is a single line. A note or a long
+    /// message is one tall field, and under (or, without room, above) it is far from where you type: without a cursor there is
+    /// no good place, so nothing is shown.
+    var cardAnchor: CGRect? {
+        if let caret { return caret }
+        guard let fieldFrame, fieldFrame.height <= max(40, (fontSize ?? 13) * 2.8) else { return nil }
+        return fieldFrame
+    }
 }
 
 /// Reads the focused field of the front app through the Accessibility API. Password fields are never read. Slow apps can take
@@ -208,8 +217,17 @@ enum AutocompleteField {
               let value = parameterized(element, kAXBoundsForRangeParameterizedAttribute, parameter),
               CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
-        guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 1, rect.height < 400 else { return nil }
+        // A rect at the screen's corner is an app's way of saying it does not know (Notes, for the end of the text).
+        guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 1, rect.height < 400, rect.origin != .zero else { return nil }
         return rect
+    }
+
+    private static func lineRange(in element: AXUIElement, containing location: Int) -> CFRange? {
+        guard let line = parameterized(element, kAXLineForIndexParameterizedAttribute, NSNumber(value: location)) as? NSNumber,
+              let value = parameterized(element, kAXRangeForLineParameterizedAttribute, line as CFNumber),
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil
     }
 
     // MARK: The cursor
@@ -228,8 +246,25 @@ enum AutocompleteField {
             }
             return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
         }
+        // Notes and other rich text views often have no box for the last character, but do for the line it ends: the cursor
+        // at the end of that line is at the line's right edge.
+        if location > 0, !previousIsNewline, let line = lineRange(in: element, containing: location - 1) {
+            var length = line.length
+            while length > 0, line.location + length > location || [0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: line.location + length - 1)) {
+                length -= 1
+            }
+            if line.location + length == location, length > 0, let box = bounds(in: element, location: line.location, length: length),
+               box.height < 100 {
+                return CGRect(x: box.maxX, y: box.minY, width: 0, height: box.height)
+            }
+        }
         if let empty, empty.height > 1 {
             return CGRect(x: empty.minX, y: empty.minY, width: 0, height: min(empty.height, 200))
+        }
+        // On a new line: the next character, when there is one, starts where the cursor is.
+        if location < text.length, ![0x0A, 0x0D, 0x2028, 0x2029].contains(text.character(at: location)),
+           let next = bounds(in: element, location: location, length: 1), next.width < 200 {
+            return CGRect(x: next.minX, y: next.minY, width: 0, height: next.height)
         }
         return nil
     }
