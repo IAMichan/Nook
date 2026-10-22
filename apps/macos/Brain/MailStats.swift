@@ -154,10 +154,14 @@ enum MailStats {
 
         /// Stable enough to remember a body between refreshes (the index shifts when new mail arrives).
         var key: String { "\(account)|\(subject)|\(date.timeIntervalSince1970)" }
-        var isAutomated: Bool { sender.range(of: MailStats.automated, options: [.regularExpression, .caseInsensitive]) != nil }
+        var isAutomated: Bool {
+            guard let pattern = MailStats.automatedPattern else { return false }
+            return pattern.firstMatch(in: sender, range: NSRange(sender.startIndex..., in: sender)) != nil
+        }
     }
 
     /// Senders that never need a reply (newsletters, notifications, no-reply addresses).
+    static let automatedPattern = try? NSRegularExpression(pattern: automated, options: [.caseInsensitive])
     static let automated = #"no-?reply|do-?not-?reply|newsletter|notifications?@|notify@|mailer-daemon|bounce|marketing@|news@|info@.*\.(mailchimp|sendgrid)|updates?@"#
 
     /// Parses `recentScript` output: the unified unread count and every row, newest first.

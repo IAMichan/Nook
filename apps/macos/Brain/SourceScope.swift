@@ -210,12 +210,27 @@ enum SourceCatalog {
     static func mentions(in text: String) -> [(range: Range<String.Index>, ids: [String])] {
         var found: [(Range<String.Index>, [String])] = []
         for alias in aliases {
-            guard let regex = try? NSRegularExpression(pattern: #"(?<![\p{L}\d])(?:"# + alias.pattern + #")(?![\p{L}\d])"#, options: [.caseInsensitive]) else { continue }
+            guard let regex = compiled(#"(?<![\p{L}\d])(?:"# + alias.pattern + #")(?![\p{L}\d])"#) else { continue }
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 if let range = Range(match.range, in: text) { found.append((range, alias.ids)) }
             }
         }
         return found.sorted { $0.0.lowerBound < $1.0.lowerBound }
+    }
+
+    /// Case-insensitive patterns, compiled once: every question runs all aliases (once per clause while parsing its
+    /// scope), and the aliases only change when a connector registers. NSCache is safe to share across threads.
+    private static let regexes: NSCache<NSString, NSRegularExpression> = {
+        let cache = NSCache<NSString, NSRegularExpression>()
+        cache.countLimit = 500
+        return cache
+    }()
+
+    static func compiled(_ pattern: String) -> NSRegularExpression? {
+        if let known = regexes.object(forKey: pattern as NSString) { return known }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        regexes.setObject(regex, forKey: pattern as NSString)
+        return regex
     }
 }
 
@@ -374,7 +389,7 @@ struct SourceScope: Equatable, Codable {
     }
 
     private static func ranges(of pattern: String, in text: String) -> [Range<String.Index>] {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        guard let regex = SourceCatalog.compiled(pattern) else { return [] }
         return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text) }
     }
 

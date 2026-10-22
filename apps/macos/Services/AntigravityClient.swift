@@ -70,11 +70,14 @@ enum AntigravityClient {
                 throw NookError(error.localizedDescription)
             }
 
+            // Both pipes are drained before waiting: a process that writes more than a pipe holds (64 KB) would otherwise
+            // block on the write while Nook blocks on its exit, for good.
+            let errors = PipeDrain(stderr)
+            let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+            let errData = errors.wait()
             process.waitUntilExit()
 
             if process.terminationStatus != 0 {
-                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
                 var errorMsg = ""
                 if let json = try? JSONSerialization.jsonObject(with: outData) as? [String: Any],
                    let err = json["error"] as? String, !err.isEmpty {
@@ -85,5 +88,23 @@ enum AntigravityClient {
                 throw NookError(errorMsg.isEmpty ? "Antigravity process exited with code \(process.terminationStatus)" : errorMsg)
             }
         }.value
+    }
+}
+
+/// Reads a pipe to its end on another thread, so a second pipe of the same process can be read at the same time.
+private final class PipeDrain: @unchecked Sendable {
+    private var data = Data()
+    private let done = DispatchSemaphore(value: 0)
+
+    init(_ pipe: Pipe) {
+        DispatchQueue.global(qos: .utility).async { [self] in
+            data = pipe.fileHandleForReading.readDataToEndOfFile()
+            done.signal()
+        }
+    }
+
+    func wait() -> Data {
+        done.wait()
+        return data
     }
 }

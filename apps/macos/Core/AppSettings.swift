@@ -570,9 +570,13 @@ final class AppSettings: ObservableObject {
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")
         // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external
         // AI (a key or a provider was set before this version) keeps that choice.
+        // The Keychain is only read when neither choice is stored yet (the first launch of this version): reading it opens the
+        // vault before the app has even started, and the answer would be ignored on every later launch.
+        let storedUseLocal = defaults.object(forKey: "useLocal") as? Bool
+        let storedProvider = defaults.string(forKey: "provider")
         useLocal = BrainSelection.initialUseLocal(
-            stored: defaults.object(forKey: "useLocal") as? Bool, storedProvider: defaults.string(forKey: "provider"),
-            hasAnthropicKey: !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
+            stored: storedUseLocal, storedProvider: storedProvider,
+            hasAnthropicKey: storedUseLocal == nil && storedProvider == nil && !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"

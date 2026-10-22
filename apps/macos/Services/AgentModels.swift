@@ -125,6 +125,11 @@ struct PlanUsage: Equatable, Codable {
         return PlanUsage(fiveHour: five, sevenDay: week, updated: Date())
     }
 
+    /// Whether this reading shows other windows than `known`, or `known` is old enough to be refreshed.
+    func differs(from known: PlanUsage, refreshAfter interval: TimeInterval = 60) -> Bool {
+        fiveHour != known.fiveHour || sevenDay != known.sevenDay || updated.timeIntervalSince(known.updated) >= interval
+    }
+
     private static func window(_ raw: Any?) -> PlanWindow? {
         guard let dict = raw as? [String: Any],
               let percent = (dict["used_percentage"] as? NSNumber)?.doubleValue,

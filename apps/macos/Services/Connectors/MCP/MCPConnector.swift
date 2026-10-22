@@ -172,6 +172,9 @@ final class MCPConnector: ContextSource, ObservableObject {
             status.state = .error(error.localizedDescription)
             status.errorKind = error.connectorKind
             throw error
+        } catch let error as MCPServerError {
+            // The server answered: it is running, so a restart would only repeat the call.
+            throw error
         } catch {
             // A server that stopped is started again once.
             disconnect()

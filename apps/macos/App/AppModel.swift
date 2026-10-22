@@ -288,7 +288,9 @@ final class AppModel: ObservableObject {
             .store(in: &bag)
         // The ring around Nook shows each conversation's status: redraw when one stops waiting for you or is read, not
         // only when it starts or stops working.
-        chat.$conversations.map { $0.map { "\($0.id)\($0.status)\($0.archived)" } }.removeDuplicates()
+        // Throttled first: `conversations` publishes for every streamed chunk, and the key walks every conversation.
+        chat.$conversations.throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
+            .map { $0.map { "\($0.id)\($0.status)\($0.archived)" } }.removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
