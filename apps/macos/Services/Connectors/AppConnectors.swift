@@ -450,8 +450,8 @@ final class WhatsAppConnector: AppDatabaseConnector {
                         }
                         return "Recent WhatsApp conversations (newest first):\n" + WhatsAppRecipients.overview(conversations)
                     }
-                    let (wanted, also) = await self?.recipient(chat) ?? (wanted: chat, also: [])
-                    guard let target = link.resolve(wanted, also: also) else {
+                    let found = await self?.recipient(chat)
+                    guard let target = link.resolve(found?.wanted ?? chat, also: found?.also ?? []) else {
                         throw NookError(tr("whatsapp.reply.unknown", chat, link.knownChats.prefix(12).map(\.name).joined(separator: ", ")))
                     }
                     let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
@@ -477,8 +477,9 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 tag: { _ in ("sends", .caution) },
                 run: { [weak self] input in
                     let chat = AppData.string(input["to"])
-                    let (to, also) = await self?.recipient(chat) ?? (wanted: chat, also: [])
-                    let name = try await WhatsAppLink.shared.send(AppData.string(input["message"]), to: to, also: also)
+                    let found = await self?.recipient(chat)
+                    let name = try await WhatsAppLink.shared.send(AppData.string(input["message"]), to: found?.wanted ?? chat,
+                                                                  also: found?.also ?? [])
                     return "WhatsApp message sent to \(name)."
                 }
             )
