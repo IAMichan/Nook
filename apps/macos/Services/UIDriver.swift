@@ -17,6 +17,17 @@ enum UIDriver {
     /// A pause after each step, so the app can draw what changed before the next step looks for it.
     private static let settle: UInt64 = 400_000_000
 
+    /// Where Nook is about to act (screen point, top-left origin) and on what: draws Nook's own cursor there (`Takeover`).
+    static var onAct: ((CGPoint, String) -> Void)?
+
+    /// Browsers: text goes in with real key presses, so a web page sees typing as typing (its scripts may ignore a value
+    /// that is only set).
+    static let browsers: Set<String> = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.google.Chrome", "com.google.Chrome.beta",
+        "com.google.Chrome.canary", "com.brave.Browser", "com.microsoft.edgemac", "company.thebrowser.Browser",
+        "com.vivaldi.Vivaldi", "com.operasoftware.Opera", "org.mozilla.firefox", "ai.perplexity.comet", "com.openai.atlas"
+    ]
+
     static var tools: [ToolSpec] {
         [
             ToolSpec(
@@ -155,7 +166,8 @@ enum UIDriver {
             try? await Task.sleep(nanoseconds: UInt64(min(max(step.seconds ?? 1, 0.1), UIControl.maxWait) * 1_000_000_000))
             return nil
         }
-        try await bringToFront(app)
+        // Nothing comes to the front yet: a control that can press itself and a field that takes its value do so in
+        // the background, so you keep working in your own window. Only the mouse and the keyboard need the app in front.
         let pid = app.processIdentifier
 
         // Where the step acts: a named element (looked up again now), or a point.
@@ -176,6 +188,7 @@ enum UIDriver {
         }
         let point: CGPoint? = element.map { CGPoint(x: $0.element.centerX, y: $0.element.centerY) }
             ?? step.x.flatMap { x in step.y.map { CGPoint(x: x, y: $0) } }
+        if let point, step.action != .key { onAct?(point, element?.element.label ?? "") }
 
         switch step.action {
         case .click, .doubleClick, .rightClick:
@@ -189,6 +202,7 @@ enum UIDriver {
                AXUIElementPerformAction(ref, kAXShowMenuAction as CFString) == .success {
                 return nil
             }
+            try await bringToFront(app)
             guard owns(point, pid: pid) else {
                 // A sidebar row under another window (Nook's own panel) can still be selected directly.
                 if step.action == .click, let found = element, ["row", "cell"].contains(found.element.role),
@@ -200,6 +214,18 @@ enum UIDriver {
             await click(at: point, right: step.action == .rightClick, count: step.action == .doubleClick ? 2 : 1)
             if step.action == .click { return await toggleNote(element) }
         case .type:
+            if let found = element, !found.element.secure, !browsers.contains(app.bundleIdentifier ?? ""),
+               settable(found.ref), ["field", "textarea", "combobox", "search"].contains(found.element.role) {
+                // In the background: the field takes the text as its value, read back to be sure.
+                let before: String = attribute(found.ref, kAXValueAttribute) ?? ""
+                let text = step.replace ? (step.text ?? "") : before + (step.text ?? "")
+                if AXUIElementSetAttributeValue(found.ref, kAXValueAttribute as CFString, text as CFString) == .success,
+                   let now: String = attribute(found.ref, kAXValueAttribute),
+                   UIControl.typedLanded(step.text ?? "", value: now, replace: step.replace) {
+                    return nil
+                }
+            }
+            try await bringToFront(app)
             if let found = element {
                 if found.element.secure { throw NookError(tr("control.error.secure")) }
                 if AXUIElementSetAttributeValue(found.ref, kAXFocusedAttribute as CFString, kCFBooleanTrue) != .success {
@@ -225,8 +251,10 @@ enum UIDriver {
             }
         case .key:
             guard let combo = step.keys.flatMap(UIControl.parseKeys) else { throw NookError(tr("control.error.noTarget")) }
+            try await bringToFront(app)
             try await press(combo, in: app)
         case .scroll:
+            try await bringToFront(app)
             let at = point ?? frontWindowCenter(pid)
             guard let at, owns(at, pid: pid) else { throw NookError(tr("control.error.covered", name)) }
             scroll(at: at, direction: step.direction ?? "down", lines: min(max(step.amount ?? 3, 1), UIControl.maxScroll))
@@ -245,6 +273,11 @@ enum UIDriver {
         guard let now = UIControl.stateText(role: element.element.role, value: raw) else { return nil }
         let unchanged = element.element.role == "radio" ? now != "on" : now == element.element.value
         return unchanged ? tr("control.note.unchanged", element.element.label, now) : nil
+    }
+
+    private static func settable(_ element: AXUIElement) -> Bool {
+        var settable: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
     }
 
     private static func focusedElement(_ pid: pid_t) -> AXUIElement? {

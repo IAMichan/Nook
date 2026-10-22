@@ -35,11 +35,16 @@ extension SettingsView {
                     }
                 }
                 .disabled(!doubleTap.enabled)
+                Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
+                    .disabled(!doubleTap.enabled)
             } header: {
                 Text(tr("doubletap.settings.title"))
             } footer: {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                     Text(tr("doubletap.settings.detail", doubleTap.key.symbol))
+                    if doubleTap.taskOnTap {
+                        Text(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
+                    }
                     if doubleTap.enabled && doubleTap.conflictsWithFlow {
                         Text(tr("doubletap.settings.conflict")).foregroundStyle(NookTheme.amber)
                     }

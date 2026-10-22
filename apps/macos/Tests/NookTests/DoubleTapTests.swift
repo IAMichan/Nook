@@ -6,13 +6,13 @@ final class DoubleTapTests: XCTestCase {
 
     func testTwoQuickTapsAreADoubleTap() {
         var gesture = DoubleTapGesture()
-        XCTAssertFalse(gesture.update(down: true, alone: true, at: 10.00, lastKeyDown: 0))
-        XCTAssertFalse(gesture.update(down: false, alone: true, at: 10.08, lastKeyDown: 0))
-        XCTAssertFalse(gesture.update(down: true, alone: true, at: 10.25, lastKeyDown: 0))
-        XCTAssertTrue(gesture.update(down: false, alone: true, at: 10.32, lastKeyDown: 0))
+        XCTAssertEqual(gesture.update(down: true, alone: true, at: 10.00, lastKeyDown: 0), .none)
+        XCTAssertEqual(gesture.update(down: false, alone: true, at: 10.08, lastKeyDown: 0), .tap)
+        XCTAssertEqual(gesture.update(down: true, alone: true, at: 10.25, lastKeyDown: 0), .none)
+        XCTAssertEqual(gesture.update(down: false, alone: true, at: 10.32, lastKeyDown: 0), .double)
         // A third tap starts a new pair instead of firing again.
-        XCTAssertFalse(gesture.update(down: true, alone: true, at: 10.5, lastKeyDown: 0))
-        XCTAssertFalse(gesture.update(down: false, alone: true, at: 10.55, lastKeyDown: 0))
+        XCTAssertEqual(gesture.update(down: true, alone: true, at: 10.5, lastKeyDown: 0), .none)
+        XCTAssertEqual(gesture.update(down: false, alone: true, at: 10.55, lastKeyDown: 0), .tap)
     }
 
     func testSlowTapsHoldsAndShortcutsAreNot() {
@@ -20,32 +20,32 @@ final class DoubleTapTests: XCTestCase {
         _ = slow.update(down: true, alone: true, at: 0, lastKeyDown: -10)
         _ = slow.update(down: false, alone: true, at: 0.1, lastKeyDown: -10)
         _ = slow.update(down: true, alone: true, at: 0.9, lastKeyDown: -10)
-        XCTAssertFalse(slow.update(down: false, alone: true, at: 1.0, lastKeyDown: -10), "too far apart")
+        XCTAssertNotEqual(slow.update(down: false, alone: true, at: 1.0, lastKeyDown: -10), .double, "too far apart")
 
         var hold = DoubleTapGesture()
         _ = hold.update(down: true, alone: true, at: 0, lastKeyDown: -10)
         _ = hold.update(down: false, alone: true, at: 0.1, lastKeyDown: -10)
         _ = hold.update(down: true, alone: true, at: 0.3, lastKeyDown: -10)
-        XCTAssertFalse(hold.update(down: false, alone: true, at: 1.5, lastKeyDown: -10), "a hold is Flow's, not a tap")
+        XCTAssertNotEqual(hold.update(down: false, alone: true, at: 1.5, lastKeyDown: -10), .double, "a hold is Flow's, not a tap")
 
         var shortcut = DoubleTapGesture()
         _ = shortcut.update(down: true, alone: true, at: 0, lastKeyDown: -10)
         _ = shortcut.update(down: false, alone: true, at: 0.1, lastKeyDown: -10)
         _ = shortcut.update(down: true, alone: true, at: 0.3, lastKeyDown: -10)
-        XCTAssertFalse(shortcut.update(down: false, alone: true, at: 0.4, lastKeyDown: 0.35), "⌘C typed in between")
+        XCTAssertNotEqual(shortcut.update(down: false, alone: true, at: 0.4, lastKeyDown: 0.35), .double, "⌘C typed in between")
 
         var chord = DoubleTapGesture()
         _ = chord.update(down: true, alone: true, at: 0, lastKeyDown: -10)
         _ = chord.update(down: false, alone: true, at: 0.1, lastKeyDown: -10)
         _ = chord.update(down: true, alone: false, at: 0.3, lastKeyDown: -10)
-        XCTAssertFalse(chord.update(down: false, alone: true, at: 0.4, lastKeyDown: -10), "another modifier held")
+        XCTAssertNotEqual(chord.update(down: false, alone: true, at: 0.4, lastKeyDown: -10), .double, "another modifier held")
 
         var interrupted = DoubleTapGesture()
         _ = interrupted.update(down: true, alone: true, at: 0, lastKeyDown: -10)
         _ = interrupted.update(down: false, alone: true, at: 0.1, lastKeyDown: -10)
         interrupted.interrupt()
         _ = interrupted.update(down: true, alone: true, at: 0.2, lastKeyDown: -10)
-        XCTAssertFalse(interrupted.update(down: false, alone: true, at: 0.3, lastKeyDown: -10))
+        XCTAssertNotEqual(interrupted.update(down: false, alone: true, at: 0.3, lastKeyDown: -10), .double)
     }
 
     // MARK: Fields

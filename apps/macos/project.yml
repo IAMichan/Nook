@@ -162,6 +162,7 @@ targets:
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+DoubleTap.swift
+      - path: Core/I18n+Takeover.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -171,6 +172,7 @@ targets:
       - path: Brain/ActionGate.swift
       - path: Brain/CommandRisk.swift
       - path: Brain/UIControl.swift
+      - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
       - path: Brain/ModelAdvisor.swift

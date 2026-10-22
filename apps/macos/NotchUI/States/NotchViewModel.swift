@@ -422,6 +422,27 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// A task Nook works on by itself (`AppModel+Takeover`): its current step in the slim strip under the notch, with
+    /// Stop, until `endWork`. Never over a card, a question or the open panel; the next step shows again once they close.
+    func showWork(_ line: String, stop: @escaping () -> Void) {
+        switch state {
+        case .idle, .music, .track, .done, .nudge, .moment: break
+        default: return
+        }
+        doneButtonTitle = tr("takeover.stop")
+        doneButtonAction = stop
+        doneTone = .waiting
+        doneAcknowledge = false
+        if case .done(let shown) = state, shown == line { return }
+        show(.done(line))
+    }
+
+    /// The task is over: the strip goes (a card or the panel that is open stays).
+    func endWork() {
+        doneButtonAction = nil
+        if case .done = state { show(.idle) }
+    }
+
     /// A toast while no panel or window is open to show it (`ToastCenter.notchFallback`): the same result in the
     /// confirmation strip. Only over a resting notch or another confirmation, never over a card, a question or a
     /// suggestion that waits for you; false when it was left out.

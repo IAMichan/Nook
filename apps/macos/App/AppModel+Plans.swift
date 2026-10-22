@@ -310,6 +310,11 @@ extension AppModel {
             replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)))
             return
         }
+        // The notch's "what should Nook do?" field: the task starts right away.
+        if card.id.hasPrefix(Self.takeoverCardPrefix) {
+            startTakeover(text)
+            return
+        }
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !question.isEmpty, settings.brainReady, let adopt = cardReplies.removeValue(forKey: card.id) {
             warmUp()

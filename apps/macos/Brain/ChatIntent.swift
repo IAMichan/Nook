@@ -8,7 +8,7 @@ import Foundation
 struct ChatIntent: Equatable {
     enum Kind: String, CaseIterable {
         case reminder, event, availability, note, todo, mailWrite, mailRead, contacts, music, volume, openApp, shortcut
-        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control
+        case chart, screen, browser, files, github, notion, clipboard, web, chats, chatWrite, memory, control, takeover
     }
 
     /// Recognized kinds, strongest first.
@@ -99,6 +99,8 @@ struct ChatIntent: Equatable {
         if has(#"grafiek|diagram|\bchart|\bplot\b|visualiseer|visualize|staafdiagram|taartdiagram"#) { kinds.append(.chart) }
         // Doing something in an app by hand: a switch in System Settings, a click, typing into a field.
         if has(#"systeeminstelling|system ?settings|systemeinstellung|réglages système|ajustes del sistema|\bklik|\bclick|\bklick|\bcliqu|\bmuis|\bmouse|\bmaus\b|toetsenbord|keyboard|tastatur|\bdruk op\b|\btyp (in|het|dit|dat)\b|\btype (in|this|it)\b|(instelling|setting|einstellung)\w* (aan|uit|wijzig|verander|aanpass|on|off|change|ändern)|(zet|schakel|turn|switch|schalte?)\b[^.?!]{0,40}\b(aan|uit|on|off|ein|aus)\b[^.?!]{0,30}\b(instelling|setting|einstellung)|\b(night ?shift|dark mode|donkere modus|bluetooth|wi-?fi|niet storen|do not disturb|true tone|screen saver|schermbeveiliging)\b"#) { kinds.append(.control) }
+        // A task of many steps Nook carries out itself: ordering, booking, unsubscribing, finishing what is on screen.
+        if has(#"\b(bestel|bestellen|koop|kopen|kaufe|kaufen|bestelle|commande|commander|achète|acheter|compra|comprar|pide)\b|\b(order|buy) (a|an|the|some|me|more|new)\b|place an order|\b(boek|book|buche|buchen|réserve|reserva|reserveer)\b[^.?!]{0,40}\b(vlucht|vluchten|flight|flights|ticket|tickets|kaartje|kaartjes|hotel|kamer|room|trein|train|tafel|table|flug|vol|vuelo)\b|\b(afmelden|uitschrijven|unsubscribe|abmelden|désabonne|darme de baja)\b|\b(finish|do) (this|it) for me\b|\bmaak (dit|het) (voor me )?af\b|\bdoe (dit|het) voor me\b|\bneem (dit|het) over\b|\btake (this )?over\b|\bmach (das|es) für mich\b|\b(vul|fill) (dit|het|this|the|out)\b[^.?!]{0,30}\b(formulier|form)\b"#) { kinds.append(.takeover) }
         if has(#"scherm|\bhier\b|\bdit\b|\bdeze (mail|pagina|tekst|tabel|code)|\bthis\b|\bscreen|bildschirm|venster|\bwindow|\bdas hier"#) { kinds.append(.screen) }
         if has(#"browser|tabblad|\btabs?\b|webpagina|\bpagina\b|artikel|website|\bsite\b|article|webseite"#) { kinds.append(.browser) }
         if has(#"bestand|document|\bpdf|\bmap\b|\bfile|folder|\bdatei|\bordner"#) { kinds.append(.files) }
@@ -120,7 +122,7 @@ struct ChatIntent: Equatable {
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)\s+"#, with: "", options: .regularExpression)
-        let imperative = polite.range(of: #"^(maak|zet|plan|boek|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
+        let imperative = polite.range(of: #"^(maak|zet|plan|boek|bestel|koop|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|buy|order|unsubscribe|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
         let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
         let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b|\bvoortaan\b|\bfrom now on\b|\bab jetzt\b"#)
         intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded)
@@ -287,6 +289,7 @@ struct ChatIntent: Equatable {
         .chart: ["show_chart"],
         .screen: ["read_screen", "read_app", "list_app_menu", "app_menu_command"],
         .control: ["read_ui", "control_ui", "app_menu_command", "list_app_menu"],
+        .takeover: ["take_over", "read_ui"],
         .browser: ["read_browser_tab", "read_webpage"],
         .files: ["search_files", "read_file"],
         .github: ["github_overview", "github_search", "github_pr_details", "github_issue_details", "github_create_issue", "github_comment_issue"],
@@ -300,7 +303,7 @@ struct ChatIntent: Equatable {
 
     /// Order of kinds when several match: the thing to make first, then what it is about.
     static let priority: [Kind] = [
-        .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
+        .takeover, .memory, .chart, .mailWrite, .chatWrite, .reminder, .note, .todo, .event, .availability, .volume, .music, .control, .openApp, .shortcut,
         .contacts, .chats, .mailRead, .github, .notion, .files, .browser, .clipboard, .web, .screen
     ]
 
@@ -308,7 +311,7 @@ struct ChatIntent: Equatable {
     static let actionByKind: [Kind: String] = [
         .reminder: "create_reminder", .event: "create_event", .note: "create_note", .todo: "add_open_loop",
         .mailWrite: "compose_mail", .chatWrite: "whatsapp_send", .music: "media_control", .volume: "set_volume", .openApp: "open_app",
-        .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember"
+        .shortcut: "run_shortcut", .chart: "show_chart", .memory: "remember", .takeover: "take_over"
     ]
 
     // MARK: Dates
