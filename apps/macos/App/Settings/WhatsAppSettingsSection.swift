@@ -73,6 +73,14 @@ struct WhatsAppLinkSection: View {
                     if gateway == .gowa, WhatsAppGOWAInstaller.isInstalled {
                         Toggle(tr("whatsapp.settings.autoStart"), isOn: $autoStart)
                             .onChange(of: autoStart) { _, on in WhatsAppGOWAProcess.autoStart = on; link.settingsChanged() }
+                        // Nook installs GOWA once; a newer one (polls need 9.3) comes from here.
+                        if !installer.busy {
+                            HStack(spacing: NookTheme.Spacing.md) {
+                                SettingLabel(tr("whatsapp.update.title"), detail: tr("whatsapp.update.detail"))
+                                Spacer()
+                                Button(tr("whatsapp.update.button")) { installer.install() }
+                            }
+                        }
                     }
                 }
 

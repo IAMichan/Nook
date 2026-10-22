@@ -316,6 +316,8 @@ final class AppModel: ObservableObject {
         ScheduledTaskStore.shared.attach(app: self)
         // Watches main for merged pull requests this build lacks (the update button in the panel footer).
         AppUpdater.shared.start()
+        // And the programs Nook installed for you (GOWA, ACP agents, Antigravity).
+        ToolUpdates.shared.start()
         CompanionServer.shared.attach(app: self)
         CompanionNotifier.shared.attach(app: self)
         SystemNotifier.shared.start()

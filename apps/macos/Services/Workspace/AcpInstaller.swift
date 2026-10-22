@@ -103,6 +103,19 @@ enum AcpInstaller {
         }
     }
 
+    /// Removes the downloads no agent uses any more: the versions an update replaced, once Nook started again (an agent
+    /// still running from one when it was updated has stopped by then).
+    static func prune(keeping folders: [String]) {
+        let manager = FileManager.default
+        let kept = Set(folders.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+        for agent in (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? [] {
+            for version in (try? manager.contentsOfDirectory(at: agent, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+            where !kept.contains(version.standardizedFileURL.path) {
+                uninstall(version.path)
+            }
+        }
+    }
+
     private static func unpack(_ tool: String, _ arguments: [String]) throws {
         let output = try ProcessRunner.run(tool, arguments, timeout: 300)
         guard output.status == 0, !output.timedOut else {

@@ -160,6 +160,33 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(AcpRegistry.parse(Data("not json".utf8)), [])
     }
 
+    func testRegistryAgentsComeToTheNewestVersion() {
+        let sha = String(repeating: "a", count: 64)
+        let npx = AcpRegistry.Entry(id: "kiro", name: "Kiro", version: "1.10.0", description: "", website: nil, command: "npx",
+                                    arguments: ["-y", "@kiro/acp@1.10.0"], environment: ["MODE": "acp"])
+        let download = AcpRegistry.Entry(id: "bin", name: "Bin", version: "2.1.0", description: "", website: nil, command: nil,
+                                         arguments: [], environment: [:],
+                                         binary: AcpRegistry.Binary(archive: URL(string: "https://x.dev/b.zip")!, sha256: sha,
+                                                                    command: "./b", arguments: [], environment: [:]))
+        let entries = [npx, download]
+        let kiro = CustomAgent(profileID: "acp-kiro", name: "Mijn Kiro", registryID: "kiro", version: "1.9.2", command: "npx",
+                               arguments: ["-y", "@kiro/acp@1.9.2"])
+        guard case .runner(let updated) = AcpRegistry.update(for: kiro, in: entries) else { return XCTFail("no update") }
+        XCTAssertEqual(updated.arguments, ["-y", "@kiro/acp@1.10.0"])
+        XCTAssertEqual(updated.version, "1.10.0")
+        XCTAssertEqual(updated.name, "Mijn Kiro", "your name for it stays")
+        XCTAssertEqual(AcpRegistry.update(for: updated, in: entries), .none, "already the newest")
+
+        let installed = CustomAgent(profileID: "acp-bin", name: "Bin", registryID: "bin", version: "2.0.0", command: "/x/b",
+                                    installedAt: "/x")
+        XCTAssertEqual(AcpRegistry.update(for: installed, in: entries), .download(download))
+        var byHand = kiro
+        byHand.registryID = nil
+        XCTAssertEqual(AcpRegistry.update(for: byHand, in: entries), .none, "one you entered yourself is yours")
+        XCTAssertFalse(AcpRegistry.isOlder("1.2.3-beta", than: "1.2.3"))
+        XCTAssertTrue(AcpRegistry.isOlder("v0.9", than: "0.10.0"))
+    }
+
     func testCustomAgentStore() {
         let defaults = UserDefaults(suiteName: "nook.tests.acp." + UUID().uuidString)!
         XCTAssertEqual(CustomAgents.load(defaults: defaults), [])

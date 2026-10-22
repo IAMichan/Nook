@@ -237,6 +237,13 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[group]?.messages.compactMap(\.poll?.question), ["Lunch?", "Wanneer?"])
     }
 
+    func testGOWAVersionsCompareByNumber() {
+        XCTAssertTrue(WAGOWARelease.isOlder("9.2.2", than: "9.3.0"))
+        XCTAssertFalse(WAGOWARelease.isOlder("9.3.0", than: "9.3.0"))
+        XCTAssertFalse(WAGOWARelease.isOlder("v9.10.1", than: "9.9.0"), "by number, not by text")
+        XCTAssertTrue(WAGOWARelease.isOlder("9.6", than: "9.6.1"))
+    }
+
     func testAnEditedPollIsNoNewPoll() {
         let body = Data(#"{"event":"message","payload":{"id":"E1","chat_id":"120363000000000001@g.us","body":"Poll edited: Lunch?","poll":{"type":"edit","poll_id":"P1","question":"Lunch?","options":[{"name":"Pizza"}]}}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: body), .ignored)

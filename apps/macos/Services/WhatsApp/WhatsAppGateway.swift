@@ -1376,6 +1376,19 @@ enum WAGOWARelease {
         return nil
     }
 
+    /// "9.2.2" comes before "9.3.0", by number ("9.10" after "9.9"); a leading "v" does not count.
+    static func isOlder(_ version: String, than other: String) -> Bool {
+        func numbers(_ text: String) -> [Int] {
+            (text.hasPrefix("v") ? String(text.dropFirst()) : text).split(separator: ".").map { Int($0.prefix(while: \.isNumber)) ?? 0 }
+        }
+        let a = numbers(version), b = numbers(other)
+        for index in 0..<max(a.count, b.count) {
+            let x = index < a.count ? a[index] : 0, y = index < b.count ? b[index] : 0
+            if x != y { return x < y }
+        }
+        return false
+    }
+
     /// Only GitHub serves the download (its assets redirect to githubusercontent.com).
     static func allowedHost(_ host: String?) -> Bool {
         guard let h = host?.lowercased() else { return false }

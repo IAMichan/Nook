@@ -27,6 +27,16 @@ enum DeviceHub {
         folder.appendingPathComponent("node_modules/agent-device/bin/agent-device.mjs")
     }
 
+    /// Other versions of `package` that were installed completely (their sentinel is there): left behind when Nook moved
+    /// to a newer pin. Their presence means you installed the tools before, so the new ones come without asking again.
+    static func earlierInstalls(root: URL, package: String, version: String, fileManager: FileManager = .default) -> [URL] {
+        let folder = root.appendingPathComponent(package, isDirectory: true)
+        let names = (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? []
+        return names.filter { $0 != version && !$0.hasPrefix(".") }.sorted()
+            .map { folder.appendingPathComponent($0, isDirectory: true) }
+            .filter { fileManager.fileExists(atPath: $0.appendingPathComponent(sentinelName).path) }
+    }
+
     static let sentinelName = ".install-complete"
 
     static func sentinel(version: String) -> String { version + "\n" }
