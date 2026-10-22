@@ -1,5 +1,5 @@
 import AppKit
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Shows notices as macOS notifications instead of on the notch, for every source set to "macOS notification" in
 /// Settings › Notifications (`NoticeRules`), and an agent's permission requests when agents are. A request whose whole command fits on the banner gets Allow and Deny there; anything you cannot
@@ -145,29 +145,25 @@ final class SystemNotifier: NSObject, ObservableObject, UNUserNotificationCenter
         let token = handlers.token
         self.handlers[id] = handlers
         if handlers.decide == nil { keepNotice(id) }
-        center.getNotificationSettings { settings in
-            let allowed = Self.showsBanners(settings)
-            Task { @MainActor in
-                self.blocked = !allowed
+        Task {
+            let allowed = Self.showsBanners(await center.notificationSettings())
+            blocked = !allowed
+            guard self.handlers[id]?.token == token else { return }
+            guard allowed else {
+                forget(id)
+                fallback()
+                return
+            }
+            do {
+                try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+                if self.handlers[id]?.token != token, self.handlers[id] == nil {
+                    // Withdrawn while it was being added.
+                    center.removeDeliveredNotifications(withIdentifiers: [id])
+                }
+            } catch {
                 guard self.handlers[id]?.token == token else { return }
-                guard allowed else {
-                    self.forget(id)
-                    fallback()
-                    return
-                }
-                self.center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { error in
-                    Task { @MainActor in
-                        let current = self.handlers[id]?.token == token
-                        if error != nil {
-                            guard current else { return }
-                            self.forget(id)
-                            fallback()
-                        } else if !current, self.handlers[id] == nil {
-                            // Withdrawn while it was being added.
-                            self.center.removeDeliveredNotifications(withIdentifiers: [id])
-                        }
-                    }
-                }
+                forget(id)
+                fallback()
             }
         }
     }
