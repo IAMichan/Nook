@@ -111,6 +111,25 @@ final class WhatsAppGOWAProcess {
     }
 }
 
+extension WhatsAppGOWAProcess {
+    /// The polls of `chat` that the GOWA Nook runs keeps in its own databases on this Mac (see `WAGOWAStoredPolls`), as
+    /// messages. Empty when GOWA is not Nook's own, or keeps none (an older GOWA has no table for them).
+    func storedPolls(chat: String) async -> [WAMessage] {
+        guard isRunning else { return [] }
+        let folder = Self.workingDirectory.appendingPathComponent("storages", isDirectory: true)
+        let store = folder.appendingPathComponent("chatstorage.db").path
+        let session = folder.appendingPathComponent("whatsapp.db").path
+        guard FileManager.default.fileExists(atPath: store),
+              let rows = try? await AppDatabase.query(store, WAGOWAStoredPolls.pollsSQL(chats: [chat], limit: 20), app: "GOWA")
+        else { return [] }
+        let polls = WAGOWAStoredPolls.polls(rows)
+        guard !polls.isEmpty else { return [] }
+        let senders = (try? await AppDatabase.query(session, WAGOWAStoredPolls.sendersSQL(ids: polls.map(\.id)), app: "GOWA")) ?? []
+        let device = (try? await AppDatabase.query(session, WAGOWAStoredPolls.deviceSQL, app: "GOWA"))?.first
+        return WAGOWAStoredPolls.messages(polls, senders: senders, device: device)
+    }
+}
+
 @MainActor
 final class WhatsAppGOWAInstaller: ObservableObject {
     static let shared = WhatsAppGOWAInstaller()

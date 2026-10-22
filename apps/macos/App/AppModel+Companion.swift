@@ -140,12 +140,18 @@ extension AppModel {
         }
     }
 
+    /// "14:05" under each bubble: one formatter for every redraw, not a new one each time.
+    private static let whatsAppBubbleTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     /// A chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows as
     /// itself, a video plays in its bubble and a document shows its first page; until then a file is a button.
     static func whatsAppBubbles(_ conversation: WAConversation) -> [ChatBubble] {
         let link = WhatsAppLink.shared
-        let time = DateFormatter()
-        time.dateFormat = "HH:mm"
+        let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return conversation.messages.suffix(WAInbox.keep).map { message in
             let file = Self.whatsAppFileLabel(message.media)
@@ -205,14 +211,14 @@ extension AppModel {
     }
 
     /// Return in a WhatsApp card's field: the text goes to that chat as typed, as an answer to its message `replyTo`
-    /// when one was quoted. The card says it is sending; when that fails it says why and puts the text back, so nothing
-    /// typed is lost.
+    /// when one was quoted. The card shows it going out above its field; when that fails it says why and puts the text
+    /// back, so nothing typed is lost.
     func replyWhatsApp(_ text: String, chat: String, replyTo: String? = nil) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // "@nook …" is a request to Nook, never a message for the chat; the card's field lets Nook write it.
         guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil else { return }
         let token = Self.whatsAppCardPrefix + chat
-        editShownCard(token) { $0.notice = tr("whatsapp.card.sending"); $0.draft = nil }
+        editShownCard(token) { $0.notice = nil; $0.sending = reply; $0.draft = nil }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -222,6 +228,7 @@ extension AppModel {
                 self.viewModel.finish(tr("whatsapp.sent", name))
             } catch {
                 let shown = self.editShownCard(token) {
+                    $0.sending = nil
                     $0.notice = tr("whatsapp.card.notSent", error.localizedDescription)
                     $0.draft = reply
                 }

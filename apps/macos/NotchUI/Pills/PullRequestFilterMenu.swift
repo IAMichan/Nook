@@ -5,6 +5,8 @@ import SwiftUI
 /// the choices that differ from the default; the panel stays open so several filters can be set in a row.
 struct PullRequestFilterMenu: View {
     @Binding var filter: PullRequestFilter
+    /// How the list groups its rows; not a filter, so the badge and Reset leave it alone.
+    @Binding var grouping: PullRequestGrouping
     /// The authors in the lists, for the Author choice.
     let authors: [String]
     /// Whether organizations or repositories are watched, for the Watched choice.
@@ -13,7 +15,7 @@ struct PullRequestFilterMenu: View {
     @State private var hovering = false
 
     enum Kind: CaseIterable, Identifiable {
-        case state, involvement, author, draft, checks
+        case state, involvement, author, draft, checks, grouping
         var id: Self { self }
 
         var title: String {
@@ -23,6 +25,7 @@ struct PullRequestFilterMenu: View {
             case .author: return tr("agents.pulls.filter.author")
             case .draft: return tr("agents.pulls.filter.draft")
             case .checks: return tr("agents.pulls.filter.checks")
+            case .grouping: return tr("agents.pulls.filter.grouping")
             }
         }
 
@@ -33,6 +36,7 @@ struct PullRequestFilterMenu: View {
             case .author: return "person"
             case .draft: return "pencil.line"
             case .checks: return "checkmark.seal"
+            case .grouping: return "rectangle.3.group"
             }
         }
     }
@@ -46,6 +50,8 @@ struct PullRequestFilterMenu: View {
                     ForEach([Kind.state, .involvement]) { kindRow($0) }
                     DropdownDivider()
                     ForEach([Kind.author, .draft, .checks]) { kindRow($0) }
+                    DropdownDivider()
+                    kindRow(.grouping)
                     if filter.activeCount > 0 {
                         DropdownDivider()
                         DropdownRow(symbol: "arrow.uturn.backward", title: tr("agents.pulls.filter.reset"), staysOpen: true) {
@@ -118,6 +124,7 @@ struct PullRequestFilterMenu: View {
         case .author: return filter.author == nil
         case .draft: return filter.draft == .all
         case .checks: return filter.status == .any
+        case .grouping: return grouping == .involvement
         }
     }
 
@@ -128,6 +135,7 @@ struct PullRequestFilterMenu: View {
         case .author: return filter.author.map { "@" + $0 } ?? tr("agents.pulls.author.anyone")
         case .draft: return tr("agents.pulls.draft." + filter.draft.rawValue)
         case .checks: return tr("agents.pulls.status." + filter.status.rawValue)
+        case .grouping: return tr("agents.pulls.grouping." + grouping.rawValue)
         }
     }
 
@@ -160,6 +168,11 @@ struct PullRequestFilterMenu: View {
             ForEach(PullRequestFilter.Status.allCases) { status in
                 FilterChoiceRow(symbol: Self.symbol(status), tint: Self.tint(status), title: tr("agents.pulls.status." + status.rawValue),
                                 chosen: filter.status == status) { filter.status = status }
+            }
+        case .grouping:
+            ForEach(PullRequestGrouping.allCases) { option in
+                FilterChoiceRow(symbol: option == .involvement ? "person.2" : "folder",
+                                title: tr("agents.pulls.grouping." + option.rawValue), chosen: grouping == option) { grouping = option }
             }
         }
     }

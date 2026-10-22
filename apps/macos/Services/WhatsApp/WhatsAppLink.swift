@@ -605,7 +605,14 @@ final class WhatsAppLink: ObservableObject {
     func messages(of chat: String, limit: Int = 20) async throws -> [WAMessage] {
         guard let provider, isConnected else { throw NookError(statusLine) }
         let key = WAJID.normalized(chat)
-        let fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
+        var fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
+        // GOWA leaves polls out of a chat's history: the ones it keeps on this Mac come in beside it, within the time
+        // the history covers (all of them when it reaches back to the chat's start).
+        if provider.kind == .gowa {
+            let oldest = fetched.count >= limit ? fetched.first?.date : nil
+            let polls = await WhatsAppGOWAProcess.shared.storedPolls(chat: key).filter { poll in oldest.map { poll.date >= $0 } ?? true }
+            if !polls.isEmpty { fetched = (fetched + polls).sorted { $0.date < $1.date } }
+        }
         for message in fetched { inbox.add(message, filters: filters, history: true) }
         // An opened chat keeps the name the chat list showed: the gateway's history may only know it by its id.
         if let shown = inbox.conversations[key]?.name, WAJID.isPlaceholderName(shown, for: key),

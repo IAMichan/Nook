@@ -21,6 +21,8 @@ struct CardView: View {
 
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
+    /// `@` in the follow-up field: people from your chats by name.
+    @StateObject private var mentionModel = ComposerModel()
     /// What the chat field says about Nook writing a message ("@nook …").
     @State private var chatNotice: String?
     /// A chat bubble's photo shown big over the card, until it is clicked or Escape is pressed.
@@ -185,7 +187,11 @@ struct CardView: View {
     /// The card's field: a chat's answer field for a message card, else a follow-up question. A draft from the model
     /// (text put back after a failed send) fills it.
     private var inputField: some View {
-        Group {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            // The chat's answer field has its own `@` menu ("@nook").
+            if !card.chatReply {
+                MentionSuggestions(model: mentionModel, text: $reply, config: mentionConfig, focus: $replyFocused)
+            }
             if card.compact { promptField } else if card.chatReply { chatField } else { replyField }
         }
         .onAppear {
@@ -214,6 +220,8 @@ struct CardView: View {
                        sendSymbol: card.replyCopiesTo == nil ? "arrow.up" : "doc.on.doc",
                        sendLabel: card.replyCopiesTo.map { tr("chats.reply.copy", $0) } ?? tr("card.send"),
                        readyNotice: card.replyCopiesTo.map { tr("chats.draft.readyCopy", $0) } ?? tr("chats.draft.ready"),
+                       outgoing: card.sending.map { ChatSending(text: $0) },
+                       recipient: card.title,
                        quote: replyingTo?.quote(contact: card.title),
                        cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
                        draft: onDraft, send: submitReply)
@@ -243,6 +251,7 @@ struct CardView: View {
                 reply = field.stringValue
             }
             .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in replyReturn(press) }
+            .mentions(mentionModel, text: $reply, config: mentionConfig)
             .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             // Cmd+Return sends, and so does a click on the arrow; an empty field sends nothing.
             let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -273,8 +282,9 @@ struct CardView: View {
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .focused($replyFocused)
-                .onSubmit(submitReply)
+                .onSubmit { if !mentionModel.isOpen { submitReply() } }
                 .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
+                .mentions(mentionModel, text: $reply, config: mentionConfig)
                 // In the non-activating notch panel the binding can lag behind the field until Return commits it,
                 // which left the send arrow looking disabled; take every keystroke straight from the field itself.
                 .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
@@ -294,8 +304,12 @@ struct CardView: View {
         .accessibilityLabel(card.title)
     }
 
+    private var mentionConfig: ComposerConfig { .mentions() }
+
     /// Return adds a line where the cursor is; with Cmd it sends.
     private func replyReturn(_ press: KeyPress) -> KeyPress.Result {
+        // With the `@` list open, Return chooses a line there.
+        if mentionModel.isOpen { return .ignored }
         if press.modifiers.contains(.command) {
             submitReply()
         } else {

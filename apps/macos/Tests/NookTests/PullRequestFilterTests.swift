@@ -117,4 +117,22 @@ final class PullRequestFilterTests: XCTestCase {
         XCTAssertEqual(groups[1].rows.map(\.item.number), [1, 4])
         XCTAssertEqual(groups[1].rows.map(\.role), [.mine, .watched])
     }
+
+    func testGroupsByRole() {
+        func dated(_ number: Int, _ minute: Int, state: PullRequestItem.State = .open, author: String = "ada") -> PullRequestItem {
+            PullRequestItem(repo: "acme/app", number: number, title: "T\(number)", url: nil, draft: false,
+                            updated: Date(timeIntervalSince1970: Double(minute * 60)), author: author, state: state)
+        }
+        var account = AccountPullRequests(id: "github", name: "Work", login: "ada",
+                                          mine: [dated(1, 1, state: .merged), dated(2, 2), dated(3, 3)],
+                                          reviews: [dated(4, 1, author: "bob")], error: nil)
+        // A watched one that is also yours shows once, as yours; a group without rows is left out.
+        account.watched = [dated(2, 2)]
+        let groups = account.byRole
+        XCTAssertEqual(groups.map(\.role), [.review, .mine])
+        // Open ones first, newest first; then the closed and merged ones.
+        XCTAssertEqual(groups[1].rows.map(\.item.number), [3, 2, 1])
+        account.watched = [dated(5, 9, author: "cleo")]
+        XCTAssertEqual(account.byRole.map(\.id), ["review", "mine", "watched"])
+    }
 }

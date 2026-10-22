@@ -331,6 +331,14 @@ final class WorkspaceManager: ObservableObject {
         return events[id] ?? []
     }
 
+    /// The session's timeline for Search everything: from memory when it is loaded, else read from disk off the main
+    /// thread without keeping it, so a search does not hold every timeline in memory.
+    func timelineForSearch(_ id: UUID) async -> [RunEvent] {
+        if let loaded = events[id] { return loaded }
+        let store = store
+        return await Task.detached(priority: .utility) { store.loadEvents(id) }.value
+    }
+
     /// The text of the session's last answer, from memory only: a released timeline is not read back for it, and asking
     /// does not count as using the timeline (so polling summaries do not keep every timeline in memory).
     func lastAnswer(_ id: UUID) -> String {

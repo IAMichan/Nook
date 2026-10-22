@@ -16,6 +16,11 @@ struct ChatPoll: Codable, Equatable, Sendable {
     var options: [Option]
     /// More than one option may be chosen.
     var multiple: Bool = false
+    /// True when the votes are not known: a poll Nook found later, whose app keeps the votes. It then shows no counts.
+    var unknownCounts: Bool? = nil
+
+    /// Whether the counts can be shown.
+    var counted: Bool { unknownCounts != true }
 
     /// Votes cast in all, for the share of each option.
     var total: Int { options.reduce(0) { $0 + $1.votes } }

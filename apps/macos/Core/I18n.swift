@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
@@ -822,6 +822,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.plan.include": "Deze stap toch uitvoeren",
         "chat.plan.duplicate": "Al uitgevoerd op %@; niet herhaald",
         "chat.plan.notRun": "Niet uitgevoerd (een eerdere stap mislukte)",
+        "chat.plan.archived": "PLAN · %d STAPPEN",
+        "chat.plan.archivedOne": "VOORSTEL",
+        "chat.plan.notExecuted": "Niet uitgevoerd",
         "chat.plan.skipped": "Overgeslagen",
         "chat.plan.edit": "Aanpassen",
         "chat.plan.doneEditing": "Klaar",
@@ -1596,6 +1599,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.plan.include": "Include this step",
         "chat.plan.duplicate": "Already done on %@; not repeated",
         "chat.plan.notRun": "Not run (an earlier step failed)",
+        "chat.plan.archived": "PLAN · %d STEPS",
+        "chat.plan.archivedOne": "PROPOSAL",
+        "chat.plan.notExecuted": "Not executed",
         "chat.plan.skipped": "Skipped",
         "chat.plan.edit": "Edit",
         "chat.plan.doneEditing": "Done",
@@ -2365,6 +2371,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.plan.include": "Diesen Schritt einschließen",
         "chat.plan.duplicate": "Bereits am %@ ausgeführt; nicht wiederholt",
         "chat.plan.notRun": "Nicht ausgeführt (ein früherer Schritt schlug fehl)",
+        "chat.plan.archived": "PLAN · %d SCHRITTE",
+        "chat.plan.archivedOne": "VORSCHLAG",
+        "chat.plan.notExecuted": "Nicht ausgeführt",
         "chat.plan.skipped": "Übersprungen",
         "chat.plan.edit": "Bearbeiten",
         "chat.plan.doneEditing": "Fertig",

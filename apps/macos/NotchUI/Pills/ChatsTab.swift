@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Combine
 
 /// One chat in the Chats tab: a WhatsApp chat through the linked phone, or a chat collected from another app's
 /// notifications.
@@ -101,6 +102,29 @@ extension ChatsEntry {
     }
 }
 
+/// `ChatsEntry.all`, made once and asked many times: the tab asks for it a dozen times while it draws (the list, the
+/// filters, the counts, the open chat), and making it goes through every chat. Forgotten as soon as WhatsApp or the other
+/// chats change, and once the redraw is over, so it is never older than what it is made of.
+@MainActor
+final class ChatsEntryMemo {
+    private var entries: [ChatsEntry]?
+    private var watching: [AnyCancellable] = []
+
+    func entries(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
+        if let entries { return entries }
+        if watching.isEmpty {
+            watching = [
+                whatsApp.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
+                capture.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
+            ]
+        }
+        let made = ChatsEntry.all(whatsApp: whatsApp, capture: capture)
+        entries = made
+        DispatchQueue.main.async { [weak self] in self?.entries = nil }
+        return made
+    }
+}
+
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
 /// "All" and "Unread" on top, one row of app filters (icons, the rest behind "+N") with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
@@ -127,6 +151,7 @@ struct ChatsTab: View {
     /// Settings › Chats: opening a chat marks it read, in Nook only. On by default; WhatsApp keeps it unread either way.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
+    @State private var entriesMemo = ChatsEntryMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
 
@@ -165,7 +190,7 @@ struct ChatsTab: View {
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
-                                        onMarkUnread: { markUnread(current) })
+                                        onMarkUnread: { markUnread(current) }, onClose: closeChat)
                                 .id(current.id)
                         } else {
                             // No chat open (none picked yet, closed with Escape, or not in what the list shows).
@@ -205,11 +230,6 @@ struct ChatsTab: View {
             })
         }
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
-        // Escape closes the open chat; the list stays.
-        .onExitCommand {
-            guard selection != nil else { return }
-            withAnimation(NookTheme.reveal) { selection = nil }
-        }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
@@ -231,6 +251,12 @@ struct ChatsTab: View {
         if let openOnAgents, showsFooter {
             PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
         }
+    }
+
+    /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
+    private func closeChat() {
+        guard selection != nil else { return }
+        withAnimation(NookTheme.reveal) { selection = nil }
     }
 
     /// "Mark as read", by hand: its badge goes, and a WhatsApp chat is read in WhatsApp too, so the sender sees it.
@@ -263,8 +289,8 @@ struct ChatsTab: View {
 
     // MARK: The chats
 
-    /// Every chat, newest first, as `ChatsEntry.all` lists them.
-    private var all: [ChatsEntry] { ChatsEntry.all(whatsApp: whatsApp, capture: capture) }
+    /// Every chat, newest first, as `ChatsEntry.all` lists them: made once per redraw (see `ChatsEntryMemo`).
+    private var all: [ChatsEntry] { entriesMemo.entries(whatsApp: whatsApp, capture: capture) }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
         if let avatar = entry.avatar, FileManager.default.fileExists(atPath: avatar),
@@ -774,7 +800,7 @@ private struct ChatsRow: View {
             row.accessibilityAction(named: Text(tr(entry.readable ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let onToggleRead {
-                ToolbarIconButton(entry.readable ? "checkmark.circle" : "circle.badge",
+                ToolbarIconButton(entry.readable ? "envelope.open" : "envelope.badge",
                                   tr(entry.readable ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
                     .pointerStyle(.link)
                     .padding(.top, NookTheme.Spacing.sm)
@@ -894,10 +920,13 @@ private struct ChatsDetail: View {
     @ObservedObject var whatsApp: WhatsAppLink
     /// "Mark as unread" in the header: the tab closes the chat and shows its badge again.
     var onMarkUnread: () -> Void = {}
+    /// Escape: the tab closes the chat.
+    var onClose: () -> Void = {}
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
-    @State private var sending = false
+    /// The answer on its way to the chat, then briefly that it is there.
+    @State private var outgoing: ChatSending?
     @FocusState private var replyFocused: Bool
     /// A photo shown big over the chat, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
@@ -970,6 +999,22 @@ private struct ChatsDetail: View {
         // A file or picture dropped on the chat waits above the field, as one chosen with "+".
         .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
             !app.chatSends(route).isEmpty && composer.accept(providers)
+        }
+        // Escape, also when nothing in the chat has the keyboard (a row in the list was clicked last).
+        .onEscapeKey(perform: escape)
+    }
+
+    /// Escape first shrinks an enlarged photo back, closes a poll, place, contact or sticker panel, and lets go of a
+    /// quoted message; only then does it close the chat.
+    private func escape() {
+        if zoomed != nil {
+            withAnimation(NookTheme.reveal) { zoomed = nil }
+        } else if composer.panel != nil {
+            composer.closePanel()
+        } else if replyingTo != nil {
+            withAnimation(NookTheme.reveal) { replyingTo = nil }
+        } else {
+            onClose()
         }
     }
 
@@ -1095,9 +1140,11 @@ private struct ChatsDetail: View {
             sendSymbol: route == nil ? "doc.on.doc" : "arrow.up",
             sendLabel: route == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
             readyNotice: route == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
-            busy: sending,
+            outgoing: outgoing,
+            recipient: entry.name,
             quote: replyingTo?.quote(contact: entry.name),
             cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
+            onEscape: escape,
             draft: { instruction in
                 let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
                 return try await app.draftChatMessage(app: appName, chat: entry.name, transcript: transcript,
@@ -1128,19 +1175,22 @@ private struct ChatsDetail: View {
     }
 
     /// What waits goes to the chat (to the quoted message, when one is), after your own Return or click: the files
-    /// first, the typed text as the caption of the first one that takes a caption, else as a message after them. What
-    /// could not go stays, with the reason above the field.
+    /// first, the typed text as the caption of the first one that takes a caption, else as a message after them. It
+    /// leaves the field for the sending panel above it, which says when it is there; when it fails the text is back in
+    /// the field, the files that did not go still wait, and the quote stays.
     private func send(via route: ChatRoute) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = composer.files
-        guard !text.isEmpty || !files.isEmpty, !sending else { return }
-        sending = true
-        notice = tr("whatsapp.card.sending")
+        guard !text.isEmpty || !files.isEmpty, outgoing?.sent ?? true else { return }
+        let shown = ChatSending(text: Self.summary(text: text, files: files))
+        outgoing = shown
+        notice = nil
+        reply = ""
         let quoted = replyingTo?.id
         Task { @MainActor in
-            defer { sending = false }
+            // The text still to go: once it went as a caption, a failure later does not put it back to go twice.
+            var caption = text
             do {
-                var caption = text
                 var answers = quoted
                 for var file in files {
                     let captioned = !caption.isEmpty && [ChatMedia.Kind.photo, .video, .gif, .file].contains(file.kind)
@@ -1148,41 +1198,55 @@ private struct ChatsDetail: View {
                     try await app.sendChatItem(.file(file), route: route, chat: entry.name, replyTo: answers)
                     composer.sent(.file(file))
                     answers = nil
-                    if captioned {
-                        caption = ""
-                        reply = ""
-                    }
+                    if captioned { caption = "" }
                 }
                 if !caption.isEmpty {
                     try await app.sendChatText(caption, route: route, chat: entry.name, replyTo: answers)
                 }
-                reply = ""
-                notice = nil
                 if replyingTo?.id == quoted { replyingTo = nil }
                 replyFocused = true
+                await showSent(shown)
             } catch {
+                outgoing = nil
+                if !caption.isEmpty, reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reply = caption }
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
     }
 
-    /// One thing sent at once, after your own click: a poll, a place, a contact, a sticker, a voice message.
-    private func sendItem(_ outgoing: ChatOutgoing) {
-        guard let route = self.route, !sending else { return }
-        sending = true
-        notice = tr("whatsapp.card.sending")
+    /// One thing sent at once, after your own click: a poll, a place, a contact, a sticker, a voice message. It shows in
+    /// the sending panel as the chat list will name it ("📊 Lunch?").
+    private func sendItem(_ item: ChatOutgoing) {
+        guard let route = self.route, outgoing?.sent ?? true else { return }
+        let shown = ChatSending(text: item.line)
+        outgoing = shown
+        notice = nil
         let quoted = replyingTo?.id
         Task { @MainActor in
-            defer { sending = false }
             do {
-                try await app.sendChatItem(outgoing, route: route, chat: entry.name, replyTo: quoted)
-                composer.sent(outgoing)
-                notice = nil
+                try await app.sendChatItem(item, route: route, chat: entry.name, replyTo: quoted)
+                composer.sent(item)
                 if quoted != nil, replyingTo?.id == quoted { replyingTo = nil }
+                await showSent(shown)
             } catch {
+                outgoing = nil
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
+    }
+
+    /// The sending panel says the message is there for a moment, then lets go (unless a newer one is on its way).
+    private func showSent(_ shown: ChatSending) async {
+        let sent = ChatSending(text: shown.text, sent: true)
+        outgoing = sent
+        try? await Task.sleep(for: .seconds(1.4))
+        if outgoing == sent { outgoing = nil }
+    }
+
+    /// What the sending panel shows for text and files going together: the text, else the files one after another.
+    private static func summary(text: String, files: [ChatAttachment]) -> String {
+        guard text.isEmpty else { return text }
+        return files.map { ChatOutgoing.file($0).line }.joined(separator: ", ")
     }
 
     /// Nook cannot write in this app: the text goes on the clipboard and the app opens, to paste it there.

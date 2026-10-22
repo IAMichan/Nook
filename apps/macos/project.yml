@@ -165,12 +165,14 @@ targets:
       - path: Core/I18n+Confirm.swift
       - path: Core/I18n+Buddy.swift
       - path: Core/I18n+Quiet.swift
+      - path: Core/I18n+Search.swift
       - path: Core/I18n+Update.swift
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatCompose.swift
+      - path: Core/I18n+PullRequests.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -184,6 +186,7 @@ targets:
       - path: Brain/TakeoverPolicy.swift
       - path: Brain/NetworkGuard.swift
       - path: Brain/ToolLoop.swift
+      - path: Brain/PlanArchive.swift
       - path: Brain/ModelAdvisor.swift
       - path: Brain/ModelDownload.swift
       - path: Brain/ChatIntent.swift
@@ -333,6 +336,7 @@ targets:
       - path: Brain/Undo.swift
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
+      - path: Services/Search/NookSearch.swift
       - path: Brain/MacReport.swift
       - path: Brain/EnergyVAD.swift
       - path: Services/Updates/AppUpdateCore.swift
