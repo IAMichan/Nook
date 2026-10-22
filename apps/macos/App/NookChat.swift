@@ -145,6 +145,10 @@ struct Conversation: Identifiable, ConversationListItem {
     var updated: Date
     var messages: [ChatMessage] = []
     var busy = false
+    /// Questions you asked while Nook was still answering, sent one by one after the answer. Kept only while Nook runs.
+    var queue = MessageQueue()
+    /// Pictures that go with a queued question, by its id.
+    var queuedImages: [UUID: [ImageAttachment]] = [:]
     /// Finished in background while looking elsewhere.
     var unread = false
     /// Scope of sources this conversation can use (picker next to input field).
@@ -433,6 +437,52 @@ final class NookChat: ObservableObject {
         guard let index = index(of: id) else { return }
         conversations[index].busy = value
         touch(index)
+    }
+
+    // MARK: Queue
+
+    /// Puts a question in line for after the answer that is running. False when the queue is full.
+    @discardableResult
+    func enqueue(_ text: String, images: [ImageAttachment] = [], conversation id: UUID) -> Bool {
+        guard let index = index(of: id), let message = conversations[index].queue.enqueue(text) else { return false }
+        if !images.isEmpty { conversations[index].queuedImages[message.id] = images }
+        return true
+    }
+
+    func removeQueued(_ message: UUID, conversation id: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].queue.remove(message)
+        conversations[index].queuedImages[message] = nil
+    }
+
+    func moveQueued(_ message: UUID, toIndex: Int, conversation id: UUID) {
+        guard let index = index(of: id) else { return }
+        conversations[index].queue.move(message, toIndex: toIndex)
+    }
+
+    /// Takes the next question out of line (`message`: that one instead), or nil when there is none or the queue is held.
+    func takeQueued(_ message: UUID? = nil, conversation id: UUID) -> (text: String, images: [ImageAttachment])? {
+        guard let index = index(of: id) else { return nil }
+        let text: String?
+        let taken: UUID?
+        if let message {
+            text = conversations[index].queue.promoteToSteer(message)
+            taken = message
+            conversations[index].queue.resume()
+        } else {
+            let next = conversations[index].queue.next()
+            text = next?.text
+            taken = next?.id
+        }
+        guard let text, let taken else { return nil }
+        let images = conversations[index].queuedImages.removeValue(forKey: taken) ?? []
+        return (text, images)
+    }
+
+    /// After a stop or an error nothing goes out on its own; the line waits until you send one of its questions.
+    func holdQueue(conversation id: UUID) {
+        guard let index = index(of: id), !conversations[index].queue.isEmpty else { return }
+        conversations[index].queue.hold()
     }
 
     /// Chat history turns formatted for model context, excluding current turn.
