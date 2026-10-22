@@ -18,6 +18,8 @@ struct PanelView: View {
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
+    /// Search everything is open over the tab (⇧⌘F, or the magnifying glass in the header).
+    @State private var searching = false
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
     static let headerHeight: CGFloat = 32
@@ -50,6 +52,18 @@ struct PanelView: View {
             }
         }
         .animation(NookTheme.swap, value: sheet)
+        .overlay(alignment: .top) {
+            if searching, sheet == nil {
+                SearchPanel(select: select) { searching = false }
+                    .padding(.top, Self.headerHeight + NookTheme.Spacing.md)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
+            }
+        }
+        .animation(NookTheme.reveal, value: searching)
+        .background {
+            Button("") { searching.toggle() }.keyboardShortcut("f", modifiers: [.command, .shift])
+                .opacity(0).accessibilityHidden(true)
+        }
         // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge.
         .nookToastHost()
     }
@@ -117,6 +131,10 @@ struct PanelView: View {
             // same quiet round button, so the header reads as one calm row next to the tabs.
             let gear = app.demoMode
             HStack(spacing: NookTheme.Spacing.xxs) {
+                if !app.demoMode {
+                    NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
+                        .help(tr("search.button"))
+                }
                 NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
                 // What Nook told you lately, for a notice that closed before you looked.
                 if !app.demoMode { NoticeBellButton() }

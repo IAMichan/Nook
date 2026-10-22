@@ -90,6 +90,9 @@ final class NotchViewModel: ObservableObject {
     /// What the Chats tab shows next ("@chat Anna"): it takes this once and clears it.
     @Published var chatsFocus: ChatsFocus?
 
+    /// Words the session opened next finds in its timeline (a search hit in it): it takes this once and clears it.
+    @Published var sessionFind: String?
+
     /// Something is open next to the chat (an app or the browser): the chat gets the room for it.
     var chatSideOpen: Bool { embeddedAppOpen || browserBesideChat }
 

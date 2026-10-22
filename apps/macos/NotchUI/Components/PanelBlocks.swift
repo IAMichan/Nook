@@ -162,6 +162,36 @@ struct NookSectionLabel: View {
     }
 }
 
+/// A filter chip in a row of them ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an
+/// optional count after the title.
+struct NookFilterChip: View {
+    let title: String
+    var count: Int? = nil
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Text(title).font(NookTheme.TextStyle.label)
+                if let count {
+                    Text("\(count)").font(NookTheme.rounded(11, .medium)).opacity(0.7)
+                }
+            }
+            .foregroundStyle(selected ? NookTheme.onIris : (hovering ? NookTheme.paper : NookTheme.textStrong))
+            .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+            .padding(.vertical, NookTheme.Spacing.xs + 1)
+            .background(Capsule().fill(selected ? NookTheme.iris : NookTheme.smoke))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 /// The one hairline between rows or regions. `inset` leaves room on the leading side (under a row's icon).
 struct NookDivider: View {
     var vertical = false

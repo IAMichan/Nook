@@ -114,6 +114,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
+| `NookFilterChip` | `PanelBlocks.swift` | One chip in a row of filters ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an optional count. Search everything uses it for its kinds |
 | `NookSectionLabel` | `PanelBlocks.swift` | A group's name in a list or on a page ("Pinned", "For you"), lined up with the rows under it |
 | `NookDivider` | `PanelBlocks.swift` | The one line between rows or regions, horizontal (with an `inset`) or `vertical` |
 | `NookRowSeparator` | `PanelBlocks.swift` | The clearer line between the items of a list (Nook's chats, Agents, Chats), in `NookTheme.separator`; placed before every item but the first |
