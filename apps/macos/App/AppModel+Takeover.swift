@@ -14,9 +14,12 @@ final class TakeoverState: ObservableObject {
     fileprivate var messageID: UUID?
     /// A checkpoint or a question that waits for the user's answer.
     fileprivate var decision: CheckedContinuation<Bool, Never>?
+    /// Stop was asked for: also before the brain's run exists (while Nook still gathers the context).
+    fileprivate var stopRequested = false
 
     /// Stops the task: a question that waits is answered with no, the brain's run is cancelled.
     func stop() {
+        stopRequested = true
         resolve(false)
         task?.cancel()
     }
@@ -133,9 +136,8 @@ extension AppModel {
         let id = reply.id
         Task { [weak self] in
             guard let self else { return }
-            TakeoverState.shared.messageID = id
             do {
-                let summary = try await self.takeOver(task)
+                let summary = try await self.takeOver(task, messageID: id)
                 self.chat.update(id) { message in
                     message.text = summary
                     message.streaming = false
@@ -162,12 +164,15 @@ extension AppModel {
     // MARK: Running
 
     /// Carries out one task and returns the brain's summary. Throws when it could not, or when the user stopped it.
-    func takeOver(_ task: String) async throws -> String {
+    /// `messageID`: the chat message that follows the task's steps.
+    func takeOver(_ task: String, messageID: UUID? = nil) async throws -> String {
         let task = task.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.isEmpty else { throw NookError(tr("takeover.noTask")) }
         let state = TakeoverState.shared
         guard !state.isRunning else { throw NookError(tr("takeover.busy")) }
         state.isRunning = true
+        state.stopRequested = false
+        state.messageID = messageID
         UIDriver.onAct = { point, label in TakeoverCursor.shared.move(to: point, label: label) }
         defer {
             state.isRunning = false
@@ -199,9 +204,14 @@ extension AppModel {
         let prompt = TakeoverPolicy.prompt(task: task, frontApp: front?.localizedName ?? "", window: "", screen: screen,
                                            memories: memories, dates: ChatIntent.dateSheet())
 
-        let available = allTools
+        // Sources kept on this Mac stay out of reach of an external brain here too (the screen, when it is one of them).
+        let available = scopedTools(SourceScope.automatic.keepingLocal(settings.privateSources), ledger: nil)
+        guard available.contains(where: { $0.name == "read_ui" }), available.contains(where: { $0.name == "control_ui" }) else {
+            throw NookError(tr("takeover.screenPrivate"))
+        }
         let tools = Self.takeoverToolNames.compactMap { name in available.first { $0.name == name } }.map(followed)
             + [waitForUserTool]
+        if state.stopRequested { throw NookError(tr("takeover.stopped")) }
         let run = Task { @MainActor [weak self] () throws -> String in
             guard let self else { throw CancellationError() }
             return try await self.brain.runTask(system: TakeoverPolicy.system, prompt: prompt, tools: tools, images: images,

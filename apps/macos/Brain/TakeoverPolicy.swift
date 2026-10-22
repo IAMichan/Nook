@@ -45,7 +45,7 @@ enum TakeoverPolicy {
     /// Labels of fields that take a search or an address: Return there only searches or navigates.
     static let searchWords: [String] = [
         "search", "zoek", "zoeken", "suche", "suchen", "recherche", "rechercher", "buscar", "búsqueda",
-        "address", "adres", "adresse", "url", "location", "where to", "waarheen", "from", "to", "van", "naar"
+        "address", "adres", "adresse", "url", "location", "where to", "waarheen"
     ]
 
     /// Whether a label holds one of the words (or phrases) as whole words.
@@ -69,7 +69,9 @@ enum TakeoverPolicy {
         for step in steps {
             switch step.action {
             case .click, .doubleClick:
-                if let label = step.element, mentions(label, commitWords) { return summary }
+                // A point without a label could be any button: it waits too.
+                guard let label = step.element, !mentions(label, commitWords) else { return summary }
+                searching = false
             case .type:
                 searching = step.role == "search" || step.element.map { mentions($0, searchWords) } ?? false
             case .key:

@@ -66,6 +66,7 @@ final class DoubleTap: ObservableObject {
         monitors.forEach { NSEvent.removeMonitor($0) }
         monitors.removeAll()
         gesture.interrupt()
+        tapCount += 1
         guard enabled else { return }
         // Monitors added while the app is still launching never receive events: try again once it runs.
         guard NSApp?.isRunning == true else {
@@ -89,6 +90,7 @@ final class DoubleTap: ObservableObject {
     private func handle(keyCode: UInt16, rawFlags: UInt) {
         guard keyCode == key.keyCode else {
             gesture.interrupt()
+            tapCount += 1
             return
         }
         guard !conflictsWithFlow else { return }
@@ -99,6 +101,8 @@ final class DoubleTap: ObservableObject {
         let alone = (down ? held.isEmpty : flags.intersection(others).isEmpty) && NSEvent.pressedMouseButtons == 0
         let now = ProcessInfo.processInfo.systemUptime
         let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        // A new press of the key ends the wait of an earlier single tap, also when its release comes late.
+        if down { tapCount += 1 }
         switch gesture.update(down: down, alone: alone, at: now, lastKeyDown: now - sinceKey) {
         case .double:
             tapCount += 1

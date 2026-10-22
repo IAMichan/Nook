@@ -30,6 +30,16 @@ final class TakeoverPolicyTests: XCTestCase {
         XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "compose_mail", input: [:], summary: "mail"), "every other action asks")
         XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: controlInput([["action": "click", "element": "Sender"]]),
                                                summary: "x"), "whole words only")
+        let message = controlInput([["action": "type", "element": "Message to Anna", "text": "Hoi"], ["action": "key", "keys": "return"]])
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: message, summary: "send"), "\"to\" is no search field")
+        let switched = controlInput([
+            ["action": "type", "element": "Search", "text": "Anna"],
+            ["action": "click", "element": "Message"],
+            ["action": "key", "keys": "return"]
+        ])
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: switched, summary: "send"), "a click leaves the search field")
+        let point = controlInput([["action": "click", "x": 640, "y": 512]])
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: point, summary: "point"), "a point could be any button")
     }
 
     func testCardNumbersAreNeverTyped() {
