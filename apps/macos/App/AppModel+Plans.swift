@@ -310,9 +310,9 @@ extension AppModel {
             replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)))
             return
         }
-        // The notch's "what should Nook do?" field: the task starts right away.
+        // The notch's "what can Nook do for you?" field: a new conversation in the Nook chat.
         if card.id.hasPrefix(Self.takeoverCardPrefix) {
-            startTakeover(text)
+            askFromQuickField(text)
             return
         }
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)

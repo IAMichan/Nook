@@ -17,6 +17,10 @@ struct ChatReplyField: View {
     let readyNotice: String
     /// The host is busy with the text (sending it): the field and its button wait.
     var busy = false
+    /// The message what is typed answers, quoted above the field; nil for an ordinary message.
+    var quote: BubbleQuote? = nil
+    /// The cross on the quote, or Escape in the field: the message goes as an ordinary one.
+    var cancelQuote: () -> Void = {}
     /// "@nook …": what was asked ("" for a fitting answer), returning the message Nook wrote. Throws with a sentence
     /// you can act on.
     let draft: (String) async throws -> String
@@ -52,6 +56,10 @@ struct ChatReplyField: View {
             if menu.isOpen {
                 ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
             }
+            if let quote {
+                ReplyingBar(quote: quote, cancel: cancelQuote)
+                    .transition(.opacity)
+            }
             field
         }
     }
@@ -73,8 +81,12 @@ struct ChatReplyField: View {
                     return .handled
                 }
                 .onKeyPress(.escape) { () -> KeyPress.Result in
-                    guard menu.isOpen else { return .ignored }
-                    menu.close()
+                    if menu.isOpen {
+                        menu.close()
+                        return .handled
+                    }
+                    guard quote != nil else { return .ignored }
+                    cancelQuote()
                     return .handled
                 }
                 .onChange(of: text) { _, new in
@@ -155,5 +167,39 @@ struct ChatReplyField: View {
                 notice = error.localizedDescription
             }
         }
+    }
+}
+
+/// Above the field while it answers one message: who wrote that message and its start, with a cross to let it go.
+private struct ReplyingBar: View {
+    let quote: BubbleQuote
+    let cancel: () -> Void
+
+    private var tint: Color { quote.mine ? NookTheme.mint : NookTheme.blue }
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(systemName: "arrowshape.turn.up.left.fill")
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(quote.sender.isEmpty ? tr("chat.reply") : tr("chat.replyingTo", quote.sender))
+                    .font(NookTheme.font(11.5, .semibold))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                Text(quote.text)
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            ToolbarIconButton("xmark", tr("chat.reply.cancel"), cancel)
+        }
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .cardBackground(NookTheme.smoke, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
+        .accessibilityElement(children: .contain)
     }
 }

@@ -76,6 +76,29 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     /// Your own message's ticks; nil when they are unknown (someone else's message, or older history the gateway
     /// keeps no status for).
     var receipt: WAReceipt? = nil
+    /// The message this one answers (WhatsApp's "reply"), when the gateway says.
+    var replyTo: String? = nil
+    /// The answered message's text as the gateway quotes it, for when Nook does not keep that message.
+    var quotedText: String? = nil
+    /// The emoji people put on it, one per person.
+    var reactions: [WAReaction] = []
+}
+
+/// One person's emoji on a message. WhatsApp keeps one per person: a new one replaces theirs, an empty one removes it.
+struct WAReaction: Equatable, Sendable {
+    var emoji: String
+    /// Who reacted (their JID or the network's user id).
+    var sender: String
+    var fromMe: Bool = false
+}
+
+extension Array where Element == WAReaction {
+    /// The list after `sender` reacted with `emoji` (empty: their reaction is taken back).
+    func applying(_ emoji: String, sender: String, fromMe: Bool) -> [WAReaction] {
+        var list = filter { fromMe ? !$0.fromMe : ($0.fromMe || !WAJID.sameReactor($0.sender, sender)) }
+        if !emoji.isEmpty { list.append(WAReaction(emoji: emoji, sender: sender, fromMe: fromMe)) }
+        return list
+    }
 }
 
 extension WAMedia {
@@ -295,8 +318,11 @@ struct WAInbox: Equatable, Sendable {
     @discardableResult
     mutating func add(_ message: WAMessage, filters: WAFilters, name: String? = nil, history: Bool = false,
                       quietBefore: Date? = nil) -> Outcome {
-        guard !seenIds.contains(message.id) else { return .duplicate }
         let chat = WAJID.normalized(message.chat)
+        guard !seenIds.contains(message.id) else {
+            refresh(message, in: chat)
+            return .duplicate
+        }
         guard !filters.ignored.contains(chat) else { return .ignored }
         seenIds.insert(message.id)
         seenOrder.append(message.id)
@@ -371,6 +397,38 @@ struct WAInbox: Equatable, Sendable {
         }
         if earlyReceipts.count > 500 { earlyReceipts.removeAll() }
         return changed
+    }
+
+    /// A message Nook already keeps, as the gateway shows it again (a chat's history): its reactions as they stand now,
+    /// and what it answers when that was not known yet.
+    private mutating func refresh(_ message: WAMessage, in chat: String) {
+        guard var conversation = conversations[chat],
+              let index = conversation.messages.firstIndex(where: { $0.id == message.id }) else { return }
+        var kept = conversation.messages[index]
+        if !message.reactions.isEmpty { kept.reactions = message.reactions }
+        if kept.replyTo == nil { kept.replyTo = message.replyTo }
+        if kept.quotedText == nil { kept.quotedText = message.quotedText }
+        guard kept != conversation.messages[index] else { return }
+        conversation.messages[index] = kept
+        conversations[chat] = conversation
+    }
+
+    /// Someone put `emoji` on a message (an empty one takes theirs back). The chat that changed, nil when Nook does not
+    /// keep that message.
+    @discardableResult
+    mutating func applyReaction(_ emoji: String, message id: String, chat: String, sender: String, fromMe: Bool) -> String? {
+        let key = WAJID.normalized(chat)
+        // As with receipts, the gateway can name the chat differently: then every chat is looked at.
+        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        for chatKey in keys {
+            guard var conversation = conversations[chatKey],
+                  let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
+            conversation.messages[index].reactions = conversation.messages[index].reactions
+                .applying(emoji, sender: sender, fromMe: fromMe)
+            conversations[chatKey] = conversation
+            return chatKey
+        }
+        return nil
     }
 
     /// The conversations the pill lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
@@ -548,7 +606,9 @@ enum WAWebhookEvent: Equatable, Sendable {
     case receipt(ids: [String], chat: String, status: WAReceipt)
     /// You read the chat on the phone (or another linked device): it is read here too.
     case readElsewhere(chat: String)
-    /// A valid delivery Nook has no use for (reactions, a test ping…).
+    /// Someone (you too, from the phone) put an emoji on a message, or took it back (an empty emoji).
+    case reaction(chat: String, message: String, emoji: String, sender: String, fromMe: Bool)
+    /// A valid delivery Nook has no use for (a revoked message, a test ping…).
     case ignored
 }
 
@@ -581,6 +641,7 @@ enum WAWebhook {
     /// sender_display_name, timestamp (RFC3339), is_from_me, body, image|video|audio|document|…}}`
     private static func parseGOWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json) }
+        if json["event"] as? String == "message.reaction" { return parseGOWAReaction(json) }
         guard json["event"] as? String == "message",
               let p = json["payload"] as? [String: Any],
               let id = p["id"] as? String, !id.isEmpty,
@@ -595,7 +656,19 @@ enum WAWebhook {
             date: WADate.rfc3339(p["timestamp"] as? String) ?? Date(),
             fromMe: p["is_from_me"] as? Bool ?? false)
         message.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: mine)
+        message.replyTo = nonEmpty(p["replied_to_id"])
+        message.quotedText = nonEmpty(p["quoted_body"])
         return .message(message)
+    }
+
+    /// `{"event":"message.reaction","payload":{id, chat_id, from, is_from_me, reaction, reacted_message_id}}`; an empty
+    /// `reaction` takes it back.
+    private static func parseGOWAReaction(_ json: [String: Any]) -> WAWebhookEvent {
+        guard let p = json["payload"] as? [String: Any],
+              let chat = nonEmpty(p["chat_id"]), let target = nonEmpty(p["reacted_message_id"]) else { return .ignored }
+        let fromMe = p["is_from_me"] as? Bool ?? false
+        return .reaction(chat: chat, message: target, emoji: (p["reaction"] as? String) ?? "",
+                         sender: nonEmpty(p["from"]) ?? (fromMe ? "" : chat), fromMe: fromMe)
     }
 
     /// `{"event":"message.ack","payload":{ids, chat_id, from, receipt_type: "delivered"|"read"|"played"|…}}`.
@@ -634,6 +707,7 @@ enum WAWebhook {
     private static func parseOpenWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         let event = json["event"] as? String
         if event == "message.ack" || event == "message.failed" { return parseOpenWAReceipt(json) }
+        if event == "message.reaction" { return parseOpenWAReaction(json, me: me) }
         guard event == "message.received" || event == "message.sent",
               let d = json["data"] as? [String: Any],
               let id = d["id"] as? String, !id.isEmpty,
@@ -656,7 +730,19 @@ enum WAWebhook {
             let ids = (d["mentionedIds"] as? [String]) ?? []
             message.mentionsMe = ids.contains { WAJID.sameUser($0, mine) } || WAMention.textMentions(message.text, me: mine)
         }
+        let quoted = d["quotedMessage"] as? [String: Any]
+        message.replyTo = nonEmpty(quoted?["id"])
+        message.quotedText = nonEmpty(quoted?["body"])
         return .message(message)
+    }
+
+    /// `{"event":"message.reaction","data":{messageId, chatId, reaction, senderId}}`; an empty `reaction` takes it back.
+    private static func parseOpenWAReaction(_ json: [String: Any], me: String?) -> WAWebhookEvent {
+        guard let d = json["data"] as? [String: Any],
+              let chat = nonEmpty(d["chatId"]), let target = nonEmpty(d["messageId"]) else { return .ignored }
+        let sender = nonEmpty(d["senderId"]) ?? chat
+        let fromMe = d["fromMe"] as? Bool ?? me.map { WAJID.sameUser(sender, $0) } ?? false
+        return .reaction(chat: chat, message: target, emoji: (d["reaction"] as? String) ?? "", sender: sender, fromMe: fromMe)
     }
 
     /// `{"event":"message.ack"|"message.failed","data":{id, messageId, status, ack, chatId?}}`. OpenWA only moves a
@@ -769,8 +855,20 @@ enum WAGOWA {
                 fromMe: m["is_from_me"] as? Bool ?? false)
             msg.chatName = WAJID.isGroup(chat) ? chatName : nil
             msg.mentionsMe = WAJID.isGroup(chat) && WAMention.textMentions(text, me: me)
+            msg.replyTo = repliedTo(m["context_metadata"])
+            msg.reactions = ((m["reactions"] as? [[String: Any]]) ?? []).compactMap { r in
+                guard let emoji = nonEmpty(r["emoji"]) else { return nil }
+                return WAReaction(emoji: emoji, sender: (r["sender_jid"] as? String) ?? "", fromMe: r["is_from_me"] as? Bool ?? false)
+            }
             return msg
         }
+    }
+
+    /// `context_metadata` is a JSON string: `{"replied_to_id":"…"}` when the message answers another.
+    static func repliedTo(_ metadata: Any?) -> String? {
+        guard let text = metadata as? String, let data = text.data(using: .utf8),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return nonEmpty(obj["replied_to_id"])
     }
 
     /// `GET /message/{id}/download` → `results: {filename, file_path, file_url}`. The saved file's path on the
@@ -913,7 +1011,8 @@ enum WAOpenWA {
                   let chat = m["chatId"] as? String, !chat.isEmpty else { return nil }
             let type = (m["type"] as? String) ?? "text"
             guard type != "revoked" else { return nil }
-            let media = (m["metadata"] as? [String: Any])?["media"] as? [String: Any]
+            let metadata = m["metadata"] as? [String: Any]
+            let media = metadata?["media"] as? [String: Any]
             var msg = WAMessage(
                 id: id, chat: chat, sender: nonEmpty(m["author"]) ?? (m["from"] as? String) ?? chat,
                 senderName: "", text: (m["body"] as? String) ?? "",
@@ -923,6 +1022,9 @@ enum WAOpenWA {
             msg.chatName = nonEmpty(m["chatName"])
             if msg.fromMe { msg.receipt = (m["status"] as? String).flatMap(WAReceipt.init(status:)) }
             if WAJID.isGroup(chat), let me { msg.mentionsMe = WAMention.textMentions(msg.text, me: me) }
+            let quoted = metadata?["quotedMessage"] as? [String: Any]
+            msg.replyTo = nonEmpty(quoted?["id"])
+            msg.quotedText = nonEmpty(quoted?["body"])
             return msg
         }
     }
@@ -957,6 +1059,11 @@ extension WAJID {
     static func sameUser(_ a: String, _ b: String) -> Bool {
         let x = digits(a), y = digits(b)
         return !x.isEmpty && x == y
+    }
+
+    /// The same person reacting: their number, else (a Beeper user id, an @lid) the id itself.
+    static func sameReactor(_ a: String, _ b: String) -> Bool {
+        sameUser(a, b) || a == b
     }
 }
 
@@ -995,7 +1102,8 @@ enum WABeeper {
     }
 
     /// `GET /v1/chats/{chatID}/messages` → `{items: [Message]}`. `chat` is Nook's id for the chat, `name` its title, `me`
-    /// the user ids of this account. Reactions, hidden and deleted messages are left out.
+    /// the user ids of this account. Reactions (they come with the message they are on), hidden and deleted messages are
+    /// left out.
     static func messages(_ data: Data, chat: String, name: String?, me: [String]) -> [WAMessage] {
         (((json(data) as? [String: Any])?["items"] as? [[String: Any]]) ?? []).compactMap { message($0, chat: chat, name: name, me: me) }
     }
@@ -1012,6 +1120,13 @@ enum WABeeper {
         if let name, !name.isEmpty { msg.chatName = name }
         let mentions = (m["mentions"] as? [String]) ?? []
         msg.mentionsMe = WAJID.isGroup(chat) && mentions.contains { $0 == "@room" || me.contains($0) }
+        msg.replyTo = nonEmpty(m["linkedMessageID"])
+        // A network's own reaction key ("smiling-face") is no emoji to show.
+        msg.reactions = ((m["reactions"] as? [[String: Any]]) ?? []).compactMap { r in
+            guard let key = nonEmpty(r["reactionKey"]), r["emoji"] as? Bool != false else { return nil }
+            let sender = (r["participantID"] as? String) ?? ""
+            return WAReaction(emoji: key, sender: sender, fromMe: me.contains(sender))
+        }
         return msg
     }
 

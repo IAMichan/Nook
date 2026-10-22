@@ -5,7 +5,8 @@ import Combine
 /// WhatsApp in the notch: a new message shows as a card with the chat so far (it scrolls back) and a field to answer.
 /// What you type there goes to that chat when you press Return or click the arrow (your own words, your own click);
 /// a photo shows in the bubble and a click enlarges it in the card, a document shows in Quick Look with a click, a
-/// video plays in the bubble; "Let Nook answer" hands the chat to Nook, who proposes an answer as a plan you approve.
+/// video plays in the bubble; a message can be answered as a quote or get an emoji (your own click, logged like a send);
+/// "Let Nook answer" hands the chat to Nook, who proposes an answer as a plan you approve.
 extension AppModel {
     static let whatsAppCardPrefix = "whatsapp-"
     /// How many of a chat's newest photos, videos and documents its card fetches to show.
@@ -122,6 +123,7 @@ extension AppModel {
         let link = WhatsAppLink.shared
         let time = DateFormatter()
         time.dateFormat = "HH:mm"
+        let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return conversation.messages.suffix(WAInbox.keep).map { message in
             let file = Self.whatsAppFileLabel(message.media)
             var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
@@ -129,6 +131,8 @@ extension AppModel {
                                     sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
+            bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
+            bubble.reactions = Self.bubbleReactions(message.reactions)
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image
                 switch message.media {
@@ -144,9 +148,41 @@ extension AppModel {
         }
     }
 
-    /// Return in a WhatsApp card's field: the text goes to that chat as typed. The card says it is sending; when that
-    /// fails it says why and puts the text back, so nothing typed is lost.
-    func replyWhatsApp(_ text: String, chat: String) {
+    /// What a message answers, as its bubble quotes it: the message itself when Nook keeps it, else the text the
+    /// gateway quoted. Nil when it answers nothing, or nothing is known of what it answers.
+    static func whatsAppQuote(_ message: WAMessage, in byID: [String: WAMessage], conversation: WAConversation) -> BubbleQuote? {
+        guard let id = message.replyTo else { return nil }
+        if let answered = byID[id] {
+            let sender = answered.fromMe ? tr("chat.you")
+                : (conversation.isGroup ? answered.senderName : conversation.name)
+            let file = Self.whatsAppFileLabel(answered.media)
+            let text = answered.text.isEmpty ? (file ?? Self.whatsAppText(answered)) : answered.text
+            return BubbleQuote(sender: sender, text: text, mine: answered.fromMe)
+        }
+        guard let quoted = message.quotedText, !quoted.isEmpty else { return nil }
+        return BubbleQuote(sender: "", text: quoted)
+    }
+
+    /// The emoji on a message, one chip each, the most used first (then in the order they came).
+    static func bubbleReactions(_ reactions: [WAReaction]) -> [BubbleReaction] {
+        var chips: [BubbleReaction] = []
+        for reaction in reactions where !reaction.emoji.isEmpty {
+            if let index = chips.firstIndex(where: { $0.emoji == reaction.emoji }) {
+                chips[index].count += 1
+                chips[index].mine = chips[index].mine || reaction.fromMe
+            } else {
+                chips.append(BubbleReaction(emoji: reaction.emoji, count: 1, mine: reaction.fromMe))
+            }
+        }
+        return chips.enumerated().sorted { a, b in
+            a.element.count != b.element.count ? a.element.count > b.element.count : a.offset < b.offset
+        }.map(\.element)
+    }
+
+    /// Return in a WhatsApp card's field: the text goes to that chat as typed, as an answer to its message `replyTo`
+    /// when one was quoted. The card says it is sending; when that fails it says why and puts the text back, so nothing
+    /// typed is lost.
+    func replyWhatsApp(_ text: String, chat: String, replyTo: String? = nil) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // "@nook …" is a request to Nook, never a message for the chat; the card's field lets Nook write it.
         guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil else { return }
@@ -155,7 +191,7 @@ extension AppModel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let name = try await WhatsAppLink.shared.send(reply, to: chat)
+                let name = try await WhatsAppLink.shared.send(reply, to: chat, replyTo: replyTo)
                 self.store.audit(tool: "whatsapp_send", args: name, result: "verstuurd")
                 self.viewModel.dismissCard(id: token)
                 self.viewModel.finish(tr("whatsapp.sent", name))
@@ -165,6 +201,28 @@ extension AppModel {
                     $0.draft = reply
                 }
                 if !shown { self.viewModel.present(self.errorCard(error.localizedDescription)) }
+            }
+        }
+    }
+
+    /// The field of a message card quoted one of its messages: the text goes to that chat as an answer to it.
+    func replyCardMessage(_ text: String, to bubble: ChatBubble, card: NookCard) {
+        guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return handleCardReply(text, card: card) }
+        replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)), replyTo: bubble.id)
+    }
+
+    /// An emoji on a message in a card's chat, after your own click: it goes to the chat (the same emoji again takes it
+    /// back) and is logged as a send is; the card redraws with it, or says why it could not.
+    func reactCardMessage(_ bubble: ChatBubble, _ emoji: String, card: NookCard) {
+        guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return }
+        let chat = String(card.id.dropFirst(Self.whatsAppCardPrefix.count))
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.reactWhatsApp(emoji, to: bubble.id, chat: chat)
+                if self.viewModel.hasCard(id: card.id) { self.presentWhatsApp(chat) }
+            } catch {
+                self.editShownCard(card.id) { $0.notice = error.localizedDescription }
             }
         }
     }
@@ -200,8 +258,9 @@ extension AppModel {
     }
 
     /// Room for the context, the name, the bubbles, the answer field and the buttons. A bubble holds about 48
-    /// characters per line and at most 12 lines (a longer one folds), a file adds a row. The bubbles always get room for
-    /// a few messages, and what does not fit in their maximum height scrolls.
+    /// characters per line and at most 12 lines (a longer one folds), a file adds a row, and so do a quoted message and
+    /// the emoji under it. The bubbles always get room for a few messages, and what does not fit in their maximum height
+    /// scrolls.
     static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
         let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
         let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
@@ -215,7 +274,7 @@ extension AppModel {
             case .file: file = bubble.attachment == nil ? 0 : (bubble.image == nil ? 40 : 60)
             }
             return total + 16 + max(CGFloat(lines) * 18, bubble.attachment == nil ? 18 : 14) + file
-                + (bubble.sender.isEmpty ? 0 : 16) + 5
+                + (bubble.sender.isEmpty ? 0 : 16) + (bubble.quote == nil ? 0 : 44) + (bubble.reactions.isEmpty ? 0 : 26) + 5
         }
         return chrome + min(max(stack, 140), 320)
     }

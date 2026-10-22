@@ -74,6 +74,28 @@ struct ChatBubble: Equatable, Identifiable {
     var ticks: BubbleTicks? = nil
     /// The file on this Mac, when Nook already has it: a click opens it from there.
     var file: URL? = nil
+    /// The message this one answers, shown small at the top of the bubble.
+    var quote: BubbleQuote? = nil
+    /// The emoji on it, the most used first.
+    var reactions: [BubbleReaction] = []
+}
+
+/// The message a bubble answers, as a chat app shows it above the answer: who wrote it and the start of its text.
+struct BubbleQuote: Equatable {
+    /// Who wrote it ("You" for your own); empty when it is not known.
+    var sender: String
+    var text: String
+    /// Your own message.
+    var mine = false
+}
+
+/// One emoji on a message, with how many people put it there and whether you are one of them.
+struct BubbleReaction: Equatable, Identifiable {
+    var emoji: String
+    var count: Int
+    var mine: Bool
+
+    var id: String { emoji }
 }
 
 extension ChatBubble {
@@ -81,6 +103,11 @@ extension ChatBubble {
     /// `contact` names the other side of a private chat, where the bubbles carry no sender.
     static func transcript(_ bubbles: [ChatBubble], contact: String) -> String {
         bubbles.map { $0.line(contact: contact) }.joined(separator: "\n")
+    }
+
+    /// This message as an answer quotes it: who wrote it (`contact` in a private chat) and its text.
+    func quote(contact: String) -> BubbleQuote {
+        BubbleQuote(sender: fromMe ? tr("chat.you") : (sender.isEmpty ? contact : sender), text: copyText, mine: fromMe)
     }
 
     /// The message's own text, or the file's name when it came without one.

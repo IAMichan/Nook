@@ -314,4 +314,70 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAWebhook.parse(kind: .beeper, body: Data("{}".utf8)), .ignored)
         XCTAssertFalse(WAGatewayKind.beeper.hasWebhook)
     }
+
+    /// An answer to a message carries what it answers, from the webhook and from the history of every gateway.
+    func testRepliesKnowWhatTheyAnswer() {
+        let gowa = Data(#"""
+        {"event":"message","payload":{"id":"R1","chat_id":"316@s.whatsapp.net","from":"316@s.whatsapp.net","timestamp":"2026-10-20T09:00:00Z","body":"Ja!","replied_to_id":"Q1","quoted_body":"Eten om zes?"}}
+        """#.utf8)
+        guard case .message(let reply)? = WAWebhook.parse(kind: .gowa, body: gowa) else { return XCTFail("no message") }
+        XCTAssertEqual(reply.replyTo, "Q1")
+        XCTAssertEqual(reply.quotedText, "Eten om zes?")
+
+        let openwa = Data(#"""
+        {"event":"message.received","data":{"id":"R2","chatId":"316@c.us","from":"316@c.us","body":"Ja","type":"text","timestamp":1800000000,"quotedMessage":{"id":"Q2","body":"Kom je?"}}}
+        """#.utf8)
+        guard case .message(let other)? = WAWebhook.parse(kind: .openwa, body: openwa) else { return XCTFail("no message") }
+        XCTAssertEqual(other.replyTo, "Q2")
+        XCTAssertEqual(other.quotedText, "Kom je?")
+
+        let history = WAGOWA.messages(Data(#"""
+        {"results":{"data":[{"id":"R3","chat_jid":"316@s.whatsapp.net","sender_jid":"316@s.whatsapp.net","content":"Top","timestamp":"2026-10-20T09:00:00Z","context_metadata":"{\"replied_to_id\":\"Q3\"}","reactions":[{"emoji":"👍","sender_jid":"317@s.whatsapp.net","is_from_me":true}]}]}}
+        """#.utf8), me: nil)
+        XCTAssertEqual(history.first?.replyTo, "Q3")
+        XCTAssertEqual(history.first?.reactions, [WAReaction(emoji: "👍", sender: "317@s.whatsapp.net", fromMe: true)])
+
+        let beeper = WABeeper.messages(Data(#"""
+        {"items":[{"id":"m1","senderID":"@piet:beeper.com","text":"Prima","timestamp":"2026-10-20T09:00:00.000Z","linkedMessageID":"m0","reactions":[{"id":"@me:beeper.com","participantID":"@me:beeper.com","reactionKey":"❤️","emoji":true},{"id":"@piet:beeper.com","participantID":"@piet:beeper.com","reactionKey":"smiling-face","emoji":false}]}]}
+        """#.utf8), chat: "!a:beeper.com@beeper", name: "Piet", me: ["@me:beeper.com"])
+        XCTAssertEqual(beeper.first?.replyTo, "m0")
+        // A network's own reaction key is no emoji to show.
+        XCTAssertEqual(beeper.first?.reactions, [WAReaction(emoji: "❤️", sender: "@me:beeper.com", fromMe: true)])
+    }
+
+    /// One emoji per person: a new one replaces theirs, an empty one takes it back, and history brings them up to date.
+    func testReactionsReplaceTakeBackAndRefresh() {
+        let chat = "31600000001@s.whatsapp.net"
+        let gowa = Data(#"""
+        {"event":"message.reaction","payload":{"id":"X","chat_id":"31600000001@s.whatsapp.net","from":"31600000001@s.whatsapp.net","is_from_me":false,"reaction":"😂","reacted_message_id":"1"}}
+        """#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: gowa),
+                       .reaction(chat: chat, message: "1", emoji: "😂", sender: chat, fromMe: false))
+        let openwa = Data(#"""
+        {"event":"message.reaction","data":{"messageId":"1","chatId":"31600000001@c.us","reaction":"","senderId":"31600000001@c.us"}}
+        """#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwa, me: "31699999999@s.whatsapp.net"),
+                       .reaction(chat: "31600000001@c.us", message: "1", emoji: "", sender: "31600000001@c.us", fromMe: false))
+
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: chat), filters: WAFilters())
+        XCTAssertEqual(inbox.applyReaction("😂", message: "1", chat: chat, sender: chat, fromMe: false), chat)
+        XCTAssertEqual(inbox.applyReaction("👍", message: "1", chat: chat, sender: "", fromMe: true), chat)
+        // Their new emoji replaces their old one; yours stays.
+        inbox.applyReaction("❤️", message: "1", chat: "31600000001@c.us", sender: "31600000001@c.us", fromMe: false)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.reactions.map(\.emoji), ["👍", "❤️"])
+        // An empty emoji takes yours back.
+        inbox.applyReaction("", message: "1", chat: chat, sender: "", fromMe: true)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.reactions.map(\.emoji), ["❤️"])
+        XCTAssertNil(inbox.applyReaction("👍", message: "unknown", chat: chat, sender: chat, fromMe: false))
+
+        // The same message from history again: still one message, with the reactions and the answer it carries now.
+        var again = message("1", chat: chat)
+        again.reactions = [WAReaction(emoji: "🙏", sender: chat)]
+        again.replyTo = "0"
+        XCTAssertEqual(inbox.add(again, filters: WAFilters(), history: true), .duplicate)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.count, 1)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.reactions.map(\.emoji), ["🙏"])
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.replyTo, "0")
+    }
 }

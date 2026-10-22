@@ -664,7 +664,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.local.clipboardEmpty": "Leeg",
         "connect.local.clipboardCopied": "Tekst gekopieerd",
 
-        "connect.github.help": "Het makkelijkst: klik 'Koppel met GitHub' hierboven. Lukt dat niet? Klik 'Maak een token', de rechten staan dan al goed, en plak het token hier. Nook leest je pull requests en kan ze, na jouw goedkeuring, beoordelen, samenvoegen of sluiten; daarvoor moet het token schrijfrechten op pull requests hebben.",
+        "connect.github.help": "Het makkelijkst: klik 'Koppel met GitHub' hierboven. Lukt dat niet? Klik 'Maak een token', de rechten staan dan al goed, en plak het token hier. Nook leest je pull requests en kan ze, na jouw goedkeuring, beoordelen, samenvoegen of sluiten; daarvoor moet het token schrijfrechten op pull requests hebben. Zie je de pull requests van een organisatie niet? Gebruikt die single sign-on, autoriseer het token dan op github.com/settings/tokens (Configure SSO); een fine-grained token moet de organisatie als eigenaar hebben.",
         "connect.github.openPrs": "%lld open PR's",
         "connect.github.reviewsForYou": "%lld reviews voor jou",
 
@@ -1438,7 +1438,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.local.clipboardEmpty": "Empty",
         "connect.local.clipboardCopied": "Text copied",
 
-        "connect.github.help": "Easiest: click 'Connect with GitHub' above. If that doesn't work, click 'Create token', permissions are preconfigured, and paste the token here. Nook reads your pull requests and can review, merge or close them with your approval.",
+        "connect.github.help": "Easiest: click 'Connect with GitHub' above. If that doesn't work, click 'Create token', permissions are preconfigured, and paste the token here. Nook reads your pull requests and can review, merge or close them with your approval. Missing an organization's pull requests? If it uses single sign-on, authorize the token at github.com/settings/tokens (Configure SSO); a fine-grained token needs the organization as its resource owner.",
         "connect.github.openPrs": "%lld open PRs",
         "connect.github.reviewsForYou": "%lld reviews for you",
 
@@ -2207,7 +2207,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "connect.local.clipboardEmpty": "Leer",
         "connect.local.clipboardCopied": "Text kopiert",
 
-        "connect.github.help": "Am einfachsten: Klicke oben auf 'Mit GitHub verbinden'. Falls das nicht klappt, klicke auf 'Token erstellen' und füge das Token hier ein. Nook liest deine Pull Requests und kann sie mit deiner Genehmigung überprüfen, mergen oder schließen.",
+        "connect.github.help": "Am einfachsten: Klicke oben auf 'Mit GitHub verbinden'. Falls das nicht klappt, klicke auf 'Token erstellen' und füge das Token hier ein. Nook liest deine Pull Requests und kann sie mit deiner Genehmigung überprüfen, mergen oder schließen. Fehlen die Pull Requests einer Organisation? Nutzt sie Single Sign-on, autorisiere das Token unter github.com/settings/tokens (Configure SSO); ein Fine-grained-Token braucht die Organisation als Eigentümer.",
         "connect.github.openPrs": "%lld offene PRs",
         "connect.github.reviewsForYou": "%lld Reviews für dich",
 
