@@ -8,9 +8,24 @@ use serde_json::Value;
 use crate::provider::AIProvider;
 use crate::{NookError, Result};
 
+/// One shared client per timeout: a `reqwest::Client` is a handle to a connection pool, so reusing it keeps the
+/// connection (and its TLS session) to the provider open between messages instead of building a new one every time.
 pub fn client(provider: AIProvider) -> reqwest::Client {
-    let timeout = if provider.is_local_server() { 180 } else { 120 };
-    reqwest::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(timeout)).build().unwrap_or_default()
+    use std::sync::OnceLock;
+    static LOCAL: OnceLock<reqwest::Client> = OnceLock::new();
+    static REMOTE: OnceLock<reqwest::Client> = OnceLock::new();
+    let build = |timeout: u64| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(timeout))
+            .build()
+            .unwrap_or_default()
+    };
+    if provider.is_local_server() {
+        LOCAL.get_or_init(|| build(180)).clone()
+    } else {
+        REMOTE.get_or_init(|| build(120)).clone()
+    }
 }
 
 pub fn connection_error(error: reqwest::Error, provider: AIProvider) -> NookError {

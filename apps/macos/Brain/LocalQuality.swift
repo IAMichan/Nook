@@ -119,20 +119,23 @@ enum Grounding {
         #"https?://[^\s)\]>,]+"#,
         #"(?<![\d.,:])\d{1,2}[:.]\d{2}(?!\d|[.:,]\d)"#,
         #"(?<![\d.,])\d[\d.,]*\d(?![\d])"#
-    ]
+    ].compactMap { try? NSRegularExpression(pattern: $0) }
 
+    private static let datePattern = try? NSRegularExpression(pattern: #"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$"#)
+
+    /// Runs over the whole context (often tens of kilobytes): duplicates are found through a set, in order.
     private static func details(in text: String) -> [String] {
         var found: [String] = []
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+        var seen: Set<String> = []
+        for regex in patterns {
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let range = Range(match.range, in: text) else { continue }
                 let token = String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:"))
                 let numeric = token.allSatisfy { $0.isNumber || ".,".contains($0) }
                 // Pure numbers need three digits; times, addresses and links always count. Dates (12.11.2025) are written too many ways.
                 if numeric, token.filter(\.isNumber).count < 3 { continue }
-                if token.range(of: #"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$"#, options: .regularExpression) != nil { continue }
-                if !found.contains(token) { found.append(token) }
+                if numeric, let datePattern, datePattern.firstMatch(in: token, range: NSRange(token.startIndex..., in: token)) != nil { continue }
+                if seen.insert(token).inserted { found.append(token) }
             }
         }
         return found

@@ -351,11 +351,11 @@ final class AppUpdater: ObservableObject {
             .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
         Task.detached(priority: .userInitiated) {
-            let target = xcode.map { "application \(AppleScript.string($0.path))" } ?? "application id \"com.apple.dt.Xcode\""
+            let target = xcode.map { "application \(AppleScriptText.literal($0.path))" } ?? "application id \"com.apple.dt.Xcode\""
             let script = """
             tell \(target)
                 activate
-                set doc to open (POSIX file \(AppleScript.string(project)))
+                set doc to open (POSIX file \(AppleScriptText.literal(project)))
                 repeat 120 times
                     if loaded of doc is true then exit repeat
                     delay 0.5

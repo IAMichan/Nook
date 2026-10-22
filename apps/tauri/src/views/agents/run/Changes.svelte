@@ -29,20 +29,30 @@
   const files = $derived(view?.snapshot?.status?.files ?? []);
   const fileFor = (path: string): FileChange | undefined => files.find((f) => f.path === path);
 
+  // The parent hands a new `run` object on every workspace update; these deriveds only change with the values themselves,
+  // so the effects below do not read git again for an update that changed nothing here.
+  const runId = $derived(run.id);
+  const changedKey = $derived(`${run.changedFiles}|${run.updatedAt}`);
+  let reread: ReturnType<typeof setTimeout> | undefined;
+
   async function load(refresh: boolean) {
+    const id = runId;
     try {
-      view = await workspaceApi.git(run.id, refresh);
+      view = await workspaceApi.git(id, refresh);
       // Een bestand dat niet meer gewijzigd is (na een commit), heeft geen diff meer.
       if (selected && !(view.snapshot?.status?.files ?? []).some((f) => f.path === selected)) {
         selected = null;
         diff = null;
       }
-      if (refresh) setTimeout(() => load(false), 600);
+      if (refresh) {
+        clearTimeout(reread);
+        reread = setTimeout(() => load(false), 600);
+      }
     } catch (e) {
       error = String(e);
     }
     try {
-      quick = await workspaceApi.quick(run.id);
+      quick = await workspaceApi.quick(id);
     } catch (e) {
       quick = null;
       error = String(e);
@@ -50,14 +60,14 @@
   }
 
   $effect(() => {
-    void run.id;
+    void runId;
     load(true);
+    return () => clearTimeout(reread);
   });
 
   // De git-stand veranderde (na een beurt, commit of push): opnieuw lezen.
   $effect(() => {
-    void run.changedFiles;
-    void run.updatedAt;
+    void changedKey;
     load(false);
   });
 

@@ -245,9 +245,6 @@ enum PullRequestGraphQL {
     }
 
     private static func date(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: text)
+        NookDates.isoPlain.date(from: text) ?? NookDates.isoFractional.date(from: text)
     }
 }

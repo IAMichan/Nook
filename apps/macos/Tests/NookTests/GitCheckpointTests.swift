@@ -30,6 +30,22 @@ final class GitCheckpointTests: XCTestCase {
         try? String(contentsOf: repo.appendingPathComponent(name), encoding: .utf8)
     }
 
+    func testLineCountsOfATurnBetweenSnapshots() throws {
+        let before = GitService.checkpointRef(session: UUID(), index: 0)
+        try git.checkpoint(repo.path, ref: before)
+        try write("a.txt", "een\ntwee\ndrie\n")
+        let after = GitService.checkpointRef(session: UUID(), index: 1)
+        try git.checkpoint(repo.path, ref: after)
+        try write("a.txt", "later")
+
+        let turn = try git.lineCounts(repo.path, paths: ["a.txt"], from: before, to: after)
+        XCTAssertEqual(turn["a.txt"]?.added, 3)
+        XCTAssertEqual(turn["a.txt"]?.removed, 1)
+        let untilNow = try git.lineCounts(repo.path, paths: ["a.txt"], from: before, to: nil)
+        XCTAssertEqual(untilNow["a.txt"]?.added, 1, "without a snapshot after the turn: the files as they are now")
+        XCTAssertTrue(try git.lineCounts(repo.path, paths: [], from: before, to: nil).isEmpty)
+    }
+
     func testFirstSnapshotOfAFreshWorktreeIsHead() throws {
         let ref = GitService.checkpointRef(session: UUID(), index: 0)
         try git.checkpointHead(repo.path, ref: ref)

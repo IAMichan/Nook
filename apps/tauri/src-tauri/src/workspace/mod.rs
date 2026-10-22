@@ -97,7 +97,9 @@ pub fn setup(app: &AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             tick += 1;
-            manager.flush();
+            // Serializing and writing a busy run's timeline is disk work; it does not belong on a runtime worker.
+            let m = manager.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || m.flush()).await;
             if tick % 60 == 5 {
                 let m = manager.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || m.refresh_worktrees()).await;

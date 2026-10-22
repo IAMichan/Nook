@@ -96,13 +96,13 @@ extension SettingsView {
             }
             Section {
                 LabeledContent(tr("settings.overview.openPanel")) {
-                    Text(tr("settings.overview.pointToNotch")).foregroundStyle(.secondary)
+                    Text(tr("settings.overview.pointToNotch")).foregroundStyle(NookTheme.textSecondary)
                 }
                 Button { app.settingsSection = .shortcuts } label: {
                     HStack {
                         Text(tr("settings.start.allShortcuts")).foregroundStyle(.primary)
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -124,13 +124,13 @@ extension SettingsView {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(section.title).foregroundStyle(.primary)
                     Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(state == .warning ? state.color : Color.secondary)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(state == .warning ? state.color : NookTheme.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: state.symbol).foregroundStyle(state.color)
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
             }
             .contentShape(Rectangle())
         }

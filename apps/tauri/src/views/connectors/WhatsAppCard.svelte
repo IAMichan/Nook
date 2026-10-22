@@ -102,9 +102,6 @@
     </div>
   </div>
 {/if}
-{#if whatsapp.confirmation}
-  <div class="toast">{whatsapp.confirmation}</div>
-{/if}
 
 <style>
   .alert { padding: 4px 12px 8px; }
@@ -138,5 +135,4 @@
   .buttons { display: flex; gap: 6px; flex-wrap: nowrap; }
   .buttons button { white-space: nowrap; }
   .spacer { flex: 1; }
-  .toast { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--smoke); border: 1px solid var(--line2); border-radius: 999px; padding: 5px 14px; font-size: 12px; color: var(--mint); }
 </style>

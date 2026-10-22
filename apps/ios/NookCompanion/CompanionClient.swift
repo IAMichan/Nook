@@ -24,9 +24,28 @@ final class CompanionClient: ObservableObject {
     @Published var openSession: String?
     /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
     @Published private(set) var macPushReady: Bool?
+    /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.
+    @Published private(set) var features: Set<String> = []
+    /// What a new session can start with, once asked.
+    @Published private(set) var launchOptions: LaunchOptions?
+    /// The conversation of each session that was opened, by session id.
+    @Published private(set) var timelines: [String: [TimelineEntry]] = [:]
+    /// Nook's own chats, and the messages of each one that was opened.
+    @Published private(set) var conversations: [ChatDigest] = []
+    @Published private(set) var chatLines: [String: [ChatLine]] = [:]
+    /// False when the Mac said Nook has no brain set up, so chatting cannot work yet.
+    @Published private(set) var brainReady = true
+    /// Nook's home (what waits, agenda, player, limits) and the usage page, once asked.
+    @Published private(set) var home: HomeDigest?
+    @Published private(set) var usage: UsageDigest?
+    /// When `home` was read: the player's position runs on from here.
+    @Published private(set) var homeRead = Date()
     private(set) var pushToken: String?
 
     private var link: PairingLink?
+    /// Whether a `hello` or `list` answer told us what the Mac can do. An old Mac sends no `features`: then the
+    /// empty set is known too, so a screen does not keep asking.
+    private var featuresKnown = false
     private var poll: Task<Void, Never>?
 
     init() {
@@ -50,6 +69,9 @@ final class CompanionClient: ObservableObject {
                 link = parsed
                 macName = response.macName ?? parsed.macName
                 sessions = response.sessions ?? []
+                features = Set(response.features ?? [])
+                featuresKnown = true
+                Notifications.setBadge(sessions.needingYou)
                 phase = .connected
                 startPolling()
                 await Notifications.requestAndRegister()
@@ -65,6 +87,14 @@ final class CompanionClient: ObservableObject {
         PairingStore.clear()
         link = nil
         sessions = []
+        features = []
+        featuresKnown = false
+        launchOptions = nil
+        timelines = [:]
+        conversations = []
+        chatLines = [:]
+        home = nil
+        usage = nil
         phase = .unpaired
     }
 
@@ -74,9 +104,13 @@ final class CompanionClient: ObservableObject {
         poll?.cancel()
         guard link != nil else { return }
         poll = Task { [weak self] in
+            var delay: UInt64 = 5
             while !Task.isCancelled {
                 await self?.refresh()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                // While the Mac cannot be reached, wait longer each time (10, 20, 40, then 60 s) instead of trying again and
+                // again, which keeps the radio awake; pulling to refresh still tries at once.
+                if case .offline? = self?.phase { delay = min(delay * 2, 60) } else { delay = 5 }
+                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
             }
         }
     }
@@ -128,27 +162,141 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .stop, session: session.id))
     }
 
-    private func perform(_ req: CompanionRequest) async {
-        guard let link else { return }
+    // MARK: Starting a session
+
+    func can(_ feature: String) -> Bool { features.contains(feature) }
+
+    /// `can`, after asking the Mac first when its features are not known yet (a screen that loads right after launch,
+    /// before the first `list` came back).
+    private func supports(_ feature: String) async -> Bool {
+        if !featuresKnown, link != nil { await refresh() }
+        return can(feature)
+    }
+
+    func loadLaunchOptions() async {
+        guard await supports(CompanionFeature.start) else { return }
+        await perform(CompanionRequest(op: .options))
+    }
+
+    /// Starts a session on the Mac; the id of the new session, or nil when it did not start (the reason is in `notice`).
+    func start(_ launch: LaunchRequest) async -> String? {
+        await perform(CompanionRequest(op: .start, launch: launch))?.created
+    }
+
+    // MARK: A session's conversation
+
+    func loadTimeline(_ sessionID: String) async {
+        guard await supports(CompanionFeature.timeline) else { return }
+        await perform(CompanionRequest(op: .timeline, session: sessionID), quiet: true)
+    }
+
+    // MARK: Nook's own chats
+
+    func loadChats() async {
+        guard await supports(CompanionFeature.chat) else { return }
+        await perform(CompanionRequest(op: .chats), quiet: true)
+    }
+
+    func loadChat(_ conversationID: String) async {
+        guard await supports(CompanionFeature.chat) else { return }
+        await perform(CompanionRequest(op: .chat, conversation: conversationID), quiet: true)
+    }
+
+    /// Asks Nook; nil `conversationID` starts a new chat. The id of the chat, or nil when the Mac refused.
+    func ask(_ text: String, in conversationID: String?) async -> String? {
+        let response = await perform(CompanionRequest(op: .ask, text: text, conversation: conversationID))
+        if response != nil { await loadChats() }
+        return response?.created
+    }
+
+    // MARK: Home and usage
+
+    func loadHome() async {
+        guard await supports(CompanionFeature.home) else { return }
+        await perform(CompanionRequest(op: .home), quiet: true)
+    }
+
+    /// `range`: "today", "week" or "month".
+    func loadUsage(range: String) async {
+        guard await supports(CompanionFeature.usage) else { return }
+        await perform(CompanionRequest(op: .usage, item: range), quiet: true)
+    }
+
+    /// "playpause", "next" or "previous".
+    func music(_ command: String) async {
+        guard await supports(CompanionFeature.music) else { return }
+        await perform(CompanionRequest(op: .music, text: command), quiet: true)
+    }
+
+    func stopChat(_ conversationID: String) async {
+        await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
+    }
+
+    /// Sends a request and takes in whatever the answer carries. The answer when the Mac said yes, else nil with the reason
+    /// in `notice`. `quiet` is for the requests a screen repeats by itself: a session or chat that is gone says so on that
+    /// screen instead of in an alert every few seconds.
+    @discardableResult
+    private func perform(_ req: CompanionRequest, quiet: Bool = false) async -> CompanionResponse? {
+        guard let link else { return nil }
         do {
             let response = try await request(req, using: link)
             if response.ok {
-                if let list = response.sessions { sessions = list; Notifications.setBadge(list.needingYou) }
-                if let name = response.macName { macName = name }
-                phase = .connected
-                if let message = response.message { notice = message == "queued" ? String(localized: "Queued: the session is still busy.") : nil }
-            } else {
-                switch response.error {
-                case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
-                case .unknownItem, .unknownSession: notice = String(localized: "That has already been handled."); await refresh()
-                case .stale: notice = String(localized: "The clocks of your phone and your Mac are too far apart.")
-                case .rateLimited: notice = String(localized: "Slow down a little.")
-                default: notice = String(localized: "Your Mac refused this.")
+                apply(response, to: req)
+                if phase != .connected { phase = .connected }
+                if let message = response.message {
+                    switch message {
+                    case "queued": notice = String(localized: "Queued: the session is still busy.")
+                    case "nobrain": brainReady = false
+                    default: break
+                    }
+                } else if req.op == .chats {
+                    brainReady = true
                 }
+                return response
+            }
+            if quiet, response.error == .unknownSession { return nil }
+            switch response.error {
+            case .notAllowedFromPhone: notice = String(localized: "Not possible from your phone: open it on your Mac.")
+            case .unknownSession where req.conversation != nil: notice = String(localized: "This chat is gone."); await loadChats()
+            case .unknownItem, .unknownSession: notice = String(localized: "That has already been handled."); await refresh()
+            case .stale: notice = String(localized: "The clocks of your phone and your Mac are too far apart.")
+            case .rateLimited: notice = String(localized: "Slow down a little.")
+            case .failed where response.message == "nobrain":
+                brainReady = false
+                notice = String(localized: "Nook has no brain set up on your Mac yet: choose one in Nook › Settings.")
+            case .failed where response.message?.isEmpty == false:
+                notice = String(localized: "Your Mac could not do this: \(response.message ?? "")")
+            default: notice = String(localized: "Your Mac refused this.")
             }
         } catch {
             phase = .offline(error.localizedDescription)
         }
+        return nil
+    }
+
+    /// Takes in what an answer carries. Every poll answers, mostly with the same data: a value is only assigned when it
+    /// changed, so the screens are not redrawn each time.
+    private func apply(_ response: CompanionResponse, to req: CompanionRequest) {
+        // The badge is set on (re)connecting too, so one left from before is corrected.
+        if let list = response.sessions, list != sessions || phase != .connected {
+            if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
+            if list != sessions { sessions = list }
+        }
+        if let name = response.macName, name != macName { macName = name }
+        if let features = response.features, Set(features) != self.features { self.features = Set(features) }
+        if req.op == .list || req.op == .hello { featuresKnown = true }
+        if let options = response.launch, options != launchOptions { launchOptions = options }
+        if let timeline = response.timeline, let session = req.session, timelines[session] != timeline { timelines[session] = timeline }
+        if let list = response.conversations, list != conversations { conversations = list }
+        if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
+            chatLines[conversation] = lines
+        }
+        // The player's position runs on from when it was read, so that time is kept even when nothing else changed.
+        if let home = response.home {
+            if home != self.home { self.home = home }
+            homeRead = Date()
+        }
+        if let usage = response.usage, usage != self.usage { self.usage = usage }
     }
 
     // MARK: Transport

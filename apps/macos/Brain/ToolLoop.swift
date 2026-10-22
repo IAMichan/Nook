@@ -97,6 +97,8 @@ final class ToolRunner {
     private let normalize: Normalizer
     /// Lets the set of tools grow while the loop runs (a tool that unlocks a source's tools).
     var onToolsChanged: (([LoopTool]) -> Void)?
+    /// Filters what a read tool returns before the model sees it (the privacy level, for an external brain).
+    var shield: @MainActor (String) -> String = { $0 }
 
     private(set) var actions: [PlannedAction] = []
     private(set) var callCount = 0
@@ -134,7 +136,7 @@ final class ToolRunner {
             let key = Self.cacheKey(name, input)
             if let cached = cache[key] { return (cached, false) }
             do {
-                let output = UntrustedText.wrap(try await tool.run(input))
+                let output = UntrustedText.wrap(shield(try await tool.run(input)))
                 cache[key] = output
                 return (output, false)
             } catch {

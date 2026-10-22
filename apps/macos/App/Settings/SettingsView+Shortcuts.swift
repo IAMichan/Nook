@@ -10,7 +10,7 @@ extension SettingsView {
             Section {
                 ForEach(ShortcutAction.allCases) { action in ShortcutRecorder(action: action) }
                 LabeledContent(tr("settings.overview.openPanel")) {
-                    Text(tr("settings.overview.pointToNotch")).foregroundStyle(.secondary)
+                    Text(tr("settings.overview.pointToNotch")).foregroundStyle(NookTheme.textSecondary)
                 }
             } header: {
                 Text(tr("settings.group.nook"))

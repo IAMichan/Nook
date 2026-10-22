@@ -103,9 +103,11 @@ extension AppModel {
     }
 
     /// Submits a query in chat: response streams in real-time. `focus` and `reflects` are for prompts a card writes
-    /// (see `ReplyContext`).
-    func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true) {
-        let conversation = chat.ensureActive()
+    /// (see `ReplyContext`). `target` asks in that conversation instead of the active one, and `reveal: false` leaves the
+    /// notch as it is (a question from the iPhone companion).
+    func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
+             in target: UUID? = nil, reveal: Bool = true) {
+        let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         var question = ChatMessage(role: .user, text: text)
         question.images = images
@@ -126,7 +128,7 @@ extension AppModel {
         // If prompt originated from a card or voice, reveal chat. If user is already typing in chat, stay there.
         if !viewModel.isShowing(.chat) {
             warmUp()
-            showChat()
+            if reveal { showChat() }
         }
         let history = chat.history(before: question.id, hiding: settings.privateSources)
         let replyID = reply.id

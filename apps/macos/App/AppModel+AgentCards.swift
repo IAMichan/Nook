@@ -9,15 +9,35 @@ extension AppModel {
     // MARK: Agents
 
     func presentApproval(_ request: ApprovalRequest) {
-        var context = "\(request.agentName) · \(request.project)"
-        let others = hub.approvals.count - 1
-        if others > 0 { context += " · nog \(others) wachtend" }
-        presentApprovalCard(ApprovalCenter.make(request), context: context, open: nil)
+        CompanionNotifier.shared.approval(ApprovalCenter.make(request))
+        presentApprovalCard(ApprovalCenter.make(request), context: "\(request.agentName) · \(request.project)", open: nil,
+                            waiting: hub.approvals.count - 1)
     }
 
-    /// The notch card for a permission request, the same for terminal sessions and sessions Nook runs. The whole command
-    /// is on the card (scrolled when long), so what you allow is what you saw.
-    func presentApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?) {
+    /// A permission request, the same for terminal sessions and sessions Nook runs: a notch card, or a macOS notification
+    /// when you chose those in Settings › Notifications (a click on it, or Show, brings up the card). `waiting`: other
+    /// requests queued behind it.
+    func presentApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?,
+                             waiting: Int = 0) {
+        guard settings.noticeDelivery == .system else {
+            showApprovalCard(approval, context: context, open: open, waiting: waiting)
+            return
+        }
+        NookSound.play(.attention)
+        SystemNotifier.shared.approval(
+            approval, context: context,
+            decide: { [weak self] decision in self?.approvals.decide(approval, decision) },
+            show: { [weak self] in self?.showApprovalCard(approval, context: context, open: open, waiting: waiting) },
+            fallback: { [weak self] in
+                self?.showApprovalCard(approval, context: context, open: open, waiting: waiting, sound: false)
+            }
+        )
+    }
+
+    /// The notch card for a permission request. The whole command is on the card (scrolled when long), so what you allow
+    /// is what you saw.
+    private func showApprovalCard(_ approval: AgentApproval, context: String, open: (label: String, action: () -> Void)?,
+                                  waiting: Int = 0, sound: Bool = true) {
         let token = approval.cardToken
         viewModel.register("\(token)#yes") { [weak self] in self?.approvals.decide(approval, .allow) }
         viewModel.register("\(token)#always") { [weak self] in self?.approvals.decide(approval, .always) }
@@ -55,24 +75,34 @@ extension AppModel {
             secondary: CardAction(label: tr("button.deny"), outcome: .callback("\(token)#no", "")),
             contentHeight: height,
             extra: extra,
-            urgent: true
+            urgent: true,
+            status: CardStatus(text: waiting > 0 ? tr("card.status.approvalMore", waiting) : tr("card.status.approval"),
+                               tone: approval.danger ? .failed : .waiting)
         )
         viewModel.presentUrgent(card, keepPanel: true)
-        NookSound.play(.attention)
+        if sound { NookSound.play(.attention) }
     }
 
     /// Interactive multiple-choice prompts from an agent. Returns collected answers upon completion.
-    func presentQuestion(_ request: AgentQuestionRequest, index: Int = 0, selections: [[String]] = []) {
+    func presentQuestion(_ request: AgentQuestionRequest, index: Int = 0, selections: [[String]] = [], inNotch: Bool = false) {
         guard index < request.items.count else { return }
         let item = request.items[index]
         let token = "question-" + request.id
+        // As a macOS notification: the choices do not fit on a banner, so a click brings up the card.
+        if index == 0, !inNotch, settings.noticeDelivery == .system {
+            NookSound.play(.attention)
+            let show: () -> Void = { [weak self] in self?.presentQuestion(request, inNotch: true) }
+            SystemNotifier.shared.notice(id: token, title: tr("noticeDelivery.question", request.agentName),
+                                         subtitle: request.project, body: item.question, open: show, fallback: show)
+            return
+        }
         let choiceID = "\(token)#choice\(index)"
 
         viewModel.registerChoice(choiceID) { [weak self] labels in
             guard let self else { return }
             let all = selections + [labels]
             if index + 1 < request.items.count {
-                self.presentQuestion(request, index: index + 1, selections: all)
+                self.presentQuestion(request, index: index + 1, selections: all, inNotch: true)
             } else {
                 self.hub.answerQuestion(request.id, selections: all)
             }
@@ -84,9 +114,10 @@ extension AppModel {
             TerminalLauncher.activate(sessionBundleID: host)
         }
 
-        var context = "\(request.agentName) · \(request.project) vraagt"
+        var context = "\(request.agentName) · \(request.project)"
         if !item.header.isEmpty { context += " · \(item.header)" }
-        if request.items.count > 1 { context += " · \(index + 1) van \(request.items.count)" }
+        let status = request.items.count > 1 ? tr("card.status.questionOf", index + 1, request.items.count)
+            : tr("card.status.question")
 
         let titleLines = max(1, Int(ceil(Double(item.question.count) / 46.0)))
         let optionsHeight = item.options.reduce(CGFloat(0)) { $0 + ($1.description.isEmpty ? 40 : 58) }
@@ -103,7 +134,8 @@ extension AppModel {
             primary: CardAction(label: tr("approval.inTerminal"), outcome: .callback("\(token)#terminal", "")),
             secondary: CardAction(label: "", outcome: .dismiss),
             contentHeight: min(470, 110 + CGFloat(titleLines) * 24 + optionsHeight + (item.multiSelect ? 52 : 0)),
-            urgent: true
+            urgent: true,
+            status: CardStatus(text: status, tone: .waiting)
         )
         if index == 0 {
             // An open panel stays: it asks in its own compact bar (see `PanelApprovalBar`).
@@ -116,6 +148,7 @@ extension AppModel {
 
     /// Agent question handled: dismisses card and provides brief confirmation if answered in Nook.
     func cardGone(_ token: String, message: String?) {
+        SystemNotifier.shared.withdraw(token)
         var visible = false
         if case .card(let shown) = viewModel.state, shown.id == token { visible = true }
         viewModel.dismissCard(id: token)
@@ -127,6 +160,7 @@ extension AppModel {
     /// Agent finished, failed, or awaiting input: dedicated notification card with agent message.
     /// Displayed unless user is active in notch; auto-dismisses after a short timeout.
     func agentNeedsAttention(_ session: AgentSession) {
+        CompanionNotifier.shared.attention(session)
         NookSound.play(session.status == .done ? .done : .attention)
         // The last agent finished: a small celebration.
         if session.status == .done {
@@ -136,6 +170,23 @@ extension AppModel {
         }
         // While you share your screen or sit in a meeting and chose quiet: the Agents tab shows it, no card pops up.
         guard !quiet.silent else { return }
+        if settings.noticeDelivery == .system {
+            let open: () -> Void = { [weak self] in
+                self?.viewModel.selectedAgentID = session.id
+                self?.viewModel.show(.panel(.agents))
+            }
+            SystemNotifier.shared.notice(
+                id: "agentstatus-" + UUID().uuidString, title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
+                subtitle: session.project, body: session.summary, open: open,
+                fallback: { [weak self] in self?.showAgentNotice(session) }
+            )
+            return
+        }
+        showAgentNotice(session)
+    }
+
+    /// The notch notice for an agent that is done, failed or waits: a card or one slim line (Settings › Notifications).
+    private func showAgentNotice(_ session: AgentSession) {
         switch viewModel.state {
         case .idle, .music, .track, .done, .nudge, .moment: break
         case .card(let shown) where shown.id.hasPrefix("agentstatus-"): break
@@ -143,15 +194,14 @@ extension AppModel {
         }
 
         let mood: NookMood
-        let state: String
         let fallback: String
         switch session.status {
         case .done:
-            mood = .done; state = tr("app.agent.done.state"); fallback = tr("app.agent.done.fallback")
+            mood = .done; fallback = tr("app.agent.done.fallback")
         case .failed:
-            mood = .worry; state = tr("app.agent.failed.state"); fallback = tr("app.agent.failed.fallback")
+            mood = .worry; fallback = tr("app.agent.failed.fallback")
         default:
-            mood = .waiting; state = tr("app.agent.waiting.state"); fallback = tr("app.agent.waiting.fallback")
+            mood = .waiting; fallback = tr("app.agent.waiting.fallback")
         }
         // Compact: one line under the notch, with View and OK. The summary waits in the Agents tab.
         if settings.agentNotice == .compact {
@@ -175,10 +225,8 @@ extension AppModel {
         // OK: gone at once instead of waiting out the timeout; a queued card comes next.
         viewModel.register("\(token)#ok") { [weak self] in self?.viewModel.dismissCard(id: token) }
 
-        var context = "\(session.name) · \(session.project) · \(state)"
-        if session.linesAdded + session.linesRemoved > 0 {
-            context += " · +\(session.linesAdded) −\(session.linesRemoved)"
-        }
+        let context = [session.name, session.project].filter { !$0.isEmpty }.joined(separator: " · ")
+        let changed = session.linesAdded + session.linesRemoved > 0
         let lines = max(1, min(4, Int(ceil(Double(title.count) / 46.0))))
         let ok = CardAction(label: tr("button.ok"), outcome: .callback("\(token)#ok", ""))
         let card = NookCard(
@@ -193,7 +241,9 @@ extension AppModel {
             contentHeight: 100 + CGFloat(lines) * 24,
             acknowledge: ok,
             countdown: Self.agentNoticeSeconds,
-            escape: ok
+            escape: ok,
+            status: CardStatus(text: tr("card.status.\(Self.noticeKey(session.status))"), tone: Self.doneTone(session.status)),
+            changes: changed ? LineChanges(added: session.linesAdded, removed: session.linesRemoved) : nil
         )
         viewModel.show(.card(card))
         dismissAgentCardLater(token)

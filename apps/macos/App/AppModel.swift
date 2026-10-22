@@ -288,7 +288,9 @@ final class AppModel: ObservableObject {
             .store(in: &bag)
         // The ring around Nook shows each conversation's status: redraw when one stops waiting for you or is read, not
         // only when it starts or stops working.
-        chat.$conversations.map { $0.map { "\($0.id)\($0.status)\($0.archived)" } }.removeDuplicates()
+        // Throttled first: `conversations` publishes for every streamed chunk, and the key walks every conversation.
+        chat.$conversations.throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
+            .map { $0.map { "\($0.id)\($0.status)\($0.archived)" } }.removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
@@ -314,9 +316,14 @@ final class AppModel: ObservableObject {
         AppUpdater.shared.start()
         CompanionServer.shared.attach(app: self)
         CompanionNotifier.shared.attach(app: self)
+        SystemNotifier.shared.start()
+        if settings.noticeDelivery == .system { SystemNotifier.shared.requestAccess() }
         hub.onApproval = { [weak self] request in self?.presentApproval(request) }
         hub.onApprovalGone = { [weak self] id, message in self?.cardGone("approval-" + id, message: message) }
-        hub.onQuestion = { [weak self] request in self?.presentQuestion(request) }
+        hub.onQuestion = { [weak self] request in
+            CompanionNotifier.shared.question(request)
+            self?.presentQuestion(request)
+        }
         hub.onQuestionGone = { [weak self] id, message in self?.cardGone("question-" + id, message: message) }
         hub.onAttention = { [weak self] session in self?.agentNeedsAttention(session) }
         hub.start()
@@ -419,6 +426,7 @@ final class AppModel: ObservableObject {
             BrowserConnector(),
             FilesConnector(),
             ClipboardConnector(),
+            ChatInboxConnector(),
             // Apps without an API: their local database, read-only (Messages and WhatsApp need Full Disk Access).
             MessagesConnector(),
             WhatsAppConnector(),
@@ -440,6 +448,7 @@ final class AppModel: ObservableObject {
             .store(in: &bag)
         connectors.start()
         startWhatsApp()
+        startChats()
         startFlow()
         startNotes()
         startWindowAttach()

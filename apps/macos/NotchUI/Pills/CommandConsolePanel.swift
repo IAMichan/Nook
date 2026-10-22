@@ -43,7 +43,7 @@ struct CommandConsolePanel: View {
                     .padding(10)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .cardBackground(NookTheme.notch, stroke: NookTheme.line2, radius: 10, style: .continuous)
+                .cardBackground(NookTheme.notch, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.output?.count ?? 0) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.id) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
@@ -55,7 +55,7 @@ struct CommandConsolePanel: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "terminal").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.console.title")).font(NookTheme.font(13, .semibold)).foregroundStyle(NookTheme.paper)
+            Text(tr("ws.console.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
             status
             Spacer(minLength: 4)
             ToolbarIconButton(copied ? "checkmark" : "doc.on.doc", tr("ws.console.copy")) {
@@ -93,15 +93,21 @@ struct CommandConsolePanel: View {
 /// The block cursor of a shell that still runs.
 private struct BlinkingCursor: View {
     @State private var on = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Rectangle()
             .fill(NookTheme.textSecondary)
             .frame(width: 7, height: 13)
-            .opacity(on ? 1 : 0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { on = false }
-            }
+            // With Reduce Motion the cursor stays lit instead of blinking, also when it is turned on while it blinks.
+            .opacity(on || reduceMotion ? 1 : 0)
+            .onAppear(perform: blink)
+            .onChange(of: reduceMotion) { blink() }
             .accessibilityHidden(true)
+    }
+
+    private func blink() {
+        guard !reduceMotion, on else { return }
+        withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { on = false }
     }
 }

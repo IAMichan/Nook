@@ -60,7 +60,7 @@ struct MusicArtwork: View {
             guard let url else { image = nil; return }
             if let cached = MusicArtworkStore.shared.cached(url) { image = cached; return }
             let loaded = await MusicArtworkStore.shared.image(for: url)
-            withAnimation(.easeOut(duration: 0.25)) { image = loaded }
+            withAnimation(NookTheme.reveal) { image = loaded }
         }
     }
 }
@@ -210,7 +210,7 @@ struct MusicScrubBar: View {
         }
         .frame(height: 14)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: active)
+        .animation(NookTheme.reveal, value: active)
         .accessibilityElement()
         .accessibilityLabel(tr("music.progress"))
         .accessibilityValue("\(musicClock(fraction * duration)) / \(musicClock(duration))")
@@ -244,7 +244,7 @@ struct MusicToggleButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: isOn)
+        .animation(NookTheme.reveal, value: isOn)
         .help(label)
         .accessibilityLabel(label)
         .accessibilityValue(isOn ? tr("music.on") : tr("music.off"))
@@ -319,7 +319,7 @@ struct MusicVolumeControl: View {
             .accessibilityValue(tr("music.percent", shown))
         }
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
     }
 }
 

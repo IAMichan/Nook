@@ -27,6 +27,8 @@ final class FaviconStore: ObservableObject {
         let key = domain.lowercased()
         guard Self.valid(key) else { return nil }
         if let image = images[key] { return image }
+        // Called from view bodies: a domain without an icon must not hit the disk on every redraw.
+        guard !missed.contains(key), !loading.contains(key) else { return nil }
         let file = directory.appendingPathComponent(key + ".icon")
         if let data = try? Data(contentsOf: file), let image = NSImage(data: data) {
             images[key] = image

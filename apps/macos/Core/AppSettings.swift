@@ -354,6 +354,11 @@ final class AppSettings: ObservableObject {
     @Published var agentNotice: AgentNoticeStyle {
         didSet { UserDefaults.standard.set(agentNotice.rawValue, forKey: "agentNotice") }
     }
+    /// Where agent notices and permission requests appear: on the notch, or as macOS notifications with Allow and Deny
+    /// on the banner (Settings › Notifications).
+    @Published var noticeDelivery: NoticeDelivery {
+        didSet { UserDefaults.standard.set(noticeDelivery.rawValue, forKey: "noticeDelivery") }
+    }
     /// Play a short sound when an agent finishes or awaits input.
     @Published var sounds: Bool {
         didSet { UserDefaults.standard.set(sounds, forKey: "sounds") }
@@ -406,6 +411,16 @@ final class AppSettings: ObservableObject {
     @Published var localOnlySources: Set<String> {
         didSet { UserDefaults.standard.set(localOnlySources.sorted(), forKey: "localOnlySources") }
     }
+    /// Apps Nook never reads, on top of the password managers (`ScreenReader.builtInExcluded`): bundle identifiers.
+    @Published var neverReadApps: [String] {
+        didSet { UserDefaults.standard.set(neverReadApps, forKey: Self.neverReadAppsKey) }
+    }
+    nonisolated static let neverReadAppsKey = "neverReadApps"
+    /// How tightly Nook guards what an external brain sees (Settings › Privacy): secrets and, at the strictest level,
+    /// contact details are taken out of what Nook gathered, and the screen and clipboard stay on this Mac.
+    @Published var privacyLevel: PrivacyLevel {
+        didSet { UserDefaults.standard.set(privacyLevel.rawValue, forKey: "privacyLevel") }
+    }
     /// Local quality: a narrow first step copies the evidence out of each document, and the answer is written from those
     /// quotes (slower, more accurate). Only for small brains.
     @Published var evidenceFirst: Bool {
@@ -448,7 +463,14 @@ final class AppSettings: ObservableObject {
 
     /// The sources the active brain may not see: the "only on this Mac" sources while an external brain answers, none
     /// when the brain runs on this Mac.
-    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources }
+    /// The privacy level adds its own (the screen and clipboard when strict).
+    var privateSources: Set<String> { isLocalBrain ? [] : localOnlySources.union(privacyLevel.localOnlySources) }
+
+    /// Text Nook gathered (context, screen text, tool results) as the active brain may get it: unchanged on this Mac,
+    /// filtered by the privacy level when it goes to an external brain.
+    func shielded(_ text: String) -> String {
+        isLocalBrain ? text : PrivacyFilter.apply(text, level: privacyLevel)
+    }
 
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
@@ -548,9 +570,13 @@ final class AppSettings: ObservableObject {
         autoRunSafe = defaults.bool(forKey: "autoRunSafe")
         // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external
         // AI (a key or a provider was set before this version) keeps that choice.
+        // The Keychain is only read when neither choice is stored yet (the first launch of this version): reading it opens the
+        // vault before the app has even started, and the answer would be ignored on every later launch.
+        let storedUseLocal = defaults.object(forKey: "useLocal") as? Bool
+        let storedProvider = defaults.string(forKey: "provider")
         useLocal = BrainSelection.initialUseLocal(
-            stored: defaults.object(forKey: "useLocal") as? Bool, storedProvider: defaults.string(forKey: "provider"),
-            hasAnthropicKey: !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
+            stored: storedUseLocal, storedProvider: storedProvider,
+            hasAnthropicKey: storedUseLocal == nil && storedProvider == nil && !(Keychain.read(Self.keyAccount) ?? "").isEmpty)
         localModel = UserDefaults.standard.string(forKey: "localModel") ?? ""
         screenChoice = defaults.string(forKey: "screenChoice") ?? "auto"
         placement = defaults.string(forKey: "placement") ?? "notch"
@@ -576,6 +602,7 @@ final class AppSettings: ObservableObject {
         notchOnAllScreens = defaults.bool(forKey: "notchOnAllScreens")
         sounds = defaults.object(forKey: "sounds") as? Bool ?? true
         agentNotice = AgentNoticeStyle(rawValue: defaults.string(forKey: "agentNotice") ?? "") ?? .detailed
+        noticeDelivery = NoticeDelivery(rawValue: defaults.string(forKey: "noticeDelivery") ?? "") ?? .notch
         speakAnswers = defaults.bool(forKey: "speakAnswers")
         wakeWord = defaults.bool(forKey: "wakeWord")
         provider = AIProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .claude
@@ -586,6 +613,8 @@ final class AppSettings: ObservableObject {
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
         energyMode = EnergyMode(rawValue: defaults.string(forKey: "energyMode") ?? "") ?? .automatic
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
+        neverReadApps = defaults.stringArray(forKey: Self.neverReadAppsKey) ?? []
+        privacyLevel = PrivacyLevel(rawValue: defaults.string(forKey: "privacyLevel") ?? "") ?? .balanced
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")
         checkAnswers = defaults.object(forKey: "checkAnswers") as? Bool ?? true
         useMemory = defaults.object(forKey: "useMemory") as? Bool ?? true
@@ -632,4 +661,16 @@ enum AgentNoticeStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var titleKey: String { "agentNotice.style.\(rawValue)" }
+}
+
+/// Where Nook shows what agents need from you: a card on the notch, or a macOS notification.
+enum NoticeDelivery: String, CaseIterable, Identifiable {
+    /// Cards and strips on the notch (the default).
+    case notch
+    /// macOS notifications: a permission request carries Allow and Deny on its banner, a click opens it in the notch.
+    case system
+
+    var id: String { rawValue }
+
+    var titleKey: String { "noticeDelivery.\(rawValue)" }
 }

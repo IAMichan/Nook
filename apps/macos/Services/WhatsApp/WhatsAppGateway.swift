@@ -8,6 +8,7 @@
 
 import Foundation
 import CryptoKit
+import UniformTypeIdentifiers
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
 /// (a photo, a video, a document) or you open it.
@@ -76,6 +77,27 @@ extension WAMedia {
         case .image, .video, .audio, .voice, .document: return true
         case .none, .sticker, .location, .contact, .other: return false
         }
+    }
+
+    /// A safe file name for this file: the document's own name when there is one, else one after its kind, with an
+    /// extension the Mac recognizes.
+    func safeFileName(given: String?, mimeType: String?) -> String {
+        var name: String
+        switch self {
+        case .document(let own): name = own ?? given ?? "document"
+        case .image: name = given ?? "photo"
+        case .video: name = given ?? "video"
+        case .audio, .voice: name = given ?? "voice message"
+        default: name = given ?? "attachment"
+        }
+        name = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        if name.isEmpty { name = "attachment" }
+        if (name as NSString).pathExtension.isEmpty, let mimeType,
+           let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension {
+            name += "." + ext
+        }
+        return String(name.suffix(120))
     }
 }
 
@@ -239,8 +261,11 @@ struct WAInbox: Equatable, Sendable {
     /// `.quiet` when it is kept but stays silent (a muted group, your own message).
     /// `history`: an older message loaded on demand (a conversation opened): kept, never counted
     /// as unread, never announced.
+    /// `quietBefore`: someone else's message written before this moment is a catch-up (the Mac slept, the gateway was
+    /// down), likely read on the phone meanwhile: kept like history, never counted as unread, never announced.
     @discardableResult
-    mutating func add(_ message: WAMessage, filters: WAFilters, name: String? = nil, history: Bool = false) -> Outcome {
+    mutating func add(_ message: WAMessage, filters: WAFilters, name: String? = nil, history: Bool = false,
+                      quietBefore: Date? = nil) -> Outcome {
         guard !seenIds.contains(message.id) else { return .duplicate }
         let chat = WAJID.normalized(message.chat)
         guard !filters.ignored.contains(chat) else { return .ignored }
@@ -275,7 +300,7 @@ struct WAInbox: Equatable, Sendable {
         conversation.lastActivity = max(conversation.lastActivity, message.date)
 
         let outcome: Outcome
-        if history {
+        if history || (!message.fromMe && quietBefore.map { message.date < $0 } == true) {
             outcome = .quiet
         } else if message.fromMe {
             // You answered from the phone: it is read there.
@@ -469,6 +494,8 @@ enum WAWebhookEvent: Equatable, Sendable {
     case message(WAMessage)
     /// Your own messages reached the phone or were read: their ticks move.
     case receipt(ids: [String], chat: String, status: WAReceipt)
+    /// You read the chat on the phone (or another linked device): it is read here too.
+    case readElsewhere(chat: String)
     /// A valid delivery Nook has no use for (reactions, a test ping…).
     case ignored
 }
@@ -520,12 +547,14 @@ enum WAWebhook {
 
     /// `{"event":"message.ack","payload":{ids, chat_id, from, receipt_type: "delivered"|"read"|"played"|…}}`.
     /// A group sends one per member, while WhatsApp's own ticks wait for every member: a group keeps its one tick.
-    /// The `-self` receipts are your own phone reading incoming messages, which have no ticks.
+    /// The `-self` receipts are your own phone reading incoming messages, which have no ticks: the chat is read.
     private static func parseGOWAReceipt(_ json: [String: Any]) -> WAWebhookEvent {
         guard let p = json["payload"] as? [String: Any],
-              let chat = p["chat_id"] as? String, !chat.isEmpty, !WAJID.isGroup(chat),
+              let chat = p["chat_id"] as? String, !chat.isEmpty,
+              let type = p["receipt_type"] as? String else { return .ignored }
+        if type == "read-self" || type == "played-self" { return .readElsewhere(chat: chat) }
+        guard !WAJID.isGroup(chat), !type.hasSuffix("-self"),
               let ids = (p["ids"] as? [String])?.filter({ !$0.isEmpty }), !ids.isEmpty,
-              let type = p["receipt_type"] as? String, !type.hasSuffix("-self"),
               let status = WAReceipt(status: type), status >= .delivered else { return .ignored }
         return .receipt(ids: ids, chat: chat, status: status)
     }

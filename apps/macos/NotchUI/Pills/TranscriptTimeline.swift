@@ -78,7 +78,7 @@ struct TranscriptConversation: View {
             }
             if let preview {
                 FilePreviewPanel(path: preview, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(.easeInOut(duration: 0.2)) { self.preview = nil }
+                    withAnimation(NookTheme.reveal) { self.preview = nil }
                 }
                 .id(preview)
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
@@ -86,7 +86,7 @@ struct TranscriptConversation: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else if outputsOpen.wrappedValue {
                 SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(.easeInOut(duration: 0.2)) { outputsOpen.wrappedValue = false }
+                    withAnimation(NookTheme.reveal) { outputsOpen.wrappedValue = false }
                 }
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
                                 available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
@@ -97,7 +97,7 @@ struct TranscriptConversation: View {
         .preference(key: TranscriptOutputCount.self, value: outputs.count)
         // The outputs button in the header asks for the outputs, also while a file is open.
         .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
-            if isOpen { withAnimation(.easeInOut(duration: 0.2)) { preview = nil } }
+            if isOpen { withAnimation(NookTheme.reveal) { preview = nil } }
         }
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
@@ -173,6 +173,9 @@ struct TranscriptConversation: View {
                                    live: true)
                     .help(step.map(Self.label) ?? "")
             }
+        case .interrupted:
+            TranscriptWorkLine(symbol: "stop.circle", label: tr("agents.transcript.interrupted"))
+                .padding(.bottom, 8)
         }
     }
 
@@ -200,14 +203,29 @@ struct TranscriptConversation: View {
         let key = "plan:" + step.id
         let tasks = step.tasks.flatMap { $0.isEmpty ? nil : $0 }
         let file = tasks == nil ? directory.flatMap { folder in step.file.map { SessionOutputs.resolve($0, in: folder) } } : nil
-        return VStack(alignment: .leading, spacing: 4) {
-            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: Self.label(step),
+        let text = TranscriptStepText.parts(step)
+        let error = step.state == .failed ? step.error : nil
+        return VStack(alignment: .leading, spacing: 2) {
+            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
                                lines: step.state == .failed ? nil : step.lines,
                                open: tasks == nil ? nil : open.contains(key), reveals: file.map { $0 == preview }) {
                 if let file { show(file) } else { toggle(key) }
             }
-            .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? step.summary)
+            .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
+            // Why it failed, right under it: what the agent ran into before it tried something else.
+            if let error {
+                Text(error)
+                    .font(NookTheme.font(11.5))
+                    .foregroundStyle(NookTheme.coral.opacity(0.85))
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 26)
+                    .padding(.bottom, 2)
+                    .help(error)
+            }
             if let tasks, open.contains(key) {
                 TaskListRows(steps: tasks)
                     .padding(10)
@@ -240,20 +258,21 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// "Bash  Run the tests": the tool, then what it was about.
+    /// "Ran  npm test": what the agent did, then what it did that to.
     private static func label(_ step: AgentToolStep) -> String {
-        step.summary.isEmpty ? step.name : step.name + "  " + step.summary
+        let text = TranscriptStepText.parts(step)
+        return text.detail.isEmpty ? text.verb : text.verb + "  " + text.detail
     }
 
     private func toggle(_ key: String) {
-        withAnimation(.easeInOut(duration: 0.18)) {
+        withAnimation(NookTheme.reveal) {
             if open.contains(key) { open.remove(key) } else { open.insert(key) }
         }
     }
 
     /// Opens a file in the side panel; the file that is open already closes again.
     private func show(_ file: String) {
-        withAnimation(.easeInOut(duration: 0.2)) { preview = preview == file ? nil : file }
+        withAnimation(NookTheme.reveal) { preview = preview == file ? nil : file }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -298,10 +317,10 @@ struct TranscriptUserBubble: View {
                         text(parts.text)
                         if long {
                             Button(expanded ? tr("agents.message.showLess") : tr("agents.message.showFull")) {
-                                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                                withAnimation(NookTheme.reveal) { expanded.toggle() }
                             }
                             .buttonStyle(.plain)
-                            .font(NookTheme.font(11.5, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
@@ -417,6 +436,9 @@ struct TranscriptCopyButton: View {
 struct TranscriptWorkLine: View {
     let symbol: String
     let label: String
+    /// What the work was done to (a command, a file, a pattern), after the label in quieter text; in monospace with `mono`.
+    var detail: String? = nil
+    var mono = false
     var failed = false
     var live = false
     /// The tests, builds and linters it stands for, and how they went.
@@ -432,19 +454,27 @@ struct TranscriptWorkLine: View {
 
     private var clickable: Bool { open != nil || reveals != nil }
 
+    /// The label, then its detail on the same line, so a long command or path truncates as one sentence.
+    private var labelText: Text {
+        let color = reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.paper.opacity(0.85) : NookTheme.textSecondary
+        let head = Text(label).foregroundStyle(color)
+        guard let detail, !detail.isEmpty else { return head }
+        return head + Text("  ") + Text(detail)
+            .font(mono ? NookTheme.mono(11.5) : NookTheme.font(12.5))
+            .foregroundStyle(reveals == true ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
+    }
+
     var body: some View {
         let content = HStack(spacing: 6) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(NookTheme.font(11.5, .medium))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
                 .frame(width: 20)
             if live {
                 ShimmerText(text: label)
                     .lineLimit(1)
             } else {
-                Text(label)
-                    .foregroundStyle(reveals == true ? NookTheme.paper
-                                     : hovering && clickable ? NookTheme.paper.opacity(0.85) : NookTheme.textSecondary)
+                labelText
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -532,6 +562,39 @@ struct TranscriptWorkingLine: View {
         .padding(.top, 2)
         .padding(.bottom, 8)
         .overlay(alignment: .bottom) { Rectangle().fill(NookTheme.line2.opacity(0.8)).frame(height: 1) }
+    }
+}
+
+/// How a step reads: what the agent did as a verb ("Ran", "Edited"), then what it did that to, instead of the bare
+/// name of the tool. A tool Nook does not know keeps its own name.
+enum TranscriptStepText {
+    /// `detail` is the command, file, pattern or task; `mono` when it is code or a path rather than words.
+    static func parts(_ step: AgentToolStep) -> (verb: String, detail: String, mono: Bool) {
+        let summary = step.summary
+        switch step.name {
+        case "Task", "Agent": return (tr("agents.step.delegated"), summary, false)
+        case "TodoWrite", "Plan", "update_plan": return (tr("agents.step.tasks"), "", false)
+        case "ExitPlanMode": return (tr("agents.step.plan"), "", false)
+        case "WebSearch", "web_search", "google_web_search": return (tr("agents.step.searchedWeb"), summary, false)
+        case "WebFetch", "web_fetch": return (tr("agents.step.fetched"), summary, true)
+        case "Skill": return (tr("agents.step.skill"), summary, true)
+        default: break
+        }
+        let name = step.name.lowercased()
+        switch ToolCategory.of(tool: step.name) {
+        case .command:
+            // A description says in words what the command does; without one the command line itself shows.
+            let described = step.command.map { $0 != summary } ?? false
+            return (tr("agents.step.ran"), summary, !described)
+        case .edit:
+            return (tr(["write", "write_file"].contains(name) ? "agents.step.wrote" : "agents.step.edited"), summary, true)
+        case .read:
+            return (tr(["ls", "list_directory"].contains(name) ? "agents.step.listed" : "agents.step.read"), summary, true)
+        case .search:
+            return (tr("agents.step.searched"), summary, true)
+        case .other:
+            return (step.name, summary, false)
+        }
     }
 }
 

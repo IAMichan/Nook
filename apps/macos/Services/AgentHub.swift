@@ -385,7 +385,10 @@ final class AgentHub: ObservableObject {
         missingScans = missingScans.filter { busy[$0.key] != nil }
         let running = Self.scanned(found)
         for (key, record) in records where record.pid == nil && !record.lineage.isEmpty {
-            records[key]?.pid = SessionLiveness.agentProcess(agent: record.agent, lineage: record.lineage, in: running)
+            // Assigning nil again would still trigger `records`' didSet, and with it a rewrite of the whole file.
+            if let pid = SessionLiveness.agentProcess(agent: record.agent, lineage: record.lineage, in: running) {
+                records[key]?.pid = pid
+            }
         }
         guard !busy.isEmpty else { return }
         for key in busy.keys {
@@ -544,6 +547,11 @@ final class AgentHub: ObservableObject {
         if mode == "statusline" {
             if let usage = PlanUsage.parse(event) {
                 let home = Self.accountHome(env, agentID: agentID)
+                // The status line runs on every message update, several times a second: a reading that shows nothing new
+                // is only stored once a minute (to keep `updated` fresh), instead of redrawing every view and rewriting
+                // UserDefaults each time.
+                let known = home.isEmpty ? planUsage : profilePlanUsage[home]
+                if let known, !usage.differs(from: known) { connection.reply(nil); return }
                 if home.isEmpty { planUsage = usage } else { profilePlanUsage[home] = usage }
             }
             connection.reply(nil)

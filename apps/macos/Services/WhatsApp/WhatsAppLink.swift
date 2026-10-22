@@ -113,6 +113,9 @@ struct WAPreview {
 final class WhatsAppLink: ObservableObject {
     static let shared = WhatsAppLink()
     nonisolated static let webhookPath = "/whatsapp"
+    /// A message older than this when it reaches Nook is a catch-up (after a sleep or an outage), never announced:
+    /// the webhook is instant and polling at most half a minute late.
+    static let freshness: TimeInterval = 120
 
     enum Link: Equatable {
         case off
@@ -146,6 +149,8 @@ final class WhatsAppLink: ObservableObject {
     var onMessage: ((_ chat: String) -> Void)?
     /// Your own messages in a chat got new ticks (delivered, read).
     var onReceipt: ((_ chat: String) -> Void)?
+    /// You read a chat on the phone: what Nook still had waiting for it goes.
+    var onReadElsewhere: ((_ chat: String) -> Void)?
 
     var isConnected: Bool { link == .connected }
 
@@ -392,6 +397,11 @@ final class WhatsAppLink: ObservableObject {
             ingest([message], announce: true)
         case .receipt(let ids, let chat, let status)?:
             if let changed = inbox.applyReceipt(status, ids: ids, chat: chat) { onReceipt?(changed) }
+        case .readElsewhere(let chat)?:
+            let key = WAJID.normalized(chat)
+            guard inbox.conversations[key] != nil else { return }
+            inbox.markRead(key)
+            onReadElsewhere?(key)
         default:
             break
         }
@@ -436,9 +446,10 @@ final class WhatsAppLink: ObservableObject {
 
     private func ingest(_ messages: [WAMessage], announce: Bool) {
         var fresh: String?
+        let quietBefore = Date().addingTimeInterval(-Self.freshness)
         for message in messages {
             let key = WAJID.normalized(message.chat)
-            let outcome = inbox.add(message, filters: filters)
+            let outcome = inbox.add(message, filters: filters, quietBefore: quietBefore)
             nameGroupIfNeeded(key)
             if outcome == .notify, !message.fromMe { fresh = key }
         }
@@ -523,7 +534,7 @@ final class WhatsAppLink: ObservableObject {
 
     /// Saves a fetched file in its own folder under Nook's temporary one, under a name the Mac recognizes.
     private static func save(_ file: WAFile, media: WAMedia) throws -> URL {
-        let name = fileName(for: media, given: file.name, mimeType: file.mimeType)
+        let name = media.safeFileName(given: file.name, mimeType: file.mimeType)
         let folder = openedFilesFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(name)
@@ -601,27 +612,6 @@ final class WhatsAppLink: ObservableObject {
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-    }
-
-    /// A safe file name: the document's own name when there is one, else one after its kind, with an extension the
-    /// Mac recognizes.
-    nonisolated static func fileName(for media: WAMedia, given: String?, mimeType: String?) -> String {
-        var name: String
-        switch media {
-        case .document(let own): name = own ?? given ?? "document"
-        case .image: name = given ?? "photo"
-        case .video: name = given ?? "video"
-        case .audio, .voice: name = given ?? "voice message"
-        default: name = given ?? "attachment"
-        }
-        name = name.components(separatedBy: CharacterSet(charactersIn: "/\\:")).joined(separator: "-")
-            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
-        if name.isEmpty { name = "attachment" }
-        if (name as NSString).pathExtension.isEmpty, let mimeType,
-           let ext = UTType(mimeType: mimeType)?.preferredFilenameExtension {
-            name += "." + ext
-        }
-        return String(name.suffix(120))
     }
 
     /// Marks the chat read here and on WhatsApp (up to its newest received message).

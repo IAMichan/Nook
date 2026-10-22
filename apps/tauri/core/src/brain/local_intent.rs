@@ -34,7 +34,7 @@ impl LocalIntent {
         let polite = rx!(r"^(nook|hé nook|hey nook)[ ,]+").replace(&text, "").to_string();
         let polite = rx!(r"^(wil je|kun je|kan je|graag|please)\s+").replace(&polite, "").to_string();
         let polite = rx!(r"\s+(alsjeblieft|aub|graag|please)$").replace(&polite, "").to_string();
-        let is = |pattern: &str| fancy_regex::Regex::new(&format!("^({pattern})$")).ok().is_some_and(|re| super::matches(&re, &polite));
+        let is = |pattern: &str| super::matches_pattern(&format!("^({pattern})$"), &polite);
 
         if is(r"(volgend[e]?|het volgende) ?(nummer|liedje|track)?|next( song| track)?|skip( dit)?( nummer)?") {
             return Some(Self::Media("next".into()));

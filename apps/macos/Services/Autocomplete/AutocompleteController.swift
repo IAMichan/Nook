@@ -115,6 +115,15 @@ final class AutocompleteController: ObservableObject {
     /// The text before the cursor before and after the key the next read is for, when the key said what it would be: a read
     /// that still shows `old` came before the app took in the key and is read again.
     private var expected: (old: String, new: String)?
+    /// Where the app last said the cursor was, in which field, behind which text: for a read where it says nothing (see
+    /// `placed`).
+    private var lastCaret: (field: String, frame: CGRect?, before: String, caret: CGRect, fontName: String?, fontSize: CGFloat?)?
+    /// What Nook typed last, behind which text, in which app: to check the app took all of it in (see `repairDroppedCharacters`).
+    private var lastTyped: (app: String?, base: String, text: String)?
+    /// Apps that take only the first character of each key event Nook sends: typed into one character at a time. Remembered
+    /// across launches.
+    private var oneByOneApps = Set(UserDefaults.standard.stringArray(forKey: AutocompleteController.oneByOneKey) ?? [])
+    private static let oneByOneKey = "autocomplete.typeOneByOne"
     /// Suggestions made in the field being written in (see `CompletionMemo`).
     private var memo = CompletionMemo()
     /// The read to do again once the app has taken in a key (see `readAgain`).
@@ -338,6 +347,8 @@ final class AutocompleteController: ObservableObject {
     private func isActive(in app: NSRunningApplication?) -> Bool {
         guard let app, !ownAppInFront, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
         let bundleID = app.bundleIdentifier
+        // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
+        if let bundleID, ScreenReader.excludedBundles.contains(bundleID) { return false }
         return prefs.isEnabled(inApp: bundleID) && !store.isPaused(app: bundleID) && !(prefs.pauseOnBattery && onBattery)
     }
 
@@ -445,7 +456,7 @@ final class AutocompleteController: ObservableObject {
             if !commandLike, let number = Int(key.characters), (1...alternatives.count).contains(number) {
                 let choice = alternatives[number - 1]
                 dismiss()
-                AutocompleteTyper.type(choice)
+                typeText(choice)
                 scheduleRefresh()
                 return true
             }
@@ -489,7 +500,7 @@ final class AutocompleteController: ObservableObject {
             case .replacement(let delete, let insert, let word):
                 if acceptWord || acceptAll {
                     dismiss()
-                    AutocompleteTyper.replace(last: delete, with: insert)
+                    AutocompleteTyper.replace(last: delete, with: insert, oneByOne: typesOneByOne(bundleID))
                     store.recordAccepted(insert, first: true, app: bundleID)
                     scheduleRefresh()
                     return true
@@ -561,7 +572,7 @@ final class AutocompleteController: ObservableObject {
         }
         // The field changes without a key the tap sees: known again at the next read.
         lastRead = nil
-        AutocompleteTyper.type(text)
+        typeText(text, behind: rest.anchor)
         store.recordAccepted(text, first: rest.fresh, app: frontApp?.bundleIdentifier)
         if rest.suggestion.isEmpty {
             let anchor = rest.anchor + text
@@ -658,6 +669,8 @@ final class AutocompleteController: ObservableObject {
         completer?.cancel()
         proposal = nil
         alternatives = nil
+        // Whatever Nook typed is no longer what the field is checked against.
+        lastTyped = nil
         overlay.hide()
     }
 
@@ -704,19 +717,66 @@ final class AutocompleteController: ObservableObject {
     private func read(in app: NSRunningApplication, done: @escaping (AutocompleteFieldSnapshot?) -> Void) {
         let token = readToken
         let height = NSScreen.screens.first?.frame.height ?? 0
+        let screens = NSScreen.screens.map(\.frame)
         let pid = app.processIdentifier
         readQueue.async {
-            let snapshot = AutocompleteField.read(screenHeight: height)
+            let snapshot = AutocompleteField.read(screenHeight: height, screens: screens)
             // Chromium and Electron build their tree on request: ask again so the next key finds the field.
             if snapshot == nil { AutocompleteField.wake(app) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard token == self.readToken else { return }
+                    let snapshot = snapshot.map { self.placed($0, in: app) }
                     self.lastRead = snapshot.map { (pid, $0) }
                     done(snapshot)
                 }
             }
         }
+    }
+
+    /// Fills in the cursor when the app did not say where it is this time, from where it said at an earlier read of the same
+    /// field, still in the same place (see `CompletionPlacement.carried`). Many apps answer only now and then, while the app
+    /// is busy drawing the key just typed.
+    private func placed(_ snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication) -> AutocompleteFieldSnapshot {
+        var snapshot = snapshot
+        let field = "\(app.processIdentifier)|" + fieldKey(for: snapshot, in: app)
+        if let caret = snapshot.caret {
+            lastCaret = (field, snapshot.fieldFrame, snapshot.before, caret, snapshot.fontName, snapshot.fontSize)
+            return snapshot
+        }
+        // Another field, or the field moved (scrolled, the window dragged): the old place says nothing any more.
+        guard let last = lastCaret, last.field == field, last.frame == snapshot.fieldFrame else { return snapshot }
+        let font = GhostOverlay.font(name: snapshot.fontName ?? last.fontName, size: snapshot.fontSize ?? last.fontSize,
+                                     caretHeight: last.caret.height, scale: prefs.app(app.bundleIdentifier).fontScale)
+        snapshot.caret = CompletionPlacement.carried(from: last.caret, before: last.before, to: snapshot.before, field: snapshot.fieldFrame) {
+            ($0 as NSString).size(withAttributes: [.font: font]).width
+        }
+        return snapshot
+    }
+
+    private func typesOneByOne(_ bundleID: String?) -> Bool {
+        bundleID.map { oneByOneApps.contains($0) } ?? false
+    }
+
+    /// Types `text` into the front app. With `base` (the text before the cursor it goes behind), the next reads check the app
+    /// took all of it in (see `repairDroppedCharacters`).
+    private func typeText(_ text: String, behind base: String? = nil) {
+        let bundleID = frontApp?.bundleIdentifier
+        lastTyped = base.map { (bundleID, $0, text) }
+        AutocompleteTyper.type(text, oneByOne: typesOneByOne(bundleID))
+    }
+
+    /// When the app took in only part of what Nook just typed (it reads one character per key event), deletes that part and
+    /// types it again one character at a time, and from now on always types into that app that way. True when it did.
+    private func repairDroppedCharacters(_ snapshot: AutocompleteFieldSnapshot?, in app: NSRunningApplication) -> Bool {
+        guard let typed = lastTyped, let snapshot, let bundleID = app.bundleIdentifier, typed.app == bundleID, !oneByOneApps.contains(bundleID),
+              let count = CompletionPlacement.droppedCharacters(typed: typed.text, base: typed.base, actual: snapshot.before) else { return false }
+        lastTyped = nil
+        oneByOneApps.insert(bundleID)
+        UserDefaults.standard.set(oneByOneApps.sorted(), forKey: Self.oneByOneKey)
+        lastRead = nil
+        AutocompleteTyper.replace(last: count, with: typed.text, oneByOne: true)
+        return true
     }
 
     /// Runs `body` (a read of the field) after `interval`, or sooner, as soon as the app reports the field changed (see
@@ -841,7 +901,7 @@ final class AutocompleteController: ObservableObject {
         if snapshot.hasSelection { return }
         if !prefs.smallFields, let field = snapshot.fieldFrame, field.width > 0, field.width < 150 { return }
 
-        if prefs.emoji, let anchor = snapshot.caret ?? snapshot.fieldFrame, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
+        if prefs.emoji, let anchor = snapshot.cardAnchor, let query = CompletionEmojiCatalog.query(in: snapshot.before) {
             let context = String(snapshot.before.dropLast(query.count + 1))
             let choices = CompletionEmojiCatalog.choices(for: query, recent: store.recentEmoji, limit: Self.emojiColumns * 4, context: context)
             // A colon with no emoji by that name is just a colon.
@@ -979,9 +1039,12 @@ final class AutocompleteController: ObservableObject {
         read(in: app) { [weak self] snapshot in
             guard let self else { return }
             if let snapshot, snapshot.before == anchor {
+                self.lastTyped = nil
                 self.propose(for: snapshot, in: app, continuing: true)
             } else if attempt < self.settleAttempts {
                 self.readAgain(after: self.settleInterval) { self.followUp(after: anchor, attempt: attempt + 1) }
+            } else if self.repairDroppedCharacters(snapshot, in: app) {
+                self.followUp(after: anchor)
             } else {
                 self.scheduleRefresh()
             }
@@ -1038,7 +1101,7 @@ final class AutocompleteController: ObservableObject {
             let recent = clipboardSeen.map { Date().timeIntervalSince($0.date) < Self.clipboardSeconds } ?? false
             // Password managers mark secrets as concealed: leave those alone.
             let concealed = board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ?? false
-            if recent, !concealed { input.clipboard = board.string(forType: .string).map(CompletionPrivacy.sanitize) }
+            if recent, !concealed { input.clipboard = board.string(forType: .string).map { CompletionPrivacy.sanitize($0) } }
         }
         if prefs.learn, prefs.personalStrength > 0, let bundleID { input.samples = store.samples.relevant(for: bundleID, limit: 2) }
         fieldContext = (key, Date(), input)
@@ -1081,9 +1144,12 @@ final class AutocompleteController: ObservableObject {
         read(in: app) { [weak self] snapshot in
             guard let self, case .completion(let completion) = self.proposal else { return }
             if let snapshot, !snapshot.hasSelection, snapshot.before == completion.anchor {
+                self.lastTyped = nil
                 self.show(completion.suggestion, for: snapshot, in: app)
             } else if attempt < self.settleAttempts {
                 self.readAgain(after: self.settleInterval) { self.settle(attempt: attempt + 1) }
+            } else if self.repairDroppedCharacters(snapshot, in: app) {
+                self.settle()
             } else {
                 // The app did something else with the text (autocorrect, formatting): start over.
                 self.dismiss()
@@ -1110,7 +1176,7 @@ final class AutocompleteController: ObservableObject {
             }
         }
         // No room in the line, no cursor position, or the card style chosen: a card under the cursor or the field.
-        if let anchor = snapshot.caret ?? snapshot.fieldFrame {
+        if let anchor = snapshot.cardAnchor {
             overlay.showCard(card(suggestion.remaining.trimmingCharacters(in: .whitespaces)), below: anchor)
         } else {
             proposal = nil
@@ -1123,7 +1189,7 @@ final class AutocompleteController: ObservableObject {
         let emoji = picker.choices[index]
         let rendered = CompletionEmojiCatalog.render(emoji, skinTone: prefs.skinTone)
         dismiss()
-        AutocompleteTyper.replace(last: picker.query.count + 1, with: rendered)
+        AutocompleteTyper.replace(last: picker.query.count + 1, with: rendered, oneByOne: typesOneByOne(frontApp?.bundleIdentifier))
         store.recordAccepted(rendered, first: true, app: frontApp?.bundleIdentifier)
         store.recordEmoji(emoji.character)
         scheduleRefresh()
@@ -1202,7 +1268,7 @@ final class AutocompleteController: ObservableObject {
             anchor = snapshot.selectionRect ?? snapshot.caret
             current = snapshot.selectedText.trimmingCharacters(in: .whitespaces)
         } else {
-            anchor = snapshot.caret ?? snapshot.fieldFrame
+            anchor = snapshot.cardAnchor
             current = suggested
         }
         guard let anchor, let model = activeModel else { return }

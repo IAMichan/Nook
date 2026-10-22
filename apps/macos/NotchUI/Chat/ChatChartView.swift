@@ -132,7 +132,7 @@ struct ChatChartView: View {
         // More than seven slices: aggregate the smallest into "Other".
         let sorted = all.sorted { $0.value > $1.value }
         let rest = sorted.dropFirst(6).reduce(0) { $0 + $1.value }
-        return Array(sorted.prefix(6)) + [Row(id: 999, series: "Overig", label: "Overig", value: rest)]
+        return Array(sorted.prefix(6)) + [Row(id: 999, series: tr("chart.other"), label: tr("chart.other"), value: rest)]
     }
 
     private var pie: some View {
@@ -163,7 +163,7 @@ struct ChatChartView: View {
                             .font(NookTheme.font(12, .medium))
                             .foregroundStyle(NookTheme.textSecondary)
                         Text("\(Int((part.value / total * 100).rounded()))%")
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                             .frame(width: 34, alignment: .trailing)
                     }

@@ -100,7 +100,7 @@ private struct MusicBar: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 12)
-        .animation(.easeOut(duration: 0.15), value: hoveringTrack)
+        .animation(NookTheme.hover, value: hoveringTrack)
     }
 
     private var subtitle: String { musicSubtitle(info) }
@@ -320,7 +320,7 @@ private struct MusicUpcomingChip: View {
                         .lineLimit(1)
                     if !track.artist.isEmpty {
                         Text(track.artist)
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.paper.opacity(0.45))
                             .lineLimit(1)
                     }
@@ -333,7 +333,7 @@ private struct MusicUpcomingChip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(NookTheme.hover, value: hovering)
         .help(tr("music.play"))
         .accessibilityLabel(track.artist.isEmpty ? track.title : "\(track.title), \(track.artist)")
         .accessibilityHint(tr("music.play"))
