@@ -676,7 +676,7 @@ private struct NotchResizeHandles: View {
             .onTapGesture(count: 2) { viewModel.resetPanelSize() }
             .help(tr("notch.resize"))
             .accessibilityLabel(tr("notch.resize"))
-            .animation(.easeOut(duration: 0.15), value: lit)
+            .animation(NookTheme.hover, value: lit)
     }
 
     /// What you see of a handle: a grip in the bottom corners (always, faintly), a short bar on a side or the bottom

@@ -177,7 +177,7 @@ struct PanelApprovalBar: View {
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(subtitle(approval, more: waiting.count - 1))
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                 }
@@ -197,7 +197,7 @@ struct PanelApprovalBar: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: 10)
+            .cardBackground(NookTheme.field, stroke: approval.danger ? NookTheme.coral.opacity(0.35) : NookTheme.line2, radius: NookTheme.Radius.card)
             .padding(.top, 10)
             .transition(.opacity.combined(with: .offset(y: -4)))
         } else if !app.demoMode, let question = hub.questions.first(where: { !onScreen($0) }) {
@@ -227,7 +227,7 @@ struct PanelApprovalBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .padding(.top, 10)
         .transition(.opacity.combined(with: .offset(y: -4)))
     }
@@ -236,7 +236,7 @@ struct PanelApprovalBar: View {
     private func questionBar(_ request: AgentQuestionRequest, more: Int) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "questionmark.bubble.fill")
-                .font(NookTheme.font(13))
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.amber)
             VStack(alignment: .leading, spacing: 1) {
                 Text(request.items.first?.question ?? "")
@@ -244,7 +244,7 @@ struct PanelApprovalBar: View {
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 Text(subtitle(request, more: more))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
             }
@@ -261,7 +261,7 @@ struct PanelApprovalBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card)
         .padding(.top, 10)
         .transition(.opacity.combined(with: .offset(y: -4)))
     }
@@ -340,7 +340,7 @@ struct NotchSheetView: View {
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
                 Text(sheet.title)
-                    .font(NookTheme.font(15, .semibold))
+                    .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                 if let subtitle {
                     Text(subtitle)

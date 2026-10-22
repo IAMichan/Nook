@@ -17,11 +17,11 @@ struct ShortcutRecorder: View {
                 HStack(spacing: 6) {
                     Button { recording ? stop() : start() } label: {
                         if recording {
-                            Text(tr("shortcut.record")).foregroundStyle(.secondary)
+                            Text(tr("shortcut.record")).foregroundStyle(NookTheme.textSecondary)
                         } else if let current {
                             Keycap(label: current.display)
                         } else {
-                            Text(tr("shortcut.off")).foregroundStyle(.secondary)
+                            Text(tr("shortcut.off")).foregroundStyle(NookTheme.textSecondary)
                         }
                     }
                     .buttonStyle(.borderless)
@@ -33,7 +33,7 @@ struct ShortcutRecorder: View {
                         .help(tr("shortcut.reset"))
                     }
                 }
-                if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
+                if !note.isEmpty { Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
             }
         }
         .onDisappear { stop() }

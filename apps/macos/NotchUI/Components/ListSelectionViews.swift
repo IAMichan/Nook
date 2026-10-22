@@ -41,6 +41,7 @@ struct SelectableRow: ViewModifier {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tr("select.start"))
                 .padding(.leading, 2)
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }

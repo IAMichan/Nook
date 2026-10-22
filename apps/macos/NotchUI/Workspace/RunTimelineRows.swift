@@ -30,9 +30,9 @@ struct EventRow: View {
             Button(action: toggle) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Image(systemName: "brain").font(NookTheme.font(10.5, .medium)).foregroundStyle(NookTheme.iris)
+                        Image(systemName: "brain").font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.iris)
                         Text(event.state == .running ? tr("ws.event.thinkingLive") : tr("ws.event.thinking"))
-                            .font(NookTheme.font(11.5, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(WS.tertiary)
                         if event.text.count > 280 || event.text.split(separator: "\n").count > 4 {
                             Image(systemName: "chevron.right")
@@ -69,7 +69,7 @@ struct EventRow: View {
                     Image(systemName: "doc.badge.ellipsis")
                         .foregroundStyle(NookTheme.iris)
                     Text(event.text).font(NookTheme.mono(11.5)).foregroundStyle(WS.text)
-                    Text(tr("ws.change." + (event.tool ?? "modified"))).font(NookTheme.font(11)).foregroundStyle(WS.tertiary)
+                    Text(tr("ws.change." + (event.tool ?? "modified"))).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)
                     Image(systemName: "arrow.up.right.square").font(NookTheme.font(10)).foregroundStyle(WS.tertiary)
                 }
             }
@@ -276,7 +276,7 @@ struct CodeBlock: View {
             .clipped()
         }
         .padding(10)
-        .cardBackground(WS.code, stroke: WS.border, radius: 8)
+        .cardBackground(WS.code, stroke: WS.border, radius: NookTheme.Radius.control)
     }
 }
 
@@ -303,7 +303,7 @@ struct ApprovalRow: View {
         }
         .padding(10)
         // Calm: the state label carries the color, the row itself stays neutral.
-        .cardBackground(Color.white.opacity(0.03), stroke: Color.white.opacity(0.08), radius: 9)
+        .cardBackground(Color.white.opacity(0.03), stroke: Color.white.opacity(0.08), radius: NookTheme.Radius.control)
         .onTapGesture { toggle() }
     }
 

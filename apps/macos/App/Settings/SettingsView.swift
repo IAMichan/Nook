@@ -185,8 +185,8 @@ struct SettingsView: View {
         return Section(tr("settings.search.results")) {
             if hits.isEmpty {
                 Text(tr("settings.search.none"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(hits) { hit in
                 Button {
@@ -196,7 +196,7 @@ struct SettingsView: View {
                     Label {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(hit.title).lineLimit(1)
-                            Text(hit.section.title).font(.caption).foregroundStyle(.secondary)
+                            Text(hit.section.title).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                         }
                     } icon: {
                         SettingsTile(hit.section, size: 20)

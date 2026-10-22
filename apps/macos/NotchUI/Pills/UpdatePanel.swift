@@ -97,7 +97,7 @@ struct UpdatePanel: View {
                         Text(tr("update.viewOnGitHub"))
                         Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold))
                     }
-                    .font(NookTheme.font(11.5, .medium))
+                    .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .contentShape(Rectangle())
                 }
@@ -123,7 +123,7 @@ struct UpdatePanel: View {
             }
         }
         .padding(4)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 10, style: .continuous)
+        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
     }
 
     // MARK: Installing
@@ -147,7 +147,7 @@ struct UpdatePanel: View {
                     }
                     if updater.compiledFiles > 0 {
                         Text(tr("update.compiled", updater.compiledFiles))
-                            .font(NookTheme.font(11))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                 }
@@ -181,7 +181,7 @@ struct UpdatePanel: View {
                     Image(systemName: "circle").foregroundStyle(NookTheme.line2)
                 }
             }
-            .font(NookTheme.font(13))
+            .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
             Text(UpdateText.step(step))
                 .font(NookTheme.font(12.5, step == current ? .semibold : .regular))
@@ -250,7 +250,7 @@ struct UpdatePanel: View {
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: 8, style: .continuous)
+                .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.control, style: .continuous)
                 .textSelection(.enabled)
             }
             HStack(spacing: 8) {
@@ -332,7 +332,7 @@ struct UpdatePanel: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: 8, style: .continuous)
+        .cardBackground(tint.opacity(0.08), stroke: tint.opacity(0.25), radius: NookTheme.Radius.control, style: .continuous)
     }
 }
 
@@ -356,7 +356,7 @@ private struct ChangeRow: View {
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
                 Text(NookDates.ago(change.date))
-                    .font(NookTheme.font(11))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                     .fixedSize()

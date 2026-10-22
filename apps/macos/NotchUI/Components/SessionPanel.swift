@@ -198,7 +198,7 @@ struct SessionPanel: View {
                 .textFieldStyle(.roundedBorder)
             TextField(tr("agents.panel.scriptCommand"), text: $scriptCommand)
                 .textFieldStyle(.roundedBorder)
-                .font(NookTheme.mono(12))
+                .font(NookTheme.TextStyle.code)
                 .onSubmit(saveScript)
             HStack(spacing: 6) {
                 Text(tr("agents.panel.scriptFile"))
@@ -206,12 +206,10 @@ struct SessionPanel: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(2)
                 Spacer(minLength: 4)
-                Button(tr("button.cancel")) { resetScriptForm() }
-                Button(tr("agents.panel.scriptSave"), action: saveScript)
-                    .buttonStyle(.borderedProminent)
+                SmallGhostButton(title: tr("button.cancel")) { resetScriptForm() }
+                SmallPrimaryButton(title: tr("agents.panel.scriptSave"), action: saveScript)
                     .disabled(scriptCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .controlSize(.small)
         }
         .font(NookTheme.font(12.5))
         .padding(8)
@@ -389,11 +387,9 @@ struct SessionPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                Button(tr("button.cancel")) { confirmDefault = nil }
-                Button(tr("ws.quick.confirm")) { perform(action) }
-                    .buttonStyle(.borderedProminent)
+                SmallGhostButton(title: tr("button.cancel")) { confirmDefault = nil }
+                SmallPrimaryButton(title: tr("ws.quick.confirm")) { perform(action) }
             }
-            .controlSize(.small)
         }
         .padding(8)
     }
@@ -455,6 +451,8 @@ private struct PanelRow: View {
                     Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
                     Menu { menu } label: { chevron.frame(width: 30, height: 34).contentShape(Rectangle()) }
                         .composerMenu()
+                        .help(tr("a11y.more"))
+                        .accessibilityLabel(tr("a11y.more"))
                 }
             } else if let menu {
                 Menu { menu } label: {
@@ -489,7 +487,7 @@ private struct PanelRow: View {
                     .truncationMode(.middle)
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(NookTheme.font(11))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)

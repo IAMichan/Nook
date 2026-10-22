@@ -14,7 +14,7 @@ struct TasksStrip: View {
         let finished = progress.done >= progress.total
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
+                withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "checklist").font(NookTheme.font(11, .semibold))
@@ -109,7 +109,7 @@ struct SubagentBar: View {
         let done = agents.filter { !$0.isRunning }.count
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) { open.toggle() }
+                withAnimation(NookTheme.reveal) { open.toggle() }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.2").font(NookTheme.font(11, .semibold))
@@ -233,12 +233,7 @@ struct PullRequestWatchStrip: View {
     }
 
     private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(NookTheme.font(10.5, .semibold)).frame(width: 22, height: 22).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
     }
 
     /// "…/pull/12" or "…/-/merge_requests/12".
@@ -316,7 +311,7 @@ struct TurnChangesChip: View {
                 Text(tr("ws.turnChanges.count", turn.files.count))
                 if let total, total != EditLines() { EditLinesLabel(lines: total) }
             }
-            .font(NookTheme.font(11.5, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textSecondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
@@ -348,7 +343,7 @@ struct TurnChangesChip: View {
                         Spacer(minLength: 0)
                         if let count = counts?[relative(path)] { EditLinesLabel(lines: count, size: 10) }
                     }
-                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    Text(relative(path)).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.head)
                 }
                 .tag(path)
             }
@@ -356,17 +351,17 @@ struct TurnChangesChip: View {
             Divider()
             Group {
                 if let failure {
-                    Text(failure).font(.callout).foregroundStyle(.secondary).padding()
+                    Text(failure).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coralSoft).padding()
                 } else if let text {
                     if text.isEmpty {
-                        Text(tr("ws.turnChanges.none")).font(.callout).foregroundStyle(.secondary).padding()
+                        ListEmptyNote(tr("ws.turnChanges.none"), padding: NookTheme.Spacing.xl)
                     } else {
                         DiffText(text: text)
                     }
                 } else if chosen != nil {
-                    ProgressView()
+                    ProgressView().controlSize(.small)
                 } else {
-                    Text(tr("ws.turnChanges.pick")).font(.callout).foregroundStyle(.secondary)
+                    ListEmptyNote(tr("ws.turnChanges.pick"))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

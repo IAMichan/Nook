@@ -33,7 +33,7 @@ struct CIChecksPopover: View {
                         CheckOutcomeGlyph(outcome: check.outcome).frame(width: 14)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(check.name).font(NookTheme.font(12, .medium)).lineLimit(1)
-                            Text(check.detail).font(NookTheme.font(10.5)).foregroundStyle(.secondary).lineLimit(1)
+                            Text(check.detail).font(NookTheme.font(10.5)).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
                         }
                     }
                     .tag(check.id)

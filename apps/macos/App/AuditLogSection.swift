@@ -13,29 +13,29 @@ struct AuditLogSection: View {
                 .onSubmit(load)
                 .onChange(of: query) { _, _ in load() }
             if entries.isEmpty {
-                Text(tr("privacy.log.empty")).foregroundStyle(.secondary)
+                Text(tr("privacy.log.empty")).foregroundStyle(NookTheme.textSecondary)
             }
             ForEach(entries.prefix(100)) { entry in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text(entry.tool).font(.callout.weight(.medium))
+                        Text(entry.tool).font(NookTheme.font(13, .medium))
                         Spacer()
-                        Text(entry.date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                        Text(entry.date.formatted(date: .abbreviated, time: .shortened)).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
                     if !entry.result.isEmpty {
-                        Text(entry.result).font(.caption)
-                            .foregroundStyle(entry.result.hasPrefix("FOUT") ? Color.red : Color.secondary)
+                        Text(entry.result).font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(entry.result.hasPrefix("FOUT") ? NookTheme.coral : NookTheme.textSecondary)
                             .lineLimit(2)
                     }
                     if !entry.args.isEmpty, entry.args != "{}" {
-                        Text(entry.args).font(.caption2.monospaced()).foregroundStyle(.tertiary).lineLimit(2).textSelection(.enabled)
+                        Text(entry.args).font(NookTheme.mono(10.5)).foregroundStyle(NookTheme.textTertiary).lineLimit(2).textSelection(.enabled)
                     }
                 }
             }
             HStack {
                 Spacer()
-                if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
-                Button(tr("privacy.log.clear"), role: .destructive) {
+                if !note.isEmpty { Text(note).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary) }
+                ConfirmedButton(tr("privacy.log.clear"), question: tr("confirm.clearAudit"), detail: tr("confirm.clearAudit.detail")) {
                     app.store.clearAudit()
                     note = tr("privacy.log.cleared")
                     load()

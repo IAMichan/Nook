@@ -303,7 +303,7 @@ struct ComposerSuggestionList: View {
             }
         }
         .padding(5)
-        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: 14, style: .continuous)
+        .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .accessibilityElement(children: .contain)
     }
 }
@@ -425,7 +425,7 @@ struct ComposerContextRing: View {
                 if let onCompact {
                     Button(tr("compose.context.compact")) { open = false; onCompact() }
                 } else {
-                    Text(tr("compose.context.noCompact")).font(NookTheme.font(11)).foregroundStyle(NookTheme.textTertiary)
+                    Text(tr("compose.context.noCompact")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                 }
             }
             .padding(12)
