@@ -5,10 +5,12 @@
   import { toast } from "../lib/toast.svelte";
   import type { ConversationSummary } from "../lib/types";
   import Icon from "./Icon.svelte";
+  import type { Route } from "../lib/shell-routes";
+  import { onBack } from "../lib/mobile";
 
   let { onclose, onnavigate, companionEnabled = false }: {
     onclose: () => void;
-    onnavigate: (route: "chat" | "agents" | "workspace" | "companion" | "settings") => void;
+    onnavigate: (route: Route) => void;
     companionEnabled?: boolean;
   } = $props();
 
@@ -25,7 +27,9 @@
     const previous = document.activeElement;
     dialog.showModal();
     input.focus();
+    const offBack = onBack(() => { onclose(); return true; });
     return () => {
+      offBack();
       dialog.close();
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
@@ -75,12 +79,13 @@
   }
 
   function keys(e: KeyboardEvent) {
-    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && items.length) {
+    if (e.isComposing || e.defaultPrevented) return;
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && items.length && e.target === input) {
       e.preventDefault();
       input.focus();
       selected = (activeIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       queueMicrotask(() => dialog.querySelector(`[data-index="${selected}"]`)?.scrollIntoView({ block: "nearest" }));
-    } else if (e.key === "Enter" && !e.isComposing && e.target === input) {
+    } else if (e.key === "Enter" && e.target === input) {
       e.preventDefault();
       const command = items[activeIndex];
       if (command) choose(command);
@@ -90,14 +95,15 @@
 
 <dialog bind:this={dialog} aria-label="Quick switcher" onclose={onclose} onkeydown={keys} onclick={(e) => { if (e.target === dialog) onclose(); }}>
   <div class="palette">
-    <div class="search"><Icon name="search" size={20} /><input bind:this={input} bind:value={query} aria-label="Search actions and conversations" placeholder="Where would you like to go?" /><button class="ghost" onclick={onclose} aria-label="Close quick switcher">Esc</button></div>
+    <div class="search"><Icon name="search" size={20} /><input bind:this={input} bind:value={query} role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="quick-switcher-results" aria-activedescendant={items.length ? `quick-switcher-option-${activeIndex}` : undefined} aria-label="Search actions and conversations" placeholder="Where would you like to go?" /><button class="ghost" onclick={onclose} aria-label="Close quick switcher">Esc</button></div>
     <div class="results">
       <div class="label">{query.trim() ? "RESULTS" : "QUICK ACTIONS & RECENT NOOKS"}</div>
+      <div id="quick-switcher-results" role="listbox" aria-label="Actions and conversations">
       {#each items as command, i (command.id)}
-        <button class="result" class:active={i === activeIndex} data-index={i} onclick={() => choose(command)} onfocus={() => (selected = i)}><Icon name={command.icon} /><span>{command.title}</span><small>{command.id.startsWith("nook:") ? "Conversation" : "Action"}</small></button>
-      {:else}
-        {#if !searching}<p class="empty">No matches. Try a different search.</p>{/if}
+        <button id={`quick-switcher-option-${i}`} role="option" aria-selected={i === activeIndex} tabindex="-1" class="result" class:active={i === activeIndex} data-index={i} onclick={() => choose(command)} onfocus={() => (selected = i)}><Icon name={command.icon} /><span>{command.title}</span><small>{command.id.startsWith("nook:") ? "Conversation" : "Action"}</small></button>
       {/each}
+      </div>
+      {#if !items.length && !searching}<p class="empty" role="status">No matches. Try a different search.</p>{/if}
       {#if searching}<p class="note" role="status">Searching conversations…</p>{/if}
       {#if searchError}<p class="error" role="alert">Could not search conversations. Close and try again.</p>{/if}
     </div>

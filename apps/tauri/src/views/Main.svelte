@@ -9,15 +9,13 @@
   import CommandPalette from "../components/CommandPalette.svelte";
   import { conversationMarkdown } from "../lib/conversation-export";
   import { toast } from "../lib/toast.svelte";
-  import Settings from "./Settings.svelte";
-  import Agents from "./Agents.svelte";
-  import Workspace from "./Workspace.svelte";
-  import Companion from "./companion/Companion.svelte";
+  import LazyView from "../components/LazyView.svelte";
+  import { parseRoute, reloadRoute, resumeRoute, routeTitles, routeViews, type Route } from "../lib/shell-routes";
+  import { shellShortcut } from "../lib/shell-shortcuts";
   import { companion } from "../lib/companion";
   import { onBack, setupMobile } from "../lib/mobile";
 
-  type Route = "chat" | "agents" | "workspace" | "companion" | "settings";
-  let route = $state<Route>("chat");
+  let route = $state<Route>(resumeRoute());
   let showList = $state(true);
   let paletteOpen = $state(false);
   let width = $state(window.innerWidth);
@@ -45,15 +43,16 @@
 
   // Terug: van een gesprek naar de lijst, van een ander scherm naar de chat.
   $effect(() => onBack(() => {
+    if (paletteOpen) return (paletteOpen = false), true;
     if (route === "chat" && mobile && !showList) return (showList = true), true;
     if (route !== "chat") return (route = "chat"), true;
     return false;
   }));
 
   $effect(() => {
-    api.takeRoute().then((r) => r && (route = r as Route));
+    api.takeRoute().then((r) => r && (route = parseRoute(r)));
     const un = events.onNavigate((r) => {
-      route = (r as Route) || "chat";
+      route = parseRoute(r);
       api.takeRoute();
     });
     return () => {
@@ -68,27 +67,28 @@
     lastActive = nook.activeId;
   });
 
-  const routeTitle = $derived(({ chat: "Chat", agents: "Agents", workspace: "Workspace", companion: "Companion", settings: "Settings" })[route]);
+  const routeTitle = $derived(routeTitles[route]);
   const status = $derived(nook.waiting ? "Waiting for you" : nook.working ? "Working" : nook.info?.brainReady ? "Ready" : "Set up your brain");
 
   function keys(e: KeyboardEvent) {
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === "k") {
-      e.preventDefault();
-      paletteOpen = !paletteOpen;
-    } else if (mod && e.key.toLowerCase() === "b" && route === "chat" && !paletteOpen) {
-      e.preventDefault();
-      showList = !showList;
-    } else if (mod && e.key.toLowerCase() === "n" && !paletteOpen) {
-      e.preventDefault();
-      route = "chat";
-      showList = !mobile;
-      nook.newNook();
-    } else if (mod && e.key === ",") {
-      e.preventDefault();
-      route = "settings";
-    } else if (mod && e.key === ".") {
-      nook.stop();
+    const target = e.target instanceof Element ? e.target : null;
+    const shortcut = shellShortcut(e, {
+      paletteOpen, chat: route === "chat",
+      modalOpen: !!document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]'),
+      editing: !!target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .xterm'),
+    });
+    if (!shortcut) return;
+    e.preventDefault();
+    switch (shortcut) {
+      case "palette": paletteOpen = !paletteOpen; break;
+      case "sidebar": showList = !showList; break;
+      case "new":
+        route = "chat";
+        showList = !mobile;
+        nook.newNook();
+        break;
+      case "settings": route = "settings"; break;
+      case "stop": nook.stop(); break;
     }
   }
 
@@ -150,10 +150,7 @@
     {:else}
       <header class="title page-title"><span class="name">{routeTitle}</span><span class="page-caption">{route === "settings" ? "Make Nook yours" : route === "agents" ? "Your coding sessions, together" : route === "workspace" ? "Tools for your next idea" : "Stay connected"}</span></header>
       <div class="route-body">
-        {#if route === "agents"}<Agents />
-        {:else if route === "workspace"}<Workspace />
-        {:else if route === "companion"}<Companion />
-        {:else}<Settings />{/if}
+        {#key route}<LazyView load={routeViews[route]} label={routeTitle} onretry={() => reloadRoute(route)} />{/key}
       </div>
     {/if}
   </section>
