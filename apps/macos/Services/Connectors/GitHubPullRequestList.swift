@@ -183,7 +183,7 @@ final class PullRequestWatchSettings: ObservableObject {
 }
 
 /// The pull request list kept between visits: the last list shows at once, also after a
-/// restart, and is refreshed in the background when it is older than half a minute. A failed refresh keeps the rows; a
+/// restart, and is refreshed in the background when it is older than 15 seconds. A failed refresh keeps the rows; a
 /// passing failure (no connection for a moment, GitHub slow to answer) only shows once it happened twice in a row.
 @MainActor
 final class PullRequestStore: ObservableObject {
@@ -194,11 +194,13 @@ final class PullRequestStore: ObservableObject {
     @Published private(set) var loaded = false
     @Published private(set) var available = false
     private(set) var fetchedAt = Date.distantPast
+    /// When the list was last read from GitHub; the panel says how long ago. Unlike `fetchedAt`, never reset by `markStale`.
+    @Published private(set) var lastRead: Date?
     /// A forced refresh asked for while one was running: it runs right after, so a change made meanwhile is not missed.
     private var again = false
     /// Passing failures in a row per account; the error shows from the second one, or at once without rows to show.
     private var failures: [String: Int] = [:]
-    private static let staleAfter: TimeInterval = 30
+    private static let staleAfter: TimeInterval = 15
     /// Pull requests merged from Nook, with when. GitHub's search takes a while to see a merge; until it does (or for
     /// ten minutes at most) the list shows them merged anyway, instead of open again after the next refresh.
     private var mergedHere: [String: Date] = [:]
@@ -235,6 +237,7 @@ final class PullRequestStore: ObservableObject {
         loading = false
         loaded = true
         fetchedAt = Date()
+        if fresh.contains(where: { $0.error == nil }) { lastRead = fetchedAt }
         let cutoff = Date().addingTimeInterval(-Self.mergeGrace)
         mergedHere = mergedHere.filter { $0.value > cutoff }
         accounts = fresh.map(merge).map(settled)
@@ -277,6 +280,29 @@ final class PullRequestStore: ObservableObject {
             kept.errorKind = account.errorKind
         }
         return kept
+    }
+
+    /// A pull request was read in full (see PullRequestDetailModel): its row takes the title, state and checks GitHub
+    /// gave just now, so the list never lags behind the page.
+    func update(with detail: PullRequestDetail) {
+        let state: PullRequestItem.State = detail.state == .merged ? .merged : detail.state == .closed ? .closed : .open
+        func refreshed(_ items: [PullRequestItem]) -> [PullRequestItem] {
+            items.map { item in
+                guard item.id == detail.id else { return item }
+                return PullRequestItem(repo: item.repo, number: item.number, title: detail.title, url: detail.url ?? item.url,
+                                       draft: detail.state == .draft, updated: detail.updated ?? item.updated, author: item.author,
+                                       ci: detail.checks.isEmpty ? item.ci : detail.checkSummary,
+                                       state: mergedHere[item.id] != nil && state == .open ? .merged : state)
+            }
+        }
+        let updated = accounts.map { account -> AccountPullRequests in
+            var account = account
+            account.mine = refreshed(account.mine)
+            account.reviews = refreshed(account.reviews)
+            account.watched = refreshed(account.watched)
+            return account
+        }
+        if updated != accounts { accounts = updated }
     }
 
     /// Something changed (a turn ended, a pull request opened): the next look refreshes.

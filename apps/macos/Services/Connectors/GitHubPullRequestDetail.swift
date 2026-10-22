@@ -18,40 +18,26 @@ enum GitHubPullRequestDetail {
         ["Authorization": "Bearer \(token)", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
     }
 
-    /// The pull request with its checks, conversation, commits and files. Only the pull request itself must load; a part
-    /// that fails (no access to checks, say) stays empty instead of hiding the rest.
+    /// The pull request with its checks, conversation, commits and files: `summary` and `activity` together.
     static func load(repo: String, number: Int, token: String) async throws -> PullRequestDetail {
-        let auth = headers(token)
-        let base = "https://api.github.com/repos/\(repo)"
-        @Sendable func get(_ path: String) async throws -> Any {
-            guard let url = URL(string: base + path) else { throw NookError("Invalid GitHub address.") }
-            return try await ConnectorRetry.run { try await ConnectorHTTP.json(url, headers: auth) }
-        }
-        @Sendable func list(_ path: String) async -> [[String: Any]] { ((try? await get(path)) as? [[String: Any]]) ?? [] }
-        /// Every page of a list (100 per page), up to `pages` pages.
-        @Sendable func all(_ path: String, pages: Int) async -> [[String: Any]] {
-            var result: [[String: Any]] = []
-            for page in 1...pages {
-                let chunk = await list(path + (path.contains("?") ? "&" : "?") + "per_page=100&page=\(page)")
-                result += chunk
-                if chunk.count < 100 { break }
-            }
-            return result
-        }
+        async let activity = loadActivity(repo: repo, number: number, token: token, counts: nil)
+        var detail = try await summary(repo: repo, number: number, token: token)
+        detail.apply(await activity)
+        return detail
+    }
 
+    /// What the top of the page and the merge bar need, in two rounds of requests: the pull request with its
+    /// repository, then the checks of its head. Its `activityLoaded` is false; `loadActivity` fills in the rest.
+    static func summary(repo: String, number: Int, token: String) async throws -> PullRequestDetail {
+        let get = getter(repo: repo, token: token)
+        async let repository = (try? await get("")) as? [String: Any]
         guard let pull = try await get("/pulls/\(number)") as? [String: Any] else {
             throw NookError("GitHub returned an unexpected response.")
         }
-        async let repository = (try? await get("")) as? [String: Any]
-        async let reviews = all("/pulls/\(number)/reviews", pages: 3)
-        async let comments = all("/issues/\(number)/comments", pages: 3)
-        async let lineComments = all("/pulls/\(number)/comments", pages: 3)
-        async let commits = all("/pulls/\(number)/commits", pages: 3)
-        async let files = all("/pulls/\(number)/files", pages: 30)
-        async let timeline = all("/issues/\(number)/timeline", pages: 5)
         guard var detail = PullRequestDetailParser.detail(pull: pull, repository: await repository) else {
             throw NookError("GitHub returned an unexpected response.")
         }
+        detail.activityLoaded = false
         let sha = detail.headSHA
         if !sha.isEmpty {
             async let runs = (try? await get("/commits/\(sha)/check-runs?per_page=100")) as? [String: Any]
@@ -59,11 +45,60 @@ enum GitHubPullRequestDetail {
             detail.checks = PullRequestDetailParser.checks(runs: ((await runs)?["check_runs"] as? [[String: Any]]) ?? [],
                                                            statuses: ((await status)?["statuses"] as? [[String: Any]]) ?? [])
         }
-        detail.commits = PullRequestDetailParser.commits(await commits)
-        detail.events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
-                                                       timeline: await timeline, commits: detail.commits)
-        detail.files = PullRequestDetailParser.files(await files)
         return detail
+    }
+
+    /// The timeline, commits and files. A part that fails (no access, say) stays empty instead of hiding the rest.
+    /// With the counts of a summary every page of a list is asked at once; without them one after the other.
+    static func loadActivity(repo: String, number: Int, token: String, counts: PullRequestDetail?) async -> PullRequestActivity {
+        let get = getter(repo: repo, token: token)
+        @Sendable func list(_ path: String) async -> [[String: Any]] { ((try? await get(path)) as? [[String: Any]]) ?? [] }
+        @Sendable func page(_ path: String, _ page: Int) -> String { path + (path.contains("?") ? "&" : "?") + "per_page=100&page=\(page)" }
+        /// Every page of a list (100 per page), up to `limit` pages.
+        @Sendable func all(_ path: String, count: Int?, limit: Int) async -> [[String: Any]] {
+            if let pages = PullRequestDetailParser.pages(count: count, limit: limit) {
+                return await withTaskGroup(of: JSONPage.self) { group in
+                    for index in 1...pages { group.addTask { JSONPage(number: index, items: await list(page(path, index))) } }
+                    var parts: [JSONPage] = []
+                    for await part in group { parts.append(part) }
+                    return parts.sorted { $0.number < $1.number }.flatMap(\.items)
+                }
+            }
+            var result: [[String: Any]] = []
+            for index in 1...limit {
+                let chunk = await list(page(path, index))
+                result += chunk
+                if chunk.count < 100 { break }
+            }
+            return result
+        }
+
+        async let reviews = all("/pulls/\(number)/reviews", count: nil, limit: 3)
+        async let comments = all("/issues/\(number)/comments", count: counts?.commentCount, limit: 3)
+        async let lineComments = all("/pulls/\(number)/comments", count: counts?.lineCommentCount, limit: 3)
+        async let commitList = all("/pulls/\(number)/commits", count: counts?.commitCount, limit: 3)
+        async let fileList = all("/pulls/\(number)/files", count: counts?.changedFiles, limit: 30)
+        async let timeline = all("/issues/\(number)/timeline", count: nil, limit: 5)
+        let commits = PullRequestDetailParser.commits(await commitList)
+        let events = PullRequestDetailParser.events(reviews: await reviews, comments: await comments, lineComments: await lineComments,
+                                                    timeline: await timeline, commits: commits)
+        return PullRequestActivity(events: events, commits: commits, files: PullRequestDetailParser.files(await fileList))
+    }
+
+    /// One page of a list, handed from the task that read it. Parsed JSON is only read after the group is done.
+    private struct JSONPage: @unchecked Sendable {
+        let number: Int
+        let items: [[String: Any]]
+    }
+
+    /// A GET on the repository's REST address, asked again when it failed on something passing.
+    private static func getter(repo: String, token: String) -> @Sendable (String) async throws -> Any {
+        let auth = headers(token)
+        let base = "https://api.github.com/repos/\(repo)"
+        return { path in
+            guard let url = URL(string: base + path) else { throw NookError("Invalid GitHub address.") }
+            return try await ConnectorRetry.run { try await ConnectorHTTP.json(url, headers: auth) }
+        }
     }
 
     /// Only what deciding on a merge needs: the pull request, the repository's merge methods and access, and the checks

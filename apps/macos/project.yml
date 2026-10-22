@@ -170,6 +170,7 @@ targets:
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
       - path: Core/I18n+ChatMedia.swift
+      - path: Core/I18n+PullRequests.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
