@@ -126,7 +126,8 @@ extension AppModel {
     }
 
     /// What was typed in the notch's quick field: a new conversation in the Nook chat, through the same path as a message
-    /// typed there (`handleUserText`), so the quick field can do everything the chat can.
+    /// typed there (`handleUserText`), so the quick field can do everything the chat can. The notch stays small while
+    /// Nook works; the answer arrives as a card with View, and opening the notch yourself shows the chat.
     func askFromQuickField(_ text: String) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty else { return }
@@ -137,7 +138,7 @@ extension AppModel {
             return
         }
         chat.startNew()
-        handleUserText(request)
+        handleUserText(request, reveal: false)
     }
 
     // MARK: Running
