@@ -61,8 +61,8 @@ struct ChatsTab: View {
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
-    /// Settings › Chats: opening a chat marks it read, in Nook only. Off by default.
-    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = false
+    /// Settings › Chats: opening a chat marks it read, in Nook only. On by default; WhatsApp keeps it unread either way.
+    @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
@@ -214,7 +214,7 @@ struct ChatsTab: View {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: conversation.unread, ticks: ticks, handle: Self.handle(conversation.id),
+                                          unread: whatsApp.unread(conversation.id), ticks: ticks, handle: Self.handle(conversation.id),
                                           avatar: whatsApp.avatars[conversation.id]))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
@@ -226,7 +226,7 @@ struct ChatsTab: View {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, unread: 0, handle: Self.handle(chat.jid),
+                                          preview: "", last: chat.last, unread: whatsApp.unread(chat.jid), handle: Self.handle(chat.jid),
                                           avatar: whatsApp.avatars[chat.jid]))
             }
         }

@@ -142,6 +142,8 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
     @Published private(set) var knownChats: [WAChatInfo] = []
+    /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows.
+    @Published private(set) var readInNook: [String: Date] = [:]
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
     @Published private(set) var avatars: [String: String] = [:]
     /// When a chat's picture was last asked for: a chat without one is asked again after a while, not at every look.
@@ -448,7 +450,7 @@ final class WhatsAppLink: ObservableObject {
     private func loadChats(_ provider: WhatsAppProvider, gen: Int) async {
         lastChatList = Date()
         guard let chats = try? await provider.chats(limit: 200), gen == generation else { return }
-        knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last) }
+        knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread) }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
             let jid = WAJID.normalized(channel.jid)
@@ -712,16 +714,30 @@ final class WhatsAppLink: ObservableObject {
     /// Marks the chat read here and on WhatsApp (up to its newest received message).
     /// Marks the chat read in Nook only: WhatsApp (and your phone) keep it unread, and the sender sees no blue ticks.
     func markReadInNook(_ chat: String) {
-        inbox.markRead(chat)
+        let key = WAJID.normalized(chat)
+        inbox.markRead(key)
+        readInNook[key] = Date()
+    }
+
+    /// The unread count a chat shows in Nook: what came in while Nook ran, else what WhatsApp itself counts (when the
+    /// gateway says), until you read it in Nook.
+    func unread(_ chat: String) -> Int {
+        let key = WAJID.normalized(chat)
+        if let counted = inbox.conversations[key]?.unread, counted > 0 { return counted }
+        guard let known = knownChats.first(where: { $0.jid == key }), known.unread > 0 else { return 0 }
+        if let read = readInNook[key], known.last <= read { return 0 }
+        return known.unread
     }
 
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
+        readInNook[WAJID.normalized(chat)] = nil
         inbox.markUnread(chat)
     }
 
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
+        readInNook[key] = Date()
         guard let provider, let conversation = inbox.conversations[key] else { return }
         let hadUnread = conversation.unread > 0
         inbox.markRead(key)
