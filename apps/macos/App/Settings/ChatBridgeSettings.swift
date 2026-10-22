@@ -140,6 +140,8 @@ struct TelegramSettingsRows: View {
 /// code on Microsoft's own page.
 struct TeamsSettingsRows: View {
     @ObservedObject var teams: TeamsBridge
+    /// Why the last read failed while signed in, if it did.
+    let problem: String?
     let onSignedIn: () -> Void
     @State private var clientID = ""
 
@@ -186,6 +188,9 @@ struct TeamsSettingsRows: View {
                 Button(tr("chats.teams.signOut")) { teams.signOut() }
             }
             .onAppear(perform: onSignedIn)
+            if let problem {
+                StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
+            }
         }
     }
 

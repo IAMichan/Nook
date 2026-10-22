@@ -137,6 +137,16 @@ enum TeamsData {
         return messages.sorted { $0.date < $1.date }
     }
 
+    /// Whether an answer of /me/chats/{id}/messages already lists the newest message the chat list announced. Graph can
+    /// announce a message in the list a few seconds before the chat's own messages show it; a chat read too early must
+    /// be read again. System notices count too, since the list announces those as well.
+    static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
+        guard let last else { return true }
+        let newest = (json["value"] as? [[String: Any]] ?? []).compactMap { date($0["createdDateTime"]) }.max()
+        // The list and the messages round the same moment differently (milliseconds or not).
+        return newest.map { $0 >= last.addingTimeInterval(-1) } ?? false
+    }
+
     /// How many of these messages from others came after you last read the chat.
     static func unread(_ messages: [InboxMessage], readUntil: Date?) -> Int {
         guard let readUntil else { return 0 }
