@@ -8,7 +8,8 @@ struct SuggestionGrid: View {
     let ask: (StartSuggestion) -> Void
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], alignment: .leading, spacing: 8) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: NookTheme.Spacing.md), GridItem(.flexible(), spacing: NookTheme.Spacing.md)],
+                  alignment: .leading, spacing: NookTheme.Spacing.md) {
             ForEach(suggestions) { suggestion in
                 SuggestionCard(suggestion: suggestion) { ask(suggestion) }
             }
@@ -24,10 +25,10 @@ private struct SuggestionCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 HomeLogo(logo: suggestion.logo, tint: NookTheme.textSecondary, size: 26)
                 Text(suggestion.text)
-                    .font(NookTheme.font(12.5, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -40,7 +41,7 @@ private struct SuggestionCard: View {
             }
             .padding(.horizontal, NookTheme.Spacing.md)
             .padding(.vertical, NookTheme.Spacing.md)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(hovering ? NookTheme.graphite : NookTheme.field))
             .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
         }
@@ -102,7 +103,7 @@ struct TodayRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 HomeLogo(logo: item.logo, tint: item.color)
                     .overlay(alignment: .bottomTrailing) {
                         if hasBadge {
@@ -111,23 +112,23 @@ struct TodayRow: View {
                                 .offset(x: 2, y: 2)
                         }
                     }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(item.title)
-                        .font(NookTheme.font(13.5, .medium))
+                        .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     if !item.subtitle.isEmpty {
                         Text(item.subtitle)
-                            .font(NookTheme.font(12))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .lineLimit(1)
                     }
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: NookTheme.Spacing.md)
                 if !item.action.isEmpty {
-                    HStack(spacing: 4) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
                         Text(item.action)
-                            .font(NookTheme.font(12, .medium))
+                            .font(NookTheme.TextStyle.label)
                         Image(systemName: "chevron.right")
                             .font(NookTheme.font(9.5, .semibold))
                     }

@@ -36,32 +36,33 @@ struct MailDraftView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: "envelope")
-                    .font(NookTheme.font(12, .semibold))
-                    .foregroundStyle(NookTheme.iris)
-                Text(tr("chat.mail.concept"))
-                    .font(NookTheme.font(12, .semibold))
+                    .font(NookTheme.font(12, .medium))
                     .foregroundStyle(NookTheme.textSecondary)
+                Text(tr("chat.mail.concept"))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(NookTheme.paper)
                 Spacer()
                 statusLabel
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, NookTheme.Spacing.md)
 
             field(tr("chat.mail.to"), text: $to, prompt: tr("chat.mail.emailPrompt"))
             if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
             field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"))
 
             TextEditor(text: $body_)
-                .font(NookTheme.font(13.5))
+                .font(NookTheme.TextStyle.body)
+                .lineSpacing(3)
                 .foregroundStyle(NookTheme.paper)
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
                 .frame(minHeight: 110, maxHeight: 220)
-                .padding(.top, 8)
+                .padding(.top, NookTheme.Spacing.md)
                 .disabled(locked)
 
-            HStack(spacing: 4) {
+            HStack(spacing: NookTheme.Spacing.xs) {
                 if draft.state == .sent {
                     Label(tr("chat.mail.sent"), systemImage: "checkmark")
                         .font(NookTheme.TextStyle.strong)
@@ -79,19 +80,19 @@ struct MailDraftView: View {
                 }
                 Spacer()
             }
-            .padding(.top, 8)
+            .padding(.top, NookTheme.Spacing.md)
 
             if case .failed(let message) = draft.state {
                 Text(message)
-                    .font(NookTheme.font(12))
+                    .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .padding(.top, 6)
             }
         }
-        .padding(14)
-        .cardBackground(NookTheme.field, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet)
+        .padding(NookTheme.Spacing.xl)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
     }
 
     @ViewBuilder
@@ -107,18 +108,18 @@ struct MailDraftView: View {
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: NookTheme.Spacing.md) {
             Text(label)
-                .font(NookTheme.font(12))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
-                .frame(width: 70, alignment: .leading)
+                .frame(width: 64, alignment: .leading)
             TextField("", text: text, prompt: Text(prompt).foregroundStyle(NookTheme.textTertiary))
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(NookTheme.paper)
                 .disabled(locked)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, NookTheme.Spacing.md)
         .overlay(alignment: .bottom) { NookDivider() }
     }
 }

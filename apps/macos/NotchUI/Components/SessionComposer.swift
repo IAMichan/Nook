@@ -146,7 +146,7 @@ struct SessionComposer<Controls: View>: View {
     private var enabled: Bool { canSend && !sending && !isEmpty }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if let extras, extras.model.isOpen {
                 ComposerSuggestionList(model: extras.model, tint: tint) { choose($0) }
             }
@@ -239,7 +239,7 @@ struct SessionComposer<Controls: View>: View {
         let placeholder: Text = Text(prompt).foregroundStyle(NookTheme.textTertiary)
         return TextField("", text: $text, prompt: placeholder, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(NookTheme.font(14))
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(NookTheme.paper)
             .lineLimit(lines)
             .focused(focused)
@@ -264,7 +264,7 @@ struct SessionComposer<Controls: View>: View {
 
     private var box: some View {
         let focused = focus ?? $ownFocus
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if let imagesBinding, !imagesBinding.wrappedValue.isEmpty {
                 ImageAttachmentStrip(images: imagesBinding.wrappedValue) { gone in
                     imagesBinding.wrappedValue.removeAll { $0.id == gone.id }
@@ -281,17 +281,17 @@ struct SessionComposer<Controls: View>: View {
                 controlRow.environment(\.composerDensity, .icons)
             }
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .padding(.top, 13)
-        .padding(.bottom, 9)
+        .padding(.leading, NookTheme.Spacing.xl)
+        .padding(.trailing, NookTheme.Spacing.md)
+        .padding(.top, NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
+        .padding(.bottom, NookTheme.Spacing.md)
+        // One quiet surface; focus only brightens its edge a little, so the box does not flash while you type.
         .background(
             RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(Self.surface)
-                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(tint.opacity(0.035)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
-                .stroke(focused.wrappedValue ? tint.opacity(0.5) : NookTheme.fieldStroke, lineWidth: 1)
+                .stroke(focused.wrappedValue ? tint.opacity(0.28) : NookTheme.fieldStroke, lineWidth: 1)
         )
         .overlay {
             if dropTargeted {
@@ -313,9 +313,9 @@ struct SessionComposer<Controls: View>: View {
 
     /// The choices for the turn, then the extra button and send (or stop) on the right.
     private var controlRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NookTheme.Spacing.xs) {
             controls()
-            Spacer(minLength: 8)
+            Spacer(minLength: NookTheme.Spacing.md)
             if let trailingAccessory { trailingAccessory }
             if busy, let onStop {
                 if let queueAction, !isEmpty {
@@ -365,7 +365,7 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             .foregroundStyle(active ? NookTheme.onIris : NookTheme.textTertiary)
-            .frame(width: 30, height: 30)
+            .frame(width: 32, height: 32)
             .background(Circle().fill(active ? tint : NookTheme.smoke))
             .contentShape(Circle())
         }
@@ -435,11 +435,11 @@ struct ComposerPill: View {
                 RoomyText(text: shown)
             }
         }
-        .font(NookTheme.font(12.5, .medium))
+        .font(NookTheme.TextStyle.label)
         .foregroundStyle(tint ?? (hovering ? NookTheme.paper : NookTheme.textSecondary))
-        .padding(.horizontal, 7)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering ? NookTheme.smoke : Color.clear))
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering ? NookTheme.smoke : Color.clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }

@@ -294,27 +294,27 @@ struct ComposerSuggestionList: View {
                             .foregroundStyle(index == model.selection ? tint : NookTheme.textTertiary)
                             .frame(width: 16)
                         Text(row.title)
-                            .font(NookTheme.font(12.5, .medium))
+                            .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.paper)
                             .lineLimit(1)
                         if let detail = row.detail {
                             Text(detail)
-                                .font(NookTheme.font(11.5))
+                                .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .lineLimit(1)
                                 .truncationMode(.head)
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(index == model.selection ? tint.opacity(0.14) : Color.clear))
+                    .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                    .frame(height: 30)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(index == model.selection ? NookTheme.smoke : Color.clear))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(5)
+        .padding(NookTheme.Spacing.sm)
         .cardBackground(SessionComposer<EmptyView>.surface, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .accessibilityElement(children: .contain)
     }
@@ -430,10 +430,10 @@ struct ComposerContextRing: View {
         .accessibilityLabel(tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
         .popover(isPresented: $open, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(tr("compose.context.title")).font(NookTheme.font(12.5, .semibold))
+                Text(tr("compose.context.title")).font(NookTheme.TextStyle.strong)
                 ProgressView(value: fraction).tint(tint)
                 Text(tr("compose.context.detail", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
-                    .font(NookTheme.font(11.5)).foregroundStyle(NookTheme.textSecondary)
+                    .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 if let onCompact {
                     Button(tr("compose.context.compact")) { open = false; onCompact() }
                 } else {

@@ -55,11 +55,11 @@ struct DropdownHeader: View {
     let title: String
     var body: some View {
         Text(title)
-            .font(NookTheme.font(11, .medium))
+            .font(NookTheme.TextStyle.label)
             .foregroundStyle(NookTheme.textTertiary)
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
-            .padding(.bottom, 4)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.top, NookTheme.Spacing.md)
+            .padding(.bottom, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -110,7 +110,7 @@ struct DropdownRow: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(NookTheme.font(12.5, .medium))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(tint ?? NookTheme.paper)
                         .lineLimit(1)
                     if let detail, !detail.isEmpty {
@@ -125,9 +125,9 @@ struct DropdownRow: View {
                     Text(trailing).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, detail == nil ? 5 : 6)
-            .frame(minHeight: 28)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, detail == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
+            .frame(minHeight: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(chosen ? DropdownStyle.chosen : (hovering && disabledReason == nil ? DropdownStyle.hover : .clear)))
@@ -262,7 +262,7 @@ struct DropdownList<Rows: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let emptyNote {
                     Text(emptyNote)
-                        .font(NookTheme.font(12))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .padding(10)
                 }

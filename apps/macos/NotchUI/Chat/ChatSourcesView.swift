@@ -88,11 +88,11 @@ struct SourcesDisclosure: View {
                     HStack(spacing: 7) {
                         iconStack(list)
                         Text(summary(used: used, failed: failed, running: running))
-                            .font(NookTheme.font(12, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                         if failed > 0 && !(running && message.streaming) {
                             Text(tr("chat.sources.unread", failed))
-                                .font(NookTheme.font(10.5, .semibold))
+                                .font(NookTheme.TextStyle.caption)
                                 .foregroundStyle(NookTheme.amber)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
@@ -120,12 +120,8 @@ struct SourcesDisclosure: View {
                             groupView(group)
                         }
                     }
-                    .padding(4)
-                    .background(
-                        RoundedRectangle(cornerRadius: NookTheme.Radius.panel)
-                            .fill(NookTheme.field)
-                            .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).stroke(NookTheme.line2.opacity(0.7), lineWidth: 1))
-                    )
+                    .padding(NookTheme.Spacing.xs)
+                    .panelCard()
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
@@ -160,7 +156,7 @@ struct SourcesDisclosure: View {
             HStack(spacing: 8) {
                 sourceIcon(group)
                 Text(group.title)
-                    .font(NookTheme.font(12.5, .medium))
+                    .font(NookTheme.TextStyle.body)
                     .foregroundStyle(failure == nil ? NookTheme.paper.opacity(0.88) : NookTheme.paper)
                 Spacer(minLength: 6)
                 statusChip(group)
@@ -178,10 +174,10 @@ struct SourcesDisclosure: View {
                 .padding(.leading, 20)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, NookTheme.Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.card)
+            RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
                 .fill(failure == nil ? Color.clear : NookTheme.coral.opacity(0.06))
         )
     }
@@ -194,7 +190,7 @@ struct SourcesDisclosure: View {
                 ProgressView().controlSize(.mini).scaleEffect(0.6).frame(width: 9, height: 9)
             }
             Text(statusText(group))
-                .font(NookTheme.font(10.5, .semibold))
+                .font(NookTheme.TextStyle.caption)
                 .lineLimit(1)
         }
         .foregroundStyle(statusColor(group.status))
@@ -208,7 +204,7 @@ struct SourcesDisclosure: View {
         let needed = NoticePermission.needed(by: reason)
         return HStack(alignment: .center, spacing: 10) {
             Text(reason)
-                .font(NookTheme.font(11.5))
+                .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -330,10 +326,10 @@ private struct SourceFixButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
-                .font(NookTheme.font(11, .semibold))
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(prominent ? NookTheme.ink : NookTheme.paper)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
+                .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+                .frame(height: 26)
                 .background(Capsule().fill(prominent ? NookTheme.amber : NookTheme.smoke))
         }
         .buttonStyle(.plain)
@@ -431,7 +427,7 @@ struct NoticeList: View {
                         .padding(.top, 1)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(notice)
-                            .font(NookTheme.font(12))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -444,13 +440,9 @@ struct NoticeList: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.panel)
-                .fill(NookTheme.amber.opacity(0.06))
-                .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).stroke(NookTheme.amber.opacity(0.18), lineWidth: 1))
-        )
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.amber.opacity(0.07)))
     }
 }
 
@@ -466,13 +458,13 @@ private struct ReferenceRow: View {
         Button(action: open) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text("\(reference.number)")
-                    .font(NookTheme.font(10, .bold))
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(cited ? NookTheme.ink : NookTheme.textSecondary)
                     .frame(minWidth: 16, minHeight: 16)
                     .background(Circle().fill(cited ? NookTheme.iris : NookTheme.smoke))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(reference.title)
-                        .font(NookTheme.font(12.5, .medium))
+                        .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.paper)
                         .lineLimit(1)
                     Text(([SourceCatalog.title(reference.sourceID)] + (reference.detail.isEmpty ? [] : [reference.detail])).joined(separator: " · "))
@@ -487,9 +479,9 @@ private struct ReferenceRow: View {
                         .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textTertiary)
                 }
             }
-            .padding(.vertical, 3)
-            .padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(hovering && openable ? NookTheme.smoke : Color.clear))
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && openable ? NookTheme.smoke : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -652,12 +644,12 @@ struct ContextInspector: View {
     private var content: some View {
         let scope = app.scope(of: chat.activeID)
         let _ = app.connectors.revision
-        return VStack(alignment: .leading, spacing: 10) {
-            Text(tr("context.title")).font(NookTheme.TextStyle.strong)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Text(tr("context.title")).font(NookTheme.TextStyle.title)
             Text(destination).font(NookTheme.TextStyle.body).fixedSize(horizontal: false, vertical: true)
             Text(tr("context.how")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
 
-            Divider()
+            NookDivider().padding(.vertical, NookTheme.Spacing.xs)
             row(SourceCatalog.title(SourceCatalog.screen), screenState(scope), ok: scope.allows(SourceCatalog.screen) && app.settings.liveScreen)
             if let name = app.attachmentName {
                 row(tr("context.attachment"), name, ok: true)
@@ -667,15 +659,15 @@ struct ContextInspector: View {
                     row(source.title, sourceState(source, scope: scope), ok: source.isActive && scope.allows(source.id), source: source)
                 }
             }
-            Divider()
+            NookDivider().padding(.vertical, NookTheme.Spacing.xs)
             HStack {
                 Text(tr("context.scope", scope.label())).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                 Spacer()
                 Button(tr("context.manage")) { app.openSettings(section: .connections) }
             }
         }
-        .padding(14)
-        .frame(width: 360, alignment: .leading)
+        .padding(NookTheme.Spacing.xl)
+        .frame(width: 380, alignment: .leading)
     }
 
     private func screenState(_ scope: SourceScope) -> String {
@@ -694,8 +686,8 @@ struct ContextInspector: View {
     }
 
     private func row(_ title: String, _ detail: String, ok: Bool, source: ContextSource? = nil) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle().fill(ok ? NookTheme.mint : NookTheme.textSecondary.opacity(0.5)).frame(width: 6, height: 6)
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
+            Circle().fill(ok ? NookTheme.mint : NookTheme.textTertiary).frame(width: 6, height: 6)
             if let source {
                 SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 14, source: source.id)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
@@ -713,17 +705,14 @@ struct AttachmentChip: View {
     let remove: () -> Void
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: isImage ? "photo" : "paperclip").font(NookTheme.font(10, .semibold)).foregroundStyle(NookTheme.iris)
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Image(systemName: isImage ? "photo" : "paperclip").font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary)
             Text(name).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.paper).lineLimit(1)
-            Button(action: remove) {
-                Image(systemName: "xmark").font(NookTheme.font(8.5, .bold)).foregroundStyle(NookTheme.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(tr("button.clear"))
+            ToolbarIconButton("xmark", tr("button.clear"), height: 18, width: 18, remove)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(NookTheme.smoke))
+        .padding(.leading, NookTheme.Spacing.md)
+        .padding(.trailing, NookTheme.Spacing.xxs)
+        .frame(height: 26)
+        .background(Capsule().fill(NookTheme.graphite))
     }
 }

@@ -21,7 +21,7 @@ struct ChatChartView: View {
     private var rows: [Row] {
         var result: [Row] = []
         for (s, series) in chart.series.enumerated() {
-            let name = series.name.isEmpty ? "Reeks \(s + 1)" : series.name
+            let name = series.name.isEmpty ? tr("chart.seriesNumber", s + 1) : series.name
             for point in series.points {
                 result.append(Row(id: result.count, series: name, label: point.label, value: point.value))
             }
@@ -35,18 +35,18 @@ struct ChatChartView: View {
         var seen = Set<String>()
         return rows.map(\.series).filter { seen.insert($0).inserted }
     }
-    private var valueLabel: String { chart.unit.isEmpty ? "Waarde" : chart.unit }
+    private var valueLabel: String { chart.unit.isEmpty ? tr("chart.value") : chart.unit }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             HStack(alignment: .firstTextBaseline) {
-                Text(chart.title.isEmpty ? "Grafiek" : chart.title)
-                    .font(NookTheme.font(13.5, .semibold))
+                Text(chart.title.isEmpty ? tr("table.chart") : chart.title)
+                    .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
                 if !chart.unit.isEmpty {
                     Text(chart.unit)
-                        .font(NookTheme.font(11.5))
+                        .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                 }
             }
@@ -56,8 +56,8 @@ struct ChatChartView: View {
                 xy.frame(height: 190)
             }
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet).fill(NookTheme.field))
+        .padding(NookTheme.Spacing.xl)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
     }
 
     // MARK: Bar, line, area, points
@@ -93,7 +93,7 @@ struct ChatChartView: View {
                     .annotation(position: .top, spacing: 3) {
                         // Show values above bars when few; omit when numerous to avoid clutter.
                         Text(Self.format(row.value))
-                            .font(NookTheme.font(10, .medium))
+                            .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textSecondary)
                             .opacity(labelBars ? 1 : 0)
                     }
@@ -105,7 +105,7 @@ struct ChatChartView: View {
         .chartXAxis {
             AxisMarks { _ in
                 AxisValueLabel()
-                    .font(NookTheme.font(10.5))
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(NookTheme.textSecondary)
             }
         }
@@ -116,7 +116,7 @@ struct ChatChartView: View {
                 AxisValueLabel {
                     if let number = value.as(Double.self) {
                         Text(Self.format(number))
-                            .font(NookTheme.font(10.5))
+                            .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textTertiary)
                     }
                 }
@@ -155,12 +155,12 @@ struct ChatChartView: View {
                             .fill(Self.palette[index % Self.palette.count])
                             .frame(width: 10, height: 10)
                         Text(part.label)
-                            .font(NookTheme.font(12))
+                            .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.paper)
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         Text(Self.format(part.value) + (chart.unit.isEmpty ? "" : " \(chart.unit)"))
-                            .font(NookTheme.font(12, .medium))
+                            .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                         Text("\(Int((part.value / total * 100).rounded()))%")
                             .font(NookTheme.TextStyle.detail)
