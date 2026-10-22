@@ -35,19 +35,14 @@ extension SettingsView {
                     }
                 }
                 .disabled(!doubleTap.enabled)
-                Picker(tr("doubletap.settings.action"), selection: $doubleTap.fillsOnDoubleTap) {
-                    Text(tr("doubletap.settings.action.ask")).tag(false)
-                    Text(tr("doubletap.settings.action.fill")).tag(true)
-                }
-                .disabled(!doubleTap.enabled)
                 Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
                     .disabled(!doubleTap.enabled)
             } header: {
                 Text(tr("doubletap.settings.title"))
             } footer: {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                    Text(tr(doubleTap.fillsOnDoubleTap ? "doubletap.settings.detail" : "doubletap.settings.askDetail",
-                            doubleTap.key.symbol))
+                    Text(tr("doubletap.settings.askDetail", doubleTap.key.symbol))
+                    Text(tr("doubletap.settings.detail"))
                     if doubleTap.taskOnTap {
                         Text(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
                     }

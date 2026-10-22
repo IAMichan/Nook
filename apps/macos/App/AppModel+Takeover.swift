@@ -127,6 +127,11 @@ extension AppModel {
         let task = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.isEmpty else { return }
         viewModel.show(.idle)
+        // "Vul het formulier in": Double Tap fills the form in front, once the app you were in has the keyboard back.
+        if DoubleTapLogic.asksToFill(task) {
+            DoubleTap.shared.fill(request: task, after: 0.3)
+            return
+        }
         let conversation = chat.startNew()
         chat.rename(conversation, to: Conversation.title(from: task))
         chat.append(ChatMessage(role: .user, text: task), to: conversation)

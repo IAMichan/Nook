@@ -89,6 +89,30 @@ final class DoubleTapTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Text on screen:\nCreate your account"))
     }
 
+    func testPromptCarriesTheUsersRequest() {
+        let fields = DoubleTapLogic.candidates([field("field", "Address", focused: true)])
+        let prompt = DoubleTapLogic.prompt(app: "Safari", window: "", fields: fields, facts: [], screen: "",
+                                           request: "Vul het formulier in met mijn werkadres")
+        XCTAssertTrue(prompt.hasPrefix("The user's request: Vul het formulier in met mijn werkadres\n"))
+        XCTAssertFalse(DoubleTapLogic.prompt(app: "Safari", window: "", fields: fields, facts: [], screen: "").contains("request"))
+    }
+
+    // MARK: Request
+
+    func testAskingToFillInTheFormInFront() {
+        for text in ["Vul het formulier in", "vul dit in", "Invullen", "fill in the form", "Fill this out", "fill it in",
+                     "Füll das Formular aus", "Remplis le formulaire", "Rellena el formulario", "vul de velden in met mijn werkadres"] {
+            XCTAssertTrue(DoubleTapLogic.asksToFill(text), text)
+        }
+    }
+
+    func testOtherTasksAreNotAFill() {
+        for text in ["Bestel nieuwe koffiefilters bij bol.com", "Vul het formulier op bol.com in", "order coffee filters",
+                     "Vul mijn boodschappenlijst aan", "Unsubscribe me from this newsletter", "", "fill out https://example.com/form"] {
+            XCTAssertFalse(DoubleTapLogic.asksToFill(text), text)
+        }
+    }
+
     // MARK: Answer
 
     func testValuesAreReadFailClosed() {
