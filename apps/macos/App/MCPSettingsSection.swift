@@ -580,8 +580,10 @@ struct AddMCPServerWizardSheet: View {
         let transport: MCPServerConfig.Transport
 
         if isRemote {
+            // https anywhere, plain http only on this Mac (Beeper Desktop listens on localhost).
             guard let url = URL(string: commandOrURL.trimmingCharacters(in: .whitespaces)),
-                  url.scheme?.lowercased() == "https" || url.host == "localhost" || url.host == "127.0.0.1", url.host != nil else {
+                  let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased(),
+                  scheme == "https" || (scheme == "http" && (host == "localhost" || host == "127.0.0.1")) else {
                 problem = tr("mcp.problem.https")
                 return
             }
