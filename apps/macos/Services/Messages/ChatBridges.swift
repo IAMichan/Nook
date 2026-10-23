@@ -502,7 +502,10 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     var skips: (String) -> Bool = { _ in false }
 
     static let tokenAccount = "chats.beeper.token"
-    private static let base = URL(string: "http://localhost:23373")!
+    /// Beeper Desktop's local API, used while Nook's own chat helper does not run.
+    private static let beeperBase = URL(string: "http://localhost:23373")!
+    /// The chat service Nook reads: its own helper (`ChatHelper`) while it runs, else Beeper Desktop.
+    static var base: URL { ChatHelper.shared.isRunning ? ChatHelper.base : beeperBase }
     private static let chatCount = 40
     private static let history = 30
 
@@ -518,7 +521,12 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     @Published private(set) var isLive = false
     private let live = ChatLiveStream()
 
-    static var token: String? { CloudHelp.secret(tokenAccount) }
+    /// The token of the chat service Nook reads: the helper's own while it runs, else the one set for Beeper.
+    static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : beeperToken }
+    /// The token set for Beeper Desktop in Settings › Chats.
+    static var beeperToken: String? { CloudHelp.secret(tokenAccount) }
+    /// Where the live line was opened, to open it again when the chat service changes.
+    private var liveBase: URL?
 
     init() {
         live.onChange = { [weak self] chat in
@@ -540,7 +548,9 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     }
 
     var isReady: Bool {
-        !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.token != nil
+        // Nook's own helper once something was linked through it (it then starts at the first read).
+        if ChatHelper.isBuilt, FileManager.default.fileExists(atPath: ChatHelper.dataDirectory.path) { return true }
+        return !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.beeperToken != nil
     }
 
     func reset() {
@@ -558,12 +568,19 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     }
 
     func read() async throws -> [BridgedChat] {
+        if ChatHelper.isBuilt, isReady, !ChatHelper.shared.isRunning { await ChatHelper.shared.start() }
         guard isReady, let token = Self.token else {
             isWorking = false
             live.disconnect()
             return []
         }
-        if !live.isConnecting, let url = URL(string: "ws://localhost:23373/v1/ws") { live.connect(url, token: token) }
+        if liveBase != Self.base {
+            live.disconnect()
+            liveBase = Self.base
+        }
+        var socket = URLComponents(url: Self.base.appendingPathComponent("v1/ws"), resolvingAgainstBaseURL: false)
+        socket?.scheme = "ws"
+        if !live.isConnecting, let url = socket?.url { live.connect(url, token: token) }
         do {
             let listed = BeeperData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
                 .filter { !skips($0.app) }

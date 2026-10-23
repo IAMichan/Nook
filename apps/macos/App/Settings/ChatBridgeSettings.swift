@@ -211,7 +211,7 @@ struct BeeperSettingsRows: View {
     @ObservedObject var capture: ChatCaptureService
     @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
     @State private var token = ""
-    @State private var saved = BeeperBridge.token != nil
+    @State private var saved = BeeperBridge.beeperToken != nil
 
     var body: some View {
         if WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper {

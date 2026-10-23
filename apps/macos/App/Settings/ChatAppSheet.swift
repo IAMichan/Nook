@@ -47,6 +47,8 @@ struct ChatAppSheet: View {
                 } else {
                     serviceSteps
                 }
+            } else if !ownWay, ChatHelper.apps.contains(app), !ChatHelper.isBuilt {
+                SettingNote(tr("chats.link.helperMissing", name))
             } else if !ownWay {
                 SettingNote(tr("chats.link.notYet", name, name))
             }
@@ -119,6 +121,9 @@ struct ChatAppSheet: View {
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textTertiary)
             } else if let network {
+                if ChatHelper.riskyApps.contains(app), network.accounts.isEmpty {
+                    SettingNote(tr("chats.link.risk", name), tone: .warning)
+                }
                 if !network.accounts.isEmpty, network.canLink, !isLinking {
                     Button(tr("chats.link.another")) { Task { await linker.link(network) } }
                 } else {

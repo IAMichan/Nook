@@ -13,6 +13,8 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     private let web: WKWebView
     private var checking: Timer?
     private var finished = false
+    /// The request headers the page sent that the step asks for (LinkedIn's), by lower-case name.
+    private var headers: [String: String] = [:]
 
     init(step: ChatLinkData.Step, title: String, onDone: @escaping ([String: String], String?) -> Void) {
         self.step = step
@@ -20,10 +22,19 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         let configuration = WKWebViewConfiguration()
         // Its own store, gone with the window: the sign-in lives in the chat service, not in Nook.
         configuration.websiteDataStore = .nonPersistent()
+        let wanted: [String]
+        if case .browser(_, _, _, _, let collect, _) = step { wanted = ChatLinkData.pageHeaders(collect) } else { wanted = [] }
+        let listener = HeaderListener()
+        if let script = Self.headerScript(wanted) {
+            configuration.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart,
+                                                                           forMainFrameOnly: false))
+            configuration.userContentController.add(listener, name: Self.headerHandler)
+        }
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: 520, height: 720), configuration: configuration)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 720),
                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         super.init()
+        listener.heard = { [weak self] name, value in self?.headers[name] = value }
         window.title = title
         window.isReleasedWhenClosed = false
         window.contentView = web
@@ -74,13 +85,43 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         for cookie in cookies where !Self.belongs(cookie.domain, to: start) { jar[cookie.name] = cookie.value }
         for cookie in cookies where Self.belongs(cookie.domain, to: start) { jar[cookie.name] = cookie.value }
         let storage = await localStorage(collect.filter { $0.source == .localStorage }.map(\.name))
-        let values = ChatLinkData.collected(collect, cookies: jar, storage: storage)
+        let values = ChatLinkData.collected(collect, cookies: jar, storage: storage, headers: headers)
         guard ChatLinkData.hasCookies(collect, values: values) else { return }
         // A pattern for the page after signing in waits for it; without one the cookies are enough.
         if done != nil, !ChatLinkData.isDone(address, pattern: done) { return }
         finished = true
         onDone(values, address.isEmpty ? nil : address)
         close()
+    }
+
+    private static let headerHandler = "nookSignInHeaders"
+
+    /// Runs in the website before its own scripts: when the page sets one of the request headers the step asks for (on
+    /// a fetch or an XMLHttpRequest), its value goes to the window. Nothing else is looked at. The names go in as JSON,
+    /// never as code.
+    static func headerScript(_ names: [String]) -> String? {
+        guard !names.isEmpty, let data = try? JSONSerialization.data(withJSONObject: names),
+              let list = String(data: data, encoding: .utf8) else { return nil }
+        return """
+        (() => {
+          const wanted = new Set(\(list));
+          const tell = (name, value) => {
+            const key = String(name).toLowerCase();
+            if (!wanted.has(key) || !value) return;
+            try { window.webkit.messageHandlers.\(headerHandler).postMessage([key, String(value)]); } catch (error) {}
+          };
+          const setHeader = XMLHttpRequest.prototype.setRequestHeader;
+          XMLHttpRequest.prototype.setRequestHeader = function (name, value) { tell(name, value); return setHeader.call(this, name, value); };
+          const nativeFetch = window.fetch;
+          window.fetch = function (input, init) {
+            try {
+              const given = (init && init.headers) || (input && input.headers);
+              if (given) new Headers(given).forEach((value, name) => tell(name, value));
+            } catch (error) {}
+            return nativeFetch.apply(this, arguments);
+          };
+        })();
+        """
     }
 
     /// The local storage values the step asks for, by key.
@@ -100,6 +141,17 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         let bare = domain.lowercased().hasPrefix(".") ? String(domain.lowercased().dropFirst()) : domain.lowercased()
         let site = host.split(separator: ".").suffix(2).joined(separator: ".")
         return host == bare || host.hasSuffix("." + bare) || bare == site || bare.hasSuffix("." + site)
+    }
+}
+
+/// Hands the request headers the sign-in page sent to its window; the content controller keeps it, so it holds the
+/// window only through a weak closure.
+private final class HeaderListener: NSObject, WKScriptMessageHandler {
+    var heard: @MainActor (String, String) -> Void = { _, _ in }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let pair = message.body as? [String], pair.count == 2 else { return }
+        MainActor.assumeIsolated { heard(pair[0], pair[1]) }
     }
 }
 

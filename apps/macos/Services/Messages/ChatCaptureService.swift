@@ -122,6 +122,11 @@ final class ChatCaptureService: ObservableObject {
             self.loggedIn(self.instagramBridge.app)
             ToastCenter.shared.success(tr("chats.login.done", "Instagram"))
         }
+        // Instagram's own live line in its page said something came in: read it at the next tick.
+        instagramBridge.onChange = { [weak self] in
+            guard let self else { return }
+            self.bridgeDue[self.instagramBridge.app] = nil
+        }
         beeperBridge.skips = { [weak self] app in
             guard let self else { return false }
             return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.beeperBridge }

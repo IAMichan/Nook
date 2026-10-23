@@ -1,6 +1,6 @@
 # ADR: Linking Messenger, Signal, Discord, LinkedIn and X without Beeper
 
-- **Status:** Proposed
+- **Status:** Accepted, implemented (see "Implementation" below)
 - **Date:** 2026-10-23
 - **Scope:** `apps/macos` Chats tab, Settings › Chats
 - **Related:** [IAMichan/Nook#533](https://github.com/IAMichan/Nook/pull/533) (link chat apps in Nook's own way)
@@ -150,33 +150,52 @@ Keep today's behavior: Messenger, Signal, Discord, LinkedIn and X show in the Ch
 
 ## Decision
 
-**Adopt Option 1, as an opt-in helper in its own AGPL-3.0 repository, and do the Option 2 web-page variant for
-Instagram first. Keep Option 3 as the fallback for every app the helper does not link. Do not offer Discord.**
+**Adopt Option 1, as a helper with its own AGPL-3.0 license kept in this repository (`apps/chatd`), and do the Option 2
+web-page variant for Instagram first. Keep Option 3 as the fallback for every app the helper does not link. Do not offer
+Discord.**
 
 In order:
 
 1. **Instagram realtime now, in Nook (MIT):** add the socket-watching `WKUserScript` to `InstagramBridge` so the inbox is
    read as soon as instagram.com's own page receives something; lower the poll to a safety net.
-2. **Create `IAMichan/nook-chatd` (AGPL-3.0):** a Go program importing `mautrix/go` bridgev2 and the `mautrix/signal`
-   and `mautrix/meta` connectors, serving the Beeper-Client-API subset listed above on `127.0.0.1` with a token. CI
-   builds arm64 and x86_64, publishes releases with SHA-256 checksums.
-3. **In Nook:** an installer and process runner modeled on `WhatsAppGOWAInstaller` / `WhatsAppGOWAProcess`; make the
-   base URL in `ChatLinker`, `BeeperBridge` and `ChatLiveStream` come from whichever service runs (Nook's helper first,
-   Beeper second). `ChatOwnLinkSteps` gets one step for these apps: "Install Nook's chat helper", after which the
-   existing login-session flow takes over. Add a `THIRD-PARTY-NOTICES.md` section and a line in Settings saying the
-   helper is a separate open-source program.
-4. **Roll out Signal first** (lowest ban risk, most asked-for), then **Messenger and Instagram** (cookie login only;
-   Instagram then switches from the WebView poll to the helper's Lightspeed stream), then **X and LinkedIn** behind a
-   clear "may get your account restricted" note.
+2. **`apps/chatd` (AGPL-3.0):** a Go program, nook-chatd, importing `mautrix/go` bridgev2 and the Signal, Meta
+   (Messenger and Instagram), X and LinkedIn connectors, serving the Beeper-Client-API subset listed above on
+   `127.0.0.1` with a token.
+3. **In Nook:** built locally by `scripts/build-chatd.sh` and embedded and signed by a build phase, exactly like TDLib;
+   a process runner (`ChatHelper`); the base URL and token in `ChatLinker`, `BeeperBridge` and `ChatLiveStream` come
+   from whichever service runs (Nook's helper first, Beeper second). The existing login-session flow in Settings ›
+   Chats takes over from there. A `THIRD-PARTY-NOTICES.md` section says the helper is a separate AGPL program.
+4. **Logins:** Signal by QR code, the others by signing in on the app's own website in Nook's sign-in window (cookies,
+   and for LinkedIn two request headers its page sets); never a password typed into Nook. Messenger, Instagram, X and
+   LinkedIn show a clear "may get your account restricted" note before linking.
 5. **Discord stays on notifications.** Revisit only if Discord ever allows user-account clients.
+
+### Why one repository after all
+
+The options above assumed a separate public repository with its own release pipeline. Nook is only ever built from its
+own checkout, so the helper is built the same way as TDLib: from source, on the Mac that runs it. Keeping it in
+`apps/chatd` with its own `LICENSE` (AGPL-3.0) keeps the licenses apart just as well, since it is still a separate
+program that shares no code with Nook, and it saves a second repository, CI and checksummed downloads.
 
 ## Consequences
 
 - Nook links every requested app except Discord without Beeper, using the same code paths it already has for a local
   chat service, so the UI does not grow a second flow.
-- Nook's source stays MIT. The helper is AGPL-3.0 and its source is public; nobody may copy connector code into Nook.
-- A second repository and release pipeline to keep alive, including the `libsignal` Rust build. Most protocol fixes come
-  from upstream; we bump and rebuild.
+- Nook's source stays MIT. `apps/chatd` is AGPL-3.0 and its source is in this repository; nobody may copy connector code
+  into Nook's own sources.
+- One more local build step (`scripts/build-chatd.sh`, about two minutes for libsignal the first time). Most protocol
+  fixes come from upstream; we bump the connector versions and rebuild.
 - If Nook is ever distributed as a notarized app, the helper has to be signed and notarized with it (see Option 1).
 - Account risk is the user's choice per app and is stated where they link it.
-- Nothing in this ADR is implemented yet; each numbered step above is its own pull request.
+
+## Implementation
+
+- `apps/chatd`: `networks.go` (one bridgev2 bridge per app), `matrix.go` (`LocalMatrix`, the Matrix side the bridges
+  talk to, with no server), `store.go` (rooms, members, timeline, media in SQLite), `login.go` (login sessions),
+  `api.go` and `live.go` (the API and `/v1/ws`), `main.go`.
+- Nook: `Services/Messages/ChatHelper.swift`, `Config/embed-chatd.sh`, the base URL and token switch in
+  `BeeperBridge`/`ChatLinker`, header collection in `ChatSignInWindow`, required-field handling in `ChatLinkData`, and
+  the live-line nudge in `InstagramBridge`.
+- Verified: every app starts and offers a login step Nook can show (Signal a QR code; the others their website), the
+  helper signed with the hardened runtime runs, and the store logic has Go tests. Not verified: linking real accounts
+  end to end, which needs your own accounts.
