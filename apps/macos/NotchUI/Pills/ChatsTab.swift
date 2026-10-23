@@ -17,8 +17,8 @@ struct ChatsEntry: Identifiable, Equatable {
     /// The app's source id ("telegram").
     let app: String
     let name: String
-    /// The newest message, with who wrote it in a group ("Jan: dinner?").
-    let preview: String
+    /// The newest message, with who wrote it in a group ("Jan: dinner?"). While you search, the newest one that matched.
+    var preview: String
     let last: Date
     let unread: Int
     /// The newest message is yours: how far it got (sent, delivered, read), as far as its app says. Nil for theirs, and
@@ -55,11 +55,7 @@ extension ChatsEntry {
         var entries: [ChatsEntry] = []
         if whatsApp.isConnected {
             for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
-                let preview = conversation.messages.last.map { message in
-                    let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
-                    let who = message.fromMe ? tr("chat.you") : (conversation.isGroup ? message.senderName : "")
-                    return who.isEmpty ? text : "\(who): \(text)"
-                } ?? ""
+                let preview = conversation.messages.last.map { line($0, group: conversation.isGroup) } ?? ""
                 let newest = conversation.messages.last
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
@@ -83,10 +79,7 @@ extension ChatsEntry {
             }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
-            let preview = thread.messages.last.map { message in
-                let who = message.isMine ? tr("chat.you") : message.sender
-                return who.isEmpty ? message.summary : "\(who): \(message.summary)"
-            } ?? ""
+            let preview = thread.messages.last.map(line) ?? ""
             let newest = thread.messages.last
             let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
@@ -94,6 +87,50 @@ extension ChatsEntry {
                                       members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
+    }
+
+    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?").
+    @MainActor
+    static func line(_ message: WAMessage, group: Bool) -> String {
+        let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
+        let who = message.fromMe ? tr("chat.you") : (group ? message.senderName : "")
+        return who.isEmpty ? text : "\(who): \(text)"
+    }
+
+    /// A message of any other app as one line in the list.
+    @MainActor
+    static func line(_ message: InboxMessage) -> String {
+        let who = message.isMine ? tr("chat.you") : message.sender
+        return who.isEmpty ? message.summary : "\(who): \(message.summary)"
+    }
+
+    /// The chat as the Chats tab's search finds it: by its name or its people as it is, else by the newest of its
+    /// messages that holds `needle`, which then shows as its line. Every message Nook has of it counts, not only the
+    /// newest, so "dinner" finds the Instagram chat where it came up last week. Nil when nothing in it matches.
+    @MainActor
+    func found(_ needle: String, whatsApp: WhatsAppLink, capture: ChatCaptureService) -> ChatsEntry? {
+        if name.localizedCaseInsensitiveContains(needle) || preview.localizedCaseInsensitiveContains(needle)
+            || (members ?? []).contains(where: { $0.localizedCaseInsensitiveContains(needle) }) {
+            return self
+        }
+        let match: String?
+        switch origin {
+        case .whatsApp(let jid):
+            guard let conversation = whatsApp.inbox.conversations[jid] else { return nil }
+            match = conversation.messages.last { message in
+                AppModel.whatsAppText(message).localizedCaseInsensitiveContains(needle)
+                    || message.senderName.localizedCaseInsensitiveContains(needle)
+            }.map { Self.line($0, group: conversation.isGroup) }
+        case .captured(let id):
+            guard let thread = capture.inbox.threads[id] else { return nil }
+            match = thread.messages.last { message in
+                message.summary.localizedCaseInsensitiveContains(needle) || message.sender.localizedCaseInsensitiveContains(needle)
+            }.map(Self.line)
+        }
+        guard let match else { return nil }
+        var entry = self
+        entry.preview = match
+        return entry
     }
 
     /// A private WhatsApp chat's phone number; nil for groups, channels and Beeper chats, which have none.
@@ -304,15 +341,15 @@ struct ChatsTab: View {
         return photos.photo(handle: entry.handle, name: entry.name)
     }
 
-    /// The chats that match the filter and the search, in the list's order: group by group, newest first in each.
+    /// The chats that match the filter and the search (their names, their people and every message Nook has of them), in
+    /// the list's order: group by group, newest first in each.
     /// A chat keeps its place when it is read, so nothing jumps while you read it.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         let now = Date()
-        return all.filter { entry in
-            (filter == nil || entry.app == filter)
-                && (!unreadOnly || entry.unread > 0 || entry.id == selection)
-                && (needle.isEmpty || entry.name.localizedCaseInsensitiveContains(needle) || entry.preview.localizedCaseInsensitiveContains(needle))
+        let found = needle.isEmpty ? all : all.compactMap { $0.found(needle, whatsApp: whatsApp, capture: capture) }
+        return found.filter { entry in
+            (filter == nil || entry.app == filter) && (!unreadOnly || entry.unread > 0 || entry.id == selection)
         }
         .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
         .sorted { a, b in
