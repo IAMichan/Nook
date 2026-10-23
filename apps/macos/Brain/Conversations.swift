@@ -87,7 +87,10 @@ final class AnthropicConversation: ModelConversation {
             ["type": "image", "source": ["type": "base64", "media_type": $0.mediaType, "data": $0.base64]]
         }
         if let text = last["content"] as? String { blocks.append(["type": "text", "text": text]) }
-        else if let existing = last["content"] as? [[String: Any]] { blocks += existing }
+        else if let existing = last["content"] as? [[String: Any]] {
+            // Tool results lead their message; a picture a tool took follows them.
+            blocks = existing.contains { ($0["type"] as? String) == "tool_result" } ? existing + blocks : blocks + existing
+        }
         last["content"] = blocks
         messages[messages.count - 1] = last
     }

@@ -217,4 +217,78 @@ final class DoubleTapTests: XCTestCase {
         XCTAssertTrue(long.hasSuffix("seven eight"), long)
         XCTAssertLessThanOrEqual(long.count, 20)
     }
+
+    // MARK: Editing what is there
+
+    func testEditRequestsInEveryLanguage() {
+        for text in ["punt 5 moet dit worden", "Punt 3 moet worden: gratis verzending", "verwijder alinea 2",
+                     "maak de tweede alinea korter", "herschrijf de laatste zin formeler", "vervang 'Jansen' door 'de Vries'",
+                     "vervang Jansen door de Vries", "change point 5 to this", "make item 2 more formal", "delete the last sentence",
+                     "Punkt 5 soll das werden", "ersetze den ersten Absatz", "le point 5 doit devenir ceci",
+                     "el punto 5 debe ser esto", "vertaal punt 4 naar het Engels"] {
+            XCTAssertTrue(DoubleTapLogic.asksToEdit(text), text)
+        }
+        for text in ["schrijf een sollicitatiebrief", "vul het formulier in", "wat is het weer morgen", "maak een afspraak om 3 uur",
+                     "dat is een goed punt", "verwijder de afspraak van morgen", "zet Night Shift aan",
+                     "verander punt 5 op bol.com", "open Spotify", ""] {
+            XCTAssertFalse(DoubleTapLogic.asksToEdit(text), text)
+        }
+    }
+
+    func testEditPromptHoldsTheDocumentSelectionAndClipboard() {
+        let document = "Voorwaarden\rLevering binnen 5 dagen\rRetour binnen 14 dagen"
+        let prompt = DoubleTapLogic.editPrompt(request: "punt 2 moet dit worden", app: "Microsoft Word", window: "Offerte.docx",
+                                               document: document, cursor: NSRange(location: 12, length: 0),
+                                               clipboard: "Retour binnen 30 dagen", facts: [], screen: "")
+        XCTAssertTrue(prompt.contains("The user's request: punt 2 moet dit worden"))
+        XCTAssertTrue(prompt.contains("App: Microsoft Word — window: Offerte.docx"))
+        XCTAssertTrue(prompt.contains("The document:\n" + document))
+        XCTAssertTrue(prompt.contains("Clipboard:\nRetour binnen 30 dagen"))
+        XCTAssertTrue(prompt.contains("Text just before the cursor:"))
+        let long = String(repeating: "a", count: 30_000)
+        let excerpt = DoubleTapLogic.editPrompt(request: "x", app: "Pages", window: "", document: long,
+                                                cursor: NSRange(location: 29_000, length: 0), clipboard: "", facts: [], screen: "")
+        XCTAssertTrue(excerpt.contains("an excerpt around the cursor"))
+        XCTAssertLessThan(excerpt.count, 20_000)
+    }
+
+    func testEditsAreFoundInTheDocumentFailClosed() {
+        let document = "Afspraken\r1 Levering binnen 5 dagen\rRetour binnen 14 dagen\rBetaling binnen 30 dagen"
+        let reply = """
+        ```json
+        {"edits": [{"find": "Retour binnen 14 dagen", "replace": "Retour binnen **30** dagen"},
+                   {"find": "Levering binnen 5 dagen", "replace": "Levering binnen 2 dagen"},
+                   {"find": "Niet in het document", "replace": "x"},
+                   {"find": "binnen", "replace": "ambiguous"},
+                   {"find": "Betaling binnen 30 dagen", "replace": "Betaling binnen 30 dagen"}]}
+        ```
+        """
+        let (edits, missed) = DoubleTapLogic.edits(from: reply, in: document)
+        XCTAssertEqual(edits.map(\.replace), ["Retour binnen 30 dagen", "Levering binnen 2 dagen"], "last first, Markdown gone")
+        XCTAssertEqual(missed, 2, "not there, and there more than once")
+        XCTAssertEqual((document as NSString).substring(with: edits[1].range), "Levering binnen 5 dagen")
+        XCTAssertTrue(DoubleTapLogic.edits(from: "Sure, I changed it.", in: document).edits.isEmpty)
+        XCTAssertTrue(DoubleTapLogic.edits(from: #"{"edits": [{"find": "Retour binnen 14 dagen", "replace": "4111 1111 1111 1111"}]}"#,
+                                           in: document).edits.isEmpty, "a card number is never typed")
+        let deletion = DoubleTapLogic.edits(from: #"{"find": "Retour binnen 14 dagen", "replace": ""}"#, in: document).edits
+        XCTAssertEqual(deletion.first?.replace, "", "an empty replace deletes")
+    }
+
+    func testLocateEvensOutQuotesSpacesAndListMarkers() {
+        let document = "Intro\r\rHet \u{201C}nieuwe\u{201D}  plan\u{00A0}start\rNog een punt"
+        let range = DoubleTapLogic.locate("Het \"nieuwe\" plan start", in: document)
+        XCTAssertEqual(range.map { (document as NSString).substring(with: $0) }, "Het \u{201C}nieuwe\u{201D}  plan\u{00A0}start")
+        let marked = DoubleTapLogic.locate("2. Nog een punt", in: document)
+        XCTAssertEqual(marked.map { (document as NSString).substring(with: $0) }, "Nog een punt")
+        XCTAssertNil(DoubleTapLogic.locate("Bestaat niet", in: document))
+    }
+
+    func testAppliedComparesWithLineBreaksEvenedOut() {
+        let before = "Een\rTwee\rDrie"
+        let edit = DoubleTapEdit(find: "Twee", replace: "2\n2b", range: NSRange(location: 4, length: 4))
+        XCTAssertTrue(DoubleTapLogic.applied(edit, before: before, after: "Een\r2\r2b\rDrie"))
+        XCTAssertFalse(DoubleTapLogic.applied(edit, before: before, after: before))
+        XCTAssertEqual(DoubleTapLogic.editPreview(edit), "“Twee” → “2 2b”")
+        XCTAssertEqual(DoubleTapLogic.editPreview(DoubleTapEdit(find: "Twee", replace: "", range: edit.range)), "“Twee” ✕")
+    }
 }
