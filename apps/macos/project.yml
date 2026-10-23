@@ -367,6 +367,7 @@ targets:
       - path: Services/Autocomplete/CompletionSuggestion.swift
       - path: Services/Autocomplete/CompletionSampling.swift
       - path: Services/Autocomplete/CompletionPreferences.swift
+      - path: Services/Autocomplete/CompletionKeyGate.swift
       - path: Services/Autocomplete/CompletionEmoji.swift
       - path: Services/Messages/EmojiCatalog.swift
       - path: Services/Autocomplete/CompletionPrivacy.swift
