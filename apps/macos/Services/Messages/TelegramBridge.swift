@@ -65,9 +65,13 @@ final class TelegramBridge: ObservableObject, ChatBridge {
     var isReady: Bool { state == .login(.ready) }
     var isWorking: Bool { isReady }
 
+    /// Your own app id and hash, else the ones this build of Nook comes with (Info.plist), so you only log in.
     static var keys: (id: Int, hash: String)? {
-        guard let id = CloudHelp.secret(apiIDAccount).flatMap(Int.init), let hash = CloudHelp.secret(apiHashAccount),
-              !hash.isEmpty else { return nil }
+        if let id = CloudHelp.secret(apiIDAccount).flatMap(Int.init), let hash = CloudHelp.secret(apiHashAccount), !hash.isEmpty {
+            return (id, hash)
+        }
+        guard let id = (Bundle.main.object(forInfoDictionaryKey: "NookTelegramAPIID") as? String).flatMap(Int.init),
+              let hash = Bundle.main.object(forInfoDictionaryKey: "NookTelegramAPIHash") as? String, !hash.isEmpty else { return nil }
         return (id, hash)
     }
 

@@ -9,6 +9,8 @@ final class ChatLinker: ObservableObject {
     static let shared = ChatLinker()
 
     @Published private(set) var networks: [ChatLinkData.Network] = []
+    /// The chat service answers on this Mac: only then is linking through it offered. Nook links its own apps without it.
+    @Published private(set) var serviceRuns = false
     @Published private(set) var isLoading = false
     /// Why the apps could not be listed; nil while it works.
     @Published private(set) var problem: String?
@@ -33,8 +35,10 @@ final class ChatLinker: ObservableObject {
 
     /// The apps that can be linked, and their linked accounts.
     func refresh() async {
-        guard let token = BeeperBridge.token else {
+        serviceRuns = await Self.answers()
+        guard serviceRuns, let token = BeeperBridge.token else {
             networks = []
+            problem = nil
             return
         }
         isLoading = true
@@ -45,6 +49,15 @@ final class ChatLinker: ObservableObject {
         } catch {
             problem = error.localizedDescription
         }
+    }
+
+    /// Whether the chat service's local API is there (its info needs no token).
+    private static func answers() async -> Bool {
+        guard let url = URL(string: "http://localhost:23373/v1/info") else { return false }
+        var request = URLRequest(url: url, timeoutInterval: 2)
+        request.httpMethod = "GET"
+        guard let (_, response) = try? await ConnectorHTTP.session.data(for: request) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
     // MARK: Logging in

@@ -86,6 +86,12 @@ targets:
         NookSourceRoot: "$(SRCROOT)"
         NookBuildConfiguration: "$(CONFIGURATION)"
         NookDeveloperDir: "$(DEVELOPER_DIR)"
+        # Nook's own app registrations, so linking Telegram and Teams needs nothing but your login. Set the build
+        # settings NOOK_TELEGRAM_API_ID / NOOK_TELEGRAM_API_HASH (my.telegram.org) and NOOK_TEAMS_CLIENT_ID (Microsoft
+        # Entra); while they are empty, Settings › Chats asks for your own.
+        NookTelegramAPIID: "$(NOOK_TELEGRAM_API_ID)"
+        NookTelegramAPIHash: "$(NOOK_TELEGRAM_API_HASH)"
+        NookTeamsClientID: "$(NOOK_TEAMS_CLIENT_ID)"
         CFBundleURLTypes:
           - CFBundleURLName: app.nook.link
             CFBundleURLSchemes: [nook]

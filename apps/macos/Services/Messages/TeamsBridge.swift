@@ -59,7 +59,9 @@ final class TeamsBridge: ObservableObject, ChatBridge {
 
     /// Nook's own app in Microsoft Entra: a multi-tenant public client ("Allow public client flows" on) with the
     /// delegated permissions Chat.Read and User.Read. Signing in with it needs nothing but the account itself.
-    static let builtInClientID: String? = nil
+    /// Comes with the build (Info.plist, from the NOOK_TEAMS_CLIENT_ID build setting); nil while that is empty.
+    static let builtInClientID: String? = (Bundle.main.object(forInfoDictionaryKey: "NookTeamsClientID") as? String)
+        .flatMap { $0.isEmpty ? nil : $0 }
 
     init() {
         accounts = Self.loadAccounts()

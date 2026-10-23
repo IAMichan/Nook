@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The chat apps Settings › Chats offers, in the order they show while none is linked: the apps most chats come from
-/// first. Any other app the chat service on this Mac can link follows them.
+/// first. Nook links those in `ownWay` itself; the others show only while a chat service on this Mac can link them (or
+/// one is linked), as does any other app such a service offers.
 enum ChatAppsCatalog {
     static let apps = ["whatsapp", "instagram", "messenger", "telegram", "signal", "teams", "slack", "discord", "linkedin", "x",
                        "messages"]
@@ -103,8 +104,12 @@ struct ChatAppsSection: View {
 @MainActor
 enum ChatAppStates {
     static func all() -> [ChatAppState] {
-        let offered = ChatLinker.shared.networks.map(\.app).filter { !ChatAppsCatalog.apps.contains($0) }
-        return (ChatAppsCatalog.apps + offered).compactMap(state)
+        let linker = ChatLinker.shared
+        let offered = linker.networks.map(\.app).filter { !ChatAppsCatalog.apps.contains($0) }
+        return (ChatAppsCatalog.apps + offered).compactMap(state).filter { app in
+            app.linked || ChatAppsCatalog.ownWay.contains(app.id) || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
+                || (linker.serviceRuns && BeeperBridge.token == nil)
+        }
     }
 
     static func state(_ id: String) -> ChatAppState? {

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// Settings › Chats: every chat app at a glance first (which are linked, as whom, and the others with a Link button that
 /// walks a link through its steps in `ChatAppSheet`), then the notifications Nook collects from any other app, how
-/// reading works, the chat service on this Mac, and the GIF key.
+/// reading works, a chat service on this Mac when one runs, and the GIF key.
 struct ChatsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
@@ -43,12 +43,15 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.reading"))
             }
 
-            Section {
-                BeeperSettingsRows(capture: capture)
-            } header: {
-                Text(tr("chats.beeper.title"))
-            } footer: {
-                Text(tr("chats.beeper.footer"))
+            // Nook links its apps itself; a chat service only shows while one runs on this Mac or is set up.
+            if linker.serviceRuns || BeeperBridge.token != nil {
+                Section {
+                    BeeperSettingsRows(capture: capture)
+                } header: {
+                    Text(tr("chats.beeper.title"))
+                } footer: {
+                    Text(tr("chats.beeper.footer"))
+                }
             }
 
             Section {
