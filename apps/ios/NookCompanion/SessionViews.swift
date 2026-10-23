@@ -74,6 +74,9 @@ struct SessionDetailView: View {
                 Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
             }
             .screen()
+            // A push about this session arrives without a banner while it is on screen.
+            .onAppear { client.visibleSession = sessionID }
+            .onDisappear { if client.visibleSession == sessionID { client.visibleSession = nil } }
             // While the session is on screen its conversation stays current; leaving the screen ends the loop.
             .task {
                 while !Task.isCancelled {
@@ -323,6 +326,8 @@ struct ItemView: View {
 struct NewSessionView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.dismiss) private var dismiss
+    /// A `nook://prompt` link this sheet was opened for: its text, and the project and agent it names.
+    var link: PromptLink? = nil
     let started: (String) -> Void
 
     @State private var task = ""
@@ -452,10 +457,12 @@ struct NewSessionView: View {
     private func prepare() {
         guard !prepared, let options else { return }
         prepared = true
-        agent = options.defaultAgent ?? options.agents.first?.id ?? ""
-        project = options.defaultProject ?? options.projects.first?.path ?? ""
+        agent = link?.agent(in: options.agents)?.id ?? options.defaultAgent ?? options.agents.first?.id ?? ""
+        project = link?.project(in: options.projects)?.path ?? options.defaultProject ?? options.projects.first?.path ?? ""
         plan = options.defaultPlan
         worktree = options.defaultWorktree
+        // A link only fills in the task; you read it and start the session yourself.
+        if let link, task.isEmpty { task = link.text }
         focused = true
     }
 

@@ -15,4 +15,14 @@ final class DevServerTests: XCTestCase {
         XCTAssertEqual(DevServerScanner.parseFolders("p501\nfcwd\nn/Users/x/app\np900\nfcwd\nn/Users/x/other\n"),
                        [501: "/Users/x/app", 900: "/Users/x/other"])
     }
+
+    func testOnlyPagesCountAsWebServers() {
+        XCTAssertTrue(DevServerProbe.isWebPage(status: 200, contentType: "text/html; charset=utf-8", location: nil))
+        XCTAssertTrue(DevServerProbe.isWebPage(status: 200, contentType: "application/xhtml+xml", location: nil))
+        XCTAssertTrue(DevServerProbe.isWebPage(status: 302, contentType: nil, location: "/login"))
+        XCTAssertFalse(DevServerProbe.isWebPage(status: 301, contentType: nil, location: nil))
+        XCTAssertFalse(DevServerProbe.isWebPage(status: 200, contentType: "application/json", location: nil))
+        XCTAssertFalse(DevServerProbe.isWebPage(status: 204, contentType: "text/html", location: nil))
+        XCTAssertFalse(DevServerProbe.isWebPage(status: 404, contentType: "text/html", location: nil))
+    }
 }

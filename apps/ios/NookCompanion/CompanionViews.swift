@@ -57,6 +57,10 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
         .task { client.startPolling() }
+        // A prompt link starts on the Agents tab, where its New session sheet opens.
+        .onChange(of: client.pendingPrompt) { _, prompt in
+            if prompt != nil { tab = .sessions }
+        }
         // A tapped notification opens its session.
         .onChange(of: client.openSession) { _, id in
             guard let id else { return }
@@ -197,6 +201,8 @@ struct SessionListView: View {
     @ObservedObject private var live = LiveActivities.shared
     @Binding var path: [String]
     @State private var composing = false
+    /// The prompt link the open New session sheet was opened for.
+    @State private var link: PromptLink?
 
     private var ordered: [SessionDigest] { client.sessions.sorted { $0.updated > $1.updated } }
     private var needsYou: [SessionDigest] { ordered.filter(Self.needsYou) }
@@ -262,8 +268,20 @@ struct SessionListView: View {
                 }
             }
         }
-        .sheet(isPresented: $composing) {
-            NewSessionView { id in path.append(id) }
+        .sheet(isPresented: $composing, onDismiss: { link = nil }) {
+            NewSessionView(link: link) { id in path.append(id) }
+        }
+        // An opened nook://prompt link: the New session sheet with its text, never started by itself.
+        .onChange(of: client.pendingPrompt, initial: true) { _, prompt in
+            guard let prompt else { return }
+            guard client.can(CompanionFeature.start) else {
+                client.pendingPrompt = nil
+                client.notice = String(localized: "This Mac cannot start sessions from the phone yet. Update Nook on your Mac.")
+                return
+            }
+            link = prompt
+            composing = true
+            client.pendingPrompt = nil
         }
         .screen()
     }

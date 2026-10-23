@@ -9,6 +9,7 @@ Sources/
   CompanionLiveActivity.swift  Live Activity phases, attributes, planner and liveactivity payloads (also compiled into the iPhone widget extension)
   CompanionSeal.swift     Authenticated encryption with ChaCha20-Poly1305 (CryptoKit)
   WebhookSecurity.swift   Pure-Swift SHA-256 and HMAC verification (no CryptoKit dependency)
+  PromptLink.swift        `nook://prompt` links that prefill a new session's draft, on the Mac and the iPhone (tested in PromptLinkTests)
 ```
 
 `apps/macos/project.yml` and `apps/ios/project.yml` compile these source files directly into their respective targets. Keep all files portable (`Foundation`-only), with the sole exception of `CompanionSeal.swift` which uses `CryptoKit` on Apple platforms.

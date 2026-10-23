@@ -114,6 +114,7 @@ struct RunInspector: View {
                         ForEach(files.prefix(40)) { file in
                             Button { review(file) } label: { FileChangeRow(file: file) }
                                 .buttonStyle(.plain)
+                                .sessionFileMenu(workspace, runID: runID, path: file.path)
                         }
                         if files.count > 40 {
                             Text(tr("ws.inspector.moreFiles", files.count - 40)).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)

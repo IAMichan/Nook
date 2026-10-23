@@ -43,8 +43,9 @@ enum TextGeneration {
         """
     }
 
-    static func commitPrompt(branch: String?, files: String, patch: String) -> String {
-        [
+    /// `style` holds the extra rules of the commit style you chose (`CommitStyle`).
+    static func commitPrompt(branch: String?, files: String, patch: String, style: [String] = []) -> String {
+        var lines: [String] = [
             "You write concise git commit messages in English.",
             "Return a JSON object with keys: subject, body.",
             "Rules:",
@@ -52,6 +53,9 @@ enum TextGeneration {
             "- subject must be imperative, <= 72 chars, and no trailing period",
             "- body can be empty string or short bullet points",
             "- capture the primary user-visible or developer-visible change",
+        ]
+        lines += style
+        lines += [
             "",
             "Branch: \(branch ?? "(detached)")",
             "",
@@ -60,10 +64,12 @@ enum TextGeneration {
             "",
             "Staged patch:",
             limit(patch, 40_000)
-        ].joined(separator: "\n")
+        ]
+        return lines.joined(separator: "\n")
     }
 
-    static func pullRequestPrompt(base: String, head: String, commits: String, stat: String, patch: String, template: String?) -> String {
+    static func pullRequestPrompt(base: String, head: String, commits: String, stat: String, patch: String, template: String?,
+                                  style: [String] = []) -> String {
         let template = template?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         let bodyRules = template == nil ? [
             "- body must be markdown and include headings '## Summary' and '## Testing'",
@@ -77,7 +83,7 @@ enum TextGeneration {
         ]
         var lines = ["You write source control change request content in English.", "Return a JSON object with keys: title, body.", "Rules:",
                      "- write title and body in English",
-                     "- title should be concise and specific"] + bodyRules
+                     "- title should be concise and specific"] + bodyRules + style
         if let template { lines += ["", "Repository change request template:", limit(template, 8_000)] }
         lines += ["", "Base branch: \(base)", "Head branch: \(head)", "", "Commits:", limit(commits, 12_000), "",
                   "Diff stat:", limit(stat, 12_000), "", "Diff patch:", limit(patch, 40_000)]
@@ -171,7 +177,7 @@ enum TextGenerationRunner {
     }
 
     static func run(engine: TextGeneration.Engine, executable: String, environment: [String: String], prompt: String,
-                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120) -> [String: Any]? {
+                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) -> [String: Any]? {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("nook-text-" + UUID().uuidString, isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -179,7 +185,7 @@ enum TextGenerationRunner {
         let arguments: [String]
         switch engine {
         case .claude:
-            arguments = TextGeneration.claudeArguments(schema: schema)
+            arguments = TextGeneration.claudeArguments(schema: schema, model: model ?? "haiku")
         case .codex:
             let schemaFile = temp.appendingPathComponent("schema.json")
             guard (try? Data(TextGeneration.json(schema).utf8).write(to: schemaFile)) != nil else { return nil }

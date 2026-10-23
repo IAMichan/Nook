@@ -11,9 +11,16 @@ struct NookCompanionApp: App {
             RootView()
                 .environmentObject(client)
                 // A tap on a Live Activity opens its session; the Mac's QR code, scanned with the Camera app, opens the
-                // app with the pairing link.
+                // app with the pairing link; a prompt link (nook://prompt?text=…) opens a new session with its text
+                // filled in, never sent.
                 .onOpenURL { url in
-                    if let session = ActivityLink.session(from: url) { client.openSession = session } else { client.pair(link: url.absoluteString) }
+                    if let session = ActivityLink.session(from: url) {
+                        client.openSession = session
+                    } else if let prompt = PromptLink.parse(url: url) {
+                        client.pendingPrompt = prompt
+                    } else {
+                        client.pair(link: url.absoluteString)
+                    }
                 }
         }
     }
@@ -38,8 +45,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return .newData
     }
 
+    /// No banner or sound for the session you are looking at (as Code does): its screen already shows what changed.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .badge]
+        let nook = notification.request.content.userInfo["nook"] as? [String: Any]
+        let session = nook?["session"] as? String
+        let visible = await MainActor.run { CompanionClient.shared.visibleSession }
+        if let session, session == visible { return [.badge] }
+        return [.banner, .sound, .badge]
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

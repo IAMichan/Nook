@@ -32,7 +32,7 @@ extension MarkdownBlock {
         }
         for run in parsed.runs {
             var piece = AttributedString(parsed[run.range])
-            let url = run.link.flatMap { isSafeLink($0) ? $0 : nil }
+            let url = run.link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
             if run.link != nil, url == nil { piece.link = nil }
             if run.inlinePresentationIntent?.contains(.code) == true {
                 piece.font = .system(size: size - 1.5, design: .monospaced)
@@ -122,7 +122,39 @@ enum MarkdownCache {
     }
 }
 
+private struct FileLinkBaseKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    /// The folder a relative file link in an answer is read from: the session's folder in an agent's conversation. Without
+    /// it, only absolute paths open.
+    var fileLinkBase: String? {
+        get { self[FileLinkBaseKey.self] }
+        set { self[FileLinkBaseKey.self] = newValue }
+    }
+}
+
+extension MarkdownBlock {
+    /// A link to a file (`src/app.swift:12:3`, `./README.md`, `file:///…`) rather than to a web page or a mail address.
+    static func isFileLink(_ url: URL) -> Bool {
+        guard !isSafeLink(url) else { return false }
+        return FileLink.parse(url.absoluteString) != nil
+    }
+
+    /// Opens a file link in your editor at its line (never in the file's own app). False when it is not a file link or
+    /// cannot be placed (a relative path without a folder).
+    @MainActor
+    static func openFileLink(_ url: URL, base: String?) -> Bool {
+        guard isFileLink(url), let target = FileLink.parse(url.absoluteString),
+              let resolved = FileLink.resolve(target, base: base) else { return false }
+        AppModel.shared.workspace.openFile(resolved)
+        return true
+    }
+}
+
 struct MarkdownView: View {
+    @Environment(\.fileLinkBase) private var fileLinkBase
     let text: String
     var size: CGFloat = 14
     /// When set, the options of a question at the end of the answer become buttons that answer it.
@@ -144,7 +176,10 @@ struct MarkdownView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
-        .environment(\.openURL, OpenURLAction { url in
+        .environment(\.openURL, OpenURLAction { [fileLinkBase] url in
+            if MarkdownBlock.isFileLink(url) {
+                return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase) } ? .handled : .discarded
+            }
             guard MarkdownBlock.isSafeLink(url) else { return .discarded }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }

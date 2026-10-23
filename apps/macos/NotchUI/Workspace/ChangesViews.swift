@@ -77,6 +77,7 @@ struct ChangesSheet: View {
         List(selection: $selected) {
             ForEach(files) { file in
                 FileChangeRow(file: file).tag(file.path)
+                    .sessionFileMenu(workspace, runID: runID, path: file.path)
             }
         }
         .listStyle(.sidebar)
@@ -154,6 +155,7 @@ struct CommitSheet: View {
                         FileChangeRow(file: file)
                     }
                     .toggleStyle(.checkbox)
+                    .sessionFileMenu(workspace, runID: runID, path: file.path)
                 }
             }
             .frame(minHeight: 160, maxHeight: 260)
