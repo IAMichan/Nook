@@ -5,6 +5,8 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     enum CI: String, Equatable, Codable, Sendable { case unknown, pending, passing, failing }
     /// Where the pull request stands: still open, closed without merging, or merged.
     enum State: String, Equatable, Codable, Sendable { case open, closed, merged }
+    /// What the reviews decided so far (GitHub's `reviewDecision`), as Code shows it in a row.
+    enum Review: String, Equatable, Codable, Sendable { case none, required, approved, changesRequested }
 
     let repo: String
     let number: Int
@@ -18,12 +20,18 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     /// Lines added and removed across the whole pull request; nil in a list saved before the row showed them.
     var additions: Int? = nil
     var deletions: Int? = nil
+    var review: Review = .none
+    /// The branch conflicts with its base (GitHub's `mergeable` is CONFLICTING).
+    var conflict = false
+    var labels: [String] = []
 
     var id: String { "\(repo)#\(number)" }
+    /// Lines changed in all, for the size sorts.
+    var size: Int { (additions ?? 0) + (deletions ?? 0) }
 }
 
 extension PullRequestItem {
-    private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions }
+    private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions, review, conflict, labels }
 
     /// A list saved before states existed only held open pull requests.
     init(from decoder: Decoder) throws {
@@ -34,7 +42,10 @@ extension PullRequestItem {
                   author: try c.decode(String.self, forKey: .author), ci: try c.decodeIfPresent(CI.self, forKey: .ci) ?? .unknown,
                   state: try c.decodeIfPresent(State.self, forKey: .state) ?? .open,
                   additions: try c.decodeIfPresent(Int.self, forKey: .additions),
-                  deletions: try c.decodeIfPresent(Int.self, forKey: .deletions))
+                  deletions: try c.decodeIfPresent(Int.self, forKey: .deletions),
+                  review: try c.decodeIfPresent(Review.self, forKey: .review) ?? .none,
+                  conflict: try c.decodeIfPresent(Bool.self, forKey: .conflict) ?? false,
+                  labels: try c.decodeIfPresent([String].self, forKey: .labels) ?? [])
     }
 }
 
@@ -155,7 +166,8 @@ enum PullRequestGraphQL {
       reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) { nodes { ...row } }
     }
     fragment row on PullRequest {
-      number title url isDraft updatedAt state additions deletions
+      number title url isDraft updatedAt state additions deletions reviewDecision mergeable
+      labels(first: 6) { nodes { name } }
       author { login }
       repository { nameWithOwner }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -270,7 +282,19 @@ enum PullRequestGraphQL {
                                    author: ((node["author"] as? [String: Any])?["login"] as? String) ?? "", ci: ci(rollup),
                                    state: state(node["state"] as? String),
                                    additions: (node["additions"] as? NSNumber)?.intValue,
-                                   deletions: (node["deletions"] as? NSNumber)?.intValue)
+                                   deletions: (node["deletions"] as? NSNumber)?.intValue,
+                                   review: review(node["reviewDecision"] as? String),
+                                   conflict: (node["mergeable"] as? String) == "CONFLICTING",
+                                   labels: (((node["labels"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String })
+        }
+    }
+
+    static func review(_ decision: String?) -> PullRequestItem.Review {
+        switch decision {
+        case "APPROVED": return .approved
+        case "CHANGES_REQUESTED": return .changesRequested
+        case "REVIEW_REQUIRED": return .required
+        default: return .none
         }
     }
 

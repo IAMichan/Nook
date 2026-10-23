@@ -105,7 +105,9 @@ enum PullRequestGrouping: String, CaseIterable, Identifiable, Sendable {
 /// In what order the list shows its rows and repositories: what waits on you first (reviews asked of you, then your
 /// own pull requests with failing checks), or by when they last changed. Open ones always come before closed ones.
 enum PullRequestSort: String, CaseIterable, Identifiable, Sendable {
-    case attention, recent, oldest
+    /// Code's orders besides Nook's own: merge readiness (approved with passing checks first, conflicts last, the
+    /// smaller change first among equals), what is blocked on you, and by size.
+    case attention, readiness, blockedOnMe, recent, oldest, largest, smallest
     var id: String { rawValue }
 }
 
@@ -136,6 +138,33 @@ struct PullRequestRepoGroup: Identifiable, Equatable, Sendable {
             if role == .review { return 0 }
             return role == .mine && item.ci == .failing ? 1 : 2
         }
+
+        /// How close it is to merging: 0 approved with passing checks, 1 passing checks, 2 a draft or anything else
+        /// open, 3 a conflict, 4 closed or merged.
+        var readiness: Int {
+            guard item.state == .open else { return 4 }
+            if item.conflict { return 3 }
+            if item.draft { return 2 }
+            if item.ci == .passing { return item.review == .approved ? 0 : 1 }
+            return 2
+        }
+
+        /// What waits on you first: a review asked of you, then your own by what blocks it (a conflict, changes asked
+        /// for, failing checks, a draft, anything else, ready to merge), then the watched ones, then closed ones.
+        var blockedOnMe: Int {
+            guard item.state == .open else { return 9 }
+            switch role {
+            case .review: return 0
+            case .watched: return 8
+            case .mine:
+                if item.conflict { return 1 }
+                if item.review == .changesRequested { return 2 }
+                if item.ci == .failing { return 3 }
+                if item.draft { return 4 }
+                if item.ci == .passing && item.review == .approved { return 6 }
+                return 5
+            }
+        }
     }
 
     /// "owner/name".
@@ -157,12 +186,18 @@ extension Array where Element == PullRequestRepoGroup.Row {
 
     /// Whether `left` comes before `right`, or nil when they tie.
     static func precedes(_ left: Element, _ right: Element, _ sort: PullRequestSort) -> Bool? {
-        func key(_ row: Element) -> (Int, Double) {
+        func key(_ row: Element) -> (Int, Double, Double) {
             let updated = row.item.updated?.timeIntervalSince1970 ?? 0
+            let open = row.item.state == .open ? 0 : 1
+            let size = Double(row.item.size)
             switch sort {
-            case .attention: return (row.urgency, -updated)
-            case .recent: return (row.item.state == .open ? 0 : 1, -updated)
-            case .oldest: return (row.item.state == .open ? 0 : 1, updated)
+            case .attention: return (row.urgency, -updated, 0)
+            case .readiness: return (row.readiness, size, -updated)
+            case .blockedOnMe: return (row.blockedOnMe, -updated, 0)
+            case .recent: return (open, -updated, 0)
+            case .oldest: return (open, updated, 0)
+            case .largest: return (open, -size, -updated)
+            case .smallest: return (open, size, -updated)
             }
         }
         let (a, b) = (key(left), key(right))

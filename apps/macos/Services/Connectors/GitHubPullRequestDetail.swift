@@ -149,4 +149,25 @@ enum GitHubPullRequestDetail {
         }
         return (object["sha"] as? String) ?? ""
     }
+
+    /// Sends one action from the page (a review, a comment, close, reopen, …; see PullRequestAction), only after your
+    /// click. Throws GitHub's refusal in words.
+    static func perform(_ action: PullRequestAction, repo: String, number: Int, token: String) async throws {
+        guard let spec = action.request(repo: repo, number: number) else { throw NookError("Nothing to send.") }
+        guard let url = URL(string: "https://api.github.com" + spec.path) else { throw NookError("Invalid GitHub address.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = spec.method
+        if let body = spec.body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        for (key, value) in headers(token) { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            throw NookError(PullRequestAction.error(status: status, object: object), kind: status == 401 ? .auth : .other)
+        }
+    }
 }
