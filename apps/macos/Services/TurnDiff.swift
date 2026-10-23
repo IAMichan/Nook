@@ -150,6 +150,9 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
     var files: [File] = []
     /// The last answer of the turn: the card goes under it.
     var answerID: String?
+    /// When the turn started and ended, for a session Nook runs: its git snapshots around the turn give the real diff.
+    var start: Date?
+    var end: Date?
 
     var lines: EditLines { files.reduce(EditLines()) { $0 + $1.lines } }
     var isEmpty: Bool { files.isEmpty }
@@ -210,9 +213,52 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
         return turns
     }
 
+    /// The finished turns of a session Nook runs that changed a file, from its timeline. The card goes under the
+    /// turn's end; a file the agent changed without an edit tool (Codex's file changes) has no patch of its own.
+    static func collect(events: [RunEvent]) -> [TurnDiff] {
+        var turns: [TurnDiff] = []
+        var number = 0
+        for events in TimelinePresentation.split(events) {
+            guard let first = events.first else { continue }
+            if first.kind == .user { number += 1 }
+            guard let end = events.last(where: { $0.kind == .result }) else { continue }
+            var turn = TurnDiff(id: first.id.uuidString, number: max(number, 1), answerID: end.id.uuidString,
+                                start: first.date, end: end.date)
+            for event in events {
+                switch event.kind {
+                case .fileChange:
+                    if let path = event.detail ?? (event.text.isEmpty ? nil : event.text) { turn.merge(File(path: path)) }
+                case .tool where ToolCategory.of(tool: event.tool ?? "") == .edit && event.state != .failed:
+                    let input = event.detail.flatMap { $0.data(using: .utf8) }
+                        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+                    var step = AgentToolStep(id: event.id.uuidString, name: event.tool ?? "", summary: "",
+                                             path: ToolSummary.path(input), lines: EditLines.of(event),
+                                             patch: EditPatch.make(tool: event.tool ?? "", input: input))
+                    step.state = .done
+                    if step.patch == nil, let path = step.path { turn.merge(File(path: path, lines: step.lines ?? EditLines())) }
+                    turn.add(step)
+                default:
+                    continue
+                }
+            }
+            if !turn.isEmpty { turns.append(turn) }
+        }
+        return turns
+    }
+
+    /// The same turn with the lines git counted (keyed by the path relative to `directory`) in place of those from the
+    /// agent's edits.
+    func counted(_ counts: [String: EditLines], relativeTo directory: String?) -> TurnDiff {
+        var copy = self
+        for index in copy.files.indices {
+            if let lines = counts[Self.relative(copy.files[index].path, to: directory)] { copy.files[index].lines = lines }
+        }
+        return copy
+    }
+
     /// All the turns together, each file once with the edits of every turn: the whole session.
     static func session(_ turns: [TurnDiff]) -> TurnDiff {
-        var all = TurnDiff(id: "all", number: 0)
+        var all = TurnDiff(id: "all", number: 0, start: turns.compactMap(\.start).min(), end: turns.compactMap(\.end).max())
         for turn in turns {
             for file in turn.files { all.merge(file) }
         }
@@ -230,7 +276,7 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
         }
     }
 
-    private mutating func merge(_ file: File) {
+    mutating func merge(_ file: File) {
         if let index = files.firstIndex(where: { $0.path == file.path }) {
             files[index].lines = files[index].lines + file.lines
             files[index].patches += file.patches
