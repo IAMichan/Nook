@@ -273,6 +273,14 @@ final class AppModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
+        // The task ring also shows a Nook with news: reading it, or marking it unread, redraws the ring at once. Cheap
+        // enough for streamed tokens: only the flags are compared, never the messages.
+        chat.$conversations
+            .map { $0.map { "\($0.id)|\($0.unread)|\($0.archived)" } }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in
             guard let self else { return }
