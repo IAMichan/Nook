@@ -381,7 +381,7 @@ struct AgentSessionDetail: View {
 
     /// Attach a file, end the session, or open its folder or a terminal there.
     private func sessionMenu(_ session: AgentSession) -> some View {
-        let finishKey = FinishedSessions.key(agent: session.name, conversation: app.conversationID(for: session), fallback: session.id)
+        let finishKey = FinishedSessions.key(session: session)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
         let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
         return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
