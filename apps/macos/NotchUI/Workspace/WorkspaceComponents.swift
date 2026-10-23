@@ -447,15 +447,6 @@ struct ElapsedText: View {
     }
 }
 
-extension WorkspaceRun {
-    /// The models offered for the next turn: the agent's suggestions plus the one this session already uses.
-    var modelChoices: [String] {
-        var list = provider.suggestedModels
-        if !model.isEmpty, !list.contains(model) { list.append(model) }
-        return list
-    }
-}
-
 /// Mode, permissions and model for the next turn of a session Nook runs, also while it works (see
 /// `WorkspaceManager.configure`).
 struct NextTurnSettings: View {
@@ -472,9 +463,22 @@ struct NextTurnSettings: View {
             ForEach(capabilities.policies) { Text($0.label).tag($0) }
         }
         Picker(tr("agents.run.model"), selection: Binding(get: { run.model }, set: { workspace.configure(run.id, model: $0) })) {
-            ForEach(run.modelChoices, id: \.self) { model in
-                Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+            ForEach(modelChoices, id: \.self) { model in
+                let choice = workspace.modelChoice(model, for: run.provider)
+                let name = model.isEmpty ? tr("ws.model.default") : choice?.name ?? model
+                // A model that needs a newer agent names the update and cannot be picked until then.
+                Text(choice?.requiredVersion.map { tr("ws.model.needsUpdate", name, run.provider.displayName, $0) } ?? name)
+                    .tag(model)
+                    .disabled(choice?.needsUpdate == true)
             }
         }
+    }
+
+    /// The models offered for the next turn: the same menu as the composer's (favorites first, older models only while
+    /// in use), with the session's model under the name it uses ("opus" stays "opus", so the picker shows it chosen).
+    private var modelChoices: [String] {
+        workspace.menuModelIDs(for: run.provider, extra: [run.model])
+            .filter { !workspace.hidesLegacyModel($0, for: run.provider, chosen: run.model) }
+            .map { workspace.sameModel($0, run.model, for: run.provider) ? run.model : $0 }
     }
 }

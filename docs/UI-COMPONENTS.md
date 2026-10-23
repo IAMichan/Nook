@@ -103,6 +103,10 @@ The checklist for a new or changed view:
   or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
+- A key that runs a command (send, find, the command palette, a new session, undo…) is a keybinding command, offered
+  with `.keyCommand` / `.keyCommands` and listed in `Keybindings.commandIDs` and `defaults`, never a hidden
+  `Button("").keyboardShortcut(…)` or an `onKeyPress` with modifiers. That keeps it rebindable in
+  `~/.nook/keybindings.json` and listed under Settings › Shortcuts (see [`KEYBINDINGS.md`](KEYBINDINGS.md)).
 - A field where you write words (not a name, a path or a search) gets `@` through `.mentions` and `MentionSuggestions`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice under
@@ -140,6 +144,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `NookNoticeActions`, `NookNoticeAction` | `NookNoticeActions.swift` | The button row at the bottom of every notification (cards, approvals, questions, panel notices): main action and its "not now" in one pill (`NookSplitButton`), muted extras, rarer actions in a "…" menu (`NookMoreMenu`), optional mic. Use it for any new notification instead of loose buttons |
 | `ToastCenter`, `NookToastView`, `.nookToastHost()` | `NookToast.swift` | The one toast for the result of something you did (saved, pushed, failed): `ToastCenter.shared.success(…)`, `.error(…)` (also takes an `Error`, under a title that says what failed), `.warning(…)`, `.info(…)`, with at most one `NookToastAction`. See *Toasts* above |
 | `NookSearchField` | `PanelBlocks.swift` | The one search field (panel lists, Settings rows, menus, the command palette): magnifying glass, text, a clear button, Escape clears and then calls `onEscape`. `panel`, `inline` (in a Settings form or a menu) and `large` (a palette). Never build a search field by hand |
+| `QRCodeView`, `QRCode` | `QRCode.swift` | The one QR code for a phone to scan (linking a chat app, WhatsApp, pairing the companion): crisp pixels on a light card, with a label for VoiceOver. Never draw a QR image by hand |
 | `PanelListHeader`, `PanelNewButton` | `PanelBlocks.swift` | The title row on top of every tab's list (Nook, Agents, Chats, Pull requests): name, `NookCountBadge`, the list's actions; `PanelNewButton` is the "new" in it, lit while the new one is open |
 | `NookCountBadge` | `PanelBlocks.swift` | How many wait for you: a small amber count, on a tab or a list title |
 | `NookFilterChip` | `PanelBlocks.swift` | One chip in a row of filters ("All", "Sessions 4"): a quiet capsule, filled with the accent when chosen, with an optional count. Search everything uses it for its kinds |
@@ -155,6 +160,8 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `.chatColumn()` | `PanelResize.swift` | Keeps a conversation, its composer or an agent's question to one centered column of `PanelLayout.chatColumn` (736 pt) |
+| `FileContextMenu`, `.sessionFileMenu(_:runID:path:)` | `FileContextMenu.swift` | The right-click menu of a session's file: open in your editor (at a line, through `WorkspaceManager.openFile`), show in Finder, copy the path or the path in the repository. Use it on every row that shows a changed file |
+| `.keyCommand(_:perform:)`, `.keyCommands(_:context:enabled:priority:)`, `KeyCommandCenter` | `KeyCommands.swift` | Offers keybinding commands (`Keybindings.commandIDs`) to the panel's one key monitor while the view is in a window; `context` adds `when` flags (`paletteOpen`, `turnRunning`…), `enabled` limits it to while a field has the keyboard, `priority: -1` makes a window-wide fallback. See [`KEYBINDINGS.md`](KEYBINDINGS.md) |
 | `.onEscapeKey(enabled:perform:)` | `EscapeKey.swift` | Escape that closes what is open (a chat in the Chats tab) also when nothing in the window has the keyboard, where `onExitCommand` hears nothing; a text field being typed in keeps its own Escape |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
@@ -162,7 +169,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `PullRequestFreshness` | `NotchUI/Pills/PullRequestsPanel.swift` | "Updated 20 s ago": how fresh a pull request list or page is, ticking along; next to its refresh button |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
-| `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |
+| `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers; `DropdownRow(favorite:)` adds a favorite star (the model menus) |
 | `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip. `SessionComposer.choicesBelowBox()` puts the agent, model and mode choices in such a tray, so the box stays one line (the chat of a running session uses it) |
 | `.mentions(_:text:config:)`, `MentionSuggestions`, `ComposerConfig.mentions(folder:)` | `MentionField.swift` | `@` in any field where you write words (a follow-up, a prompt, a mail, a commit message): `.mentions` on the text field itself, `MentionSuggestions` right above its box, both sharing a `ComposerModel` the view owns. `@` lists people from your chats and, with a folder, its files, put in as plain words. `SessionComposer` and `ChatReplyField` have the same list built in |
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |

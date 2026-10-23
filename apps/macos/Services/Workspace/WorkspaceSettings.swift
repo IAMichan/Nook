@@ -23,6 +23,19 @@ final class WorkspaceSettings: ObservableObject {
     @Published var defaultProfiles: [String: String] {
         didSet { defaults.set(defaultProfiles, forKey: "ws.defaultProfiles") }
     }
+    /// Favorite models per agent: listed first in the model menus.
+    @Published var favoriteModels: [String: [String]] {
+        didSet { defaults.set(favoriteModels, forKey: "ws.favoriteModels") }
+    }
+    /// Model ids you typed yourself per agent, newest first (see `ModelPreferences`).
+    @Published var customModels: [String: [String]] {
+        didSet { defaults.set(customModels, forKey: "ws.customModels") }
+    }
+    /// Nook may fetch a fresh model list from its repository (new models, which agent update they need). Off: the list
+    /// that came with the app is used and nothing goes online for it.
+    @Published var onlineModelList: Bool {
+        didSet { defaults.set(onlineModelList, forKey: "ws.onlineModelList") }
+    }
     @Published var defaultMode: ExecutionMode {
         didSet { defaults.set(defaultMode.rawValue, forKey: "ws.defaultMode") }
     }
@@ -62,6 +75,14 @@ final class WorkspaceSettings: ObservableObject {
     /// Coding agents may use Nook's terminal, browser and pull requests through the workspace bridge.
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
+    }
+    /// How commit messages and pull requests are written (`CommitStyle`).
+    @Published var commitStyle: CommitStyle {
+        didSet { defaults.set(commitStyle.rawValue, forKey: CommitStyle.defaultsKey) }
+    }
+    /// Your own instructions for commit messages and pull requests, used with `CommitStyle.custom`.
+    @Published var commitInstructions: String {
+        didSet { defaults.set(commitInstructions, forKey: CommitStyle.instructionsKey) }
     }
     /// A new session gets a short title written by a small model in place of the first line of its task.
     @Published var autoTitles: Bool {
@@ -103,6 +124,9 @@ final class WorkspaceSettings: ObservableObject {
         defaultModels = (defaults.dictionary(forKey: "ws.defaultModels") as? [String: String]) ?? [:]
         defaultProfiles = (defaults.dictionary(forKey: "ws.defaultProfiles") as? [String: String]) ?? [:]
         defaultEfforts = (defaults.dictionary(forKey: "ws.defaultEfforts") as? [String: String]) ?? [:]
+        favoriteModels = (defaults.dictionary(forKey: "ws.favoriteModels") as? [String: [String]]) ?? [:]
+        customModels = (defaults.dictionary(forKey: "ws.customModels") as? [String: [String]]) ?? [:]
+        onlineModelList = defaults.object(forKey: "ws.onlineModelList") as? Bool ?? true
         defaultMode = ExecutionMode(rawValue: defaults.string(forKey: "ws.defaultMode") ?? "") ?? .agent
         defaultIsolation = IsolationMode(rawValue: defaults.string(forKey: "ws.defaultIsolation") ?? "") ?? .worktree
         defaultPermission = PermissionPolicy(rawValue: defaults.string(forKey: "ws.defaultPermission") ?? "") ?? .acceptEdits
@@ -115,6 +139,8 @@ final class WorkspaceSettings: ObservableObject {
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
+        commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
+        commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? true
@@ -141,6 +167,18 @@ final class WorkspaceSettings: ObservableObject {
     func model(for provider: RunProvider) -> String { defaultModels[provider.rawValue] ?? "" }
 
     func setModel(_ model: String, for provider: RunProvider) { defaultModels[provider.rawValue] = model }
+
+    func favoriteModels(for provider: RunProvider) -> [String] { favoriteModels[provider.rawValue] ?? [] }
+
+    func toggleFavoriteModel(_ model: String, for provider: RunProvider) {
+        favoriteModels[provider.rawValue] = ModelPreferences.toggling(model, in: favoriteModels(for: provider))
+    }
+
+    func customModels(for provider: RunProvider) -> [String] { customModels[provider.rawValue] ?? [] }
+
+    func rememberCustomModel(_ model: String, for provider: RunProvider) {
+        customModels[provider.rawValue] = ModelPreferences.remembering(model, in: customModels(for: provider))
+    }
 
     func profile(for provider: RunProvider) -> String? { defaultProfiles[provider.rawValue] }
 

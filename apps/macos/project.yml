@@ -181,9 +181,11 @@ targets:
       - path: Core/I18n+Notices.swift
       - path: Core/I18n+DoubleTap.swift
       - path: Core/I18n+Takeover.swift
+      - path: Core/I18n+Harness.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
+      - path: Core/I18n+Keybindings.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -208,7 +210,7 @@ targets:
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
-      - path: Services/Messages/InstagramData.swift
+      - path: Services/Messages/ChatJSON.swift
       - path: Services/Messages/BeeperData.swift
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
@@ -237,6 +239,7 @@ targets:
       - path: App/ChatRecovery.swift
       - path: Services/AgentSessionRegistry.swift
       - path: Services/ResumedConversations.swift
+      - path: Services/SpawnedSessions.swift
       - path: Services/LocalAgentScanner.swift
       - path: Services/ClaudeAccountFile.swift
       - path: Services/FinishedSessions.swift
@@ -252,6 +255,8 @@ targets:
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/PullRequestViewedFiles.swift
+      - path: Services/Connectors/PullRequestReviewGuide.swift
       - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
       - path: Services/Connectors/GitHubMarkdown.swift
@@ -283,6 +288,7 @@ targets:
       - path: Services/Workspace/SourceControlHost.swift
       - path: ../../packages/protocol/Sources/CompanionModels.swift
       - path: ../../packages/protocol/Sources/CompanionPush.swift
+      - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift
@@ -290,7 +296,7 @@ targets:
       - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/Keybindings.swift
-      - path: Services/Workspace/PromptLink.swift
+      - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
@@ -310,9 +316,17 @@ targets:
       - path: Services/Workspace/DevServers.swift
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/TerminalTitle.swift
+      - path: Services/Workspace/FileLinks.swift
+      - path: Services/Workspace/TerminalLinks.swift
+      - path: Services/Workspace/WorktreeCleanup.swift
+      - path: Services/Workspace/ComposerLists.swift
+      - path: Services/Workspace/CommitStyle.swift
+      - path: Services/Workspace/RemoteHostDiscovery.swift
+      - path: Services/Workspace/ResourceUsage.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift
+      - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift
       - path: Services/Workspace/GitQuickActions.swift

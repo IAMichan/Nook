@@ -103,9 +103,7 @@ struct AgentsTab: View {
                     .transition(.opacity)
             }
         }
-        .background {
-            Button("") { palette.toggle() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true)
-        }
+        .keyCommands(["commandPalette.toggle": { palette.toggle(); return true }], context: ["paletteOpen": palette])
         .onAppear {
             app.hub.refreshDetected()
             app.adoptAccounts()
@@ -182,12 +180,14 @@ struct AgentsTab: View {
                              selection: Selection) -> some View {
         let current = selectedID(selection)
         let runs = app.demoMode ? [] : WorkspaceRunsSection.recent(app.workspace)
-        let running = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
-        let busyKeys = Set(running.filter(\.isBusy).map(\.finishKey))
+        let built = sorted(runs.map { item($0) } + live.map { item($0, transcript: transcripts[$0.id]) })
+        let busyKeys = Set(built.filter(\.isBusy).map(\.finishKey))
+        let (running, earlier) = Self.linkSpawned(running: built,
+                                                  past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) })
 
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                AgentInboxList(items: running, past: past.map { item($0) }.filter { !busyKeys.contains($0.finishKey) },
+                AgentInboxList(items: running, past: earlier,
                                current: current, now: context.date) { viewModel.selectedAgentID = $0 }
             }
             if showsCloudLink {
@@ -210,6 +210,24 @@ struct AgentsTab: View {
             visits.visit(old)
             visits.visit(new)
         }
+    }
+
+    /// Gives a session another one spawned (Claude desktop's suggested tasks) that one as its parent, so the list shows it
+    /// underneath. A parent Nook already knows (delegated, forked) stays.
+    private static func linkSpawned(running: [AgentListItem], past: [AgentListItem]) -> ([AgentListItem], [AgentListItem]) {
+        let all = running + past
+        guard all.contains(where: { !$0.spawnedTasks.isEmpty }) else { return (running, past) }
+        let parents = SpawnedSessions.parents(
+            firstPrompts: Dictionary(all.map { ($0.id, $0.firstPrompt) }, uniquingKeysWith: { first, _ in first }),
+            tasks: Dictionary(all.filter { !$0.spawnedTasks.isEmpty }.map { ($0.id, $0.spawnedTasks) }, uniquingKeysWith: { first, _ in first }))
+        func linked(_ items: [AgentListItem]) -> [AgentListItem] {
+            items.map { item in
+                var item = item
+                if item.parentID == nil { item.parentID = parents[item.id] }
+                return item
+            }
+        }
+        return (linked(running), linked(past))
     }
 
     /// Waiting for you first, then working, then the rest; newest first within each.
@@ -272,7 +290,9 @@ struct AgentsTab: View {
             snoozedAt: run.snoozedAt,
             machine: run.remote?.name ?? MachineName.local,
             model: run.resolvedModel ?? run.model,
-            accountName: accountName(app.profile(for: run))
+            accountName: accountName(app.profile(for: run)),
+            // A session Nook delegated to or forked from another one.
+            parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString }
         )
     }
 
@@ -289,9 +309,8 @@ struct AgentsTab: View {
         }
         let conversation = app.conversationID(for: session)
         let known = transcript ?? conversation.flatMap { id in app.history.sessions.first { $0.isConversation(id) } }
-        var title = session.project
-        if !session.summary.isEmpty { title = AgentFormat.title(session.summary) }
-        else if let known, !known.title.isEmpty { title = AgentFormat.title(known.title) }
+        let named = AgentFormat.sessionTitle(session, known: known)
+        let title = named.isEmpty ? session.project : named
         let branch = known.flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd)
         return AgentListItem(
             id: session.id,
@@ -309,7 +328,9 @@ struct AgentsTab: View {
             unseen: session.status == .done && unseen(session.id, session.updated),
             machine: MachineName.local,
             model: known?.model ?? "",
-            accountName: accountName(app.profile(for: session))
+            accountName: accountName(app.profile(for: session)),
+            firstPrompt: known?.firstPrompt ?? "",
+            spawnedTasks: known?.spawnedTasks ?? []
         )
     }
 
@@ -327,7 +348,9 @@ struct AgentsTab: View {
             finishKey: FinishedSessions.key(agent: session.agent.name, conversation: session.sessionID, fallback: "past:" + session.id),
             machine: MachineName.local,
             model: session.model,
-            accountName: accountName(app.profile(for: session))
+            accountName: accountName(app.profile(for: session)),
+            firstPrompt: session.firstPrompt,
+            spawnedTasks: session.spawnedTasks
         )
     }
 
@@ -386,6 +409,12 @@ struct AgentListItem: Identifiable {
     var machine = ""
     var model = ""
     var accountName = ""
+    /// The session this one was started from: its list id ("run:<uuid>", a hub session id or "past:<id>").
+    var parentID: String? = nil
+    /// The first prompt and the tasks the session started for others, to find a spawned session's parent
+    /// (`SpawnedSessions`).
+    var firstPrompt = ""
+    var spawnedTasks: [String] = []
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
@@ -393,7 +422,8 @@ struct AgentListItem: Identifiable {
     func markedFinished() -> AgentListItem {
         AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
                       started: started, path: path, finishKey: finishKey,
-                      machine: machine, model: model, accountName: accountName)
+                      machine: machine, model: model, accountName: accountName,
+                      parentID: parentID, firstPrompt: firstPrompt, spawnedTasks: spawnedTasks)
     }
 }
 

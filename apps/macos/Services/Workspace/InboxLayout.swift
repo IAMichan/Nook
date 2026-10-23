@@ -24,6 +24,8 @@ struct InboxRow: Identifiable, Equatable, Sendable {
     var isActive = false
     /// Changed since the user last looked. Defaults to true so nothing recedes by accident.
     var unread = true
+    /// The session this one was started from (a delegated or forked session, a task another session spawned).
+    var parentID: String? = nil
 
     /// Needs you, from either source: the derived attention or a raw request flag.
     var needsYou: Bool { hasOpenRequest || attention.needsYou }
@@ -106,6 +108,8 @@ struct InboxEntry: Identifiable, Equatable, Sendable {
     var receded: Bool
     /// Came back from a snooze and the user has not looked yet.
     var woke: Bool
+    /// How far the row sits in under the session that started it: 0 for a session of its own.
+    var depth = 0
     var id: String { row.id }
 }
 
@@ -119,6 +123,37 @@ struct InboxSection: Equatable, Sendable {
 
 enum InboxLayout {
     static let settledPage = 10
+
+    typealias Kind = InboxSection.Kind
+
+    /// Rows with each session's children right under it, in their own order, one step further in (at most two). A row whose
+    /// parent is not in the list stays where it is, as a session of its own.
+    static func nest(_ entries: [InboxEntry]) -> [InboxEntry] {
+        let ids = Set(entries.map(\.id))
+        var children: [String: [InboxEntry]] = [:]
+        var roots: [InboxEntry] = []
+        for entry in entries {
+            if let parent = entry.row.parentID, parent != entry.id, ids.contains(parent) {
+                children[parent, default: []].append(entry)
+            } else {
+                roots.append(entry)
+            }
+        }
+        guard !children.isEmpty else { return entries }
+        var result: [InboxEntry] = []
+        var placed: Set<String> = []
+        func place(_ entry: InboxEntry, depth: Int) {
+            guard placed.insert(entry.id).inserted else { return }
+            var entry = entry
+            entry.depth = min(depth, 2)
+            result.append(entry)
+            for child in children[entry.id] ?? [] { place(child, depth: depth + 1) }
+        }
+        for root in roots { place(root, depth: 0) }
+        // A loop of parents has no root: its rows keep their place.
+        for entry in entries where !placed.contains(entry.id) { place(entry, depth: 0) }
+        return result
+    }
 
     /// Sections in display order; empty ones are left out. Every row lands in exactly one section.
     static func sections(rows: [InboxRow], state: InboxState, showWorking: Bool, now: Date,
@@ -169,6 +204,34 @@ enum InboxLayout {
             return a != b ? a < b : $0.id < $1.id
         }
         settled.sort(by: newestFirst)
+
+        // A session started from another one that is running or open follows it into its section, so it can sit under it;
+        // one that needs you, is pinned, snoozed or settled stays where it is.
+        var home: [String: Kind] = [:]
+        for entry in active { home[entry.id] = .active }
+        for entry in working { home[entry.id] = .working }
+        for entry in pinned { home[entry.id] = .pinned }
+        let follows = (working + active).filter { entry in
+            guard let parent = entry.row.parentID, let target = home[parent], target != home[entry.id] else { return false }
+            return !entry.row.needsYou
+        }
+        if !follows.isEmpty {
+            let moved = Set(follows.map(\.id))
+            working.removeAll { moved.contains($0.id) }
+            active.removeAll { moved.contains($0.id) }
+            for entry in follows {
+                switch home[entry.row.parentID ?? ""] {
+                case .pinned?: pinned.append(entry)
+                case .working?: working.append(entry)
+                default: active.append(entry)
+                }
+            }
+        }
+        pinned = nest(pinned)
+        working = nest(working)
+        active = nest(active)
+        snoozed = nest(snoozed)
+        settled = nest(settled)
 
         let limit = max(0, settledLimit)
         var result: [InboxSection] = [

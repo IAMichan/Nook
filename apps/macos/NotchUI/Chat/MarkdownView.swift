@@ -32,11 +32,14 @@ extension MarkdownBlock {
         }
         for run in parsed.runs {
             var piece = AttributedString(parsed[run.range])
-            let url = run.link.flatMap { isSafeLink($0) ? $0 : nil }
+            let url = run.link.flatMap { isSafeLink($0) || isFileLink($0) ? $0 : nil }
             if run.link != nil, url == nil { piece.link = nil }
             if run.inlinePresentationIntent?.contains(.code) == true {
                 piece.font = .system(size: size - 1.5, design: .monospaced)
                 piece.backgroundColor = NookTheme.field
+                piece.foregroundColor = NookTheme.textStrong
+            } else if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
+                // Running text is a step softer than `paper`; bold keeps the full white, so it stands out without weight.
                 piece.foregroundColor = NookTheme.paper
             }
             if open?.url != url { close() }
@@ -122,7 +125,39 @@ enum MarkdownCache {
     }
 }
 
+private struct FileLinkBaseKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    /// The folder a relative file link in an answer is read from: the session's folder in an agent's conversation. Without
+    /// it, only absolute paths open.
+    var fileLinkBase: String? {
+        get { self[FileLinkBaseKey.self] }
+        set { self[FileLinkBaseKey.self] = newValue }
+    }
+}
+
+extension MarkdownBlock {
+    /// A link to a file (`src/app.swift:12:3`, `./README.md`, `file:///…`) rather than to a web page or a mail address.
+    static func isFileLink(_ url: URL) -> Bool {
+        guard !isSafeLink(url) else { return false }
+        return FileLink.parse(url.absoluteString) != nil
+    }
+
+    /// Opens a file link in your editor at its line (never in the file's own app). False when it is not a file link or
+    /// cannot be placed (a relative path without a folder).
+    @MainActor
+    static func openFileLink(_ url: URL, base: String?) -> Bool {
+        guard isFileLink(url), let target = FileLink.parse(url.absoluteString),
+              let resolved = FileLink.resolve(target, base: base) else { return false }
+        AppModel.shared.workspace.openFile(resolved)
+        return true
+    }
+}
+
 struct MarkdownView: View {
+    @Environment(\.fileLinkBase) private var fileLinkBase
     let text: String
     var size: CGFloat = 14
     /// When set, the options of a question at the end of the answer become buttons that answer it.
@@ -144,7 +179,10 @@ struct MarkdownView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
-        .environment(\.openURL, OpenURLAction { url in
+        .environment(\.openURL, OpenURLAction { [fileLinkBase] url in
+            if MarkdownBlock.isFileLink(url) {
+                return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase) } ? .handled : .discarded
+            }
             guard MarkdownBlock.isSafeLink(url) else { return .discarded }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
@@ -190,6 +228,8 @@ struct MarkdownView: View {
             TableBlock(header: header, rows: rows, size: size)
         case .rule:
             NookDivider().padding(.vertical, 4)
+        case .pullRequest(let url):
+            PullRequestLinkCard(url: url)
         }
     }
 
@@ -232,7 +272,7 @@ private struct CalloutBlock: View {
                     Text(MarkdownBlock.inline(callout.body, size: size))
                         .font(NookTheme.font(size))
                         .lineSpacing(4)
-                        .foregroundStyle(NookTheme.paper)
+                        .foregroundStyle(NookTheme.textStrong)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -241,6 +281,56 @@ private struct CalloutBlock: View {
         .padding(NookTheme.Spacing.lg)
         // Tinted, without an edge: the color says what kind of note it is, the fill keeps it apart from the text.
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(callout.kind.color.opacity(0.08)))
+    }
+}
+
+// MARK: Pull requests
+
+/// A pull request an agent made, as a card instead of its raw tag: GitHub's mark, "Pull request #12", the repository,
+/// and an arrow; a click opens it.
+private struct PullRequestLinkCard: View {
+    let url: URL
+    @Environment(\.openURL) private var openURL
+    @State private var hovering = false
+
+    var body: some View {
+        let reference = MarkdownBlock.pullRequestReference(url)
+        let gitLab = url.path.contains("/merge_requests/")
+        Button { openURL(url) } label: {
+            HStack(spacing: NookTheme.Spacing.md) {
+                PullRequestStateGlyph(glyph: .open, size: 16)
+                    .foregroundStyle(NookTheme.mint)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr(gitLab ? "markdown.mergeRequest" : "markdown.pullRequest", reference?.number ?? 0))
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                    if let repo = reference?.repo {
+                        Text(repo)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .frame(maxWidth: 360, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+                .fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(url.absoluteString)
+        .contextMenu {
+            Button(tr("button.copy")) { Pasteboard.copy(url.absoluteString) }
+        }
     }
 }
 
@@ -438,7 +528,7 @@ private struct TableBlock: View {
         return Text(MarkdownBlock.inline(cell, size: size))
             .font(NookTheme.font(size - 0.5, weight))
             .monospacedDigit()
-            .foregroundStyle(NookTheme.paper)
+            .foregroundStyle(NookTheme.textStrong)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, NookTheme.Spacing.md)
     }

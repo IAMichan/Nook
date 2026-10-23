@@ -108,6 +108,20 @@ final class CompanionStore: ObservableObject {
         save()
     }
 
+    /// What the phone registered for Live Activities (checked with `LiveActivityRegistration.isValid` first).
+    func applyLive(device id: String, _ registration: LiveActivityRegistration) {
+        guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        devices[index].apply(registration)
+        save()
+    }
+
+    /// Apple refused the push-to-start token; activity tokens and the phone's choice stay.
+    func dropLiveStartToken(device id: String) {
+        guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        devices[index].liveStartToken = nil
+        save()
+    }
+
     func touch(_ id: String, now: Date = Date()) {
         guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
         // Not on every request: a minute is fine for "last seen".

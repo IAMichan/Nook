@@ -32,6 +32,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Quitting stops the sessions Nook runs (they can be resumed later). While one is still at work, Nook asks first, as
+    /// Code does before it quits. Not when you log out or shut down, nor for a restart into an update you chose.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let working = model.workspace.activeRuns.count
+        let defaults = UserDefaults.standard
+        let systemQuit = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)) != nil
+        guard working > 0, !systemQuit, !AppUpdater.shared.restarting,
+              defaults.object(forKey: Self.confirmQuitKey) as? Bool ?? true else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = working == 1 ? tr("quit.working.one") : tr("quit.working.many", working)
+        alert.informativeText = tr("quit.working.detail")
+        alert.addButton(withTitle: tr("quit.working.quit"))
+        alert.addButton(withTitle: tr("button.cancel"))
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = tr("quit.working.dontAsk")
+        let answer = alert.runAboveNotch()
+        if alert.suppressionButton?.state == .on { defaults.set(false, forKey: Self.confirmQuitKey) }
+        return answer == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// Whether quitting asks while sessions are at work (Settings › Workspace).
+    static let confirmQuitKey = "nook.quit.confirmWorking"
+
     func applicationWillTerminate(_ notification: Notification) {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()

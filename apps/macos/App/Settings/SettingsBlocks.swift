@@ -337,6 +337,7 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var ws = WorkspaceSettings.shared
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
+    @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @State private var showScheduled = false
 
     var body: some View {
@@ -389,11 +390,13 @@ struct WorkspaceSettingsSection: View {
                         get: { ws.model(for: provider) },
                         set: { ws.setModel($0, for: provider) }
                     )) {
-                        ForEach(Array(Set(provider.suggestedModels + [ws.model(for: provider)])).sorted(), id: \.self) { model in
-                            Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                        ForEach(defaultModelChoices(provider), id: \.self) { model in
+                            Text(app.modelName(model, for: provider)).tag(model)
                         }
                     }
                 }
+                // Off: the model list that came with the app is used, and nothing goes online for it.
+                SettingToggle(tr("settings.ws.onlineModels"), detail: onlineModelsDetail, isOn: $ws.onlineModelList)
             }
             Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
                 ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
@@ -448,10 +451,38 @@ struct WorkspaceSettingsSection: View {
         }
     }
 
+    /// The models to pick a default from: the composer's menu without older models, with the saved one under its own
+    /// name ("opus" stays "opus", so the picker shows it chosen).
+    private func defaultModelChoices(_ provider: RunProvider) -> [String] {
+        let saved = ws.model(for: provider)
+        return app.workspace.menuModelIDs(for: provider, extra: [saved])
+            .filter { !app.workspace.hidesLegacyModel($0, for: provider, chosen: saved) }
+            .map { app.workspace.sameModel($0, saved, for: provider) ? saved : $0 }
+    }
+
+    /// Where the model list comes from, and how old it is.
+    private var onlineModelsDetail: String {
+        let date = app.workspace.modelManifest?.updatedAt.formatted(date: .abbreviated, time: .omitted)
+        return tr("settings.ws.onlineModelsDetail") + (date.map { " " + tr("settings.ws.modelListDate", $0) } ?? "")
+    }
+
     /// How sessions behave and are tidied up, in three short groups: while a session runs, when it stops or Nook
     /// restarts, and how the list keeps itself tidy.
     @ViewBuilder
     private var behavior: some View {
+        // How Nook writes commit messages and pull requests.
+        Section {
+            Picker(tr("settings.ws.commitStyle"), selection: $ws.commitStyle) {
+                ForEach(CommitStyle.allCases) { Text(tr("settings.ws.commitStyle." + $0.rawValue)).tag($0) }
+            }
+            if ws.commitStyle == .custom {
+                TextField(tr("settings.ws.commitInstructions"), text: $ws.commitInstructions,
+                          prompt: Text(tr("settings.ws.commitInstructions.placeholder")), axis: .vertical)
+                    .lineLimit(2...5)
+            }
+        } footer: {
+            Text(tr("settings.ws.commitStyle.footer"))
+        }
         Section(tr("settings.ws.behavior")) {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
@@ -462,6 +493,7 @@ struct WorkspaceSettingsSection: View {
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            Toggle(tr("settings.ws.confirmQuit"), isOn: $confirmQuit)
         }
         Section {
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)

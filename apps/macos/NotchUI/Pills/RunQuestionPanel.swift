@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// A question from the agent in place of the composer, one at a time: its options as buttons (keys 1–9
-/// pick one), several for a multiple choice, or an answer of your own. A single choice moves on by itself.
+/// pick one), several for a multiple choice, or an answer of your own. A single choice moves on by itself; with several
+/// questions, Back returns to an earlier one with its answer still picked (as in Code), and what you had started on
+/// the later one waits for you.
 struct RunQuestionPanel: View {
     let question: PendingQuestion
     let agent: String
@@ -12,6 +14,8 @@ struct RunQuestionPanel: View {
     @State private var answers: [String: [String]] = [:]
     @State private var picks: Set<String> = []
     @State private var own = ""
+    /// What you had picked and typed on a question you went back from, by question id.
+    @State private var drafts: [String: QuestionDraft] = [:]
     @FocusState private var ownFocused: Bool
     /// `@` in your own answer: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
@@ -28,6 +32,10 @@ struct RunQuestionPanel: View {
                         .font(NookTheme.TextStyle.strong)
                         .foregroundStyle(NookTheme.textSecondary)
                     Spacer(minLength: 6)
+                    if index > 0 {
+                        ToolbarIconButton("chevron.left", tr("ws.question.back")) { goBack() }
+                            .help(tr("ws.question.back"))
+                    }
                     if question.questions.count > 1 {
                         Text("\(index + 1)/\(question.questions.count)")
                             .font(NookTheme.TextStyle.detail)
@@ -152,12 +160,38 @@ struct RunQuestionPanel: View {
 
     private func record(_ item: RunQuestion, _ values: [String]) {
         answers[item.id] = values
-        picks = []
-        own = ""
         if isLast {
+            picks = []
+            own = ""
             onAnswer(answers)
         } else {
             withAnimation(NookTheme.reveal) { index += 1 }
+            restore(question.questions[index])
         }
     }
+
+    /// Back to the previous question, with its answer picked again; what you started here is kept for later.
+    private func goBack() {
+        guard index > 0, let current = item else { return }
+        drafts[current.id] = QuestionDraft(picks: picks, own: own)
+        withAnimation(NookTheme.reveal) { index -= 1 }
+        let previous = question.questions[index]
+        let earlier = answers[previous.id] ?? []
+        let labels = Set(previous.options.map(\.label))
+        drafts[previous.id] = QuestionDraft(picks: Set(earlier.filter { labels.contains($0) }),
+                                            own: earlier.first { !labels.contains($0) } ?? "")
+        restore(previous)
+    }
+
+    private func restore(_ next: RunQuestion) {
+        let draft = drafts[next.id]
+        picks = draft?.picks ?? []
+        own = draft?.own ?? ""
+    }
+}
+
+/// An answer in progress on one question.
+private struct QuestionDraft: Equatable {
+    var picks: Set<String>
+    var own: String
 }

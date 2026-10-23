@@ -223,6 +223,10 @@ struct PastSession: Identifiable, Equatable {
     var path = ""
     /// The ids of earlier transcripts of this same conversation (it was resumed into a new file); `sessionID` is the latest.
     var earlierIDs: [String] = []
+    /// The first prompt typed, single-spaced: how a session another one spawned is recognised (`SpawnedSessions`).
+    var firstPrompt = ""
+    /// The tasks this session started for other sessions (`SpawnedSessions.key` of their prompts).
+    var spawnedTasks: [String] = []
 
     /// Whether `id` names this conversation: its latest session id or an earlier one.
     func isConversation(_ id: String) -> Bool { sessionID == id || earlierIDs.contains(id) }
@@ -990,6 +994,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let claudeAssistant = Data(#""type":"assistant""#.utf8)
     private static let claudeUser = Data(#""type":"user""#.utf8)
     private static let claudeSummary = Data(#""type":"summary""#.utf8)
+    private static let spawnTask = Data("spawn_task".utf8)
     private static let toolResult = Data(#""tool_result""#.utf8)
 
     /// How far a transcript has been read: the state after every complete line up to `offset`. Transcripts only grow, so
@@ -1070,6 +1075,7 @@ private final class HistoryScanner: @unchecked Sendable {
         session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
+        session.firstPrompt = Self.clip(SpawnedSessions.normalized(result.firstPrompt), 4_000)
         let links = ResumedConversations.links(
             sessionIDs: result.sessionIDs.union([session.sessionID]), firstMessage: result.firstMessage, firstParent: result.firstParent,
             lastMessage: result.lastMessage, firstPrompt: Self.oneLine(result.firstPrompt, 200), firstPromptAt: result.firstPromptAt
@@ -1112,6 +1118,11 @@ private final class HistoryScanner: @unchecked Sendable {
             if let model = message["model"] as? String, !model.hasPrefix("<") { progress.session.model = model }
             let text = Self.text(message["content"])
             if !text.isEmpty { progress.session.lastReply = text }
+            if line.range(of: Self.spawnTask) != nil, (object["isSidechain"] as? Bool) != true {
+                for key in SpawnedSessions.taskKeys(in: message["content"]) where !progress.session.spawnedTasks.contains(key) {
+                    progress.session.spawnedTasks.append(key)
+                }
+            }
             if let raw = message["usage"] as? [String: Any] {
                 let id = "\((message["id"] as? String) ?? ""):\((object["requestId"] as? String) ?? "")"
                 // Claude Code writes a line per block for each reply, each containing identical usage.

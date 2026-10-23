@@ -50,6 +50,22 @@ final class MarkdownBlockTests: XCTestCase {
         guard case .paragraph("Klaar.") = blocks.last else { return XCTFail("no closing paragraph") }
     }
 
+    func testAgentPullRequestTagBecomesACard() {
+        let blocks = MarkdownBlock.parse("Klaar.\n\n<pr-created>https://github.com/IAMichan/Nook/pull/537</pr-created>\n\nTests zijn groen.")
+        XCTAssertEqual(blocks.count, 3)
+        guard case .pullRequest(let url) = blocks[1] else { return XCTFail("no pull request card") }
+        XCTAssertEqual(MarkdownBlock.pullRequestReference(url)?.repo, "IAMichan/Nook")
+        XCTAssertEqual(MarkdownBlock.pullRequestReference(url)?.number, 537)
+        XCTAssertEqual(MarkdownBlock.pullRequestReference(URL(string: "https://gitlab.com/a/b/-/merge_requests/4")!)?.repo, "a/b")
+    }
+
+    func testAgentTagsComeOffInlineButNotInCodeOrHTML() {
+        XCTAssertEqual(MarkdownBlock.untag("Zie <pr-created>https://example.com/x</pr-created>."), "Zie <https://example.com/x>.")
+        XCTAssertEqual(MarkdownBlock.untag("Druk op <kbd>Cmd</kbd>"), "Druk op <kbd>Cmd</kbd>")
+        guard case .code(_, let code) = MarkdownBlock.parse("```html\n<my-tag>x</my-tag>\n```").first else { return XCTFail("no code") }
+        XCTAssertEqual(code, "<my-tag>x</my-tag>")
+    }
+
     func testCalloutAndTask() {
         XCTAssertEqual(Callout.detect("[!WARNING]\nPas op")?.body, "Pas op")
         XCTAssertEqual(Callout.detect("**Tip:** probeer dit")?.body, "probeer dit")

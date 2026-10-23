@@ -6,7 +6,8 @@ import Combine
 /// as on a new phone or computer (your number, the code Telegram sends you, your password when you set one); the
 /// session is kept in Nook's support folder and Telegram lists it under Settings › Devices. Nook asks for your chats
 /// and their messages, and sends only what you send yourself from the Chats tab (text, files, polls, places, contacts).
-/// The app id and hash are your own, from my.telegram.org.
+/// The app id and hash are your own, from my.telegram.org. A build with Nook's own chat helper (`ChatHelper`) links
+/// Telegram through it instead, and this stays off.
 @MainActor
 final class TelegramBridge: ObservableObject, ChatBridge {
     let app = "telegram"
@@ -75,8 +76,9 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         return (id, hash)
     }
 
+    /// TDLib is in this build and Nook's chat helper, which links Telegram itself, is not.
     static var libraryURL: URL? {
-        guard let url = Bundle.main.privateFrameworksURL?.appendingPathComponent("libtdjson.dylib"),
+        guard !ChatHelper.isBuilt, let url = Bundle.main.privateFrameworksURL?.appendingPathComponent("libtdjson.dylib"),
               FileManager.default.fileExists(atPath: url.path) else { return nil }
         return url
     }

@@ -38,6 +38,8 @@ enum SettingsSearch {
         ("settings.overview.lookScreen", .shortcuts),
         ("flow.settings.key", .shortcuts),
         ("autocomplete.section.keys", .shortcuts),
+        ("keys.title", .shortcuts),
+        ("keys.file.title", .shortcuts),
         ("notices.settings.how", .notifications),
         ("notices.source.agents", .notifications),
         ("notices.source.chats", .notifications),

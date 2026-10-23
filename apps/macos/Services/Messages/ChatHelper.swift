@@ -2,10 +2,10 @@ import Foundation
 import Security
 
 /// Nook's own chat helper, nook-chatd (apps/chatd, built by scripts/build-chatd.sh and copied into
-/// Nook.app/Contents/Helpers): it links Signal, Messenger, Instagram, X and LinkedIn on this Mac without Beeper, and
-/// answers the same local API Beeper Desktop does, so `ChatLinker` and `BeeperBridge` read it the same way. Nook starts
-/// it as its child on 127.0.0.1 with a fresh token each time, and it stops when Nook quits (or by itself when Nook is
-/// gone). Its linked accounts and chats stay in Application Support/Nook/ChatHelper.
+/// Nook.app/Contents/Helpers): it links Telegram, Signal, Messenger, Instagram, X and LinkedIn on this Mac without
+/// Beeper, and answers the same local API Beeper Desktop does, so `ChatLinker` and `BeeperBridge` read it the same way.
+/// Nook starts it as its child on 127.0.0.1 with a fresh token each time, and it stops when Nook quits (or by itself when
+/// Nook is gone). Its linked accounts and chats stay in Application Support/Nook/ChatHelper.
 @MainActor
 final class ChatHelper: ObservableObject {
     static let shared = ChatHelper()
@@ -31,7 +31,7 @@ final class ChatHelper: ObservableObject {
     static var isBuilt: Bool { binary != nil }
 
     /// The apps the helper links.
-    static let apps: Set<String> = ["signal", "messenger", "instagram", "x", "linkedin"]
+    static let apps: Set<String> = ["telegram", "signal", "messenger", "instagram", "x", "linkedin"]
     /// The apps whose terms forbid other clients and that do restrict accounts for it: linking them says so first.
     static let riskyApps: Set<String> = ["messenger", "instagram", "x", "linkedin"]
 
@@ -64,6 +64,11 @@ final class ChatHelper: ObservableObject {
         var env = ProcessInfo.processInfo.environment
         // The token goes through the environment, not the command line (`ps` shows that).
         env["NOOK_CHATD_TOKEN"] = token
+        // Telegram logs in with an app id and hash: the ones this build comes with, or your own from Settings.
+        if let keys = TelegramBridge.keys {
+            env["NOOK_TELEGRAM_API_ID"] = String(keys.id)
+            env["NOOK_TELEGRAM_API_HASH"] = keys.hash
+        }
         p.environment = env
         // Its output may name contacts or quote messages: it goes nowhere.
         p.standardOutput = FileHandle.nullDevice
@@ -113,7 +118,8 @@ final class ChatHelper: ObservableObject {
         if p.isRunning { kill(p.processIdentifier, SIGKILL) }
     }
 
-    private static func answers() async -> Bool {
+    /// Whether a chat service (this helper, or Beeper Desktop) answers at `base`: its info needs no token.
+    static func answers(at base: URL = base) async -> Bool {
         var request = URLRequest(url: base.appendingPathComponent("v1/info"), timeoutInterval: 2)
         request.httpMethod = "GET"
         guard let (_, response) = try? await ConnectorHTTP.session.data(for: request) else { return false }

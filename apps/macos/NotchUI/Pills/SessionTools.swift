@@ -543,8 +543,9 @@ struct DevServerStrip: View {
             // server that just started shows up at once; up to every 15 seconds while the list stays the same.
             var wait: UInt64 = 3
             while !Task.isCancelled {
-                let found = await Task.detached(priority: .utility) { () -> [DevServer] in
-                    var servers = DevServerScanner.scan(folder: folder)
+                let found = await Task.detached(priority: .utility) { () async -> [DevServer] in
+                    // Only listeners that serve a page: not the folder's database or debugger.
+                    var servers = await DevServerProbe.pages(DevServerScanner.scan(folder: folder))
                     // Pages the project names (nook.json previewUrl) on localhost, when they are not already found.
                     for script in ProjectScripts.load(folder: folder) {
                         guard let url = script.previewURL, let port = url.port, BridgeURLPolicy.isLoopback(url.host ?? ""),

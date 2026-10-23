@@ -212,7 +212,7 @@ final class WorkspaceBridge: ObservableObject {
             case .browserRead: return try await browserRead(caller)
             case .browserScreenshot: return try await browserScreenshot(arguments, caller)
             case .pullRequestCreate: return try await pullRequestCreate(arguments, caller, context)
-            case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskCancel:
+            case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel:
                 return try await delegation(tool, arguments, caller, context)
             case .sessionRead: return sessionRead(arguments)
             case .sessionList: return sessionList(arguments)
@@ -267,7 +267,8 @@ final class WorkspaceBridge: ObservableObject {
         if terminals.isEmpty { lines.append("- none") }
         for terminal in terminals { lines.append("- " + describe(terminal, caller)) }
 
-        let servers = await Task.detached(priority: .utility) { DevServerScanner.scan(folder: WorkspacePathPolicy.normalize(directory)) }.value
+        let servers = await DevServerProbe.pages(
+            await Task.detached(priority: .utility) { DevServerScanner.scan(folder: WorkspacePathPolicy.normalize(directory)) }.value)
         lines.append("")
         lines.append("## Local servers in this folder")
         if servers.isEmpty { lines.append("- none listening") }
@@ -616,6 +617,28 @@ final class WorkspaceBridge: ObservableObject {
                 return .error("No such task. Use the task id that delegate_task returned.")
             }
             return BridgeRPC.ToolResult(text: DelegatedTask.render(workspace.snapshot(of: task)))
+        case .taskWait:
+            let ids = ((arguments["task_ids"] as? [Any]) ?? []).compactMap { $0 as? String }
+            guard !ids.isEmpty, ids.count <= 8 else { return .error("Pass between 1 and 8 task ids from delegate_task.") }
+            let tasks = ids.compactMap { workspace.delegatedTask($0, of: parentID) }
+            guard tasks.count == ids.count else { return .error("No such task among these ids. Use the task ids that delegate_task returned.") }
+            let mode = DelegatedTask.WaitMode(rawValue: (arguments["mode"] as? String) ?? "") ?? .any
+            let requested = (arguments["timeout_seconds"] as? Int) ?? Self.defaultWait
+            let deadline = Date().addingTimeInterval(TimeInterval(min(max(requested, 1), Self.maxWait)))
+            while true {
+                let snapshots = tasks.map { workspace.run($0.id).map(workspace.snapshot(of:)) ?? workspace.snapshot(of: $0) }
+                if DelegatedTask.waitIsOver(snapshots, mode: mode) {
+                    return BridgeRPC.ToolResult(text: DelegatedTask.renderWait(snapshots, waitTimedOut: false))
+                }
+                if Date() >= deadline || Task.isCancelled {
+                    // The tasks go on; each tells the parent when it finishes.
+                    for task in tasks where !DelegatedTask.isSettled(workspace.snapshot(of: workspace.run(task.id) ?? task)) {
+                        workspace.wakeParent(when: task.id)
+                    }
+                    return BridgeRPC.ToolResult(text: DelegatedTask.renderWait(snapshots, waitTimedOut: true))
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
         case .taskCancel:
             if case .refuse(let reason) = verdict(.taskCancel, caller) { return .error(Self.refusal(reason)) }
             guard let task = workspace.delegatedTask((arguments["task_id"] as? String) ?? "", of: parentID) else {
@@ -644,7 +667,8 @@ final class WorkspaceBridge: ObservableObject {
         for provider in RunProvider.allCases {
             let installed = workspace.executable(provider) != nil
             var line = "- \(provider.rawValue) (\(provider.displayName)): " + (installed ? "available" : "not installed")
-            let models = provider.suggestedModels.filter { !$0.isEmpty }
+            // The models it runs now: older ones and ones waiting on an agent update stay out.
+            let models = workspace.modelChoices(for: provider).filter { !$0.isLegacy && !$0.needsUpdate }.map(\.id)
             if !models.isEmpty { line += " · models: " + models.joined(separator: ", ") }
             line += " · rights: " + provider.capabilities.policies.map(\.rawValue).joined(separator: ", ")
             lines.append(line)

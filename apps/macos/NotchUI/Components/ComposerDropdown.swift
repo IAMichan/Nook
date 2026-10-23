@@ -88,6 +88,8 @@ struct DropdownRow: View {
     var disabledReason: String? = nil
     /// Keeps the panel open after the click (several choices in a row).
     var staysOpen = false
+    /// A star at the end of the row (the model menus): filled while the choice is a favorite, nil for none.
+    var favorite: Binding<Bool>? = nil
     let action: () -> Void
     @Environment(\.closeDropdown) private var close
     @State private var hovering = false
@@ -133,6 +135,8 @@ struct DropdownRow: View {
                 if let trailing {
                     Text(trailing).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1)
                 }
+                // Room for the star, which sits on top of the row as a button of its own.
+                if favorite != nil { Color.clear.frame(width: 14, height: 14) }
             }
             .padding(.horizontal, tile == nil ? NookTheme.Spacing.md : NookTheme.Spacing.sm)
             .padding(.vertical, detail == nil ? (tile == nil ? NookTheme.Spacing.sm : NookTheme.Spacing.xs) : NookTheme.Spacing.md)
@@ -143,9 +147,28 @@ struct DropdownRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .trailing) { star }
         .opacity(disabledReason == nil ? 1 : 0.64)
         .onHover { hovering = $0 }
         .help(disabledReason ?? "")
+    }
+
+    @ViewBuilder
+    private var star: some View {
+        if let favorite, favorite.wrappedValue || hovering {
+            let starred = favorite.wrappedValue
+            Button { favorite.wrappedValue.toggle() } label: {
+                Image(systemName: starred ? "star.fill" : "star")
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(starred ? NookTheme.paper : NookTheme.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, NookTheme.Spacing.xs)
+            .help(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
+            .accessibilityLabel(tr(starred ? "compose.favoriteRemove" : "compose.favoriteAdd"))
+        }
     }
 }
 
@@ -287,6 +310,8 @@ struct DropdownList<Rows: View>: View {
 /// models, with a search field. Picking an account or model keeps the panel open until you pick a model.
 struct AgentModelPicker: View {
     @EnvironmentObject private var app: AppModel
+    /// Favorites and typed models live here: a star redraws the menu at once.
+    @ObservedObject private var ws = WorkspaceSettings.shared
     /// The agents you can pick from; one agent hides the rail (a running session keeps its agent).
     let providers: [RunProvider]
     let provider: RunProvider
@@ -327,25 +352,55 @@ struct AgentModelPicker: View {
         }
         DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
         let shownModels = filtered(current)
-        DropdownList(emptyNote: shownModels.isEmpty ? tr("compose.noModels") : nil) {
+        let custom = customModel(current)
+        DropdownList(emptyNote: shownModels.isEmpty && custom == nil ? tr("compose.noModels") : nil) {
             ForEach(shownModels, id: \.self) { option in
                 // A model that comes in thinking levels shows once; its level is picked with the effort control.
                 let family = app.modelFamily(option, for: current)
                 let name = app.modelMenuName(option, for: current)
-                DropdownRow(title: name, detail: family != nil || option.isEmpty || name == option ? nil : option,
-                            chosen: current == provider && (option == model || family?.contains(model) == true)) {
+                let choice = app.workspace.modelChoice(option, for: current)
+                // A model that needs a newer agent says which update unlocks it, and cannot be picked until then.
+                DropdownRow(title: name,
+                            detail: app.modelUpdateNote(option, for: current)
+                                ?? (family != nil || option.isEmpty || name == option ? nil : option),
+                            trailing: choice?.isNew == true && choice?.needsUpdate == false ? tr("compose.modelNew") : nil,
+                            chosen: current == provider
+                                && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true),
+                            disabledReason: app.modelUpdateHelp(option, for: current),
+                            favorite: option.isEmpty ? nil : favoriteBinding(option, for: current)) {
                     let picked = app.menuPick(option, keeping: current == provider ? model : "", for: current)
                     choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, picked)
+                }
+            }
+            if let custom {
+                DropdownRow(symbol: "plus", title: tr("compose.useModel", custom), detail: tr("compose.useModelDetail")) {
+                    ws.rememberCustomModel(custom, for: current)
+                    choose(current, current == provider ? nil : app.connectedProfiles(for: current).first?.id, custom)
                 }
             }
         }
     }
 
+    /// Older models stay out of the list until you search for them, unless one is in use or a favorite.
     private func filtered(_ current: RunProvider) -> [String] {
         let all = app.menuModels(for: current)
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty else { return all }
+        guard !needle.isEmpty else {
+            return all.filter { !app.workspace.hidesLegacyModel($0, for: current, chosen: current == provider ? model : "") }
+        }
         return all.filter { $0.lowercased().contains(needle) || app.modelMenuName($0, for: current).lowercased().contains(needle) }
+    }
+
+    private func favoriteBinding(_ model: String, for current: RunProvider) -> Binding<Bool> {
+        Binding(get: { ws.favoriteModels(for: current).contains(model) },
+                set: { if $0 != ws.favoriteModels(for: current).contains(model) { ws.toggleFavoriteModel(model, for: current) } })
+    }
+
+    /// The search text as a model id of your own, when no listed model goes by that name.
+    private func customModel(_ current: RunProvider) -> String? {
+        guard let id = ModelPreferences.customID(query),
+              !app.menuModels(for: current).contains(where: { app.workspace.sameModel($0, id, for: current) }) else { return nil }
+        return id
     }
 }
 

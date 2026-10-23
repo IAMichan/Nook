@@ -199,3 +199,8 @@ program that shares no code with Nook, and it saves a second repository, CI and 
 - Verified: every app starts and offers a login step Nook can show (Signal a QR code; the others their website), the
   helper signed with the hardened runtime runs, and the store logic has Go tests. Not verified: linking real accounts
   end to end, which needs your own accounts.
+- Telegram (added later): the helper also runs `mautrix-telegram`, whose Telegram client is its own Go copy of gotd,
+  so Telegram links like Beeper does it (your number, the code, your 2FA password) with no TDLib build. The app id
+  and hash still come from Nook's Info.plist (or your own in Settings), passed as `NOOK_TELEGRAM_API_ID` /
+  `NOOK_TELEGRAM_API_HASH`. A Nook build with the helper routes Telegram through it and leaves `TelegramBridge` off;
+  a build with only TDLib keeps using `TelegramBridge`.

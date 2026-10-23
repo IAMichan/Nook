@@ -115,6 +115,13 @@ struct AgentRunPanel: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
+            .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
+            // Selected words of an answer can be quoted into the reply (right-click › Quote in reply).
+            .environment(\.quoteSelection, { text in
+                draft = ReviewComments.quote(text, into: draft)
+                focused = true
+            })
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }
@@ -228,6 +235,7 @@ struct AgentRunPanel: View {
                     .help(tr("ws.title.renameHelp"))
             }
             Spacer(minLength: 8)
+            ResourceUsageBadge(workspace: workspace, runID: runID)
             outputsButton(run, outputs)
             if let remote = run.remote {
                 // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
@@ -577,9 +585,7 @@ struct AgentRunPanel: View {
                     .padding(.top, NookTheme.Spacing.md)
                 }
             }
-            .background {
-                Button("") { openFind() }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
-            }
+            .keyCommand("chat.find") { openFind() }
             .onChange(of: findQuery) { _, _ in
                 findIndex = nil
                 let fresh = TimelineSearch.search(events, query: findQuery)
@@ -605,6 +611,13 @@ struct AgentRunPanel: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// Sends the first queued message now; false (the key goes on) when nothing waits or it cannot go in yet.
+    private func steerFirstQueued() -> Bool {
+        guard let first = workspace.queued[runID]?.messages.first, workspace.canSendQueuedNow(runID) else { return false }
+        workspace.sendQueuedNow(runID, message: first.id)
+        return true
     }
 
     // MARK: Find
@@ -810,6 +823,15 @@ struct AgentRunPanel: View {
             }
             Spacer(minLength: 6)
             NookGhostButton(title: tr("button.cancel")) { confirmDelete = false }
+            // The session's own worktree, which no other session uses, can go with it.
+            if let worktree = workspace.orphanedWorktree(runID) {
+                NookGhostButton(title: tr("agents.run.deleteWithWorktree")) {
+                    confirmDelete = false
+                    workspace.deleteWithWorktree(runID)
+                    app.viewModel.selectedAgentID = ""
+                }
+                .help(AgentPathFormat.tilde(worktree.path))
+            }
             NookPrimaryButton(title: tr("agents.run.delete")) {
                 confirmDelete = false
                 workspace.delete(runID)
@@ -895,6 +917,8 @@ struct AgentRunPanel: View {
                 .images($images)
                 .zIndex(1)
             }
+            // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
+            .keyCommands(["queue.steerFirst": { steerFirstQueued() }])
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.TextStyle.detail)
