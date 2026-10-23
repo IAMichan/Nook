@@ -675,16 +675,19 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     /// Read in Nook: the badge goes and stays gone after a restart. The app itself is not told.
     mutating func markRead(_ id: String, at date: Date = Date()) {
-        guard threads[id] != nil else { return }
-        threads[id]?.unread = 0
-        threads[id]?.readInNook = max(date, threads[id]?.newestIncoming ?? date)
+        guard var thread = threads[id] else { return }
+        thread.unread = 0
+        thread.readInNook = max(date, thread.newestIncoming ?? date)
+        threads[id] = thread
     }
 
     /// Read in the app too: Nook told it (or opened it there), so the chat is read everywhere.
     mutating func markReadInApp(_ id: String, at date: Date = Date()) {
         markRead(id, at: date)
-        threads[id]?.readInApp = threads[id]?.readInNook
-        if threads[id]?.appUnread != nil { threads[id]?.appUnread = 0 }
+        guard var thread = threads[id] else { return }
+        thread.readInApp = thread.readInNook
+        if thread.appUnread != nil { thread.appUnread = 0 }
+        threads[id] = thread
     }
 
     /// "Mark as unread": the chat shows a badge again, until it is read. In Nook only.

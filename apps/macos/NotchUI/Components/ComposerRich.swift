@@ -92,9 +92,11 @@ final class ComposerModel: ObservableObject {
 
     func close() {
         search?.cancel()
-        suggestions = []
-        selection = 0
         trigger = nil
+        // Only publish a real change: close() also runs while SwiftUI updates the view (a disappearing field, a
+        // keystroke that opens no list), and publishing there is undefined behavior.
+        if !suggestions.isEmpty { suggestions = [] }
+        if selection != 0 { selection = 0 }
     }
 
     func keep(_ id: String, text: String) { excerpts[id] = text }
