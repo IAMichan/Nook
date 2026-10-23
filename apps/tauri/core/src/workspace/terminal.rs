@@ -1,6 +1,6 @@
 //! Wat de terminals en de dev-servers van de werkruimte nodig hebben zonder venster (`TerminalSessions`,
 //! `ProjectScripts` en `DevServers` op de Mac): hoe een shell start, uitvoer bewaren en leesbaar maken voor een agent,
-//! de scripts van een project (`nook.json`/`legacy-scripts.json`) en welke lokale servers een sessie draait.
+//! de scripts van een project (`nook.json`) en welke lokale servers een sessie draait.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -141,7 +141,7 @@ pub fn strip_ansi(text: &str) -> String {
 
 // MARK: Scripts van het project
 
-/// Een commando dat een project voor zijn sessies definieert, in `nook.json` of `legacy-scripts.json` (hetzelfde schema).
+/// Een commando dat een project voor zijn sessies definieert, in `nook.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectScript {
@@ -154,21 +154,19 @@ pub struct ProjectScript {
     pub auto_open_preview: bool,
 }
 
-pub const SCRIPT_FILES: [&str; 2] = ["nook.json", "legacy-scripts.json"];
+pub const SCRIPT_FILE: &str = "nook.json";
 
-/// De scripts van het project rond `folder`: de dichtstbijzijnde `nook.json` of `legacy-scripts.json`, tot de root van de repository.
+/// De scripts van het project rond `folder`: de dichtstbijzijnde `nook.json`, tot de root van de repository.
 pub fn load_scripts(folder: &str) -> Vec<ProjectScript> {
     if folder.is_empty() {
         return vec![];
     }
     let mut dir = Path::new(folder).to_path_buf();
     for _ in 0..12 {
-        for name in SCRIPT_FILES {
-            if let Ok(bytes) = std::fs::read(dir.join(name)) {
-                let scripts = parse_scripts(&bytes);
-                if !scripts.is_empty() {
-                    return scripts;
-                }
+        if let Ok(bytes) = std::fs::read(dir.join(SCRIPT_FILE)) {
+            let scripts = parse_scripts(&bytes);
+            if !scripts.is_empty() {
+                return scripts;
             }
         }
         if dir.join(".git").exists() {
@@ -409,7 +407,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("nook-scripts-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::create_dir_all(dir.join(".git")).unwrap();
-        std::fs::write(dir.join("legacy-scripts.json"), br#"{"scripts":[{"command":"make"}]}"#).unwrap();
+        std::fs::write(dir.join("nook.json"), br#"{"scripts":[{"command":"make"}]}"#).unwrap();
         assert_eq!(load_scripts(&dir.join("sub").to_string_lossy())[0].command, "make");
         let _ = std::fs::remove_dir_all(&dir);
     }

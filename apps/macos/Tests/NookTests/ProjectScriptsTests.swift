@@ -17,7 +17,7 @@ final class ProjectScriptsTests: XCTestCase {
         let sub = repo.appendingPathComponent("packages/web")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
-        try Data(#"{"scripts":[{"name":"Dev","command":"pnpm dev"}]}"#.utf8).write(to: repo.appendingPathComponent("legacy-scripts.json"))
+        try Data(#"{"scripts":[{"name":"Dev","command":"pnpm dev"}]}"#.utf8).write(to: repo.appendingPathComponent("nook.json"))
         defer { try? FileManager.default.removeItem(at: repo) }
         XCTAssertEqual(ProjectScripts.load(folder: sub.path).map(\.command), ["pnpm dev"])
     }

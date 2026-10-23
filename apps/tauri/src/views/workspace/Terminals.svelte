@@ -1,7 +1,7 @@
 <script lang="ts">
   // De terminals (`TerminalsView` en `SessionTerminalsView` op de Mac): tabs voor elke open terminal, een nieuwe in
   // een map naar keuze, en de terminal zelf. Met `folder` alleen de terminals van die map (een sessie), met de scripts
-  // van het project (nook.json of legacy-scripts.json) en de dev-servers die daar luisteren.
+  // van het project (nook.json) en de dev-servers die daar luisteren.
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { nook } from "../../lib/state.svelte";
   import { toolEvents, toolsApi, type DevServer, type ProjectScript, type TerminalInfo } from "../../lib/workspace/api";
@@ -115,7 +115,7 @@
       </div>
       {#if folder && scripts.length}
         <span class="pop">
-          <button class="ghost" title="Scripts van dit project (nook.json of legacy-scripts.json)" onclick={(e) => { e.stopPropagation(); scriptsOpen = !scriptsOpen; }}>▶</button>
+          <button class="ghost" title="Scripts van dit project (nook.json)" onclick={(e) => { e.stopPropagation(); scriptsOpen = !scriptsOpen; }}>▶</button>
           {#if scriptsOpen}
             <div class="menu">
               {#each scripts as s (s.id)}<button title={s.command} onclick={() => run(s)}>{s.name}</button>{/each}
