@@ -34,6 +34,12 @@ struct TranscriptConversation: View {
     /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
     @State private var totalWidth: Double = 0
+    /// The diff panel's choice of turn and file; nil while it is closed.
+    @State private var diff: TurnDiffSelection?
+    /// Follows the end while the agent writes, until you scroll away; then a pill brings you back.
+    @State private var scroll = ScrollModel()
+    @State private var atEnd = true
+    @State private var scrollPhase: ScrollPhase = .idle
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
@@ -42,6 +48,11 @@ struct TranscriptConversation: View {
         // Only the very last answer can still be answered by tapping one of its options.
         let answerable = working ? nil : shown.last(where: { $0.kind == .assistant })?.id
         let outputs = SessionOutputs.collect(shown, directory: directory ?? "").filter { directory != nil || !$0.isFile }
+        let turns = TurnDiff.collect(shown)
+        // A turn still at work gets its card when it is done.
+        let lastPrompt = shown.last(where: { $0.kind == .user })?.id
+        let cards = Dictionary(turns.filter { !(working && $0.id == lastPrompt) }.compactMap { turn in turn.answerID.map { ($0, turn) } },
+                               uniquingKeysWith: { first, _ in first })
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: true) {
@@ -53,7 +64,7 @@ struct TranscriptConversation: View {
                                 .foregroundStyle(NookTheme.textTertiary)
                         }
                         ForEach(rows) { row in
-                            self.row(row, answerable: answerable).id(row.id)
+                            self.row(row, answerable: answerable, cards: cards).id(row.id)
                         }
                         if let footer {
                             Text(footer)
@@ -63,20 +74,52 @@ struct TranscriptConversation: View {
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom)
-                .onChange(of: shown) { _, _ in scrollToEnd(proxy) }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
+                } action: { _, nowAtEnd in
+                    atEnd = nowAtEnd
+                    if nowAtEnd { scroll.reachedEnd() }
+                }
+                .onScrollPhaseChange { _, phase in
+                    scrollPhase = phase
+                    if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+                }
+                // A drag that began at the end, or the scroll wheel, leaves the end while you scroll: stop following.
+                .onChange(of: atEnd) { _, now in
+                    if !now, scrollPhase != .idle && scrollPhase != .animating { scroll.userScrolled() }
+                }
+                .overlay(alignment: .bottom) {
+                    if scroll.mode == .free, !atEnd, !shown.isEmpty {
+                        TimelineToEndPill {
+                            scroll.jumpedToEnd()
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        }
+                        .padding(.bottom, NookTheme.Spacing.md)
+                    }
+                }
+                // Only while you are at the end: reading higher up, new messages do not pull you down.
+                .onChange(of: shown) { _, _ in if scroll.shouldFollowEnd { scrollToEnd(proxy) } }
                 .onChange(of: loaded) { _, _ in scrollToEnd(proxy) }
                 .onAppear {
                     scrollToEnd(proxy)
                     DispatchQueue.main.async { scrollToEnd(proxy) }
                 }
             }
-            if let preview {
+            if let selection = diff, !turns.isEmpty {
+                TurnDiffPanel(turns: turns, selection: Binding(get: { diff ?? selection }, set: { diff = $0 }),
+                              directory: directory, wide: PanelLayout.wide($outputsWidth)) {
+                    withAnimation(NookTheme.reveal) { diff = nil }
+                }
+                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
+                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if let preview {
                 FilePreviewPanel(path: preview, wide: PanelLayout.wide($outputsWidth)) {
                     withAnimation(NookTheme.reveal) { self.preview = nil }
                 }
@@ -99,7 +142,17 @@ struct TranscriptConversation: View {
         .preference(key: TranscriptOutputCount.self, value: outputs.count)
         // The outputs button in the header asks for the outputs, also while a file is open.
         .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
-            if isOpen { withAnimation(NookTheme.reveal) { preview = nil } }
+            if isOpen { withAnimation(NookTheme.reveal) { preview = nil; diff = nil } }
+        }
+        // ⌘D: the latest turn's diff, as in Code; again to close it.
+        .keyCommand("diff.toggle", enabled: !turns.isEmpty) {
+            withAnimation(NookTheme.reveal) {
+                if diff != nil {
+                    diff = nil
+                } else if let last = turns.last {
+                    openDiff(TurnDiffSelection(turn: last.id))
+                }
+            }
         }
         .task(id: path + (working ? "#working" : "")) {
             while !Task.isCancelled {
@@ -122,7 +175,7 @@ struct TranscriptConversation: View {
     // MARK: Rows
 
     @ViewBuilder
-    private func row(_ row: TranscriptRow, answerable: String?) -> some View {
+    private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff]) -> some View {
         if case .fold(let id, let seconds, let inner) = row {
             let key = "fold:" + id
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -131,20 +184,20 @@ struct TranscriptConversation: View {
                                    checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
                 if open.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        ForEach(inner) { flatRow($0, answerable: nil).id($0.id) }
+                        ForEach(inner) { flatRow($0, answerable: nil, cards: cards).id($0.id) }
                     }
                     .padding(.bottom, NookTheme.Spacing.xs)
                 }
             }
             .padding(.bottom, NookTheme.Spacing.xxs)
         } else {
-            flatRow(row, answerable: answerable)
+            flatRow(row, answerable: answerable, cards: cards)
         }
     }
 
     /// Every row but a fold (a fold holds only these).
     @ViewBuilder
-    private func flatRow(_ row: TranscriptRow, answerable: String?) -> some View {
+    private func flatRow(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff] = [:]) -> some View {
         switch row {
         case .user(let message):
             // Space above your message: each turn starts as its own block.
@@ -152,9 +205,17 @@ struct TranscriptConversation: View {
                 .padding(.top, NookTheme.Spacing.lg)
                 .padding(.bottom, NookTheme.Spacing.xxs)
         case .assistant(let message, let isFinal):
-            TranscriptAnswer(message: message, isFinal: isFinal,
-                             onChoose: message.id == answerable ? onReply : nil)
-                .padding(.bottom, isFinal ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs)
+            VStack(alignment: .leading, spacing: 0) {
+                TranscriptAnswer(message: message, isFinal: isFinal,
+                                 onChoose: message.id == answerable ? onReply : nil)
+                // What the turn changed, under its answer: a click opens the diff beside the conversation.
+                if let turn = cards[message.id] {
+                    TurnChangesCard(turn: turn, directory: directory) { file in
+                        openDiff(TurnDiffSelection(turn: turn.id, file: file))
+                    }
+                }
+            }
+            .padding(.bottom, isFinal ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs)
         case .thinking(let message):
             thinking(message)
         case .step(let step):
@@ -276,7 +337,19 @@ struct TranscriptConversation: View {
 
     /// Opens a file in the side panel; the file that is open already closes again.
     private func show(_ file: String) {
-        withAnimation(NookTheme.reveal) { preview = preview == file ? nil : file }
+        withAnimation(NookTheme.reveal) {
+            preview = preview == file ? nil : file
+            diff = nil
+        }
+    }
+
+    /// Opens the diff panel on a turn (and a file), in place of a file or the outputs.
+    private func openDiff(_ selection: TurnDiffSelection) {
+        withAnimation(NookTheme.reveal) {
+            preview = nil
+            outputsOpen.wrappedValue = false
+            diff = selection
+        }
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
@@ -311,6 +384,15 @@ struct TranscriptUserBubble: View {
     var body: some View {
         let parts = parts
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
+            // Sent while the agent was working: it changed course mid-turn (Code's steer mark).
+            if message.queued {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Image(systemName: "arrow.turn.down.right")
+                    Text(tr("agents.message.steered"))
+                }
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textTertiary)
+            }
             if !parts.images.isEmpty {
                 MessagePictures(urls: parts.images)
             }
