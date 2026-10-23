@@ -509,7 +509,7 @@ struct PanelOrb: View {
 }
 
 extension TaskRingItem {
-    /// What Nook's ring shows: the sessions in the Agents list that run, wait for you, failed or finished since you last
+    /// What Nook's ring shows: the sessions in the Agents list that run, wait for you, or failed or finished since you last
     /// looked (the same answer the list gives), and every Nook that works, waits for you or has news. A session you
     /// marked as finished, or already read, is not on it. `selected` is the session open in the Agents tab: what it
     /// finished while you look at it is not news.
@@ -534,7 +534,10 @@ extension TaskRingItem {
             let status: AgentStatus
             switch attention {
             case .approval, .input: kind = .waiting; status = .waiting
-            case .failed, .limited: kind = .failed; status = .failed
+            case .failed, .limited:
+                // A failure you opened is no news anymore (it stays in the list, where you can retry it).
+                if !unseen(id, run.updatedAt) { continue }
+                kind = .failed; status = .failed
             case .working:
                 // Marked as finished during this busy spell (a turn that hangs): out of the way, like in the list.
                 if finished.isMarkedWhileBusy(key) { continue }
@@ -555,6 +558,7 @@ extension TaskRingItem {
                 if app.isSettledWhileBusy(session) { continue }
                 kind = .running; status = .running
             } else if session.status == .failed {
+                if !unseen(session.id, session.updated) { continue }
                 kind = .failed; status = .failed
             } else if session.status == .done, unseen(session.id, session.updated), app.demoMode || !app.isMarkedFinished(session) {
                 kind = .done; status = .done
@@ -590,6 +594,8 @@ extension PanelOrb {
         NookPresence.shared.lookAngle = nil
         switch item.target {
         case .agent(let id):
+            // Looked at from here on: its piece leaves the ring now, not when the Agents tab has appeared.
+            SessionVisits.shared.visit(id)
             viewModel.selectedAgentID = id
             if inWindow {
                 viewModel.windowSheet = nil
@@ -598,7 +604,14 @@ extension PanelOrb {
                 viewModel.show(.panel(.agents), inNotch: true)
             }
         case .nook(let id):
-            app.openConversation(id)
+            if inWindow {
+                // Stays in the window; selecting reads the conversation, so its piece leaves the ring at once.
+                app.chat.select(id)
+                viewModel.windowSheet = nil
+                viewModel.windowTab = .chat
+            } else {
+                app.openConversation(id)
+            }
         }
     }
 }
