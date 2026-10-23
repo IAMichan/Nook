@@ -1819,6 +1819,8 @@ final class WorkspaceManager: ObservableObject {
         guard let worktree = orphanedWorktree(id) else { delete(id); return }
         guard run(id)?.status.isActive == false else { return }
         delete(id)
+        // `delete` leaves a session whose process is still there; its worktree stays with it.
+        guard run(id) == nil else { return }
         Task {
             do {
                 try await removeWorktree(repo: worktree.repo, path: worktree.path, force: false)

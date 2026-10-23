@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let working = model.workspace.activeRuns.count
         let defaults = UserDefaults.standard
-        let systemQuit = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: kAEQuitReason) != nil
+        let systemQuit = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)) != nil
         guard working > 0, !systemQuit, !AppUpdater.shared.restarting,
               defaults.object(forKey: Self.confirmQuitKey) as? Bool ?? true else { return .terminateNow }
         let alert = NSAlert()

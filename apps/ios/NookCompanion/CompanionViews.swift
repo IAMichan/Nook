@@ -267,7 +267,12 @@ struct SessionListView: View {
         }
         // An opened nook://prompt link: the New session sheet with its text, never started by itself.
         .onChange(of: client.pendingPrompt, initial: true) { _, prompt in
-            guard let prompt, client.can(CompanionFeature.start) else { return }
+            guard let prompt else { return }
+            guard client.can(CompanionFeature.start) else {
+                client.pendingPrompt = nil
+                client.notice = String(localized: "This Mac cannot start sessions from the phone yet. Update Nook on your Mac.")
+                return
+            }
             link = prompt
             composing = true
             client.pendingPrompt = nil
