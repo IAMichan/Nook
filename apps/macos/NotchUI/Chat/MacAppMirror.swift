@@ -615,7 +615,7 @@ private final class FrameSink: NSObject, SCStreamOutput, SCStreamDelegate {
 }
 
 /// The view under the picture: it takes the mouse and keyboard and hands them to the mirror.
-final class MacAppMirrorView: NSView {
+final class MacAppMirrorView: NSView, ForwardsKeys {
     private let mirror: MacAppMirror
 
     init(mirror: MacAppMirror) {

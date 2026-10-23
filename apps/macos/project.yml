@@ -184,6 +184,7 @@ targets:
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
+      - path: Core/I18n+Keybindings.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift

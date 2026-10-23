@@ -166,4 +166,60 @@ final class KeybindingsTests: XCTestCase {
         XCTAssertNil(Keybindings.match(chord("mod+enter"), context: [:], rules: d))
         XCTAssertEqual(Keybindings.match(chord("mod+shift+]"), context: [:], rules: d), "session.next")
     }
+
+    func testStashWorksOnAnEmptyComposerToo() {
+        // ⌘S on an empty composer brings a stashed draft back, so the rule must not ask for a draft.
+        let d = Keybindings.defaults
+        XCTAssertEqual(Keybindings.match(chord("mod+s"), context: ["composerFocus": true], rules: d), "composer.stash")
+        XCTAssertNil(Keybindings.match(chord("mod+s"), context: [:], rules: d))
+    }
+
+    func testUndoStaysWithTextFields() {
+        let d = Keybindings.defaults
+        XCTAssertEqual(Keybindings.match(chord("cmd+z"), context: [:], rules: d), "session.undo")
+        XCTAssertNil(Keybindings.match(chord("cmd+z"), context: ["editableFocus": true], rules: d))
+        XCTAssertNil(Keybindings.match(chord("cmd+k"), context: ["terminalFocus": true], rules: d))
+    }
+
+    // MARK: Pressed keys
+
+    private func press(_ characters: String?, _ keyCode: UInt16 = 0, cmd: Bool = false, ctrl: Bool = false, alt: Bool = false,
+                       shift: Bool = false) -> KeyChord? {
+        KeyChord.pressed(characters: characters, keyCode: keyCode, command: cmd, control: ctrl, option: alt, shift: shift)
+    }
+
+    func testPressedKeysMatchRuleChords() {
+        XCTAssertEqual(press("\r", 36, cmd: true), chord("mod+enter").resolved)
+        XCTAssertEqual(press("\u{3}", 76, cmd: true), chord("mod+enter").resolved, "keypad enter")
+        XCTAssertEqual(press("[", 33, cmd: true, shift: true), chord("mod+shift+[").resolved, "unshifted character")
+        XCTAssertEqual(press("\u{F700}", 126, alt: true), chord("alt+up"))
+        XCTAssertEqual(press("k", 40, cmd: true), chord("cmd+k"))
+        XCTAssertEqual(press("\u{F708}", 96), chord("f5"))
+        XCTAssertEqual(press(" ", 49, ctrl: true), chord("ctrl+space"))
+        XCTAssertEqual(press("\u{1B}", 53), chord("escape"))
+        XCTAssertNil(press(nil, 56), "a bare modifier")
+        XCTAssertNil(press("", 0), "a dead key")
+        XCTAssertNil(press("\u{F704}", 255), "an unknown function key")
+        XCTAssertEqual(Keybindings.match(press("]", 30, cmd: true, shift: true)!, context: [:], rules: Keybindings.defaults), "session.next")
+    }
+
+    // MARK: The user's file
+
+    func testReadingTheUserFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("keybindings-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("keybindings.json")
+        XCTAssertEqual(Keybindings.read(url).state, .missing)
+        XCTAssertEqual(Keybindings.read(url).rules, [])
+        try Data(#"[{"key":"mod+shift+k","command":"commandPalette.toggle"},{"key":"mod+j","command":"no.such"}]"#.utf8).write(to: url)
+        let result = Keybindings.read(url)
+        XCTAssertEqual(result.state, .ok)
+        XCTAssertEqual(result.rules.count, 2)
+        XCTAssertEqual(Keybindings.unknownCommands(result.rules).map(\.command), ["no.such"])
+        let all = Keybindings.effective(user: result.rules)
+        XCTAssertEqual(Keybindings.chords(for: "commandPalette.toggle", rules: all), [chord("cmd+k"), chord("cmd+shift+k")])
+        XCTAssertEqual(Keybindings.chords(for: "session.interrupt", rules: all), [])
+        XCTAssertTrue(Keybindings.userFileURL.path.hasSuffix(".nook/keybindings.json"))
+    }
 }
