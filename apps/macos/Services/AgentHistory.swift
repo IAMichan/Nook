@@ -1017,6 +1017,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let claudeAssistant = Data(#""type":"assistant""#.utf8)
     private static let claudeUser = Data(#""type":"user""#.utf8)
     private static let claudeSummary = Data(#""type":"summary""#.utf8)
+    private static let claudeQueued = Data(#""queued_command""#.utf8)
     private static let spawnTask = Data("spawn_task".utf8)
     private static let toolResult = Data(#""tool_result""#.utf8)
 
@@ -1110,6 +1111,15 @@ private final class HistoryScanner: @unchecked Sendable {
         if line.range(of: Self.claudeSummary) != nil, progress.summaryTitle.isEmpty,
            let object = json(line), object["type"] as? String == "summary" {
             progress.summaryTitle = (object["summary"] as? String) ?? ""
+            return
+        }
+        // A message sent while the agent worked is written as a queued command, not as a user line.
+        if line.range(of: Self.claudeQueued) != nil, let object = json(line), let text = AgentTranscript.queuedPrompt(object) {
+            progress.session.prompts += 1
+            progress.session.lastPrompt = text
+            if let stamp = (object["timestamp"] as? String).flatMap({ self.date($0) }) {
+                progress.session.ended = max(progress.session.ended, stamp)
+            }
             return
         }
         let isAssistant = line.range(of: Self.claudeAssistant) != nil

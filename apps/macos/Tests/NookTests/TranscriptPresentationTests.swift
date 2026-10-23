@@ -130,6 +130,25 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(TranscriptPresentation.seconds(messages), 63)
     }
 
+    /// A message sent while the agent worked (from the CLI, the desktop app or Nook) is a queued command line, and starts
+    /// a turn of its own; task notifications and other agents' messages in that shape stay out.
+    func testMessageSentWhileWorkingShowsAsYourPrompt() {
+        let lines = [
+            #"{"type":"user","uuid":"u1","timestamp":"2026-10-19T10:00:00Z","message":{"role":"user","content":"Fix the build"}}"#,
+            #"{"type":"assistant","uuid":"a1","timestamp":"2026-10-19T10:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"On it."}]}}"#,
+            #"{"type":"attachment","uuid":"q1","timestamp":"2026-10-19T10:00:09Z","attachment":{"type":"queued_command","prompt":"Also run the linter","commandMode":"prompt","origin":{"kind":"human"},"humanTurn":true}}"#,
+            #"{"type":"attachment","uuid":"q2","attachment":{"type":"queued_command","prompt":"<task-notification>done</task-notification>","commandMode":"task-notification","origin":{"kind":"task-notification"}}}"#,
+            #"{"type":"attachment","uuid":"q3","isMeta":true,"attachment":{"type":"queued_command","prompt":"report","commandMode":"prompt","origin":{"kind":"peer"}}}"#,
+            #"{"type":"attachment","uuid":"q4","attachment":{"type":"queued_command","prompt":[{"type":"text","text":"Older build, no origin"}],"commandMode":"prompt"}}"#,
+            #"{"type":"user","uuid":"c1","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation."}}"#,
+            #"{"type":"assistant","uuid":"a2","message":{"role":"assistant","content":[{"type":"text","text":"Linted."}]}}"#
+        ]
+        let messages = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.map(\.kind), [.user, .assistant, .user, .user, .assistant])
+        XCTAssertEqual(messages.filter { $0.kind == .user }.map(\.text), ["Fix the build", "Also run the linter", "Older build, no origin"])
+        XCTAssertEqual(messages[2].id, "q1")
+    }
+
     func testTranscriptEditsCarryTheirLines() {
         let lines = [
             #"{"type":"assistant","uuid":"a1","timestamp":"2026-10-19T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/p/App.swift","old_string":"a\nb\nc","new_string":"a\nB\nc\nd"}}]}}"#,

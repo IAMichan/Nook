@@ -206,6 +206,8 @@ enum AgentTranscript {
             // Claude Code
             if type == "user" || type == "assistant" {
                 guard (object["isMeta"] as? Bool) != true, (object["isSidechain"] as? Bool) != true,
+                      // The summary written when the context was compacted is not something you typed.
+                      (object["isCompactSummary"] as? Bool) != true,
                       let message = object["message"] as? [String: Any] else { continue }
 
                 if type == "user" {
@@ -249,6 +251,13 @@ enum AgentTranscript {
                     }
                     if let content = message["content"] as? String { append(reply: content, id: id, at: when, to: &messages) }
                 }
+            }
+            // Claude Code: a message you sent while the agent was working (in the CLI, the desktop app or Nook). It is
+            // written as a queued command, never as a user line; task notifications and messages from other agents
+            // use the same shape and are left out.
+            else if type == "attachment" {
+                guard let text = queuedPrompt(object) else { continue }
+                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
             }
             // Antigravity (USER_INPUT, PLANNER_RESPONSE)
             else if type == "USER_INPUT" {
@@ -535,6 +544,21 @@ enum AgentTranscript {
     }
 
     /// Filters to actual user prompts, excluding synthetic commands, output, or interruption notices.
+    /// The words of a message a person sent while the agent worked, from Claude Code's `queued_command` attachment line;
+    /// nil for anything else in that shape (task notifications, other agents, sidechains).
+    static func queuedPrompt(_ object: [String: Any]) -> String? {
+        guard object["type"] as? String == "attachment", (object["isSidechain"] as? Bool) != true,
+              (object["isMeta"] as? Bool) != true,
+              let attachment = object["attachment"] as? [String: Any],
+              attachment["type"] as? String == "queued_command",
+              ((attachment["commandMode"] as? String) ?? "prompt") == "prompt" else { return nil }
+        if let origin = (attachment["origin"] as? [String: Any])?["kind"] as? String, origin != "human" { return nil }
+        if (attachment["humanTurn"] as? Bool) == false { return nil }
+        let text = Self.text(attachment["prompt"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, isTypedPrompt(text) else { return nil }
+        return text
+    }
+
     private static func isTypedPrompt(_ text: String) -> Bool {
         !InjectedPrompt.isInjected(text)
     }
