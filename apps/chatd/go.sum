@@ -25,6 +25,8 @@ github.com/beeper/poly1305 v0.0.0-20250815183548-d4eede7bbf3c h1:Axyrzr6L42CLNJI
 github.com/beeper/poly1305 v0.0.0-20250815183548-d4eede7bbf3c/go.mod h1:mo9x0FBxrMo75mAnk1ALdXrHfe8NG3C25CFDf4RSRpc=
 github.com/beeper/req/v3 v3.0.0-20260925135712-b49593750e56 h1:VQTcNnqViZfzYJtDue7HUF9Y979KdafTdJkX/DPasSQ=
 github.com/beeper/req/v3 v3.0.0-20260925135712-b49593750e56/go.mod h1:1nX+ECJqEyUXbQHlubo2nKckcfIF7L8+xrG4k4gx1F4=
+github.com/beeper/slackgo v0.0.0-20261015121614-caa8a716ef7e h1:XnzOkyYI660XHGL66k+RC2BPcfcXOLSiZQAl1DHaFZA=
+github.com/beeper/slackgo v0.0.0-20261015121614-caa8a716ef7e/go.mod h1:9noNm7FUbFD2s+NOlbZlYnk9OfkcEkx34C8TiWigAEs=
 github.com/bwesterb/go-ristretto v1.2.4 h1:8HUl/bYdUaLakTdT2mfYomzPego+qjs5dOrYgAo3+J0=
 github.com/bwesterb/go-ristretto v1.2.4/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7NFEuV9ekS419A0=
 github.com/bytemare/cryptotools v0.0.0-20210220202506-7b38001c07b2/go.mod h1:CKpsDERRG5MbUDJUl6xUDAuL228QndGKNabkx/E+Qug=
@@ -58,6 +60,8 @@ github.com/go-faster/jx v1.2.0/go.mod h1:UWLOVDmMG597a5tBFPLIWJdUxz5/2emOpfsj9Ne
 github.com/go-faster/xor v0.3.0/go.mod h1:x5CaDY9UKErKzqfRfFZdfu+OSTfoZny3w5Ak7UxcipQ=
 github.com/go-faster/xor v1.0.0 h1:2o8vTOgErSGHP3/7XwA5ib1FTtUsNtwCoLLBjl31X38=
 github.com/go-faster/xor v1.0.0/go.mod h1:x5CaDY9UKErKzqfRfFZdfu+OSTfoZny3w5Ak7UxcipQ=
+github.com/go-test/deep v1.1.1 h1:0r/53hagsehfO4bzD2Pgr/+RgHqhmf+k1Bpse2cTu1U=
+github.com/go-test/deep v1.1.1/go.mod h1:5C2ZWiW0ErCdrYzpqxLbTX7MG14M9iiw8DgHncVwcsE=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/flatbuffers v25.12.19+incompatible h1:haMV2JRRJCe1998HeW/p0X9UaMTK6SDo0ffLn2+DbLs=
@@ -69,6 +73,8 @@ github.com/google/go-querystring v1.2.0 h1:yhqkPbu2/OH+V9BfpCVPZkNmUXhb2gBxJArfh
 github.com/google/go-querystring v1.2.0/go.mod h1:8IFJqpSRITyJ8QhQ13bmbeMBDfmeEJZD5A0egEOmkqU=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/gotd/ige v0.2.2 h1:XQ9dJZwBfDnOGSTxKXBGP4gMud3Qku2ekScRjDWWfEk=
 github.com/gotd/ige v0.2.2/go.mod h1:tuCRb+Y5Y3eNTo3ypIfNpQ4MFjrnONiL2jN2AKZXmb0=
 github.com/gotd/neo v0.1.5 h1:oj0iQfMbGClP8xI59x7fE/uHoTJD7NZH9oV1WNuPukQ=
@@ -155,6 +161,8 @@ go.mau.fi/mautrix-meta v0.2610.0 h1:fmbylDCpTq240dAYutX8GRHyGlSmNM5Q2LehM8q7/vo=
 go.mau.fi/mautrix-meta v0.2610.0/go.mod h1:HuaOS23+rEw8Gi2XnYjo2MisKoCrWVBbUeuS4GcWNTw=
 go.mau.fi/mautrix-signal v0.2610.0 h1:i5GA8A5hk4MOj4kSz10J44tNL5Ld+H+imG/Q08EIWcU=
 go.mau.fi/mautrix-signal v0.2610.0/go.mod h1:qKP9fyC3Y97Bya/Y257OLox+FyZ279g40MzQeNcn6Us=
+go.mau.fi/mautrix-slack v0.2610.0 h1:bdCgmbbUXyzXkPS+vH9A7Pixf5yiZbg11w66PPfTpB0=
+go.mau.fi/mautrix-slack v0.2610.0/go.mod h1:jdBLvSjoHQicW8Oy1Y4HDAREcvthYFhL6sADlc+kM2g=
 go.mau.fi/mautrix-telegram v0.2610.0 h1:pzsSgq8zqNMY5q4kKBbEtN0xWtfdsWCpd069CH9ppUY=
 go.mau.fi/mautrix-telegram v0.2610.0/go.mod h1:IP3aj7AGioqiLH5Qzhs7Z/tsxunCs2g8Cajl8fyRIPA=
 go.mau.fi/mautrix-twitter v0.2609.0 h1:SRrRa8MVCmvFCUXz7Pi6hp1Riq31HsciDIS85UWqOo4=

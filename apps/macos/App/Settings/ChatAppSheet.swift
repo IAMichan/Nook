@@ -213,7 +213,7 @@ struct ChatLinkSteps: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(linker.isSending || fields.contains { !$0.isOptional && (values[$0.id] ?? $0.initial).trimmingCharacters(in: .whitespaces).isEmpty })
                 .id(id)
-        case .browser(_, let instructions, let url, _, _, _):
+        case .browser(_, let instructions, let url, _, _, _, _):
             instructionsText(instructions.isEmpty ? tr("chats.link.browser.detail", network.name) : instructions)
             Button {
                 ChatSignInWindow.open(step: step, title: tr("chats.link.browser.title", network.name)) { collected, last in

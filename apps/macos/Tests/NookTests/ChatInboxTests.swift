@@ -779,7 +779,7 @@ final class ChatInboxTests: XCTestCase {
                                          "fields": [["id": "sessionid", "type": "cookie", "name": "sessionid"],
                                                     ["id": "csrf", "type": "cookie", "name": "csrftoken"],
                                                     ["id": "app", "type": "local_storage", "name": "appID"]]])
-        guard case .browser(_, _, let url, _, let collect, let done) = browser else { return XCTFail("a sign-in step") }
+        guard case .browser(_, _, let url, _, let collect, let done, _) = browser else { return XCTFail("a sign-in step") }
         XCTAssertEqual(url.host, "www.instagram.com")
         XCTAssertTrue(ChatLinkData.isDone("https://www.instagram.com/", pattern: done))
         XCTAssertFalse(ChatLinkData.isDone("https://www.instagram.com/accounts/login/", pattern: done))
@@ -796,12 +796,22 @@ final class ChatInboxTests: XCTestCase {
         let optional = ChatLinkData.step(["type": "cookies", "stepID": "ig", "url": "https://www.instagram.com/accounts/login/",
                                           "fields": [["id": "sessionid", "type": "cookie", "name": "sessionid", "required": true],
                                                      ["id": "shbid", "type": "cookie", "name": "shbid", "required": false]]])
-        guard case .browser(_, _, _, _, let some2, _) = optional else { return XCTFail("a sign-in step") }
+        guard case .browser(_, _, _, _, let some2, _, _) = optional else { return XCTFail("a sign-in step") }
         XCTAssertTrue(ChatLinkData.hasCookies(some2, values: ChatLinkData.collected(some2, cookies: ["sessionid": "1"], storage: [:])))
         let linkedIn = ChatLinkData.step(["type": "cookies", "stepID": "li", "url": "https://linkedin.com/login",
                                           "fields": [["id": "cookie", "type": "header", "name": "Cookie", "pattern": "\\bJSESSIONID=[^;]+"],
                                                      ["id": "track", "type": "header", "name": "X-LI-Track", "pattern": "clientVersion"]]])
-        guard case .browser(_, _, _, _, let headers, _) = linkedIn else { return XCTFail("a sign-in step") }
+        // Slack: the token is found by the step's own script in the page, the "d" cookie as usual.
+        let slack = ChatLinkData.step(["type": "cookies", "stepID": "sl", "url": "https://slack.com/signin", "extractJS": "new Promise(r => r({}))",
+                                       "fields": [["id": "auth_token", "type": "special", "name": "fi.mau.slack.auth_token", "pattern": "^xoxc-.+$"],
+                                                  ["id": "cookie_token", "type": "cookie", "name": "d", "pattern": "^xoxd-.+$"]]])
+        guard case .browser(_, _, _, _, let slackCollect, _, let extract) = slack else { return XCTFail("a sign-in step") }
+        XCTAssertNotNil(extract)
+        XCTAssertFalse(ChatLinkData.hasCookies(slackCollect, values: ChatLinkData.collected(slackCollect, cookies: ["d": "xoxd-1"], storage: [:])),
+                       "the token the script finds is needed too")
+        XCTAssertEqual(ChatLinkData.collected(slackCollect, cookies: ["d": "xoxd-1"], storage: [:], special: ["auth_token": "xoxc-2"]),
+                       ["auth_token": "xoxc-2", "cookie_token": "xoxd-1"])
+        guard case .browser(_, _, _, _, let headers, _, _) = linkedIn else { return XCTFail("a sign-in step") }
         XCTAssertEqual(ChatLinkData.pageHeaders(headers), ["x-li-track"], "the Cookie header is made from the cookies")
         let early = ChatLinkData.collected(headers, cookies: ["li_at": "a"], storage: [:], headers: ["x-li-track": "{\"clientVersion\":\"1\"}"])
         XCTAssertNil(early["cookie"], "a value that does not match the pattern does not count")

@@ -143,9 +143,10 @@ Nook uses the following open-source Swift packages:
 `Nook.app/Contents/Helpers`, and runs as its own process that Nook talks to over a local socket; no code is shared
 between it and Nook. It is built on:
 
-- **mautrix-telegram**, **mautrix-signal**, **mautrix-meta**, **mautrix-twitter**, **mautrix-linkedin** — AGPL-3.0 (© Tulir Asokan,
+- **mautrix-telegram**, **mautrix-slack**, **mautrix-signal**, **mautrix-meta**, **mautrix-twitter**, **mautrix-linkedin** — AGPL-3.0 (© Tulir Asokan,
   Sumner Evans and contributors)
 - **gotd/td** (the Telegram client inside mautrix-telegram) — MIT License (© Aleksandr Razumov, Tulir Asokan)
+- **slack-go** (Beeper's fork, used by mautrix-slack) — BSD 2-Clause License (© Norberto Lopes and contributors)
 - **libsignal** — AGPL-3.0 (© Signal Messenger, LLC)
 - **mautrix-go** — Mozilla Public License 2.0 (© Tulir Asokan)
 
