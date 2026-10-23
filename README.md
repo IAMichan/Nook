@@ -396,7 +396,7 @@ nook/
 
 ## Contributing
 
-Bug reports, feature ideas, translations, and pull requests are very welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request to learn about the architecture, localization coverage tests (`I18nCoverageTests`), and safety guidelines.
+Bug reports, feature ideas, translations, and pull requests are very welcome, and **you don't need a Mac**: the Windows, Linux, and Android app is Rust and Svelte, and the Windows build is still waiting for its first run on a real PC. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request to learn about the architecture, localization coverage tests (`I18nCoverageTests`), and safety guidelines.
 
 The short version:
 
@@ -405,7 +405,7 @@ The short version:
 3. Run `./scripts/core-tests.sh` before committing (and the Tauri checks from [Windows & Linux](#windows--linux) when you change `apps/tauri`).
 4. Open a pull request using the [PR template](.github/pull_request_template.md). Commits, branches, code, and docs are written in English.
 
-New here? Look for issues labeled `good first issue`, or help by adding a translation or improving the docs. Coding agents working in this repo should follow [`AGENTS.md`](AGENTS.md). Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
+New here? Look for issues labeled [`good first issue`](https://github.com/IAMichan/nook/labels/good%20first%20issue) or [`help wanted`](https://github.com/IAMichan/nook/labels/help%20wanted), try Nook on Windows, Linux, or Android and file a [test report](https://github.com/IAMichan/nook/issues/new?template=test_report.yml), or help by adding a translation or improving the docs. [CONTRIBUTING.md](CONTRIBUTING.md#ways-to-contribute) lists what you can pick up with the hardware you have. Coding agents working in this repo should follow [`AGENTS.md`](AGENTS.md). Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
