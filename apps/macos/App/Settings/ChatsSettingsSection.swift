@@ -27,9 +27,10 @@ struct ChatsSettingsSection: View {
                 SettingToggle(tr("chats.settings.collect"), detail: tr("chats.settings.collectDetail"),
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
                 if capture.enabled { status }
-                // A chat app that is linked is switched on and off in the overview; the rest come in by their notifications.
-                let linked = Set(ChatAppStates.all().filter(\.linked).map(\.id))
-                ForEach(capture.sources.apps.filter { !linked.contains($0.id) }) { source in
+                // The apps in the overview are switched on and off there (or in their sheet while not linked); this lists
+                // only the apps Nook knows by their notifications alone.
+                let overview = Set(ChatAppStates.all().map(\.id))
+                ForEach(capture.sources.apps.filter { !overview.contains($0.id) }) { source in
                     row(source)
                 }
                 addRow

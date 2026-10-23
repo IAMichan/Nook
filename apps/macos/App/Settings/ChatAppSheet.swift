@@ -52,6 +52,15 @@ struct ChatAppSheet: View {
             } else if !ownWay {
                 SettingNote(tr("chats.link.notYet", name, name))
             }
+            // Until it is linked, its chats come in by its notifications: switched here, as the overview shows no row.
+            if ChatAppStates.state(app)?.linked != true, capture.sources.apps.contains(where: { $0.id == app }) {
+                NookDivider()
+                SettingToggle(tr("chats.link.notifications"), detail: tr("chats.settings.collectDetail"),
+                              isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
+                                  capture.setSource(app, on: on)
+                                  if on, !capture.enabled { setCollecting(true) }
+                              }))
+            }
         } footer: {
             if isLinking {
                 Button(tr("chats.link.stop")) { Task { await linker.cancel() } }

@@ -60,8 +60,6 @@ struct ChatAppsSection: View {
             }
         } header: {
             Text(tr("chats.apps.title"))
-        } footer: {
-            Text(tr("chats.apps.footer"))
         }
         .sheet(item: $open) { item in
             ChatAppSheet(app: item.id, setCollecting: setCollecting)
