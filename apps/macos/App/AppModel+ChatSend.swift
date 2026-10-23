@@ -83,3 +83,64 @@ extension AppModel {
         }
     }
 }
+
+// MARK: Doing things in a chat
+
+/// What else Nook can do in a chat it writes in through the linked chat service (Instagram, Messenger, Signal…): read
+/// state, emoji, your messages' edits and deletions, and pinning, muting and archiving it in its app.
+extension AppModel {
+    /// The linked chat behind a route, when it is one; nil for WhatsApp, Telegram and Instagram's own web login.
+    func linkedChat(_ route: ChatRoute?) -> BeeperData.Chat? {
+        guard case .beeper(let id) = route else { return nil }
+        return ChatCaptureService.shared.beeperBridge.chats[id]
+    }
+
+    /// "Mark as read" or "Mark as unread" by your own click: in Nook, and in the chat's app.
+    func markLinkedChat(_ id: String, read: Bool) {
+        let bridge = ChatCaptureService.shared.beeperBridge
+        Task {
+            do {
+                if read { try await bridge.markRead(id) } else { try await bridge.markUnread(id) }
+            } catch {
+                ToastCenter.shared.error(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Your emoji on a message, after your own click; the same one again takes it back.
+    func reactInLinkedChat(_ emoji: String, to bubble: ChatBubble, chat id: String, name: String) async throws {
+        let mine = bubble.reactions.contains { $0.emoji == emoji && $0.mine }
+        try await ChatCaptureService.shared.beeperBridge.react(emoji, to: bubble.id, in: id, mine: mine)
+        store.audit(tool: "chat_react", args: "\(name): \(emoji)", result: mine ? "weggehaald" : "verstuurd")
+    }
+
+    /// The new text of your message, after your own Return or click.
+    func editInLinkedChat(_ bubble: ChatBubble, text: String, chat id: String, name: String) async throws {
+        try await ChatCaptureService.shared.beeperBridge.edit(bubble.id, in: id, to: text)
+        store.audit(tool: "chat_edit", args: name, result: "bewerkt")
+    }
+
+    /// Deletes your message for everyone, after you confirmed it.
+    func deleteInLinkedChat(_ bubble: ChatBubble, chat id: String, name: String) async throws {
+        try await ChatCaptureService.shared.beeperBridge.delete(bubble.id, in: id)
+        store.audit(tool: "chat_delete", args: name, result: "verwijderd")
+    }
+
+    /// Pins, mutes or archives the chat in its app, after your own click.
+    func setLinkedChatPinned(_ pinned: Bool, chat id: String, name: String) async throws {
+        try await ChatCaptureService.shared.beeperBridge.setPinned(pinned, chat: id)
+        store.audit(tool: "chat_pin", args: name, result: pinned ? "vastgezet" : "losgemaakt")
+    }
+
+    func setLinkedChatMuted(_ muted: Bool, chat id: String, name: String) async throws {
+        try await ChatCaptureService.shared.beeperBridge.setMuted(muted, chat: id)
+        store.audit(tool: "chat_mute", args: name, result: muted ? "gedempt" : "niet meer gedempt")
+    }
+
+    /// Archives the chat in its app; it leaves the Chats tab too, and comes back with a newer message.
+    func archiveLinkedChat(_ id: String, thread: String, name: String) async throws {
+        try await ChatCaptureService.shared.beeperBridge.archive(id)
+        ChatCaptureService.shared.remove(thread)
+        store.audit(tool: "chat_archive", args: name, result: "gearchiveerd")
+    }
+}

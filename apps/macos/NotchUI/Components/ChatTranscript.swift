@@ -22,6 +22,9 @@ struct ChatTranscript: View {
     var onReply: ((ChatBubble) -> Void)? = nil
     /// Putting an emoji on a message; the one you already put there takes it back. Nil where the chat cannot be answered.
     var onReact: ((ChatBubble, String) -> Void)? = nil
+    /// "Edit" and "Delete for everyone" on your own messages, where the chat's app takes them; nil shows neither.
+    var onEdit: ((ChatBubble) -> Void)? = nil
+    var onDelete: ((ChatBubble) -> Void)? = nil
     /// Voting on a poll with your new choice. Nil where the chat's app cannot take a vote from Nook: the poll then
     /// shows its counts and says to vote in the app.
     var onVote: ((ChatBubble, [String]) -> Void)? = nil
@@ -121,10 +124,17 @@ struct ChatTranscript: View {
                                         }
                                     }
                                 }
+                                if bubble.fromMe, let onEdit, !bubble.text.isEmpty, bubble.poll == nil {
+                                    Button(tr("chat.edit")) { onEdit(bubble) }
+                                }
                                 if !bubble.copyText.isEmpty {
                                     Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
                                 }
                                 Button(tr("whatsapp.copy.chat")) { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) }
+                                if bubble.fromMe, let onDelete {
+                                    Divider()
+                                    Button(tr("chat.delete"), role: .destructive) { onDelete(bubble) }
+                                }
                             }
                             // A new run starts with room above it; the messages of one run sit close together.
                             .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.md : NookTheme.Spacing.xxs))

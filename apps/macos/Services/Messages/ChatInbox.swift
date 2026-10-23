@@ -337,6 +337,8 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var receipt: ChatReceipt? = nil
     /// Your own message in a group: who has it and who read it, when the app says per person; nil when it does not.
     var readers: [ChatReader]? = nil
+    /// The emoji on it, the most used first, when its app says; nil when it does not.
+    var reactions: [InboxReaction]? = nil
 
     var isMine: Bool { fromMe == true }
 
@@ -365,6 +367,15 @@ struct BridgedChat: Equatable, Sendable {
     /// The app lists this chat as one of yours (Teams): it shows in the Chats tab even without messages, or with only
     /// old ones, as long as the app keeps listing it.
     var listed: Bool = false
+    /// Messages (by their id in Nook) the app says were deleted since: the chat drops them.
+    var deleted: [String] = []
+}
+
+/// One emoji on a message, with how many people put it there and whether you are one of them.
+struct InboxReaction: Codable, Equatable, Sendable {
+    var emoji: String
+    var count: Int
+    var mine: Bool
 }
 
 /// One chat in one app, with its newest messages.
@@ -557,7 +568,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let messages = gone.map { gone in chat.messages.filter { $0.date > gone } } ?? chat.messages
         // Without new messages a bridge can still bring the app's unread count (or the group's people) for a chat Nook
         // shows, or a chat its app lists that you did not remove.
-        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil || chat.listed
+        guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil || chat.listed || !chat.deleted.isEmpty
                                                      || (chat.avatar != nil && chat.avatar != known?.avatar)))
                 || (known == nil && gone == nil && chat.listed)
         else { return false }
@@ -578,7 +589,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
                 if next != kept { thread.messages[index].receipt = next }
             }
             if let readers = message.readers, thread.messages[index].readers != readers { thread.messages[index].readers = readers }
+            if let reactions = message.reactions, thread.messages[index].reactions != reactions {
+                thread.messages[index].reactions = reactions
+            }
         }
+        if !chat.deleted.isEmpty { thread.messages.removeAll { chat.deleted.contains($0.id) } }
         for message in messages where !thread.messages.contains(where: {
             $0.id == message.id
                 // Two photos sent in a row are two messages, even without a caption.

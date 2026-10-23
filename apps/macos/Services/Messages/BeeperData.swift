@@ -17,6 +17,15 @@ enum BeeperData {
         var picture: String? = nil
         /// A group's other people by name (you left out), as far as Beeper lists them with the chat.
         var members: [String] = []
+        /// Your own id in it, to tell your emoji from the others'.
+        var me: String? = nil
+        /// Pinned or muted in its app.
+        var isPinned = false
+        var isMuted = false
+        /// What its app takes besides text: editing or deleting your messages, and emoji on a message.
+        var canEdit = true
+        var canDelete = true
+        var canReact = true
     }
 
     /// Beeper's networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"),
@@ -55,10 +64,97 @@ enum BeeperData {
             guard !title.isEmpty else { return nil }
             let unread = (chat["unreadCount"] as? Int) ?? Int((chat["unreadCount"] as? Double) ?? 0)
             let isGroup = chat["type"] as? String == "group"
+            let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
+            let abilities = chat["capabilities"] as? [String: Any]
             return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
-                        last: date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [])
+                        last: date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
+                        me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String,
+                        isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
+                        canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
+                        canReact: supports(abilities?["reaction"]))
         }
     }
+
+    /// A capability level (-2 rejected … 2 fully supported); one that is not given counts as there, and the app says
+    /// so when it is not.
+    static func supports(_ level: Any?) -> Bool {
+        guard let level = (level as? Int) ?? (level as? Double).map(Int.init) else { return true }
+        return level > 0
+    }
+
+    /// Nook's id of a message in a chat, and back: "beeper-<chat>-<message>".
+    static func messageID(_ id: String, chat: String) -> String { "beeper-\(chat)-\(id)" }
+
+    static func networkID(_ id: String, chat: String) -> String? {
+        let prefix = "beeper-\(chat)-"
+        return id.hasPrefix(prefix) ? String(id.dropFirst(prefix.count)) : nil
+    }
+
+    /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook.
+    static func deleted(_ json: [String: Any], chat: Chat) -> [String] {
+        (json["items"] as? [[String: Any]] ?? []).compactMap { message in
+            guard message["isDeleted"] as? Bool == true, let id = message["id"] as? String else { return nil }
+            return messageID(id, chat: chat.id)
+        }
+    }
+
+    /// The emoji on a message, the most used first; yours are those of `me`.
+    static func reactions(_ message: [String: Any], me: String?) -> [InboxReaction] {
+        var counts: [String: (count: Int, mine: Bool, first: Int)] = [:]
+        for (index, reaction) in (message["reactions"] as? [[String: Any]] ?? []).enumerated() {
+            guard let key = reaction["reactionKey"] as? String, !key.isEmpty else { continue }
+            let mine = me != nil && reaction["participantID"] as? String == me
+            let known = counts[key] ?? (0, false, index)
+            counts[key] = (known.count + 1, known.mine || mine, known.first)
+        }
+        return counts.sorted { $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.value.first < $1.value.first }
+            .map { InboxReaction(emoji: $0.key, count: $0.value.count, mine: $0.value.mine) }
+    }
+
+    /// How far your message got: its send status, then whether it was delivered or seen.
+    static func receipt(_ message: [String: Any]) -> ChatReceipt {
+        let status = message["sendStatus"] as? [String: Any]
+        switch status?["status"] as? String {
+        case "PENDING": return .pending
+        case "FAIL_RETRIABLE", "FAIL_PERMANENT": return .failed
+        default: break
+        }
+        if seen(message["seen"]) { return .read }
+        if !((status?["deliveredToUsers"] as? [String]) ?? []).isEmpty { return .delivered }
+        return .sent
+    }
+
+    /// Whether a message was seen: `true`, a time, or (in a group) by anyone.
+    private static func seen(_ value: Any?) -> Bool {
+        switch value {
+        case let flag as Bool: return flag
+        case let time as String: return !time.isEmpty
+        case let people as [String: Any]: return people.values.contains { seen($0) }
+        default: return false
+        }
+    }
+
+    /// What one event of /v1/ws asks for: subscribing once the socket is ready, reading a chat that changed again.
+    enum Event: Equatable {
+        case ready
+        case subscribed
+        case changed(chat: String)
+        case other
+    }
+
+    static func event(_ json: [String: Any]) -> Event {
+        switch json["type"] as? String {
+        case "ready": return .ready
+        case "subscriptions.updated": return .subscribed
+        case "chat.upserted", "chat.deleted", "message.upserted", "message.deleted":
+            guard let chat = json["chatID"] as? String, !chat.isEmpty else { return .other }
+            return .changed(chat: chat)
+        default: return .other
+        }
+    }
+
+    /// What the socket sends once it is ready: every chat's changes.
+    static let subscribeAll: [String: Any] = ["type": "subscriptions.set", "chatIDs": ["*"]]
 
     /// The people of a chat Beeper lists with it, yourself (`isSelf`) left out: their full name, else their username.
     static func members(_ chat: [String: Any]) -> [String] {
@@ -92,10 +188,11 @@ enum BeeperData {
             guard !text.isEmpty || media != nil else { return nil }
             let mine = message["isSender"] as? Bool == true
             let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
-            var inbox = InboxMessage(id: "beeper-\(chat.id)-\(id)", sender: sender, text: text, date: sent, fromMe: mine,
+            var inbox = InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: text, date: sent, fromMe: mine,
                                      media: media)
-            // Beeper lists a message once the network has it, and shares no delivery or read receipts: one tick.
-            if mine { inbox.receipt = .sent }
+            if mine { inbox.receipt = receipt(message) }
+            // An empty list too: the last emoji taken back leaves none.
+            inbox.reactions = reactions(message, me: chat.me)
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
