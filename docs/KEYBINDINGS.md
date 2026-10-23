@@ -30,6 +30,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧↩ | `composer.newline` | `composerFocus` | A new line in the box |
 | ⌘S | `composer.stash` | `composerFocus` | Set the draft aside; in an empty box bring it back (or choose from several) |
 | ⌥↑ / ⌥↓ | `composer.historyPrevious` / `composer.historyNext` | `composerFocus` | Walk through earlier messages from anywhere in the text (plain ↑ ↓ still do it from the edge) |
+| ⇧⇥ | `composer.access` | `composerFocus` | In the Nook chat and the Double Tap field: what Nook may do by itself, to the next level (Ask first, Small things, More by itself); other composers leave ⇧⇥ to the field |
 | ⇧⌘↩ | `queue.steerFirst` | `composerFocus && turnRunning` | Send the first queued message now |
 | ⌘F | `chat.find` | `!terminalFocus` | Find in the session, or jump to the pull requests' search |
 | ⌘K | `search.toggle` | `!terminalFocus` | Search everything, from every tab (also ⇧⌘F) |

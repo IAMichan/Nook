@@ -324,11 +324,13 @@ final class NotchViewModel: ObservableObject {
     /// If such a prompt is already shown, this queues behind it, ahead of regular cards.
     /// - `keepPanel`: an open panel stays: the prompt waits in line (it shows as a card once the panel closes) and the
     ///   panel asks it in a compact bar of its own (see `PanelApprovalBar`), so it does not take over the whole notch.
-    func presentUrgent(_ card: NookCard, keepPanel: Bool = false) {
+    /// - `evenWhenHeld`: shows during a meeting or while sharing too, where cards otherwise wait (a task Nook carries out
+    ///   waits on this answer).
+    func presentUrgent(_ card: NookCard, keepPanel: Bool = false, evenWhenHeld: Bool = false) {
         var urgent = card
         urgent.urgent = true
         let firstNormal = pending.firstIndex { !$0.urgent } ?? pending.count
-        if holdsCards {
+        if holdsCards, !evenWhenHeld {
             pending.insert(urgent, at: firstNormal)
             return
         }

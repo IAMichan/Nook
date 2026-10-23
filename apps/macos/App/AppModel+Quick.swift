@@ -63,7 +63,7 @@ extension AppModel {
     func proposeQuick(tool: String, input: [String: Any]) {
         let plan = BrainPlan(text: "", actions: [PlannedAction(tool: tool, input: input)])
         // Recognized word for word from the user's own command, so it counts as asked for.
-        if settings.autoRunSafe, Self.safeTools.contains(tool) {
+        if settings.nookAccess.allows(tool) {
             execute(plan)
             return
         }

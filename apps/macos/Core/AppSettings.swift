@@ -252,10 +252,16 @@ final class AppSettings: ObservableObject {
     @Published var autoWatch: Bool {
         didSet { UserDefaults.standard.set(autoWatch, forKey: "autoWatch") }
     }
-    /// Immediately perform minor user requests (music, volume, opening an app, reminders, or open loops)
-    /// without pressing Run first. Proactive suggestions always ask first. Off by default.
-    @Published var autoRunSafe: Bool {
-        didSet { UserDefaults.standard.set(autoRunSafe, forKey: "autoRunSafe") }
+    /// How much Nook does by itself when your own words ask for it (`NookAccess`), chosen in the chat's composer and the
+    /// Double Tap field. Proactive suggestions always ask first. "Ask first" by default.
+    @Published var nookAccess: NookAccess {
+        didSet { UserDefaults.standard.set(nookAccess.rawValue, forKey: "nookAccess") }
+    }
+    /// Immediately perform minor user requests (music, volume, opening an app, reminders, or open loops) without
+    /// pressing Run first: any level above "Ask first". Turning it on keeps a higher level that was chosen.
+    var autoRunSafe: Bool {
+        get { nookAccess != .ask }
+        set { nookAccess = newValue ? (nookAccess == .ask ? .small : nookAccess) : .ask }
     }
     /// Use a free local model (built-in, MLX) instead of the Claude API.
     @Published var useLocal: Bool {
@@ -570,7 +576,7 @@ final class AppSettings: ObservableObject {
         }
         language = defaults.string(forKey: "language") ?? "auto"
         autoWatch = UserDefaults.standard.bool(forKey: "autoWatch")
-        autoRunSafe = defaults.bool(forKey: "autoRunSafe")
+        nookAccess = NookAccess.migrated(stored: defaults.string(forKey: "nookAccess"), autoRunSafe: defaults.bool(forKey: "autoRunSafe"))
         // Local is the default brain: a fresh install thinks on the Mac itself. Someone who already chose an external
         // AI (a key or a provider was set before this version) keeps that choice.
         // The Keychain is only read when neither choice is stored yet (the first launch of this version): reading it opens the

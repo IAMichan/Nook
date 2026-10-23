@@ -35,7 +35,12 @@ extension SettingsView {
                 // How a suggestion shows, and the apps it is switched off in, are with every other notice.
                 SettingsLinkRow(title: tr("notices.settings.suggestionsLink"), detail: tr("notices.settings.suggestionsLinkDetail"),
                                 section: .notifications) { app.settingsSection = .notifications }
-                SettingToggle(tr("settings.assistant.autoRunSafe"), detail: tr("settings.assistant.autoRunSafeDetail"), isOn: $settings.autoRunSafe)
+                // The same choice as in the chat's composer and the Double Tap field (⇧Tab there).
+                Picker(tr("nookAccess.title"), selection: $settings.nookAccess) {
+                    ForEach(NookAccess.allCases) { level in Text(level.short).tag(level) }
+                }
+                .pickerStyle(.segmented)
+                SettingNote(settings.nookAccess.detail + " " + tr("nookAccess.always"))
             }
             buddySection
         }

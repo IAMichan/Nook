@@ -35,6 +35,14 @@ final class TakeoverState: ObservableObject {
     }
 }
 
+/// The conversations asked from the notch (the Double Tap field, a notice's field) that have not answered yet: their
+/// answer, a question back or a plan that waits for a click comes back to the notch as a card (`AppModel.nookFinished`).
+@MainActor
+final class NotchFollow {
+    static let shared = NotchFollow()
+    var conversations: Set<UUID> = []
+}
+
 /// Taking over a task (`TakeoverPolicy`): "finish this for me", "order more coffee filters", "unsubscribe me from this".
 ///
 /// - Start: the brain proposes `take_over` in the chat and the user approves it like any plan. The Double Tap key's field in
@@ -97,8 +105,9 @@ extension AppModel {
 
     // MARK: Starting from the notch
 
-    /// A double tap (or one tap) of the Double Tap key: a small field in the notch asks what Nook should do, with nothing
-    /// around it but its send button. Escape closes it. A tap while a task runs stops it.
+    /// A double tap (or one tap) of the Double Tap key: a small field in the notch asks what Nook should do. It is the Nook
+    /// chat's composer, with the model and what Nook may do by itself (⇧Tab) under the box. Escape closes it. A tap while
+    /// a task runs stops it.
     func presentTakeoverPrompt() {
         if TakeoverState.shared.isRunning {
             TakeoverState.shared.stop()
@@ -117,7 +126,8 @@ extension AppModel {
             detail: .none,
             primary: close,
             secondary: CardAction(label: "", outcome: .dismiss),
-            contentHeight: 46,
+            // The box and the tray of choices under it; the notch grows with a longer text (`fitCompactCard`).
+            contentHeight: 92,
             input: true,
             inputPrompt: tr("takeover.prompt.title"),
             focusesInput: true,
@@ -137,11 +147,7 @@ extension AppModel {
         // "Punt 5 moet dit worden", "verwijder de laatste zin": the part is changed in the document in front, selected and
         // typed over like a person would. Without a document there, it is a chat message, and a task Nook can take over.
         if DoubleTapLogic.asksToEdit(request) {
-            DoubleTap.shared.edit(request: request, after: 0.3) { [weak self] in
-                self?.chat.startNew()
-                self?.handleUserText(request, reveal: false)
-                self?.followInNotch()
-            }
+            DoubleTap.shared.edit(request: request, after: 0.3) { [weak self] in self?.askInNotch(request) }
             return
         }
         // "Vul het formulier in": Double Tap fills the form in front, once the app you were in has the keyboard back.
@@ -152,14 +158,17 @@ extension AppModel {
         // "Schrijf een sollicitatiebrief", "vertaal dit": typed where your cursor is, in Word or any other app. Without a
         // cursor in a text, it is a chat message after all.
         if DoubleTapLogic.asksToWrite(request) {
-            DoubleTap.shared.write(request: request, after: 0.3) { [weak self] in
-                self?.chat.startNew()
-                self?.handleUserText(request, reveal: false)
-                self?.followInNotch()
-            }
+            DoubleTap.shared.write(request: request, after: 0.3) { [weak self] in self?.askInNotch(request) }
             return
         }
-        chat.startNew()
+        askInNotch(request)
+    }
+
+    /// A new conversation in the Nook chat for what was asked in the notch, followed there: its steps in the slim line,
+    /// then its answer, question or plan as a card.
+    private func askInNotch(_ request: String) {
+        let conversation = chat.startNew()
+        NotchFollow.shared.conversations.insert(conversation)
         handleUserText(request, reveal: false)
         followInNotch()
     }
@@ -180,16 +189,20 @@ extension AppModel {
         viewModel.show(.idle)
         NookPresence.shared.heard()
         chat.select(id)
+        NotchFollow.shared.conversations.insert(id)
         ask(answer, in: id, reveal: false)
         followInNotch()
     }
 
     /// While Nook answers what was typed in the quick field, the notch shows how it gets there in one slim line with
-    /// Stop: what it looks at, then the answer as it is written. The answer itself arrives as a card with View, as before.
+    /// Stop, from the moment you send: that it thinks, what it looks at, then the answer as it is written. The answer
+    /// itself arrives as a card with View (`nookFinished`).
     private func followInNotch() {
         guard let conversation = chat.activeID, chat.isBusy(conversation) else { return }
+        let thinking = tr("chat.thinking") + "…"
+        viewModel.showWork(thinking) { [weak self] in self?.stop(conversation: conversation) }
         Task { @MainActor [weak self] in
-            var shown = ""
+            var shown = thinking
             while !Task.isCancelled {
                 guard let self, self.chat.isBusy(conversation) else { break }
                 if let id = self.replies[conversation], let message = self.chat.message(id) {
@@ -404,10 +417,79 @@ extension AppModel {
             await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 state.resolve(false)
                 state.decision = continuation
-                viewModel.presentUrgent(card)
+                // The task waits on this answer: it shows in a meeting too, where other cards wait.
+                viewModel.presentUrgent(card, evenWhenHeld: true)
             }
         } onCancel: {
             Task { @MainActor in TakeoverState.shared.resolve(false) }
+        }
+    }
+
+    // MARK: Answers in the notch
+
+    /// A card for what you asked from the notch: over a resting notch (also in a meeting, you are waiting for it), else
+    /// in line behind what shows now.
+    func showInNotch(_ card: NookCard) {
+        if notchFreeForNotice { viewModel.show(.card(card)) } else { viewModel.present(card) }
+    }
+
+    /// A plan Nook proposes for what you asked from the notch and that waits for your click (the access you chose does
+    /// not cover it): its steps with Run, the field to answer instead, and View for the conversation.
+    func notchPlanCard(_ message: ChatMessage, conversation: UUID) -> NookCard {
+        let token = Self.nookReplyCardPrefix + conversation.uuidString + "/" + UUID().uuidString
+        let steps = planSteps(message.actions)
+        let blocked = message.actionProblems.contains { !$0.isEmpty }
+        let title = message.text.isEmpty ? tr("app.plan.title") : String(message.text.prefix(300))
+        let titleLines = max(1, min(6, Int(ceil(Double(title.count) / 52.0))))
+        viewModel.register("\(token)#run") { [weak self] in self?.runPlanInNotch(message.id) }
+        viewModel.register("\(token)#open") { [weak self] in self?.openConversation(conversation) }
+        let later = CardAction(label: tr("nooks.later"), outcome: .dismiss)
+        // A step that cannot run as it is (a missing field, a source that is off) is fixed in the chat.
+        let primary = blocked ? CardAction(label: tr("nooks.view"), outcome: .callback("\(token)#open", ""))
+            : CardAction(label: tr("app.plan.run"), outcome: .callback("\(token)#run", ""), symbol: "play.fill")
+        return NookCard(
+            id: token,
+            mood: .waiting,
+            context: tr(steps.count == 1 ? "app.plan.steps.one" : "app.plan.steps.many", steps.count),
+            title: title,
+            detail: .steps(steps),
+            primary: primary,
+            secondary: later,
+            contentHeight: min(470, 150 + CGFloat(titleLines) * 22 + CGFloat(min(steps.count, 6)) * 30),
+            input: true,
+            inputPrompt: tr("nooks.replyPrompt"),
+            focusesInput: false,
+            more: blocked ? [] : [CardAction(label: tr("nooks.view"), outcome: .callback("\(token)#open", ""))],
+            escape: later,
+            status: CardStatus(text: tr("card.status.approval"), tone: .waiting)
+        )
+    }
+
+    /// Run on a plan card in the notch: the plan runs in its conversation, a task Nook takes over shows its steps in the
+    /// slim line, and the outcome comes back to the notch.
+    func runPlanInNotch(_ id: UUID) {
+        runPlan(id)
+        followPlanInNotch(id)
+    }
+
+    /// Waits for a running plan and brings its outcome to the notch: a short one in the slim line, a longer one or a
+    /// failure as a card.
+    func followPlanInNotch(_ id: UUID) {
+        Task { @MainActor [weak self] in
+            while self?.chat.message(id)?.planState == .running {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            guard let self, let message = self.chat.message(id) else { return }
+            switch message.planState {
+            case .done(let summary) where summary.count > 90:
+                self.showInNotch(self.answerCard(summary))
+            case .done(let summary):
+                if self.notchFreeForNotice { self.viewModel.finish(summary) }
+            case .failed(let failure):
+                self.showInNotch(self.errorCard(failure))
+            default:
+                break
+            }
         }
     }
 
