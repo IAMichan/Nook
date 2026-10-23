@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// What the side panel next to a session in the Agents tab shows: nothing (only the conversation), a terminal in its
-/// folder (or worktree), Nook's browser, for instance on the dev server the agent started, or the folder's changes.
+/// folder (or worktree), Nook's browser, for instance on the dev server the agent started, the folder's changes, or
+/// what the agent produced: its plans, task list and the files it wrote (`outputs`).
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, pullRequest, picker
+    case conversation, terminal, browser, changes, outputs, pullRequest, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
-    static let panelTools: [SessionTool] = [.terminal, .browser, .changes]
+    static let panelTools: [SessionTool] = [.outputs, .terminal, .browser, .changes]
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
     /// + menu, and not kept across launches).
     static let sideTabs: [SessionTool] = panelTools + [.pullRequest]
@@ -18,14 +19,15 @@ enum SessionTool: String {
         case .terminal: return "terminal"
         case .browser: return "safari"
         case .changes: return "plus.forwardslash.minus"
+        case .outputs: return "list.bullet.clipboard"
         case .pullRequest: return "arrow.triangle.pull"
         case .picker: return "square.grid.2x2"
         }
     }
 
-    /// Whether the tool works for a session in `directory`: without a folder there is only the browser.
+    /// Whether the tool works for a session in `directory`: without a folder there is only the browser and the outputs.
     func available(in directory: String) -> Bool {
-        if self == .pullRequest { return true }
+        if self == .pullRequest || self == .outputs { return true }
         return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
@@ -39,11 +41,13 @@ enum SessionTool: String {
 /// The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
 /// opens on what it showed last, the terminal by default; the side panel on what it showed last, or on the list of
 /// tools when no tab is open. When the agent started a process or opened a page that you have not looked at yet, the
-/// side panel's icon carries a small dot.
+/// side panel's icon carries a small dot. The same goes for a plan or another output the agent made.
 struct SessionToolSwitch: View {
     @ObservedObject var viewModel: NotchViewModel
     /// The session's folder; empty means no terminal and no changes, only the browser.
     let directory: String
+    /// The agent made a plan or another output you have not seen yet.
+    var outputsFresh = false
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
@@ -56,9 +60,10 @@ struct SessionToolSwitch: View {
         .toolbarGroup()
     }
 
-    /// The agent started a process or opened a page you have not seen: a tool with news that neither panel shows.
+    /// The agent started a process, opened a page or made a plan you have not seen: a tool with news that neither
+    /// panel shows.
     private var fresh: Bool {
-        SessionTool.panelTools.contains { tool in
+        outputsFresh || SessionTool.panelTools.contains { tool in
             tool.available(in: directory) && viewModel.sessionTool != tool && viewModel.bottomTool != tool
                 && bridge.hasUnseen(directory, tool.rawValue)
         }
@@ -159,6 +164,30 @@ struct ToolbarGroupDivider: View {
     }
 }
 
+/// What a session's conversation found the agent produced, handed up to the workbench around it for the outputs tab.
+/// `fresh`: something came in that you have not seen yet (a dot on the tab and on the side panel's button).
+struct SessionOutputsReport: PreferenceKey, Equatable {
+    var outputs: [SessionOutput] = []
+    var fresh = false
+
+    static let defaultValue = SessionOutputsReport()
+    static func reduce(value: inout SessionOutputsReport, nextValue: () -> SessionOutputsReport) {
+        let next = nextValue()
+        if !next.outputs.isEmpty || next.fresh { value = next }
+    }
+}
+
+/// From the workbench to the conversation inside it: whether the outputs tab is in view (what it shows counts as seen),
+/// and how to open it on a new output; false when it stayed closed because you have another tool open.
+struct SessionOutputsLink {
+    var shown = false
+    var open: (String) -> Bool = { _ in false }
+}
+
+extension EnvironmentValues {
+    @Entry var sessionOutputs = SessionOutputsLink()
+}
+
 /// Where a tool panel sits next to the conversation: what it shows and which tabs it has open in the view model.
 private struct SessionPanelSlot {
     let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
@@ -187,6 +216,9 @@ struct SessionWorkbench<Conversation: View>: View {
     @State private var totalWidth: Double = 0
     @State private var totalHeight: Double = 0
     @State private var dragStart: Double?
+    /// What the conversation found the agent produced (`SessionOutputsReport`), and the output the outputs tab shows.
+    @State private var outputs = SessionOutputsReport()
+    @State private var outputSelection: String?
 
     /// What a panel shows: nothing (closed), the list of tools, or one this session can use.
     private func shown(_ slot: SessionPanelSlot) -> SessionTool {
@@ -203,11 +235,16 @@ struct SessionWorkbench<Conversation: View>: View {
     var body: some View {
         let side = shown(.side)
         let bottom = shown(.bottom)
+        let outputsShown = side == .outputs || bottom == .outputs
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
-                conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
+                conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
+                                                       outputsFresh: outputs.fresh && !outputsShown)))
                     // A pull request link in the conversation opens in the side panel.
                     .environment(\.pullRequestLinksBeside, true)
+                    // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
+                    .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput))
+                    .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
                     VStack(spacing: 0) {
@@ -242,6 +279,18 @@ struct SessionWorkbench<Conversation: View>: View {
         }
     }
 
+    /// Shows a new output in the outputs tab: in the bottom panel when it is open there, otherwise beside the
+    /// conversation. A terminal, page or diff you have open beside it stays; then only the tab's dot says so (false).
+    private func openOutput(_ id: String) -> Bool {
+        let side = viewModel.sessionTool
+        guard viewModel.bottomTool == .outputs || side == .outputs || side == .conversation || side == .picker else { return false }
+        outputSelection = id
+        if viewModel.bottomTool != .outputs, side != .outputs {
+            withAnimation(NookTheme.reveal) { viewModel.sessionTool = .outputs }
+        }
+        return true
+    }
+
     /// Dragging the line above the bottom panel up makes it taller.
     private func dragBottom(_ offset: Double) {
         let start = dragStart ?? BottomPanelLayout.height(bottomHeight, available: totalHeight)
@@ -251,6 +300,7 @@ struct SessionWorkbench<Conversation: View>: View {
 
     private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
+                         outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
                          closeHelp: tr(slot.closeHelp),
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
                          closeTab: { closeTab($0, in: slot) },
@@ -335,6 +385,9 @@ private struct SessionToolPanel: View {
     let tool: SessionTool
     let tabs: [SessionTool]
     let pullRequest: PullRequestOpenRequest?
+    let outputs: [SessionOutput]
+    @Binding var outputSelection: String?
+    let outputsFresh: Bool
     let closeHelp: String
     let show: (SessionTool) -> Void
     let closeTab: (SessionTool) -> Void
@@ -351,6 +404,7 @@ private struct SessionToolPanel: View {
                 case .picker:
                     SessionToolPicker(directory: directory) { show($0) }
                 case .terminal: SessionTerminalsView(directory: directory).id(directory)
+                case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
                 case .changes:
                     if let runID {
                         ChangesSheet(runID: runID, initialFile: nil, onClose: close, stacked: true).id(runID)
@@ -382,7 +436,9 @@ private struct SessionToolPanel: View {
             if !tabs.isEmpty {
                 NookTabBar(items: tabs.map { item in
                     NookTabBar<SessionTool>.Item(value: item, title: item.title, symbol: item.symbol,
-                                                 fresh: item != tool && bridge.hasUnseen(directory, item.rawValue), help: item.help)
+                                                 fresh: item != tool && (item == .outputs ? outputsFresh
+                                                                                         : bridge.hasUnseen(directory, item.rawValue)),
+                                                 help: item.help)
                 }, selected: tool, onSelect: show, onClose: closeTab)
             }
             addMenu

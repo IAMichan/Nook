@@ -2,14 +2,12 @@ import SwiftUI
 import AppKit
 import WebKit
 
-/// Next to a session's conversation: what the agent produced (see SessionOutputs). Its task list, the plans it
-/// proposed, and the designs, documents and images it wrote, each shown the way it is meant to be seen: a page as it
-/// renders, Markdown formatted, an image as the image.
+/// The outputs tab in a session's side (or bottom) panel: what the agent produced (see SessionOutputs). Its task list,
+/// the plans it proposed, and the designs, documents and images it wrote, each shown the way it is meant to be seen: a
+/// page as it renders, Markdown formatted, an image as the image. The panel's tab bar is its header.
 struct SessionOutputsPanel: View {
     let outputs: [SessionOutput]
     @Binding var selection: String?
-    @Binding var wide: Bool
-    let close: () -> Void
 
     private var current: SessionOutput? {
         outputs.first { $0.id == selection } ?? outputs.first
@@ -17,7 +15,6 @@ struct SessionOutputsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            header
             if outputs.isEmpty {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     Text(tr("ws.outputs.empty.title")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
@@ -36,22 +33,6 @@ struct SessionOutputsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var header: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "tray.full").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.outputs.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
-            if !outputs.isEmpty {
-                Text("\(outputs.count)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
-            }
-            Spacer(minLength: 4)
-            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(NookTheme.reveal) { wide.toggle() }
-            }
-            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
-        }
-        .frame(height: 30)
     }
 
     /// One row per output, newest first; the list scrolls when it is long.
@@ -415,39 +396,5 @@ struct TaskListRows: View {
                 TaskStepRow(step: step)
             }
         }
-    }
-}
-
-/// The button in a session's header that opens or closes the outputs panel: a quiet group of its own next to the
-/// side panel's tools, with how many outputs there are while the panel is closed and a dot when something is new.
-struct SessionOutputsButton: View {
-    let open: Bool
-    var count = 0
-    var fresh = false
-    var tint: Color = NookTheme.iris
-    let toggle: () -> Void
-
-    var body: some View {
-        let showCount = !open && count > 0
-        let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
-        Button { withAnimation(NookTheme.reveal) { toggle() } } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "tray.full").font(NookTheme.font(11, .medium))
-                if showCount { Text("\(count)").font(NookTheme.mono(10.5, .medium)) }
-            }
-            .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
-            .padding(.horizontal, showCount ? 7 : 0)
-            .frame(height: ToolbarGroup.itemHeight)
-            .frame(minWidth: 26)
-            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(open ? NookTheme.smoke : Color.clear))
-            .overlay(alignment: .topTrailing) {
-                if fresh { Circle().fill(tint).frame(width: 5, height: 5).offset(x: -3, y: 3) }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .toolbarGroup()
-        .help(open || fresh ? label : tr("ws.outputs.show"))
-        .accessibilityLabel(label)
     }
 }

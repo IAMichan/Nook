@@ -34,9 +34,6 @@ struct AgentSessionDetail: View {
     @State private var questionStep = 0
     @State private var questionAnswers: [[String]] = []
     @State private var questionPicks: Set<String> = []
-    /// The outputs panel next to the conversation, and how many outputs the conversation found (for its header button).
-    @State private var outputsOpen = false
-    @State private var outputCount = 0
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
 
@@ -47,7 +44,6 @@ struct AgentSessionDetail: View {
             case .past(let session): pastDetail(session)
             }
         }
-        .onPreferenceChange(TranscriptOutputCount.self) { outputCount = $0 }
         .confirmDelete($endRequest, question: { tr("confirm.endSession", $0.name) },
                        detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.end")) { session in
             perform { try app.endSession(session) }
@@ -57,7 +53,6 @@ struct AgentSessionDetail: View {
             perform { try await app.continueInNook(session, endingTerminal: true) }
         }
         .onChange(of: selectionID) { _, _ in
-            outputsOpen = false
             actionError = nil
             draft = ""
             choice = nil
@@ -86,9 +81,6 @@ struct AgentSessionDetail: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            if !app.demoMode, outputCount > 0 || outputsOpen {
-                SessionOutputsButton(open: outputsOpen, count: outputCount) { outputsOpen.toggle() }
-            }
             if !app.demoMode, let headerAccessory { headerAccessory }
             if !app.demoMode, !directory.isEmpty {
                 FolderGitButton(directory: directory, agentWorking: agentWorking) {
@@ -168,7 +160,7 @@ struct AgentSessionDetail: View {
                 Spacer(minLength: 0)
             } else {
                 // Every agent Nook can answer (Antigravity too, through its agent API), not only the ones it takes over.
-                AgentConversation(session: shown, outputsOpen: $outputsOpen, onReply: app.canReply(to: session) ? { answer in
+                AgentConversation(session: shown, onReply: app.canReply(to: session) ? { answer in
                     perform { try await app.reply(to: session, message: answer) }
                 } : nil)
             }
@@ -535,8 +527,7 @@ struct AgentSessionDetail: View {
                     perform { try await app.reply(to: session, message: answer) }
                 } : nil,
                 footer: tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts),
-                directory: session.cwd,
-                outputsOpen: $outputsOpen
+                directory: session.cwd
             )
             .id("past:" + session.id)
 
