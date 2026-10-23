@@ -106,6 +106,15 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         }
     }
 
+    /// Keeps the id of an app you registered in Microsoft Entra yourself, for a build that comes without Nook's own.
+    /// False when it is not an app id or the Keychain refused it.
+    func setClientID(_ id: String) -> Bool {
+        let id = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard UUID(uuidString: id) != nil, Keychain.write(id, account: Self.clientAccount) == errSecSuccess else { return false }
+        state = .idle
+        return true
+    }
+
     func cancelSignIn() {
         waiting?.cancel()
         waiting = nil

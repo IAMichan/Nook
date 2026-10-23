@@ -143,6 +143,7 @@ struct TeamsSettingsRows: View {
     /// Why the last read failed, if it did for every account.
     let problem: String?
     let onSignedIn: () -> Void
+    @State private var clientID = ""
 
     var body: some View {
         ForEach(teams.accounts) { account in
@@ -186,7 +187,7 @@ struct TeamsSettingsRows: View {
                 }
             }
         case .noClient:
-            StatusRow(title: tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"), state: .todo) { EmptyView() }
+            clientField
         case .idle, .failed:
             if case .failed(let why) = teams.state {
                 StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
@@ -201,6 +202,35 @@ struct TeamsSettingsRows: View {
                 Button(teams.accounts.isEmpty ? tr("chats.teams.signIn") : tr("chats.teams.addAccount")) { teams.signIn() }
             }
         }
+    }
+
+    /// A build without Nook's own app in Microsoft Entra: the id of one you registered, pasted once.
+    private var clientField: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            SettingLabel(tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"))
+            HStack(spacing: NookTheme.Spacing.sm) {
+                TextField("", text: $clientID, prompt: Text("00000000-0000-0000-0000-000000000000"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { saveClient() }
+                Button(tr("chats.slack.save")) { saveClient() }
+                    .disabled(UUID(uuidString: clientID.trimmingCharacters(in: .whitespaces)) == nil)
+            }
+            Button(tr("chats.teams.openEntra")) {
+                if let url = URL(string: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .buttonStyle(.link)
+        }
+    }
+
+    private func saveClient() {
+        guard teams.setClientID(clientID) else {
+            ToastCenter.shared.error(tr("chats.slack.notSaved"))
+            return
+        }
+        clientID = ""
     }
 }
 
