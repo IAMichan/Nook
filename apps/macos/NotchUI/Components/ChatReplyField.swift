@@ -56,6 +56,7 @@ struct ChatReplyField: View {
     private var aboveAccessory: AnyView?
     private var idleAccessory: AnyView?
     private var replacement: AnyView?
+    private var trayContent: AnyView?
     private var hasExtra = false
     private var pasted: (() -> Bool)?
 
@@ -93,6 +94,14 @@ struct ChatReplyField: View {
         copy.leadingAccessory = AnyView(leading())
         copy.aboveAccessory = AnyView(above())
         copy.idleAccessory = AnyView(idle())
+        return copy
+    }
+
+    /// A line in the tray tucked above the box, the same tray the agents show their queued messages in (see
+    /// `ComposerTray`). Nil leaves the box without a tray.
+    func tray<Content: View>(_ content: Content?) -> Self {
+        var copy = self
+        copy.trayContent = content.map { AnyView($0) }
         return copy
     }
 
@@ -144,13 +153,19 @@ struct ChatReplyField: View {
                     .transition(.opacity)
             }
             if let aboveAccessory { aboveAccessory }
-            if let replacement {
-                replacement
-                    .padding(.horizontal, NookTheme.Spacing.xs)
-                    .padding(.vertical, NookTheme.Spacing.xs)
-                    .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
-            } else {
-                field
+            VStack(spacing: 0) {
+                if let trayContent {
+                    ComposerTray(edge: .top) { trayContent }
+                        .transition(.opacity)
+                }
+                if let replacement {
+                    replacement
+                        .padding(.horizontal, NookTheme.Spacing.xs)
+                        .padding(.vertical, NookTheme.Spacing.xs)
+                        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+                } else {
+                    field
+                }
             }
         }
         .animation(NookTheme.reveal, value: showsDraft)

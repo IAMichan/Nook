@@ -249,7 +249,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
     }
 }
 
-/// Under an open chat, above its answer field: where it stands and the one step that is left. Something new can be read
+/// Under an open chat, in the tray above its answer field: where it stands and the one step that is left. Something new can be read
 /// in Nook; read in Nook, it can be passed on to the app ("Mark as read in Telegram"), which Nook tells itself where it
 /// can, and otherwise opens the app so you read it there. Read everywhere, it says so and asks nothing.
 struct ChatReadLine: View {
@@ -264,8 +264,8 @@ struct ChatReadLine: View {
             ChatReadMark(state: state)
                 .frame(minWidth: 16)
             Text(line)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(explanation)
@@ -278,6 +278,9 @@ struct ChatReadLine: View {
                 ChatPassOnButton(title: tr("chats.markReadInApp", appName), help: explanation, action: markReadInApp)
             }
         }
+        // The same row as the queued messages' header in an agent's tray (see `QueuedMessagesStrip`).
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, 3)
         .animation(NookTheme.reveal, value: state)
     }
 
