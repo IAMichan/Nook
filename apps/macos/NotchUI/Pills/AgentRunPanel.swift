@@ -590,9 +590,7 @@ struct AgentRunPanel: View {
                     .padding(.top, NookTheme.Spacing.md)
                 }
             }
-            .background {
-                Button("") { openFind() }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
-            }
+            .keyCommand("chat.find") { openFind() }
             .onChange(of: findQuery) { _, _ in
                 findIndex = nil
                 let fresh = TimelineSearch.search(events, query: findQuery)
@@ -618,6 +616,13 @@ struct AgentRunPanel: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// Sends the first queued message now; false (the key goes on) when nothing waits or it cannot go in yet.
+    private func steerFirstQueued() -> Bool {
+        guard let first = workspace.queued[runID]?.messages.first, workspace.canSendQueuedNow(runID) else { return false }
+        workspace.sendQueuedNow(runID, message: first.id)
+        return true
     }
 
     // MARK: Find
@@ -917,6 +922,8 @@ struct AgentRunPanel: View {
                 .images($images)
                 .zIndex(1)
             }
+            // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
+            .keyCommands(["queue.steerFirst": { steerFirstQueued() }])
             if !active, run.mode == .plan {
                 Text(tr("agents.run.planHint"))
                     .font(NookTheme.TextStyle.detail)

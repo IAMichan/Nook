@@ -116,7 +116,7 @@ struct NookList: View {
     private var header: some View {
         PanelListHeader(tr("tab.nook")) {
             PanelNewButton(label: tr("nooks.newHelp"), active: chat.isEmpty) { app.newChat() }
-                .keyboardShortcut("n", modifiers: .command)
+                .keyCommand("session.new") { app.newChat() }
         }
     }
 

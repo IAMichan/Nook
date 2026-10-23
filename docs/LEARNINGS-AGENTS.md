@@ -42,6 +42,39 @@ pairing and push actions.
 | Back through multiple agent questions, drafts kept | Back returns to an earlier question with its answer picked; what you started on the later one waits | `RunQuestionPanel` |
 | Live Activity per agent thread (`AgentActivity`, `agentLiveActivity.ios.ts`, `liveActivityPreferences.ts`): phase, project, model; finished results stay 15 minutes; a stale date; a switch in Settings | One Live Activity per session working on the Mac (Lock Screen and Dynamic Island): project, title, agent and model, *working / waiting for you / done / failed*. The Mac starts, updates and ends it with `liveactivity` pushes from its own APNs key (push-to-start and per-activity tokens through the companion protocol, rate-limited); a done or failed session stays 15 minutes; past the stale date it reads *Out of date*; a switch in the phone's menu turns it off. Unlike one card for all threads, and without a cloud relay | `LiveActivityPlanner` (`packages/protocol`), `CompanionNotifier`, `NookActivity` widget extension, `LiveActivities` |
 
+## Keybindings
+
+**In Code** (`apps/web/src/keybindings.ts`): shortcuts are rules `{ key, command, when }`. One key handler builds a
+context (`terminalFocus`, `terminalOpen`, …), resolves the pressed chord against the defaults plus the user's
+`keybindings.json` (the last matching rule wins), and dispatches the command. Bad rules are skipped and reported;
+`mod` is ⌘ on the Mac and Ctrl elsewhere.
+
+**In Nook** (implemented after the round above):
+
+- `Services/Workspace/Keybindings.swift` (Foundation-only, tested in `KeybindingsTests`): `KeyChord` (parse, format,
+  `pressed` from a key event's unshifted characters and key code), `WhenExpression`, `KeybindingRule`,
+  `Keybindings.defaults`, `commandIDs`, `contextKeys`, `match`, `conflicts`, `load` / `read` of
+  `~/.nook/keybindings.json`, `unknownCommands` and `chords(for:)`.
+- `NotchUI/Components/KeyCommands.swift`: `KeyCommandCenter`, the one local key monitor for the panel. It builds the
+  context (`composerFocus`, `composerDraft`, `turnRunning` from the focused composer; `editableFocus`, `terminalFocus`
+  from the first responder; `paletteOpen` from the agents' tab), matches over `Keybindings.effective(user:)` and runs
+  the handler a view offers with `.keyCommand` / `.keyCommands`, scoped to the window the key was pressed in.
+- The hard-coded shortcuts it covers are gone: ⌘Return, ⌘S and the history keys in `SessionComposer`, ⌘Return in
+  `ChatReplyField`, the hidden ⌘F buttons in `AgentRunPanel` and `PullRequestsPanel`, ⌘K in `AgentsTab`, ⌘N in
+  `WorkspaceView` and `NookConversationList`, ⌘Z in `AgentInboxList`. ⇧⌘Return sends the first queued message.
+- Settings › Shortcuts › **Panel keys** lists every command with its keys, marks the commands nothing runs yet, and
+  shows the file's state, the rules it skipped (with their position), unknown commands and conflicts.
+
+**Differences from Code**, on purpose:
+
+- A rule adds a key; the default stays (Code does the same). ⌘S (`composer.stash`) asks only for `composerFocus`,
+  because in an empty composer it brings a stashed draft back.
+- A matched command that nothing on screen handles lets the key go on to the focused view, so a rule for a command
+  that is not wired yet never swallows a key.
+- Keys inside a field or a list (Return, Tab, Escape, plain arrows) stay with that view; they are not commands.
+
+See [`KEYBINDINGS.md`](KEYBINDINGS.md) for the defaults, the file format and how to add a command.
+
 ## Still open
 
 Larger pieces, roughly by value. Each fits Nook's architecture; none is started.
@@ -50,8 +83,6 @@ Larger pieces, roughly by value. Each fits Nook's architecture; none is started.
   the Live Activity can host it.
 - **Composer chips.** Context references (`[label](nook-context:…)`) as inline chips that delete as one, with undo grouped
   per kind of edit. Needs the composer moved from `TextField` to an `NSTextView`.
-- **Keybindings wired to commands.** `Keybindings.swift` parses rules with `when` clauses but nothing dispatches them;
-  a central key monitor in the panel would make every shortcut configurable.
 - **Model manifest.** A bundled `model-manifest.json`, refreshed from the repository, with `minVersion` per agent so the
   picker says which CLI update unlocks a model; favorites and custom model ids in the picker.
 - **Pi and Muse as managed providers.** Pi speaks LF-delimited JSON RPC over stdio (`prompt`, `get_state`, `set_model`,

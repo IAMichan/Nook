@@ -1,7 +1,9 @@
 import Foundation
 
 // Configurable shortcuts: rules `{key, command, when}`, the LAST matching rule wins, invalid
-// rules are skipped. `mod` is Command on macOS.
+// rules are skipped. `mod` is Command on macOS. The panel's key monitor (`KeyCommandCenter`) builds the context, matches
+// the pressed chord here and runs the handler a view registered for the command; the user's rules come from
+// `~/.nook/keybindings.json` (see docs/KEYBINDINGS.md).
 
 struct KeyChord: Equatable, Hashable, Sendable {
     struct Modifiers: OptionSet, Hashable, Sendable {
@@ -67,6 +69,28 @@ struct KeyChord: Equatable, Hashable, Sendable {
             }
         }
         return KeyChord(modifiers: mods, key: normalized)
+    }
+
+    /// Virtual key codes of the named keys (Carbon's `kVK_…`), which have no printable character of their own.
+    private static let namedKeyCodes: [UInt16: String] = [
+        36: "enter", 76: "enter", 53: "escape", 48: "tab", 49: "space", 51: "backspace", 117: "delete",
+        123: "left", 124: "right", 125: "down", 126: "up", 115: "home", 119: "end", 116: "pageup", 121: "pagedown",
+        122: "f1", 120: "f2", 99: "f3", 118: "f4", 96: "f5", 97: "f6", 98: "f7", 100: "f8", 101: "f9", 109: "f10",
+        103: "f11", 111: "f12", 105: "f13", 107: "f14", 113: "f15", 106: "f16", 64: "f17", 79: "f18", 80: "f19", 90: "f20",
+    ]
+
+    /// A key as it was pressed. `characters` is what the key types without any modifier applied (so ⇧[ is `[`, not
+    /// `{`); named keys are recognised by their key code. Nil for a key no rule can name (a dead key, a bare modifier).
+    static func pressed(characters: String?, keyCode: UInt16, command: Bool, control: Bool, option: Bool, shift: Bool) -> KeyChord? {
+        var mods: Modifiers = []
+        if command { mods.insert(.cmd) }
+        if control { mods.insert(.ctrl) }
+        if option { mods.insert(.alt) }
+        if shift { mods.insert(.shift) }
+        if let name = namedKeyCodes[keyCode] { return KeyChord(modifiers: mods, key: name) }
+        guard let characters, characters.count == 1, let scalar = characters.unicodeScalars.first,
+              !CharacterSet.controlCharacters.contains(scalar), scalar.value < 0xF700 || scalar.value > 0xF8FF else { return nil }
+        return KeyChord(modifiers: mods, key: characters)
     }
 
     /// Canonical text, modifiers in a fixed order.
@@ -213,7 +237,8 @@ enum Keybindings {
     }
 
     struct LoadResult: Equatable, Sendable {
-        enum FileState: Sendable { case ok, empty, unparseable }
+        /// `missing`: there is no file, which is the normal case (only the defaults apply).
+        enum FileState: Sendable { case ok, empty, unparseable, missing }
         var rules: [KeybindingRule]
         var problems: [Problem]
         var state: FileState
@@ -249,6 +274,33 @@ enum Keybindings {
             rules.append(rule)
         }
         return LoadResult(rules: rules, problems: problems, state: .ok)
+    }
+
+    /// Reads the user's file. No file is no rules and no problem; a file that cannot be read counts as unparseable.
+    static func read(_ url: URL) -> LoadResult {
+        guard FileManager.default.fileExists(atPath: url.path) else { return LoadResult(rules: [], problems: [], state: .missing) }
+        guard let data = try? Data(contentsOf: url) else { return LoadResult(rules: [], problems: [], state: .unparseable) }
+        return load(data)
+    }
+
+    /// Where the user's rules live: `~/.nook/keybindings.json`, next to Nook's other files for the command line.
+    static var userFileURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/keybindings.json")
+    }
+
+    /// Rules naming a command Nook does not know (a typo, or a command from another app): they load but never run.
+    static func unknownCommands(_ rules: [KeybindingRule]) -> [KeybindingRule] {
+        rules.filter { !commandIDs.contains($0.command) }
+    }
+
+    /// Every key a command answers to, in rule order without repeats (a user's rule adds a key, it does not take the
+    /// default away).
+    static func chords(for command: String, rules: [KeybindingRule]) -> [KeyChord] {
+        var out: [KeyChord] = []
+        for rule in rules where rule.command == command {
+            if let chord = rule.chord?.resolved, !out.contains(chord) { out.append(chord) }
+        }
+        return out
     }
 
     static func encode(_ rules: [KeybindingRule]) -> Data {
@@ -295,7 +347,9 @@ enum Keybindings {
         return false
     }
 
-    /// Context keys the app provides.
+    /// Context keys the app provides. `composerFocus`, `composerDraft` (the focused composer holds text) and
+    /// `turnRunning` come from the focused composer; `editableFocus` and `terminalFocus` from the key window's first
+    /// responder; `paletteOpen`, `modelPickerOpen` and `diffOpen` from the views that show them.
     static let contextKeys = ["composerFocus", "composerDraft", "turnRunning", "editableFocus", "terminalFocus",
                               "modelPickerOpen", "paletteOpen", "diffOpen"]
 
@@ -307,12 +361,13 @@ enum Keybindings {
         "session.undo", "session.interrupt",
     ]
 
-    /// Default chat and workspace keybindings. `session.interrupt` stays unbound on purpose.
+    /// Default chat and workspace keybindings. `session.interrupt` stays unbound on purpose. ⌘S also brings a stashed
+    /// draft back into an empty composer, so the stash rule does not ask for `composerDraft`.
     static let defaults: [KeybindingRule] = [
         KeybindingRule(key: "mod+enter", command: "composer.send", when: "composerFocus && !turnRunning"),
         KeybindingRule(key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning"),
         KeybindingRule(key: "shift+enter", command: "composer.newline", when: "composerFocus"),
-        KeybindingRule(key: "mod+s", command: "composer.stash", when: "composerFocus && composerDraft"),
+        KeybindingRule(key: "mod+s", command: "composer.stash", when: "composerFocus"),
         KeybindingRule(key: "alt+up", command: "composer.historyPrevious", when: "composerFocus"),
         KeybindingRule(key: "alt+down", command: "composer.historyNext", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+enter", command: "queue.steerFirst", when: "composerFocus && turnRunning"),

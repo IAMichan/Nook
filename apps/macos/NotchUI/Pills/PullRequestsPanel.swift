@@ -135,10 +135,8 @@ struct PullRequestsPanel: View {
         HStack(spacing: NookTheme.Spacing.sm) {
             NookSearchField(prompt: tr("agents.pulls.search"), text: $filter.query, focus: $searching,
                             onEscape: { searching = false })
-            .background {
-                // ⌘F jumps to the search field.
-                Button("") { searching = true }.keyboardShortcut("f", modifiers: .command).opacity(0).accessibilityHidden(true)
-            }
+            // ⌘F jumps to the search field.
+            .keyCommand("chat.find") { searching = true }
 
             PullRequestFilterMenu(filter: $filter, grouping: Binding(get: { grouping }, set: { groupingRaw = $0.rawValue }),
                                   sort: Binding(get: { sort }, set: { sortRaw = $0.rawValue }),

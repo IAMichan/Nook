@@ -482,7 +482,8 @@ struct AgentInboxList: View {
                         .buttonStyle(.plain)
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
-                        .keyboardShortcut("z", modifiers: .command)
+                        // ⌘Z, while no text field has the keyboard (there it undoes typing).
+                        .keyCommand("session.undo") { store.undo() }
                 }
                 .padding(.horizontal, NookTheme.Spacing.lg)
                 .frame(height: 32)

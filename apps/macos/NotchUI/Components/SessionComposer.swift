@@ -209,14 +209,16 @@ struct SessionComposer<Controls: View>: View {
         extras.model.update(for: new, extras.config)
     }
 
-    private func arrow(_ delta: Int) -> KeyPress.Result {
+    /// Up and Down move in the list, or walk through earlier messages: plain arrows only from the edge of the text (see
+    /// `ComposerKeys`), the history commands (⌥↑ ⌥↓) from anywhere.
+    private func arrow(_ delta: Int, walkAnywhere: Bool = false) -> KeyPress.Result {
         guard let extras else { return .ignored }
         if extras.model.isOpen {
             extras.model.move(delta)
             return .handled
         }
         if delta < 0 {
-            guard ComposerKeys.arrowWalksHistory(text: text, walking: extras.model.history.isWalking),
+            guard walkAnywhere || ComposerKeys.arrowWalksHistory(text: text, walking: extras.model.history.isWalking),
                   let previous = extras.model.history.previous(current: text) else { return .ignored }
             assign(previous)
             return .handled
@@ -226,28 +228,58 @@ struct SessionComposer<Controls: View>: View {
         return .handled
     }
 
-    private func returnKey(_ press: KeyPress) -> KeyPress.Result {
-        if let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) {
-            choose(extras.model.suggestions[extras.model.selection])
-            return .handled
-        }
-        guard press.modifiers.contains(.command) else { return .ignored }
-        if busy {
-            if !isEmpty, let flipAction { flipAction() }
-        } else if enabled {
-            onSend()
-        }
-        return .handled
+    /// Return with the list open takes the chosen line; a plain Return otherwise sends through `onSubmit`.
+    private func returnKey() -> KeyPress.Result {
+        chooseSelected() ? .handled : .ignored
     }
 
-    /// Cmd+S: set the draft aside, bring one back, or choose from several.
-    private func stashKey(_ press: KeyPress) -> KeyPress.Result {
-        guard let extras, press.modifiers.contains(.command), let result = extras.model.stashKey(composerText: text) else {
-            return press.modifiers.contains(.command) ? .handled : .ignored
+    private func chooseSelected() -> Bool {
+        guard let extras, extras.model.isOpen, extras.model.suggestions.indices.contains(extras.model.selection) else { return false }
+        choose(extras.model.suggestions[extras.model.selection])
+        return true
+    }
+
+    /// The composer's commands for the panel's key monitor (see `Keybindings`); they run while the box has the keyboard.
+    private var keyHandlers: [String: () -> Bool] {
+        [
+            // ⌘Return: send, or while the agent works deliver the other way (steer instead of queue, or the reverse).
+            "composer.send": { sendKey(alternate: false) },
+            "composer.sendAlternate": { sendKey(alternate: true) },
+            "composer.newline": {
+                if chooseSelected() { return true }
+                return NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+            },
+            "composer.stash": stashKey,
+            "composer.historyPrevious": { walkHistory(-1) },
+            "composer.historyNext": { walkHistory(1) },
+        ]
+    }
+
+    private func walkHistory(_ delta: Int) -> Bool {
+        if case .handled = arrow(delta, walkAnywhere: true) { return true }
+        return false
+    }
+
+    private var keyContext: [String: Bool] {
+        ["composerFocus": true, "composerDraft": !isEmpty, "turnRunning": busy]
+    }
+
+    private func sendKey(alternate: Bool) -> Bool {
+        if chooseSelected() { return true }
+        if alternate {
+            if busy, !isEmpty, let flipAction { flipAction() }
+        } else if !busy, enabled {
+            onSend()
         }
+        return true
+    }
+
+    /// ⌘S: set the draft aside, bring one back, or choose from several.
+    private func stashKey() -> Bool {
+        guard let extras, let result = extras.model.stashKey(composerText: text) else { return true }
         assign(result)
         extras.model.onStashChanged?()
-        return .handled
+        return true
     }
 
     private func tabKey() -> KeyPress.Result {
@@ -275,15 +307,16 @@ struct SessionComposer<Controls: View>: View {
             .onChange(of: text) { old, new in textChanged(old, new) }
     }
 
-    private func withKeys(_ view: some View) -> some View {
+    // The keys that belong to the text field itself (moving in the list, taking a line); ⌘Return, ⌘S, ⇧Return and the
+    // history keys are keybinding commands, offered to the panel's key monitor while the box has the keyboard.
+    private func withKeys(_ view: some View, focused: Bool) -> some View {
         view
             .onKeyPress(.upArrow) { () -> KeyPress.Result in arrow(-1) }
             .onKeyPress(.downArrow) { () -> KeyPress.Result in arrow(1) }
             .onKeyPress(.tab) { () -> KeyPress.Result in tabKey() }
             .onKeyPress(.escape) { () -> KeyPress.Result in escapeKey() }
-            // These two need the modifiers, so the overload that passes the KeyPress (it has no default phases).
-            .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
-            .onKeyPress(KeyEquivalent("s"), phases: .down) { (press: KeyPress) -> KeyPress.Result in stashKey(press) }
+            .onKeyPress(.return, phases: .down) { (_: KeyPress) -> KeyPress.Result in returnKey() }
+            .keyCommands(keyHandlers, context: keyContext, enabled: focused)
     }
 
     private func submit() {
@@ -300,12 +333,12 @@ struct SessionComposer<Controls: View>: View {
             }
             if choicesBelow {
                 HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
-                    withKeys(field(focused: focused))
+                    withKeys(field(focused: focused), focused: focused.wrappedValue)
                         .frame(minHeight: minHeight, alignment: .center)
                     sendCluster
                 }
             } else {
-                withKeys(field(focused: focused))
+                withKeys(field(focused: focused), focused: focused.wrappedValue)
                     .frame(minHeight: minHeight, alignment: .topLeading)
             }
             // When the box gets narrow (the chat beside an open app), the choices give up their words step by step,

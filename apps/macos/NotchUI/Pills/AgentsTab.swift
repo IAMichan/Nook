@@ -103,9 +103,7 @@ struct AgentsTab: View {
                     .transition(.opacity)
             }
         }
-        .background {
-            Button("") { palette.toggle() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true)
-        }
+        .keyCommands(["commandPalette.toggle": { palette.toggle(); return true }], context: ["paletteOpen": palette])
         .onAppear {
             app.hub.refreshDetected()
             app.adoptAccounts()
