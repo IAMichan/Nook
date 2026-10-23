@@ -199,6 +199,7 @@ targets:
       - path: Services/Messages/TeamsData.swift
       - path: Services/Messages/InstagramData.swift
       - path: Services/Messages/BeeperData.swift
+      - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
       - path: Services/Messages/ChatFormat.swift
       - path: Services/Messages/ChatPoll.swift

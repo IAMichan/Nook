@@ -733,7 +733,8 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         try await call("POST", path, json, token: token, timeout: timeout, failure: tr("chat.compose.notSent"))
     }
 
-    private func call(_ method: String, _ path: String, _ json: [String: any Sendable]?, query: [URLQueryItem] = [],
+    /// One request to the local service; `plain` keeps its errors to `failure` (no service name in them).
+    func call(_ method: String, _ path: String, _ json: [String: any Sendable]?, query: [URLQueryItem] = [],
                       token: String, timeout: TimeInterval, failure: String, plain: Bool = false) async throws -> Data {
         var components = URLComponents(url: Self.base, resolvingAgainstBaseURL: false)!
         components.percentEncodedPath = path
@@ -762,7 +763,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         return data
     }
 
-    private func get(_ path: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
+    func get(_ path: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
         var components = URLComponents(url: Self.base, resolvingAgainstBaseURL: false)!
         components.percentEncodedPath = path
         components.queryItems = parameters.map { URLQueryItem(name: $0.key, value: $0.value) }

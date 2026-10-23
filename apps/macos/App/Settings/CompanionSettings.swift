@@ -1,5 +1,4 @@
 import SwiftUI
-import CoreImage.CIFilterBuiltins
 import UniformTypeIdentifiers
 
 /// Settings for the iPhone companion: switch it on, pair a phone (QR code or link, valid for five minutes) and remove phones.
@@ -138,7 +137,7 @@ struct CompanionSettingsRows: View {
 
     private func pairing(_ link: PairingLink) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            if let url = link.url, let image = Self.qr(url.absoluteString) {
+            if let url = link.url, let image = QRCode.image(url.absoluteString) {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 160, height: 160)
                     .accessibilityLabel(tr("companion.qr"))
             }
@@ -153,16 +152,5 @@ struct CompanionSettingsRows: View {
                 Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil; copied = false }
             }
         }
-    }
-
-    private static func qr(_ text: String) -> NSImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) else { return nil }
-        let rep = NSCIImageRep(ciImage: output)
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        return image
     }
 }

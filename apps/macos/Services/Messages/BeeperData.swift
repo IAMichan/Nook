@@ -33,7 +33,7 @@ enum BeeperData {
     private static let networks: [(word: String, app: String)] = [
         ("whatsapp", "whatsapp"), ("instagram", "instagram"), ("messenger", "messenger"), ("facebook", "messenger"),
         ("telegram", "telegram"), ("signal", "signal"), ("discord", "discord"), ("linkedin", "linkedin"),
-        ("twitter", "x"), ("slack", "slack"), ("imessage", "messages"), ("googlechat", "googlechat"),
+        ("twitter", "x"), ("slack", "slack"), ("teams", "teams"), ("imessage", "messages"), ("googlechat", "googlechat"),
         ("google chat", "googlechat"), ("hungryserv", "beeper"), ("beeper", "beeper"), ("matrix", "beeper"),
     ]
 
