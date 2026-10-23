@@ -24,8 +24,9 @@ struct PanelView: View {
     /// use most. Search and talk always show.
     @State private var headerHover = false
 
-    /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
-    static let headerHeight: CGFloat = 32
+    /// The height of the header row (the floating capsule with the tabs, or a task's title), so Nook can be centered
+    /// on it: a 30 pt button with the capsule's 4 pt padding above and below.
+    static let headerHeight: CGFloat = 38
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -125,9 +126,11 @@ struct PanelView: View {
         }
     }
 
+    /// The tabs, search, talk and the bell in one floating capsule centered over the content, so the header is not a
+    /// bar of its own and needs no line under it. The rarer buttons (the window, close, the gear in demo mode) stay
+    /// outside it at the trailing edge.
     private var header: some View {
         HStack(spacing: 0) {
-            NookTabBar(items: tabItems, selected: tab) { select($0) }
             if inWindow {
                 // Empty header space moves the window, as a title bar does. Its height is fixed: a clear color takes all
                 // the height it is offered, and left free it stretched the header to half the window.
@@ -139,18 +142,9 @@ struct PanelView: View {
             } else {
                 Spacer()
             }
-            // The gear sits in the footer instead, which every tab shows outside demo mode. All header buttons are the
-            // same quiet round button, so the header reads as one calm row next to the tabs.
+            // The gear sits in the footer instead, which every tab shows outside demo mode.
             let gear = app.demoMode
             HStack(spacing: NookTheme.Spacing.xxs) {
-                if !app.demoMode {
-                    NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
-                        .help(tr("search.button"))
-                }
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
-                    .help(tr("button.talk"))
-                // What Nook told you lately, for a notice that closed before you looked.
-                if !app.demoMode { NoticeBellButton() }
                 if !inWindow, headerHover {
                     // Go on in the main window, on this tab, with more room.
                     NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
@@ -168,8 +162,36 @@ struct PanelView: View {
             }
         }
         .frame(minHeight: Self.headerHeight)
+        // Centered on the header (after Nook's room on the left); the empty space around it still moves the window.
+        .overlay { headerCapsule }
         .padding(.leading, headerInset)
         .onHover { hovering in withAnimation(NookTheme.hover) { headerHover = hovering } }
+    }
+
+    /// The tabs, a thin line, then search, talk and the bell: one `graphite` capsule with a hairline edge and a soft
+    /// shadow, lifted off the content. The selected tab is on the accent.
+    private var headerCapsule: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            NookTabBar(items: tabItems, selected: tab, onSelect: { select($0) }, prominent: true)
+            NookDivider(vertical: true)
+                .frame(height: 18)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+            if !app.demoMode {
+                NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
+                    .help(tr("search.button"))
+            }
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
+                .help(tr("button.talk"))
+            // What Nook told you lately, for a notice that closed before you looked.
+            if !app.demoMode { NoticeBellButton() }
+        }
+        .padding(NookTheme.Spacing.xs)
+        .background(
+            Capsule().fill(NookTheme.graphite)
+                .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+                .shadow(color: NookTheme.notch.opacity(0.55), radius: 14, y: 6)
+        )
+        .fixedSize()
     }
 
     @ViewBuilder

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The row of tabs at the top of the panel (Nook, Agents, Music): plain words, the selected one on a soft capsule that
-/// slides to the next one; no track behind them, so the header stays quiet. Also used for tabs inside a page, such as a
-/// pull request's Conversation, Commits and Files, and the side panel's Terminal, Browser and Changes next to a session.
+/// A row of tabs: plain words, the selected one on a soft capsule that slides to the next one; no track behind them.
+/// The panel's own tabs (Nook, Agents, Chats, Music) sit in the header's floating capsule and mark the selected one
+/// `prominent`, on the accent. Also used for tabs inside a page, such as a pull request's Conversation, Commits and
+/// Files, and the side panel's Terminal, Browser and Changes next to a session.
 struct NookTabBar<Value: Hashable>: View {
     struct Item: Identifiable {
         let value: Value
@@ -22,6 +23,9 @@ struct NookTabBar<Value: Hashable>: View {
     let onSelect: (Value) -> Void
     /// Tabs you open yourself can be closed again: a small cross on the selected tab and the one under the pointer.
     var onClose: ((Value) -> Void)? = nil
+    /// The selected tab on the accent (`iris`) instead of `smoke`: for a tab bar that sits on a `graphite` surface of
+    /// its own, where `smoke` would barely show.
+    var prominent = false
     @Namespace private var selection
     @State private var hovered: Value?
 
@@ -38,20 +42,21 @@ struct NookTabBar<Value: Hashable>: View {
                         if item.count > 0 {
                             NookCountBadge(count: item.count)
                         } else if item.fresh {
-                            Circle().fill(NookTheme.iris).frame(width: 5, height: 5)
+                            Circle().fill(item.value == selected ? selectedText : NookTheme.iris).frame(width: 5, height: 5)
                         }
                         // Room for the cross, so a tab keeps its width when the cross appears.
                         if closable { Color.clear.frame(width: 12, height: 12) }
                     }
                     .font(NookTheme.font(13, .medium))
-                    .foregroundStyle(item.value == selected || hovered == item.value ? NookTheme.paper : NookTheme.textTertiary)
+                    .foregroundStyle(item.value == selected ? selectedText
+                                     : (hovered == item.value ? NookTheme.paper : NookTheme.textTertiary))
                     .padding(.leading, 12)
                     .padding(.trailing, closable ? 8 : 12)
                     .padding(.vertical, 5)
                     .background {
                         if item.value == selected {
                             Capsule()
-                                .fill(NookTheme.smoke)
+                                .fill(prominent ? NookTheme.iris : NookTheme.smoke)
                                 .matchedGeometryEffect(id: "selection", in: selection)
                         }
                     }
@@ -84,4 +89,7 @@ struct NookTabBar<Value: Hashable>: View {
         }
         .animation(NookTheme.hover, value: hovered)
     }
+
+    /// The selected tab's title: dark on a light accent, as `onIris` says.
+    private var selectedText: Color { prominent ? NookTheme.onIris : NookTheme.paper }
 }
