@@ -105,7 +105,10 @@ enum ChatAppStates {
     static func all() -> [ChatAppState] {
         let linker = ChatLinker.shared
         let offered = linker.networks.map(\.app).filter { !ChatAppsCatalog.apps.contains($0) }
-        return (ChatAppsCatalog.apps + offered).compactMap(state).filter { app in
+        // The chats per app, counted once for every row instead of once per row.
+        var chats: [String: Int] = [:]
+        for thread in ChatCaptureService.shared.inbox.threads.values { chats[thread.app, default: 0] += 1 }
+        return (ChatAppsCatalog.apps + offered).compactMap { state($0, chats: chats[$0] ?? 0) }.filter { app in
             // Nook's own helper links these: they show even in a build without it, whose sheet says how to add it.
             app.linked || ChatAppsCatalog.ownWay.contains(app.id) || ChatHelper.apps.contains(app.id)
                 || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
@@ -113,7 +116,7 @@ enum ChatAppStates {
         }
     }
 
-    static func state(_ id: String) -> ChatAppState? {
+    static func state(_ id: String, chats: Int? = nil) -> ChatAppState? {
         let capture = ChatCaptureService.shared
         let linker = ChatLinker.shared
         let linked = capture.beeperBridge
@@ -122,7 +125,7 @@ enum ChatAppStates {
         let accounts = network?.accounts ?? []
         let own = ownLink(id)
         let linkedHere = !accounts.isEmpty || own != nil
-        let chats = capture.inbox.threads.values.filter { $0.app == id }.count
+        let chats = chats ?? capture.inbox.threads.values.filter { $0.app == id }.count
         let isOn = capture.enabled && capture.sources.isOn(id)
         guard linkedHere else {
             return ChatAppState(id: id, name: app.name, site: app.site, linked: false, status: .notLinked,

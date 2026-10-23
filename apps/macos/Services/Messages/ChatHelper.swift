@@ -113,7 +113,8 @@ final class ChatHelper: ObservableObject {
         if p.isRunning { kill(p.processIdentifier, SIGKILL) }
     }
 
-    private static func answers() async -> Bool {
+    /// Whether a chat service (this helper, or Beeper Desktop) answers at `base`: its info needs no token.
+    static func answers(at base: URL = base) async -> Bool {
         var request = URLRequest(url: base.appendingPathComponent("v1/info"), timeoutInterval: 2)
         request.httpMethod = "GET"
         guard let (_, response) = try? await ConnectorHTTP.session.data(for: request) else { return false }

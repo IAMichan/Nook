@@ -559,13 +559,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         isWorking = false
     }
 
-    private static func path(_ chat: String) -> String {
-        "/v1/chats/" + (chat.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? chat)
-    }
-
-    private static func segment(_ id: String) -> String {
-        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? id
-    }
+    private static func path(_ chat: String) -> String { "/v1/chats/" + ChatJSON.segment(chat) }
 
     func read() async throws -> [BridgedChat] {
         if ChatHelper.isBuilt, isReady, !ChatHelper.shared.isRunning { await ChatHelper.shared.start() }
@@ -632,7 +626,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["url": source])
         guard let answer = try? await ConnectorHTTP.session.data(for: request),
               (answer.1 as? HTTPURLResponse)?.statusCode == 200,
-              let local = (BeeperData.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
+              let local = (ChatJSON.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
         downloaded[source] = local.path
         return local.path
     }
@@ -695,9 +689,9 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     /// Your emoji on a message (Nook's id of it); `mine` takes yours back instead.
     func react(_ emoji: String, to message: String, in chat: String, mine: Bool) async throws {
         guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
-        let reactions = Self.path(chat) + "/messages/" + Self.segment(id) + "/reactions"
+        let reactions = Self.path(chat) + "/messages/" + ChatJSON.segment(id) + "/reactions"
         if mine {
-            try await act("DELETE", reactions + "/" + Self.segment(emoji), nil, chat: chat)
+            try await act("DELETE", reactions + "/" + ChatJSON.segment(emoji), nil, chat: chat)
         } else {
             try await act("POST", reactions, ["reactionKey": emoji], chat: chat)
         }
@@ -708,13 +702,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
-        try await act("PUT", Self.path(chat) + "/messages/" + Self.segment(id), ["text": body], chat: chat)
+        try await act("PUT", Self.path(chat) + "/messages/" + ChatJSON.segment(id), ["text": body], chat: chat)
     }
 
     /// Deletes your message for everyone in the chat, where its app can.
     func delete(_ message: String, in chat: String) async throws {
         guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
-        try await act("DELETE", Self.path(chat) + "/messages/" + Self.segment(id), nil, query: [URLQueryItem(name: "forEveryone", value: "true")],
+        try await act("DELETE", Self.path(chat) + "/messages/" + ChatJSON.segment(id), nil, query: [URLQueryItem(name: "forEveryone", value: "true")],
                       chat: chat)
     }
 
@@ -796,7 +790,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw NookError(tr("chats.beeper.unauthorized")) }
-        guard (200..<300).contains(code), let json = BeeperData.object(data) else { throw NookError("Beeper: HTTP \(code)") }
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Beeper: HTTP \(code)") }
         return json
     }
 }
@@ -990,7 +984,7 @@ final class SlackBridge: ChatBridge {
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 429 { throw NookError(tr("chats.slack.rateLimited")) }
-        guard (200..<300).contains(code), let json = SlackData.object(data) else { throw NookError("Slack: HTTP \(code)") }
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Slack: HTTP \(code)") }
         if let error = SlackData.error(json) { throw NookError(tr("chats.slack.refused", error)) }
         return json
     }

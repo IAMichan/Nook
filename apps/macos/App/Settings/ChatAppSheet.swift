@@ -141,7 +141,6 @@ struct ChatLinkSteps: View {
     let network: ChatLinkData.Network
     @ObservedObject private var linker = ChatLinker.shared
     @State private var values: [String: String] = [:]
-    @State private var window: ChatSignInWindow?
 
     private var session: ChatLinkData.Session? { linker.linking?.id == network.id ? linker.session : nil }
 
@@ -171,7 +170,12 @@ struct ChatLinkSteps: View {
                 SettingNote(problem, tone: .error)
             }
         }
-        .onDisappear { window?.close() }
+        .onDisappear { ChatSignInWindow.closeAll() }
+        // The sign-in window belongs to its step: once the login moved on, or ended, it goes.
+        .onChange(of: session?.step) { _, step in
+            if case .browser = step { return }
+            ChatSignInWindow.closeAll()
+        }
     }
 
     @ViewBuilder
@@ -202,11 +206,9 @@ struct ChatLinkSteps: View {
         case .browser(_, let instructions, let url, _, _, _):
             instructionsText(instructions.isEmpty ? tr("chats.link.browser.detail", network.name) : instructions)
             Button {
-                window?.close()
-                window = ChatSignInWindow(step: step, title: tr("chats.link.browser.title", network.name)) { collected, last in
+                ChatSignInWindow.open(step: step, title: tr("chats.link.browser.title", network.name)) { collected, last in
                     Task { await linker.submitBrowser(collected, lastURL: last) }
                 }
-                window?.show()
             } label: {
                 Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
             }
@@ -229,15 +231,7 @@ struct ChatLinkSteps: View {
     private func display(_ show: ChatLinkData.Display) -> some View {
         switch show {
         case .qr(let data):
-            if let image = QRCode.image(data) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 200, height: 200)
-                    .padding(NookTheme.Spacing.md)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper))
-                    .accessibilityLabel(tr("chats.link.qr"))
-            }
+            QRCodeView(text: data, label: tr("chats.link.qr"))
         case .code(let code):
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(code)
@@ -358,13 +352,7 @@ struct ChatOwnLinkSteps: View {
                 .disabled(!installed || installer.busy)
             } else if whatsApp.link == .needsQR, let data = whatsApp.qrPNG, let image = NSImage(data: data) {
                 detail(tr("whatsapp.settings.scan"))
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .frame(width: 200, height: 200)
-                    .padding(NookTheme.Spacing.md)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper))
-                    .accessibilityLabel(tr("chats.link.qr"))
+                QRCodeView(image: image, label: tr("chats.link.qr"))
             } else {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     ProgressView().controlSize(.small)

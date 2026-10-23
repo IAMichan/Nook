@@ -137,9 +137,8 @@ struct CompanionSettingsRows: View {
 
     private func pairing(_ link: PairingLink) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            if let url = link.url, let image = QRCode.image(url.absoluteString) {
-                Image(nsImage: image).interpolation(.none).resizable().frame(width: 160, height: 160)
-                    .accessibilityLabel(tr("companion.qr"))
+            if let url = link.url, let code = QRCodeView(text: url.absoluteString, side: 140, label: tr("companion.qr")) {
+                code
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).fixedSize(horizontal: false, vertical: true)
