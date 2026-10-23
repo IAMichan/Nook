@@ -30,6 +30,8 @@ final class NotesConnector: ContextSource {
     private var recentNotes: [NoteSummary] = []
     private var totalCount = 0
     private var loadedAt: Date?
+    /// Refreshes in a row in which Notes did not answer.
+    private var failures = 0
     private static var bodyCache: [String: CachedNote] = [:] {
         didSet { if bodyCache.count > cacheLimit { trimBodyCache() } }
     }
@@ -70,51 +72,26 @@ final class NotesConnector: ContextSource {
             return
         }
 
-        let script = """
-        tell application "Notes"
-            set total to count of notes
-            set n to total
-            if n > 20 then set n to 20
-            set out to (total as string) & linefeed
-            repeat with i from 1 to n
-                set notitem to note i
-                set nname to name of notitem
-                set nid to id of notitem
-                set ndate to ((modification date of notitem) as «class isot» as string)
-                set nfolder to ""
-                try
-                    set nfolder to name of container of notitem
-                end try
-                set out to out & nid & "|||" & nname & "|||" & ndate & "|||" & nfolder & linefeed
-            end repeat
-            return out
-        end tell
-        """
-
-        let result = await ScriptText.run(script, timeout: 5)
+        let result = await Self.recent(limit: 20, timeout: 20)
         if result.errorNumber == -1743 {
-            status = ConnectorStatus(state: .error("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering."))
+            status = ConnectorStatus(state: .error(tr("connect.notes.permission")))
             return
         }
         guard let text = result.text else {
-            status = ConnectorStatus(state: .error("Notities gaf geen antwoord."))
+            failures += 1
+            // A slow Notes (starting up, syncing iCloud) is no broken link: keep what was there, and only say something is
+            // wrong once it keeps failing with nothing to show.
+            if loadedAt != nil || failures < 3 {
+                if status.updated == nil { status = ConnectorStatus(state: .loading, detail: tr("connect.notes.loading")) }
+                return
+            }
+            status = ConnectorStatus(state: .error(Self.failure(errorNumber: result.errorNumber)))
             return
         }
-
-        var lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        totalCount = Int(lines.first ?? "") ?? 0
-        if !lines.isEmpty { lines.removeFirst() }
-
-        recentNotes = lines.compactMap { line in
-            let parts = line.components(separatedBy: "|||")
-            guard parts.count >= 3 else { return nil }
-            return NoteSummary(
-                id: parts[0],
-                name: parts[1],
-                date: parts[2],
-                folder: parts.count > 3 ? parts[3] : ""
-            )
-        }
+        failures = 0
+        let parsed = Self.parse(text)
+        totalCount = parsed.total
+        recentNotes = parsed.notes
         loadedAt = Date()
 
         status = ConnectorStatus(
@@ -130,6 +107,79 @@ final class NotesConnector: ContextSource {
             },
             updated: Date()
         )
+    }
+
+    /// The newest notes: the total count on the first line, then "id|||name|||date|||folder" per note. `bulk` reads each
+    /// property of all of them in one Apple Event; one event per note per property took longer than any limit on a large
+    /// iCloud library.
+    private static func recentScript(limit: Int, bulk: Bool) -> String {
+        let rows = bulk ? """
+                set ids to id of notes 1 thru n
+                set nms to name of notes 1 thru n
+                set dts to modification date of notes 1 thru n
+                set fls to {}
+                try
+                    set fls to name of container of notes 1 thru n
+                end try
+                repeat with i from 1 to (count of ids)
+                    set nfolder to ""
+                    if (count of fls) >= i then set nfolder to item i of fls
+                    set out to out & (item i of ids) & "|||" & (item i of nms) & "|||" & ((item i of dts) as «class isot» as string) & "|||" & nfolder & linefeed
+                end repeat
+        """ : """
+                repeat with i from 1 to n
+                    set notitem to note i
+                    set nfolder to ""
+                    try
+                        set nfolder to name of container of notitem
+                    end try
+                    set out to out & (id of notitem) & "|||" & (name of notitem) & "|||" & ((modification date of notitem) as «class isot» as string) & "|||" & nfolder & linefeed
+                end repeat
+        """
+        return """
+        tell application "Notes"
+            set total to count of notes
+            set n to total
+            if n > \(limit) then set n to \(limit)
+            set out to (total as string) & linefeed
+            if n > 0 then
+        \(rows)
+            end if
+            return out
+        end tell
+        """
+    }
+
+    /// Runs `recentScript`, one note at a time only when this Notes cannot read a range of notes at once.
+    private static func recent(limit: Int, timeout: TimeInterval) async -> (text: String?, errorNumber: Int?, errorMessage: String?) {
+        let result = await ScriptText.run(recentScript(limit: limit, bulk: true), timeout: timeout)
+        guard result.text == nil, let number = result.errorNumber, ![-1743, -1712, -600, -609].contains(number) else { return result }
+        return await ScriptText.run(recentScript(limit: limit, bulk: false), timeout: timeout)
+    }
+
+    private static func parse(_ text: String) -> (total: Int, notes: [NoteSummary]) {
+        var lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        let total = Int(lines.first ?? "") ?? 0
+        if !lines.isEmpty { lines.removeFirst() }
+        let notes = lines.compactMap { line -> NoteSummary? in
+            let parts = line.components(separatedBy: "|||")
+            guard parts.count >= 3 else { return nil }
+            return NoteSummary(id: parts[0], name: parts[1], date: parts[2], folder: parts.count > 3 ? parts[3] : "")
+        }
+        return (total, notes)
+    }
+
+    /// Why Notes gave no answer, in words that say what to do about it, with the error code so a report can be traced.
+    private static func failure(errorNumber: Int?) -> String {
+        let text: String
+        switch errorNumber {
+        case -1743: text = tr("connect.notes.permission")
+        case -1712: text = tr("connect.notes.timeout")
+        case -600, -609: text = tr("connect.notes.notRunning")
+        default: text = tr("connect.notes.noAnswer")
+        }
+        guard let errorNumber, errorNumber != -1743 else { return text }
+        return text + " (" + tr("connect.mail.code", errorNumber) + ")"
     }
 
     func contextLines() -> [String] {
@@ -173,38 +223,11 @@ final class NotesConnector: ContextSource {
                         return Self.formatNoteList(Array(self.recentNotes.prefix(limit)))
                     }
                     try await NotesConnector.ensureRunning()
-                    let script = """
-                    tell application "Notes"
-                        set total to count of notes
-                        set n to total
-                        if n > \(limit) then set n to \(limit)
-                        set out to ""
-                        repeat with i from 1 to n
-                            set notitem to note i
-                            set nname to name of notitem
-                            set nid to id of notitem
-                            set ndate to ((modification date of notitem) as «class isot» as string)
-                            set nfolder to ""
-                            try
-                                set nfolder to name of container of notitem
-                            end try
-                            set out to out & nid & "|||" & nname & "|||" & ndate & "|||" & nfolder & linefeed
-                        end repeat
-                        return out
-                    end tell
-                    """
-                    let result = await ScriptText.run(script, timeout: 6)
-                    if result.errorNumber == -1743 {
-                        throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
+                    let result = await Self.recent(limit: limit, timeout: 20)
+                    guard let text = result.text else {
+                        throw NookError(Self.failure(errorNumber: result.errorNumber))
                     }
-                    guard let text = result.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        return "Geen notities gevonden in Apple Notities."
-                    }
-                    let summaries = text.components(separatedBy: .newlines).filter { !$0.isEmpty }.compactMap { line -> NoteSummary? in
-                        let parts = line.components(separatedBy: "|||")
-                        guard parts.count >= 3 else { return nil }
-                        return NoteSummary(id: parts[0], name: parts[1], date: parts[2], folder: parts.count > 3 ? parts[3] : "")
-                    }
+                    let summaries = Self.parse(text).notes
                     return Self.formatNoteList(summaries)
                 }
             ),
@@ -273,14 +296,15 @@ final class NotesConnector: ContextSource {
                         return out
                     end tell
                     """
-                    let result = await ScriptText.run(script, timeout: 7)
+                    let result = await ScriptText.run(script, timeout: 20)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
                     if result.errorNumber == -1712 {
                         throw NookError("Notities doorzoeken duurde te lang. Probeer een specifieker trefwoord.")
                     }
-                    let raw = (result.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let text = result.text else { throw NookError(Self.failure(errorNumber: result.errorNumber)) }
+                    let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !raw.isEmpty else { return "Geen notities gevonden voor \"\(query)\"." }
 
                     struct Found { var header: [String]; var fullBody: String; var snippet: String }
@@ -373,11 +397,12 @@ final class NotesConnector: ContextSource {
                         return nid & "|||" & nname & "|||" & ndate & linefeed & nbody
                     end tell
                     """
-                    let result = await ScriptText.run(script, timeout: 6)
+                    let result = await ScriptText.run(script, timeout: 15)
                     if result.errorNumber == -1743 {
                         throw NookError("Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy › Automatisering.")
                     }
-                    guard let raw = result.text, raw != "NOT_FOUND" else {
+                    guard let raw = result.text else { throw NookError(Self.failure(errorNumber: result.errorNumber)) }
+                    guard raw != "NOT_FOUND" else {
                         throw NookError("Notitie \"\(idOrTitle)\" niet gevonden.")
                     }
                     let lines = raw.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)

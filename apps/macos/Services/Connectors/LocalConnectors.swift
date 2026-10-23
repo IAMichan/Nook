@@ -244,6 +244,10 @@ final class MailConnector: ContextSource {
     }
     private var loadedAt: Date?
     private var loading: Task<Void, Never>?
+    /// The latest answer per account, so an account that is slow this time keeps its inbox of the last refresh.
+    private var inboxes: [String: (unread: Int, rows: [MailStats.InboxRow])] = [:]
+    /// Refreshes in a row in which Mail did not answer at all.
+    private var failures = 0
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
@@ -267,7 +271,7 @@ final class MailConnector: ContextSource {
         try? await Task.sleep(nanoseconds: 300_000_000)
     }
     var refreshInterval: TimeInterval { 60 }
-    private static let loadTimeout: TimeInterval = 15
+    private static let loadTimeout: TimeInterval = 30
 
     /// Fresh enough to answer from memory.
     var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
@@ -286,21 +290,45 @@ final class MailConnector: ContextSource {
     }
 
     private func load() async {
-        // Every enabled account's inbox in one go: with several accounts, or while Mail syncs, that easily takes more
-        // than a few seconds.
-        let result = await ScriptText.run(MailStats.recentScript(), timeout: Self.loadTimeout)
-        if result.errorNumber == -1743 {
+        let list = await ScriptText.run(MailStats.accountsScript, timeout: Self.loadTimeout)
+        if list.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation."))
             return
         }
-        guard let text = result.text else {
-            status = ConnectorStatus(state: .error(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage,
+        // Each account on its own: while one account syncs a big mailbox, the others still show, and the slow one keeps
+        // the inbox it had until it answers again.
+        var failure: (number: Int?, message: String?)?
+        var answered = 0
+        if let names = list.text.map(MailStats.accounts) {
+            for name in names {
+                let result = await ScriptText.run(MailStats.recentScript(account: name), timeout: Self.loadTimeout)
+                if let text = result.text {
+                    let parsed = MailStats.recent(text)
+                    inboxes[name] = (parsed.unread, parsed.rows)
+                    answered += 1
+                } else {
+                    failure = (result.errorNumber, result.errorMessage)
+                }
+            }
+            inboxes = inboxes.filter { names.contains($0.key) }
+        } else {
+            failure = (list.errorNumber, list.errorMessage)
+        }
+        if answered == 0, let failure {
+            failures += 1
+            // A slow Mail (starting up, syncing) is no broken link: keep what was there, and only say something is wrong
+            // once it keeps failing with nothing to show.
+            if loadedAt != nil || failures < 3 {
+                if status.updated == nil { status = ConnectorStatus(state: .loading, detail: tr("connect.mail.loading")) }
+                return
+            }
+            status = ConnectorStatus(state: .error(MailStats.failure(errorNumber: failure.number, message: failure.message,
                                                                      timeout: Self.loadTimeout)))
             return
         }
-        let parsed = MailStats.recent(text)
-        unreadCount = parsed.unread
-        var rows = parsed.rows
+        failures = 0
+        unreadCount = inboxes.values.reduce(0) { $0 + $1.unread }
+        var rows = inboxes.values.flatMap { $0.rows }.sorted { $0.date > $1.date }
         // Read the start of the text of mail that still waits for a reply, newest first, only what is not read yet.
         let waiting = MailStats.select(rows, now: Date(), days: 14, unansweredOnly: true, limit: 10)
         let missing = waiting.filter { bodies[$0.key] == nil }
@@ -334,6 +362,8 @@ final class MailConnector: ContextSource {
         if case .error(let message) = status.state, recent.isEmpty || loadedAt.map({ Date().timeIntervalSince($0) > 900 }) ?? true {
             throw NookError(message)
         }
+        // Mail has not answered even once yet (it is still starting or syncing): say so instead of "no mail".
+        guard loadedAt != nil else { throw NookError(tr("connect.mail.loading")) }
         let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
         guard !rows.isEmpty else {
             return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
