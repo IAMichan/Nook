@@ -298,6 +298,8 @@ targets:
       - path: Services/Workspace/Keybindings.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
+      - path: Services/Workspace/UsageLedger.swift
+      - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
