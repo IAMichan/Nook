@@ -99,6 +99,6 @@ struct SimulatorSnapshotView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "Simulator.png"
-        if panel.runModal() == .OK, let url = panel.url { try? png.write(to: url) }
+        if panel.runAboveNotch() == .OK, let url = panel.url { try? png.write(to: url) }
     }
 }

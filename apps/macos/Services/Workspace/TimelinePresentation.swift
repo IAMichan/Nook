@@ -185,7 +185,8 @@ struct LiveActivity: Equatable, Sendable {
 }
 
 enum TimelinePresentation {
-    /// Groups the events of a session into blocks. `active`: the last turn is still running and never folds.
+    /// Groups the events of a session into blocks. `active`: the last turn is still running. Once it finished, the last
+    /// turn folds like the earlier ones.
     static func blocks(_ events: [RunEvent], active: Bool) -> [TimelineBlock] {
         let turns = split(visible(events, active: active))
         var blocks: [TimelineBlock] = []
@@ -282,16 +283,20 @@ enum TimelinePresentation {
                 .event(turn[answer]), .event(finished)]
     }
 
-    /// Two or more tool calls in a row become one block. Everything else stands on its own: the agent's thinking stays
-    /// readable in the chat, and errors and approvals are never hidden inside a group.
+    /// Two or more tool calls in a row become one block, also across the agent's thinking between them: that thinking
+    /// opens with the block. Thinking before the first call or after the last stays on its own, and errors and
+    /// approvals are never hidden inside a group.
     static func group(_ events: [RunEvent]) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var run: [RunEvent] = []
         func isWork(_ event: RunEvent) -> Bool { event.kind == .tool || event.kind == .fileChange }
         func flush() {
-            // Thinking after the last tool belongs to what comes next, not to the group.
+            // Thinking before the first tool and after the last belongs to what comes around the group.
+            var leading: [RunEvent] = []
+            while let first = run.first, !isWork(first) { leading.append(run.removeFirst()) }
             var trailing: [RunEvent] = []
             while let last = run.last, !isWork(last) { trailing.insert(run.removeLast(), at: 0) }
+            blocks += leading.map { TimelineBlock.event($0) }
             if run.filter(isWork).count >= 2 {
                 blocks.append(.tools(id: run[0].id, events: run, tally: ToolTally(run)))
             } else {
@@ -301,7 +306,7 @@ enum TimelinePresentation {
             run = []
         }
         for event in events {
-            if isWork(event) {
+            if isWork(event) || event.kind == .thinking {
                 run.append(event)
             } else {
                 flush()

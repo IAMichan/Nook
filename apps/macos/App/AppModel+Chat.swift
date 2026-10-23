@@ -42,7 +42,21 @@ extension AppModel {
             presentSetupCard()
             return
         }
+        // Nook is still answering: the question waits in line and goes out once that answer is done.
+        if let busy = chat.activeID, chat.isBusy(busy) {
+            chat.enqueue(text, images: images, conversation: busy)
+            return
+        }
         ask(text, images: images, reveal: reveal)
+    }
+
+    /// The next question that waited in line, once the answer before it is done. `message`: that question right away
+    /// (Send now), stopping the answer that runs; it also lets a line held after a stop or an error go again.
+    func sendQueued(_ conversation: UUID, message: UUID? = nil) {
+        if message != nil, chat.isBusy(conversation) { stop(conversation: conversation) }
+        guard !chat.isBusy(conversation), settings.brainReady,
+              let next = chat.takeQueued(message, conversation: conversation) else { return }
+        ask(next.text, images: next.images, in: conversation, reveal: false)
     }
 
     // MARK: Chat
@@ -89,6 +103,7 @@ extension AppModel {
         }
         replies[conversation] = nil
         chat.setBusy(false, conversation: conversation)
+        chat.holdQueue(conversation: conversation)
         spokenRequest = false
     }
 
@@ -405,6 +420,7 @@ extension AppModel {
             learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
             // Automatically execute safe small actions if auto-run is enabled and inputs validate.
             if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
+            sendQueued(conversation)
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
             finishReply(id, error: error.localizedDescription, conversation: conversation)
@@ -426,6 +442,7 @@ extension AppModel {
         chatTasks[conversation] = nil
         spokenRequest = false
         chat.setBusy(false, conversation: conversation)
+        chat.holdQueue(conversation: conversation)
     }
 
     /// Conversation finished in background while looking elsewhere: a notice the way Settings › Notifications says for

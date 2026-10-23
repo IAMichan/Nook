@@ -342,4 +342,136 @@ final class ChatComposeTests: XCTestCase {
         XCTAssertEqual(recent.count, 2)
         XCTAssertEqual(try Data(contentsOf: recent[0]), Data("cat".utf8))
     }
+
+    // MARK: GIFs from GIPHY
+
+    func testGiphyAsksForTrendingOrASearch() throws {
+        let trending = try XCTUnwrap(Giphy.request(query: "  ", key: "K"))
+        XCTAssertEqual(trending.host, "api.giphy.com")
+        XCTAssertEqual(trending.path, "/v1/gifs/trending")
+        let items = URLComponents(url: trending, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertTrue(items.contains(URLQueryItem(name: "api_key", value: "K")))
+        XCTAssertFalse(items.contains { $0.name == "q" })
+
+        let search = try XCTUnwrap(Giphy.request(query: "happy cat", key: "K", language: "nl", offset: 30))
+        XCTAssertEqual(search.path, "/v1/gifs/search")
+        let words = URLComponents(url: search, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertTrue(words.contains(URLQueryItem(name: "q", value: "happy cat")))
+        XCTAssertTrue(words.contains(URLQueryItem(name: "lang", value: "nl")))
+        XCTAssertTrue(words.contains(URLQueryItem(name: "offset", value: "30")))
+    }
+
+    func testGiphyAnswersBecomeGIFsToSend() {
+        let json = #"""
+        {"data":[
+          {"id":"a1","title":"Happy Cat","images":{
+            "fixed_width_small":{"url":"https://media1.giphy.com/media/a1/100w.gif","width":"100","height":"75"},
+            "original":{"url":"https://media1.giphy.com/media/a1/giphy.gif","mp4":"https://media1.giphy.com/media/a1/giphy.mp4"}}},
+          {"id":"b2","title":"","images":{
+            "fixed_width":{"url":"https://media2.giphy.com/media/b2/200w.gif"},
+            "original":{"url":"https://media2.giphy.com/media/b2/giphy.gif"}}},
+          {"id":"evil","images":{
+            "fixed_width_small":{"url":"https://example.com/x.gif"},
+            "original":{"mp4":"https://media.giphy.com/x.mp4"}}},
+          {"id":"plain","images":{
+            "fixed_width_small":{"url":"http://media.giphy.com/x.gif"},
+            "original":{"mp4":"https://media.giphy.com/x.mp4"}}}
+        ],"meta":{"status":200,"msg":"OK"}}
+        """#
+        let gifs = Giphy.gifs(Data(json.utf8))
+        XCTAssertEqual(gifs.map(\.id), ["a1", "b2"], "a preview off GIPHY or over plain HTTP is never fetched")
+        XCTAssertEqual(gifs[0].file.pathExtension, "mp4", "the MP4 goes, as WhatsApp sends a GIF")
+        XCTAssertEqual(gifs[0].previewSize, CGSize(width: 100, height: 75))
+        XCTAssertEqual(gifs[1].file.lastPathComponent, "giphy.gif", "without an MP4 the GIF itself goes")
+        XCTAssertEqual(Giphy.fileName(gifs[0]), "GIF.mp4")
+        XCTAssertEqual(Giphy.fileName(gifs[0], preview: true), "preview.gif")
+        XCTAssertTrue(Giphy.gifs(Data("{}".utf8)).isEmpty)
+    }
+
+    func testYourOwnGiphyKeyTakesNooksPlace() {
+        XCTAssertEqual(Giphy.key(own: "mine"), "mine")
+        XCTAssertEqual(Giphy.key(own: nil), Giphy.builtInKey)
+        XCTAssertEqual(Giphy.key(own: "  "), Giphy.builtInKey, "a blank key is no key")
+        XCTAssertFalse(Giphy.builtInKey.isEmpty)
+    }
+
+    func testGiphySaysWhyItRefused() {
+        XCTAssertEqual(Giphy.problem(Data(#"{"meta":{"status":401,"msg":"Unauthorized"}}"#.utf8)), "Unauthorized")
+        XCTAssertEqual(Giphy.problem(Data(#"{"message":"Invalid authentication credentials"}"#.utf8)), "Invalid authentication credentials")
+        XCTAssertNil(Giphy.problem(Data("nope".utf8)))
+    }
+
+    // MARK: Voice messages as Ogg Opus
+
+    func testOpusPacketsSayHowLongTheyAre() {
+        XCTAssertEqual(OggOpus.samples(Data([0xF8, 1, 2])), 960, "CELT 20 ms, one frame")
+        XCTAssertEqual(OggOpus.samples(Data([0x08])), 960, "SILK 20 ms")
+        XCTAssertEqual(OggOpus.samples(Data([0x18])), 2880, "SILK 60 ms")
+        XCTAssertEqual(OggOpus.samples(Data([0xF9])), 1920, "two frames")
+        XCTAssertEqual(OggOpus.samples(Data([0xFB, 0x03])), 2880, "a frame count byte")
+        XCTAssertEqual(OggOpus.samples(Data()), 0)
+    }
+
+    func testOggChecksumIsOggsOwn() {
+        // Polynomial 0x04C11DB7, not reflected, no initial or final XOR: the standard check string.
+        XCTAssertEqual(OggOpus.crc(Data("123456789".utf8)), 0x89A1_897F)
+    }
+
+    func testAVoiceMessageBecomesAnOggOpusFile() {
+        let packets = (0..<120).map { index in Data([0xF8] + [UInt8](repeating: UInt8(index % 251), count: index == 7 ? 255 : 60)) }
+        let file = OggOpus.file(packets: packets)
+        let pages = Self.pages(file)
+
+        XCTAssertEqual(pages.first?.body.prefix(8), Data("OpusHead".utf8))
+        XCTAssertEqual(pages.first?.flags, 0x02, "the first page begins the stream")
+        XCTAssertEqual(pages.first?.body[9], 1, "one channel")
+        XCTAssertEqual(pages[1].body.prefix(8), Data("OpusTags".utf8))
+        XCTAssertEqual(pages.last?.flags, 0x04, "the last page ends it")
+        XCTAssertEqual(pages.last?.granule, 120 * 960, "the last page counts every sample")
+        XCTAssertEqual(pages.map(\.sequence), Array(0..<UInt32(pages.count)))
+        for page in pages { XCTAssertTrue(page.checksumMatches) }
+
+        // Every packet comes back whole and in order, the 256-byte one laced as 255 + 1.
+        XCTAssertEqual(pages.dropFirst(2).flatMap(\.packets), packets)
+    }
+
+    private struct Page {
+        var flags: UInt8
+        var granule: UInt64
+        var sequence: UInt32
+        var body: Data
+        var packets: [Data]
+        var checksumMatches: Bool
+    }
+
+    private static func pages(_ file: Data) -> [Page] {
+        let bytes = [UInt8](file)
+        var pages: [Page] = []
+        var at = 0
+        func number(_ from: Int, _ count: Int) -> UInt64 {
+            (0..<count).reduce(UInt64(0)) { $0 | UInt64(bytes[from + $1]) << (8 * UInt64($1)) }
+        }
+        while at + 27 <= bytes.count, Data(bytes[at..<at + 4]) == Data("OggS".utf8) {
+            let count = Int(bytes[at + 26])
+            let lacing = Array(bytes[at + 27..<at + 27 + count])
+            let start = at + 27 + count
+            let end = start + lacing.reduce(0) { $0 + Int($1) }
+            var packets: [Data] = []
+            var current = Data()
+            var offset = start
+            for value in lacing {
+                current.append(contentsOf: bytes[offset..<offset + Int(value)])
+                offset += Int(value)
+                if value < 255 { packets.append(current); current = Data() }
+            }
+            var zeroed = Data(bytes[at..<end])
+            zeroed.replaceSubrange(22..<26, with: Data(count: 4))
+            pages.append(Page(flags: bytes[at + 5], granule: number(at + 6, 8), sequence: UInt32(number(at + 18, 4)),
+                              body: Data(bytes[start..<end]), packets: packets,
+                              checksumMatches: OggOpus.crc(zeroed) == UInt32(number(at + 22, 4))))
+            at = end
+        }
+        XCTAssertEqual(at, bytes.count, "nothing after the last page")
+        return pages
+    }
 }

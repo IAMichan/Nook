@@ -25,6 +25,10 @@ struct ChatTranscript: View {
     /// Voting on a poll with your new choice. Nil where the chat's app cannot take a vote from Nook: the poll then
     /// shows its counts and says to vote in the app.
     var onVote: ((ChatBubble, [String]) -> Void)? = nil
+    /// Fetching the messages before the oldest shown; true when some came. Nil where the chat cannot load older ones:
+    /// no button at its top.
+    var onLoadOlder: (() async -> Bool)? = nil
+    @State private var loadingOlder = false
 
     var body: some View {
         if fills {
@@ -39,7 +43,17 @@ struct ChatTranscript: View {
 
     private var scroller: some View {
         ScrollViewReader { proxy in
-            ScrollView(showsIndicators: true) { stack }
+            ScrollView(showsIndicators: true) {
+                VStack(spacing: 0) {
+                    if let onLoadOlder {
+                        loadOlderButton { anchor in
+                            // The message that was on top stays where it was, with the older ones above it.
+                            if await onLoadOlder(), let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                        }
+                    }
+                    stack
+                }
+            }
                 .defaultScrollAnchor(.bottom)
                 .onChange(of: bubbles.last?.id) { _, last in
                     // A new message (or one you just sent) scrolls into view.
@@ -47,6 +61,32 @@ struct ChatTranscript: View {
                     withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
                 }
         }
+    }
+
+    /// "Load older messages" at the top of the chat; `load` gets the id of the message that is on top now.
+    private func loadOlderButton(_ load: @escaping (String?) async -> Void) -> some View {
+        Button {
+            guard !loadingOlder else { return }
+            loadingOlder = true
+            let anchor = bubbles.first?.id
+            Task { @MainActor in
+                await load(anchor)
+                loadingOlder = false
+            }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if loadingOlder { ProgressView().controlSize(.small) }
+                Text(tr("chat.loadOlder"))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.blue)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(loadingOlder)
+        .accessibilityLabel(tr("chat.loadOlder"))
     }
 
     private var entries: [ChatTimeline.Entry] {

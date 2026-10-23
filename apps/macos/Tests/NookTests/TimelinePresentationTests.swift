@@ -22,8 +22,8 @@ final class TimelinePresentationTests: XCTestCase {
     }
 
     func testFinishedTurnFoldsBetweenQuestionAndAnswer() throws {
-        let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
-        XCTAssertEqual(blocks.count, 4)
+        let blocks = TimelinePresentation.blocks(finishedTurn() + [event(.user, "Nog iets", at: 200)], active: false)
+        XCTAssertEqual(blocks.count, 5)
         guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner) = blocks[1],
               case .event(let answer) = blocks[2], case .event(let result) = blocks[3] else { return XCTFail("\(blocks)") }
         XCTAssertEqual(user.text, "Fix de test")
@@ -39,6 +39,13 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertFalse(tally.failed)
     }
 
+    func testLastTurnFoldsOnceFinished() {
+        let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
+        XCTAssertTrue(blocks.contains { if case .fold = $0 { true } else { false } },
+                      "a finished turn reads as 'Worked for …' over its answer")
+        XCTAssertEqual(TimelinePresentation.events(blocks).map(\.text), finishedTurn().map(\.text), "folding hides nothing")
+    }
+
     func testBlockIdsAreUnique() {
         let events = finishedTurn() + finishedTurn() + [event(.user, "Nog iets", at: 300), event(.tool, "Read · x", tool: "Read")]
         let ids = TimelinePresentation.blocks(events, active: true).map(\.id)
@@ -50,7 +57,7 @@ final class TimelinePresentationTests: XCTestCase {
                        "the turn that is still running stays open")
         var failed = finishedTurn()
         failed.insert(event(.error, "Rate limit", at: 60), at: 5)
-        XCTAssertFalse(TimelinePresentation.blocks(failed, active: false).contains { if case .fold = $0 { true } else { false } },
+        XCTAssertFalse(TimelinePresentation.blocks(failed + [event(.user, "Nog iets", at: 200)], active: false).contains { if case .fold = $0 { true } else { false } },
                        "a turn with an error stays open")
         let earlier = finishedTurn()
         let blocks = TimelinePresentation.blocks(earlier + [event(.user, "Nog iets", at: 200)], active: true)
@@ -66,16 +73,15 @@ final class TimelinePresentationTests: XCTestCase {
             event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed),
             event(.thinking, "volgende stap")
         ])
-        XCTAssertEqual(blocks.count, 6)
-        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1], case .event(let grep) = blocks[2],
-              case .event(let hmm) = blocks[3], case .event(let shell) = blocks[4], case .event(let thought) = blocks[5]
+        XCTAssertEqual(blocks.count, 4)
+        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1], case .tools(_, let inside, _) = blocks[2],
+              case .event(let thought) = blocks[3]
         else { return XCTFail("\(blocks)") }
         XCTAssertEqual(read.text, "Read · a", "a single tool stands alone")
         XCTAssertEqual(error.kind, .error)
-        XCTAssertEqual(grep.kind, .tool)
-        XCTAssertEqual(hmm.text, "hmm", "thinking stays readable in the chat, never inside a group")
-        XCTAssertEqual(shell.state, .failed)
-        XCTAssertEqual(thought.text, "volgende stap")
+        XCTAssertEqual(inside.map(\.text), ["Grep · x", "hmm", "run_shell_command · ls"],
+                       "thinking between tool calls opens with their group")
+        XCTAssertEqual(thought.text, "volgende stap", "thinking after the last call stays readable")
 
         let grouped = TimelinePresentation.group([event(.tool, "Grep · x", tool: "Grep"),
                                                   event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed)])

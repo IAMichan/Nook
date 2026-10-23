@@ -32,6 +32,8 @@ struct SessionComposer<Controls: View>: View {
     private var flipAction: (() -> Void)?
     /// The list under the text, history and references (see `ComposerRich`); nil keeps the plain box.
     private var extras: (model: ComposerModel, config: ComposerConfig)?
+    /// The choices sit in a tray under the box, tucked behind it, and the box holds the text with send on its row.
+    private var choicesBelow = false
     /// The composer's own color: the send button, the focus ring and a trace in the surface.
     private var tint: Color = NookTheme.iris
 
@@ -72,6 +74,14 @@ struct SessionComposer<Controls: View>: View {
         copy.imagesBinding = images
         copy.imagesAsPaths = asPaths
         copy.fileDropped = onFile
+        return copy
+    }
+
+    /// The same composer with its choices (agent, model, mode…) in a tray under the box instead of inside it: a
+    /// one-line box that reads the same when the agent works, when you scroll back and when you start a session.
+    func choicesBelowBox() -> Self {
+        var copy = self
+        copy.choicesBelow = true
         return copy
     }
 
@@ -150,7 +160,15 @@ struct SessionComposer<Controls: View>: View {
             if let extras, extras.model.isOpen {
                 ComposerSuggestionList(model: extras.model, tint: tint) { choose($0) }
             }
-            box
+            if choicesBelow {
+                // The box comes first in z-order so the tray runs on behind it (see ComposerTray).
+                VStack(spacing: 0) {
+                    box.zIndex(1)
+                    ComposerTray(edge: .bottom) { choicesRow }
+                }
+            } else {
+                box
+            }
         }
     }
 
@@ -275,20 +293,30 @@ struct SessionComposer<Controls: View>: View {
                     imagesBinding.wrappedValue.removeAll { $0.id == gone.id }
                 }
             }
-            withKeys(field(focused: focused))
-                .frame(minHeight: minHeight, alignment: .topLeading)
+            if choicesBelow {
+                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                    withKeys(field(focused: focused))
+                        .frame(minHeight: minHeight, alignment: .center)
+                    sendCluster
+                }
+            } else {
+                withKeys(field(focused: focused))
+                    .frame(minHeight: minHeight, alignment: .topLeading)
+            }
             // When the box gets narrow (the chat beside an open app), the choices give up their words step by step,
             // so the row shrinks with the box instead of running out of it while keeping as much text as fits.
-            ViewThatFits(in: .horizontal) {
-                controlRow.environment(\.composerDensity, .full)
-                controlRow.environment(\.composerDensity, .short)
-                controlRow.environment(\.composerDensity, .marks)
-                controlRow.environment(\.composerDensity, .icons)
+            if !choicesBelow {
+                ViewThatFits(in: .horizontal) {
+                    controlRow.environment(\.composerDensity, .full)
+                    controlRow.environment(\.composerDensity, .short)
+                    controlRow.environment(\.composerDensity, .marks)
+                    controlRow.environment(\.composerDensity, .icons)
+                }
             }
         }
         .padding(.leading, NookTheme.Spacing.xl)
         .padding(.trailing, NookTheme.Spacing.md)
-        .padding(.top, NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
+        .padding(.top, choicesBelow ? NookTheme.Spacing.md : NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
         .padding(.bottom, NookTheme.Spacing.md)
         // One quiet surface; focus only brightens its edge a little, so the box does not flash while you type.
         .background(
@@ -321,6 +349,23 @@ struct SessionComposer<Controls: View>: View {
         HStack(spacing: NookTheme.Spacing.xs) {
             controls()
             Spacer(minLength: NookTheme.Spacing.md)
+            sendCluster
+        }
+    }
+
+    /// The choices alone, in the tray under the box; they give up their words step by step like the row in the box.
+    private var choicesRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .full)
+            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .short)
+            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .marks)
+            HStack(spacing: NookTheme.Spacing.xs) { controls(); Spacer(minLength: 0) }.environment(\.composerDensity, .icons)
+        }
+    }
+
+    /// The extra button, then send, or stop and queue while the agent works.
+    private var sendCluster: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
             if let trailingAccessory { trailingAccessory }
             if busy, let onStop {
                 if let queueAction, !isEmpty {

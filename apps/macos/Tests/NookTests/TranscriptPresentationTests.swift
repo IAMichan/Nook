@@ -26,8 +26,8 @@ final class TranscriptPresentationTests: XCTestCase {
     }
 
     func testFinishedTurnFoldsEverythingBeforeItsAnswer() {
-        let rows = TranscriptPresentation.rows(finishedTurn(), working: false)
-        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2"])
+        let rows = TranscriptPresentation.rows(finishedTurn() + [message("u2", .user, "Nog iets", at: 100)], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2", "u2"])
         guard case .fold(_, let seconds, let inner) = rows[1], case .assistant(let answer, let isFinal) = rows[2] else {
             return XCTFail("\(rows)")
         }
@@ -41,10 +41,18 @@ final class TranscriptPresentationTests: XCTestCase {
         let rows = TranscriptPresentation.rows([
             message("u1", .user, "Hoi"),
             message("s1", .tools, steps: [step("a", "Read", "x.swift")]),
-            message("x1", .assistant, "Hallo")
+            message("x1", .assistant, "Hallo"),
+            message("u2", .user, "Nog iets")
         ], working: false)
         guard case .fold(_, let seconds, _) = rows[1] else { return XCTFail("\(rows)") }
         XCTAssertNil(seconds)
+    }
+
+    func testLastTurnFoldsOnceFinished() {
+        let rows = TranscriptPresentation.rows(finishedTurn(), working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2"], "the finished turn reads as 'Worked for 1m 3s' over its answer")
+        guard case .assistant(_, let isFinal) = rows[2] else { return XCTFail("\(rows)") }
+        XCTAssertTrue(isFinal)
     }
 
     func testTurnWithoutWorkDoesNotFold() {
@@ -57,7 +65,7 @@ final class TranscriptPresentationTests: XCTestCase {
         messages.append(message("s3", .tools, steps: [step("d", "Grep", "TODO"), step("e", "Bash", "swift test", .running)], at: 70))
         let rows = TranscriptPresentation.rows(Array(messages), working: true)
         XCTAssertEqual(rows.map(\.id), ["u1", "working", "t1", "group:s1", "x1", "group:s2", "live"])
-        guard case .working(let since) = rows[1], case .group(_, let steps) = rows[5], case .live(let current) = rows[6] else {
+        guard case .working(let since) = rows[1], case .group(_, let steps, _) = rows[5], case .live(let current) = rows[6] else {
             return XCTFail("\(rows)")
         }
         XCTAssertEqual(since, start)
@@ -85,6 +93,19 @@ final class TranscriptPresentationTests: XCTestCase {
             message("s2", .tools, steps: [step("b", "Read", "b.swift")])
         ], working: false)
         XCTAssertEqual(rows.map(\.id), ["u1", "group:s1"], "steps split only by silent thinking are one group")
+    }
+
+    func testThinkingBetweenStepsJoinsTheGroup() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Hoi"),
+            message("t0", .thinking, "Eerst kijken."),
+            message("s1", .tools, steps: [step("a", "Read", "a.swift")]),
+            message("t1", .thinking, "Nu de tests."),
+            message("s2", .tools, steps: [step("b", "Bash", "ls")]),
+            message("t2", .thinking, "Klaar met werken.")
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "t0", "group:s1", "t2"],
+                       "a thought before more steps joins their group; one that opens or ends the work stays")
     }
 
     func testTallyCountsEditedFilesOnce() {

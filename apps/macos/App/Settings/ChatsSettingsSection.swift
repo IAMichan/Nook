@@ -15,6 +15,8 @@ struct ChatsSettingsSection: View {
     @State private var noticeIsProblem = false
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
+    @State private var giphyKey = ""
+    @State private var giphySet = Giphy.ownKey != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
 
     var body: some View {
@@ -48,6 +50,14 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.sources"))
             } footer: {
                 Text(tr("chats.settings.sourcesFooter"))
+            }
+
+            Section {
+                giphyRow
+            } header: {
+                Text(tr("chats.giphy.title"))
+            } footer: {
+                Text(tr("chats.giphy.footer"))
             }
 
             Section {
@@ -144,6 +154,43 @@ struct ChatsSettingsSection: View {
                 StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.collectOff"), state: .todo) { EmptyView() }
             }
         }
+    }
+
+    /// Your GIPHY key, for the GIFs the chat's "+" offers: pasted once, kept in the Keychain.
+    @ViewBuilder
+    private var giphyRow: some View {
+        SettingLabel(tr("chats.giphy.key"), detail: tr("chats.giphy.keyDetail"))
+        HStack(spacing: NookTheme.Spacing.sm) {
+            SecureField("", text: $giphyKey, prompt: Text(giphySet ? "••••••••" : tr("chats.giphy.key")))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+                .onSubmit { saveGiphyKey() }
+            Button(tr("chats.slack.save")) { saveGiphyKey() }
+                .disabled(giphyKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if giphySet {
+                Button(tr("chats.giphy.remove")) {
+                    Keychain.remove(Giphy.keyAccount)
+                    giphySet = false
+                }
+            } else {
+                Button(tr("chats.giphy.getKey")) {
+                    if let url = URL(string: "https://developers.giphy.com/dashboard/") { NSWorkspace.shared.open(url) }
+                }
+            }
+        }
+    }
+
+    private func saveGiphyKey() {
+        let key = giphyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        guard Keychain.write(key, account: Giphy.keyAccount) == errSecSuccess else {
+            ToastCenter.shared.error(tr("chats.giphy.notSaved"))
+            return
+        }
+        giphyKey = ""
+        giphySet = true
+        ToastCenter.shared.success(tr("chats.giphy.saved"))
     }
 
     private func saveSlackToken() {

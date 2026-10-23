@@ -353,7 +353,7 @@ struct AgentRunPanel: View {
         panel.nameFieldStringValue = SessionExport.fileName(run)
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveNotch() == .OK, let url = panel.url else { return }
         try? SessionExport.markdown(run, events: workspace.timeline(runID)).write(to: url, atomically: true, encoding: .utf8)
     }
 
@@ -437,7 +437,23 @@ struct AgentRunPanel: View {
     @ViewBuilder
     private func effortMenu(_ run: WorkspaceRun) -> some View {
         let levels = EffortLevels.levels(for: run.provider, model: run.model)
-        if !levels.isEmpty {
+        if let family = app.modelFamily(run.model, for: run.provider) {
+            // An agent that lists one model per thinking level: the level picks the model of that family.
+            ComposerDivider()
+            Menu {
+                ForEach(family.members, id: \.self) { member in
+                    Button { _ = workspace.applySelection(runID, provider: run.provider, profileID: run.profileID, model: member.id) } label: {
+                        let title = tr(EffortLevels.label(variant: member.level))
+                        if member.id == run.model { Label(title, systemImage: "checkmark") } else { Text(title) }
+                    }
+                }
+            } label: {
+                let current = family.members.first { $0.id == run.model }?.level ?? ""
+                ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(variant: current)))
+            }
+            .composerMenu()
+            .help(tr("compose.effort.help"))
+        } else if !levels.isEmpty {
             ComposerDivider()
             Menu {
                 Button { workspace.setEffort(runID, nil) } label: {
@@ -874,6 +890,7 @@ struct AgentRunPanel: View {
                     effortMenu(run)
                 }
                 .rich(composerModel, composerConfig(run))
+                .choicesBelowBox()
                 .trailing { composerTrailing(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,
@@ -930,7 +947,7 @@ struct AgentRunPanel: View {
     private func modelMenu(_ run: WorkspaceRun) -> some View {
         let profile = app.profile(for: run)
         let account = profile.map { AccountLabel.name($0, app: app) }
-        let model = run.model.isEmpty ? nil : app.modelName(run.model, for: run.provider)
+        let model = run.model.isEmpty ? nil : app.modelMenuName(run.model, for: run.provider)
         let idle = workspace.canTransfer(runID)
         let providers = idle ? app.connectedProviders : [run.provider]
         return ComposerDropdown(width: providers.count > 1 ? 340 : 296, takesRoom: true) {

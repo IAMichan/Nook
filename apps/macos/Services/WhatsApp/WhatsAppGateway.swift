@@ -209,8 +209,14 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var name: String
     var isGroup: Bool
     var kind: WAJID.Kind { WAJID.kind(id) }
-    /// Newest last, the last `WAInbox.keep` only.
+    /// Newest last, the last `capacity` only.
     var messages: [WAMessage] = []
+    /// How many messages are kept: `WAInbox.keep` until "Load older messages" raises it for this chat.
+    var capacity = WAInbox.keep
+    /// False once the gateway has no older messages than the ones kept.
+    var hasOlder = true
+    /// Whether the chat can load older messages: it is full, and the gateway may have more.
+    var canLoadOlder: Bool { hasOlder && messages.count >= capacity }
     var unread: Int = 0
     var lastActivity: Date
     /// A group's other members (you left out), once the gateway was asked; nil while that is not known.
@@ -384,6 +390,8 @@ enum WAJID {
 struct WAInbox: Equatable, Sendable {
     /// Messages kept per chat (in memory only): enough for the notch card to scroll back a while.
     static let keep = 50
+    /// Messages "Load older messages" adds to what a chat keeps.
+    static let olderStep = 50
     /// An opened chat fetches its messages from the gateway again once the last fetch is this old.
     static let historyRefresh: TimeInterval = 30
 
@@ -431,17 +439,23 @@ struct WAInbox: Equatable, Sendable {
     mutating func add(_ message: WAMessage, filters: WAFilters, name: String? = nil, history: Bool = false,
                       quietBefore: Date? = nil) -> Outcome {
         let chat = WAJID.normalized(message.chat)
-        guard !seenIds.contains(message.id) else {
+        let seen = seenIds.contains(message.id)
+        // An older message the chat let go of (it kept fewer then) comes back when its history is loaded.
+        let letGo = seen && history && message.pollVote == nil
+            && conversations[chat]?.messages.contains(where: { $0.id == message.id }) != true
+        guard !seen || letGo else {
             refresh(message, in: chat)
             return .duplicate
         }
         guard !filters.ignored.contains(chat) else { return .ignored }
-        seenIds.insert(message.id)
-        seenOrder.append(message.id)
-        if seenOrder.count > 2_000 {
-            let dropped = seenOrder.prefix(1_000)
-            seenOrder.removeFirst(1_000)
-            for id in dropped { seenIds.remove(id) }
+        if !seen {
+            seenIds.insert(message.id)
+            seenOrder.append(message.id)
+            if seenOrder.count > 2_000 {
+                let dropped = seenOrder.prefix(1_000)
+                seenOrder.removeFirst(1_000)
+                for id in dropped { seenIds.remove(id) }
+            }
         }
         // A vote is no message of its own: it moves the counts of the poll it is on.
         if let vote = message.pollVote {
@@ -471,7 +485,9 @@ struct WAInbox: Equatable, Sendable {
         }
         conversation.messages.append(msg)
         conversation.messages.sort { $0.date < $1.date }
-        if conversation.messages.count > Self.keep { conversation.messages.removeFirst(conversation.messages.count - Self.keep) }
+        if conversation.messages.count > conversation.capacity {
+            conversation.messages.removeFirst(conversation.messages.count - conversation.capacity)
+        }
         conversation.lastActivity = max(conversation.lastActivity, message.date)
 
         let outcome: Outcome
@@ -517,6 +533,23 @@ struct WAInbox: Equatable, Sendable {
         }
         if earlyReceipts.count > 500 { earlyReceipts.removeAll() }
         return changed
+    }
+
+    /// Lets a chat keep `WAInbox.olderStep` more messages; the new capacity, nil when Nook has no such chat.
+    mutating func growCapacity(_ chat: String) -> Int? {
+        let key = WAJID.normalized(chat)
+        guard var conversation = conversations[key] else { return nil }
+        conversation.capacity = max(conversation.capacity, conversation.messages.count) + Self.olderStep
+        conversations[key] = conversation
+        return conversation.capacity
+    }
+
+    /// Records that the gateway had no more than `capacity` messages of this chat: nothing older to load.
+    mutating func markOldestReached(_ chat: String) {
+        let key = WAJID.normalized(chat)
+        guard var conversation = conversations[key], conversation.hasOlder else { return }
+        conversation.hasOlder = false
+        conversations[key] = conversation
     }
 
     /// A message Nook already keeps, as the gateway shows it again (a chat's history): its reactions as they stand now,
@@ -1206,9 +1239,30 @@ enum WAGOWA {
         ["rest", "--host=127.0.0.1", "--port=\(url.port ?? 3000)", "--auto-download-media=false"]
     }
 
+    /// The PATH Nook starts GOWA with. GOWA runs ffmpeg for every video and GIF it sends, but an app started from the
+    /// Finder gets only the system folders, so an ffmpeg from Homebrew was never found: its folders are added after them.
+    static func searchPath(_ current: String?) -> String {
+        var folders = (current ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        if folders.isEmpty { folders = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] }
+        for folder in ["/opt/homebrew/bin", "/usr/local/bin"] where !folders.contains(folder) { folders.append(folder) }
+        return folders.joined(separator: ":")
+    }
+
     /// The error code of a refused call (`ALREADY_LOGGED_IN`, `DEVICE_ID_REQUIRED`…).
     static func errorCode(_ data: Data) -> String? {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["code"] as? String
+    }
+
+    /// Why a call was refused, as GOWA words it ("ffmpeg not installed (required for PTT voice notes)"), else its code:
+    /// `INTERNAL_SERVER_ERROR` alone says nothing you can act on.
+    static func errorReason(_ data: Data) -> String? {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard let message = object?["message"] as? String, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return errorCode(data)
+        }
+        // GOWA needs ffmpeg for every video and GIF: say how to get it, not only that it is missing.
+        if message.lowercased().contains("ffmpeg not installed") { return tr("whatsapp.gowa.needsFFmpeg") }
+        return message
     }
 
     /// `GET /chats` → `results: {data: [{jid, name, last_message_time, …}], pagination}`.

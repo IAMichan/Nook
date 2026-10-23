@@ -93,6 +93,24 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.last?.id, "m\(count - 1)")
     }
 
+    func testLoadingOlderMessagesBringsBackWhatAChatLetGo() {
+        var inbox = WAInbox()
+        let chat = "1@s.whatsapp.net"
+        let count = WAInbox.keep + 5
+        for index in 0..<count { inbox.add(message("m\(index)", chat: chat, at: Double(index + 1)), filters: WAFilters()) }
+        XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, true, "full: older ones may exist")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.id, "m5")
+
+        XCTAssertEqual(inbox.growCapacity(chat), WAInbox.keep + WAInbox.olderStep)
+        for index in 0..<count { inbox.add(message("m\(index)", chat: chat, at: Double(index + 1)), filters: WAFilters(), history: true) }
+        XCTAssertEqual(inbox.conversations[chat]?.messages.count, count, "the five it let go are back")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.id, "m0")
+        XCTAssertEqual(inbox.conversations[chat]?.unread, count, "history never changes the unread count")
+
+        inbox.markOldestReached(chat)
+        XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, false)
+    }
+
     func testAGroupKnownOnlyByItsIdIsAskedItsName() {
         let old = "31622360496-1542111077@g.us"
         XCTAssertTrue(WAJID.isPlaceholderName("Group 31622360496-1542111077", for: old), "the gateway's stand-in")
@@ -133,6 +151,22 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(names["120363000000000002@g.us"], "Buurt", "a community's announcement group takes its community's name")
         XCTAssertNil(names["120363000000000004@g.us"])
         XCTAssertTrue(WAGOWA.groupNames(Data("{}".utf8)).isEmpty)
+    }
+
+    func testGOWAFindsHomebrewsFFmpeg() {
+        XCTAssertEqual(WAGOWA.searchPath("/usr/bin:/bin:/usr/sbin:/sbin"),
+                       "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
+        XCTAssertEqual(WAGOWA.searchPath("/opt/homebrew/bin:/usr/bin"), "/opt/homebrew/bin:/usr/bin:/usr/local/bin")
+        XCTAssertEqual(WAGOWA.searchPath(nil), "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")
+    }
+
+    func testARefusedSendSaysWhyNotOnlyItsCode() {
+        let refused = #"{"status":500,"code":"INTERNAL_SERVER_ERROR","message":"failed to create thumbnail exit status 1","results":null}"#
+        XCTAssertEqual(WAGOWA.errorReason(Data(refused.utf8)), "failed to create thumbnail exit status 1")
+        let noFFmpeg = #"{"status":500,"code":"INTERNAL_SERVER_ERROR","message":"ffmpeg not installed","results":null}"#
+        XCTAssertEqual(WAGOWA.errorReason(Data(noFFmpeg.utf8)), tr("whatsapp.gowa.needsFFmpeg"), "says how to get ffmpeg")
+        XCTAssertEqual(WAGOWA.errorReason(Data(#"{"code":"DEVICE_ID_REQUIRED","message":" "}"#.utf8)), "DEVICE_ID_REQUIRED")
+        XCTAssertNil(WAGOWA.errorReason(Data("<html>".utf8)))
     }
 
     func testOneGroupsInfoNamesItOrItsCommunity() {
