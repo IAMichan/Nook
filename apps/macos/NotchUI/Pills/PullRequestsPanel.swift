@@ -339,6 +339,7 @@ private struct PullRequestRow: View {
                             .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                             .lineLimit(1)
                         ciMark
+                        reviewMark
                     }
                     HStack(spacing: NookTheme.Spacing.xs) {
                         if role != .mine, !item.author.isEmpty { Text("@" + item.author).lineLimit(1) }
@@ -350,6 +351,10 @@ private struct PullRequestRow: View {
                         }
                         // Grouped by role, the group's heading already says so.
                         if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
+                        // Up to three labels, as Code's rows show them.
+                        ForEach(item.labels.prefix(3), id: \.self) { label in
+                            PullRequestTag(text: label, color: NookTheme.textSecondary)
+                        }
                     }
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
@@ -404,7 +409,7 @@ private struct PullRequestRow: View {
         switch item.state {
         case .merged: return .merged
         case .closed: return .closed
-        case .open: return item.draft ? .draft : .open
+        case .open: return item.conflict ? .conflict : item.draft ? .draft : .open
         }
     }
 
@@ -412,7 +417,7 @@ private struct PullRequestRow: View {
         switch item.state {
         case .merged: return NookTheme.violet
         case .closed: return NookTheme.coralSoft
-        case .open: return item.draft ? NookTheme.textTertiary : NookTheme.mint
+        case .open: return item.conflict ? NookTheme.amber : item.draft ? NookTheme.textTertiary : NookTheme.mint
         }
     }
 
@@ -420,7 +425,7 @@ private struct PullRequestRow: View {
         switch item.state {
         case .merged: return "agents.pulls.state.merged"
         case .closed: return "agents.pulls.state.closed"
-        case .open: return item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
+        case .open: return item.conflict ? "agents.pulls.state.conflict" : item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
         }
     }
 
@@ -440,6 +445,28 @@ private struct PullRequestRow: View {
                 .help(tr("agents.pulls.status.pending"))
         case .unknown:
             EmptyView()
+        }
+    }
+}
+
+extension PullRequestRow {
+    /// The review decision next to the checks: approved, changes requested, or waiting for a required review.
+    @ViewBuilder
+    var reviewMark: some View {
+        if item.state == .open {
+            switch item.review {
+            case .approved:
+                Image(systemName: "checkmark.seal.fill").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.mint)
+                    .help(tr("agents.pulls.review.approved"))
+            case .changesRequested:
+                Image(systemName: "exclamationmark.bubble.fill").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.amber)
+                    .help(tr("agents.pulls.review.changes"))
+            case .required:
+                Image(systemName: "eye").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textTertiary)
+                    .help(tr("agents.pulls.review.required"))
+            case .none:
+                EmptyView()
+            }
         }
     }
 }

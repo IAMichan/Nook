@@ -26,6 +26,14 @@ struct PullRequestViewedFiles: Codable, Equatable, Sendable {
         return then == now
     }
 
+    enum Status: Equatable, Sendable { case unviewed, viewed, changed }
+
+    /// As Code marks it: viewed, not viewed, or changed (marked viewed, then pushed to since).
+    func status(_ file: PullRequestFile, in pullRequest: String) -> Status {
+        guard marks[pullRequest]?[file.path] != nil else { return .unviewed }
+        return isViewed(file, in: pullRequest) ? .viewed : .changed
+    }
+
     func viewedCount(_ files: [PullRequestFile], in pullRequest: String) -> Int {
         files.filter { isViewed($0, in: pullRequest) }.count
     }

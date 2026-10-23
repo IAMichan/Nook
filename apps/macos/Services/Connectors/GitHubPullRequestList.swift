@@ -293,7 +293,8 @@ final class PullRequestStore: ObservableObject {
                                        draft: detail.state == .draft, updated: detail.updated ?? item.updated, author: item.author,
                                        ci: detail.checks.isEmpty ? item.ci : detail.checkSummary,
                                        state: mergedHere[item.id] != nil && state == .open ? .merged : state,
-                                       additions: detail.additions, deletions: detail.deletions)
+                                       additions: detail.additions, deletions: detail.deletions,
+                                       review: item.review, conflict: detail.mergeState == "dirty", labels: detail.labels)
             }
         }
         let updated = accounts.map { account -> AccountPullRequests in
