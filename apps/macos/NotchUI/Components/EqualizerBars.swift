@@ -14,7 +14,7 @@ struct EqualizerBars: View {
     var frameRate: Double = 30
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / max(1, frameRate), paused: !isPlaying)) { context in
+        TimelineView(.nookFrames(fps: frameRate, paused: !isPlaying)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let realBands = (isPlaying && AudioLevelMonitor.shared.hasSignal) ? AudioLevelMonitor.shared.snapshot() : []
             HStack(alignment: .bottom, spacing: 3) {

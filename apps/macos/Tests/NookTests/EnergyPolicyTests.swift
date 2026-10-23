@@ -68,7 +68,7 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(full.backgroundWindowMaxAge, 30)
         XCTAssertEqual(full.backgroundCaptureMaxSide, 2400)
         XCTAssertEqual(full.mirrorFrameRate, 60)
-        XCTAssertEqual(full.idleOrbFrameRate, 12)
+        XCTAssertEqual(full.idleOrbFrameRate, 15)
         XCTAssertEqual(full.interactiveFrameRate, 60)
         XCTAssertEqual(full.ambientFrameRate, 30)
 
@@ -78,7 +78,7 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(light.backgroundWindowMaxAge, 90)
         XCTAssertEqual(light.backgroundCaptureMaxSide, 1600)
         XCTAssertEqual(light.mirrorFrameRate, 30)
-        XCTAssertEqual(light.idleOrbFrameRate, 8)
+        XCTAssertEqual(light.idleOrbFrameRate, 7.5)
         XCTAssertEqual(light.interactiveFrameRate, 30)
         XCTAssertEqual(light.ambientFrameRate, 15)
         // Paused keeps the same light knobs for the work that still runs.

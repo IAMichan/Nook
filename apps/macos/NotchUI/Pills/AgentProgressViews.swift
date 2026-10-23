@@ -198,7 +198,7 @@ struct SpinningRing: View {
             Circle().stroke(color.opacity(0.2), lineWidth: 1.6)
             // A turn every 0.9 s on a timeline at the ambient rate: a `repeatForever` animation turns it at the display's
             // own rate and redraws the whole window with it, for as long as the agent works.
-            TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
+            TimelineView(.nookFrames(fps: energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
                 let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
                 Circle()
                     .trim(from: 0, to: 0.7)

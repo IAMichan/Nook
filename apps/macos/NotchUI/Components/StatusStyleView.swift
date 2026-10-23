@@ -96,7 +96,7 @@ struct SteppedPulseDot: View {
     var body: some View {
         Group {
             if visible && !reduceMotion {
-                TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
+                TimelineView(.nookFrames(fps: energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
                     let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
                     dot(halo: 0.55 * (1 - phase), scale: 1 + 1.1 * phase)
                 }

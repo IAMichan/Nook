@@ -49,7 +49,7 @@ struct NookOrb: View {
         Color.clear
             .frame(width: size, height: size)
             .overlay {
-                TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, awakeRate) : 1.0 / Self.dozingFrameRate,
+                TimelineView(.nookFrames(fps: animated ? awakeRate : Self.dozingFrameRate,
                                         paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
                     let p = pose(at: context.date)
                     orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
@@ -66,7 +66,8 @@ struct NookOrb: View {
         .accessibilityHidden(true)
     }
 
-    private static let dozingFrameRate: Double = 8
+    /// Half the ambient rate on battery: on the shared clock (`NookFrames`) his frames fall on the other animations'.
+    private static let dozingFrameRate: Double = 7.5
 
     /// The look this orb draws: eyes, mouth, gloss, glow and blush.
     var style: NookLook { look ?? appearance.look }

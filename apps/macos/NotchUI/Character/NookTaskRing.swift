@@ -86,7 +86,7 @@ struct NookTaskRing: View {
         // frame redraws the whole window the ring is in. Only while you point at a piece in the panel does it run at the
         // interactive rate.
         let rate = compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
-        TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving && !following)) { context in
+        TimelineView(.nookFrames(fps: rate, paused: !moving && !following)) { context in
             ring(at: context.date)
         }
         // One picture per frame instead of a layer per piece, its light and its glow; twice its size, so the ring

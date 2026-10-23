@@ -103,8 +103,9 @@ struct EnergyPlan: Equatable {
     /// of that on battery, where every frame is a GPU copy and a composite.
     var mirrorFrameRate: Int { pace == .full ? 60 : 30 }
 
-    /// Frames per second of Nook in the closed notch while he thinks along without the pointer on him.
-    var idleOrbFrameRate: Double { pace == .full ? 12 : 8 }
+    /// Frames per second of Nook in the closed notch while he thinks along without the pointer on him. Half the ambient
+    /// rate, so on the shared animation clock (`NookFrames`) each of his frames falls on one of the ring's.
+    var idleOrbFrameRate: Double { pace == .full ? 15 : 7.5 }
 
     /// Frames per second of motion you are looking at and steering: Nook following the pointer, the ring in the open
     /// panel, a shimmer on the step that runs. As smooth as the display at full speed; half of that on battery.

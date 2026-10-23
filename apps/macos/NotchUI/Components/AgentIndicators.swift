@@ -31,7 +31,7 @@ struct PulseDot: View {
             if animated && !reduceMotion {
                 // A timeline at the ambient rate, not a `repeatForever` animation: that runs at the display's own rate (up to
                 // 120 times a second) for as long as the dot is there, and every frame redraws the whole window it is in.
-                TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
+                TimelineView(.nookFrames(fps: energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
                     // An ease-out over 1.4 s, starting over: the ring grows and fades.
                     let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
                     let eased = 1 - (1 - phase) * (1 - phase)
@@ -54,7 +54,7 @@ struct ShimmerText: View {
     @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / energy.plan.interactiveFrameRate)) { context in
+        TimelineView(.nookFrames(fps: energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
             let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
             Text(text)
                 .foregroundStyle(
