@@ -974,8 +974,9 @@ private struct ChatsDetail: View {
     @EnvironmentObject private var app: AppModel
     @State private var reply = ""
     @State private var notice: String?
-    /// The answer on its way to the chat, then briefly that it is there.
-    @State private var outgoing: ChatSending?
+    /// The sends still going to the chat, one after another: each waits for the one before it, so messages arrive in
+    /// the order you sent them while the field is free for the next one at once.
+    @State private var sending: Task<Void, Never>?
     @FocusState private var replyFocused: Bool
     /// A photo shown big over the chat, until it is clicked or Escape is pressed.
     @State private var zoomed: ChatBubble?
@@ -1168,23 +1169,19 @@ private struct ChatsDetail: View {
     /// The changed text goes to your message; when it fails the text stays in the field to try again.
     private func sendEdit(_ bubble: ChatBubble, chat: String) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, outgoing?.sent ?? true else { return }
+        guard !text.isEmpty else { return }
         guard text != bubble.text else {
             withAnimation(NookTheme.reveal) { editing = nil }
             reply = ""
             return
         }
-        let shown = ChatSending(text: text)
-        outgoing = shown
         notice = nil
         reply = ""
-        Task { @MainActor in
+        withAnimation(NookTheme.reveal) { editing = nil }
+        enqueue {
             do {
                 try await app.editInLinkedChat(bubble, text: text, chat: chat, name: entry.name)
-                if editing?.id == bubble.id { withAnimation(NookTheme.reveal) { editing = nil } }
-                await showSent(shown)
             } catch {
-                outgoing = nil
                 if reply.isEmpty { reply = text }
                 notice = error.localizedDescription
             }
@@ -1303,7 +1300,6 @@ private struct ChatsDetail: View {
             sendSymbol: route == nil ? "doc.on.doc" : "arrow.up",
             sendLabel: route == nil ? tr("chats.reply.copy", appName) : tr("chats.send"),
             readyNotice: route == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
-            outgoing: outgoing,
             recipient: entry.name,
             quote: editing.map { BubbleQuote(sender: tr("chat.editing"), text: $0.text, mine: true) }
                 ?? replyingTo?.quote(contact: entry.name),
@@ -1357,77 +1353,71 @@ private struct ChatsDetail: View {
 
     /// What waits goes to the chat (to the quoted message, when one is), after your own Return or click: the files
     /// first, the typed text as the caption of the first one that takes a caption, else as a message after them. It
-    /// leaves the field for the sending panel above it, which says when it is there; when it fails the text is back in
-    /// the field, the files that did not go still wait, and the quote stays.
+    /// leaves the field at once and shows in the chat when the app has it, with no panel in between; when it fails the
+    /// text is back in the field, the files that did not go wait again, and the quote stays.
     private func send(via route: ChatRoute) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = composer.files
-        guard !text.isEmpty || !files.isEmpty, outgoing?.sent ?? true else { return }
-        let shown = ChatSending(text: Self.summary(text: text, files: files))
-        outgoing = shown
+        guard !text.isEmpty || !files.isEmpty else { return }
         notice = nil
         reply = ""
         let quoted = replyingTo?.id
-        Task { @MainActor in
+        withAnimation(NookTheme.reveal) { replyingTo = nil }
+        for file in files { composer.sent(.file(file)) }
+        replyFocused = true
+        enqueue {
             // The text still to go: once it went as a caption, a failure later does not put it back to go twice.
             var caption = text
+            var waiting = files
             do {
                 var answers = quoted
                 for var file in files {
                     let captioned = !caption.isEmpty && [ChatMedia.Kind.photo, .video, .gif, .file].contains(file.kind)
                     if captioned { file.caption = caption }
                     try await app.sendChatItem(.file(file), route: route, chat: entry.name, replyTo: answers)
-                    composer.sent(.file(file))
+                    waiting.removeFirst()
                     answers = nil
                     if captioned { caption = "" }
                 }
                 if !caption.isEmpty {
                     try await app.sendChatText(caption, route: route, chat: entry.name, replyTo: answers)
                 }
-                if replyingTo?.id == quoted { replyingTo = nil }
-                replyFocused = true
-                await showSent(shown)
             } catch {
-                outgoing = nil
                 if !caption.isEmpty, reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reply = caption }
+                composer.restore(waiting)
+                if let quoted, replyingTo == nil { replyingTo = bubbles.first { $0.id == quoted } }
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
     }
 
-    /// One thing sent at once, after your own click: a poll, a place, a contact, a sticker, a voice message. It shows in
-    /// the sending panel as the chat list will name it ("📊 Lunch?").
+    /// One thing sent at once, after your own click: a poll, a place, a contact, a sticker, a voice message. It goes
+    /// straight away, as text does.
     private func sendItem(_ item: ChatOutgoing) {
-        guard let route = self.route, outgoing?.sent ?? true else { return }
-        let shown = ChatSending(text: item.line)
-        outgoing = shown
+        guard let route = self.route else { return }
         notice = nil
         let quoted = replyingTo?.id
-        Task { @MainActor in
+        let poll = composer.poll
+        composer.sent(item)
+        if quoted != nil { withAnimation(NookTheme.reveal) { replyingTo = nil } }
+        enqueue {
             do {
                 try await app.sendChatItem(item, route: route, chat: entry.name, replyTo: quoted)
-                composer.sent(item)
-                if quoted != nil, replyingTo?.id == quoted { replyingTo = nil }
-                await showSent(shown)
             } catch {
-                outgoing = nil
+                // A poll you wrote is not lost: its form comes back as it was.
+                if case .poll = item { composer.poll = poll; composer.panel = .poll }
                 notice = tr("whatsapp.card.notSent", error.localizedDescription)
             }
         }
     }
 
-    /// The sending panel says the message is there for a moment, then lets go (unless a newer one is on its way).
-    private func showSent(_ shown: ChatSending) async {
-        let sent = ChatSending(text: shown.text, sent: true)
-        outgoing = sent
-        try? await Task.sleep(for: .seconds(1.4))
-        if outgoing == sent { outgoing = nil }
-    }
-
-    /// What the sending panel shows for text and files going together: the text, else the files one after another.
-    private static func summary(text: String, files: [ChatAttachment]) -> String {
-        guard text.isEmpty else { return text }
-        return files.map { ChatOutgoing.file($0).line }.joined(separator: ", ")
+    /// Runs a send after the ones still going, so the chat gets your messages in the order you sent them.
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+        let before = sending
+        sending = Task { @MainActor in
+            await before?.value
+            await work()
+        }
     }
 
     /// Nook cannot write in this app: the text goes on the clipboard and the app opens, to paste it there.
