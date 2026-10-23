@@ -50,45 +50,56 @@ final class PullRequestActionState: ObservableObject {
     }
 }
 
-/// The ⋯ menu of a pull request: copy its link, number or checkout command, ask for reviews, edit it, bring
+/// The ⋯ menu of a pull request, in Nook's own dropdown panel: copy its link, number or checkout command, ask for reviews, edit it, bring
 /// its branch up to date, close or reopen it. What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail
 
     var body: some View {
-        Menu {
-            if let url = detail.url {
-                Button(tr("agents.pr.copyLink")) { copy(url.absoluteString, tr("agents.pr.copiedLink")) }
-            }
-            Button(tr("agents.pr.action.copyNumber")) { copy("#\(detail.number)", tr("agents.pr.action.copied")) }
-            Button(tr("agents.pr.action.copyCheckout")) { copy(Self.checkout(detail), tr("agents.pr.action.copied")) }
-            if detail.isOpen {
-                Divider()
-                Button(tr("agents.pr.action.requestReviewers")) { state.open(.reviewers, detail: detail) }
-                Button(tr("agents.pr.action.edit")) { state.open(.edit, detail: detail) }
-                if detail.state == .draft, !detail.nodeID.isEmpty {
-                    Button(tr("agents.pr.action.ready")) { ask(.markReady(nodeID: detail.nodeID)) }
-                }
-                if detail.mergeState == "behind" {
-                    Button(tr("agents.pr.action.updateBranch")) { ask(.updateBranch(headSHA: detail.headSHA)) }
-                }
-                Divider()
-                Button(tr("agents.pr.action.close"), role: .destructive) { ask(.close) }
-            } else if detail.state == .closed {
-                Divider()
-                Button(tr("agents.pr.action.reopen")) { ask(.reopen) }
-            }
-        } label: {
+        ComposerDropdown(width: 248) {
             Image(systemName: "ellipsis")
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
+        } content: {
+            if let url = detail.url {
+                DropdownRow(symbol: "link", title: tr("agents.pr.copyLink")) {
+                    copy(url.absoluteString, tr("agents.pr.copiedLink"))
+                }
+            }
+            DropdownRow(symbol: "number", title: tr("agents.pr.action.copyNumber")) {
+                copy("#\(detail.number)", tr("agents.pr.action.copied"))
+            }
+            DropdownRow(symbol: "terminal", title: tr("agents.pr.action.copyCheckout")) {
+                copy(Self.checkout(detail), tr("agents.pr.action.copied"))
+            }
+            if detail.isOpen {
+                DropdownDivider()
+                DropdownRow(symbol: "person.badge.plus", title: tr("agents.pr.action.requestReviewers")) {
+                    state.open(.reviewers, detail: detail)
+                }
+                DropdownRow(symbol: "pencil", title: tr("agents.pr.action.edit")) { state.open(.edit, detail: detail) }
+                if detail.state == .draft, !detail.nodeID.isEmpty {
+                    DropdownRow(symbol: "checkmark.circle", title: tr("agents.pr.action.ready")) {
+                        ask(.markReady(nodeID: detail.nodeID))
+                    }
+                }
+                if detail.mergeState == "behind" {
+                    DropdownRow(symbol: "arrow.triangle.merge", title: tr("agents.pr.action.updateBranch")) {
+                        ask(.updateBranch(headSHA: detail.headSHA))
+                    }
+                }
+                DropdownDivider()
+                DropdownRow(symbol: "xmark.circle", title: tr("agents.pr.action.close"), tint: NookTheme.coralSoft) {
+                    ask(.close)
+                }
+            } else if detail.state == .closed {
+                DropdownDivider()
+                DropdownRow(symbol: "arrow.uturn.backward.circle", title: tr("agents.pr.action.reopen")) { ask(.reopen) }
+            }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help(tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
         .disabled(state.sending)
