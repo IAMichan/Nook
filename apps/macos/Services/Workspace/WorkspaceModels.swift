@@ -56,7 +56,8 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Quick-select models. Empty means: agent default. Custom names can also be typed.
+    /// The well-known names, used only when neither the agent nor the model manifest (ModelManifest) lists any. Empty
+    /// means: agent default. Custom names can also be typed.
     var suggestedModels: [String] {
         switch self {
         case .claude: return ["", "sonnet", "opus", "haiku"]
