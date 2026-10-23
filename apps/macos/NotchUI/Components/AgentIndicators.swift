@@ -76,28 +76,17 @@ struct ShimmerText: View {
     }
 }
 
-/// "#12" with the state of the pull request as its icon (GitHub's marks, drawn) and colour: open (ready to merge) mint,
-/// merge conflict coral, merged violet, draft and closed grey. `compact` shows the icon alone, for a slim row.
+/// "#12" with the state of the pull request as its icon and color (`PullRequestStateIcon`). `compact` shows the icon
+/// alone, for a slim row.
 struct PullRequestPill: View {
     let badge: PullRequestBadge
     var compact = false
-
-    private var tint: Color {
-        switch badge.glyph {
-        case .open: return NookTheme.mint
-        case .conflict: return NookTheme.coral
-        case .merged: return NookTheme.violet
-        case .draft, .closed: return NookTheme.textTertiary
-        case .stack: return NookTheme.amber
-        }
-    }
 
     private var status: String { tr("inbox.pr.state." + badge.glyph.rawValue) }
 
     var body: some View {
         HStack(spacing: 3) {
-            PullRequestStateGlyph(glyph: badge.glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
-                .foregroundStyle(tint)
+            PullRequestStateIcon(glyph: badge.glyph)
             if !compact {
                 Text(label).font(NookTheme.font(11, .medium).monospacedDigit())
                     .foregroundStyle(NookTheme.textSecondary)
@@ -115,35 +104,13 @@ struct PullRequestPill: View {
     }
 }
 
-extension PullRequestItem {
-    /// The mark for this pull request's state, as its tab and row show it: a conflict wears the conflict mark.
-    var stateGlyph: PullRequestBadge.Glyph {
-        switch state {
-        case .merged: return .merged
-        case .closed: return .closed
-        case .open: return conflict ? .conflict : draft ? .draft : .open
-        }
-    }
-}
-
 /// A pull request's state as a tinted capsule: GitHub's mark and the word ("Open", "Merged"), optionally after its
 /// number. The pull request page and the watched pull request above the composer both wear it.
 struct PullRequestStateBadge: View {
     let glyph: PullRequestBadge.Glyph
     var number: Int? = nil
 
-    private var tint: Color { Self.tint(glyph) }
-
-    /// The state's color, also used for a pull request's number in the page's crumbs.
-    static func tint(_ glyph: PullRequestBadge.Glyph) -> Color {
-        switch glyph {
-        case .open: return NookTheme.mint
-        case .draft: return NookTheme.textSecondary
-        case .conflict, .closed: return NookTheme.coral
-        case .merged: return NookTheme.violet
-        case .stack: return NookTheme.amber
-        }
-    }
+    private var tint: Color { PullRequestIcon.tint(glyph) }
 
     private var state: String {
         switch glyph {
@@ -156,7 +123,7 @@ struct PullRequestStateBadge: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
+            PullRequestStateIcon(glyph: glyph, tinted: false)
             Text(label).lineLimit(1)
         }
         .font(NookTheme.TextStyle.label.monospacedDigit())
@@ -170,17 +137,3 @@ struct PullRequestStateBadge: View {
     }
 }
 
-/// The outcome of a CI check or one of its steps: a mint tick, a coral cross, an amber dot while it runs, a grey dash
-/// when skipped. The pull request page and the CI of a watched pull request both use it.
-struct CheckOutcomeGlyph: View {
-    let outcome: PullRequestCheck.Outcome
-
-    var body: some View {
-        switch outcome {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
-        case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
-        case .skipped: Image(systemName: "minus.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
-        }
-    }
-}

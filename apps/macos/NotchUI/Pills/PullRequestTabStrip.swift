@@ -59,9 +59,7 @@ private struct PullRequestTab: View {
         HStack(spacing: NookTheme.Spacing.xs) {
             Button(action: select) {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.5, nodeRadius: 1.8)
-                        .foregroundStyle(tint)
-                        .frame(width: 12, height: 12)
+                    PullRequestStateIcon(glyph: tab.item.stateGlyph)
                     Text("#\(tab.item.number)").font(NookTheme.mono(11, .medium)).monospacedDigit()
                         .foregroundStyle(NookTheme.textTertiary)
                     Text(tab.item.title.isEmpty ? tab.item.repo : tab.item.title)
@@ -94,8 +92,4 @@ private struct PullRequestTab: View {
         .onHover { hovering = $0 }
         .accessibilityAddTraits(active ? .isSelected : [])
     }
-
-    private var glyph: PullRequestBadge.Glyph { tab.item.stateGlyph }
-
-    private var tint: Color { PullRequestStateBadge.tint(glyph) }
 }

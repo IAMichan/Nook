@@ -24,7 +24,7 @@ enum SessionTool: String {
         case .browser: return "safari"
         case .changes: return "plus.forwardslash.minus"
         case .outputs: return "list.bullet.clipboard"
-        case .pullRequest: return "arrow.triangle.pull"
+        case .pullRequest: return PullRequestIcon.generic
         case .picker: return "square.grid.2x2"
         }
     }
@@ -570,7 +570,7 @@ private struct SidePanelSymbol: View {
     let symbol: String
 
     var body: some View {
-        Image(systemName: symbol).font(NookTheme.font(10.5, .medium))
+        NookSymbol(symbol, size: 12).font(NookTheme.font(10.5, .medium))
     }
 }
 
@@ -579,10 +579,7 @@ private struct SidePanelPullRequestIcon: View {
     let item: PullRequestItem?
 
     var body: some View {
-        let glyph = item?.stateGlyph ?? .open
-        PullRequestStateGlyph(glyph: glyph, size: 11, lineWidth: 1.5, nodeRadius: 1.7)
-            .foregroundStyle(PullRequestStateBadge.tint(glyph))
-            .frame(width: 11, height: 11)
+        PullRequestStateIcon(glyph: item?.stateGlyph ?? .open)
     }
 }
 

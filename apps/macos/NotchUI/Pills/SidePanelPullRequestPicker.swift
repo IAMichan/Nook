@@ -90,20 +90,10 @@ private struct SidePanelPullRequestRow: View {
     let action: () -> Void
     @State private var hovering = false
 
-    private var glyph: PullRequestBadge.Glyph {
-        switch item.state {
-        case .merged: return .merged
-        case .closed: return .closed
-        case .open: return item.conflict ? .conflict : item.draft ? .draft : .open
-        }
-    }
-
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-                PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.5, nodeRadius: 1.8)
-                    .foregroundStyle(PullRequestStateBadge.tint(glyph))
-                    .frame(width: 12, height: 12)
+                PullRequestStateIcon(glyph: item.stateGlyph)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: NookTheme.Spacing.xs) {

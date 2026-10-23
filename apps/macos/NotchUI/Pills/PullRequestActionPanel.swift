@@ -82,22 +82,22 @@ struct PullRequestMoreMenu: View {
                 }
                 DropdownRow(symbol: "pencil", title: tr("agents.pr.action.edit")) { state.open(.edit, detail: detail) }
                 if detail.state == .draft, !detail.nodeID.isEmpty {
-                    DropdownRow(symbol: "checkmark.circle", title: tr("agents.pr.action.ready")) {
+                    DropdownRow(symbol: PullRequestIcon.symbol(.open), title: tr("agents.pr.action.ready")) {
                         ask(.markReady(nodeID: detail.nodeID))
                     }
                 }
                 if detail.mergeState == "behind" {
-                    DropdownRow(symbol: "arrow.triangle.2.circlepath", title: tr("agents.pr.action.updateBranch")) {
+                    DropdownRow(symbol: PullRequestIcon.behind, title: tr("agents.pr.action.updateBranch")) {
                         ask(.updateBranch(headSHA: detail.headSHA))
                     }
                 }
                 DropdownDivider()
-                DropdownRow(symbol: "xmark.circle", title: tr("agents.pr.action.close"), tint: NookTheme.coralSoft) {
+                DropdownRow(symbol: PullRequestIcon.symbol(.closed), title: tr("agents.pr.action.close"), tint: PullRequestIcon.tint(.closed)) {
                     ask(.close)
                 }
             } else if detail.state == .closed {
                 DropdownDivider()
-                DropdownRow(symbol: "arrow.uturn.backward.circle", title: tr("agents.pr.action.reopen")) { ask(.reopen) }
+                DropdownRow(symbol: PullRequestIcon.symbol(.open), title: tr("agents.pr.action.reopen")) { ask(.reopen) }
             }
         }
         .help(tr("agents.pr.action.more"))
@@ -276,7 +276,7 @@ struct PullRequestActionPanel: View {
 
     private func confirmation(_ action: PullRequestAction) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: Self.symbol(action))
+            NookSymbol(Self.symbol(action), size: 13)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(Self.destructive(action) ? NookTheme.coral : NookTheme.amber)
             Text(Self.question(action, detail: detail))
@@ -343,14 +343,15 @@ struct PullRequestActionPanel: View {
     static func symbol(_ action: PullRequestAction) -> String {
         switch action {
         case .review(let verdict, _): return verdictSymbol(verdict)
-        case .comment: return "text.bubble"
-        case .close: return "xmark.circle"
-        case .reopen: return "arrow.uturn.backward.circle"
+        case .comment: return PullRequestIcon.symbol(PullRequestIcon.Review.commented)
+        // An action shows the mark of the state it leads to.
+        case .close: return PullRequestIcon.symbol(.closed)
+        case .reopen: return PullRequestIcon.symbol(.open)
         case .edit: return "pencil"
         case .requestReviewers: return "person.badge.plus"
-        case .updateBranch: return "arrow.triangle.2.circlepath"
+        case .updateBranch: return PullRequestIcon.behind
         case .addLabels, .removeLabel: return "tag"
-        case .markReady: return "eye"
+        case .markReady: return PullRequestIcon.symbol(.open)
         case .changeBase: return "arrow.triangle.branch"
         }
     }
@@ -369,19 +370,15 @@ struct PullRequestActionPanel: View {
         }
     }
 
-    static func verdictSymbol(_ verdict: PullRequestAction.Verdict) -> String {
-        switch verdict {
-        case .comment: return "text.bubble"
-        case .approve: return "checkmark.circle.fill"
-        case .requestChanges: return "exclamationmark.circle.fill"
-        }
-    }
+    static func verdictSymbol(_ verdict: PullRequestAction.Verdict) -> String { PullRequestIcon.symbol(verdictIcon(verdict)) }
 
-    static func verdictColor(_ verdict: PullRequestAction.Verdict) -> Color {
+    static func verdictColor(_ verdict: PullRequestAction.Verdict) -> Color { PullRequestIcon.tint(verdictIcon(verdict)) }
+
+    private static func verdictIcon(_ verdict: PullRequestAction.Verdict) -> PullRequestIcon.Review {
         switch verdict {
-        case .comment: return NookTheme.textSecondary
-        case .approve: return NookTheme.mint
-        case .requestChanges: return NookTheme.amber
+        case .comment: return .commented
+        case .approve: return .approved
+        case .requestChanges: return .changesRequested
         }
     }
 }

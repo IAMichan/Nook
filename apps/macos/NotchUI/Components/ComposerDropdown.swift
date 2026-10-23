@@ -106,14 +106,14 @@ struct DropdownRow: View {
                 } else if let brand {
                     BrandMark(logo: brand, size: 14)
                 } else if let symbol, let tile {
-                    Image(systemName: symbol)
+                    NookSymbol(symbol, size: 13)
                         .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(tile)
                         .frame(width: 26, height: 26)
                         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
                             .fill(tile.opacity(hovering ? 0.24 : 0.16)))
                 } else if let symbol {
-                    Image(systemName: symbol)
+                    NookSymbol(symbol, size: 13)
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(tint ?? NookTheme.textSecondary)
                         .frame(width: 15)

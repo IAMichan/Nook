@@ -460,8 +460,7 @@ private struct PullRequestRow: View {
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if let stack {
                         HStack(spacing: NookTheme.Spacing.xxs) {
-                            PullRequestStateGlyph(glyph: .stack, size: 12, lineWidth: 1.5, nodeRadius: 1.8)
-                                .frame(width: 12, height: 12)
+                            PullRequestStateIcon(glyph: .stack, tinted: false)
                             Text("\(stack.index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
                         }
                         .foregroundStyle(NookTheme.textTertiary)
@@ -516,9 +515,7 @@ private struct PullRequestRow: View {
 
     /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears the conflict mark.
     private var stateMark: some View {
-        PullRequestStateGlyph(glyph: glyph, size: 16, lineWidth: 1.4, nodeRadius: 1.7)
-            .foregroundStyle(tint)
-            .frame(width: 16, height: 16)
+        PullRequestStateIcon(glyph: item.stateGlyph, size: .header)
             .help(tr(stateKey))
     }
 
@@ -543,22 +540,6 @@ private struct PullRequestRow: View {
         }
     }
 
-    private var glyph: PullRequestBadge.Glyph {
-        switch item.state {
-        case .merged: return .merged
-        case .closed: return .closed
-        case .open: return item.conflict ? .conflict : item.draft ? .draft : .open
-        }
-    }
-
-    private var tint: Color {
-        switch item.state {
-        case .merged: return NookTheme.violet
-        case .closed: return NookTheme.coralSoft
-        case .open: return item.conflict ? NookTheme.coral : item.draft ? NookTheme.textTertiary : NookTheme.mint
-        }
-    }
-
     private var stateKey: String {
         switch item.state {
         case .merged: return "agents.pulls.state.merged"
@@ -567,22 +548,12 @@ private struct PullRequestRow: View {
         }
     }
 
-    /// The checks as GitHub's outlined circles, right behind the title, so you see at a glance whether CI passed.
+    /// The checks as their filled circle, right behind the title, so you see at a glance whether CI passed.
     @ViewBuilder
     private var ciMark: some View {
-        switch item.ci {
-        case .passing:
-            Image(systemName: "checkmark.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.mint)
-                .help(tr("agents.pulls.status.passing"))
-        case .failing:
-            Image(systemName: "xmark.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.coral)
-                .help(tr("agents.pulls.status.failing"))
-        // Running checks wait on CI, not on you: no amber.
-        case .pending:
-            Image(systemName: "smallcircle.filled.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
-                .help(tr("agents.pulls.status.pending"))
-        case .unknown:
-            EmptyView()
+        if let outcome = item.checkOutcome {
+            CheckOutcomeGlyph(outcome: outcome)
+                .help(tr("agents.pulls.status." + outcome.rawValue))
         }
     }
 }
@@ -591,20 +562,17 @@ extension PullRequestRow {
     /// The review decision next to the checks: approved, changes requested, or waiting for a required review.
     @ViewBuilder
     var reviewMark: some View {
-        if item.state == .open {
-            switch item.review {
-            case .approved:
-                Image(systemName: "checkmark.seal.fill").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.mint)
-                    .help(tr("agents.pulls.review.approved"))
-            case .changesRequested:
-                Image(systemName: "exclamationmark.bubble.fill").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.amber)
-                    .help(tr("agents.pulls.review.changes"))
-            case .required:
-                Image(systemName: "eye").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textTertiary)
-                    .help(tr("agents.pulls.review.required"))
-            case .none:
-                EmptyView()
-            }
+        if item.state == .open, let review = item.reviewIcon {
+            PullRequestReviewIcon(review: review)
+                .help(tr(Self.reviewKey(review)))
+        }
+    }
+
+    private static func reviewKey(_ review: PullRequestIcon.Review) -> String {
+        switch review {
+        case .approved: return "agents.pulls.review.approved"
+        case .changesRequested: return "agents.pulls.review.changes"
+        default: return "agents.pulls.review.required"
         }
     }
 }

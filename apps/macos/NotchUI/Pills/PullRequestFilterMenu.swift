@@ -38,13 +38,13 @@ struct PullRequestFilterMenu: View {
 
         var symbol: String {
             switch self {
-            case .state: return "arrow.triangle.pull"
+            case .state: return PullRequestIcon.generic
             case .involvement: return "person.2"
             case .author: return "person"
             case .labels: return "tag"
             case .draft: return "pencil.line"
-            case .review: return "checkmark.bubble"
-            case .checks: return "checkmark.seal"
+            case .review: return PullRequestIcon.symbol(PullRequestIcon.Review.approved)
+            case .checks: return PullRequestIcon.symbol(PullRequestCheck.Outcome.passing)
             case .repository: return "folder"
             case .account: return "person.crop.circle"
             }
@@ -100,7 +100,7 @@ struct PullRequestFilterMenu: View {
     private func kindRow(_ row: Kind) -> some View {
         Button { kind = row } label: {
             HStack(spacing: NookTheme.Spacing.md) {
-                Image(systemName: row.symbol)
+                NookSymbol(row.symbol, size: 13)
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(NookTheme.textSecondary)
                     .frame(width: 15)
@@ -269,54 +269,56 @@ struct PullRequestFilterMenu: View {
     private static func symbol(_ state: PullRequestFilter.State) -> String {
         switch state {
         case .all: return "square.stack"
-        case .open: return NookSymbol.open
-        case .closed: return "xmark.circle"
-        case .merged: return NookSymbol.merge
+        case .open: return PullRequestIcon.symbol(.open)
+        case .closed: return PullRequestIcon.symbol(.closed)
+        case .merged: return PullRequestIcon.symbol(.merged)
         }
     }
 
     private static func tint(_ state: PullRequestFilter.State) -> Color? {
         switch state {
         case .all: return nil
-        case .open: return NookTheme.mint
-        case .closed: return NookTheme.coralSoft
-        case .merged: return NookTheme.violet
+        case .open: return PullRequestIcon.tint(.open)
+        case .closed: return PullRequestIcon.tint(.closed)
+        case .merged: return PullRequestIcon.tint(.merged)
         }
     }
 
     private static func symbol(_ review: PullRequestFilter.Review) -> String {
         switch review {
         case .all: return "square.stack"
-        case .approved: return "checkmark.circle"
-        case .changesRequested: return "xmark.circle"
-        case .required: return "circle.dashed"
-        case .noReviews: return "circle.slash"
+        case .approved: return PullRequestIcon.symbol(PullRequestIcon.Review.approved)
+        case .changesRequested: return PullRequestIcon.symbol(PullRequestIcon.Review.changesRequested)
+        case .required: return PullRequestIcon.symbol(PullRequestIcon.Review.required)
+        case .noReviews: return PullRequestIcon.symbol(PullRequestIcon.Review.noReviews)
         }
     }
 
     private static func tint(_ review: PullRequestFilter.Review) -> Color? {
         switch review {
-        case .approved: return NookTheme.mint
-        case .changesRequested: return NookTheme.amber
-        case .all, .required, .noReviews: return nil
+        case .all: return nil
+        case .approved: return PullRequestIcon.tint(PullRequestIcon.Review.approved)
+        case .changesRequested: return PullRequestIcon.tint(PullRequestIcon.Review.changesRequested)
+        case .required: return PullRequestIcon.tint(PullRequestIcon.Review.required)
+        case .noReviews: return PullRequestIcon.tint(PullRequestIcon.Review.noReviews)
         }
     }
 
     private static func symbol(_ status: PullRequestFilter.Status) -> String {
         switch status {
         case .any: return "square.stack"
-        case .failing: return "xmark.circle"
-        case .pending: return "clock"
-        case .passing: return "checkmark.circle"
+        case .failing: return PullRequestIcon.symbol(PullRequestCheck.Outcome.failing)
+        case .pending: return PullRequestIcon.symbol(PullRequestCheck.Outcome.pending)
+        case .passing: return PullRequestIcon.symbol(PullRequestCheck.Outcome.passing)
         }
     }
 
     private static func tint(_ status: PullRequestFilter.Status) -> Color? {
         switch status {
         case .any: return nil
-        case .failing: return NookTheme.coral
-        case .pending: return NookTheme.amber
-        case .passing: return NookTheme.mint
+        case .failing: return PullRequestIcon.tint(PullRequestCheck.Outcome.failing)
+        case .pending: return PullRequestIcon.tint(PullRequestCheck.Outcome.pending)
+        case .passing: return PullRequestIcon.tint(PullRequestCheck.Outcome.passing)
         }
     }
 }
