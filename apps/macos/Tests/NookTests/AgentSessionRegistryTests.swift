@@ -20,6 +20,14 @@ final class AgentSessionRegistryTests: XCTestCase {
         XCTAssertEqual(merged[0].leading, .nook)
     }
 
+    func testAConversationContinuedInTheDesktopAppIsOneRow() {
+        let merged = AgentSessionRegistry.merge([
+            record("desktop", [.hook], conversation: "abc", agent: "Claude (app)"),
+            record("past", [.transcript], conversation: "abc", phase: .finished, updated: 50)
+        ])
+        XCTAssertEqual(merged.count, 1)
+    }
+
     func testTheSameConversationInTwoAccountsStaysTwoRows() {
         let merged = AgentSessionRegistry.merge([
             record("a", [.transcript], conversation: "abc", phase: .finished),

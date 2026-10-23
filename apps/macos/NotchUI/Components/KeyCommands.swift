@@ -59,7 +59,7 @@ final class KeyCommandCenter: ObservableObject {
     /// available yet, so a rule for them is not mistaken for a broken key.
     static let wiredCommands: Set<String> = [
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
-        "composer.historyNext", "queue.steerFirst", "chat.find", "commandPalette.toggle", "session.new", "session.undo",
+        "composer.historyNext", "queue.steerFirst", "chat.find", "commandPalette.toggle", "session.new", "session.undo", "diff.toggle",
     ]
 
     func update(_ id: UUID, window: NSWindow?, enabled: Bool, priority: Int, context: [String: Bool],

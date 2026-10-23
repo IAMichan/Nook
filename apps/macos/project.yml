@@ -258,6 +258,8 @@ targets:
       - path: Services/Connectors/PullRequestDetail.swift
       - path: Services/Connectors/PullRequestViewedFiles.swift
       - path: Services/Connectors/PullRequestReviewGuide.swift
+      - path: Services/Connectors/PullRequestActions.swift
+      - path: Services/Connectors/PullRequestFileOrder.swift
       - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
       - path: Services/Connectors/GitHubMarkdown.swift
@@ -341,6 +343,7 @@ targets:
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/AgentTranscript.swift
       - path: Services/TranscriptPresentation.swift
+      - path: Services/TurnDiff.swift
       - path: Services/AntigravityClient.swift
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift

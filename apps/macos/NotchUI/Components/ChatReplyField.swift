@@ -176,8 +176,9 @@ struct ChatReplyField: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
                 .focused(focus)
-                // Return adds a line; with the `@` menu open Return chooses a line there. ⌘Return (send) and ⇧Return are
-                // keybinding commands, run by the panel's key monitor while this field has the keyboard.
+                // Return adds a line; with the `@` menu open Return chooses a line there, and on "@nook …" Return lets
+                // Nook write. ⌘Return (send) and ⇧Return are keybinding commands, run by the panel's key monitor while
+                // this field has the keyboard.
                 .onKeyPress(.return, phases: .down) { (_: KeyPress) -> KeyPress.Result in returnKey() }
                 .keyCommands(keyHandlers, context: ["composerFocus": true, "composerDraft": !empty], enabled: focus.wrappedValue)
                 .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
@@ -225,7 +226,7 @@ struct ChatReplyField: View {
             } else {
                 NookIconButton(systemName: asksNook ? "sparkles" : sendSymbol, label: buttonLabel, filled: true, size: 28) { submit() }
                     .disabled(busy || empty)
-                    .help(buttonLabel + " (⌘↩)")
+                    .help(buttonLabel + (asksNook ? " (↩)" : " (⌘↩)"))
             }
         }
         .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.md : NookTheme.Spacing.xs)
@@ -248,7 +249,7 @@ struct ChatReplyField: View {
         })
     }
 
-    /// A line of the menu fills the field; Cmd+Return then lets Nook write.
+    /// A line of the menu fills the field; Return then lets Nook write.
     private func choose(_ row: ComposerSuggestion) {
         guard case .command(let command) = row.payload else { return }
         text = command.insertion
@@ -261,24 +262,35 @@ struct ChatReplyField: View {
         choose(menu.suggestions[menu.selection])
     }
 
+    /// Return: takes the menu's line, lets Nook write for "@nook …", else adds a line. Sending Nook's message (or your
+    /// own) stays ⌘Return, so Return never sends.
     private func returnKey() -> KeyPress.Result {
         if menu.isOpen {
             chooseSelected()
+        } else if ChatDraft.instruction(in: text) != nil {
+            submit()
         } else {
-            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+            newline()
         }
         return .handled
     }
 
-    /// ⌘Return sends (or takes the menu's line); ⇧Return adds a line like Return. No turn runs in a reply, so the
-    /// alternate send never applies here.
+    private func newline() {
+        NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+    }
+
+    /// ⌘Return sends (or takes the menu's line); ⇧Return always adds a line. No turn runs in a reply, so the alternate
+    /// send never applies here.
     private var keyHandlers: [String: () -> Bool] {
         [
             "composer.send": {
                 if menu.isOpen { chooseSelected() } else { submit() }
                 return true
             },
-            "composer.newline": { _ = returnKey(); return true },
+            "composer.newline": {
+                if menu.isOpen { chooseSelected() } else { newline() }
+                return true
+            },
         ]
     }
 
@@ -288,7 +300,8 @@ struct ChatReplyField: View {
         return .handled
     }
 
-    /// Cmd+Return or the button: Nook writes for "@nook …"; anything else goes to the host to send.
+    /// Return or Cmd+Return on "@nook …", or the button: Nook writes; anything else (Cmd+Return or the button) goes to
+    /// the host to send.
     private func submit() {
         guard !busy, !drafting else { return }
         if let instruction = ChatDraft.instruction(in: text) {

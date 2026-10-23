@@ -51,6 +51,10 @@ struct AgentRunPanel: View {
     @State private var consoleEventID: UUID?
     /// A file the agent read or wrote that you clicked: shown in the side panel, in place of the outputs.
     @State private var filePreview: String?
+    /// The diff panel's choice of turn and file; nil while it is closed.
+    @State private var diffSelection: TurnDiffSelection?
+    /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
+    @State private var countedLines: [String: [String: EditLines]] = [:]
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -71,11 +75,11 @@ struct AgentRunPanel: View {
                     header(run, outputs: outputs)
                     timeline(run)
                     if let pending = workspace.approvals[runID], let first = pending.first {
-                        approval(run, first, more: pending.count - 1)
+                        approval(run, first, more: pending.count - 1).chatColumn()
                     } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
                         // A command or pull request the agent asks for through Nook's workspace.
                         let approval = ApprovalCenter.make(request)
-                        ApprovalView(approval: approval, maxHeight: 110) { app.approvals.decide(approval, $0) }
+                        ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }.chatColumn()
                     }
                     if let target = revertTarget {
                         revertConfirmation(target)
@@ -94,7 +98,18 @@ struct AgentRunPanel: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                if let filePreview {
+                let turns = turnDiffs(run)
+                if let selection = diffSelection, !turns.isEmpty {
+                    TurnDiffPanel(turns: turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
+                                  directory: run.workingDirectory, wide: PanelLayout.wide($outputsWidth),
+                                  load: run.isRemote ? nil : { turn, files in try await gitDiff(turn, files) }) {
+                        withAnimation(NookTheme.reveal) { diffSelection = nil }
+                    }
+                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
+                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else if let filePreview {
                     FilePreviewPanel(path: filePreview, wide: PanelLayout.wide($outputsWidth)) {
                         withAnimation(NookTheme.reveal) { self.filePreview = nil }
                     }
@@ -128,7 +143,15 @@ struct AgentRunPanel: View {
             }
             // The outputs button asks for the outputs, also while a file is open.
             .onChange(of: outputsOpen) { _, isOpen in
-                if isOpen { withAnimation(NookTheme.reveal) { filePreview = nil } }
+                if isOpen { withAnimation(NookTheme.reveal) { filePreview = nil; diffSelection = nil } }
+            }
+            // ⌘D: the latest turn's diff, as in Code; again to close it.
+            .keyCommand("diff.toggle", enabled: !turnDiffs(run).isEmpty) {
+                if diffSelection != nil {
+                    withAnimation(NookTheme.reveal) { diffSelection = nil }
+                } else if let last = turnDiffs(run).last {
+                    openDiff(TurnDiffSelection(turn: last.id))
+                }
             }
             .onChange(of: outputs.map(SessionOutputs.signature)) { _, _ in 
                 noticeOutputs(outputs, working: run.status.isActive, turnStart: run.turnStartedAt)
@@ -162,6 +185,8 @@ struct AgentRunPanel: View {
                 outputsOpen = false
                 outputSelection = nil
                 filePreview = nil
+                diffSelection = nil
+                countedLines = [:]
                 seenOutputs = nil
                 consoleEventID = nil
             }
@@ -488,12 +513,48 @@ struct AgentRunPanel: View {
         }
     }
 
+    // MARK: Turn diffs
+
+    /// The finished turns that changed files, with the lines git counted where it did.
+    private func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
+        TurnDiff.collect(events: workspace.timeline(runID)).map { turn in
+            countedLines[turn.id].map { turn.counted($0, relativeTo: run.workingDirectory) } ?? turn
+        }
+    }
+
+    /// Counts a turn's lines with git, between the snapshots around it (once per turn and set of files).
+    private func countLines(_ turn: TurnDiff, run: WorkspaceRun) async {
+        guard !run.isRemote, let start = turn.start, let end = turn.end else { return }
+        if let counts = try? await workspace.turnLines(runID, paths: turn.files.map(\.path), start: start, end: end) {
+            countedLines[turn.id] = counts
+        }
+    }
+
+    /// The real diff of these files in this turn (or in all turns), from the session's git snapshots.
+    private func gitDiff(_ turn: TurnDiff, _ files: [TurnDiff.File]) async throws -> String {
+        guard let start = turn.start, let end = turn.end else { return "" }
+        var parts: [String] = []
+        for file in files {
+            parts.append(try await workspace.turnDiff(runID, path: file.path, start: start, end: end))
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    /// Opens the diff panel on a turn (and a file), in place of a file or the outputs.
+    private func openDiff(_ selection: TurnDiffSelection) {
+        withAnimation(NookTheme.reveal) {
+            filePreview = nil
+            outputsOpen = false
+            diffSelection = selection
+        }
+    }
+
     // MARK: Timeline
 
     private func timeline(_ run: WorkspaceRun) -> some View {
         let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
         let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
-        let turnFiles = TurnChanges.byTurnEnd(events)
+        let cards = Dictionary(turnDiffs(run).compactMap { turn in turn.answerID.map { ($0, turn) } }, uniquingKeysWith: { first, _ in first })
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
         return ScrollViewReader { proxy in
@@ -508,12 +569,12 @@ struct AgentRunPanel: View {
                             AnyView(
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     eventRow(event)
-                                    if let turn = turnFiles[event.id] {
-                                        TurnChangesChip(turn: turn, directory: run.workingDirectory) { path in
-                                            try await workspace.turnDiff(runID, path: path, start: turn.start, end: turn.end)
-                                        } lines: {
-                                            try await workspace.turnLines(runID, paths: turn.files, start: turn.start, end: turn.end)
+                                    // What the turn changed (Code's card): a file or Open diff opens the diff beside it.
+                                    if let turn = cards[event.id.uuidString] {
+                                        TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
+                                            openDiff(TurnDiffSelection(turn: turn.id, file: file))
                                         }
+                                        .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) }
                                     }
                                 }
                                 .padding(.vertical, current == event.id ? 4 : 0)
@@ -787,7 +848,7 @@ struct AgentRunPanel: View {
     private func showFile(_ file: String) {
         withAnimation(NookTheme.reveal) {
             filePreview = filePreview == file ? nil : file
-            if filePreview != nil { outputsOpen = false }
+            if filePreview != nil { outputsOpen = false; diffSelection = nil }
         }
     }
 
@@ -805,7 +866,7 @@ struct AgentRunPanel: View {
 
     private func approval(_ run: WorkspaceRun, _ pending: PendingPermission, more: Int) -> some View {
         let request = ApprovalCenter.make(pending, run: run)
-        return ApprovalView(approval: request, more: more, maxHeight: 110) { app.approvals.decide(request, $0) }
+        return ApprovalView(approval: request, more: more) { app.approvals.decide(request, $0) }
     }
 
     /// Inline instead of a dialog: the notch is a panel, not a window that sheets can attach to.

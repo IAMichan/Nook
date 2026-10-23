@@ -31,6 +31,10 @@ struct PullRequestDetailView: View {
     @State private var confirmMerge = false
     @State private var merging = false
     @State private var mergeError: String?
+    /// The composer, the ⋯ menu's actions and their confirmation.
+    @StateObject private var actions = PullRequestActionState()
+    /// The timeline newest first, as Code offers.
+    @AppStorage("agents.pr.timelineNewest") private var newestFirst = false
 
     init(accountID: String, item: PullRequestItem, onBack: (() -> Void)? = nil) {
         self.accountID = accountID
@@ -56,6 +60,10 @@ struct PullRequestDetailView: View {
                 // The relative times in the timeline and the commits tick along, once a minute.
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     content(detail, now: context.date)
+                }
+                if actions.panel != .none || actions.pending != nil || actions.error != nil {
+                    PullRequestActionPanel(state: actions, model: model, accountID: accountID, detail: detail)
+                        .transition(.opacity)
                 }
                 mergeBar(detail)
             } else if let error = model.error {
@@ -111,6 +119,9 @@ struct PullRequestDetailView: View {
                 Task { await model.refresh(activity: true) }
             }
             .help(tr("agents.pulls.refresh"))
+            if let detail {
+                PullRequestMoreMenu(state: actions, detail: detail)
+            }
             if let url = detail?.url ?? item.url {
                 NookIconButton(systemName: "link", label: tr("agents.pr.copyLink"), size: 28) {
                     Pasteboard.copy(url.absoluteString)
@@ -191,6 +202,25 @@ struct PullRequestDetailView: View {
                 ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
             }
             .accessibilityAddTraits(.isButton)
+            ToolbarIconButton("terminal", tr("agents.pr.action.copyCheckout")) {
+                Pasteboard.copy(PullRequestMoreMenu.checkout(detail))
+                ToastCenter.shared.success(tr("agents.pr.action.copied"))
+            }
+            if detail.isOpen && detail.mergeState == "behind" {
+                Button {
+                    actions.close()
+                    actions.pending = .updateBranch(headSHA: detail.headSHA)
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text(tr("agents.pr.behind"))
+                    }
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.amber)
+                }
+                .buttonStyle(.plain)
+                .help(tr("agents.pr.action.updateBranch"))
+            }
             Spacer(minLength: NookTheme.Spacing.sm)
             HStack(spacing: NookTheme.Spacing.sm) {
                 HStack(spacing: NookTheme.Spacing.xxs) {
@@ -534,9 +564,25 @@ struct PullRequestDetailView: View {
 
     /// The history as one rail, oldest first: who did what, with conversations as cards and commits in runs.
     private func timeline(_ detail: PullRequestDetail, now: Date) -> some View {
-        let entries = PullRequestTimelineEntry.entries(detail.events)
+        let oldestFirst = PullRequestTimelineEntry.entries(detail.events)
+        let entries = newestFirst ? Array(oldestFirst.reversed()) : oldestFirst
         return VStack(alignment: .leading, spacing: 0) {
-            if let created = detail.created {
+            HStack {
+                Spacer(minLength: 0)
+                Button {
+                    newestFirst.toggle()
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Image(systemName: "arrow.up.arrow.down")
+                        Text(tr(newestFirst ? "agents.pr.timeline.newest" : "agents.pr.timeline.oldest"))
+                    }
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, NookTheme.Spacing.sm)
+            if let created = detail.created, !newestFirst {
                 TimelineRail(last: entries.isEmpty) {
                     TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
                 } content: {
@@ -547,7 +593,15 @@ struct PullRequestDetailView: View {
                 ListEmptyNote(tr("agents.pr.conversation.none"))
             } else {
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                    timelineEntry(entry, detail: detail, now: now, last: index == entries.count - 1)
+                    timelineEntry(entry, detail: detail, now: now,
+                                  last: index == entries.count - 1 && !(newestFirst && detail.created != nil))
+                }
+            }
+            if newestFirst, let created = detail.created {
+                TimelineRail(last: true) {
+                    TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
+                } content: {
+                    activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
             }
         }
@@ -806,9 +860,10 @@ struct PullRequestDetailView: View {
                         .padding(.horizontal, NookTheme.Spacing.xs)
                 }
                 VStack(spacing: 0) {
-                    ForEach(Array(detail.files.enumerated()), id: \.element.id) { index, file in
+                    ForEach(Array(orderedFiles(detail).enumerated()), id: \.element.id) { index, file in
                         if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 14 + NookTheme.Spacing.md) }
-                        let seen = viewed.isViewed(file, in: key)
+                        let status = viewed.status(file, in: key)
+                        let seen = status == .viewed
                         HStack(spacing: 0) {
                             viewedButton(file, key: key, seen: seen)
                                 .padding(.leading, NookTheme.Spacing.sm)
@@ -816,6 +871,15 @@ struct PullRequestDetailView: View {
                                 HStack(spacing: NookTheme.Spacing.md) {
                                     fileGlyph(file.status)
                                     filePath(file.path)
+                                    if status == .changed {
+                                        Text(tr("agents.pr.files.changedSince"))
+                                            .font(NookTheme.TextStyle.caption)
+                                            .foregroundStyle(NookTheme.amber)
+                                    } else if PullRequestFileOrder.kind(file.path) == .generated {
+                                        Text(tr("agents.pr.files.generated"))
+                                            .font(NookTheme.TextStyle.caption)
+                                            .foregroundStyle(NookTheme.textTertiary)
+                                    }
                                     Spacer(minLength: 6)
                                     Text("+\(file.additions)").foregroundStyle(NookTheme.mint)
                                     Text("−\(file.deletions)").foregroundStyle(NookTheme.coral)
@@ -830,6 +894,12 @@ struct PullRequestDetailView: View {
                 .panelCard()
             }
         }
+    }
+
+    /// The files in reading order (Code's): each source file with its tests, then documentation, then generated files.
+    private func orderedFiles(_ detail: PullRequestDetail) -> [PullRequestFile] {
+        let byPath = Dictionary(detail.files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        return PullRequestFileOrder.ordered(detail.files.map(\.path)).compactMap { byPath[$0] }
     }
 
     /// Ticks a file as viewed (or not), as on GitHub. The mark holds the file's revision, so a push that changes the file
@@ -881,20 +951,21 @@ struct PullRequestDetailView: View {
                 Text("−\(file.deletions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
                 viewedButton(file, key: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number),
                              seen: viewed.isViewed(file, in: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)))
-                if let index = detail.files.firstIndex(of: file) {
-                    Text("\(index + 1)/\(detail.files.count)")
+                let ordered = orderedFiles(detail)
+                if let index = ordered.firstIndex(of: file) {
+                    Text("\(index + 1)/\(ordered.count)")
                         .font(NookTheme.TextStyle.detail.monospacedDigit())
                         .foregroundStyle(NookTheme.textTertiary)
                     NookIconButton(systemName: "chevron.up", label: tr("agents.pr.files.previous"), size: 24) {
-                        openFile = detail.files[index - 1].path
+                        openFile = ordered[index - 1].path
                     }
                     .disabled(index == 0)
                     .opacity(index == 0 ? 0.35 : 1)
                     NookIconButton(systemName: "chevron.down", label: tr("agents.pr.files.next"), size: 24) {
-                        openFile = detail.files[index + 1].path
+                        openFile = ordered[index + 1].path
                     }
-                    .disabled(index + 1 >= detail.files.count)
-                    .opacity(index + 1 >= detail.files.count ? 0.35 : 1)
+                    .disabled(index + 1 >= ordered.count)
+                    .opacity(index + 1 >= ordered.count ? 0.35 : 1)
                 }
             }
             if let patch = file.patch, !patch.isEmpty {
@@ -966,6 +1037,12 @@ struct PullRequestDetailView: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
+            if actions.panel != .write {
+                NookGhostButton(title: tr("agents.pr.write.open"), symbol: "square.and.pencil", compact: true, height: 30) {
+                    withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
+                }
+                .disabled(actions.sending)
+            }
             if detail.isOpen && detail.canPush != false && !detail.methods.isEmpty {
                 Menu {
                     ForEach(detail.methods) { option in

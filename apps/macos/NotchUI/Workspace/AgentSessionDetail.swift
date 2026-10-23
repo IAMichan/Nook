@@ -163,11 +163,11 @@ struct AgentSessionDetail: View {
 
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
-                ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
+                ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
             } else if !app.demoMode, let request = bridgeRequest(for: session) {
                 // A command or pull request this agent asks for through Nook's workspace.
                 let approval = ApprovalCenter.make(request)
-                ApprovalView(approval: approval, maxHeight: 120) { app.approvals.decide(approval, $0) }
+                ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
             } else {
                 errorLine
                 liveComposer(shown)

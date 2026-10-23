@@ -97,7 +97,7 @@ final class WorkspaceSettings: ObservableObject {
         didSet { defaults.set(continueAfterRelaunch, forKey: "ws.continueAfterRelaunch") }
     }
     /// A message typed while an agent works steers the turn (Cmd+Return queues it instead); off: it queues (Cmd+Return steers).
-    /// Configurable in Settings.
+    /// Off by default: what you send during a turn waits in line, as you expect from a queue. Configurable in Settings.
     @Published var steerByDefault: Bool {
         didSet { defaults.set(steerByDefault, forKey: "ws.steerByDefault") }
     }
@@ -143,7 +143,7 @@ final class WorkspaceSettings: ObservableObject {
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
-        steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? true
+        steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? false
         scheduledTasksEnabled = defaults.object(forKey: "ws.scheduledTasksEnabled") as? Bool ?? false
         scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""

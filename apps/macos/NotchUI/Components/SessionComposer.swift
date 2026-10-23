@@ -228,9 +228,13 @@ struct SessionComposer<Controls: View>: View {
         return .handled
     }
 
-    /// Return with the list open takes the chosen line; a plain Return otherwise sends through `onSubmit`.
-    private func returnKey() -> KeyPress.Result {
-        chooseSelected() ? .handled : .ignored
+    /// Return with the list open takes the chosen line; a plain Return otherwise sends. Sending here, instead of leaving
+    /// it to `onSubmit`, keeps the field from committing the edit, which selected the whole text while it was still there.
+    private func returnKey(_ press: KeyPress) -> KeyPress.Result {
+        if chooseSelected() { return .handled }
+        guard press.modifiers.isEmpty else { return .ignored }
+        submit()
+        return .handled
     }
 
     private func chooseSelected() -> Bool {
@@ -315,7 +319,7 @@ struct SessionComposer<Controls: View>: View {
             .onKeyPress(.downArrow) { () -> KeyPress.Result in arrow(1) }
             .onKeyPress(.tab) { () -> KeyPress.Result in tabKey() }
             .onKeyPress(.escape) { () -> KeyPress.Result in escapeKey() }
-            .onKeyPress(.return, phases: .down) { (_: KeyPress) -> KeyPress.Result in returnKey() }
+            .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
             .keyCommands(keyHandlers, context: keyContext, enabled: focused)
     }
 
