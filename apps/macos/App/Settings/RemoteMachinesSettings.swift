@@ -96,6 +96,8 @@ private struct AddMachineSheet: View {
     @State private var name = ""
     @State private var host = ""
     @State private var port = ""
+    /// Machines from ~/.ssh/config, ~/.ssh/known_hosts and your tailnet, to fill the form with one click.
+    @State private var suggestions: [RemoteHostDiscovery.Suggestion] = []
 
     private var portNumber: Int? { Int(port.trimmingCharacters(in: .whitespaces)).flatMap { (1...65535).contains($0) ? $0 : nil } }
     private var canAdd: Bool {
@@ -107,6 +109,23 @@ private struct AddMachineSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(tr("remote.addTitle")).font(NookTheme.TextStyle.heading)
             Text(tr("remote.addSubtitle")).foregroundStyle(NookTheme.textSecondary)
+            if !suggestions.isEmpty {
+                Menu {
+                    ForEach(suggestions) { suggestion in
+                        Button {
+                            name = suggestion.name
+                            host = suggestion.host
+                            port = suggestion.port.map(String.init) ?? ""
+                        } label: {
+                            Text(suggestion.name + (suggestion.detail.map { " · \($0)" } ?? ""))
+                            Text(tr("remote.suggestion." + suggestion.source.rawValue))
+                        }
+                    }
+                } label: {
+                    Label(tr("remote.suggestions", suggestions.count), systemImage: "sparkle.magnifyingglass")
+                }
+                .fixedSize()
+            }
             TextField(tr("remote.name"), text: $name, prompt: Text("buildbox")).textFieldStyle(.roundedBorder)
             TextField(tr("remote.host"), text: $host, prompt: Text("me@buildbox.local")).textFieldStyle(.roundedBorder)
                 .font(NookTheme.TextStyle.code)
@@ -129,5 +148,38 @@ private struct AddMachineSheet: View {
         }
         .padding(20)
         .frame(width: 440)
+        .task {
+            let existing = RemoteMachines.load()
+            suggestions = await Task.detached(priority: .userInitiated) { Self.discover(existing: existing) }.value
+        }
+    }
+
+    /// Reads ~/.ssh/config and ~/.ssh/known_hosts, and asks the Tailscale app for the devices of your tailnet. Nothing
+    /// is contacted on the network.
+    nonisolated private static func discover(existing: [RemoteMachine]) -> [RemoteHostDiscovery.Suggestion] {
+        let ssh = (NSHomeDirectory() as NSString).appendingPathComponent(".ssh")
+        let config = (try? String(contentsOfFile: ssh + "/config", encoding: .utf8)).map(RemoteHostDiscovery.sshConfig) ?? []
+        let known = (try? String(contentsOfFile: ssh + "/known_hosts", encoding: .utf8)).map(RemoteHostDiscovery.knownHosts) ?? []
+        return RemoteHostDiscovery.merge(tailscale: tailnet(), sshConfig: config, knownHosts: known, existing: existing)
+    }
+
+    /// `tailscale status --json`, from the app or a command line install; nothing when Tailscale is not there or not up.
+    nonisolated private static func tailnet() -> [RemoteHostDiscovery.Suggestion] {
+        let candidates = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale"]
+        guard let tool = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return [] }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = ["status", "--json"]
+        process.standardInput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
+        do { try process.run() } catch { return [] }
+        let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 4, execute: stop)
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        stop.cancel()
+        return process.terminationStatus == 0 ? RemoteHostDiscovery.tailscale(data) : []
     }
 }

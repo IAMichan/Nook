@@ -98,7 +98,7 @@ final class ChatLiveStream {
         case .data(let bytes): data = bytes
         @unknown default: data = nil
         }
-        guard let data, let json = BeeperData.object(data) else { return }
+        guard let data, let json = ChatJSON.object(data) else { return }
         switch BeeperData.event(json) {
         case .ready:
             guard let body = try? JSONSerialization.data(withJSONObject: BeeperData.subscribeAll),

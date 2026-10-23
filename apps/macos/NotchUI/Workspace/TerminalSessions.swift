@@ -28,7 +28,7 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
     @Published private(set) var exitCode: Int32?
     @Published private(set) var running = true
     let created = Date()
-    let view: LocalProcessTerminalView
+    let view: NookTerminalView
 
     init(title: String, directory: String, command: String?, shortID: String = "", owner: TerminalOwner? = nil) {
         self.title = title
@@ -37,9 +37,10 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         self.owner = owner
         self.command = command
         origin = directory
-        view = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
+        view = NookTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
         super.init()
         view.processDelegate = self
+        view.linkBase = { [weak self] in self?.directory }
         view.font = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
 
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
@@ -88,6 +89,35 @@ final class TerminalSession: NSObject, ObservableObject, Identifiable, LocalProc
         Task { @MainActor in
             self.running = false
             self.exitCode = exitCode
+        }
+    }
+}
+
+/// The terminal view, with ⌘-click on a link handled the Nook way (as Code's terminal does): an address on this Mac
+/// (`http://localhost:5173`) opens in Nook's browser, any other web address in your browser, and a path the terminal shows
+/// (`./src/app.swift:12:3`, `~/notes.md`, `/abs/file.ts`) in your editor at that line. Other links (`ssh:`, `magnet:`…)
+/// are left alone.
+final class NookTerminalView: LocalProcessTerminalView {
+    /// The folder a relative path is read from: where the shell is now.
+    var linkBase: @MainActor () -> String? = { nil }
+
+    override func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        let base = MainActor.assumeIsolated { linkBase() }
+        let text = link.trimmingCharacters(in: .whitespaces)
+        Task { @MainActor in
+            if TerminalLinks.isURL(text), let url = URL(string: text) {
+                if TerminalLinks.isLocal(url) {
+                    BrowserStore.shared.open(url)
+                    BrowserPopup.shared.show()
+                } else {
+                    NSWorkspace.shared.open(url)
+                }
+                return
+            }
+            // The terminal's own match can carry sentence punctuation; read it the way the link parser does.
+            let path = TerminalLinks.extract(text).first { $0.kind == .path }?.text ?? text
+            guard let target = FileLink.parse(path), let resolved = FileLink.resolve(target, base: base) else { return }
+            AppModel.shared.workspace.openFile(resolved)
         }
     }
 }

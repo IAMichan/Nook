@@ -58,6 +58,7 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `orchestrator_capabilities` | Lists which agents Nook can spawn for delegated subtasks, available models, and current session permissions. | Immediate |
 | `delegate_task` | Delegates a focused subtask (`research`, `review`, `design`, `test`, `implementation`) to a child agent session visible beside the parent. | Requires approval (unless session has full access); disabled in Plan mode |
 | `task_status` | Returns status (`queued`, `running`, `waiting`, `completed`, `failed`, `cancelled`) and latest output of a delegated task. | Immediate |
+| `task_wait` | Waits for up to eight delegated tasks until any one (`mode: any`) or all of them (`mode: all`) have finished or ask a question, at most `timeout_seconds` (default 45, at most 840). Returns each task's state and which are settled; tasks keep running after a timeout and wake the parent when done. | Immediate |
 | `task_cancel` | Cancels a delegated task and any subtasks it spawned. | Immediate (disabled in Plan mode) |
 | `session_read` | Reads a summary of another Nook session (prompt, answer, commands, changed files) for `@`-mentions. | Immediate |
 

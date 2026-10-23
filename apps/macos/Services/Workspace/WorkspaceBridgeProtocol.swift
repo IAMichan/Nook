@@ -19,6 +19,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case orchestratorCapabilities = "orchestrator_capabilities"
     case delegateTask = "delegate_task"
     case taskStatus = "task_status"
+    case taskWait = "task_wait"
     case taskCancel = "task_cancel"
     case sessionRead = "session_read"
     case sessionList = "session_list"
@@ -39,7 +40,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
     var effect: Effect {
         switch self {
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot,
-             .orchestratorCapabilities, .taskStatus, .sessionRead, .sessionList, .deviceList, .deviceScreenshot: return .read
+             .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList, .deviceList, .deviceScreenshot: return .read
         case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .deviceOpen, .deviceClose: return .local
         case .pullRequestCreate: return .outward
         }
@@ -69,6 +70,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .orchestratorCapabilities: return "Nook agents"
         case .delegateTask: return "Delegate task"
         case .taskStatus: return "Task status"
+        case .taskWait: return "Wait for tasks"
         case .taskCancel: return "Cancel task"
         case .sessionRead: return "Read session"
         case .sessionList: return "Nook sessions"
@@ -114,6 +116,8 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Hands a task to a new agent session in Nook, visible to the user next to yours. The agent gets only the task text (and a role), not this conversation, so write a complete brief. It works in your folder with your mode and rights or narrower; it can never have more. Returns a task id. Without wait it returns at once and Nook tells you when the task has finished; with wait it waits for the result (at most timeout_seconds) and reports waitTimedOut if the task is still running. The user approves each delegation unless the session has full rights."
         case .taskStatus:
             return "Reads the state and result of a task you delegated: queued, running, waiting (for the user), completed, failed or cancelled, with the child's last message as summary."
+        case .taskWait:
+            return "Waits for several tasks you delegated, so you can start them all first and then collect the results: until any one of them (mode any, the default) or all of them (mode all) has finished or asks a question, at most timeout_seconds. Returns each task's state and result, which ones are settled, and waitTimedOut when time ran out first; the tasks keep running after a timeout."
         case .taskCancel:
             return "Stops a task you delegated, and every task that task delegated in turn."
         case .sessionList:
@@ -202,6 +206,14 @@ enum BridgeTool: String, CaseIterable, Sendable {
             ])
         case .taskStatus:
             return object(["task_id": ["type": "string", "description": "The task id from delegate_task."]], required: ["task_id"])
+        case .taskWait:
+            return object([
+                "task_ids": ["type": "array", "items": ["type": "string"], "minItems": 1, "maxItems": 8,
+                             "description": "The task ids from delegate_task."],
+                "mode": ["type": "string", "enum": DelegatedTask.WaitMode.allCases.map(\.rawValue),
+                         "description": "any: return as soon as one task is settled (default). all: wait for every task."],
+                "timeout_seconds": ["type": "integer", "description": "How long to wait (default 45, at most 840)."]
+            ], required: ["task_ids"])
         case .taskCancel:
             return object(["task_id": ["type": "string", "description": "The task id from delegate_task."]], required: ["task_id"])
         case .pullRequestCreate:

@@ -24,6 +24,9 @@ NookCompanion/   SwiftUI app: QR pairing, session list, inline actions, APNs pus
   InboxViews.swift       the Mac's Chats tab: every chat app in one list, a chat as bubbles, answering WhatsApp
   HomeViews.swift        Today: greeting, what needs you, For you, agenda, now playing, limits, starters
   UsageViews.swift       plan limits, tokens and costs, tokens per day, usage per model
+  LiveActivities.swift   Live Activity tokens for the Mac, the switch, updates while the app is open
+NookActivity/    widget extension: the Live Activity on the Lock Screen and in the Dynamic Island
+Shared/          what the app and the extension share (ActivityKit attributes, how a phase looks)
 ```
 
 The wire protocol, ChaCha20-Poly1305 sealing, and SHA-256/HMAC helpers are shared with the macOS app via [`packages/protocol`](../../packages/protocol).

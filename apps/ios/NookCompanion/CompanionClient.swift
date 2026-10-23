@@ -22,6 +22,10 @@ final class CompanionClient: ObservableObject {
     @Published var notice: String?
     /// Set when a notification was tapped: the session to open.
     @Published var openSession: String?
+    /// The session whose screen is open, so a push about it arrives without a banner.
+    var visibleSession: String?
+    /// A `nook://prompt` link that was opened: the New session sheet shows with its text.
+    @Published var pendingPrompt: PromptLink?
     /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
     @Published private(set) var macPushReady: Bool?
     /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.
@@ -92,6 +96,7 @@ final class CompanionClient: ObservableObject {
 
     func unpair() {
         poll?.cancel()
+        Task { await LiveActivities.shared.endAll() }
         PairingStore.clear()
         link = nil
         sessions = []
@@ -131,8 +136,11 @@ final class CompanionClient: ObservableObject {
     func refresh() async {
         guard link != nil else { return }
         await perform(CompanionRequest(op: .list))
+        guard phase == .connected else { return }
+        // The Live Activities follow the list (and the Mac gets the tokens it does not have yet).
+        await LiveActivities.shared.reconcile(sessions)
         // The chats too, for the badge on the Chats tab.
-        if phase == .connected, can(CompanionFeature.inbox) { await perform(CompanionRequest(op: .inbox), quiet: true) }
+        if can(CompanionFeature.inbox) { await perform(CompanionRequest(op: .inbox), quiet: true) }
     }
 
     /// The token iOS gave this app for pushes: kept, and sent to the Mac (sealed) so it can notify this phone.
@@ -142,16 +150,30 @@ final class CompanionClient: ObservableObject {
         await sendPushRegistration()
     }
 
+    /// Whether this build's push tokens are for Apple's production service; a debug build has sandbox tokens.
+    static var apnsProduction: Bool {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }
+
     func sendPushRegistration() async {
         guard let link, let pushToken else { return }
-        #if DEBUG
-        let environment = "development"
-        #else
-        let environment = "production"
-        #endif
+        let environment = Self.apnsProduction ? "production" : "development"
         if let response = try? await request(CompanionRequest(op: .register, item: environment, text: pushToken), using: link), response.ok {
             macPushReady = response.message == "push"
         }
+    }
+
+    /// Hands the Mac a Live Activity token (or says one ended, or that they are off). The Mac's "push"/"nopush" when it
+    /// took it, nil when it could not be reached or does not know Live Activities.
+    func registerLive(_ registration: LiveActivityRegistration) async -> String? {
+        guard let link, can(CompanionFeature.liveActivity),
+              let response = try? await request(CompanionRequest(op: .liveActivity, live: registration), using: link),
+              response.ok else { return nil }
+        return response.message ?? "nopush"
     }
 
     /// An action from a notification (Allow / Deny), done without opening the app.

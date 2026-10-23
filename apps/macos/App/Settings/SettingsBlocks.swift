@@ -337,6 +337,7 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var ws = WorkspaceSettings.shared
     @ObservedObject private var inbox = InboxStore.shared
     @ObservedObject private var webhook = WebhookListener.shared
+    @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @State private var showScheduled = false
 
     var body: some View {
@@ -452,6 +453,19 @@ struct WorkspaceSettingsSection: View {
     /// restarts, and how the list keeps itself tidy.
     @ViewBuilder
     private var behavior: some View {
+        // How Nook writes commit messages and pull requests.
+        Section {
+            Picker(tr("settings.ws.commitStyle"), selection: $ws.commitStyle) {
+                ForEach(CommitStyle.allCases) { Text(tr("settings.ws.commitStyle." + $0.rawValue)).tag($0) }
+            }
+            if ws.commitStyle == .custom {
+                TextField(tr("settings.ws.commitInstructions"), text: $ws.commitInstructions,
+                          prompt: Text(tr("settings.ws.commitInstructions.placeholder")), axis: .vertical)
+                    .lineLimit(2...5)
+            }
+        } footer: {
+            Text(tr("settings.ws.commitStyle.footer"))
+        }
         Section(tr("settings.ws.behavior")) {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
             Toggle(tr("settings.ws.steerByDefault"), isOn: $ws.steerByDefault)
@@ -462,6 +476,7 @@ struct WorkspaceSettingsSection: View {
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)
+            Toggle(tr("settings.ws.confirmQuit"), isOn: $confirmQuit)
         }
         Section {
             Toggle(tr("settings.ws.inboxWorking"), isOn: $inbox.showWorking)

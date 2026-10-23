@@ -38,12 +38,7 @@ struct WhatsAppLinkSection: View {
 
                 if link.link == .needsQR, let data = link.qrPNG, let image = NSImage(data: data) {
                     HStack(alignment: .top, spacing: 16) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .interpolation(.none)
-                            .frame(width: 180, height: 180)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.control))
+                        QRCodeView(image: image, side: 160, label: tr("chats.link.qr"))
                         Text(tr("whatsapp.settings.scan"))
                             .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.textStrong)

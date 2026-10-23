@@ -86,4 +86,18 @@ final class PromptLinkTests: XCTestCase {
         let url = PromptLink.build(text: "hi", project: "../x", agent: "bad agent", model: nil)
         XCTAssertEqual(url?.absoluteString, "nook://prompt?text=hi")
     }
+
+    func testChoosingTheProjectAndAgentOfALink() {
+        let projects = [LaunchOptions.Project(path: "/Users/me/code/app", name: "app", canWorktree: true),
+                        LaunchOptions.Project(path: "/Users/me/work/site", name: "Site", canWorktree: false)]
+        let agents = [LaunchOptions.Agent(id: "claude-code", name: "Claude Code", canPlan: true),
+                      LaunchOptions.Agent(id: "codex", name: "Codex", canPlan: true)]
+        XCTAssertEqual(PromptLink(text: "x", project: "site").project(in: projects)?.path, "/Users/me/work/site")
+        XCTAssertEqual(PromptLink(text: "x", project: "code/app/").project(in: projects)?.path, "/Users/me/code/app")
+        XCTAssertNil(PromptLink(text: "x", project: "other").project(in: projects))
+        XCTAssertNil(PromptLink(text: "x").project(in: projects))
+        XCTAssertEqual(PromptLink(text: "x", agent: "claude").agent(in: agents)?.id, "claude-code")
+        XCTAssertEqual(PromptLink(text: "x", agent: "codex").agent(in: agents)?.id, "codex")
+        XCTAssertNil(PromptLink(text: "x", agent: "gemini").agent(in: agents))
+    }
 }

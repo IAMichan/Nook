@@ -35,9 +35,17 @@ final class APNsClient {
 
     func forgetToken() { cached = nil }
 
-    func send(payload: [String: Any], to deviceToken: String, production: Bool, collapseID: String, priority: Int = 10) async -> Result {
-        let topic = "nl.imdigital.nook.companion"
-        guard let url = APNsJWT.endpoint(production: production, deviceToken: deviceToken), let jwt = token(),
+    /// The companion app's bundle id: the topic of its notifications, and with a suffix of its Live Activities.
+    static let bundleID = "nl.imdigital.nook.companion"
+
+    /// A notification (`liveActivity` false) or a Live Activity push: start, update or end (`LiveActivityPayload`), which
+    /// goes to its own topic with its own push type and is never collapsed.
+    func send(payload: [String: Any], to deviceToken: String, production: Bool, collapseID: String?, priority: Int = 10,
+              liveActivity: Bool = false) async -> Result {
+        let topic = liveActivity ? LiveActivityPayload.topic(bundleID: Self.bundleID) : Self.bundleID
+        // An activity token is longer than a device token; both are hex only (they go into the URL).
+        let valid = liveActivity ? LiveActivityRegistration.validToken(deviceToken) : APNsJWT.validToken(deviceToken)
+        guard valid, let url = APNsJWT.endpoint(production: production, deviceToken: deviceToken), let jwt = token(),
               let body = try? JSONSerialization.data(withJSONObject: payload), body.count <= 4_096 else {
             return Result(outcome: .configuration, status: 0, reason: "not configured")
         }
@@ -46,9 +54,9 @@ final class APNsClient {
         request.httpBody = body
         request.setValue("bearer \(jwt)", forHTTPHeaderField: "authorization")
         request.setValue(topic, forHTTPHeaderField: "apns-topic")
-        request.setValue("alert", forHTTPHeaderField: "apns-push-type")
+        request.setValue(liveActivity ? LiveActivityPayload.pushType : "alert", forHTTPHeaderField: "apns-push-type")
         request.setValue(String(priority), forHTTPHeaderField: "apns-priority")
-        request.setValue(collapseID, forHTTPHeaderField: "apns-collapse-id")
+        if let collapseID { request.setValue(collapseID, forHTTPHeaderField: "apns-collapse-id") }
         do {
             let (data, response) = try await session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0

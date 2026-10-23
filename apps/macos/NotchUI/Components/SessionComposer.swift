@@ -196,6 +196,11 @@ struct SessionComposer<Controls: View>: View {
             return
         }
         extras.model.history.stopWalking()
+        // A line break after a list item starts the next item (or ends the list after an empty one).
+        if let continued = ComposerLists.continued(old: old, new: new) {
+            assign(continued)
+            return
+        }
         if extras.config.keepsBigPastes, let kept = extras.model.keepPaste(old: old, new: new) {
             assign(kept)
             extras.model.close()

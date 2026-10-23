@@ -1,8 +1,10 @@
 import Foundation
 import CoreGraphics
+import Combine
 
 /// Turns what happens in the workspace (an approval, a question, a finished or failed turn) into pushes to the paired
-/// phones, within the user's rules (`PushSettings`): which events, only when away, quiet hours, titles or not.
+/// phones, within the user's rules (`PushSettings`): which events, only when away, quiet hours, titles or not. It also
+/// keeps each phone's Live Activities current (one per working session, `LiveActivityPlanner`).
 @MainActor
 final class CompanionNotifier: ObservableObject {
     static let shared = CompanionNotifier()
@@ -10,8 +12,24 @@ final class CompanionNotifier: ObservableObject {
     @Published private(set) var lastResult: String?
     private weak var app: AppModel?
     private var ledger = PushLedger()
+    /// One planner per paired phone: what its Live Activities were last told.
+    private var live: [String: LiveActivityPlanner] = [:]
+    private var liveWatch: AnyCancellable?
+    private var liveTimer: Timer?
 
-    func attach(app: AppModel) { self.app = app }
+    func attach(app: AppModel) {
+        self.app = app
+        // A session that starts, waits or finishes changes the workspace or the hub. Streaming text changes them many
+        // times a second, so at most one look every three seconds; the planner sends only what changed.
+        liveWatch = app.workspace.objectWillChange.merge(with: app.hub.objectWillChange)
+            .throttle(for: .seconds(3), scheduler: RunLoop.main, latest: true)
+            // `objectWillChange` fires before the change lands; look on a later turn of the run loop.
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLiveActivities() } }
+        // Heartbeats (which move the stale date on) and phase changes held back by the rate limit.
+        liveTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshLiveActivities() }
+        }
+    }
 
     /// Idle for two minutes, or the screen is locked.
     static func userIsAway() -> Bool {
@@ -19,6 +37,64 @@ final class CompanionNotifier: ObservableObject {
         if idle >= 120 { return true }
         let session = CGSessionCopyCurrentDictionary() as? [String: Any]
         return (session?["CGSSessionScreenIsLocked"] as? Bool) == true
+    }
+
+    // MARK: Live Activities
+
+    /// Brings every phone's Live Activities in line with the sessions as they are now: start, update, end. Cheap when
+    /// nothing changed; nothing at all when no phone has Live Activities or push is not set up.
+    func refreshLiveActivities(now: Date = Date()) {
+        let store = CompanionStore.shared
+        let targets = store.devices.filter(\.wantsLiveActivities)
+        live = live.filter { id, _ in targets.contains { $0.id == id } }
+        guard let app, store.enabled, store.canPush, store.push.enabled, !targets.isEmpty else { return }
+        let snapshots = CompanionServer.shared.digests(app).map { LiveActivitySnapshot(digest: $0, includeTitle: store.push.includeTitle) }
+        for device in targets {
+            var planner = live[device.id] ?? LiveActivityPlanner()
+            let actions = planner.plan(snapshots, canStart: device.liveStartToken != nil,
+                                       tokens: Set((device.liveTokens ?? [:]).keys), now: now)
+            live[device.id] = planner
+            for action in actions { deliverLive(action, to: device) }
+        }
+    }
+
+    private func deliverLive(_ action: LiveActivityAction, to device: PairedDevice) {
+        let token = action.event == .start ? device.liveStartToken : device.liveTokens?[action.session]
+        guard let token else { return }
+        // A push-to-start needs an alert; it has no sound and says only who started working.
+        var alert: (title: String, body: String)?
+        if action.event == .start, let attributes = action.attributes {
+            alert = (attributes.title.isEmpty ? attributes.agent : "\(attributes.agent) · \(attributes.title)", tr("live.started"))
+        }
+        let payload = LiveActivityPayload.make(action, now: Date(), alert: alert)
+        let production = device.liveProduction ?? device.pushProduction ?? true
+        Task {
+            let result = await APNsClient.shared.send(payload: payload, to: token, production: production, collapseID: nil,
+                                                      priority: action.urgent ? 10 : 5, liveActivity: true)
+            let store = CompanionStore.shared
+            switch (result.outcome, action.event) {
+            case (.delivered, .end):
+                store.applyLive(device: device.id, LiveActivityRegistration(kind: .ended, session: action.session))
+            case (.delivered, _):
+                break
+            case (.dropToken, .start):
+                // The phone sends a new one when iOS gives it one.
+                store.dropLiveStartToken(device: device.id)
+                live[device.id]?.forget(action.session, now: Date())
+            case (.dropToken, _):
+                store.applyLive(device: device.id, LiveActivityRegistration(kind: .ended, session: action.session))
+                live[device.id]?.forget(action.session, now: Date())
+            case (_, .start):
+                // Not started: try again after the cooldown rather than updating an activity that is not there.
+                live[device.id]?.forget(action.session, now: Date())
+            default:
+                break
+            }
+            if action.event != .update || result.outcome != .delivered {
+                app?.store.audit(tool: "companion_live", args: "\(action.event.rawValue) · \(device.name)",
+                                 result: result.outcome == .delivered ? "ok" : (result.reason ?? "\(result.status)"))
+            }
+        }
     }
 
     func approval(_ run: WorkspaceRun, _ pending: PendingPermission) {

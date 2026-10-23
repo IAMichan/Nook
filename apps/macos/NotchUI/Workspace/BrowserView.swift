@@ -26,6 +26,8 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var openedBy: String?
     /// Why the last page did not load, if it did not.
     @Published private(set) var lastError: String?
+    /// When the page was last loaded again after its process crashed.
+    private var lastCrashReload = Date.distantPast
     /// How many browser pages (notch, workspace window) show the web view now. While one does, a page Nook opens is
     /// already in sight and needs no popup.
     var shownInWorkbench = 0
@@ -237,6 +239,19 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         lastError = error.localizedDescription
         refresh(loading: false)
+    }
+
+    /// The page's process crashed or was ended by macOS (memory pressure): the view would stay blank, so load the page
+    /// again, at most once per ten seconds so a page that crashes on load does not loop (as Code's browser recovers).
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        guard now.timeIntervalSince(lastCrashReload) > 10 else {
+            lastError = tr("ws.browser.crashed")
+            refresh(loading: false)
+            return
+        }
+        lastCrashReload = now
+        if webView.url != nil { webView.reload() } else if let url = URL(string: address) { webView.load(URLRequest(url: url)) }
     }
 
     /// Only web pages open inside; mail, phone and app links go to the system, other schemes are refused.
