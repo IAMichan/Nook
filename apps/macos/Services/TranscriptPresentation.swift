@@ -15,7 +15,8 @@ enum TranscriptRow: Identifiable, Equatable {
     /// A single step on its own.
     case step(AgentToolStep)
     /// Two or more steps in a row, behind one sentence.
-    case group(id: String, steps: [AgentToolStep])
+    /// `thoughts`: what the agent thought between the steps, by the id of the step each came right before.
+    case group(id: String, steps: [AgentToolStep], thoughts: [String: [AgentChatMessage]])
     /// The work of a finished turn before its answer, and the `seconds` it took (nil: the transcript has no times).
     case fold(id: String, seconds: Double?, rows: [TranscriptRow])
     /// At the top of the turn that runs: "Working for 12s" since `since`.
@@ -30,7 +31,7 @@ enum TranscriptRow: Identifiable, Equatable {
         case .user(let message), .thinking(let message): return message.id
         case .assistant(let message, _): return message.id
         case .step(let step): return "step:" + step.id
-        case .group(let id, _): return "group:" + id
+        case .group(let id, _, _): return "group:" + id
         case .fold(let id, _, _): return "fold:" + id
         case .working: return "working"
         case .live: return "live"
@@ -166,11 +167,14 @@ enum TranscriptPresentation {
         var rows: [TranscriptRow] = []
         var steps: [AgentToolStep] = []
         var groupID = ""
-        // Thinking after the steps so far: absorbed when more steps follow, else shown after the group.
+        // Thinking after the steps so far: moved into the group when more steps follow, else shown after it.
         var pending: [AgentChatMessage] = []
+        // Absorbed thoughts stay a click away inside the group, by the step they came before.
+        var thoughts: [String: [AgentChatMessage]] = [:]
         func flush() {
+            defer { thoughts = [:] }
             if steps.count == 1 { rows.append(.step(steps[0])) }
-            if steps.count > 1 { rows.append(.group(id: groupID, steps: steps)) }
+            if steps.count > 1 { rows.append(.group(id: groupID, steps: steps, thoughts: thoughts)) }
             steps = []
             rows += pending.map { TranscriptRow.thinking($0) }
             pending = []
@@ -179,6 +183,7 @@ enum TranscriptPresentation {
             switch message.kind {
             case .tools:
                 if steps.isEmpty { groupID = message.id }
+                if let first = message.steps.first, !pending.isEmpty { thoughts[first.id, default: []] += pending }
                 pending = []
                 steps += message.steps
             case .user:
@@ -218,7 +223,7 @@ enum TranscriptPresentation {
         rows.flatMap { row -> [AgentToolStep] in
             switch row {
             case .step(let step): return [step]
-            case .group(_, let steps): return steps
+            case .group(_, let steps, _): return steps
             case .fold(_, _, let inner): return self.steps(inner)
             case .live(let step): return step.map { [$0] } ?? []
             default: return []

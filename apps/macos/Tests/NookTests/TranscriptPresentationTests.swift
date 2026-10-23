@@ -65,7 +65,7 @@ final class TranscriptPresentationTests: XCTestCase {
         messages.append(message("s3", .tools, steps: [step("d", "Grep", "TODO"), step("e", "Bash", "swift test", .running)], at: 70))
         let rows = TranscriptPresentation.rows(Array(messages), working: true)
         XCTAssertEqual(rows.map(\.id), ["u1", "working", "t1", "group:s1", "x1", "group:s2", "live"])
-        guard case .working(let since) = rows[1], case .group(_, let steps) = rows[5], case .live(let current) = rows[6] else {
+        guard case .working(let since) = rows[1], case .group(_, let steps, _) = rows[5], case .live(let current) = rows[6] else {
             return XCTFail("\(rows)")
         }
         XCTAssertEqual(since, start)

@@ -157,8 +157,8 @@ struct TranscriptConversation: View {
             thinking(message)
         case .step(let step):
             stepLine(step)
-        case .group(let id, let steps):
-            group(id: id, steps: steps)
+        case .group(let id, let steps, let thoughts):
+            group(id: id, steps: steps, thoughts: thoughts)
         case .fold:
             EmptyView()
         case .working(let since):
@@ -180,7 +180,7 @@ struct TranscriptConversation: View {
         }
     }
 
-    private func group(id: String, steps: [AgentToolStep]) -> some View {
+    private func group(id: String, steps: [AgentToolStep], thoughts: [String: [AgentChatMessage]]) -> some View {
         let key = "group:" + id
         let tally = ToolTally(steps: steps)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
@@ -189,6 +189,7 @@ struct TranscriptConversation: View {
             if open.contains(key) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     ForEach(steps) { step in
+                        ForEach(thoughts[step.id] ?? []) { thinking($0) }
                         stepLine(step)
                     }
                 }

@@ -39,11 +39,11 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertFalse(tally.failed)
     }
 
-    func testLastTurnStaysOpenOnceFinished() {
+    func testLastTurnFoldsOnceFinished() {
         let blocks = TimelinePresentation.blocks(finishedTurn(), active: false)
-        XCTAssertFalse(blocks.contains { if case .fold = $0 { true } else { false } },
-                       "the turn you just watched reads the same once the agent is done")
-        XCTAssertEqual(TimelinePresentation.events(blocks).map(\.text), finishedTurn().map(\.text))
+        XCTAssertTrue(blocks.contains { if case .fold = $0 { true } else { false } },
+                      "a finished turn reads as 'Worked for …' over its answer")
+        XCTAssertEqual(TimelinePresentation.events(blocks).map(\.text), finishedTurn().map(\.text), "folding hides nothing")
     }
 
     func testBlockIdsAreUnique() {
@@ -73,16 +73,15 @@ final class TimelinePresentationTests: XCTestCase {
             event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed),
             event(.thinking, "volgende stap")
         ])
-        XCTAssertEqual(blocks.count, 6)
-        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1], case .event(let grep) = blocks[2],
-              case .event(let hmm) = blocks[3], case .event(let shell) = blocks[4], case .event(let thought) = blocks[5]
+        XCTAssertEqual(blocks.count, 4)
+        guard case .event(let read) = blocks[0], case .event(let error) = blocks[1], case .tools(_, let inside, _) = blocks[2],
+              case .event(let thought) = blocks[3]
         else { return XCTFail("\(blocks)") }
         XCTAssertEqual(read.text, "Read · a", "a single tool stands alone")
         XCTAssertEqual(error.kind, .error)
-        XCTAssertEqual(grep.kind, .tool)
-        XCTAssertEqual(hmm.text, "hmm", "thinking stays readable in the chat, never inside a group")
-        XCTAssertEqual(shell.state, .failed)
-        XCTAssertEqual(thought.text, "volgende stap")
+        XCTAssertEqual(inside.map(\.text), ["Grep · x", "hmm", "run_shell_command · ls"],
+                       "thinking between tool calls opens with their group")
+        XCTAssertEqual(thought.text, "volgende stap", "thinking after the last call stays readable")
 
         let grouped = TimelinePresentation.group([event(.tool, "Grep · x", tool: "Grep"),
                                                   event(.tool, "run_shell_command · ls", tool: "run_shell_command", state: .failed)])
