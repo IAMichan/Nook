@@ -462,7 +462,6 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.change.openDiff": "Änderung anzeigen",
         "ws.change.update": "geändert",
         "ws.change.written": "geschrieben",
-        "ws.changes.error": "Diff nicht verfügbar",
         "ws.changes.noDiff": "Kein Unterschied",
         "ws.changes.noDiffDetail": "Wähle links eine Datei. Binärdateien haben keinen Text-Diff.",
         "ws.changes.title": "Änderungen",

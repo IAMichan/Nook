@@ -192,6 +192,8 @@ struct DiffText: View {
     var comments: [ReviewComment] = []
     var onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil
     var onRemoveComment: ((UUID) -> Void)? = nil
+    /// One file of a `StackedDiffList`: no scroll view of its own and no file line, its header above says which file.
+    var stacked = false
     private let rows: [UnifiedDiff.Row]
     /// Width of one line-number column, from the largest number in the diff.
     private let numberWidth: CGFloat
@@ -201,7 +203,8 @@ struct DiffText: View {
 
     init(text: String, comments: [ReviewComment] = [],
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
-         onRemoveComment: ((UUID) -> Void)? = nil) {
+         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false) {
+        self.stacked = stacked
         self.comments = comments
         self.onComment = onComment
         self.onRemoveComment = onRemoveComment
@@ -216,12 +219,24 @@ struct DiffText: View {
     private let markerWidth: CGFloat = 16
 
     var body: some View {
-        ScrollView(.vertical) {
-            LazyVStack(alignment: .leading, spacing: 0) {
+        if stacked {
+            VStack(alignment: .leading, spacing: 0) { lines }
+                .background(WS.code)
+        } else {
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0) { lines }
+                    .padding(.bottom, NookTheme.Spacing.md)
+            }
+            .background(WS.code)
+        }
+    }
+
+    @ViewBuilder
+    private var lines: some View {
                 ForEach(rows.indices, id: \.self) { index in
                     let row = rows[index]
                     switch row.kind {
-                    case .file: fileRow(row, first: index == 0)
+                    case .file: if !stacked { fileRow(row, first: index == 0) }
                     case .hunk: hunkRow(row)
                     case .note: noteRow(row)
                     case .context, .add, .remove:
@@ -234,10 +249,6 @@ struct DiffText: View {
                         }
                     }
                 }
-            }
-            .padding(.bottom, NookTheme.Spacing.md)
-        }
-        .background(WS.code)
     }
 
     private func lineRow(_ row: UnifiedDiff.Row, index: Int) -> some View {

@@ -428,7 +428,7 @@ struct TranscriptUserBubble: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .padding(NookTheme.Spacing.lg)
+                    .padding(NookTheme.Spacing.md)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
             }
@@ -563,16 +563,16 @@ struct TranscriptWorkLine: View {
         let head = Text(label).foregroundStyle(color)
         guard let detail, !detail.isEmpty else { return head }
         return head + Text("  ") + Text(detail)
-            .font(mono ? NookTheme.mono(11.5) : NookTheme.TextStyle.detail)
+            .font(mono ? NookTheme.mono(12) : NookTheme.TextStyle.body)
             .foregroundStyle(reveals == true ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
     }
 
     var body: some View {
         let content = HStack(spacing: NookTheme.Spacing.sm) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(NookTheme.TextStyle.label)
+                .font(NookTheme.TextStyle.body)
                 .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
-                .frame(width: 20)
+                .frame(width: 24)
             if live {
                 ShimmerText(text: label)
                     .lineLimit(1)
@@ -597,8 +597,8 @@ struct TranscriptWorkLine: View {
             if !checks.isEmpty { VerificationChips(checks: checks) }
             Spacer(minLength: 0)
         }
-        .font(NookTheme.TextStyle.detail)
-        .frame(minHeight: 22)
+        .font(NookTheme.TextStyle.body)
+        .frame(minHeight: 24)
         .contentShape(Rectangle())
 
         if let action, clickable {
@@ -631,7 +631,7 @@ struct TranscriptFoldLine: View {
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
-            .font(NookTheme.TextStyle.detail)
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
             .padding(.top, NookTheme.Spacing.xxs)
             .padding(.bottom, NookTheme.Spacing.md)
@@ -659,7 +659,7 @@ struct TranscriptWorkingLine: View {
                 Text(tr("ws.timeline.working"))
             }
         }
-        .font(NookTheme.TextStyle.detail)
+        .font(NookTheme.TextStyle.body)
         .foregroundStyle(NookTheme.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, NookTheme.Spacing.xxs)

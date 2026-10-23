@@ -232,88 +232,47 @@ struct FolderGitButton: View {
     }
 }
 
-/// The changes in a folder, inside the notch: files on the left, the diff of the chosen file on the right.
+/// The changes in a folder, laid out(`StackedDiffList`): a toolbar with the number of files,
+/// the lines and the buttons that fold every file or show the tree, then every file in one scroll, folded until you
+/// open it.
 struct FolderChangesSheet: View {
     @StateObject private var model: FolderGitModel
-    @State private var selected: String?
-    @State private var diff = ""
-    @State private var loading = false
-    @State private var error: String?
-    /// In a narrow side panel: the file list above the diff instead of beside it.
-    private let stacked: Bool
+    @State private var expanded: Set<String> = []
+    @State private var showsTree = false
+    @State private var loaded = false
 
+    /// `stacked` is kept for the side panel's call; the stacked list fits a narrow panel and a wide one alike.
     init(directory: String, stacked: Bool = false) {
         _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
-        self.stacked = stacked
     }
 
     var body: some View {
-        let layout = stacked ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
-        layout {
-            ScrollView(showsIndicators: true) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    ForEach(model.changes) { file in
-                        Button { selected = file.path } label: {
-                            FileChangeRow(file: file)
-                                .padding(.horizontal, NookTheme.Spacing.md)
-                                .padding(.vertical, 5)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(selected == file.path ? NookTheme.smoke : Color.clear))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if model.changes.isEmpty {
-                        Text(tr("agents.git.noChanges"))
-                            .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .padding(NookTheme.Spacing.md)
-                    }
+        let files = model.changes.map(StackedDiffFile.init)
+        VStack(spacing: 0) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(tr("agents.turn.changedFiles", files.count))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh")) { Task { await model.refresh() } }
+                StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showsTree)
+            }
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .frame(height: 36)
+            NookDivider()
+            if files.isEmpty {
+                StackedDiffNote(text: loaded ? tr("agents.git.noChanges") : tr("ws.timeline.working"))
+            } else {
+                StackedDiffList(files: files, scope: model.directory, expanded: $expanded, showsTree: showsTree) { file in
+                    guard let change = model.changes.first(where: { $0.path == file.path }) else { return "" }
+                    return try await model.diff(change)
                 }
             }
-            .frame(width: stacked ? nil : 240, height: stacked ? 150 : nil)
-            .frame(maxWidth: stacked ? CGFloat.infinity : nil)
-            if stacked { Divider() }
-            Group {
-                if loading {
-                    PatientSpinner()
-                } else if let error {
-                    WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.changes.error"), message: error)
-                } else if diff.isEmpty {
-                    WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("ws.changes.noDiff"), message: tr("ws.changes.noDiffDetail"))
-                } else {
-                    DiffText(text: diff)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(stacked ? 8 : 0)
         .task {
             await model.refresh()
-            if selected == nil { selected = model.changes.first?.path }
-        }
-        .onChange(of: selected) { _, path in load(path) }
-    }
-
-    private func load(_ path: String?) {
-        guard let path, let file = model.changes.first(where: { $0.path == path }) else { diff = ""; return }
-        // A diff seen before shows at once and is read again behind it; only a new one waits for git.
-        let key = model.directory + "|" + path
-        let cached = DiffCache.diff(key)
-        if let cached { diff = cached }
-        loading = cached == nil
-        error = nil
-        Task {
-            do {
-                let fresh = try await model.diff(file)
-                DiffCache.store(fresh, key)
-                guard selected == path else { return }
-                diff = fresh
-            } catch let failure {
-                guard selected == path else { return }
-                error = failure.localizedDescription
-            }
-            loading = false
+            loaded = true
         }
     }
 }

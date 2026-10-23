@@ -661,7 +661,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.git.errorTitle": "Dat lukte niet",
 
         "ws.changes.title": "Wijzigingen",
-        "ws.changes.error": "Diff niet beschikbaar",
         "ws.changes.noDiff": "Geen verschil",
         "ws.changes.noDiffDetail": "Kies links een bestand. Een binair bestand heeft geen tekst-diff.",
         "ws.commit.title": "Commit",
@@ -1518,7 +1517,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "ws.git.errorTitle": "That didn't work",
 
         "ws.changes.title": "Changes",
-        "ws.changes.error": "Diff not available",
         "ws.changes.noDiff": "No difference",
         "ws.changes.noDiffDetail": "Pick a file on the left. Binary files have no text diff.",
         "ws.commit.title": "Commit",
