@@ -5,6 +5,9 @@ import Foundation
 
 let pullRequestTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.pr.confirmMerge": "Mergen bevestigen?",
+        "agents.pr.mergeMethod.title": "Mergemethode",
+        "agents.pr.mergeFailed": "Mergen is niet gelukt",
         "agents.pr.action.ready": "Klaar voor review",
         "agents.pr.confirm.changeBase": "%@ naar %@ laten mergen?",
         "agents.pr.confirm.ready": "%@ klaar voor review maken?",
@@ -125,6 +128,9 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "voegde %ld commits toe",
     ],
     .en: [
+        "agents.pr.confirmMerge": "Confirm merge?",
+        "agents.pr.mergeMethod.title": "Merge method",
+        "agents.pr.mergeFailed": "Couldn't merge",
         "agents.pr.action.ready": "Ready for review",
         "agents.pr.confirm.changeBase": "Merge %@ into %@ from now on?",
         "agents.pr.confirm.ready": "Mark %@ ready for review?",
@@ -245,6 +251,9 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "added %ld commits",
     ],
     .de: [
+        "agents.pr.confirmMerge": "Mergen bestätigen?",
+        "agents.pr.mergeMethod.title": "Merge-Methode",
+        "agents.pr.mergeFailed": "Mergen fehlgeschlagen",
         "agents.pr.action.ready": "Bereit für Review",
         "agents.pr.confirm.changeBase": "%@ ab jetzt in %@ mergen?",
         "agents.pr.confirm.ready": "%@ als bereit für Review markieren?",
@@ -365,6 +374,9 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "hat %ld Commits hinzugefügt",
     ],
     .fr: [
+        "agents.pr.confirmMerge": "Confirmer la fusion ?",
+        "agents.pr.mergeMethod.title": "Méthode de fusion",
+        "agents.pr.mergeFailed": "Échec de la fusion",
         "agents.pr.action.ready": "Prête pour revue",
         "agents.pr.confirm.changeBase": "Fusionner %@ dans %@ désormais ?",
         "agents.pr.confirm.ready": "Marquer %@ prête pour revue ?",
@@ -485,6 +497,9 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "a ajouté %ld commits",
     ],
     .es: [
+        "agents.pr.confirmMerge": "¿Confirmar la fusión?",
+        "agents.pr.mergeMethod.title": "Método de fusión",
+        "agents.pr.mergeFailed": "No se pudo fusionar",
         "agents.pr.action.ready": "Lista para revisión",
         "agents.pr.confirm.changeBase": "¿Fusionar %@ en %@ a partir de ahora?",
         "agents.pr.confirm.ready": "¿Marcar %@ como lista para revisión?",
