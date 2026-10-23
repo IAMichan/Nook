@@ -425,13 +425,38 @@ enum PullRequestNews {
             }
         }
         for review in new.reviews.dropFirst(min(old.reviewCount, new.reviews.count)) {
-            let text = review.text.isEmpty ? "" : ": " + ToolSummary.oneLine(review.text, 600)
+            let body = plain(review.text)
+            let text = body.isEmpty ? "" : ": " + body
             lines.append("Review from @\(review.author) (\(review.verdict.lowercased().replacingOccurrences(of: "_", with: " ")))" + text)
         }
         for comment in new.comments.dropFirst(min(old.commentCount, new.comments.count)) {
-            lines.append("Comment from @\(comment.author): " + ToolSummary.oneLine(comment.text, 600))
+            let body = plain(comment.text)
+            lines.append("Comment from @\(comment.author)" + (body.isEmpty ? "" : ": " + body))
         }
         return lines
+    }
+
+    /// A review or comment as one readable line: a bot's HTML comments, tags, badges and images left out, links as their
+    /// words. The agent can read the whole comment on GitHub; the line says what it is about.
+    static func plain(_ text: String, limit: Int = 300) -> String {
+        var result = text
+        let patterns: [(String, String)] = [
+            (#"<!--[\s\S]*?(-->|$)"#, " "),                // HTML comments, also one cut off
+            (#"<details>[\s\S]*?</details>"#, " "),        // folded sections
+            (#"!\[[^\]]*\]\([^)]*\)"#, " "),             // images and badges
+            (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),           // links: their words
+            (#"<[^>]*>"#, " "),                             // other tags
+            (#"(?m)^\s*(#+|>+|[-*_]{3,})\s*"#, " ")         // headings, quotes, rules
+        ]
+        for (pattern, template) in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            result = regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: template)
+        }
+        for (entity, character) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
+            result = result.replacingOccurrences(of: entity, with: character)
+        }
+        let words = result.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return ToolSummary.oneLine(words, limit)
     }
 
     /// Worth waking the agent for: something it can act on (failed CI, reviews, comments), not a merge or a pass.

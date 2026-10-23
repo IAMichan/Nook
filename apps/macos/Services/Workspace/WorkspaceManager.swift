@@ -1612,7 +1612,8 @@ final class WorkspaceManager: ObservableObject {
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }
         let message = PullRequestNews.message(url: old.url, lines: lines)
-        if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
+        // The news line above already shows it: the agent gets it without a bubble of yours.
+        if run.canContinue && processes[id] == nil { sendHidden(id, text: message) } else { enqueue(id, text: message) }
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
