@@ -484,7 +484,8 @@ struct AgentListRow: View {
                     .help(AgentPathFormat.tilde(item.path))
                 if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                AgentMark(agent: item.agent, account: item.account, size: 14, dimmed: dimmed, ring: background)
+                AgentMark(agent: item.agent, account: item.account, size: 14, dimmed: dimmed, ring: background,
+                          quiet: !hovering && !selected)
                     .padding(.trailing, item.account == nil ? 0 : 3)
             }
             .font(NookTheme.TextStyle.detail)

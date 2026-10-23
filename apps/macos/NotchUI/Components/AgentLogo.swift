@@ -150,10 +150,14 @@ struct AgentMark: View {
     var size: CGFloat = 16
     var dimmed = false
     var ring: Color = NookTheme.rowRest
+    /// Grey at rest, as Code shows a row's icon: the brand color comes back under the pointer or when selected.
+    var quiet = false
 
     var body: some View {
         AgentLogo(agent: agent, size: size)
-            .opacity(dimmed ? 0.5 : 1)
+            .saturation(quiet ? 0 : 1)
+            .opacity(dimmed ? 0.5 : (quiet ? 0.6 : 1))
+            .animation(NookTheme.hover, value: quiet)
             .accountBadge(account, size: size, ring: ring)
             .help(account.map { "\(agent) · \($0.label)" } ?? agent)
     }

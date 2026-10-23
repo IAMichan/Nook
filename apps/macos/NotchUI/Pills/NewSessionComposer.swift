@@ -204,7 +204,6 @@ struct NewSessionComposer: View {
 
     private var composerConfig: ComposerConfig {
         var rich = ComposerConfig()
-        rich.tint = config.provider.composerTint
         rich.fileRoot = config.projectPath.isEmpty ? nil : config.projectPath
         rich.keepsBigPastes = true
         return rich

@@ -193,10 +193,10 @@ struct MarkdownView: View {
         }
     }
 
-    private func paragraph(_ text: String, color: Color = NookTheme.paper) -> some View {
+    private func paragraph(_ text: String, color: Color = NookTheme.textStrong) -> some View {
         Text(MarkdownBlock.inline(text, size: size))
             .font(NookTheme.font(size))
-            .lineSpacing(4)
+            .lineSpacing(5)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
     }

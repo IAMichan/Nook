@@ -9,10 +9,10 @@ extension StatusTone {
         case .amber: return NookTheme.amber
         case .coral: return NookTheme.coral
         case .mint: return NookTheme.mint
-        case .iris: return Color(hex: 0x8CA2FF)
+        case .iris: return NookTheme.blue
         case .white: return NookTheme.paper
         case .muted: return NookTheme.textTertiary
-        case .slate: return Color(hex: 0x7C8AA5)
+        case .slate: return NookTheme.textSecondary
         }
     }
 }
@@ -66,17 +66,15 @@ struct AgentStatusBadge: View {
     }
 }
 
-/// The ground every small badge in a row stands on (status, pull request): the app's own subtle fill, no edge, in the
-/// chip corner, 18pt high so it fits a 12pt text line without making the row taller.
+/// The ground every small badge in a row stands on (status, pull request): no fill and no edge, as Code's rows show a
+/// status as a mark and a word only, 18pt high so it fits a 12pt text line without making the row taller.
 struct RowBadgeBackground: ViewModifier {
-    var horizontal: CGFloat = NookTheme.Spacing.sm
+    var horizontal: CGFloat = NookTheme.Spacing.xs
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
         content
             .padding(.horizontal, horizontal)
             .frame(height: 18)
-            .background(shape.fill(WS.subtle))
             .fixedSize()
     }
 }

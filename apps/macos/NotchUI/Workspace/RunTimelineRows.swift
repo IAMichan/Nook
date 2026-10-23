@@ -46,7 +46,7 @@ struct EventRow: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(WS.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(expanded || event.state == .running ? nil : 4)
+                        .lineLimit(expanded || event.state == .running ? nil : 2)
                         .opacity(0.85)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -90,7 +90,7 @@ struct EventRow: View {
             }
             .padding(NookTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.coral.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.surface))
 
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
@@ -125,17 +125,17 @@ struct EventRow: View {
             .foregroundStyle(WS.tertiary)
 
         case .result:
-            HStack(spacing: NookTheme.Spacing.md) {
-                NookDivider()
-                Image(systemName: event.state == .failed ? "xmark.circle" : "checkmark.circle")
-                    .foregroundStyle(event.state == .failed ? NookTheme.coral : NookTheme.mint)
+            // The end of a turn, quietly: the fold above already says how long it worked. Only a failure gets a mark.
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if event.state == .failed {
+                    Image(systemName: "xmark.circle").foregroundStyle(NookTheme.coral)
+                }
                 Text(event.text.isEmpty ? tr("ws.event.turnDone") : tr("ws.event.turnDoneWith", event.text))
-                    .font(NookTheme.TextStyle.detail)
+                    .font(NookTheme.TextStyle.caption)
                     .foregroundStyle(WS.tertiary)
                     .fixedSize()
-                NookDivider()
             }
-            .padding(.vertical, NookTheme.Spacing.sm)
+            .padding(.vertical, NookTheme.Spacing.xs)
         }
     }
 }
@@ -149,6 +149,8 @@ struct ToolRow: View {
     var file: String? = nil
     /// The side panel shows `file` now.
     var reveals = false
+    /// The chevron shows under the pointer only, as Code's work log keeps its rows bare at rest.
+    @State private var hovering = false
 
     /// The file a read or an edit was about, as an absolute path; nil for other tools, a folder, or a remote session.
     static func file(_ event: RunEvent, in directory: String?) -> String? {
@@ -171,7 +173,7 @@ struct ToolRow: View {
                         .foregroundStyle(WS.tertiary)
                     Text(event.text)
                         .font(NookTheme.mono(11.5))
-                        .foregroundStyle(WS.text.opacity(0.9))
+                        .foregroundStyle(hovering || expanded ? WS.text.opacity(0.9) : WS.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if event.state != .failed, let lines = EditLines.of(event) { EditLinesLabel(lines: lines) }
@@ -181,10 +183,13 @@ struct ToolRow: View {
                     Image(systemName: file != nil ? "sidebar.right" : expanded ? "chevron.down" : "chevron.right")
                         .font(NookTheme.font(9, .semibold))
                         .foregroundStyle(reveals ? WS.text : WS.tertiary)
+                        .opacity(hovering || expanded || reveals ? 1 : 0)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .animation(NookTheme.hover, value: hovering)
             .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? "")
             .accessibilityLabel(event.text)
             .accessibilityHint(file != nil ? tr("ws.file.show") : tr("ws.tool.expandHint"))
@@ -222,8 +227,8 @@ struct ToolRow: View {
         switch event.state {
         case .running: ProgressView().controlSize(.mini)
         case .failed: Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral)
-        // A step that went fine needs no color: only a failure stands out in a long run of steps.
-        default: Image(systemName: "checkmark").font(NookTheme.font(9, .bold)).foregroundStyle(WS.tertiary)
+        // A step that went fine needs no mark at all: only a failure stands out in a long run of steps.
+        default: Color.clear.frame(width: 9, height: 9)
         }
     }
 

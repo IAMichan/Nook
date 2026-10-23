@@ -17,20 +17,24 @@ extension Color {
 /// Calm by design: every surface sits on one neutral grey ramp, a step apart, so regions read by their fill and need
 /// almost no strokes; strokes are only a shade lighter than what they edge; state colors are a little softened so a
 /// badge informs without shouting. Change a token here and every panel, card and setting follows.
+///
+/// The ramp is pure grey (no blue cast), following Code's dark theme: a near-black canvas (#0A0A0A), raised
+/// surfaces about 3 % lighter, separation by tonal steps and 4–8 % white fills instead of grey panels or heavy lines.
+/// Color is kept for state (a status mark and its word, errors, diff +/−) and for links; everything else is neutral.
 enum NookTheme {
     // Colors: the surface ramp, darkest to lightest.
     static let notch = Color.black
-    static let graphite = Color(hex: 0x17171A)
-    static let smoke = Color(hex: 0x1F1F23)
-    static let field = Color(hex: 0x111113)
-    static let line = Color(hex: 0x18181B)
-    static let line2 = Color(hex: 0x232327)
+    static let graphite = Color(hex: 0x171717)
+    static let smoke = Color(hex: 0x1F1F1F)
+    static let field = Color(hex: 0x111111)
+    static let line = Color(hex: 0x181818)
+    static let line2 = Color(hex: 0x232323)
 
-    static let paper = Color(hex: 0xF2F2F4)
+    static let paper = Color(hex: 0xF5F5F5)
     static let ink = Color(hex: 0x0B0B0D)
     static let eyeInk = Color(hex: 0x050507)
-    static let textSecondary = Color(hex: 0x98989F)
-    static let textTertiary = Color(hex: 0x6C6C74)
+    static let textSecondary = Color(hex: 0x999999)
+    static let textTertiary = Color(hex: 0x6E6E6E)
 
     /// Nook's own color. Soft white by default; the user can pick another in Settings › Appearance.
     static let defaultAccentHex: UInt32 = 0xF4F3F7
@@ -58,29 +62,33 @@ enum NookTheme {
     static let music = Color(hex: 0xF0936A)
 
     /// The canvas behind every window: the Workspace, Settings, and the Today window share it.
-    static let canvas = Color(hex: 0x0C0C0E)
+    static let canvas = Color(hex: 0x0A0A0A)
     /// A sunken well inside a card: code, logs, and the composer tray.
-    static let well = Color(hex: 0x0A0A0C)
+    static let well = Color(hex: 0x080808)
     /// A lifted surface: sidebars, menus, the composer.
-    static let surface = Color(hex: 0x131315)
+    static let surface = Color(hex: 0x121212)
     /// The faintest divider between regions of a panel.
-    static let hairline = Color(hex: 0x18181B)
+    static let hairline = Color(hex: 0x181818)
     /// The line between the items of a list (a chat in the Chats tab): a step brighter than `line2`, so
     /// each item reads as its own.
-    static let separator = Color(hex: 0x2E2E34)
+    static let separator = Color(hex: 0x2B2B2B)
     /// The stroke of a text field or tray at rest.
-    static let fieldStroke = Color(hex: 0x1D1D21)
+    static let fieldStroke = Color(hex: 0x1C1C1C)
     /// Body text that reads a little softer than `paper`, without dropping to `textSecondary`.
-    static let textStrong = Color(hex: 0xD4D4D9)
+    static let textStrong = Color(hex: 0xD6D6D6)
     /// Muted text that shimmers or sits in a disabled control.
-    static let textMuted = Color(hex: 0x86868E)
+    static let textMuted = Color(hex: 0x878787)
     /// Links, renamed files, and diff hunk headers.
     static let blue = Color(hex: 0x8FB3F0)
 
+    /// Your own message in a conversation: a soft fill about 4 % lighter than the canvas, no edge (the agent's answer has
+    /// no bubble at all).
+    static let bubble = Color(hex: 0x171717)
+
     // List rows and cards: at rest, under the pointer, and selected.
-    static let rowRest = Color(hex: 0x0A0A0B)
-    static let rowHover = Color(hex: 0x141416)
-    static let rowSelected = Color(hex: 0x1A1A1D)
+    static let rowRest = Color(hex: 0x0A0A0A)
+    static let rowHover = Color(hex: 0x141414)
+    static let rowSelected = Color(hex: 0x1A1A1A)
 
     /// The fill of a list row: `rowSelected` when selected, `rowHover` under the pointer, `rest` otherwise.
     static func rowFill(selected: Bool, hovering: Bool, rest: Color = rowRest) -> Color {
@@ -100,6 +108,8 @@ enum NookTheme {
         static let panel: CGFloat = 12
         /// Sheets and the composer tray.
         static let sheet: CGFloat = 14
+        /// Your own message's bubble in a conversation.
+        static let bubble: CGFloat = 18
         /// Pills and the notch's own corners.
         static let pill: CGFloat = 20
     }

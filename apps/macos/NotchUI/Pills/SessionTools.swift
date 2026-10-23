@@ -150,18 +150,16 @@ enum ToolbarGroup {
 }
 
 extension View {
+    /// Plain icons with a fill only under the pointer, as Code's header: the group needs no box of its own.
     func toolbarGroup() -> some View {
         padding(ToolbarGroup.padding)
-            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius + ToolbarGroup.padding, style: .continuous).fill(NookTheme.field))
-            .overlay(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius + ToolbarGroup.padding, style: .continuous)
-                .stroke(NookTheme.line2.opacity(0.7), lineWidth: 0.5))
     }
 }
 
 /// The thin line between buttons inside one group.
 struct ToolbarGroupDivider: View {
     var body: some View {
-        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 12).padding(.horizontal, NookTheme.Spacing.xxs)
+        Color.clear.frame(width: NookTheme.Spacing.xs, height: 12)
     }
 }
 

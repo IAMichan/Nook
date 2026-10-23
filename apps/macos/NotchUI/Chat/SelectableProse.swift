@@ -36,8 +36,8 @@ struct SelectableProse: NSViewRepresentable {
 
     func updateNSView(_ view: NSTextView, context: Context) {
         view.linkTextAttributes = [
-            .foregroundColor: NSColor(NookTheme.iris),
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            // Links in the link blue without an underline, as Code shows them; the pointer says they are links.
+            .foregroundColor: NSColor(NookTheme.blue),
             .cursor: NSCursor.pointingHand,
         ]
         let text = Self.attributed(blocks, size: size)
@@ -114,7 +114,8 @@ struct SelectableProse: NSViewRepresentable {
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
                 append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
             case .paragraph(let text):
-                append(inline(text, size: size, weight: .regular, color: NookTheme.paper), style: style(before: gap), to: result)
+                // Running text a step softer than headings (Code sets answers at 80 % of its text color).
+                append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
                     appendItem(item, before: itemIndex == 0 ? gap : 6, size: size, to: result)
@@ -127,7 +128,8 @@ struct SelectableProse: NSViewRepresentable {
         return result
     }
 
-    private static func style(before: CGFloat, lineSpacing: CGFloat = 4) -> NSMutableParagraphStyle {
+    /// `lineSpacing` 5 gives running text about Code's relaxed 1.6 line height.
+    private static func style(before: CGFloat, lineSpacing: CGFloat = 5) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = lineSpacing
         style.paragraphSpacingBefore = before
@@ -155,10 +157,10 @@ struct SelectableProse: NSViewRepresentable {
         let paragraph = style(before: before)
         paragraph.firstLineHeadIndent = indent
         var text = item.text
-        var color = item.level == 0 ? NookTheme.paper : NookTheme.textSecondary
+        var color = item.level == 0 ? NookTheme.textStrong : NookTheme.textSecondary
         if let task = MarkdownBlock.task(item.text) {
             text = task.text
-            color = task.done ? NookTheme.textSecondary : NookTheme.paper
+            color = task.done ? NookTheme.textSecondary : NookTheme.textStrong
             let box = NSAttributedString(string: task.done ? "☑" : "☐", attributes: [
                 .font: font, .foregroundColor: NSColor(task.done ? NookTheme.mint : NookTheme.textTertiary),
             ])
