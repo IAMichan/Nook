@@ -60,7 +60,8 @@ struct AgentInboxList: View {
             lastActivity: item.started ?? .distantPast,
             hasOpenRequest: item.status == .waiting || item.status == .input,
             isActive: item.isBusy || item.status == .working,
-            unread: item.unseen
+            unread: item.unseen,
+            parentID: item.parentID
         )
     }
 
@@ -292,6 +293,7 @@ struct AgentInboxList: View {
             ) {
                 click(item, entry, shown: shown)
             }
+            .nested(entry.depth)
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }
@@ -505,6 +507,25 @@ private struct DropTarget: ViewModifier {
     func body(content: Content) -> some View {
         content.onDrop(of: [.plainText], isTargeted: Binding(get: { false }, set: { list.setTargeted(kind, $0) })) { _ in
             list.drop(on: kind, row: row, section: section, sections: sections, byID: byID)
+        }
+    }
+}
+
+private extension View {
+    /// A session started from the row above it sits one step in, behind a turn arrow, as in Claude's own session list.
+    @ViewBuilder
+    func nested(_ depth: Int) -> some View {
+        if depth > 0 {
+            HStack(spacing: 0) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(NookTheme.font(9.5, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: NookTheme.Spacing.xl)
+                self
+            }
+            .padding(.leading, NookTheme.Spacing.md + CGFloat(depth - 1) * NookTheme.Spacing.xl)
+        } else {
+            self
         }
     }
 }
