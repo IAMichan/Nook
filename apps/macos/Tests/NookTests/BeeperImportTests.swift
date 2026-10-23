@@ -51,7 +51,7 @@ final class BeeperImportTests: XCTestCase {
         let other = BeeperImport.ChatSetting(app: "x", name: "Jan", pinned: true, since: now)
         let merged = BeeperImport.merged([old, other], [newer], now: now.addingTimeInterval(120))
         XCTAssertEqual(merged, [newer, other].sorted { $0.key < $1.key }, "a newer setting for a chat replaces the older")
-        XCTAssertEqual(BeeperImport.merged(merged, [], now: now.addingTimeInterval(BeeperImport.settingsKeep + 1)), [],
+        XCTAssertEqual(BeeperImport.merged(merged, [], now: now.addingTimeInterval(60 + BeeperImport.settingsKeep + 1)), [],
                        "settings whose chat never shows up are let go")
     }
 
