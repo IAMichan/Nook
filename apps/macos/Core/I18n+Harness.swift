@@ -1,6 +1,6 @@
 import Foundation
 
-// Texts of what Nook learned from Code: opening files and links where they point, the file menu, the browser,
+// Texts of the workspace tools: opening files and links where they point, the file menu, the browser,
 // quitting with sessions at work, commit styles, remote machines and the companion.
 
 let harnessTranslations: [AppLanguage: [String: String]] = [

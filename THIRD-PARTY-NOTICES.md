@@ -26,8 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-The link patterns of Nook's terminal (`TerminalLinks.swift`) and the ideas behind several workspace features listed in
-[`docs/LEARNINGS-AGENTS.md`](docs/LEARNINGS-AGENTS.md) are adapted from [Code]():
+The link patterns of Nook's terminal (`TerminalLinks.swift`) are adapted from code under this license:
 
 ```text
 MIT License

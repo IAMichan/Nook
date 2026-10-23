@@ -141,7 +141,7 @@ pub fn strip_ansi(text: &str) -> String {
 
 // MARK: Scripts van het project
 
-/// Een commando dat een project voor zijn sessies definieert, in `nook.json` of `legacy-scripts.json` (hetzelfde schema als).
+/// Een commando dat een project voor zijn sessies definieert, in `nook.json` of `legacy-scripts.json` (hetzelfde schema).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectScript {

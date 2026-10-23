@@ -242,7 +242,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     }
 
     /// The page's process crashed or was ended by macOS (memory pressure): the view would stay blank, so load the page
-    /// again, at most once per ten seconds so a page that crashes on load does not loop (as Code's browser recovers).
+    /// again, at most once per ten seconds so a page that crashes on load does not loop.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         let now = Date()
         guard now.timeIntervalSince(lastCrashReload) > 10 else {

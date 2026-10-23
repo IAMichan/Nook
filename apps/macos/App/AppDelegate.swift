@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Quitting stops the sessions Nook runs (they can be resumed later). While one is still at work, Nook asks first, as
-    /// Code does before it quits. Not when you log out or shut down, nor for a restart into an update you chose.
+    /// before it quits. Not when you log out or shut down, nor for a restart into an update you chose.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let working = model.workspace.activeRuns.count
         let defaults = UserDefaults.standard

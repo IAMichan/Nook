@@ -1,6 +1,6 @@
 import Foundation
 
-/// The files of a pull request you marked as viewed, as GitHub and Code keep them: each mark holds the file's revision
+/// The files of a pull request you marked as viewed, as GitHub keeps them: each mark holds the file's revision
 /// at the moment you marked it, so a push that changes the file shows it as not viewed again, while untouched files stay
 /// ticked. Kept on this Mac, for the 200 pull requests marked most recently.
 struct PullRequestViewedFiles: Codable, Equatable, Sendable {
@@ -28,7 +28,7 @@ struct PullRequestViewedFiles: Codable, Equatable, Sendable {
 
     enum Status: Equatable, Sendable { case unviewed, viewed, changed }
 
-    /// As Code marks it: viewed, not viewed, or changed (marked viewed, then pushed to since).
+    /// Viewed, not viewed, or changed (marked viewed, then pushed to since).
     func status(_ file: PullRequestFile, in pullRequest: String) -> Status {
         guard marks[pullRequest]?[file.path] != nil else { return .unviewed }
         return isViewed(file, in: pullRequest) ? .viewed : .changed

@@ -66,7 +66,7 @@ struct AgentStatusBadge: View {
     }
 }
 
-/// The ground every small badge in a row stands on (status, pull request): no fill and no edge, as Code's rows show a
+/// The ground every small badge in a row stands on (status, pull request): no fill and no edge, as rows show a
 /// status as a mark and a word only, 18pt high so it fits a 12pt text line without making the row taller.
 struct RowBadgeBackground: ViewModifier {
     var horizontal: CGFloat = NookTheme.Spacing.xs

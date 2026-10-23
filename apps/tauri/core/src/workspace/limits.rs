@@ -1,4 +1,4 @@
-//! Een beurt die op een gebruikslimiet stopte (`UsageLimits` en `FailureClassifier` op de Mac) het
+//! Een beurt die op een gebruikslimiet stopte (`UsageLimits` en `FailureClassifier` op de Mac), zoals Nook het
 //! leest: wanneer de limiet weer vrij is, zodat de sessie dan vanzelf verder kan. Claude Code meldt het in
 //! `rate_limit_event` (status "rejected", `resetsAt`) en in het resultaat (`terminal_reason`, `api_error_status`);
 //! Codex met de foutcode `usageLimitExceeded` en zijn limietstand.
@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::parsers::number;
 
-/// Wat een sessie stuurt als hij na de reset verdergaat (de tekst, voor het model dus Engels).
+/// Wat een sessie stuurt als hij na de reset verdergaat (in het Engels, voor het model).
 pub const RESUME_MESSAGE: &str = "Continue where you left off.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

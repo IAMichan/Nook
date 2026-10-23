@@ -1,6 +1,6 @@
 import XCTest
 
-final class PullRequestLayoutTests: XCTestCase {
+final class PullRequestListTests: XCTestCase {
     private func item(_ number: Int, state: PullRequestItem.State = .open, ci: PullRequestItem.CI = .unknown, draft: Bool = false,
                       review: PullRequestItem.Review = .none, conflict: Bool = false, size: Int = 10, updated: Double = 0) -> PullRequestItem {
         PullRequestItem(repo: "acme/app", number: number, title: "T\(number)", url: nil, draft: draft,

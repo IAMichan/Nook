@@ -9,6 +9,15 @@ extension Color {
         let b = Double(hex & 0xFF) / 255
         self.init(.sRGB, red: r, green: g, blue: b, opacity: opacity)
     }
+
+    /// A color written as six hex digits, with or without "#" ("d73a4a", as GitHub gives a label's color); nil when the
+    /// text is not one. For colors that come with the data, never for Nook's own palette.
+    init?(hexString text: String?) {
+        guard var text = text?.trimmingCharacters(in: .whitespaces) else { return nil }
+        if text.hasPrefix("#") { text.removeFirst() }
+        guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
+        self.init(hex: value)
+    }
 }
 
 /// Nook design system. Color consistently represents state:
@@ -18,7 +27,7 @@ extension Color {
 /// almost no strokes; strokes are only a shade lighter than what they edge; state colors are a little softened so a
 /// badge informs without shouting. Change a token here and every panel, card and setting follows.
 ///
-/// The ramp is pure grey (no blue cast), following Code's dark theme: a near-black canvas (#0A0A0A), raised
+/// The ramp is pure grey (no blue cast): a near-black canvas (#0A0A0A), raised
 /// surfaces about 3 % lighter, separation by tonal steps and 4–8 % white fills instead of grey panels or heavy lines.
 /// Color is kept for state (a status mark and its word, errors, diff +/−) and for links; everything else is neutral.
 enum NookTheme {

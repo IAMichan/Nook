@@ -48,7 +48,7 @@ private struct ResizablePanel: ViewModifier {
 
 /// Where the resizable panels start out, and how much room the conversation beside them always keeps.
 enum PanelLayout {
-    /// The widest a conversation and its composer read (Code's 46rem): on a wide window they stay one centered
+    /// The widest a conversation and its composer read (736 pt): on a wide window they stay one centered
     /// column instead of lines running from edge to edge.
     static let chatColumn: CGFloat = 736
     /// The session list on the left of the Agents tab.

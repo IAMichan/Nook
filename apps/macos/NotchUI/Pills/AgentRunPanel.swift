@@ -145,7 +145,7 @@ struct AgentRunPanel: View {
             .onChange(of: outputsOpen) { _, isOpen in
                 if isOpen { withAnimation(NookTheme.reveal) { filePreview = nil; diffSelection = nil } }
             }
-            // ⌘D: the latest turn's diff, as in Code; again to close it.
+            // ⌘D: the latest turn's diff; again to close it.
             .keyCommand("diff.toggle", enabled: !turnDiffs(run).isEmpty) {
                 if diffSelection != nil {
                     withAnimation(NookTheme.reveal) { diffSelection = nil }
@@ -423,7 +423,7 @@ struct AgentRunPanel: View {
     }
 
     /// What this composer offers beyond typing: the commands, files and sessions to point at. The box keeps Nook's own
-    /// quiet tint for every agent (as Code does): an agent's color stays in its logo.
+    /// quiet tint for every agent: an agent's color stays in its logo.
     private func composerConfig(_ run: WorkspaceRun) -> ComposerConfig {
         var config = ComposerConfig()
         config.fileRoot = run.workingDirectory
@@ -569,7 +569,7 @@ struct AgentRunPanel: View {
                             AnyView(
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     eventRow(event)
-                                    // What the turn changed (Code's card): a file or Open diff opens the diff beside it.
+                                    // What the turn changed (the changed-files card): a file or Open diff opens the diff beside it.
                                     if let turn = cards[event.id.uuidString] {
                                         TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
                                             openDiff(TurnDiffSelection(turn: turn.id, file: file))
