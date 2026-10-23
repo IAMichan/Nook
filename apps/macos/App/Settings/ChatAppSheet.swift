@@ -312,8 +312,8 @@ struct ChatOwnLinkSteps: View {
                 }
             }
         case capture.slackBridge.app:
-            SetupStep(number: 1, title: tr("chats.own.slack.step"), done: SlackBridge.token != nil) {
-                SlackTokenRows(setCollecting: setCollecting)
+            SetupStep(number: 1, title: tr("chats.own.slack.step"), done: SlackBridge.auth != nil) {
+                SlackSettingsRows(setCollecting: setCollecting)
             }
         case capture.messagesBridge.app:
             messagesStep

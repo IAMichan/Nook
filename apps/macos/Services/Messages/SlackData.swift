@@ -16,6 +16,34 @@ enum SlackData {
         var updated: Double
     }
 
+    /// What Slack is asked with: a token, and after signing in on slack.com (`SlackWebSession`) the `d` cookie the
+    /// website's own token only works with.
+    struct Auth: Codable, Equatable, Sendable {
+        var token: String
+        var cookie: String?
+        /// The workspace, as Slack's website names it; empty for a token you pasted.
+        var team: String = ""
+
+        /// The headers of every request to Slack.
+        var headers: [String: String] {
+            var headers = ["Authorization": "Bearer " + token]
+            if let cookie, !cookie.isEmpty { headers["Cookie"] = "d=" + cookie }
+            return headers
+        }
+    }
+
+    /// The website's sign-in once you signed in on slack.com: the token Slack's web client keeps for the workspace you
+    /// used last (its `localConfig_v2` in local storage) and the `d` cookie it goes with. Nil until both are there.
+    static func webAuth(localConfig: String?, cookie: String?) -> Auth? {
+        guard let cookie, cookie.hasPrefix("xoxd-"), let data = localConfig?.data(using: .utf8),
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let teams = json["teams"] as? [String: [String: Any]] else { return nil }
+        let signedIn = teams.filter { ($0.value["token"] as? String)?.hasPrefix("xoxc-") == true }
+        guard let team = (json["lastActiveTeamId"] as? String).flatMap({ signedIn[$0] })
+            ?? signedIn.sorted(by: { $0.key < $1.key }).first?.value,
+            let token = team["token"] as? String else { return nil }
+        return Auth(token: token, cookie: cookie, team: (team["name"] as? String) ?? "")
+    }
 
     /// Slack answers 200 with `"ok": false` and the reason ("invalid_auth", "missing_scope"…).
     static func error(_ json: [String: Any]) -> String? {
