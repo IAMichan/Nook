@@ -797,10 +797,10 @@ final class BeeperBridge: ObservableObject, ChatBridge {
 
 // MARK: Slack
 
-/// Your Slack direct messages and group messages, with their history, through Slack's Web API and a user token you set
-/// in Settings › Chats (kept in the Keychain). Read-only scopes are enough: im:history, mpim:history, im:read,
-/// mpim:read, users:read and files:read (for the photos, GIFs and voice clips in them). Only Slack is asked, and only
-/// for your own conversations.
+/// Your Slack direct messages and group messages, with their history, through Slack's Web API: with the sign-in of
+/// Slack's website after you signed in on slack.com (`SlackWebSession`), or with a user token you set in Settings ›
+/// Chats (kept in the Keychain; read-only scopes are enough: im:history, mpim:history, im:read, mpim:read, users:read
+/// and files:read). Only Slack is asked, and only for your own conversations.
 @MainActor
 final class SlackBridge: ChatBridge {
     let app = "slack"
@@ -810,10 +810,19 @@ final class SlackBridge: ChatBridge {
     /// Where the token is kept.
     static let tokenAccount = "chats.slack.token"
 
-    /// Nil once Slack is linked through Nook's chat helper (signing in on slack.com), so it is not read twice.
+    /// What Slack is asked with: the website's sign-in, else the token you pasted. Nil once Slack is linked through
+    /// Nook's chat helper, so it is not read twice.
+    static var auth: SlackData.Auth? {
+        guard !ChatHelper.linked("slack") else { return nil }
+        if let web = SlackWebSession.shared.auth { return web }
+        guard let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
+        return SlackData.Auth(token: token)
+    }
+
+    /// The token you pasted, if that is how Slack is linked.
     static var token: String? {
-        guard !ChatHelper.linked("slack"), let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
-        return token
+        guard let auth = Self.auth, auth.cookie == nil else { return nil }
+        return auth.token
     }
 
     /// Conversations read in one go: the most recently active first, then a few of the others in turn, so every one is
@@ -838,7 +847,7 @@ final class SlackBridge: ChatBridge {
     private var people: [String: [String]] = [:]
     private var turn = 0
 
-    var isReady: Bool { Self.token != nil }
+    var isReady: Bool { Self.auth != nil }
 
     /// Forgets what was read (a new token may be another workspace).
     func reset() {
@@ -856,18 +865,18 @@ final class SlackBridge: ChatBridge {
     }
 
     func read() async throws -> [BridgedChat] {
-        guard let token = Self.token else { isWorking = false; return [] }
+        guard let auth = Self.auth else { isWorking = false; return [] }
         do {
-            if me == nil { me = SlackData.me(try await call("auth.test", [:], token: token)) }
+            if me == nil { me = SlackData.me(try await call("auth.test", [:], auth: auth)) }
             if usersAt.map({ Date().timeIntervalSince($0) > 3600 }) ?? true {
-                let members = try await pages("users.list", ["limit": "200"], token: token, maxPages: 5)
+                let members = try await pages("users.list", ["limit": "200"], auth: auth, maxPages: 5)
                 users = members.reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
                 avatars = members.reduce(into: [:]) { $0.merge(SlackData.avatars($1)) { a, _ in a } }
                 usersAt = Date()
             }
             if conversationsAt.map({ Date().timeIntervalSince($0) > 600 }) ?? true {
                 conversations = try await pages("conversations.list", ["types": "im,mpim", "exclude_archived": "true", "limit": "200"],
-                                                token: token, maxPages: 5).flatMap(SlackData.conversations)
+                                                auth: auth, maxPages: 5).flatMap(SlackData.conversations)
                 for conversation in conversations { active[conversation.id] = max(active[conversation.id] ?? 0, conversation.updated) }
                 conversationsAt = Date()
             }
@@ -875,9 +884,9 @@ final class SlackBridge: ChatBridge {
             for conversation in pick() {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
-                let json = try await call("conversations.history", parameters, token: token)
+                let json = try await call("conversations.history", parameters, auth: auth)
                 let read = SlackData.messages(json, conversation: conversation, users: users, me: me)
-                let messages = await withFiles(read, token: token)
+                let messages = await withFiles(read, auth: auth)
                 if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
@@ -889,7 +898,7 @@ final class SlackBridge: ChatBridge {
                 let picture = await avatar(of: conversation.user)
                 if conversation.isGroup, people[conversation.id] == nil {
                     // One refused list (a missing scope) leaves the group without its people, not without its messages.
-                    let json = try? await call("conversations.members", ["channel": conversation.id, "limit": "200"], token: token)
+                    let json = try? await call("conversations.members", ["channel": conversation.id, "limit": "200"], auth: auth)
                     people[conversation.id] = json.map { SlackData.members($0, users: users, me: me) } ?? []
                 }
                 let members = people[conversation.id] ?? []
@@ -921,15 +930,14 @@ final class SlackBridge: ChatBridge {
     /// The messages with their files fetched from Slack (with the token, only from Slack's own addresses), so a photo,
     /// GIF or voice clip shows as itself. One that cannot be fetched (the token lacks files:read) stays a file to open
     /// in Slack.
-    private func withFiles(_ messages: [InboxMessage], token: String) async -> [InboxMessage] {
+    private func withFiles(_ messages: [InboxMessage], auth: SlackData.Auth) async -> [InboxMessage] {
         var result = messages
         for index in result.indices {
             guard var media = result[index].media, media.path == nil, let source = media.source,
                   let url = URL(string: source), SlackData.isSlack(url) else { continue }
             let target = ChatMedia.destination(key: result[index].id, name: media.name ?? url.lastPathComponent)
             if !FileManager.default.fileExists(atPath: target.path) {
-                var request = URLRequest(url: url)
-                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                let request = Self.request(url, auth: auth)
                 guard let answer = try? await ConnectorHTTP.session.data(for: request),
                       let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
                       answer.0.count <= ChatMedia.maxBytes,
@@ -961,13 +969,13 @@ final class SlackBridge: ChatBridge {
         return picked
     }
 
-    private func pages(_ method: String, _ parameters: [String: String], token: String, maxPages: Int) async throws -> [[String: Any]] {
+    private func pages(_ method: String, _ parameters: [String: String], auth: SlackData.Auth, maxPages: Int) async throws -> [[String: Any]] {
         var results: [[String: Any]] = []
         var cursor: String?
         for _ in 0..<maxPages {
             var query = parameters
             if let cursor { query["cursor"] = cursor }
-            let json = try await call(method, query, token: token)
+            let json = try await call(method, query, auth: auth)
             results.append(json)
             cursor = SlackData.nextCursor(json)
             if cursor == nil { break }
@@ -975,12 +983,20 @@ final class SlackBridge: ChatBridge {
         return results
     }
 
-    private func call(_ method: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
+    /// A request to Slack with the token, and the website's cookie when it is signed in that way (sent as given, not
+    /// mixed with cookies of the session).
+    private static func request(_ url: URL, auth: SlackData.Auth) -> URLRequest {
+        var request = URLRequest(url: url)
+        for (name, value) in auth.headers { request.setValue(value, forHTTPHeaderField: name) }
+        if auth.cookie != nil { request.httpShouldHandleCookies = false }
+        return request
+    }
+
+    private func call(_ method: String, _ parameters: [String: String], auth: SlackData.Auth) async throws -> [String: Any] {
         var components = URLComponents(string: "https://slack.com/api/" + method)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = components.url else { throw NookError("Slack: \(method)") }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        var request = Self.request(url, auth: auth)
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
