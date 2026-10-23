@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Overview: what still needs doing, and the shortcuts.
+/// Settings › Overview: what still needs doing and how each part of Nook is doing. Each switch and shortcut lives on its
+/// own page only.
 extension SettingsView {
     // MARK: Overview
 
@@ -75,33 +76,6 @@ extension SettingsView {
                 glanceRow(.privacy, detail: tr("settings.start.permissions", granted, SystemPermission.allCases.count),
                           state: granted == SystemPermission.allCases.count ? .done : .todo)
             }
-            Section {
-                quickToggle(tr("settings.assistant.thinkAlongToggle"), .assistant, isOn: $settings.autoWatch)
-                    .disabled(settings.useLocal)
-                quickToggle(tr("settings.assistant.webSearch"), .assistant, isOn: $settings.webSearch)
-                quickToggle(tr("flow.settings.enable"), .dictation, isOn: Binding(
-                    get: { flowStore.enabled },
-                    set: { on in
-                        flowStore.enabled = on
-                        if on, !FlowDictation.shared.trusted { FlowDictation.shared.askForAccessibility() }
-                        FlowDictation.shared.refresh()
-                    }
-                ))
-                quickToggle(tr("settings.voice.speakAnswers"), .dictation, isOn: $settings.speakAnswers)
-                quickToggle(tr("settings.voice.agentSound"), .notifications, isOn: $settings.sounds)
-            } header: {
-                Text(tr("settings.start.quick"))
-            } footer: {
-                Text(tr("settings.start.quickFooter"))
-            }
-            Section {
-                SettingLabel(tr("settings.overview.openPanel"), detail: tr("settings.overview.pointToNotch"))
-                SettingsLinkRow(title: tr("settings.start.allShortcuts")) { app.settingsSection = .shortcuts }
-            } header: {
-                Text(tr("settings.overview.howToUse"))
-            } footer: {
-                Text(tr("settings.overview.howToUseFooter"))
-            }
             UpdateSettingsSection()
         }
     }
@@ -111,13 +85,6 @@ extension SettingsView {
     func glanceRow(_ section: SettingsSection, detail: String, state: StatusState) -> some View {
         SettingsLinkRow(title: section.title, detail: detail, section: section, state: state) {
             app.settingsSection = section
-        }
-    }
-
-    /// A switch with, under its name, the section it belongs to.
-    func quickToggle(_ title: String, _ section: SettingsSection, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            SettingLabel(title, detail: section.title)
         }
     }
 

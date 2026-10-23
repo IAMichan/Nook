@@ -25,8 +25,6 @@ extension SettingsView {
                 .onChange(of: flowStore.key) { _, _ in FlowDictation.shared.refresh(); DoubleTap.shared.refresh() }
             } header: {
                 Text(tr("flow.settings.title"))
-            } footer: {
-                Text(tr("flow.settings.enableDetail", flowStore.key.symbol))
             }
             Section {
                 Toggle(tr("doubletap.settings.enable"), isOn: $doubleTap.enabled)

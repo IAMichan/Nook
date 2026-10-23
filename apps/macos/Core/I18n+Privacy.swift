@@ -19,7 +19,7 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.title": "Apps die Nook nooit leest",
         "settings.privacy.neverRead.add": "App toevoegen…",
         "settings.privacy.neverRead.remove": "Verwijder",
-        "settings.privacy.neverRead.footer": "Nook leest deze apps nooit: niet van het scherm, niet via toegankelijkheid of scripts, en hij doet er geen suggesties tijdens het typen. Handig voor je bank, een medische app of een privéchat. Wachtwoordmanagers staan hier altijd al buiten.",
+        "settings.privacy.neverRead.footer": "Nook leest deze apps nooit en doet er geen suggesties, zoals je bank of een privéchat. Wachtwoordmanagers blijven altijd buiten.",
         "settings.private.byLevel": "Het privacyniveau Strikt houdt deze bron op deze Mac.",
     ],
     .en: [
@@ -37,7 +37,7 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.title": "Apps Nook never reads",
         "settings.privacy.neverRead.add": "Add App…",
         "settings.privacy.neverRead.remove": "Remove",
-        "settings.privacy.neverRead.footer": "Nook never reads these apps: not from the screen, not through accessibility or scripts, and it makes no suggestions while you type in them. Useful for your bank, a medical app or a private chat. Password managers are always left out.",
+        "settings.privacy.neverRead.footer": "Nook never reads these apps or suggests text in them, like your bank or a private chat. Password managers are always left out.",
         "settings.private.byLevel": "The Strict privacy level keeps this source on this Mac.",
     ],
     .de: [
@@ -55,7 +55,7 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.title": "Apps, die Nook nie liest",
         "settings.privacy.neverRead.add": "App hinzufügen …",
         "settings.privacy.neverRead.remove": "Entfernen",
-        "settings.privacy.neverRead.footer": "Nook liest diese Apps nie: nicht vom Bildschirm, nicht über Bedienungshilfen oder Skripte, und es macht beim Tippen darin keine Vorschläge. Praktisch für deine Bank, eine medizinische App oder einen privaten Chat. Passwortmanager sind immer ausgenommen.",
+        "settings.privacy.neverRead.footer": "Nook liest diese Apps nie und macht darin keine Vorschläge, etwa deine Bank oder ein privater Chat. Passwortmanager bleiben immer außen vor.",
         "settings.private.byLevel": "Die Datenschutzstufe Streng hält diese Quelle auf diesem Mac.",
     ],
     .fr: [
@@ -73,7 +73,7 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.title": "Apps que Nook ne lit jamais",
         "settings.privacy.neverRead.add": "Ajouter une app…",
         "settings.privacy.neverRead.remove": "Retirer",
-        "settings.privacy.neverRead.footer": "Nook ne lit jamais ces apps : ni à l'écran, ni via l'accessibilité ou des scripts, et il n'y fait aucune suggestion pendant la saisie. Pratique pour votre banque, une app médicale ou une discussion privée. Les gestionnaires de mots de passe sont toujours exclus.",
+        "settings.privacy.neverRead.footer": "Nook ne lit jamais ces apps et n’y suggère rien, comme votre banque ou une discussion privée. Les gestionnaires de mots de passe sont toujours exclus.",
         "settings.private.byLevel": "Le niveau de confidentialité Strict garde cette source sur ce Mac.",
     ],
     .es: [
@@ -91,7 +91,7 @@ let privacyTranslations: [AppLanguage: [String: String]] = [
         "settings.privacy.neverRead.title": "Apps que Nook nunca lee",
         "settings.privacy.neverRead.add": "Añadir app…",
         "settings.privacy.neverRead.remove": "Quitar",
-        "settings.privacy.neverRead.footer": "Nook nunca lee estas apps: ni de la pantalla, ni mediante accesibilidad o scripts, y no hace sugerencias mientras escribes en ellas. Útil para tu banco, una app médica o un chat privado. Los gestores de contraseñas siempre quedan excluidos.",
+        "settings.privacy.neverRead.footer": "Nook nunca lee estas apps ni sugiere texto en ellas, como tu banco o un chat privado. Los gestores de contraseñas siempre quedan fuera.",
         "settings.private.byLevel": "El nivel de privacidad Estricto mantiene esta fuente en este Mac.",
     ],
 ]
