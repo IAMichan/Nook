@@ -667,9 +667,20 @@ final class WhatsAppLink: ObservableObject {
     /// The newest messages of one chat: the gateway's history together with what came in live, so a message that
     /// arrived after the gateway's stored history is never left out (falls back to what Nook kept).
     func messages(of chat: String, limit: Int = 20) async throws -> [WAMessage] {
-        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard isConnected else { throw NookError(statusLine) }
         let key = WAJID.normalized(chat)
-        var fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
+        let fetched = (try? await fetchHistory(key, limit: limit).messages) ?? []
+        let kept = inbox.conversations[key]?.messages ?? []
+        return WAInbox.newest(fetched, kept, limit: limit)
+    }
+
+    /// Asks the gateway for a chat's newest `limit` messages and keeps them in the inbox; what came (the polls GOWA keeps
+    /// on this Mac among them), and how many of them came from its history: fewer than `limit` means it has nothing older.
+    /// Throws when the gateway could not answer, so a failed request is never taken for the chat's start.
+    private func fetchHistory(_ key: String, limit: Int) async throws -> (messages: [WAMessage], gateway: Int) {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        let history = try await provider.messages(chat: key, limit: limit, me: me)
+        var fetched = history
         // GOWA leaves polls out of a chat's history: the ones it keeps on this Mac come in beside it, within the time
         // the history covers (all of them when it reaches back to the chat's start).
         if provider.kind == .gowa {
@@ -684,32 +695,33 @@ final class WhatsAppLink: ObservableObject {
             inbox.rename(key, to: known.name)
         }
         nameGroupIfNeeded(key)
-        let kept = inbox.conversations[key]?.messages ?? []
-        return WAInbox.newest(fetched, kept, limit: limit)
+        return (fetched, history.count)
     }
 
-    /// "Load older messages": the chat keeps `WAInbox.olderStep` more and asks the gateway for that many. True when
-    /// messages were added; the chat remembers when the gateway has nothing older left.
+    /// "Load older messages": the chat keeps `WAInbox.olderStep` more and asks the gateway for that many (in pages, as
+    /// the gateway allows). True when messages were added; the chat remembers when the gateway has nothing older left,
+    /// judged by what the gateway gave, not by what the chat kept (a blank or a vote shows nothing but is no start).
     func loadOlder(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
         guard isConnected, let limit = inbox.growCapacity(key) else { return false }
         let before = inbox.conversations[key]?.messages.count ?? 0
-        _ = try? await messages(of: key, limit: limit)
-        let after = inbox.conversations[key]?.messages.count ?? 0
-        if after < limit { inbox.markOldestReached(key) }
-        return after > before
+        guard let fetched = try? await fetchHistory(key, limit: limit) else { return false }
+        if fetched.gateway < limit { inbox.markOldestReached(key) }
+        return (inbox.conversations[key]?.messages.count ?? 0) > before
     }
 
     /// A chat's messages from the gateway, so its card can scroll back and shows what the live feed missed (the Mac
     /// slept, a webhook got lost): fetched each time the chat opens, at most once per `WAInbox.historyRefresh`. True
-    /// when the conversation changed.
+    /// when the conversation changed. A history shorter than a chat keeps is the whole chat: no older ones to load.
     func loadHistory(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
         let now = Date()
         guard isConnected, WAInbox.historyDue(last: historyFetched[key], now: now) else { return false }
         historyFetched[key] = now
         let before = inbox.conversations[key]?.messages
-        _ = try? await messages(of: key, limit: WAInbox.keep)
+        if let fetched = try? await fetchHistory(key, limit: WAInbox.keep), fetched.gateway < WAInbox.keep {
+            inbox.markOldestReached(key)
+        }
         return inbox.conversations[key]?.messages != before
     }
 
