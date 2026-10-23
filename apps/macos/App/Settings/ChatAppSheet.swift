@@ -3,10 +3,11 @@ import AppKit
 import WebKit
 
 /// Linking one chat app, or managing it once it is linked, in numbered steps. Nook links the apps it reads itself in its
-/// own way, with nothing else needed: WhatsApp with a QR code from your phone, Telegram with your phone number and a code,
-/// Teams with a code from Microsoft, Slack with a token, Messages from this Mac. Instagram, Messenger, Signal, X and
-/// LinkedIn link through the chat service on this Mac (Nook's own helper, as Beeper does it: logging in on the app's own
-/// website or with a QR code), which is also offered as another way for the rest while it runs.
+/// own way, with nothing else needed: WhatsApp with a QR code from your phone, Teams with a code from Microsoft, Slack
+/// with a token, Messages from this Mac. Telegram, Instagram, Messenger, Signal, X and LinkedIn link through the chat
+/// service on this Mac (Nook's own helper, as Beeper does it: your phone number and a code, logging in on the app's own
+/// website, or a QR code), which is also offered as another way for the rest while it runs. A build without the helper
+/// links Telegram itself, through TDLib.
 struct ChatAppSheet: View {
     let app: String
     let setCollecting: (Bool) -> Void
