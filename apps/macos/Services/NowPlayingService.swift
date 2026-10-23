@@ -99,6 +99,7 @@ final class NowPlayingService: ObservableObject {
         timer = Timer.scheduledCoalesced(withTimeInterval: 2.0) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                if self.viewers == 0, EnergyMonitor.shared.plan.reasons.contains(.displayAsleep) { return }
                 // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
                 // launch it keeps checking every other tick until a player answers: a player that was still starting (or a cold
                 // first AppleScript run) should not keep the Music tab away for ten seconds.
