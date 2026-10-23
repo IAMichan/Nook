@@ -42,7 +42,7 @@ final class ChatHelper: ObservableObject {
     }
 
     /// The apps the helper links.
-    static let apps: Set<String> = ["telegram", "signal", "messenger", "instagram", "x", "linkedin", "slack"]
+    static let apps: Set<String> = ["whatsapp", "telegram", "signal", "messenger", "instagram", "x", "linkedin", "slack"]
     /// The apps whose terms forbid other clients and that do restrict accounts for it: linking them says so first.
     static let riskyApps: Set<String> = ["messenger", "instagram", "x", "linkedin"]
 

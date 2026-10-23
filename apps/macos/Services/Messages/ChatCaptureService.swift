@@ -77,6 +77,8 @@ final class ChatCaptureService: ObservableObject {
     @Published private(set) var bridgeProblems: [String: String] = [:]
     /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
     @Published private(set) var bridged: Set<String> = []
+    /// Chats the helper has nothing older of (scrolled back to their start).
+    private var noOlder: Set<String> = []
     private var bridgeDue: [String: Date] = [:]
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
     /// message a few seconds after it notified, so one read right away may still miss it.
@@ -283,6 +285,7 @@ final class ChatCaptureService: ObservableObject {
                 // published property redraws every view that watches the inbox.
                 if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
                 if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
+                if bridge === serviceBridge, !bridged.isDisjoint(with: serviceBridge.covered) { bridged.subtract(serviceBridge.covered) }
                 continue
             }
             if let due = bridgeDue[bridge.app], due > Date() { continue }
@@ -300,7 +303,9 @@ final class ChatCaptureService: ObservableObject {
                     changed = true
                 }
                 if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
-                if !bridged.contains(bridge.app) { bridged.insert(bridge.app) }
+                // The chat helper reads several apps: each one it brought in is bridged.
+                let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
+                if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
             } catch {
                 let problem = error.localizedDescription
                 if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
@@ -395,6 +400,34 @@ final class ChatCaptureService: ObservableObject {
     func remove(_ id: String) {
         inbox.remove(id)
         save()
+    }
+
+    /// A chat the chat helper brings in, with older messages there that Nook does not show yet.
+    func canLoadOlder(_ id: String) -> Bool {
+        guard let thread = inbox.threads[id], !noOlder.contains(id) else { return false }
+        return serviceBridge.chatID(app: thread.app, name: thread.name) != nil
+    }
+
+    /// Scrolls back in a chat the helper brings in: its next batch of older messages, kept from now on. False when no
+    /// older one came in.
+    func loadOlder(_ id: String) async -> Bool {
+        guard let thread = inbox.threads[id] else { return false }
+        let before = thread.messages.count
+        do {
+            let (chat, hasMore) = try await serviceBridge.older(app: thread.app, name: thread.name, have: before)
+            if !hasMore { noOlder.insert(id) }
+            guard let chat else { return false }
+            var merged = inbox
+            merged.grow(id, by: ChatServiceBridge.olderStep)
+            merged.merge(chat)
+            let after = merged.threads[id]?.messages.count ?? before
+            guard after > before else { return false }
+            inbox = merged
+            save()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Chats brought over from another app (`BeeperImporter`), merged like a bridge's; how many changed.

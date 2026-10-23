@@ -286,7 +286,10 @@ final class WhatsAppDesktopBridge: ChatBridge {
         AppDatabase.home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/"
     }
 
-    var isReady: Bool { !WhatsAppLink.shared.isConnected && FileManager.default.fileExists(atPath: Self.path) }
+    var isReady: Bool {
+        // WhatsApp linked through the chat helper (as Beeper did it) brings it live, with its whole history.
+        !WhatsAppLink.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
+    }
 
     func read() async throws -> [BridgedChat] {
         guard isReady else { isWorking = false; return [] }
@@ -317,6 +320,7 @@ final class WhatsAppDesktopBridge: ChatBridge {
             names[chat] = name
             let mine = (AppData.number(row["me"]) ?? 0) != 0
             var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if ChatFormat.isBlank(text) { text = "" }
             let media = Self.media(row)
             let type = Int(AppData.number(row["type"]) ?? 0)
             // A poll shows as one, its question its text; its options and votes stay in the app.
@@ -602,6 +606,27 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// How many older messages one scroll back asks for: the helper's batch (`paginateBatch` in apps/chatd).
+    static let olderStep = 50
+    /// The most messages the helper hands out for one chat in one answer.
+    private static let mostMessages = 500
+
+    /// Scrolling back in the chat Nook shows as `name` in `app`, as Beeper does it: the helper first brings in the next
+    /// batch of older messages from the app (WhatsApp asks the phone), then Nook reads the chat with `have` plus that
+    /// batch. The chat as read, and whether there is still more before it.
+    func older(app: String, name: String, have: Int) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        guard let token = Self.token, let id = chatID(app: app, name: name), let chat = chats[id] else { return (nil, false) }
+        let answer = try await call("POST", Self.path(id) + "/paginate", [:], token: token, timeout: 75,
+                                    failure: tr("chat.action.failed"))
+        let more = (ChatJSON.object(answer)?["hasMore"] as? Bool) ?? false
+        let limit = min(have + Self.olderStep, Self.mostMessages)
+        let read = try await get(Self.path(id) + "/messages", ["limit": String(limit)], token: token)
+        let messages = await withFiles(ChatServiceData.messages(read, chat: chat), token: token)
+        let bridged = BridgedChat(app: app, name: name, messages: messages, unread: nil,
+                                  members: chat.members.isEmpty ? nil : chat.members)
+        return (bridged, more && limit < Self.mostMessages)
     }
 
     /// The messages with their files on this Mac (see `local`).
