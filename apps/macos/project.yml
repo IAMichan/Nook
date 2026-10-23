@@ -280,7 +280,7 @@ targets:
       - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/Keybindings.swift
-      - path: Services/Workspace/PromptLink.swift
+      - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
       - path: Services/Workspace/TimelinePresentation.swift
@@ -305,6 +305,7 @@ targets:
       - path: Services/Workspace/WorktreeCleanup.swift
       - path: Services/Workspace/ComposerLists.swift
       - path: Services/Workspace/CommitStyle.swift
+      - path: Services/Workspace/RemoteHostDiscovery.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift

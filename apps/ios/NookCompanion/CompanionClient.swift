@@ -22,6 +22,10 @@ final class CompanionClient: ObservableObject {
     @Published var notice: String?
     /// Set when a notification was tapped: the session to open.
     @Published var openSession: String?
+    /// The session whose screen is open, so a push about it arrives without a banner.
+    var visibleSession: String?
+    /// A `nook://prompt` link that was opened: the New session sheet shows with its text.
+    @Published var pendingPrompt: PromptLink?
     /// Whether the Mac has push set up (answer to the last `register`), nil while unknown.
     @Published private(set) var macPushReady: Bool?
     /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.

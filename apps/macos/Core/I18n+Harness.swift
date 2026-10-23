@@ -24,6 +24,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.commitInstructions": "Instructies",
         "settings.ws.commitInstructions.placeholder": "Begin het onderwerp met het ticketnummer uit de branchnaam",
         "settings.ws.commitStyle.footer": "Hoe Commit en Pull request hun tekst schrijven. \"Zoals de repository\" leest de laatste commits en volgt hun stijl; berichten blijven in het Engels.",
+        "remote.suggestions": "Gevonden op deze Mac (%ld)",
+        "remote.suggestion.sshConfig": "Uit ~/.ssh/config",
+        "remote.suggestion.knownHosts": "Eerder mee verbonden (known_hosts)",
+        "remote.suggestion.tailscale": "Online in je tailnet",
     ],
     .en: [
         "ws.file.missing": "%@ is no longer there.",
@@ -45,6 +49,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.commitInstructions": "Instructions",
         "settings.ws.commitInstructions.placeholder": "Start the subject with the ticket number from the branch name",
         "settings.ws.commitStyle.footer": "How Commit and Pull Request write their text. \"Like the repository\" reads its recent commits and follows their style; messages stay in English.",
+        "remote.suggestions": "Found on this Mac (%ld)",
+        "remote.suggestion.sshConfig": "From ~/.ssh/config",
+        "remote.suggestion.knownHosts": "Connected before (known_hosts)",
+        "remote.suggestion.tailscale": "Online in your tailnet",
     ],
     .de: [
         "ws.file.missing": "%@ gibt es nicht mehr.",
@@ -66,6 +74,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.commitInstructions": "Anweisungen",
         "settings.ws.commitInstructions.placeholder": "Beginne den Betreff mit der Ticketnummer aus dem Branchnamen",
         "settings.ws.commitStyle.footer": "Wie Commit und Pull Request ihren Text schreiben. \"Wie das Repository\" liest die letzten Commits und folgt ihrem Stil; Nachrichten bleiben auf Englisch.",
+        "remote.suggestions": "Auf diesem Mac gefunden (%ld)",
+        "remote.suggestion.sshConfig": "Aus ~/.ssh/config",
+        "remote.suggestion.knownHosts": "Früher verbunden (known_hosts)",
+        "remote.suggestion.tailscale": "Online in deinem Tailnet",
     ],
     .fr: [
         "ws.file.missing": "%@ n'existe plus.",
@@ -87,6 +99,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.commitInstructions": "Instructions",
         "settings.ws.commitInstructions.placeholder": "Commencer le sujet par le numéro de ticket du nom de la branche",
         "settings.ws.commitStyle.footer": "Comment Commit et Pull request rédigent leur texte. « Comme le dépôt » lit les derniers commits et suit leur style ; les messages restent en anglais.",
+        "remote.suggestions": "Trouvées sur ce Mac (%ld)",
+        "remote.suggestion.sshConfig": "Depuis ~/.ssh/config",
+        "remote.suggestion.knownHosts": "Déjà connecté (known_hosts)",
+        "remote.suggestion.tailscale": "En ligne dans votre tailnet",
     ],
     .es: [
         "ws.file.missing": "%@ ya no existe.",
@@ -108,5 +124,9 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.commitInstructions": "Instrucciones",
         "settings.ws.commitInstructions.placeholder": "Empieza el asunto con el número de ticket del nombre de la rama",
         "settings.ws.commitStyle.footer": "Cómo escriben su texto Commit y Pull request. «Como el repositorio» lee los últimos commits y sigue su estilo; los mensajes siguen en inglés.",
+        "remote.suggestions": "Encontradas en este Mac (%ld)",
+        "remote.suggestion.sshConfig": "De ~/.ssh/config",
+        "remote.suggestion.knownHosts": "Conectado antes (known_hosts)",
+        "remote.suggestion.tailscale": "En línea en tu tailnet",
     ],
 ]

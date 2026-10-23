@@ -36,6 +36,10 @@ targets:
         NSLocalNetworkUsageDescription: Nook Companion talks to Nook on your Mac over your own wifi to show which sessions need you.
         NSCameraUsageDescription: Nook Companion scans the pairing code that Nook shows on your Mac.
         UIBackgroundModes: [remote-notification]
+        # nook://pair (the QR code scanned with the Camera app) and nook://prompt (a link that prefills a new session).
+        CFBundleURLTypes:
+          - CFBundleURLName: nl.imdigital.nook.companion
+            CFBundleURLSchemes: [nook]
     settings:
       base:
         PRODUCT_NAME: Nook Companion
