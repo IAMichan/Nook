@@ -119,10 +119,7 @@ struct ChatReplyField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if let outgoing {
-                SendingPanel(message: outgoing.text, sent: outgoing.sent, recipient: recipient)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else if showsDraft {
+            if outgoing == nil, showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
                            edited: drafted.map { $0 != text } ?? false, readyNotice: readyNotice,
                            steer: $steer, steerFocused: $steerFocused,
@@ -154,7 +151,12 @@ struct ChatReplyField: View {
             }
             if let aboveAccessory { aboveAccessory }
             VStack(spacing: 0) {
-                if let trayContent {
+                // A message on its way takes the tray, where an agent shows its queued messages; the host's line
+                // comes back once it is there.
+                if let outgoing {
+                    ComposerTray(edge: .top) { SendingPanel(message: outgoing.text, sent: outgoing.sent, recipient: recipient) }
+                        .transition(.opacity)
+                } else if let trayContent {
                     ComposerTray(edge: .top) { trayContent }
                         .transition(.opacity)
                 }
@@ -556,7 +558,7 @@ struct ChatSending: Equatable {
     var sent = false
 }
 
-/// Above the field while a message is sent: a paper plane that glides, who it goes to, and the message itself; once
+/// In the tray above the field while a message is sent: a paper plane that glides, who it goes to, and the message itself; once
 /// it is there, a check in its place.
 private struct SendingPanel: View {
     let message: String
@@ -569,11 +571,12 @@ private struct SendingPanel: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+        // The same row as the queued messages' header in an agent's tray (see `QueuedMessagesStrip`).
+        HStack(spacing: NookTheme.Spacing.sm) {
             Group {
                 if sent {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(NookTheme.font(13, .semibold))
+                        .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.mint)
                         .transition(.scale.combined(with: .opacity))
                 } else {
@@ -581,33 +584,30 @@ private struct SendingPanel: View {
                         .transition(.opacity)
                 }
             }
-            .frame(width: 18, height: 18)
+            .frame(width: 16, height: 16)
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Group {
                 if sent {
-                    Text(title)
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
+                    Text(title).foregroundStyle(NookTheme.textSecondary)
                 } else {
                     ShimmerText(text: title)
-                        .font(NookTheme.TextStyle.label)
-                        .lineLimit(1)
                 }
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            .font(NookTheme.TextStyle.label)
+            .lineLimit(1)
+            .layoutPriority(1)
+            Spacer(minLength: 8)
+            Text(message)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .padding(NookTheme.Spacing.md)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, 3)
         .overlay(alignment: .bottom) {
             if !sent { SendingSweep().padding(.horizontal, NookTheme.Spacing.md) }
         }
-        .cardBackground(NookTheme.mint.opacity(0.07), stroke: NookTheme.mint.opacity(0.2), radius: NookTheme.Radius.panel,
-                        style: .continuous)
         .animation(NookTheme.reveal, value: sent)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title + ": " + message)
