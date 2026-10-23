@@ -933,6 +933,8 @@ private struct ChatsDetail: View {
     @State private var editing: ChatBubble?
     /// Your message waiting for "Delete for everyone" to be confirmed.
     @State private var deleting: ChatBubble?
+    /// The collected chat whose removal waits for a yes.
+    @State private var removing: String?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
@@ -1223,7 +1225,7 @@ private struct ChatsDetail: View {
             }
             if case .captured(let id) = entry.origin {
                 Divider()
-                Button(tr("chats.remove"), role: .destructive) { capture.remove(id) }
+                Button(tr("chats.remove"), role: .destructive) { removing = id }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -1235,6 +1237,8 @@ private struct ChatsDetail: View {
         .composerMenu()
         .help(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
+        .confirmDelete($removing, question: { _ in tr("confirm.deleteChat", entry.name) },
+                       detail: tr("confirm.deleteChat.detail"), confirmTitle: tr("chats.remove")) { capture.remove($0) }
     }
 
     /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, an app the chat helper links),
