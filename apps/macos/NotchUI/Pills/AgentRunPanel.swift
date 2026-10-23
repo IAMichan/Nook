@@ -229,6 +229,7 @@ struct AgentRunPanel: View {
                     .help(tr("ws.title.renameHelp"))
             }
             Spacer(minLength: 8)
+            ResourceUsageBadge(workspace: workspace, runID: runID)
             outputsButton(run, outputs)
             if let fraction = run.usage.contextFraction, fraction > 0.6 {
                 Text(tr("ws.header.context", Int((fraction * 100).rounded())))

@@ -242,6 +242,7 @@ targets:
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/PullRequestViewedFiles.swift
       - path: Services/Connectors/CILog.swift
       - path: Services/Connectors/PullRequestBatchMerge.swift
       - path: Services/Connectors/GitHubMarkdown.swift
@@ -306,6 +307,7 @@ targets:
       - path: Services/Workspace/ComposerLists.swift
       - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/RemoteHostDiscovery.swift
+      - path: Services/Workspace/ResourceUsage.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift

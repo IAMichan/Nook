@@ -28,6 +28,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "remote.suggestion.sshConfig": "Uit ~/.ssh/config",
         "remote.suggestion.knownHosts": "Eerder mee verbonden (known_hosts)",
         "remote.suggestion.tailscale": "Online in je tailnet",
+        "agents.pr.files.viewedCount": "%ld van %ld bestanden bekeken",
+        "agents.pr.files.markViewed": "Markeer als bekeken",
+        "agents.pr.files.unmarkViewed": "Bekeken: klik om weg te halen",
+        "ws.header.resources": "CPU (één volle kern telt als 100) en geheugen van de agent en de %ld processen die hij op deze Mac draait",
     ],
     .en: [
         "ws.file.missing": "%@ is no longer there.",
@@ -53,6 +57,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "remote.suggestion.sshConfig": "From ~/.ssh/config",
         "remote.suggestion.knownHosts": "Connected before (known_hosts)",
         "remote.suggestion.tailscale": "Online in your tailnet",
+        "agents.pr.files.viewedCount": "%ld of %ld files viewed",
+        "agents.pr.files.markViewed": "Mark as viewed",
+        "agents.pr.files.unmarkViewed": "Viewed: click to unmark",
+        "ws.header.resources": "CPU (one full core counts as 100) and memory of the agent and the %ld processes it runs on this Mac",
     ],
     .de: [
         "ws.file.missing": "%@ gibt es nicht mehr.",
@@ -78,6 +86,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "remote.suggestion.sshConfig": "Aus ~/.ssh/config",
         "remote.suggestion.knownHosts": "Früher verbunden (known_hosts)",
         "remote.suggestion.tailscale": "Online in deinem Tailnet",
+        "agents.pr.files.viewedCount": "%ld von %ld Dateien angesehen",
+        "agents.pr.files.markViewed": "Als angesehen markieren",
+        "agents.pr.files.unmarkViewed": "Angesehen: zum Entfernen klicken",
+        "ws.header.resources": "CPU (ein voller Kern zählt als 100) und Speicher des Agenten und der %ld Prozesse, die er auf diesem Mac ausführt",
     ],
     .fr: [
         "ws.file.missing": "%@ n'existe plus.",
@@ -103,6 +115,10 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "remote.suggestion.sshConfig": "Depuis ~/.ssh/config",
         "remote.suggestion.knownHosts": "Déjà connecté (known_hosts)",
         "remote.suggestion.tailscale": "En ligne dans votre tailnet",
+        "agents.pr.files.viewedCount": "%ld fichiers sur %ld consultés",
+        "agents.pr.files.markViewed": "Marquer comme consulté",
+        "agents.pr.files.unmarkViewed": "Consulté : cliquer pour retirer",
+        "ws.header.resources": "CPU (un cœur entier compte pour 100) et mémoire de l'agent et des %ld processus qu'il exécute sur ce Mac",
     ],
     .es: [
         "ws.file.missing": "%@ ya no existe.",
@@ -128,5 +144,9 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "remote.suggestion.sshConfig": "De ~/.ssh/config",
         "remote.suggestion.knownHosts": "Conectado antes (known_hosts)",
         "remote.suggestion.tailscale": "En línea en tu tailnet",
+        "agents.pr.files.viewedCount": "%ld de %ld archivos vistos",
+        "agents.pr.files.markViewed": "Marcar como visto",
+        "agents.pr.files.unmarkViewed": "Visto: haz clic para quitar",
+        "ws.header.resources": "CPU (un núcleo completo cuenta como 100) y memoria del agente y de los %ld procesos que ejecuta en este Mac",
     ],
 ]

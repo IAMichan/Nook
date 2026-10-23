@@ -20,6 +20,8 @@ struct PullRequestDetailView: View {
     @StateObject private var model: PullRequestDetailModel
     @State private var tab: Tab = .overview
     @State private var openFile: String?
+    /// Files you marked as viewed; a mark lapses when a push changes the file.
+    @State private var viewed = PullRequestViewedFiles.load()
     @AppStorage("agents.pr.mergeMethod") private var methodRaw = PullRequestMergeMethod.merge.rawValue
     @State private var confirmMerge = false
     @State private var merging = false
@@ -655,29 +657,53 @@ struct PullRequestDetailView: View {
     // MARK: Files
 
     private func files(_ detail: PullRequestDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
+        let viewedCount = viewed.viewedCount(detail.files, in: key)
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if detail.files.isEmpty {
                 ListEmptyNote(tr("agents.pr.files.none"))
             } else {
+                if viewedCount > 0 {
+                    Text(tr("agents.pr.files.viewedCount", viewedCount, detail.files.count))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(viewedCount == detail.files.count ? NookTheme.mint : NookTheme.textTertiary)
+                        .padding(.horizontal, NookTheme.Spacing.xs)
+                }
                 VStack(spacing: 0) {
                     ForEach(Array(detail.files.enumerated()), id: \.element.id) { index, file in
                         if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 14 + NookTheme.Spacing.md) }
-                        HoverRow(action: { openFile = file.path }) {
-                            HStack(spacing: NookTheme.Spacing.md) {
-                                fileGlyph(file.status)
-                                filePath(file.path)
-                                Spacer(minLength: 6)
-                                Text("+\(file.additions)").foregroundStyle(NookTheme.mint)
-                                Text("−\(file.deletions)").foregroundStyle(NookTheme.coral)
-                                DiffStatBar(additions: file.additions, deletions: file.deletions)
+                        let seen = viewed.isViewed(file, in: key)
+                        HStack(spacing: 0) {
+                            viewedButton(file, key: key, seen: seen)
+                                .padding(.leading, NookTheme.Spacing.sm)
+                            HoverRow(action: { openFile = file.path }) {
+                                HStack(spacing: NookTheme.Spacing.md) {
+                                    fileGlyph(file.status)
+                                    filePath(file.path)
+                                    Spacer(minLength: 6)
+                                    Text("+\(file.additions)").foregroundStyle(NookTheme.mint)
+                                    Text("−\(file.deletions)").foregroundStyle(NookTheme.coral)
+                                    DiffStatBar(additions: file.additions, deletions: file.deletions)
+                                }
+                                .font(NookTheme.TextStyle.detail.monospacedDigit())
                             }
-                            .font(NookTheme.TextStyle.detail.monospacedDigit())
+                            .opacity(seen ? 0.55 : 1)
                         }
                     }
                 }
                 .panelCard()
             }
         }
+    }
+
+    /// Ticks a file as viewed (or not), as on GitHub. The mark holds the file's revision, so a push that changes the file
+    /// clears it again.
+    private func viewedButton(_ file: PullRequestFile, key: String, seen: Bool) -> some View {
+        ToolbarIconButton(seen ? "checkmark.circle.fill" : "circle", tr(seen ? "agents.pr.files.unmarkViewed" : "agents.pr.files.markViewed")) {
+            viewed.setViewed(!seen, file: file, in: key)
+            viewed.save()
+        }
+        .help(tr(seen ? "agents.pr.files.unmarkViewed" : "agents.pr.files.markViewed"))
     }
 
     /// The file's name in full brightness, the folder it is in dimmed before it.
@@ -717,6 +743,8 @@ struct PullRequestDetailView: View {
                 Spacer(minLength: 6)
                 Text("+\(file.additions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.mint)
                 Text("−\(file.deletions)").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.coral)
+                viewedButton(file, key: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number),
+                             seen: viewed.isViewed(file, in: PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)))
                 if let index = detail.files.firstIndex(of: file) {
                     Text("\(index + 1)/\(detail.files.count)")
                         .font(NookTheme.TextStyle.detail.monospacedDigit())
