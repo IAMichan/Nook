@@ -101,6 +101,7 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     private func makeWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.storeID)
+        configuration.applicationNameForUserAgent = Self.safariName
         configuration.userContentController.addUserScript(WKUserScript(source: Self.script, injectionTime: .atDocumentStart,
                                                                        forMainFrameOnly: false))
         configuration.userContentController.add(TokenListener { [weak self] url, header in self?.heard(url: url, header: header) },
@@ -109,6 +110,13 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         web.navigationDelegate = self
         self.web = web
         return web
+    }
+
+    /// Present as the Safari on this Mac: without it Teams calls the web view an unsupported browser, and it also turns
+    /// away Safari versions older than the latest two, so a fixed version would stop working after a macOS update.
+    private static var safariName: String {
+        let version = Bundle(path: "/Applications/Safari.app")?.infoDictionary?["CFBundleShortVersionString"] as? String
+        return "Version/\(version ?? "26.0") Safari/605.1.15"
     }
 
     private func heard(url: String, header: String) {
