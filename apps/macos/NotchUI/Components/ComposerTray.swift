@@ -9,7 +9,7 @@ struct ComposerTray<Content: View>: View {
     @ViewBuilder let content: Content
 
     /// How far the tray runs on behind the box.
-    static var tuck: CGFloat { 14 }
+    static var tuck: CGFloat { 16 }
 
     var body: some View {
         let inner: Edge.Set = edge == .bottom ? .top : .bottom
@@ -20,8 +20,10 @@ struct ComposerTray<Content: View>: View {
             .padding(inner, Self.tuck + 4)
             .padding(outer, 4)
             .background(shape.fill(NookTheme.field))
+            .overlay(shape.strokeBorder(NookTheme.fieldStroke, lineWidth: 1))
             .padding(inner, -Self.tuck)
-            .padding(.horizontal, 14)
+            // Narrower than the box by a little more than its corner, so the tray clearly comes out from behind it.
+            .padding(.horizontal, NookTheme.Spacing.xl + NookTheme.Spacing.sm)
     }
 
     private var shape: UnevenRoundedRectangle {

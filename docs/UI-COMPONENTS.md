@@ -51,7 +51,10 @@ and faint white fills instead of grey panels or lines, and color only where it c
   row (`RowBadgeBackground`) have no fill: a mark and a word. A card that reports a problem (recovery, an error, a
   usage limit) stands on `surface`; only its symbol carries the state color.
 - **One reading column.** A conversation and its composer are one centered column of at most 736 pt
-  (`.chatColumn()`, `PanelLayout.chatColumn`), so lines stay readable in a wide window. Your own message is a soft
+  (`.chatColumn()`, `PanelLayout.chatColumn`), so lines stay readable in a wide window. `SessionComposer` keeps to
+  that column by itself, so every chat with an agent or with Nook gets the same composer: a `Radius.composer` box on
+  `surface` with a hairline outline and a faint light on its top edge, the text 16 pt in, the choices underneath and
+  the round send button 8 pt from the corner (a one-line box is a 48 pt capsule). Your own message is a soft
   `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
   `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
 
