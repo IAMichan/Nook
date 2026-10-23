@@ -1004,7 +1004,10 @@ struct AgentRunPanel: View {
                                 }
                             },
                             move: { workspace.moveQueued(runID, message: $0, toIndex: $1) },
-                            sendNow: workspace.canSendQueuedNow(runID) ? { workspace.sendQueuedNow(runID, message: $0) } : nil)
+                            sendNow: workspace.canSendQueuedNow(runID) ? { id in
+                                if editingQueued == id { cancelQueuedEdit() }
+                                workspace.sendQueuedNow(runID, message: id)
+                            } : nil)
                     }
                 }
             }

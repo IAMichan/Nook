@@ -167,6 +167,8 @@ final class WorkspaceManager: ObservableObject {
     var warmPrompts: [UUID: String] = [:]
     /// A message you sent while the previous turn's snapshot was still being made: shown at once, sent right after it.
     var awaitingCheckpoint: [UUID: String] = [:]
+    /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
+    var pendingSendNow: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// Sessions whose Antigravity sign-in page already opened.
@@ -853,7 +855,7 @@ final class WorkspaceManager: ObservableObject {
     /// A queued message can go out right away: into the running turn, or as a new turn when the agent is idle.
     func canSendQueuedNow(_ id: UUID) -> Bool {
         guard let run = run(id) else { return false }
-        if run.status.isActive { return canSteer(id) }
+        if run.status.isActive { return true }
         return run.canContinue && processes[id] == nil && !checkpointing.contains(id)
     }
 
@@ -861,7 +863,21 @@ final class WorkspaceManager: ObservableObject {
     /// agent is idle (also after a stop or a failure). It stays queued when it cannot go out.
     func sendQueuedNow(_ id: UUID, message: UUID) {
         guard canSendQueuedNow(id), let run = run(id) else { return }
-        if run.status.isActive { return steerQueued(id, message: message) }
+        if run.status.isActive {
+            if canSteer(id) {
+                guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+                store(queue, for: id)
+                if steer(id, text: text) { return }
+                queue.requeueFirst(text)
+                store(queue, for: id)
+            }
+            guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+            queue.resume()
+            store(queue, for: id)
+            pendingSendNow[id] = text
+            stop(id)
+            return
+        }
         guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
         queue.resume()
         store(queue, for: id)
@@ -938,6 +954,11 @@ final class WorkspaceManager: ObservableObject {
         guard let process = processes[id] else {
             // No running process: update state only.
             update(id) { $0.move(to: .stopped) }
+            if let next = pendingSendNow.removeValue(forKey: id) {
+                if !send(id, text: next, shown: false) {
+                    queued[id, default: MessageQueue()].requeueFirst(next)
+                }
+            }
             return
         }
         turns[id]?.stopping = true
@@ -1423,6 +1444,13 @@ final class WorkspaceManager: ObservableObject {
         if state.stopping {
             update(id) { $0.move(to: .stopped) }
             append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+            scheduleGitRefresh(id, delay: 0.2)
+            if let next = pendingSendNow.removeValue(forKey: id) {
+                if !send(id, text: next, shown: false) {
+                    queued[id, default: MessageQueue()].requeueFirst(next)
+                }
+            }
+            return
         } else {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
@@ -1641,6 +1669,7 @@ final class WorkspaceManager: ObservableObject {
         limitResumes.removeValue(forKey: id)?.cancel()
         warmPrompts[id] = nil
         awaitingCheckpoint[id] = nil
+        pendingSendNow[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)
