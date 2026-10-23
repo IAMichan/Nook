@@ -624,6 +624,18 @@ final class WhatsAppLink: ObservableObject {
         return WAInbox.newest(fetched, kept, limit: limit)
     }
 
+    /// "Load older messages": the chat keeps `WAInbox.olderStep` more and asks the gateway for that many. True when
+    /// messages were added; the chat remembers when the gateway has nothing older left.
+    func loadOlder(_ chat: String) async -> Bool {
+        let key = WAJID.normalized(chat)
+        guard isConnected, let limit = inbox.growCapacity(key) else { return false }
+        let before = inbox.conversations[key]?.messages.count ?? 0
+        _ = try? await messages(of: key, limit: limit)
+        let after = inbox.conversations[key]?.messages.count ?? 0
+        if after < limit { inbox.markOldestReached(key) }
+        return after > before
+    }
+
     /// A chat's messages from the gateway, so its card can scroll back and shows what the live feed missed (the Mac
     /// slept, a webhook got lost): fetched each time the chat opens, at most once per `WAInbox.historyRefresh`. True
     /// when the conversation changed.

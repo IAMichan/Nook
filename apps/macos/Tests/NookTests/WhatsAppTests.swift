@@ -93,6 +93,24 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations["1@s.whatsapp.net"]?.messages.last?.id, "m\(count - 1)")
     }
 
+    func testLoadingOlderMessagesBringsBackWhatAChatLetGo() {
+        var inbox = WAInbox()
+        let chat = "1@s.whatsapp.net"
+        let count = WAInbox.keep + 5
+        for index in 0..<count { inbox.add(message("m\(index)", chat: chat, at: Double(index + 1)), filters: WAFilters()) }
+        XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, true, "full: older ones may exist")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.id, "m5")
+
+        XCTAssertEqual(inbox.growCapacity(chat), WAInbox.keep + WAInbox.olderStep)
+        for index in 0..<count { inbox.add(message("m\(index)", chat: chat, at: Double(index + 1)), filters: WAFilters(), history: true) }
+        XCTAssertEqual(inbox.conversations[chat]?.messages.count, count, "the five it let go are back")
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.id, "m0")
+        XCTAssertEqual(inbox.conversations[chat]?.unread, count, "history never changes the unread count")
+
+        inbox.markOldestReached(chat)
+        XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, false)
+    }
+
     func testAGroupKnownOnlyByItsIdIsAskedItsName() {
         let old = "31622360496-1542111077@g.us"
         XCTAssertTrue(WAJID.isPlaceholderName("Group 31622360496-1542111077", for: old), "the gateway's stand-in")

@@ -983,7 +983,7 @@ private struct ChatsDetail: View {
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { zoom($0) },
                            onReply: route == nil ? nil : quote, onReact: whatsAppChat == nil ? nil : react,
-                           onVote: canVote ? vote : nil)
+                           onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
                 .padding(.top, NookTheme.Spacing.md)
@@ -1295,6 +1295,17 @@ private struct ChatsDetail: View {
                 notice = error.localizedDescription
             }
         }
+    }
+
+    /// A WhatsApp chat that is full and may have older messages at the gateway.
+    private var canLoadOlder: Bool {
+        guard let chat = whatsAppChat else { return false }
+        return whatsApp.inbox.conversations[chat]?.canLoadOlder ?? false
+    }
+
+    private func loadOlder() async -> Bool {
+        guard let chat = whatsAppChat else { return false }
+        return await whatsApp.loadOlder(chat)
     }
 
     /// Older messages and the newest photos of a WhatsApp chat, as its card fetches them.
