@@ -470,6 +470,7 @@ struct AgentListRow: View {
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
+                    .rowActionsBackdrop(background)
                     .padding(.top, slim ? NookTheme.Spacing.sm : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
@@ -605,7 +606,8 @@ struct AgentListRow: View {
     }
 
     private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { rowIcon(symbol, label) }.buttonStyle(.plain)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+            .pointerStyle(.link)
     }
 
     /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.
@@ -670,8 +672,6 @@ struct AgentHoverCard: View {
 /// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
 struct AgentConversation: View {
     let session: AgentSession
-    /// The outputs panel next to the conversation; its button sits in the header above.
-    var outputsOpen: Binding<Bool> = .constant(false)
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
 
@@ -687,7 +687,7 @@ struct AgentConversation: View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, fallback: fallback, onReply: onReply,
-                               directory: session.cwd, outputsOpen: outputsOpen)
+                               directory: session.cwd)
             .id(session.id)
     }
 }

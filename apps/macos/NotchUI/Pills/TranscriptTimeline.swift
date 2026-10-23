@@ -25,11 +25,7 @@ struct TranscriptConversation: View {
     var directory: String? = nil
     /// Folds, groups and thoughts you opened.
     @State private var open: Set<String> = []
-    /// The panel next to the conversation with what the agent produced; its button sits in the header of the view
-    /// that shows the conversation (see SessionOutputsButton), which reads the count from TranscriptOutputCount.
-    var outputsOpen: Binding<Bool> = .constant(false)
-    @State private var outputSelection: String?
-    /// A file the agent read or wrote that you clicked: shown in the side panel, in place of the outputs.
+    /// A file the agent read or wrote that you clicked: shown beside the conversation.
     @State private var preview: String?
     /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
@@ -129,23 +125,13 @@ struct TranscriptConversation: View {
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
                                 available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if outputsOpen.wrappedValue {
-                SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(NookTheme.reveal) { outputsOpen.wrappedValue = false }
-                }
-                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
-        .preference(key: TranscriptOutputCount.self, value: outputs.count)
-        // The outputs button in the header asks for the outputs, also while a file is open.
-        .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
-            if isOpen { withAnimation(NookTheme.reveal) { preview = nil; diff = nil } }
-        }
+        // What the agent produced goes to the outputs tab of the side panel around the conversation (`SessionWorkbench`).
+        .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs))
         // ⌘D: the latest turn's diff; again to close it.
         .keyCommand("diff.toggle", enabled: !turns.isEmpty) {
             withAnimation(NookTheme.reveal) {
@@ -345,11 +331,10 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// Opens the diff panel on a turn (and a file), in place of a file or the outputs.
+    /// Opens the diff panel on a turn (and a file), in place of a file.
     private func openDiff(_ selection: TurnDiffSelection) {
         withAnimation(NookTheme.reveal) {
             preview = nil
-            outputsOpen.wrappedValue = false
             diff = selection
         }
     }
@@ -377,12 +362,6 @@ private final class TranscriptDerived {
         outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
         turns = TurnDiff.collect(messages)
     }
-}
-
-/// How many outputs the conversation found, for the button in the header above it.
-struct TranscriptOutputCount: PreferenceKey {
-    static let defaultValue = 0
-    static func reduce(value: inout Int, nextValue: () -> Int) { value = max(value, nextValue()) }
 }
 
 // MARK: Messages

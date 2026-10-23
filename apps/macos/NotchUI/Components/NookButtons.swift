@@ -292,6 +292,32 @@ struct ToolbarIconButton: View {
     }
 }
 
+/// The backdrop of a list row's hover buttons: the row's own fill behind the buttons, fading in from the left, so a long
+/// title runs out softly underneath them instead of colliding with them. The fade passes clicks through to the row.
+struct RowActionsBackdrop: ViewModifier {
+    /// The row's current fill (`NookTheme.rowFill`).
+    let fill: Color
+    var fade: CGFloat = NookTheme.Spacing.xxl
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.leading, fade)
+            .background(
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [fill.opacity(0), fill], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: fade)
+                    fill
+                }
+                .allowsHitTesting(false)
+            )
+    }
+}
+
+extension View {
+    /// Lays a row's hover buttons on the row's fill, with the title fading out underneath (`RowActionsBackdrop`).
+    func rowActionsBackdrop(_ fill: Color) -> some View { modifier(RowActionsBackdrop(fill: fill)) }
+}
+
 /// Compact subtle button for use in chat.
 struct SmallGhostButton: View {
     let title: String

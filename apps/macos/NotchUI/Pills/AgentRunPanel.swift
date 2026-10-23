@@ -38,18 +38,17 @@ struct AgentRunPanel: View {
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
-    /// The panel next to the conversation with what the agent produced: open, which output it shows, and wider.
-    @State private var outputsOpen = false
-    @State private var outputSelection: String?
+    /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
+    @Environment(\.sessionOutputs) private var outputsLink
     /// How wide the results and the terminal are: drag the line beside them, double-click it to reset. Remembered.
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
     @AppStorage("nook.agents.consoleWidth") private var consoleWidth = PanelLayout.console
     @State private var totalWidth: Double = 0
-    /// The outputs (by signature) you have seen, for the dot on the panel's button; nil until the session shows.
+    /// The outputs (by signature) you have seen, for the dot on the outputs tab; nil until the session shows.
     @State private var seenOutputs: Set<String>?
     /// The terminal on the left: the command it shows; nil while it is closed.
     @State private var consoleEventID: UUID?
-    /// A file the agent read or wrote that you clicked: shown in the side panel, in place of the outputs.
+    /// A file the agent read or wrote that you clicked: shown beside the conversation.
     @State private var filePreview: String?
     /// The diff panel's choice of turn and file; nil while it is closed.
     @State private var diffSelection: TurnDiffSelection?
@@ -70,12 +69,12 @@ struct AgentRunPanel: View {
                         withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
                     .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: outputsOpen || filePreview != nil ? outputsWidth : nil),
+                                    available: PanelLayout.room(totalWidth, besides: filePreview != nil ? outputsWidth : nil),
                                     rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-                    header(run, outputs: outputs)
+                    header(run)
                     timeline(run)
                     if let pending = workspace.approvals[runID], let first = pending.first {
                         approval(run, first, more: pending.count - 1).chatColumn()
@@ -121,14 +120,6 @@ struct AgentRunPanel: View {
                                     available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
                                     rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
-                } else if outputsOpen {
-                    SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                        withAnimation(NookTheme.reveal) { outputsOpen = false }
-                    }
-                    .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                    available: PanelLayout.room(totalWidth, besides: consoleOpen ? consoleWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -144,9 +135,13 @@ struct AgentRunPanel: View {
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }
             }
-            // The outputs button asks for the outputs, also while a file is open.
-            .onChange(of: outputsOpen) { _, isOpen in
-                if isOpen { withAnimation(NookTheme.reveal) { filePreview = nil; diffSelection = nil } }
+            // What the agent produced goes to the outputs tab of the side panel, with a dot while something is new.
+            .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(
+                outputs: outputs,
+                fresh: !outputsLink.shown && seenOutputs.map { SessionOutputs.hasNew(outputs, seen: $0) } == true))
+            // What the outputs tab shows is seen.
+            .onChange(of: outputsLink.shown) { _, isShown in
+                if isShown { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
             }
             // ⌘D: the latest turn's diff; again to close it.
             .keyCommand("diff.toggle", enabled: !turnDiffs(run).isEmpty) {
@@ -185,8 +180,6 @@ struct AgentRunPanel: View {
                 reverting = false
                 openBlocks = []
                 expanded = []
-                outputsOpen = false
-                outputSelection = nil
                 filePreview = nil
                 diffSelection = nil
                 countedLines = [:]
@@ -203,8 +196,8 @@ struct AgentRunPanel: View {
 
     // MARK: Header
 
-    /// While the agent works, a plan, design, document or image that is new opens the outputs panel on it, and anything
-    /// new while it is closed puts a dot on its button. What a session that does not work shows (its timeline loading
+    /// While the agent works, a plan, design, document or image that is new opens the outputs tab on it, and anything
+    /// new while that tab is out of view puts a dot on it. What a session that does not work shows (its timeline loading
     /// as you open it) is not news.
     private func noticeOutputs(_ outputs: [SessionOutput], working: Bool, turnStart: Date?) {
         guard working, let seen = seenOutputs else {
@@ -212,28 +205,19 @@ struct AgentRunPanel: View {
             return
         }
         let fresh = outputs.filter { !seen.contains(SessionOutputs.signature($0)) }
-        // Only what this turn made opens the panel by itself, not earlier work that comes in as the timeline loads.
+        // Only what this turn made opens the tab by itself, not earlier work that comes in as the timeline loads.
         if let shown = fresh.first(where: { output in
             if case .tasks = output.kind { return false }
             return output.date >= (turnStart ?? .distantFuture)
-        }) {
-            outputSelection = shown.id
-            withAnimation(NookTheme.reveal) { outputsOpen = true }
-        }
-        if outputsOpen { seenOutputs = Set(outputs.map(SessionOutputs.signature)) }
-    }
-
-    /// Opens or closes the outputs panel; opening it marks everything seen.
-    private func outputsButton(_ run: WorkspaceRun, _ outputs: [SessionOutput]) -> some View {
-        let fresh = !outputsOpen && SessionOutputs.hasNew(outputs, seen: seenOutputs ?? [])
-        return SessionOutputsButton(open: outputsOpen, fresh: fresh, tint: run.provider.color) {
-            outputsOpen.toggle()
+        }), outputsLink.open(shown.id) {
+            seenOutputs = Set(outputs.map(SessionOutputs.signature))
+        } else if outputsLink.shown {
             seenOutputs = Set(outputs.map(SessionOutputs.signature))
         }
     }
 
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
-    private func header(_ run: WorkspaceRun, outputs: [SessionOutput]) -> some View {
+    private func header(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
             Text(run.projectName)
                 .foregroundStyle(NookTheme.textTertiary)
@@ -264,7 +248,6 @@ struct AgentRunPanel: View {
             }
             Spacer(minLength: 8)
             ResourceUsageBadge(workspace: workspace, runID: runID)
-            outputsButton(run, outputs)
             if let remote = run.remote {
                 // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
                 Button { openRemoteTerminal(remote) } label: {
@@ -543,11 +526,10 @@ struct AgentRunPanel: View {
         return parts.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
-    /// Opens the diff panel on a turn (and a file), in place of a file or the outputs.
+    /// Opens the diff panel on a turn (and a file), in place of a file.
     private func openDiff(_ selection: TurnDiffSelection) {
         withAnimation(NookTheme.reveal) {
             filePreview = nil
-            outputsOpen = false
             diffSelection = selection
         }
     }
@@ -852,7 +834,7 @@ struct AgentRunPanel: View {
     private func showFile(_ file: String) {
         withAnimation(NookTheme.reveal) {
             filePreview = filePreview == file ? nil : file
-            if filePreview != nil { outputsOpen = false; diffSelection = nil }
+            if filePreview != nil { diffSelection = nil }
         }
     }
 
