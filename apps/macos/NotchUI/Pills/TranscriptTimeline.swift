@@ -37,6 +37,8 @@ struct TranscriptConversation: View {
     /// Follows the end while the agent writes, until you scroll away; then a pill brings you back.
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    /// The conversation is taller than the view: only then the rail with your messages shows.
+    @State private var overflows = false
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var derived = TranscriptDerived()
 
@@ -55,7 +57,8 @@ struct TranscriptConversation: View {
                                uniquingKeysWith: { first, _ in first })
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
-                ScrollView(showsIndicators: true) {
+                // No scroll bar, not even when the system shows them always: the rail beside it marks your messages.
+                ScrollView {
                     // Lazy: a long conversation only lays out what is on screen.
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
@@ -85,11 +88,25 @@ struct TranscriptConversation: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom)
+                .scrollIndicators(.never)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
                     if nowAtEnd { scroll.reachedEnd() }
+                }
+                .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                    overflows = now
+                }
+                .overlay(alignment: .trailing) {
+                    if overflows, !derived.marks.isEmpty {
+                        TranscriptPromptRail(marks: derived.marks) { mark in
+                            scroll.userScrolled()
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                        }
+                        .padding(.vertical, NookTheme.Spacing.md)
+                        .transition(.opacity)
+                    }
                 }
                 .onScrollPhaseChange { _, phase in
                     scrollPhase = phase
@@ -375,6 +392,7 @@ private final class TranscriptDerived {
     private(set) var rows: [TranscriptRow] = []
     private(set) var outputs: [SessionOutput] = []
     private(set) var turns: [TurnDiff] = []
+    private(set) var marks: [PromptMark] = []
 
     func update(_ messages: [AgentChatMessage], working: Bool, directory: String?) {
         if let key, key.working == working, key.directory == directory, key.messages == messages { return }
@@ -382,6 +400,50 @@ private final class TranscriptDerived {
         rows = TranscriptPresentation.rows(messages, working: working)
         outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
         turns = TurnDiff.collect(messages)
+        marks = TranscriptPresentation.promptMarks(rows)
+    }
+}
+
+/// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
+/// the message is, a click scrolls to it, and hovering shows what you wrote.
+struct TranscriptPromptRail: View {
+    let marks: [PromptMark]
+    let onSelect: (PromptMark) -> Void
+    @State private var hovered: String?
+
+    private static let width: CGFloat = 16
+    /// The height each mark can be clicked over.
+    private static let target: CGFloat = 8
+
+    var body: some View {
+        GeometryReader { geometry in
+            let travel = max(0, geometry.size.height - Self.target)
+            ForEach(marks) { mark in
+                let lit = hovered == mark.id
+                Button { onSelect(mark) } label: {
+                    Capsule()
+                        .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
+                        .frame(width: lit ? 12 : 8, height: 2)
+                        .frame(width: Self.width, height: Self.target)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(Self.summary(mark.text))
+                .onHover { inside in
+                    if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
+                }
+                .position(x: Self.width / 2, y: Self.target / 2 + mark.position * travel)
+            }
+        }
+        .frame(width: Self.width)
+        .animation(NookTheme.hover, value: hovered)
+    }
+
+    /// The first line of a message, without the pictures sent along, short enough for a tooltip.
+    private static func summary(_ text: String) -> String {
+        let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = words.split(separator: "\n").first.map(String.init) ?? words
+        return line.count > 80 ? String(line.prefix(79)) + "…" : line
     }
 }
 
