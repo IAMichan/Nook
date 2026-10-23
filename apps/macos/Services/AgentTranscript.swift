@@ -30,6 +30,8 @@ struct AgentToolStep: Identifiable, Equatable {
     var file: String? = nil
     /// Why a failed step failed, on one line, as the tool reported it.
     var error: String? = nil
+    /// What an edit changed, as a unified diff made from the tool's input (see EditPatch), for the turn's diff.
+    var patch: String? = nil
 }
 
 /// A single message from an active session's conversation.
@@ -52,6 +54,8 @@ struct AgentChatMessage: Identifiable, Equatable {
     var updated: Date?
     /// You stopped the agent right after this message: its turn ended without the agent finishing it.
     var interrupted = false
+    /// Your message, sent while the agent was still working on the one before (it steered the turn).
+    var queued = false
 
     var fromUser: Bool { kind == .user }
     var isThinking: Bool { kind == .thinking }
@@ -243,7 +247,8 @@ enum AgentTranscript {
                                                        path: ToolCategory.of(tool: name) == .edit ? ToolSummary.path(input) : nil,
                                                        plan: name == "ExitPlanMode" ? input["plan"] as? String : nil,
                                                        lines: EditLines.of(tool: name, input: input),
-                                                       file: opensFile(name) ? ToolSummary.path(input) : nil),
+                                                       file: opensFile(name) ? ToolSummary.path(input) : nil,
+                                                       patch: EditPatch.make(tool: name, input: input)),
                                    at: when, to: &messages)
                         default:
                             continue
@@ -257,7 +262,9 @@ enum AgentTranscript {
             // use the same shape and are left out.
             else if type == "attachment" {
                 guard let text = queuedPrompt(object) else { continue }
-                messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
+                var message = AgentChatMessage(id: id, kind: .user, text: clip(text), date: when)
+                message.queued = true
+                messages.append(message)
             }
             // Antigravity (USER_INPUT, PLANNER_RESPONSE)
             else if type == "USER_INPUT" {
@@ -304,6 +311,9 @@ enum AgentTranscript {
                                                lines: name == "apply_patch"
                                                    ? (payload["input"] as? String).flatMap(EditLines.of(patch:))
                                                        ?? EditLines.of(tool: name, input: arguments)
+                                                   : nil,
+                                               patch: name == "apply_patch"
+                                                   ? (payload["input"] as? String) ?? EditPatch.make(tool: name, input: arguments)
                                                    : nil),
                            at: when, to: &messages)
                 case "local_shell_call":
