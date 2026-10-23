@@ -11,7 +11,6 @@ struct TasksStrip: View {
 
     var body: some View {
         let progress = RunTasks.progress(steps)
-        let finished = progress.done >= progress.total
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             Button {
                 withAnimation(NookTheme.reveal) { open.toggle() }
