@@ -404,25 +404,47 @@ struct NookChatView: View {
             if let name = app.attachmentName {
                 AttachmentChip(name: name, isImage: app.attachmentIsImage) { app.clearAttachment() }
             }
-            SessionComposer(
-                text: $question,
-                prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
-                busy: chat.busy,
-                onStop: { app.stopChat() },
-                focus: $inputFocused,
-                onSend: send
-            ) {
-                // The same row as the agents' choices: a plus menu, then model and sources split by a thin line.
-                ComposerMoreMenu(chat: chat)
-                BrainChip()
-                ComposerDivider()
-                ScopeMenu(chat: chat)
+            // Questions asked while Nook answers wait in a tray tucked above the box, as an agent's do.
+            VStack(spacing: 0) {
+                queuedTray
+                SessionComposer(
+                    text: $question,
+                    prompt: chat.isEmpty ? tr("home.inputPrompt") : tr("chat.followupPrompt"),
+                    busy: chat.busy,
+                    onStop: { app.stopChat() },
+                    focus: $inputFocused,
+                    onSend: send
+                ) {
+                    // The same row as the agents' choices: a plus menu, then model and sources split by a thin line.
+                    ComposerMoreMenu(chat: chat)
+                    BrainChip()
+                    ComposerDivider()
+                    ScopeMenu(chat: chat)
+                }
+                .rich(composerModel, chatComposerConfig)
+                .trailing {
+                    NookIconButton(systemName: "mic", label: tr("button.talk"), size: 32) { viewModel.startListening() }
+                }
+                // While Nook answers, Return or the queue button puts the question in line instead of stopping the answer.
+                .queueing(chat.busy ? send : nil)
+                .images($images, asPaths: false, onFile: { app.askAbout($0) })
+                .zIndex(1)
             }
-            .rich(composerModel, chatComposerConfig)
-            .trailing {
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 32) { viewModel.startListening() }
+        }
+    }
+
+    /// The questions waiting for the answer that runs, when there are any.
+    @ViewBuilder
+    private var queuedTray: some View {
+        if let conversation = chat.active, !conversation.queue.isEmpty {
+            let id = conversation.id
+            ComposerTray(edge: .top) {
+                QueuedMessagesStrip(
+                    queue: conversation.queue,
+                    remove: { chat.removeQueued($0, conversation: id) },
+                    move: { chat.moveQueued($0, toIndex: $1, conversation: id) },
+                    sendNow: { app.sendQueued(id, message: $0) })
             }
-            .images($images, asPaths: false, onFile: { app.askAbout($0) })
         }
     }
 
