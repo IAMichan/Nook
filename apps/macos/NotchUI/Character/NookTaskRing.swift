@@ -82,9 +82,10 @@ struct NookTaskRing: View {
         // Keeps drawing while the ring still catches up with Nook; once it rests, the spring asks for one more redraw
         // so the timeline can pause again.
         let following = !reduceMotion && !spring.settled(at: motion.offset)
-        // Possibly for hours in the closed notch: the ambient rate keeps the light fluid there at a fraction of the
-        // redraws; in the open panel, where you look at it and point at it, it runs at the interactive rate.
-        let rate = compact ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
+        // Possibly for hours, closed or open: the ambient rate keeps the light fluid at a fraction of the redraws, and every
+        // frame redraws the whole window the ring is in. Only while you point at a piece in the panel does it run at the
+        // interactive rate.
+        let rate = compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
         TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving && !following)) { context in
             ring(at: context.date)
         }

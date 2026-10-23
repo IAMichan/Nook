@@ -477,6 +477,10 @@ struct PanelOrb: View {
     // Redraws the ring when you mark a chat as finished or read a session.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    /// Published only when the plan changes: sets Nook's frame rate.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    /// The pointer is on Nook: he follows it at the full rate.
+    @State private var pointerOn = false
 
     var body: some View {
         // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
@@ -490,9 +494,14 @@ struct PanelOrb: View {
                 viewModel.show(.panel(.nook), inNotch: true)
             }
         } label: {
-            NookOrb(mood: mood, size: size, glow: glow, motion: motion)
+            // Every frame redraws the whole window he is in (the open panel, the main window with a long chat): the full rate
+            // only while you point at him or his ring, as in the closed notch; otherwise the calm rate he thinks along at.
+            NookOrb(mood: mood, size: size, glow: glow,
+                    frameRate: pointerOn || ringPointer.hovered != nil ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
+                    motion: motion)
         }
         .buttonStyle(.plain)
+        .onHover { pointerOn = $0 }
         .accessibilityLabel(tr("notch.goToHome"))
         .background {
             if ring {
