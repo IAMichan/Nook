@@ -67,4 +67,29 @@ final class TurnDiffTests: XCTestCase {
         let line = #"{"type":"attachment","uuid":"q1","attachment":{"type":"queued_command","prompt":"Also this","commandMode":"prompt","origin":{"kind":"human"}}}"#
         XCTAssertEqual(AgentTranscript.jsonl(Data(line.utf8)).first?.queued, true)
     }
+
+    func testASessionNookRunsGetsItsTurnsFromTheTimeline() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let edit = #"{"file_path":"/p/A.swift","old_string":"a","new_string":"b"}"#
+        let events = [
+            RunEvent(kind: .user, text: "Change A", date: t0),
+            RunEvent(kind: .tool, text: "Edit", tool: "Edit", detail: edit, state: .done, date: t0.addingTimeInterval(1)),
+            RunEvent(kind: .fileChange, text: "", tool: "modified", detail: "/p/B.swift", date: t0.addingTimeInterval(2)),
+            RunEvent(kind: .assistant, text: "Done", date: t0.addingTimeInterval(3)),
+            RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(4)),
+            RunEvent(kind: .user, text: "Explain", date: t0.addingTimeInterval(5)),
+            RunEvent(kind: .result, text: "", date: t0.addingTimeInterval(6)),
+            RunEvent(kind: .user, text: "Still going", date: t0.addingTimeInterval(7)),
+            RunEvent(kind: .tool, text: "Edit", tool: "Edit", detail: edit, state: .running, date: t0.addingTimeInterval(8)),
+        ]
+        let turns = TurnDiff.collect(events: events)
+        XCTAssertEqual(turns.count, 1, "a turn without changes or still running has no card")
+        XCTAssertEqual(turns[0].answerID, events[4].id.uuidString)
+        XCTAssertEqual(turns[0].files.map(\.path), ["/p/A.swift", "/p/B.swift"])
+        XCTAssertEqual(turns[0].files[1].patches, [])
+        XCTAssertEqual(turns[0].start, t0)
+        XCTAssertEqual(turns[0].counted(["B.swift": EditLines(added: 3, removed: 1)], relativeTo: "/p").files[1].lines,
+                       EditLines(added: 3, removed: 1))
+        XCTAssertEqual(TurnDiff.session(turns).end, t0.addingTimeInterval(4))
+    }
 }

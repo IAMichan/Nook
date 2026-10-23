@@ -133,6 +133,9 @@ struct TurnDiffPanel: View {
     @Binding var selection: TurnDiffSelection
     let directory: String?
     @Binding var wide: Bool
+    /// Reads the real diff of these files in this turn (a session Nook runs: from its git snapshots); nil, or when it
+    /// fails, the diff made from the agent's edits shows.
+    var load: ((TurnDiff, [TurnDiff.File]) async throws -> String)? = nil
     let close: () -> Void
     @AppStorage("nook.agents.diffFiles") private var showFiles = true
 
@@ -200,10 +203,15 @@ struct TurnDiffPanel: View {
     private func diff(_ current: TurnDiff) -> some View {
         if current.files.isEmpty {
             ListEmptyNote(tr("agents.diff.none"), padding: NookTheme.Spacing.xl)
-        } else if let path = selection.file, let file = current.file(path, relativeTo: directory) {
-            DiffText(text: file.diff).id(selection.turn + "|" + file.path)
         } else {
-            DiffText(text: TurnDiff.diff(current.files)).id(selection.turn)
+            let shown = selection.file.flatMap { current.file($0, relativeTo: directory) }.map { [$0] } ?? current.files
+            let key = selection.turn + "|" + (selection.file ?? "")
+            if let load {
+                LoadedTurnDiff(fallback: TurnDiff.diff(shown)) { try await load(current, shown) }
+                    .id(key)
+            } else {
+                DiffText(text: TurnDiff.diff(shown)).id(key)
+            }
         }
     }
 
@@ -254,5 +262,27 @@ struct TurnDiffPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// A diff read when it shows (from git); while it loads, or when it cannot be read, the diff from the agent's edits.
+private struct LoadedTurnDiff: View {
+    let fallback: String
+    let load: () async throws -> String
+    @State private var text: String?
+
+    var body: some View {
+        Group {
+            if let text, !text.isEmpty {
+                DiffText(text: text)
+            } else if text == nil && fallback.isEmpty {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if fallback.isEmpty {
+                ListEmptyNote(tr("agents.diff.none"), padding: NookTheme.Spacing.xl)
+            } else {
+                DiffText(text: fallback)
+            }
+        }
+        .task { text = (try? await load()) ?? "" }
     }
 }
