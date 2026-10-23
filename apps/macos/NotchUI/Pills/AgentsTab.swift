@@ -333,7 +333,7 @@ struct AgentsTab: View {
             started: status == .idle ? (session.updated ?? session.started ?? known?.started)
                 : (session.turnStarted ?? session.started ?? known?.started),
             path: session.cwd,
-            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id),
+            finishKey: FinishedSessions.key(session: session),
             unseen: session.status == .done && unseen(session.id, session.updated),
             machine: MachineName.local,
             model: known?.model ?? "",

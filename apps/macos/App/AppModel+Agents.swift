@@ -31,14 +31,7 @@ extension AppModel {
     /// The agent's own conversation id for a running session: from its hooks, or for a session Nook only sees as a
     /// process, the most recent transcript of that agent in the same folder.
     func conversationID(for session: AgentSession) -> String? {
-        if !session.sessionID.isEmpty { return session.sessionID }
-        if !session.isDetected {
-            // The hub key is "<agent>:<session id>", with the folder as fallback when the agent sent no id.
-            if let colon = session.id.firstIndex(of: ":") {
-                let rest = String(session.id[session.id.index(after: colon)...])
-                if !rest.isEmpty, rest != session.cwd { return rest }
-            }
-        }
+        if let own = session.ownConversationID { return own }
         guard let kind = AgentKind(agentName: session.name), !session.cwd.isEmpty else { return nil }
         // The same agent and folder can run under another account: only a transcript of this session's own account counts.
         let account = profile(for: session)?.id
@@ -47,13 +40,12 @@ extension AppModel {
 
     /// You marked this chat as finished while it still read as busy (a turn that hangs): it is finished, not working.
     func isSettledWhileBusy(_ session: AgentSession) -> Bool {
-        let key = FinishedSessions.key(agent: session.name, conversation: conversationID(for: session), fallback: session.id)
-        return FinishedSessions.shared.isMarkedWhileBusy(key)
+        FinishedSessions.shared.isMarkedWhileBusy(FinishedSessions.key(session: session))
     }
 
     /// You marked this chat as finished.
     func isMarkedFinished(_ session: AgentSession) -> Bool {
-        FinishedSessions.shared.contains(FinishedSessions.key(agent: session.name, conversation: conversationID(for: session), fallback: session.id))
+        FinishedSessions.shared.contains(FinishedSessions.key(session: session))
     }
 
     /// Can Nook continue this running session's conversation itself?

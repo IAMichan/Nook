@@ -108,4 +108,17 @@ struct AgentSession: Identifiable, Equatable {
     var updated: Date? = nil
     /// Derived from a running process rather than hooks.
     var isDetected: Bool { status == .detected }
+
+    /// The conversation id the agent reported itself (see `FinishedSessions.ownConversation`).
+    var ownConversationID: String? {
+        FinishedSessions.ownConversation(id: id, sessionID: sessionID, cwd: cwd, detected: isDetected)
+    }
+}
+
+extension FinishedSessions {
+    /// A session Nook sees through hooks or the process list. Only the id the agent reported itself counts: a guess from
+    /// the folder (the latest transcript there) is the same for every session in that folder, so marking one would mark them all.
+    static func key(session: AgentSession) -> String {
+        key(agent: session.name, conversation: session.ownConversationID, fallback: session.id)
+    }
 }
