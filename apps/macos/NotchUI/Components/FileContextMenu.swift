@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What you can do with a file of a session, in its right-click menu (as Code's file menu): open it in your editor (at
+/// What you can do with a file of a session, in its right-click menu: open it in your editor (at
 /// `line` when given), show it in Finder, and copy its path. A remote session's file has no path on this Mac, so only its
 /// path in the repository can be copied.
 struct FileContextMenu: View {

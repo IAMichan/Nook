@@ -5,10 +5,9 @@ passkeys and security keys for any website when the app is signed with Apple's *
 entitlement (`com.apple.developer.web-browser.public-key-credential`). Without it, sites such as Google ask for
 Bluetooth and a nearby phone, and the sign-in stops there.
 
-This follows how [Code]() handles passkeys in its in-app browser
-(`apps/desktop/src/preview/Passkeys.ts`): with the entitlement the system's passkeys are used, and only builds signed
-with it get them. Code needs its own JavaScript bridge to AuthenticationServices because Chromium does not hand
-WebAuthn to macOS. WebKit does that itself once the entitlement is present, so Nook needs no bridge.
+With the entitlement the system's passkeys are used, and only builds signed with it get them. A Chromium-based browser
+needs its own JavaScript bridge to AuthenticationServices because Chromium does not hand WebAuthn to macOS. WebKit does
+that itself once the entitlement is present, so Nook needs no bridge.
 
 ## How Nook behaves
 

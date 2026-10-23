@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The CPU and memory a working session takes on this Mac, its agent and everything it started (as Code shows it):
+/// The CPU and memory a working session takes on this Mac, its agent and everything it started:
 /// "34 % · 512 MB" in the session's header. Read every three seconds while the session works and is on screen; hidden
 /// otherwise.
 struct ResourceUsageBadge: View {

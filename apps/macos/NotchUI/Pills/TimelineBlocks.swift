@@ -206,7 +206,7 @@ struct QueuedMessagesStrip: View {
     /// neither can happen right now.
     var sendNow: ((UUID) -> Void)? = nil
     @State private var collapsed = false
-    /// A message's buttons show while the pointer is on it (or it is open in the box), as Code's row actions.
+    /// A message's buttons show while the pointer is on it (or it is open in the box).
     @State private var hovered: UUID?
 
     var body: some View {

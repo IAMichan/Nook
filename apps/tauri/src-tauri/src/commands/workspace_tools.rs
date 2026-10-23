@@ -115,7 +115,7 @@ pub struct FolderTools {
     servers: Vec<DevServer>,
 }
 
-/// De scripts van het project (`nook.json`/`legacy-scripts.json`) en de dev-servers die in deze map draaien.
+/// De scripts van het project (`nook.json`) en de dev-servers die in deze map draaien.
 #[tauri::command]
 pub async fn workspace_folder_tools(folder: String) -> Res<FolderTools> {
     #[cfg(desktop)]

@@ -35,7 +35,7 @@ informs without shouting; motion settles without overshoot. When you add a view:
   action is filled.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-These rules follow [Code]()'s dark theme, which reads calm because it uses so
+These rules give a dark theme that reads calm because it uses so
 little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 3 % lighter, no blue cast), separation by tonal steps
 and faint white fills instead of grey panels or lines, and color only where it carries meaning. In practice:
 

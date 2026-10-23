@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return .newData
     }
 
-    /// No banner or sound for the session you are looking at (as Code does): its screen already shows what changed.
+    /// No banner or sound for the session you are looking at: its screen already shows what changed.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         let nook = notification.request.content.userInfo["nook"] as? [String: Any]
         let session = nook?["session"] as? String
