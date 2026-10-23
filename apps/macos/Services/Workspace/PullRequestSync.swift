@@ -115,21 +115,32 @@ final class PullRequestSync: ObservableObject {
         running = true
         Task {
             defer { running = false }
+            // Most answers repeat what is shown: publish (and store) only the ones that changed, so the session list
+            // does not redraw after every round.
+            var changed = false
             for job in round {
                 switch job {
                 case .run(let id, let branch):
                     checked[id] = now
                     guard let repo = await workspace.remoteRepository(id),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                    links[id] = found.isEmpty ? nil : found
+                    let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    if links[id] != next {
+                        links[id] = next
+                        changed = true
+                    }
                 case .folder(let key, let path, let branch):
                     folderChecked[key] = now
                     guard let repo = await Self.repository(path: path),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                    folderLinks[key] = found.isEmpty ? nil : found
+                    let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    if folderLinks[key] != next {
+                        folderLinks[key] = next
+                        changed = true
+                    }
                 }
             }
-            save()
+            if changed { save() }
         }
     }
 
