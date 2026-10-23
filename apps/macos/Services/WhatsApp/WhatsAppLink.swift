@@ -150,7 +150,12 @@ final class WhatsAppLink: ObservableObject {
     /// This account (JID or number), once linked.
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
-    @Published private(set) var knownChats: [WAChatInfo] = []
+    @Published private(set) var knownChats: [WAChatInfo] = [] {
+        didSet { knownIndex = Dictionary(knownChats.indices.map { (knownChats[$0].jid, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+    /// Where each chat sits in `knownChats`: the Chats tab asks about every chat on each redraw, so a scan per chat
+    /// made the list quadratic and stalled the main thread.
+    private var knownIndex: [String: Int] = [:]
     /// When a chat was last read in WhatsApp itself: marked read from Nook (by hand), or read on the phone.
     @Published private(set) var readInWhatsApp = WhatsAppSettings.readMarks(WhatsAppLink.readInWhatsAppKey) {
         didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey) }
@@ -590,7 +595,7 @@ final class WhatsAppLink: ObservableObject {
         guard WAJID.isGroup(chat), let provider, let conversation = inbox.conversations[chat],
               WAJID.isPlaceholderName(conversation.name, for: chat) else { return }
         // A name the chat list already learned comes first: no call at all.
-        if let known = knownChats.first(where: { $0.jid == chat }), !WAJID.isPlaceholderName(known.name, for: chat) {
+        if let known = known(chat), !WAJID.isPlaceholderName(known.name, for: chat) {
             inbox.rename(chat, to: known.name)
             return
         }
@@ -675,7 +680,7 @@ final class WhatsAppLink: ObservableObject {
         for message in fetched { inbox.add(message, filters: filters, history: true) }
         // An opened chat keeps the name the chat list showed: the gateway's history may only know it by its id.
         if let shown = inbox.conversations[key]?.name, WAJID.isPlaceholderName(shown, for: key),
-           let known = knownChats.first(where: { $0.jid == key }), !WAJID.isPlaceholderName(known.name, for: key) {
+           let known = known(key), !WAJID.isPlaceholderName(known.name, for: key) {
             inbox.rename(key, to: known.name)
         }
         nameGroupIfNeeded(key)
@@ -864,8 +869,13 @@ final class WhatsAppLink: ObservableObject {
             guard !last.fromMe, last.date > readThere else { return false }
             return conversation.unread > 0 || (readInNook[key].map { $0 >= last.date } ?? false)
         }
-        guard let known = knownChats.first(where: { $0.jid == key }) else { return false }
+        guard let known = known(key) else { return false }
         return known.unread > 0 && known.last > readThere
+    }
+
+    /// The phone's entry for a chat (`jid` normalized), without going through the whole list.
+    private func known(_ jid: String) -> WAChatInfo? {
+        knownIndex[jid].map { knownChats[$0] }
     }
 
     /// Where the chat stands, as every chat in the Chats tab says it: new, read in Nook only, or read in WhatsApp too.
@@ -892,7 +902,7 @@ final class WhatsAppLink: ObservableObject {
     func unread(_ chat: String) -> Int {
         let key = WAJID.normalized(chat)
         if let counted = inbox.conversations[key]?.unread, counted > 0 { return counted }
-        guard let known = knownChats.first(where: { $0.jid == key }), known.unread > 0 else { return 0 }
+        guard let known = known(key), known.unread > 0 else { return 0 }
         if let read = readInNook[key], known.last <= read { return 0 }
         return known.unread
     }
