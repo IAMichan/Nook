@@ -9,6 +9,12 @@ struct SessionDetailView: View {
     let sessionID: String
     @State private var message = ""
     @State private var confirmStop = false
+    @State private var confirmArchive = false
+    @State private var confirmEnd = false
+    @State private var renaming = false
+    @State private var newName = ""
+    /// Whether the newest message is in sight; scrolled up, an arrow brings you back.
+    @State private var atEnd = true
 
     private var session: SessionDigest? { client.sessions.first { $0.id == sessionID } }
     private var entries: [TimelineEntry] { client.timelines[sessionID] ?? [] }
@@ -17,15 +23,10 @@ struct SessionDetailView: View {
         if let session {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                         SessionHeader(session: session)
-                        if client.can(CompanionFeature.timeline) {
-                            ForEach(TimelineBlock.blocks(entries)) { block in
-                                switch block {
-                                case .message(let entry): TimelineMessage(entry: entry)
-                                case .activity(let steps): ActivityGroup(steps: steps)
-                                }
-                            }
+                        if client.can(CompanionFeature.timeline), !entries.isEmpty {
+                            TranscriptConversation(entries: entries, working: session.attention == "working")
                         } else if !session.excerpt.isEmpty {
                             SectionHeader(title: "Latest reply")
                             MessageBubble(text: session.excerpt, mine: false)
@@ -35,40 +36,64 @@ struct SessionDetailView: View {
                         }
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.bottom, Theme.Spacing.md)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.lg)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: entries.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
                 .onChange(of: session.items.count) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
                 .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-            }
-            .safeAreaInset(edge: .bottom) {
-                // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
-                if session.canSend != false {
-                    ComposerBar(placeholder: "Message to the agent", text: $message) { text in
-                        Haptics.tap()
-                        Task { await client.send(session, text: text) }
+                .defaultScrollAnchor(.bottom)
+                .modifier(ScrollEndTracker(atEnd: $atEnd))
+                .safeAreaInset(edge: .bottom) {
+                VStack(spacing: Theme.Spacing.md) {
+                    FloatingWorkingControl(
+                        workingSince: entries.last(where: { $0.kind == .user }).map { Date(timeIntervalSince1970: $0.date) },
+                        working: session.attention == "working",
+                        snoozed: actions(session).contains(.unsnooze),
+                        onWake: { manage(session, .unsnooze) },
+                        showScrollToEnd: !atEnd) {
+                        withAnimation(Theme.reveal) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                     }
-                } else {
-                    Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
-                        .font(.footnote).foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(Theme.Spacing.md)
-                        .background(Theme.canvas)
-                        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+                // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
+                ComposerDock {
+                    if session.canSend != false {
+                        // The Mac's composer: send, or stop while the agent works and nothing is typed.
+                        SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
+                                        onStop: canStop(session) ? { confirmStop = true } : nil) {
+                            let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                            message = ""
+                            Haptics.tap()
+                            Task { await client.send(session, text: text) }
+                        }
+                    } else {
+                        Label("This agent runs in a terminal on your Mac; answer it there.", systemImage: "terminal")
+                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                            .card(padding: Theme.Spacing.lg)
+                    }
+                }
+                }
                 }
             }
-            .navigationTitle(session.folder)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if session.canSend != false,
-                   session.attention == "working" || session.attention == "approval" || session.attention == "input" {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { confirmStop = true } label: { Image(systemName: "stop.circle.fill").foregroundStyle(Theme.coral) }
-                            .accessibilityLabel("Stop")
-                    }
+                ToolbarItem(placement: .principal) { SheetTitle(title: session.title, subtitle: session.folder) }
+                if !actions(session).isEmpty || (canStop(session) && stoppable(session)) {
+                    ToolbarItem(placement: .topBarTrailing) { manageMenu(session) }
                 }
+            }
+            .confirmationDialog("Archive this session?", isPresented: $confirmArchive, titleVisibility: .visible) {
+                Button("Archive", role: .destructive) { manage(session, .archive) }
+            }
+            .confirmationDialog("End this session?", isPresented: $confirmEnd, titleVisibility: .visible) {
+                Button("End session", role: .destructive) { manage(session, .end) }
+            } message: {
+                Text("The agent saves its conversation, so you can continue it in Nook.")
+            }
+            .alert("Rename", isPresented: $renaming) {
+                TextField("Name", text: $newName)
+                Button("Save") { manage(session, .rename, text: newName) }
+                Button("Cancel", role: .cancel) {}
             }
             .confirmationDialog("Stop this session?", isPresented: $confirmStop, titleVisibility: .visible) {
                 Button("Stop the session", role: .destructive) { Task { await client.stop(session) } }
@@ -92,164 +117,110 @@ struct SessionDetailView: View {
     }
 
     private static let bottom = "bottom"
+
+    private func stoppable(_ session: SessionDigest) -> Bool {
+        ["working", "approval", "input"].contains(session.attention)
+    }
+
+    /// Stopping is for sessions Nook runs; one outside Nook ends instead (`SessionAction.end`).
+    private func canStop(_ session: SessionDigest) -> Bool {
+        session.canSend != false && !actions(session).contains(.end)
+    }
+
+    private func actions(_ session: SessionDigest) -> [SessionAction] {
+        guard client.can(CompanionFeature.manage) else { return [] }
+        return (session.actions ?? []).compactMap(SessionAction.init(rawValue:))
+    }
+
+    private func manage(_ session: SessionDigest, _ action: SessionAction, text: String? = nil) {
+        Haptics.tap()
+        Task { await client.manage(session, action, text: text) }
+    }
+
+    /// What you can do with the session from afar, as the Mac's row actions: stop or end it, snooze it, rename it, archive it.
+    private func manageMenu(_ session: SessionDigest) -> some View {
+        let actions = actions(session)
+        return Menu {
+            if canStop(session), stoppable(session) {
+                Button(role: .destructive) { confirmStop = true } label: { Label("Stop", systemImage: "stop.circle") }
+            }
+            if actions.contains(.end) {
+                Button(role: .destructive) { confirmEnd = true } label: { Label("End session", systemImage: "xmark.circle") }
+            }
+            if actions.contains(.unsnooze) {
+                Button { manage(session, .unsnooze) } label: { Label("Cancel snooze", systemImage: "alarm") }
+            } else if actions.contains(.snoozeHour) {
+                Menu {
+                    Button("One hour") { manage(session, .snoozeHour) }
+                    Button("This evening") { manage(session, .snoozeEvening) }
+                    Button("Tomorrow morning") { manage(session, .snoozeTomorrow) }
+                } label: { Label("Snooze", systemImage: "clock") }
+            }
+            if actions.contains(.rename) {
+                Button { newName = session.title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
+            }
+            if actions.contains(.archive) {
+                Button(role: .destructive) { confirmArchive = true } label: { Label("Archive", systemImage: "archivebox") }
+            }
+        } label: {
+            Image(systemName: "ellipsis").foregroundStyle(Theme.text)
+        }
+        .accessibilityLabel("More")
+    }
 }
 
+/// Tells whether the end of a scroll view is in sight (iOS 18 and later; before, it counts as always in sight).
+private struct ScrollEndTracker: ViewModifier {
+    @Binding var atEnd: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height <= geometry.containerSize.height || geometry.visibleRect.maxY >= geometry.contentSize.height - 64
+            } action: { _, now in
+                atEnd = now
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Who works where, under the screen's title: the agent's logo and name, its status, and the folder and branch.
 private struct SessionHeader: View {
     let session: SessionDigest
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                AgentIcon(agent: session.agent, size: 44)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.title).font(.title3.weight(.semibold)).foregroundStyle(Theme.text)
-                    Text(session.agent).font(.subheadline).foregroundStyle(Theme.textSecondary)
-                }
-            }
-            HStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                AgentLogo(agent: session.agent, size: 18)
+                Text(session.agent).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                Spacer(minLength: Theme.Spacing.md)
                 StatusPill(attention: session.attention)
+            }
+            HStack(spacing: Theme.Spacing.lg) {
                 MetaChip(symbol: "folder", text: session.folder)
                 if let branch = session.branch, !branch.isEmpty { MetaChip(symbol: "arrow.triangle.branch", text: branch) }
             }
         }
-        .card()
-        .padding(.top, Theme.Spacing.sm)
+        .padding(Theme.Spacing.lg)
+        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        .padding(.top, Theme.Spacing.md)
     }
 }
 
+/// Where a session works, as a mark and a word: no fill, as the Mac's row badges.
 private struct MetaChip: View {
     let symbol: String
     let text: String
 
     var body: some View {
-        Label(text, systemImage: symbol)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(Theme.textSecondary)
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Theme.raised, in: Capsule())
-    }
-}
-
-/// The timeline in readable pieces: each message on its own, and the steps between two messages folded together.
-enum TimelineBlock: Identifiable {
-    case message(TimelineEntry)
-    case activity([TimelineEntry])
-
-    var id: String {
-        switch self {
-        case .message(let entry): return entry.id
-        case .activity(let steps): return "steps-" + (steps.first?.id ?? "")
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: symbol).foregroundStyle(Theme.textTertiary)
+            Text(text).foregroundStyle(Theme.textSecondary)
         }
-    }
-
-    static func blocks(_ entries: [TimelineEntry]) -> [TimelineBlock] {
-        var blocks: [TimelineBlock] = []
-        var steps: [TimelineEntry] = []
-        for entry in entries {
-            switch entry.kind {
-            case .tool, .change, .notice:
-                steps.append(entry)
-            case .user, .assistant, .error:
-                if !steps.isEmpty { blocks.append(.activity(steps)); steps = [] }
-                blocks.append(.message(entry))
-            }
-        }
-        if !steps.isEmpty { blocks.append(.activity(steps)) }
-        return blocks
-    }
-}
-
-private struct TimelineMessage: View {
-    let entry: TimelineEntry
-
-    var body: some View {
-        switch entry.kind {
-        case .user:
-            MessageBubble(text: entry.text, mine: true)
-        case .error:
-            Label { Text(entry.text).foregroundStyle(Theme.text).textSelection(.enabled) } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.coral)
-            }
-            .font(.callout)
-            .card(padding: Theme.Spacing.md, tint: Theme.coral)
-        default:
-            MessageBubble(text: entry.text, mine: false)
-        }
-    }
-}
-
-/// What the agent did between two messages: the last step, and the rest one tap away.
-private struct ActivityGroup: View {
-    let steps: [TimelineEntry]
-    @State private var expanded = false
-
-    private var changes: Int { steps.filter { $0.kind == .change }.count }
-    private var tools: Int { steps.filter { $0.kind == .tool }.count }
-    private var failed: Bool { steps.contains { $0.failed } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Button {
-                withAnimation(.spring(duration: 0.3)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: failed ? "exclamationmark.circle.fill" : "gearshape.2.fill")
-                        .foregroundStyle(failed ? Theme.coral : Theme.textTertiary)
-                    Text(summary).foregroundStyle(Theme.textSecondary)
-                    Spacer()
-                    if steps.count > 1 {
-                        Image(systemName: "chevron.down")
-                            .rotationEffect(.degrees(expanded ? 180 : 0))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                }
-                .font(.caption.weight(.medium))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(steps.count < 2)
-
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(expanded ? steps : Array(steps.suffix(1))) { StepLine(entry: $0) }
-            }
-            .padding(.leading, Theme.Spacing.sm)
-            .overlay(alignment: .leading) { Rectangle().fill(Theme.hairline).frame(width: 2) }
-        }
-        .padding(.vertical, Theme.Spacing.xs)
-        .padding(.horizontal, Theme.Spacing.sm)
-    }
-
-    private var summary: String {
-        var parts: [String] = []
-        if tools > 0 { parts.append(String(localized: "\(tools) steps")) }
-        if changes > 0 { parts.append(String(localized: "\(changes) files changed")) }
-        return parts.isEmpty ? String(localized: "Activity") : parts.joined(separator: " · ")
-    }
-}
-
-private struct StepLine: View {
-    let entry: TimelineEntry
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: symbol).foregroundStyle(entry.failed ? Theme.coral : Theme.textTertiary).frame(width: 14)
-            if let detail = entry.detail, !detail.isEmpty, entry.kind != .notice {
-                Text(detail).fontWeight(.semibold).foregroundStyle(Theme.textSecondary)
-            }
-            Text(entry.text).foregroundStyle(Theme.textTertiary).lineLimit(2)
-        }
-        .font(.caption.monospaced())
-        .padding(.leading, Theme.Spacing.sm)
-    }
-
-    private var symbol: String {
-        switch entry.kind {
-        case .change: return "doc.text"
-        case .notice: return "info.circle"
-        default: return entry.failed ? "xmark" : "chevron.right"
-        }
+        .font(Theme.TextStyle.label)
+        .lineLimit(1)
     }
 }
 
@@ -261,54 +232,54 @@ struct ItemView: View {
     @State private var text = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Label(heading, systemImage: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill")
-                .font(.caption.weight(.semibold)).foregroundStyle(Theme.amber)
-            Text(item.title).font(.body).foregroundStyle(Theme.text).textSelection(.enabled)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            Label {
+                Text(heading).foregroundStyle(Theme.text)
+            } icon: {
+                Image(systemName: item.kind == .approval ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Theme.amber)
+            }
+            .font(Theme.TextStyle.label)
+            Text(item.title).font(Theme.TextStyle.body).foregroundStyle(Theme.text).textSelection(.enabled)
             if !item.detail.isEmpty {
-                Text(item.detail).font(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
+                Text(item.detail).font(Theme.TextStyle.code).foregroundStyle(Theme.textSecondary)
+                    .padding(Theme.Spacing.md)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
             }
             switch item.kind {
             case .approval:
-                HStack(spacing: Theme.Spacing.sm) {
+                if item.canAllow {
+                    NookSplitButton(primary: NoticeAction(label: "Allow", symbol: "checkmark") {
+                        Haptics.success(); Task { await client.decide(session, item: item, allow: true) }
+                    }, secondary: NoticeAction(label: "Deny") {
+                        Haptics.warning(); Task { await client.decide(session, item: item, allow: false) }
+                    })
+                } else {
                     Button("Deny") { Haptics.warning(); Task { await client.decide(session, item: item, allow: false) } }
                         .buttonStyle(ActionButtonStyle(color: Theme.coral))
-                    if item.canAllow {
-                        Button("Allow") { Haptics.success(); Task { await client.decide(session, item: item, allow: true) } }
-                            .buttonStyle(ActionButtonStyle(color: Theme.mint, filled: true))
-                    }
+                        .fixedSize()
                 }
                 if !item.canAllow {
                     Label("This is risky or unknown: it can only be allowed on your Mac.", systemImage: "lock.fill")
-                        .font(.caption).foregroundStyle(Theme.amber)
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
             case .question:
                 if item.canAllow {
-                    VStack(spacing: Theme.Spacing.sm) {
+                    VStack(spacing: Theme.Spacing.md) {
                         ForEach(item.options, id: \.self) { option in
                             Button(option) { Haptics.success(); Task { await client.answer(session, item: item, text: option) } }
-                                .buttonStyle(ActionButtonStyle(color: Theme.amber))
+                                .buttonStyle(ActionButtonStyle())
                         }
                     }
-                    HStack(spacing: Theme.Spacing.sm) {
-                        TextField("Your own answer", text: $text)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .frame(minHeight: 38)
-                            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-                        Button {
-                            let answer = text
-                            text = ""
-                            Haptics.success()
-                            Task { await client.answer(session, item: item, text: answer) }
-                        } label: { Image(systemName: "arrow.up").font(.body.weight(.bold)) }
-                            .buttonStyle(ActionButtonStyle(color: Theme.amber, filled: true))
-                            .frame(width: 52)
-                            .disabled(text.isEmpty)
-                            .accessibilityLabel("Send")
+                    SessionComposer(text: $text, prompt: "Your own answer") {
+                        let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        text = ""
+                        Haptics.success()
+                        Task { await client.answer(session, item: item, text: answer) }
                     }
                 } else {
                     Label("Several questions at once: answer them on your Mac.", systemImage: "laptopcomputer")
-                        .font(.caption).foregroundStyle(Theme.amber)
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.amber)
                 }
             }
         }
@@ -321,8 +292,10 @@ struct ItemView: View {
 
 // MARK: Starting a session
 
-/// A new session on the Mac: the task, the agent and the folder, all on one screen. Account, model and permissions
-/// come from the Mac's own defaults for that agent, and "allow everything" is never used for a session started here.
+/// A new session on the Mac, as the Mac's `NewSessionComposer`: one question ("What should we build in Nook?", the
+/// project a menu in it), one composer with the agent and plan mode as quiet choices under the text, and where it works
+/// in a tray tucked under the box. Account, model and permissions come from the Mac's own defaults for that agent, and
+/// "allow everything" is never used for a session started here.
 struct NewSessionView: View {
     @EnvironmentObject private var client: CompanionClient
     @Environment(\.dismiss) private var dismiss
@@ -331,7 +304,6 @@ struct NewSessionView: View {
     let started: (String) -> Void
 
     @State private var task = ""
-    @State private var title = ""
     @State private var agent = ""
     @State private var project = ""
     @State private var plan = false
@@ -346,9 +318,7 @@ struct NewSessionView: View {
     private var options: LaunchOptions? { client.launchOptions }
     private var chosenAgent: LaunchOptions.Agent? { options?.agents.first { $0.id == agent } }
     private var chosenProject: LaunchOptions.Project? { options?.projects.first { $0.path == project } }
-    private var canStart: Bool {
-        !starting && chosenAgent != nil && chosenProject != nil && !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    private var canStart: Bool { !starting && chosenAgent != nil && chosenProject != nil }
 
     var body: some View {
         NavigationStack {
@@ -363,10 +333,9 @@ struct NewSessionView: View {
                 }
             }
             .screen()
-            .navigationTitle("New session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Theme.textSecondary) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.foregroundStyle(Theme.text) }
             }
             .onAppear(perform: prepare)
             .task {
@@ -376,7 +345,7 @@ struct NewSessionView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .tint(Theme.iris)
+        .tint(Theme.text)
     }
 
     @ViewBuilder
@@ -389,68 +358,105 @@ struct NewSessionView: View {
                        message: "Start a session on your Mac once: its folder then shows up here.") {}
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                    TextField("What should the agent do?", text: $task, axis: .vertical)
-                        .font(.body)
-                        .lineLimit(5...12)
-                        .focused($focused)
-                        .card()
-
-                    SectionHeader(title: "Agent")
-                    ForEach(options.agents) { option in
-                        ChoiceChip(title: option.name, selected: agent == option.id,
-                                   icon: AnyView(AgentIcon(agent: option.id, size: 30))) {
-                            withAnimation(.spring(duration: 0.25)) { agent = option.id }
+                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                    NookMark(size: 44)
+                    heading(options)
+                    VStack(spacing: 0) {
+                        SessionComposer(text: $task, prompt: "What should the agent do?", minHeight: 88, lines: 4...10,
+                                        canSend: canStart, sending: starting, focus: $focused, onSend: start) {
+                            agentMenu(options)
+                            if chosenAgent?.canPlan == true {
+                                ComposerDivider()
+                                Button { withAnimation(Theme.reveal) { plan.toggle() } } label: {
+                                    ComposerPill(symbol: "list.bullet.clipboard", text: String(localized: "Plan first"),
+                                                 tint: plan ? Theme.text : nil, showsChevron: false)
+                                        .background(plan ? Theme.raised : Color.clear,
+                                                    in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(plan ? .isSelected : [])
+                            }
                         }
+                        .zIndex(1)
+                        ComposerTray(edge: .bottom) { whereRow }
                     }
-
-                    SectionHeader(title: "Folder")
-                    ForEach(options.projects) { option in
-                        ChoiceChip(title: option.name, detail: Self.tilde(option.path), selected: project == option.path,
-                                   icon: AnyView(Image(systemName: "folder.fill").foregroundStyle(Theme.iris).frame(width: 30))) {
-                            withAnimation(.spring(duration: 0.25)) { project = option.path }
-                        }
-                    }
-
-                    SectionHeader(title: "Options")
-                    VStack(spacing: Theme.Spacing.md) {
-                        if chosenAgent?.canPlan == true {
-                            Toggle(isOn: $plan) { OptionLabel(symbol: "list.bullet.clipboard", title: "Plan first", detail: "Without changing anything") }
-                            Divider().overlay(Theme.hairline)
-                        }
-                        if chosenProject?.canWorktree == true {
-                            Toggle(isOn: $worktree) { OptionLabel(symbol: "arrow.triangle.branch", title: "Own branch", detail: "In a separate worktree") }
-                            Divider().overlay(Theme.hairline)
-                        }
-                        TextField("Title (optional)", text: $title)
-                    }
-                    .tint(Theme.iris)
-                    .card()
-
                     Label("Nook uses your account, model and permissions for this agent. Anything risky still waits for your approval.",
                           systemImage: "lock.shield")
-                        .font(.caption).foregroundStyle(Theme.textTertiary)
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
                         .padding(.horizontal, Theme.Spacing.xs)
-
                     if let failure {
                         Banner(text: failure, symbol: "exclamationmark.triangle.fill", color: Theme.coral)
                     }
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.bottom, Theme.Spacing.lg)
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.top, Theme.Spacing.lg)
+                .padding(.bottom, Theme.Spacing.xxl)
             }
             .scrollDismissesKeyboard(.interactively)
-            .safeAreaInset(edge: .bottom) {
-                Button(action: start) {
-                    if starting { ProgressView().tint(.white) } else { Label("Start session", systemImage: "play.fill") }
+        }
+    }
+
+    /// "What should we build in Nook?": the project is the menu, underlined with dots as on the Mac.
+    private func heading(_ options: LaunchOptions) -> some View {
+        Menu {
+            ForEach(options.projects) { option in
+                Button { withAnimation(Theme.reveal) { project = option.path } } label: {
+                    if project == option.path {
+                        Label(option.name, systemImage: "checkmark")
+                    } else {
+                        Text(option.name)
+                    }
                 }
-                .buttonStyle(PrimaryButtonStyle(color: canStart || starting ? Theme.iris : Theme.raised))
-                .disabled(!canStart)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.canvas)
+            }
+        } label: {
+            (Text("What should we build in ").foregroundStyle(Theme.text)
+             + Text(verbatim: chosenProject?.name ?? "…").foregroundStyle(Theme.text).underline(true, pattern: .dot, color: Theme.textTertiary)
+             + Text(verbatim: "?").foregroundStyle(Theme.text))
+                .font(Theme.TextStyle.display)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The agent, with its logo, as a menu in the composer.
+    private func agentMenu(_ options: LaunchOptions) -> some View {
+        Menu {
+            ForEach(options.agents) { option in
+                Button { withAnimation(Theme.reveal) { agent = option.id } } label: {
+                    if agent == option.id { Label(option.name, systemImage: "checkmark") } else { Text(option.name) }
+                }
+            }
+        } label: {
+            ComposerPill(agent: chosenAgent?.name ?? agent, text: chosenAgent?.name ?? "")
+        }
+    }
+
+    /// Where it works, in the tray under the box: the folder as it is or a new worktree, and the folder's place.
+    private var whereRow: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            if chosenProject?.canWorktree == true {
+                Menu {
+                    Button { worktree = false } label: {
+                        if worktree { Text("Current checkout") } else { Label("Current checkout", systemImage: "checkmark") }
+                    }
+                    Button { worktree = true } label: {
+                        if worktree { Label("New worktree", systemImage: "checkmark") } else { Text("New worktree") }
+                    }
+                } label: {
+                    ComposerPill(symbol: worktree ? "square.stack.3d.up" : "folder",
+                                 text: worktree ? String(localized: "New worktree") : String(localized: "Current checkout"))
+                }
+            } else {
+                ComposerPill(symbol: "folder", text: String(localized: "Current checkout"), showsChevron: false)
+            }
+            Spacer(minLength: Theme.Spacing.md)
+            if let chosenProject {
+                Text(Self.tilde(chosenProject.path)).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1).truncationMode(.head)
             }
         }
+        .padding(.leading, -Theme.Spacing.md)
     }
 
     /// Your defaults from the Mac, once.
@@ -467,10 +473,10 @@ struct NewSessionView: View {
     }
 
     private func start() {
-        guard canStart else { return }
+        guard canStart, !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         starting = true
         failure = nil
-        let launch = LaunchRequest(agent: agent, project: project, task: task, title: title.isEmpty ? nil : title,
+        let launch = LaunchRequest(agent: agent, project: project, task: task, title: nil,
                                    plan: plan && chosenAgent?.canPlan == true,
                                    worktree: worktree && chosenProject?.canWorktree == true)
         Task {
@@ -493,21 +499,5 @@ struct NewSessionView: View {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true)
         guard parts.count >= 2, parts[0] == "Users" else { return path }
         return "~/" + parts.dropFirst(2).joined(separator: "/")
-    }
-}
-
-private struct OptionLabel: View {
-    let symbol: String
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
-
-    var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: symbol).foregroundStyle(Theme.iris).frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
-                Text(detail).font(.caption).foregroundStyle(Theme.textTertiary)
-            }
-        }
     }
 }
