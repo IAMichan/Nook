@@ -441,7 +441,7 @@ private struct TerminalTab: View {
         }
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(selected ? Color.white.opacity(0.10) : Color.clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(selected ? WS.selected : Color.clear))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }

@@ -24,7 +24,7 @@ struct AutocompletePlaygroundSection: View {
                             Text(tr("autocomplete.playground.placeholder"))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.leading, 9)
-                                .padding(.top, 8)
+                                .padding(.top, NookTheme.Spacing.md)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -67,7 +67,7 @@ struct AutocompletePlaygroundSection: View {
                             .font(NookTheme.mono(11))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
+                            .padding(.top, NookTheme.Spacing.xs)
                     }
                 }
             }

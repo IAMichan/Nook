@@ -128,8 +128,8 @@ extension SettingsView {
                 HStack(alignment: .firstTextBaseline) {
                     ModelLogo(name: AppModel.title(of: recommendation))
                         .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        HStack(spacing: NookTheme.Spacing.sm) {
                             Text(AppModel.title(of: recommendation)).fontWeight(index == 0 ? .semibold : .regular)
                             if index == 0, recommendation.choice != .unavailable {
                                 Image(systemName: "star.fill").font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.amber)
@@ -162,10 +162,17 @@ extension SettingsView {
         default:
             Button(tr("brain.advice.use")) {
                 Task {
-                    try? await app.useRecommendation(recommendation)
+                    usingRecommendation = true
+                    defer { usingRecommendation = false }
+                    do {
+                        try await app.useRecommendation(recommendation)
+                    } catch {
+                        ToastCenter.shared.error(error, title: tr("settings.brain.useFailed"))
+                    }
                     testResult = nil
                 }
             }
+            .disabled(usingRecommendation)
         }
     }
 
@@ -204,15 +211,21 @@ extension SettingsView {
             } else if settings.provider.needsKey {
                 HStack {
                     SecureField(settings.provider.keyPlaceholder, text: $keyDraft)
-                        .onSubmit(saveKey)
+                        .onSubmit { if !keyDraft.isEmpty { saveKey() } }
                     Button(tr("button.save"), action: saveKey)
-                        .disabled(keyDraft.isEmpty && !settings.hasKey(for: settings.provider))
+                        .disabled(keyDraft.isEmpty)
                 }
                 HStack {
                     if settings.hasKey(for: settings.provider) {
                         Label(settings.provider == .claude ? "\(tr("settings.brain.keyInKeychain")): \(settings.maskedKey ?? "")" : tr("settings.brain.keyInKeychain"), systemImage: "key.fill")
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textSecondary)
+                        ConfirmedButton(tr("accounts.removeKey"), question: tr("confirm.removeKey"), detail: tr("confirm.keychain.detail")) {
+                            keyDraft = ""
+                            saveKey()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(NookTheme.TextStyle.detail)
                     } else {
                         SettingNote(tr("settings.brain.keyStaysInKeychain"))
                     }
@@ -295,7 +308,7 @@ extension SettingsView {
             if AppleIntelligence.status != .unsupported {
                 HStack {
                     ModelLogo(name: "Apple")
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(AppleModel.title)
                         Text(AppleIntelligence.isAvailable ? tr("brain.apple.detail") : AppleIntelligence.unavailableReason)
                             .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
@@ -311,7 +324,7 @@ extension SettingsView {
             ForEach(EmbeddedModel.options) { option in
                 HStack {
                     ModelLogo(name: option.title + " " + option.id)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         HStack(spacing: 5) {
                             Text(option.title)
                             if !option.seesImages { NoImagesBadge() }

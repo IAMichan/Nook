@@ -310,7 +310,7 @@ struct UsageShareBar: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Text(label).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
                 GeometryReader { proxy in
-                    HStack(spacing: 2) {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
                         ForEach(visible) { segment in
                             Capsule()
                                 .fill(segment.color)

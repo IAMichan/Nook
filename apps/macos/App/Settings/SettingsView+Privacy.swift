@@ -110,7 +110,7 @@ extension SettingsView {
     }
 
     func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             Image(systemName: symbol)
                 .font(NookTheme.font(14))
                 .foregroundStyle(NookTheme.textSecondary)

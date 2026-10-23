@@ -18,7 +18,7 @@ struct AcpAgentsSection: View {
             ForEach(agents) { agent in
                 HStack(spacing: 10) {
                     AgentLogo(agent: agent.name, size: 22)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(agent.name).font(NookTheme.TextStyle.strong)
                         Text(([agent.command] + agent.arguments).joined(separator: " "))
                             .font(NookTheme.mono(11))
@@ -30,11 +30,11 @@ struct AcpAgentsSection: View {
                     if let version = agent.version {
                         Text(version).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     }
-                    Button(role: .destructive) { remove(agent) } label: {
-                        Image(systemName: "trash")
+                    ConfirmedButton(symbol: "trash", title: tr("acp.remove"), question: tr("confirm.remove", agent.name)) {
+                        remove(agent)
                     }
+                    .labelled(tr("acp.remove"))
                     .buttonStyle(.borderless)
-                    .help(tr("acp.remove"))
                 }
             }
             HStack {
@@ -42,7 +42,7 @@ struct AcpAgentsSection: View {
                 Button { showManual = true } label: { Label(tr("acp.manual"), systemImage: "terminal") }
             }
         } header: {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 AgentLogo(.acp, size: 16)
                 Text(tr("acp.title"))
             }
@@ -107,7 +107,7 @@ private struct AcpRegistrySheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(tr("acp.registry.title")).font(NookTheme.TextStyle.heading)
             Text(tr("acp.registry.subtitle")).foregroundStyle(NookTheme.textSecondary)
             TextField(tr("acp.registry.search"), text: $query).textFieldStyle(.roundedBorder)
@@ -118,7 +118,7 @@ private struct AcpRegistrySheet: View {
                     Text(error).foregroundStyle(NookTheme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List(shown, selection: Binding<String?>(get: { chosen?.id }, set: { id in chosen = entries.first { $0.id == id } })) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             HStack {
                                 Text(entry.name).font(NookTheme.TextStyle.strong)
                                 Text(entry.version).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
@@ -213,7 +213,7 @@ private struct AcpManualSheet: View {
     private var canAdd: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty && parsed != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(tr("acp.manual.title")).font(NookTheme.TextStyle.heading)
             Text(tr("acp.manual.subtitle")).foregroundStyle(NookTheme.textSecondary)
             TextField(tr("acp.manual.name"), text: $name).textFieldStyle(.roundedBorder)
