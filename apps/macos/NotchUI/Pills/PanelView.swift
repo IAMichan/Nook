@@ -20,8 +20,8 @@ struct PanelView: View {
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
     @State private var searching = false
-    /// The header's rarer button (the window) shows while the pointer is on the header, as Code keeps its toolbar to
-    /// what you use most. Search and talk always show.
+    /// The header's rarer button (the window) shows while the pointer is on the header, so the toolbar keeps to what you
+    /// use most. Search and talk always show.
     @State private var headerHover = false
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// What you can do to a pull request from its page, besides merging it (as Code's pull request page offers): review
+/// What you can do to a pull request from its page, besides merging it: review
 /// it (approve, request changes, comment), write in its conversation, close or reopen it, edit its title and
 /// description, ask people for a review, bring its branch up to date with the base, and add or remove a label. Each is
 /// one GitHub REST call, asked from the page after your own click, and written to the action log. Foundation only, so

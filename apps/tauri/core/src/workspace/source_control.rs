@@ -436,7 +436,7 @@ impl QuickReason {
     }
 }
 
-/// De actie, of waarom er niets te doen is (`resolveQuickAction`).
+/// De actie, of waarom er niets te doen is.
 pub fn resolve(state: &QuickState) -> Result<QuickAction, QuickReason> {
     if state.branch.is_none() {
         return Err(QuickReason::Detached);

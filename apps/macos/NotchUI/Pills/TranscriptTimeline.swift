@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The whole conversation of a session from the agent's own transcript, laid out as Code lays out a thread (see
+/// The whole conversation of a session from the agent's own transcript, laid out as a thread (see
 /// TranscriptPresentation): your messages in a bubble on the right, the agent's answers as text on the left, its work as
 /// quiet one-line rows in between, and a finished turn folded into "Worked for 1m 3s". While the agent works the
 /// transcript is read again every couple of seconds; an earlier session is read once.
@@ -144,7 +144,7 @@ struct TranscriptConversation: View {
         .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
             if isOpen { withAnimation(NookTheme.reveal) { preview = nil; diff = nil } }
         }
-        // ⌘D: the latest turn's diff, as in Code; again to close it.
+        // ⌘D: the latest turn's diff; again to close it.
         .keyCommand("diff.toggle", enabled: !turns.isEmpty) {
             withAnimation(NookTheme.reveal) {
                 if diff != nil {
@@ -384,7 +384,7 @@ struct TranscriptUserBubble: View {
     var body: some View {
         let parts = parts
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
-            // Sent while the agent was working: it changed course mid-turn (Code's steer mark).
+            // Sent while the agent was working: it changed course mid-turn (a steer mark).
             if message.queued {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(systemName: "arrow.turn.down.right")
@@ -683,7 +683,7 @@ enum TranscriptStepText {
     }
 }
 
-/// The icon of a step, after the kind of work it does (as Code's work log picks them).
+/// The icon of a step, after the kind of work it does.
 enum TranscriptSymbols {
     static func symbol(_ tool: String) -> String {
         switch tool {

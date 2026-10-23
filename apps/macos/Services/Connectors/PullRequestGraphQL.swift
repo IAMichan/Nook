@@ -5,7 +5,7 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     enum CI: String, Equatable, Codable, Sendable { case unknown, pending, passing, failing }
     /// Where the pull request stands: still open, closed without merging, or merged.
     enum State: String, Equatable, Codable, Sendable { case open, closed, merged }
-    /// What the reviews decided so far (GitHub's `reviewDecision`), as Code shows it in a row.
+    /// What the reviews decided so far (GitHub's `reviewDecision`), shown in a row.
     enum Review: String, Equatable, Codable, Sendable { case none, required, approved, changesRequested }
 
     let repo: String

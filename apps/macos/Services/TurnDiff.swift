@@ -1,7 +1,7 @@
 import Foundation
 
 /// An edit of the agent as a unified diff, made from the tool's own input (what it replaced with what, or the whole
-/// file it wrote), so a turn's changes can be read in the diff panel without asking git (as Code shows a turn's diff).
+/// file it wrote), so a turn's changes can be read in the diff panel without asking git.
 /// The line numbers count from the snippet, not the file: the tool input does not say where in the file it was.
 enum EditPatch {
     /// A patch longer than this is cut: the diff panel is for reading, not for a generated file of megabytes.
@@ -164,7 +164,7 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
         return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : path
     }
 
-    /// The files as a folder tree (Code's changed-files card), keyed by their path relative to `directory`.
+    /// The files as a folder tree (the changed-files card), keyed by their path relative to `directory`.
     func tree(relativeTo directory: String?) -> ChangedFilesTree {
         ChangedFilesTree.build(files.map {
             ChangedFilesTree.FileStat(path: Self.relative($0.path, to: directory), added: $0.lines.added, removed: $0.lines.removed,

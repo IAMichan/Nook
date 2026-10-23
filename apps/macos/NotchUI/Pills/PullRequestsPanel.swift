@@ -366,7 +366,7 @@ private struct PullRequestRow: View {
                         }
                         // Grouped by role, the group's heading already says so.
                         if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
-                        // Up to three labels, as Code's rows show them.
+                        // Up to three labels per row.
                         ForEach(item.labels.prefix(3), id: \.self) { label in
                             PullRequestTag(text: label, color: NookTheme.textSecondary)
                         }
