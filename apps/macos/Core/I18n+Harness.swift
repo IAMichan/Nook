@@ -100,6 +100,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "usage.pool.reset": "Volgende reset %@ geeft %ld%% van het geheel terug",
         "usage.pool.segment": "%@: %ld%% over · %@",
         "usage.pool.notReported": "%@ meldt deze limiet niet",
+        "usage.tab.limits": "Limieten",
     ],
     .en: [
         "ws.file.missing": "%@ is no longer there.",
@@ -197,6 +198,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "usage.pool.reset": "Next reset %@ gives back %ld%% of the pool",
         "usage.pool.segment": "%@: %ld%% left · %@",
         "usage.pool.notReported": "%@ does not report this limit",
+        "usage.tab.limits": "Limits",
     ],
     .de: [
         "ws.file.missing": "%@ gibt es nicht mehr.",
@@ -294,6 +296,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "usage.pool.reset": "Nächster Reset %@ gibt %ld%% des Pools zurück",
         "usage.pool.segment": "%@: %ld%% übrig · %@",
         "usage.pool.notReported": "%@ meldet dieses Limit nicht",
+        "usage.tab.limits": "Limits",
     ],
     .fr: [
         "ws.file.missing": "%@ n'existe plus.",
@@ -391,6 +394,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "usage.pool.reset": "La prochaine réinitialisation %@ rend %ld%% de l'ensemble",
         "usage.pool.segment": "%@ : %ld%% restant · %@",
         "usage.pool.notReported": "%@ ne signale pas cette limite",
+        "usage.tab.limits": "Limites",
     ],
     .es: [
         "ws.file.missing": "%@ ya no existe.",
@@ -488,5 +492,6 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "usage.pool.reset": "El próximo reinicio %@ devuelve el %ld%% del total",
         "usage.pool.segment": "%@: %ld%% restante · %@",
         "usage.pool.notReported": "%@ no informa de este límite",
+        "usage.tab.limits": "Límites",
     ],
 ]

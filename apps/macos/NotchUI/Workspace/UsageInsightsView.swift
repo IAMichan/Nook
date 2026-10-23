@@ -9,9 +9,7 @@ enum UsageMetric: String, CaseIterable, Identifiable {
 
 /// Settings › Usage, the overview Code's Usage page shows: what every agent on this Mac used, read from their own
 /// transcripts (also the sessions you run in a terminal), as cost at API prices or as tokens, over the last 24 hours or
-/// 7, 30 or 90 days. A large total with each agent's share, a chart per agent, the totals by kind of token with cache
-/// savings, bars that split tokens and cost by type, and a breakdown per model or per day; a model opens with its own
-/// trend, cache hit rate and cost per million tokens, and a price can be set for a model without one.
+/// 7, 30 or 90 days. The same blocks (`UsageOverviewBlocks`) make the Usage page in the Agents tab.
 struct UsageInsightsView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var history: AgentHistory
@@ -26,32 +24,82 @@ struct UsageInsightsView: View {
 
     var body: some View {
         let insights = UsageInsights.make(history.ledger, window: window, prices: prices)
-        Group {
-            Section {
-                controls
-                if insights.tokens.total == 0 {
-                    Text(history.loading ? tr("usage.reading") : tr("usage.empty"))
-                        .font(NookTheme.TextStyle.body)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .padding(.vertical, NookTheme.Spacing.md)
-                } else {
-                    overview(insights)
-                    UsageAgentChart(insights: insights, metric: metric)
-                        .padding(.vertical, NookTheme.Spacing.sm)
-                    totals(insights)
-                    shares(insights)
-                }
-            } header: {
-                Text(tr("usage.title"))
-            } footer: {
-                Text(tr("usage.footer"))
+        Section {
+            HStack(spacing: NookTheme.Spacing.lg) {
+                UsageMetricPicker(metricRaw: $metricRaw)
+                Spacer(minLength: 0)
+                UsageWindowPicker(windowRaw: $windowRaw)
             }
-            if insights.tokens.total > 0 {
-                Section {
-                    if byDay { dayTable(insights) } else { modelTable(insights) }
-                } header: {
+            UsageOverviewBlocks(insights: insights, metric: metric, window: window, loading: history.loading, byDay: $byDay) {
+                openModel = $0
+            }
+        } header: {
+            Text(tr("usage.title"))
+        } footer: {
+            Text(tr("usage.footer"))
+        }
+        .sheet(item: $openModel) { model in
+            UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
+        }
+        .onAppear { history.refresh(minimumInterval: 60) }
+    }
+}
+
+/// Cost or tokens.
+struct UsageMetricPicker: View {
+    @Binding var metricRaw: String
+
+    var body: some View {
+        Picker("", selection: $metricRaw) {
+            Text(tr("usage.metric.cost")).tag(UsageMetric.cost.rawValue)
+            Text(tr("usage.metric.tokens")).tag(UsageMetric.tokens.rawValue)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
+/// 24 hours, 7, 30 or 90 days.
+struct UsageWindowPicker: View {
+    @Binding var windowRaw: String
+
+    var body: some View {
+        Picker("", selection: $windowRaw) {
+            ForEach(UsageWindow.allCases) { Text(tr("usage.window." + $0.rawValue)).tag($0.rawValue) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
+/// The Usage page itself, from the large total to the breakdown, wherever it shows (Settings › Usage, Agents › Usage):
+/// each agent's share, the chart, the totals, the split by type, and the table per model or per day. `open` opens a
+/// model's sheet.
+struct UsageOverviewBlocks: View {
+    let insights: UsageInsights
+    let metric: UsageMetric
+    let window: UsageWindow
+    var loading = false
+    @Binding var byDay: Bool
+    let open: (UsageInsights.ModelTotal) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+            if insights.tokens.total == 0 {
+                Text(loading ? tr("usage.reading") : tr("usage.empty"))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .padding(.vertical, NookTheme.Spacing.md)
+            } else {
+                overview(insights)
+                UsageAgentChart(insights: insights, metric: metric)
+                totals(insights)
+                shares(insights)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     HStack {
-                        Text(tr("usage.breakdown"))
+                        Text(tr("usage.breakdown")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
                         Spacer()
                         Picker("", selection: $byDay) {
                             Text(tr("usage.breakdown.model")).tag(false)
@@ -61,34 +109,11 @@ struct UsageInsightsView: View {
                         .labelsHidden()
                         .fixedSize()
                     }
+                    if byDay { dayTable(insights) } else { modelTable(insights) }
                 }
             }
         }
-        .sheet(item: $openModel) { model in
-            UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
-        }
-        .onAppear { history.refresh(minimumInterval: 60) }
-    }
-
-    // MARK: Controls
-
-    private var controls: some View {
-        HStack(spacing: NookTheme.Spacing.lg) {
-            Picker("", selection: $metricRaw) {
-                Text(tr("usage.metric.cost")).tag(UsageMetric.cost.rawValue)
-                Text(tr("usage.metric.tokens")).tag(UsageMetric.tokens.rawValue)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            Spacer(minLength: 0)
-            Picker("", selection: $windowRaw) {
-                ForEach(UsageWindow.allCases) { Text(tr("usage.window." + $0.rawValue)).tag($0.rawValue) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Overview
@@ -179,7 +204,7 @@ struct UsageInsightsView: View {
             ForEach(Array(insights.models.enumerated()), id: \.element.id) { index, model in
                 let value = metric == .cost ? (model.cost?.total ?? 0) : Double(model.tokens.total)
                 UsageModelRow(rank: index + 1, model: model, fraction: peak > 0 ? value / peak : 0,
-                              share: metric == .cost ? model.costShare : model.tokenShare) { openModel = model }
+                              share: metric == .cost ? model.costShare : model.tokenShare) { open(model) }
             }
         }
     }
@@ -207,7 +232,7 @@ struct UsageInsightsView: View {
                             .frame(width: 72, alignment: .trailing)
                         Text(UsageFormat.tokens(tokens))
                             .foregroundStyle(NookTheme.textSecondary)
-                            .frame(width: 64, alignment: .trailing)
+                            .frame(width: 72, alignment: .trailing)
                     }
                     .font(NookTheme.TextStyle.body.monospacedDigit())
                     .padding(.vertical, NookTheme.Spacing.sm)
@@ -431,7 +456,8 @@ struct UsageAgentChart: View {
             }
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: insights.window.hourly ? 6 : 7)) { _ in
-                    AxisValueLabel(format: insights.window.hourly ? .dateTime.hour() : .dateTime.day().month(.abbreviated))
+                    AxisValueLabel(format: insights.window.hourly ? Date.FormatStyle.dateTime.hour()
+                                                                  : Date.FormatStyle.dateTime.day().month(.abbreviated))
                 }
             }
             .frame(height: height)
@@ -560,6 +586,9 @@ struct UsageModelSheet: View {
                     Button(tr("usage.price.reset")) {
                         prices.resetPrice(provider: model.agent, model: model.model)
                         UsagePrices.save(prices)
+                        let list = ModelRates.price(agent: model.agent, model: model.model)
+                        input = list?.inputPerMillion.map { String($0) } ?? ""
+                        output = list?.outputPerMillion.map { String($0) } ?? ""
                     }
                 }
             }
@@ -630,5 +659,55 @@ struct UsageLimitPoolView: View {
         guard let left = segment.left else { return tr("usage.pool.notReported", segment.name) }
         let reset = segment.resetsAt.flatMap { AgentFormat.reset($0) } ?? ""
         return tr("usage.pool.segment", segment.name, Int(left.rounded()), reset)
+    }
+}
+
+/// Per agent with two or more accounts that report limits: their pool (`LimitPool`), for Settings › Usage and the Usage
+/// page in the Agents tab.
+enum UsagePools {
+    struct Entry: Identifiable {
+        var kind: AgentKind
+        var pool: LimitPool
+        var id: String { kind.rawValue }
+    }
+
+    @MainActor
+    static func entries(_ app: AppModel) -> [Entry] {
+        let byKind = Dictionary(grouping: app.connectedProfiles, by: \.kind)
+        return AgentKind.allCases.compactMap { kind in
+            guard let profiles = byKind[kind], profiles.count > 1 else { return nil }
+            let accounts = profiles.map { profile in
+                LimitPool.Account(id: profile.id, name: AccountLabel.name(profile, app: app),
+                                  limits: app.quota.limits(for: profile).map { LimitPool.Limit(label: $0.label, used: $0.percent, resetsAt: $0.resetsAt) })
+            }
+            return LimitPool.make(accounts).map { Entry(kind: kind, pool: $0) }
+        }
+    }
+}
+
+/// Cost and Tokens on the Usage page in the Agents tab: the same blocks as Settings › Usage, in the panel's own column.
+struct UsageInsightsPanel: View {
+    @ObservedObject var history: AgentHistory
+    let metric: UsageMetric
+    let window: UsageWindow
+    @State private var byDay = false
+    @State private var openModel: UsageInsights.ModelTotal?
+    @State private var prices = UsagePrices.load()
+
+    var body: some View {
+        let insights = UsageInsights.make(history.ledger, window: window, prices: prices)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            UsageOverviewBlocks(insights: insights, metric: metric, window: window, loading: history.loading, byDay: $byDay) {
+                openModel = $0
+            }
+            Text(tr("usage.footer"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .sheet(item: $openModel) { model in
+            UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
+        }
+        .onAppear { history.refresh(minimumInterval: 60) }
     }
 }

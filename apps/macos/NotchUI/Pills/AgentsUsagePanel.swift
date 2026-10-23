@@ -3,12 +3,19 @@ import SwiftUI
 /// The usage of every connected account at once, grouped per AI: one section for all Claude accounts, one for
 /// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), and what was used in
 /// tokens today and this week with a small chart of the last seven days. Agents that report a limit per model
-/// (Antigravity) get a compact table with only the busiest models; the rest folds away. Tokens per model and costs live
-/// in Settings › Usage.
+/// (Antigravity) get a compact table with only the busiest models; the rest folds away. That is the Limits tab; Cost and
+/// Tokens show every agent's usage on this Mac as Code's Usage page does (`UsageOverviewBlocks`).
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
     /// Accounts whose full model list is unfolded.
     @State private var expanded: Set<String> = []
+    /// Cost, Tokens or Limits, as the tabs of Code's Usage page.
+    @AppStorage("usage.tab") private var tabRaw = UsageTab.limits.rawValue
+    @AppStorage("usage.window") private var windowRaw = UsageWindow.week.rawValue
+
+    enum UsageTab: String, CaseIterable, Hashable { case cost, tokens, limits }
+
+    private var tab: UsageTab { UsageTab(rawValue: tabRaw) ?? .limits }
 
     /// How many models an account shows while folded; a model close to its limit always shows.
     private static let featuredModels = 3
@@ -34,35 +41,60 @@ struct AgentsUsagePanel: View {
             PanelListHeader(tr("agents.footer.usage")) {
                 UsageRefreshButton()
             }
+            HStack(spacing: NookTheme.Spacing.md) {
+                NookTabBar<UsageTab>(items: [
+                    .init(value: .cost, title: tr("usage.metric.cost")),
+                    .init(value: .tokens, title: tr("usage.metric.tokens")),
+                    .init(value: .limits, title: tr("usage.tab.limits")),
+                ], selected: tab) { value in withAnimation(NookTheme.swap) { tabRaw = value.rawValue } }
+                Spacer(minLength: 0)
+                if tab != .limits { UsageWindowPicker(windowRaw: $windowRaw) }
+            }
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
-                    if profiles.isEmpty {
-                        ListEmptyNote(tr("agents.noneConnected"))
-                    }
-                    ForEach(groups, id: \.kind) { group in
-                        section(group.kind, group.profiles)
-                    }
-                    if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.group == nil && $0.elapsed() != nil } }) {
-                        HStack(spacing: 7) {
-                            Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
-                            Text(tr("agents.usage.paceLegend"))
-                        }
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                    }
-                    Text(tr("agents.usage.note"))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                if tab == .limits {
+                    limits
+                } else {
+                    UsageInsightsPanel(history: app.history, metric: tab == .cost ? .cost : .tokens,
+                                       window: UsageWindow(rawValue: windowRaw) ?? .week)
+                        .padding(.bottom, NookTheme.Spacing.md)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, NookTheme.Spacing.md)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { app.history.refresh() }
         .task { await app.watchQuotas() }
+    }
+
+    /// Every account's limits, with the pool of an agent that has several accounts first.
+    private var limits: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxl) {
+            ForEach(UsagePools.entries(app)) { entry in
+                UsageLimitPoolView(kind: entry.kind, pool: entry.pool)
+                    .padding(NookTheme.Spacing.lg)
+                    .panelCard()
+            }
+            if profiles.isEmpty {
+                ListEmptyNote(tr("agents.noneConnected"))
+            }
+            ForEach(groups, id: \.kind) { group in
+                section(group.kind, group.profiles)
+            }
+            if profiles.contains(where: { profile in app.quota.limits(for: profile).contains { $0.group == nil && $0.elapsed() != nil } }) {
+                HStack(spacing: 7) {
+                    Capsule().fill(NookTheme.paper).frame(width: 2, height: 11)
+                    Text(tr("agents.usage.paceLegend"))
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+            }
+            Text(tr("agents.usage.note"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     /// One AI: its logo and name, then all its accounts on one surface, divided by hairlines. With several accounts the
