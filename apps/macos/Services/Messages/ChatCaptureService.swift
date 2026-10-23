@@ -276,6 +276,8 @@ final class ChatCaptureService: ObservableObject {
         var changed = false
         let before = inbox
         for bridge in bridges {
+            // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
+            // quiet tick every second costs no redraw.
             guard sources.isOn(bridge.app), bridge.isReady else {
                 // This runs every second for every bridge that is off: write only on a change, since each write to a
                 // published property redraws every view that watches the inbox.

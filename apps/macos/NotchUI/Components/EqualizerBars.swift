@@ -12,9 +12,12 @@ struct EqualizerBars: View {
     var isPlaying: Bool = true
     /// The closed notch shows the bars for as long as music plays: a lower rate there saves most of the redraws.
     var frameRate: Double = 30
+    /// Published only when the plan changes: caps the rate where the pointer is not.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / max(1, frameRate), paused: !isPlaying)) { context in
+        TimelineView(.nookFrames(fps: energy.plan.frameRate(frameRate, attended: attended), paused: !isPlaying)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let realBands = (isPlaying && AudioLevelMonitor.shared.hasSignal) ? AudioLevelMonitor.shared.snapshot() : []
             HStack(alignment: .bottom, spacing: 3) {

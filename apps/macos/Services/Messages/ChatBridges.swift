@@ -530,7 +530,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             self.stale.insert(chat)
             self.onChange()
         }
-        live.onLive = { [weak self] live in self?.isLive = live }
+        live.onLive = { [weak self] live in if self?.isLive != live { self?.isLive = live } }
         // What changed while the line was down is not told: every chat is read again.
         live.onDrop = { [weak self] in
             self?.seen = [:]

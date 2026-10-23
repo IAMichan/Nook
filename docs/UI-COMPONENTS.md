@@ -88,7 +88,9 @@ The checklist for a new or changed view:
   `coral` is an error, `violet` is merged.
 - Corners from `NookTheme.Radius`, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
   `NookTheme.open` / `close` / `swap` / `hover` / `reveal` / `scroll`, and a looping animation (a pulse, a blinking
-  cursor) stops with Reduce Motion.
+  cursor) stops with Reduce Motion. Anything that loops for long (a pulse, a spinner, a shimmer, Nook himself) is a
+  `TimelineView(.nookFrames(fps:paused:))` at an `EnergyPlan` rate, never `repeatForever`: that runs at the display's
+  own rate and redraws the whole window on every frame.
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
@@ -165,6 +167,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `FileContextMenu`, `.sessionFileMenu(_:runID:path:)` | `FileContextMenu.swift` | The right-click menu of a session's file: open in your editor (at a line, through `WorkspaceManager.openFile`), show in Finder, copy the path or the path in the repository. Use it on every row that shows a changed file |
 | `.keyCommand(_:perform:)`, `.keyCommands(_:context:enabled:priority:)`, `KeyCommandCenter` | `KeyCommands.swift` | Offers keybinding commands (`Keybindings.commandIDs`) to the panel's one key monitor while the view is in a window; `context` adds `when` flags (`paletteOpen`, `turnRunning`…), `enabled` limits it to while a field has the keyboard, `priority: -1` makes a window-wide fallback. See [`KEYBINDINGS.md`](KEYBINDINGS.md) |
 | `.onEscapeKey(enabled:perform:)` | `EscapeKey.swift` | Escape that closes what is open (a chat in the Chats tab) also when nothing in the window has the keyboard, where `onExitCommand` hears nothing; a text field being typed in keeps its own Escape |
+| `NookFrames` (`.nookFrames(fps:paused:)`) | `NookFrames.swift` | The shared clock for looping animations: frames of different animations fall on one grid, so they cost one window update together |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
 | `CheckOutcomeGlyph` | `AgentIndicators.swift` | The outcome of a CI check or step (passing, failing, running, skipped); the pull request page and the CI popover of a watched pull request |
@@ -184,7 +187,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `EmojiBrowser` | `EmojiBrowser.swift` | Every emoji to choose from (`EmojiCatalog`, Unicode's own list): a search by English name and by Nook's own names, a tab per group, a grid per group. Behind the "+" of the reaction picker; never build an emoji grid by hand |
 | `ChatPhotoZoom` | `ChatTranscript.swift` | A chat photo enlarged over the card or chat it is in, sharp once the file is read; a click or Escape shrinks it back, the open button shows it in Quick Look |
 | `ChatMessageText` | `ChatMessageText.swift` | A message's text as its app shows it, the same in every chat (`ChatFormat` reads the markup): *bold*, _italic_, ~strikethrough~, `code`, code blocks in a box, quotes behind a bar, lists with their markers, links. Drawn by `ChatTranscript`; never draw a message's text by hand |
-| `ChatPollView` | `ChatPollView.swift` | A poll in a chat bubble, the same for every app (`ChatPoll`): the question, each option with its share and count, your choice ticked; with `onVote` a click votes, without it the poll says to vote in the app. Drawn by `ChatTranscript`; never draw a poll by hand |
+| `ChatPollView` | `ChatPollView.swift` | A poll in a chat bubble, the same for every app (`ChatPoll`): the question, each option with its share and count, your choice ticked, and "View votes" listing who chose each option where the app names them; with `onVote` a click votes, without it the poll says to vote in the app. Drawn by `ChatTranscript`; never draw a poll by hand |
 | `ChatBubble(_:time:)` | `ChatMediaViews.swift` | Any chat app's message (`InboxMessage`) as a bubble, its file included. A bridge only fills `InboxMessage.media` (`ChatMedia`); every chat then shows photos, videos, GIFs, stickers and audio the same way |
 | `ChatStickerView`, `ChatGIFView`, `ChatAudioView` | `ChatMediaViews.swift` | A sticker on its own (no bubble), a GIF that loops silently (a real GIF or a short video), an audio or voice message with play, progress and length. Drawn by `ChatTranscript`; never draw chat media by hand |
 | `TicksView` | `ChatTranscript.swift` | How far your own message got (clock, one grey tick, two grey, two blue, failed), in every chat app that says it (`ChatReceipt`): after a bubble's time and in front of a chat's newest message in the Chats list. Given `ChatBubble.readers`, a click on them opens `MessageInfoView`. Never draw ticks by hand |

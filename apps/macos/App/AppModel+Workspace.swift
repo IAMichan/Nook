@@ -52,6 +52,7 @@ final class WorkspaceWindowController {
     func show(app: AppModel, activate: Bool = true) {
         if window == nil {
             let root = WorkspaceView()
+                .nookAttention()
                 .environmentObject(app)
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings)

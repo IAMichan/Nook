@@ -79,6 +79,7 @@ final class NotchController {
         let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)
         let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel)
+            .nookAttention()
             .environmentObject(app)
             .environmentObject(app.workspace)
             .environmentObject(app.workspace.settings))
@@ -424,6 +425,7 @@ final class NotchController {
             mirrorModel.show(resting)
             let panel = NotchPanel()
             let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel)
+                .nookAttention()
                 .environmentObject(app)
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings))
@@ -531,6 +533,8 @@ final class NotchController {
     }
 
     private func pointerMoved(force: Bool = false) {
+        // Which screen and window you point at: the animations elsewhere run slower (`nookAttention`).
+        PointerWhere.shared.moved()
         // Hidden for a share or meeting: hovering the notch area opens nothing.
         guard let panel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation

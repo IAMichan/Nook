@@ -104,7 +104,8 @@ enum WhatsAppSettings {
 /// WhatsApp, live: Nook talks to the local gateway the user runs (GOWA, which Nook can install and start, or OpenWA),
 /// receives new messages on a webhook bound to 127.0.0.1 (polling when none comes), and keeps the conversations in
 /// memory only: nothing of a message is written to disk or to a log, and everything is forgotten when Nook quits or
-/// WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
+/// WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
+/// since no gateway keeps them; they go when WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
 /// user typed the answer or approved Nook's plan.
 ///
 /// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
@@ -139,7 +140,10 @@ final class WhatsAppLink: ObservableObject {
         case refused(String)
     }
 
-    @Published private(set) var inbox = WAInbox()
+    /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
+    @Published private(set) var inbox = WAInbox(polls: WAPollStore.load()) {
+        didSet { if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) } }
+    }
     @Published private(set) var link: Link = .off
     @Published private(set) var webhook: Webhook = .off
     @Published private(set) var qrPNG: Data?
@@ -203,7 +207,12 @@ final class WhatsAppLink: ObservableObject {
     /// When each group's members were last asked of the gateway.
     private var membersLoaded: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
-    private var previews: [String: WAPreview] = [:]
+    private var previews: [String: WAPreview] = [:] {
+        didSet { previewRevision &+= 1 }
+    }
+    /// Counts changes to the fetched files. Published, so an open chat shows a photo, sticker or video the moment it
+    /// is fetched, and its bubbles made earlier know they are out of date.
+    @Published private(set) var previewRevision = 0
     private var previewOrder: [String] = []
     private var previewsLoading: Set<String> = []
     /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
@@ -613,6 +622,9 @@ final class WhatsAppLink: ObservableObject {
         guard let provider, isConnected else { return }
         let gen = generation
         for chat in chats.map(WAJID.normalized) where WAJID.kind(chat) != .status {
+            // The Chats tab starts this again (and cancels the run before) when the chat list comes in: a cancelled run
+            // stops here, before it marks the chats it did not get to as asked for six hours.
+            if Task.isCancelled { return }
             if avatars[chat] != nil { continue }
             let target = ChatMedia.destination(key: "wa-avatar-" + chat, name: "avatar.jpg")
             if FileManager.default.fileExists(atPath: target.path) {
@@ -626,11 +638,19 @@ final class WhatsAppLink: ObservableObject {
                 if address == nil { continue }
             } else {
                 if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
-                avatarAsked[chat] = Date()
                 address = await provider.avatar(chat)
+                // Asked only counts once answered: a request cut off by cancelling is asked again on the next run.
+                if Task.isCancelled { return }
+                avatarAsked[chat] = Date()
             }
-            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url),
-                  let answer = try? await Self.avatarSession.data(from: url), gen == generation,
+            // Only WhatsApp's own picture servers are asked.
+            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url) else { continue }
+            let answer = try? await Self.avatarSession.data(from: url)
+            if Task.isCancelled {
+                avatarAsked[chat] = nil
+                return
+            }
+            guard let answer, gen == generation,
                   (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000,
                   Self.thumbnail(answer.0, side: 8) != nil else { continue }
             try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)

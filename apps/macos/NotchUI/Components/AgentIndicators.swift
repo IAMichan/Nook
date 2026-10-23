@@ -25,23 +25,21 @@ struct PulseDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Published only when the plan changes: sets how often the ring redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
-
-    /// Seconds for one ring to grow and fade out.
-    private static let period: Double = 1.4
+    @Environment(\.nookAttended) private var attended
 
     var body: some View {
         ZStack {
             if animated && !reduceMotion {
-                // Drawn at the ambient rate instead of a repeating animation, which redraws on every display refresh
-                // for as long as the dot is on screen; it also starts and stops whenever `animated` changes.
-                TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate)) { context in
-                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
-                    // Ease out: fast at first, slowing down as the ring fades.
-                    let pulse = 1 - (1 - phase) * (1 - phase)
+                // A timeline at the ambient rate, not a `repeatForever` animation: that runs at the display's own rate (up to
+                // 120 times a second) for as long as the dot is there, and every frame redraws the whole window it is in.
+                TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                    // An ease-out over 1.4 s, starting over: the ring grows and fades.
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+                    let eased = 1 - (1 - phase) * (1 - phase)
                     Circle()
-                        .stroke(color.opacity(0.7 * (1 - pulse)), lineWidth: 1.5)
+                        .stroke(color.opacity(0.7 * (1 - eased)), lineWidth: 1.5)
                         .frame(width: 8, height: 8)
-                        .scaleEffect(CGFloat(1 + 1.3 * pulse))
+                        .scaleEffect(1 + 1.3 * eased)
                 }
             }
             Circle().fill(color).frame(width: 8, height: 8)
@@ -55,10 +53,10 @@ struct ShimmerText: View {
     let text: String
     /// Published only when the plan changes: sets how often the shimmer redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
 
     var body: some View {
-        // A slow sweep that can run for as long as an agent works: the ambient rate keeps it fluid at half the redraws.
-        TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate)) { context in
+        TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
             let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
             Text(text)
                 .foregroundStyle(

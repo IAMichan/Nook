@@ -605,7 +605,7 @@ private struct GlidingPlane: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.nookFrames(fps: 30, paused: reduceMotion)) { context in
             let phase = reduceMotion ? 0.35 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
             // Out to the top right while it fades, then in again from the bottom left.
             let travel = (phase - 0.35) * 14
@@ -626,7 +626,7 @@ private struct SendingSweep: View {
 
     var body: some View {
         GeometryReader { proxy in
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            TimelineView(.nookFrames(fps: 30, paused: reduceMotion)) { context in
                 let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
                 let width = proxy.size.width * 0.3
                 Capsule()
@@ -647,7 +647,7 @@ private struct WritingDots: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.nookFrames(fps: 30, paused: reduceMotion)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(0..<3) { index in

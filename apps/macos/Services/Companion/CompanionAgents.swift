@@ -2,8 +2,9 @@ import Foundation
 
 /// What the iPhone sees besides Workspace sessions: agents running in a terminal on the Mac (through their hooks) and
 /// requests through Nook's workspace bridge. Their permission requests reach the phone as pushes and in its list, where
-/// they can be denied, and the low-risk ones allowed (`CompanionPolicy`), like a Workspace session's. The conversation
-/// itself stays in the terminal, so the phone cannot send these sessions a message or stop them.
+/// they can be denied, and the low-risk ones allowed (`CompanionPolicy`), like a Workspace session's. The phone reads
+/// their conversation from the agent's own transcript, as the Mac does, and answers the ones the Mac can answer
+/// (`AppModel.canReply`) the same way; it cannot stop them.
 @MainActor
 enum CompanionAgents {
     static let terminalPrefix = "terminal:"
@@ -61,7 +62,8 @@ enum CompanionAgents {
                 id: id, title: CompanionPolicy.excerpt(session.project), agent: session.name,
                 attention: attention(session.status, approvals: !items.isEmpty), folder: folder, branch: nil,
                 updated: (session.updated ?? session.started ?? Date()).timeIntervalSince1970,
-                excerpt: CompanionPolicy.excerpt(session.summary), items: items.map(item), canSend: false
+                excerpt: CompanionPolicy.excerpt(session.summary), items: items.map(item), canSend: app.canReply(to: session),
+                actions: app.canEnd(session) ? [SessionAction.end.rawValue] : []
             ))
         }
         // Bridge requests, and any request whose terminal session is not in the list, newest first (a dictionary has no order).
@@ -75,6 +77,70 @@ enum CompanionAgents {
             ))
         }
         return digests
+    }
+
+    /// The conversation of a terminal session from its transcript, as the Mac shows it (`AgentTranscript`): your
+    /// messages, the agent's answers, and each step it took; its reasoning is left out, as for a Workspace session.
+    /// Nil for a session that is gone or has no transcript.
+    static func timeline(_ app: AppModel, session: String) async -> [TimelineEntry]? {
+        guard session.hasPrefix(terminalPrefix) else { return nil }
+        let key = String(session.dropFirst(terminalPrefix.count))
+        guard let agent = app.hub.sessions.first(where: { $0.id == key }), !agent.transcriptPath.isEmpty else { return nil }
+        let path = agent.transcriptPath
+        let messages = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
+        return entries(messages)
+    }
+
+    static func entries(_ messages: [AgentChatMessage]) -> [TimelineEntry] {
+        var entries: [TimelineEntry] = []
+        for message in messages {
+            let date = (message.date ?? Date()).timeIntervalSince1970
+            switch message.kind {
+            case .user, .assistant:
+                let text = CompanionPolicy.clip(message.text)
+                guard !text.isEmpty else { continue }
+                entries.append(TimelineEntry(id: message.id, kind: message.kind == .user ? .user : .assistant, text: text,
+                                             detail: nil, date: date, failed: false))
+            case .tools:
+                for step in message.steps {
+                    entries.append(TimelineEntry(id: message.id + ":" + step.id, kind: .tool,
+                                                 text: CompanionPolicy.clip(step.summary, limit: 240),
+                                                 detail: CompanionPolicy.clip(step.name, limit: 120), date: date,
+                                                 failed: step.state == .failed))
+                }
+            case .thinking:
+                continue
+            }
+        }
+        return Array(entries.suffix(200))
+    }
+
+    /// Ends a terminal session's process, as the Mac's End session does; nil when it ended.
+    static func end(_ app: AppModel, session: String) -> CompanionError? {
+        guard session.hasPrefix(terminalPrefix) else { return .notAllowedFromPhone }
+        let key = String(session.dropFirst(terminalPrefix.count))
+        guard let agent = app.hub.sessions.first(where: { $0.id == key }) else { return .unknownSession }
+        guard app.canEnd(agent) else { return .notAllowedFromPhone }
+        do {
+            try app.endSession(agent)
+            return nil
+        } catch {
+            return .failed
+        }
+    }
+
+    /// Sends a message to a terminal session the way the Mac answers it (`AppModel.reply`); nil when it went out.
+    static func send(_ app: AppModel, session: String, text: String) async -> CompanionError? {
+        guard session.hasPrefix(terminalPrefix) else { return .notAllowedFromPhone }
+        let key = String(session.dropFirst(terminalPrefix.count))
+        guard let agent = app.hub.sessions.first(where: { $0.id == key }) else { return .unknownSession }
+        guard app.canReply(to: agent) else { return .notAllowedFromPhone }
+        do {
+            try await app.reply(to: agent, message: text)
+            return nil
+        } catch {
+            return .notAllowedFromPhone
+        }
     }
 
     private static func item(_ approval: AgentApproval) -> SessionDigest.Item {

@@ -77,25 +77,118 @@ struct WAPoll: Equatable, Sendable {
     var multiple: Bool = false
     /// Each voter's choice, by their JID; your own under `WAPoll.me`.
     var votes: [String: [String]] = [:]
-    /// False for a poll found in the gateway's own database after it came (see `WAGOWAStoredPolls`): the votes cast
-    /// before are not known, so it shows no counts.
+    /// False when Nook did not see the poll come in live (see `WAPollLedger`): votes cast before it knew of the poll are
+    /// not known, so its counts may be short.
     var counted = true
 
     static let me = "\u{1}me"
 
-    /// The poll as every chat shows it: each option with how many chose it and whether you did.
-    var chatPoll: ChatPoll {
+    /// The poll as every chat shows it: each option with how many chose it, whether you did, and who did by `name`
+    /// (you as "You", first).
+    func chatPoll(name: (String) -> String) -> ChatPoll {
         let mine = votes[Self.me] ?? []
         return ChatPoll(question: question, options: options.map { option in
-            ChatPoll.Option(text: option, votes: votes.values.filter { $0.contains(option) }.count, chosen: mine.contains(option))
+            // Names alphabetically, then the ones known only by their number.
+            let others = votes.filter { $0.key != Self.me && $0.value.contains(option) }.map { name($0.key) }
+                .sorted { a, b in
+                    let (aNumber, bNumber) = (a.hasPrefix("+"), b.hasPrefix("+"))
+                    return aNumber != bNumber ? bNumber : a.localizedStandardCompare(b) == .orderedAscending
+                }
+            let voters = (mine.contains(option) ? [tr("chat.poll.you")] : []) + others
+            return ChatPoll.Option(text: option, votes: voters.count, chosen: mine.contains(option), voters: voters)
         }, multiple: multiple, unknownCounts: counted ? nil : true)
     }
+
+    /// The poll with voters named by their number, where no chat is at hand to name them.
+    var chatPoll: ChatPoll { chatPoll(name: WAJID.displayNumber) }
 }
 
 /// Someone's vote on a poll: which poll, and what they chose now (empty: they took their vote back).
 struct WAPollVote: Equatable, Sendable {
     var poll: String
     var choice: [String]
+}
+
+/// Every vote Nook received, by poll message id, so a poll shows them again after a restart. No gateway keeps votes
+/// (GOWA stores a poll's question and options, never who chose what), and they only reach Nook live; a vote on a poll
+/// Nook does not show yet is kept too, for when it does. Kept on disk by `WAPollStore`; nothing else of the message is.
+struct WAPollLedger: Codable, Equatable, Sendable {
+    struct Entry: Codable, Equatable, Sendable {
+        /// Each voter's choice, by their JID; your own under `WAPoll.me`.
+        var votes: [String: [String]] = [:]
+        /// Nook saw the poll come in live, so every vote on it since passed through here: its counts are complete.
+        var complete = false
+        /// The last vote or sighting, for pruning.
+        var updated: Date
+    }
+
+    /// A poll untouched this long is forgotten, like a chat's read marks.
+    static let maxAge = ChatReadMarks.maxAge
+    /// At most this many polls are kept, the most recently touched.
+    static let limit = 500
+
+    private(set) var polls: [String: Entry] = [:]
+
+    var isEmpty: Bool { polls.isEmpty }
+
+    subscript(poll: String) -> Entry? { polls[poll] }
+
+    /// `voter` chose `choice` on `poll` (empty: took their vote back).
+    mutating func record(_ vote: WAPollVote, voter: String, at date: Date = Date()) {
+        var entry = polls[vote.poll] ?? Entry(updated: date)
+        entry.votes[voter] = vote.choice.isEmpty ? nil : vote.choice
+        entry.updated = max(entry.updated, date)
+        polls[vote.poll] = entry
+    }
+
+    /// The poll `id` came in live: every vote on it from now on is seen.
+    mutating func sawLive(_ id: String, at date: Date = Date()) {
+        var entry = polls[id] ?? Entry(updated: date)
+        entry.complete = true
+        entry.updated = max(entry.updated, date)
+        polls[id] = entry
+    }
+
+    /// `poll` (message `id`) with the votes kept for it; counted when Nook saw it come in live.
+    func applied(to poll: WAPoll, id: String) -> WAPoll {
+        guard let entry = polls[id] else { return poll }
+        var poll = poll
+        poll.votes.merge(entry.votes) { _, kept in kept }
+        if entry.complete { poll.counted = true }
+        return poll
+    }
+
+    /// Without polls older than `maxAge`, and the `limit` most recently touched at most.
+    func pruned(now: Date = Date()) -> WAPollLedger {
+        var ledger = WAPollLedger()
+        let recent = polls.filter { now.timeIntervalSince($0.value.updated) < Self.maxAge }
+            .sorted { $0.value.updated > $1.value.updated }.prefix(Self.limit)
+        ledger.polls = Dictionary(uniqueKeysWithValues: recent.map { ($0.key, $0.value) })
+        return ledger
+    }
+}
+
+/// Where `WAPollLedger` lives: a small JSON file in Nook's own folder, readable by the user only.
+enum WAPollStore {
+    static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-poll-votes.json") }
+
+    static func load(from file: URL = file) -> WAPollLedger {
+        guard let data = try? Data(contentsOf: file),
+              let ledger = try? JSONDecoder().decode(WAPollLedger.self, from: data) else { return WAPollLedger() }
+        return ledger.pruned()
+    }
+
+    /// Writes the ledger; an empty one removes the file.
+    static func save(_ ledger: WAPollLedger, to file: URL = file) {
+        let ledger = ledger.pruned()
+        guard !ledger.isEmpty else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(ledger) else { return }
+        try? data.write(to: file, options: [.atomic])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
 }
 
 /// Polls as the gateways describe them. GOWA: `poll: {type: "creation"|"vote", poll_id, question, options: [{name}],
@@ -223,16 +316,80 @@ struct WAConversation: Identifiable, Equatable, Sendable {
 
     /// A member's name in this group: the one the gateway gives, else the name they wrote under here, else their number.
     func memberName(_ id: String) -> String {
-        if let member = members?.first(where: { $0.matches(id) }), !member.name.isEmpty { return member.name }
-        if let written = messages.last(where: { !$0.fromMe && WAJID.sameReactor($0.sender, id) && !$0.senderName.isEmpty }) {
-            return written.senderName
+        var index = WAMemberIndex(self)
+        return index.name(id)
+    }
+
+    /// The other members by name, as the group's info lists them.
+    var memberNames: [String] {
+        var index = WAMemberIndex(self)
+        return index.all
+    }
+}
+
+/// Who is who in a group, made once from its members and messages. Matching an id compares it with every id of every
+/// member and every sender, digit by digit; naming each member of a big group that way, for each of your messages and
+/// on every redraw, took most of the main thread. Here each id is looked up by its keys instead: the same answers as
+/// `WAMember.matches(_:)` and `WAJID.sameReactor(_:_:)`, in one pass over the group.
+struct WAMemberIndex {
+    private let members: [WAMember]
+    /// The first member each key belongs to: "d" + the digits of an id, "e" + the id itself, "n" + it normalized.
+    private var memberByKey: [String: Int] = [:]
+    /// The newest message someone else wrote under a name, per key ("d" + digits, "e" + the id): its place and the name.
+    private var writtenByKey: [String: (place: Int, name: String)] = [:]
+    private var named: [String: String] = [:]
+    private var listed: [String]?
+
+    init(_ conversation: WAConversation) {
+        members = conversation.members ?? []
+        for (index, member) in members.enumerated() {
+            for id in member.ids {
+                for key in Self.memberKeys(id) where memberByKey[key] == nil { memberByKey[key] = index }
+            }
+        }
+        for (place, message) in conversation.messages.enumerated() where !message.fromMe && !message.senderName.isEmpty {
+            for key in Self.writerKeys(message.sender) { writtenByKey[key] = (place, message.senderName) }
+        }
+    }
+
+    /// `WAMember.matches(_:)` holds when the digits agree (and are not empty), the ids are equal, or their normalized forms are.
+    private static func memberKeys(_ id: String) -> [String] {
+        let digits = WAJID.digits(id)
+        return (digits.isEmpty ? [] : ["d" + digits]) + ["e" + id, "n" + WAJID.normalized(id)]
+    }
+
+    /// `WAJID.sameReactor(_:_:)` holds when the digits agree (and are not empty) or the ids are equal.
+    private static func writerKeys(_ id: String) -> [String] {
+        let digits = WAJID.digits(id)
+        return (digits.isEmpty ? [] : ["d" + digits]) + ["e" + id]
+    }
+
+    /// A member's name: the one the gateway gives, else the name they wrote under here, else their number.
+    mutating func name(_ id: String) -> String {
+        if let known = named[id] { return known }
+        let found = lookUp(id)
+        named[id] = found
+        return found
+    }
+
+    private func lookUp(_ id: String) -> String {
+        if let first = Self.memberKeys(id).compactMap({ memberByKey[$0] }).min(), !members[first].name.isEmpty {
+            return members[first].name
+        }
+        if let written = Self.writerKeys(id).compactMap({ writtenByKey[$0] }).max(by: { $0.place < $1.place }) {
+            return written.name
         }
         return WAJID.displayNumber(id)
     }
 
     /// The other members by name, as the group's info lists them.
-    var memberNames: [String] {
-        (members ?? []).map { member in member.name.isEmpty ? memberName(member.ids.first ?? "") : member.name }
+    var all: [String] {
+        mutating get {
+            if let listed { return listed }
+            let made = members.map { member in member.name.isEmpty ? name(member.ids.first ?? "") : member.name }
+            listed = made
+            return made
+        }
     }
 }
 
@@ -393,6 +550,8 @@ struct WAInbox: Equatable, Sendable {
     }
 
     private(set) var conversations: [String: WAConversation] = [:]
+    /// Every vote received, kept across restarts (see `WAPollLedger`).
+    private(set) var pollLedger: WAPollLedger
     private var seenIds: Set<String> = []
     /// The same ids in arrival order, so the oldest are the ones forgotten.
     private var seenOrder: [String] = []
@@ -405,6 +564,10 @@ struct WAInbox: Equatable, Sendable {
     }
 
     var totalUnread: Int { conversations.values.reduce(0) { $0 + $1.unread } }
+
+    init(polls: WAPollLedger = WAPollLedger()) {
+        pollLedger = polls
+    }
 
     enum Outcome: Equatable { case duplicate, ignored, quiet, notify }
 
@@ -457,6 +620,15 @@ struct WAInbox: Equatable, Sendable {
         } else if conversation.name == number, let personName { conversation.name = personName }
         var msg = message
         msg.chat = chat
+        if var poll = msg.poll {
+            // A poll seen live has every vote from here on; one from history or a catch-up may have had votes before.
+            if history || quietBefore.map({ message.date < $0 }) == true {
+                poll.counted = false
+            } else {
+                pollLedger.sawLive(msg.id)
+            }
+            msg.poll = pollLedger.applied(to: poll, id: msg.id)
+        }
         if msg.fromMe {
             // Your own message that just went out has reached WhatsApp's server: one tick.
             if msg.receipt == nil, !history { msg.receipt = .sent }
@@ -540,7 +712,10 @@ struct WAInbox: Equatable, Sendable {
         if !message.reactions.isEmpty { kept.reactions = message.reactions }
         if kept.replyTo == nil { kept.replyTo = message.replyTo }
         if kept.quotedText == nil { kept.quotedText = message.quotedText }
-        if kept.poll == nil { kept.poll = message.poll }
+        if kept.poll == nil, var poll = message.poll {
+            poll.counted = false
+            kept.poll = pollLedger.applied(to: poll, id: message.id)
+        }
         guard kept != conversation.messages[index] else { return }
         conversation.messages[index] = kept
         conversations[chat] = conversation
@@ -587,10 +762,11 @@ struct WAInbox: Equatable, Sendable {
         return true
     }
 
-    /// Someone voted on a poll (an empty choice takes their vote back). The chat that changed, nil when Nook does not
-    /// keep that poll.
+    /// Someone voted on a poll (an empty choice takes their vote back): kept in `pollLedger`, also for a poll Nook does
+    /// not show yet. The chat that changed, nil when Nook does not keep that poll.
     @discardableResult
     mutating func applyVote(_ vote: WAPollVote, chat: String, voter: String) -> String? {
+        pollLedger.record(vote, voter: voter)
         let key = WAJID.normalized(chat)
         let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
         for chatKey in keys {
@@ -669,6 +845,7 @@ struct WAInbox: Equatable, Sendable {
         seenIds = []
         seenOrder = []
         earlyReceipts = [:]
+        pollLedger = WAPollLedger()
     }
 
     private func nonEmpty(_ s: String) -> String? { s.isEmpty ? nil : s }

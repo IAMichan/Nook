@@ -190,21 +190,25 @@ struct TaskStepRow: View {
 /// A ring with a gap that turns: the step that runs now. Still with Reduce Motion.
 struct SpinningRing: View {
     let color: Color
+    /// Published only when the plan changes: sets how often the ring turns a step.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var turning = false
 
     var body: some View {
         ZStack {
             Circle().stroke(color.opacity(0.2), lineWidth: 1.6)
-            Circle()
-                .trim(from: 0, to: 0.7)
-                .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                .rotationEffect(.degrees(turning ? 360 : 0))
+            // A turn every 0.9 s on a timeline at the ambient rate: a `repeatForever` animation turns it at the display's
+            // own rate and redraws the whole window with it, for as long as the agent works. Still with Reduce Motion.
+            TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended),
+                                     paused: energy.plan.pace == .paused || reduceMotion)) { context in
+                let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                    .rotationEffect(.degrees(360 * turn))
+            }
         }
         .padding(1)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { turning = true }
-        }
     }
 }
