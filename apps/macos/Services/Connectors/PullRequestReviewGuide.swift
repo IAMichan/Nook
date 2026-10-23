@@ -1,6 +1,6 @@
 import Foundation
 
-/// A guided tour of a pull request, written by Claude Code or Codex (a review guide): stops in the order a
+/// A guided tour of a pull request, written by Claude Code or Codex: stops in the order a
 /// reviewer should read them, each with what it changes, the files involved with a note, and the questions only a
 /// maintainer can answer. "Look closely" marks the stops that need judgement; mechanical changes come last, and every
 /// changed file appears in some stop. A guide belongs to one head commit: after a push it says it is out of date.

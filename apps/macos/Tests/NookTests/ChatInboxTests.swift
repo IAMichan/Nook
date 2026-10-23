@@ -400,13 +400,80 @@ final class ChatInboxTests: XCTestCase {
         let key = ChatInbox.key(app: "messages", chat: "Anna")
         inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [message("1", "hi")], unread: 2))
         XCTAssertEqual(inbox.threads[key]?.unread, 2)
-        inbox.markRead(key)
+        inbox.markRead(key, at: now.addingTimeInterval(1))
         inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [], unread: 2))
         XCTAssertEqual(inbox.threads[key]?.unread, 0, "read in Nook stays read")
         inbox.merge(BridgedChat(app: "messages", name: "Anna", messages: [message("2", "again", at: 5)], unread: 3))
-        XCTAssertEqual(inbox.threads[key]?.unread, 3)
+        XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came in after reading it in Nook is new")
         XCTAssertFalse(inbox.merge(BridgedChat(app: "messages", name: "Jan", messages: [], unread: 4)),
                        "a count alone does not make a chat")
+    }
+
+    func testReadInNookSurvivesARestart() throws {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Anna")
+        inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [message("1", "hi"), message("2", "you there?", at: 2)],
+                                unread: 2))
+        inbox.markRead(key, at: now.addingTimeInterval(3))
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook, "Telegram itself still counts it as unread")
+
+        // Saved and loaded again, as at the next launch, after which the app sends its unchanged count once more.
+        var loaded = try JSONDecoder().decode(ChatInbox.self, from: JSONEncoder().encode(inbox))
+        loaded.merge(BridgedChat(app: "telegram", name: "Anna", messages: [message("1", "hi"), message("2", "you there?", at: 2)],
+                                 unread: 2))
+        XCTAssertEqual(loaded.threads[key]?.unread, 0, "read in Nook stays read after a restart")
+        XCTAssertEqual(loaded.threads[key]?.readState, .readInNook)
+
+        // Read on the phone: the app's count drops, and the chat is read everywhere.
+        loaded.merge(BridgedChat(app: "telegram", name: "Anna", messages: [], unread: 0))
+        XCTAssertEqual(loaded.threads[key]?.readState, .read)
+    }
+
+    func testMarkReadInAppReadsItEverywhere() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "telegram", chat: "Anna")
+        inbox.merge(BridgedChat(app: "telegram", name: "Anna", messages: [message("1", "hi")], unread: 1))
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(1))
+        inbox.markReadInApp(key, at: now.addingTimeInterval(1))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+        XCTAssertEqual(inbox.threads[key]?.appUnread, 0)
+        inbox.markUnread(key)
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(1), "unread again, in Nook")
+        XCTAssertNil(inbox.threads[key]?.readInNook)
+    }
+
+    func testAChatFromNotificationsWaitsForItsAppOnceReadInNook() {
+        var inbox = ChatInbox()
+        let key = ChatInbox.key(app: "instagram", chat: "Lisa")
+        inbox.add(notice("Lisa", "haha", app: "instagram"), id: "n1")
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(1))
+        inbox.markRead(key, at: now.addingTimeInterval(1))
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook, "Instagram does not know yet")
+        inbox.add(notice("Lisa", "again", app: "instagram", at: 10), id: "n2")
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(1))
+        inbox.markReadInApp(key, at: now.addingTimeInterval(11))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+    }
+
+    func testReadStates() {
+        let newest = now
+        XCTAssertEqual(ChatReadState.of(unread: 2, appUnread: 2, newestIncoming: newest, readInNook: nil, readInApp: nil), .unread(2))
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 2, newestIncoming: newest, readInNook: newest, readInApp: nil),
+                       .readInNook)
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 0, newestIncoming: newest, readInNook: newest, readInApp: nil), .read,
+                       "the app counts nothing unread: read there too")
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: nil, newestIncoming: newest, readInNook: nil, readInApp: nil), .read,
+                       "history from before Nook looked counts as read")
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: nil, newestIncoming: newest, readInNook: newest, readInApp: nil),
+                       .readInNook)
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 3, newestIncoming: newest, readInNook: newest, readInApp: newest),
+                       .read, "passed on from Nook, before the app's own count caught up")
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: nil, newestIncoming: nil, readInNook: nil, readInApp: nil), .read)
+    }
+
+    func testOldReadMarksAreForgotten() {
+        let marks = ["old": now.addingTimeInterval(-ChatReadMarks.maxAge - 1), "fresh": now.addingTimeInterval(-60)]
+        XCTAssertEqual(Array(ChatReadMarks.pruned(marks, now: now).keys), ["fresh"])
     }
 
     func testARemovedChatComesBackOnlyWithNewMessages() {

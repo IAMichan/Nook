@@ -1,6 +1,6 @@
 import Foundation
 
-/// The order a pull request's files read best in (the Code tab's order): the source files first, each one
+/// The order a pull request's files read best in: the source files first, each one
 /// followed by its tests; then tests without a source file in the change; then documentation; then generated files
 /// (lockfiles, snapshots, build output, vendored and minified code), which nobody reads line by line.
 enum PullRequestFileOrder {

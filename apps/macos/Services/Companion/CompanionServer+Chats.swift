@@ -30,12 +30,7 @@ extension CompanionServer {
         // The chat may have changed while its history loaded.
         guard let current = inboxEntry(entry.id) else { return .failure(request.id, .unknownItem) }
         let readOnOpen = UserDefaults.standard.object(forKey: ChatsTab.readOnOpenKey) as? Bool ?? true
-        if readOnOpen, current.unread > 0 {
-            switch current.origin {
-            case .captured(let thread): ChatCaptureService.shared.markRead(thread)
-            case .whatsApp(let jid): WhatsAppLink.shared.markReadInNook(jid)
-            }
-        }
+        if readOnOpen, current.read.isUnread { app.markChatReadInNook(current) }
         return CompanionResponse(id: request.id, ok: true, inboxLines: inboxLines(current))
     }
 
@@ -57,15 +52,17 @@ extension CompanionServer {
         return CompanionResponse(id: request.id, ok: true, inboxLines: inboxEntry(entry.id).map(inboxLines) ?? [])
     }
 
-    /// Read or unread by hand, as the "…" menu of a chat on the Mac: read tells WhatsApp too, so the sender sees it.
+    /// Read or unread by hand, as on the Mac: read is passed on to the chat's app where Nook can tell it (so the sender
+    /// sees it), else read in Nook; unread is Nook's alone. An app Nook can only open stays as it is from the phone.
     func inboxMark(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
         guard let entry = inboxEntry(request.item) else { return .failure(request.id, .unknownItem) }
         let read = request.allow == true
-        switch entry.origin {
-        case .captured(let thread):
-            if read { ChatCaptureService.shared.markRead(thread) } else { ChatCaptureService.shared.markUnread(thread) }
-        case .whatsApp(let jid):
-            if read { WhatsAppLink.shared.markReadInWhatsApp(jid) } else { WhatsAppLink.shared.markUnread(jid) }
+        if !read {
+            app.markChatUnread(entry)
+        } else if app.chatReadHandoff(entry) == .tells {
+            app.markChatReadInApp(entry)
+        } else {
+            app.markChatReadInNook(entry)
         }
         audit(read ? "chat_read" : "chat_unread", entry.name)
         return inbox(request, app: app)

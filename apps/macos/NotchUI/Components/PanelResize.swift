@@ -48,7 +48,7 @@ private struct ResizablePanel: ViewModifier {
 
 /// Where the resizable panels start out, and how much room the conversation beside them always keeps.
 enum PanelLayout {
-    /// The widest a conversation and its composer read (736 pt): on a wide window they stay one centered
+    /// The widest a conversation and its composer read (46rem): on a wide window they stay one centered
     /// column instead of lines running from edge to edge.
     static let chatColumn: CGFloat = 736
     /// The session list on the left of the Agents tab.
@@ -64,6 +64,10 @@ enum PanelLayout {
     static let artifact: Double = 420
     /// The chat list on the left of the Chats tab.
     static let chatsList: Double = 290
+    /// The Chats tab's sidebar with its views and apps; under `chatsSidebarRoom` it folds to a rail of icons.
+    static let chatsSidebar: CGFloat = 184
+    static let chatsRail: CGFloat = 48
+    static let chatsSidebarRoom: Double = 1000
     /// The list of Nooks beside the chat, in the notch and in the main window.
     static let chatList: Double = 200
     static let chatListWindow: Double = 260

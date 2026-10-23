@@ -569,7 +569,7 @@ struct AgentRunPanel: View {
                             AnyView(
                                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                     eventRow(event)
-                                    // What the turn changed (the changed-files card): a file or Open diff opens the diff beside it.
+                                    // What the turn changed (its card): a file or Open diff opens the diff beside it.
                                     if let turn = cards[event.id.uuidString] {
                                         TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
                                             openDiff(TurnDiffSelection(turn: turn.id, file: file))

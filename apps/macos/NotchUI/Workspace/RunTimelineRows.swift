@@ -149,7 +149,7 @@ struct ToolRow: View {
     var file: String? = nil
     /// The side panel shows `file` now.
     var reveals = false
-    /// The chevron shows under the pointer only, so rows stay bare at rest.
+    /// The chevron shows under the pointer only, so the work log keeps its rows bare at rest.
     @State private var hovering = false
 
     /// The file a read or an edit was about, as an absolute path; nil for other tools, a folder, or a remote session.

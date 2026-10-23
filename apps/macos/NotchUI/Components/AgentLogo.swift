@@ -150,7 +150,7 @@ struct AgentMark: View {
     var size: CGFloat = 16
     var dimmed = false
     var ring: Color = NookTheme.rowRest
-    /// Grey at rest: the brand color comes back under the pointer or when selected.
+    /// Grey at rest, as a row's icon: the brand color comes back under the pointer or when selected.
     var quiet = false
 
     var body: some View {

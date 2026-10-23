@@ -384,7 +384,7 @@ struct TranscriptUserBubble: View {
     var body: some View {
         let parts = parts
         VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
-            // Sent while the agent was working: it changed course mid-turn (the steer mark).
+            // Sent while the agent was working: it changed course mid-turn (a steer mark).
             if message.queued {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(systemName: "arrow.turn.down.right")
@@ -683,7 +683,7 @@ enum TranscriptStepText {
     }
 }
 
-/// The icon of a step, after the kind of work it does (as the work log picks them).
+/// The icon of a step, after the kind of work it does.
 enum TranscriptSymbols {
     static func symbol(_ tool: String) -> String {
         switch tool {

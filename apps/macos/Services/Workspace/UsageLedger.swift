@@ -1,7 +1,7 @@
 import Foundation
 
 // Usage of every agent on this Mac, read from the agents' own transcripts (Claude Code, Codex, Gemini CLI, Antigravity),
-// and what it would cost at API prices, the way the Usage page shows it: per hour or day, per agent and per
+// and what it would cost at API prices, as Settings › Usage shows it: per hour or day, per agent and per
 // model, split by token type, with cache savings. Foundation only, so it is tested on its own.
 
 /// Tokens of one kind or another. `input` is uncached input; `cacheRead` input served from the prompt cache; `cacheWrite`

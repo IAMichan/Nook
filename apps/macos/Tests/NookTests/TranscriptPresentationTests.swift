@@ -1,6 +1,6 @@
 import XCTest
 
-/// How an agent's own transcript reads as a thread: finished turns fold to "Worked for …", steps in a row
+/// How an agent's own transcript reads, as a thread: finished turns fold to "Worked for …", steps in a row
 /// become one line, and the turn that runs shows how long it has been working and what it does now.
 final class TranscriptPresentationTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_000)

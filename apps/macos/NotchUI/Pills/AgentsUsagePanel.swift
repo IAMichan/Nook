@@ -4,12 +4,12 @@ import SwiftUI
 /// Antigravity, and so on. Each account shows the limits its agent reports (5 hours and the week), and what was used in
 /// tokens today and this week with a small chart of the last seven days. Agents that report a limit per model
 /// (Antigravity) get a compact table with only the busiest models; the rest folds away. That is the Limits tab; Cost and
-/// Tokens show every agent's usage on this Mac (`UsageOverviewBlocks`).
+/// Tokens show every agent's usage on this Mac, as Settings › Usage does.
 struct AgentsUsagePanel: View {
     @EnvironmentObject private var app: AppModel
     /// Accounts whose full model list is unfolded.
     @State private var expanded: Set<String> = []
-    /// Cost, Tokens or Limits.
+    /// Cost, Tokens or Limits, as the tabs of Settings › Usage.
     @AppStorage("usage.tab") private var tabRaw = UsageTab.limits.rawValue
     @AppStorage("usage.window") private var windowRaw = UsageWindow.week.rawValue
 

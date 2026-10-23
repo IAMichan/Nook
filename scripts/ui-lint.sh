@@ -7,7 +7,7 @@
 #   1. Type comes from NookTheme.font / mono / rounded or a NookTheme.TextStyle, never Font.system(size:) inline.
 #   2. Colors come from NookTheme by name; a literal hex / RGB / gray is only allowed in the theme, in Nook's character
 #      drawings, and in the files listed in OWN_COLORS (brand marks, chart series, palettes that are named once).
-#   3. Corner radii come from NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20).
+#   3. Corner radii come from NookTheme.Radius (chip 6, control 8, card 10, panel 12, sheet 14, pill 20, composer 24).
 #   4. Text uses NookTheme.TextStyle, never SwiftUI's own text styles (.caption, .callout, .headline, .system(.body …)),
 #      whose sizes do not line up with the scale.
 #   5. State and text colors come from NookTheme (coral, amber, mint, textSecondary …), never the system .red, .orange,

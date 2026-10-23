@@ -1,6 +1,6 @@
 import Foundation
 
-// How an agent's own transcript reads in Nook, as one thread: your messages in a bubble on the right,
+// How an agent's own transcript reads in Nook, as a thread: your messages in a bubble on the right,
 // the agent's answers as plain text on the left, and the work in between as quiet one-line rows. Steps in a row become
 // one line that says what they did ("Ran 3 commands and read 2 files"); a finished turn folds everything before its
 // final answer into "Worked for 1m 3s"; the turn that still runs shows for how long it has been working and what it
@@ -245,7 +245,7 @@ enum TranscriptPresentation {
         return nil
     }
 
-    /// A thought on one line: its first bold heading or its first sentence, as the work log shows reasoning.
+    /// A thought on one line: its first bold heading or its first sentence, as reasoning shows in the work log.
     static func headline(_ text: String) -> String {
         TimelinePresentation.headline(text)
     }

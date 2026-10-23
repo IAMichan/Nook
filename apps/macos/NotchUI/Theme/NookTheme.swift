@@ -121,6 +121,9 @@ enum NookTheme {
         static let bubble: CGFloat = 18
         /// Pills and the notch's own corners.
         static let pill: CGFloat = 20
+        /// The composer box: round enough that its one-line form, with the 32 pt send button 8 pt from the edge, is a
+        /// capsule whose corners run parallel to the button.
+        static let composer: CGFloat = 24
     }
 
     /// Spacing on a 4 pt grid. Use these for padding and stack spacing so the panels line up.

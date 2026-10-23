@@ -7,7 +7,7 @@ private struct QuoteSelectionKey: EnvironmentKey {
 
 extension EnvironmentValues {
     /// Set where an answer has a reply box under it (a session's conversation): selected words of the answer can be
-    /// quoted into it from the right-click menu.
+    /// quoted into it from the right-click menu, to cite a selection in the composer.
     var quoteSelection: ((String) -> Void)? {
         get { self[QuoteSelectionKey.self] }
         set { self[QuoteSelectionKey.self] = newValue }
@@ -166,7 +166,7 @@ struct SelectableProse: NSViewRepresentable {
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
                 append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
             case .paragraph(let text):
-                // Running text a step softer than headings (80 % of the text color).
+                // Running text a step softer than headings (answers at 80 % of the text color).
                 append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
@@ -180,7 +180,7 @@ struct SelectableProse: NSViewRepresentable {
         return result
     }
 
-    /// `lineSpacing` 5 gives running text a relaxed line height of about 1.6.
+    /// `lineSpacing` 5 gives running text about a relaxed 1.6 line height.
     private static func style(before: CGFloat, lineSpacing: CGFloat = 5) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = lineSpacing

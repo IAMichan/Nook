@@ -20,7 +20,10 @@ struct ChatsEntry: Identifiable, Equatable {
     /// The newest message, with who wrote it in a group ("Jan: dinner?"). While you search, the newest one that matched.
     var preview: String
     let last: Date
-    let unread: Int
+    /// Where the chat stands, the same for every app: something new, read in Nook only, or read in the app too.
+    let read: ChatReadState
+    /// The newest message is your own: nothing in it waits to be read, its ticks say how far it got.
+    var lastIsMine = false
     /// The newest message is yours: how far it got (sent, delivered, read), as far as its app says. Nil for theirs, and
     /// for every chat collected from notifications, which only ever show what came in.
     var ticks: BubbleTicks? = nil
@@ -31,11 +34,13 @@ struct ChatsEntry: Identifiable, Equatable {
     var handle: String? = nil
     /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
     var avatar: String? = nil
-    /// Read in Nook but still unread in the app itself (WhatsApp): "Mark as read" can still tell the app.
-    var waitsInApp = false
 
-    /// Whether "Mark as read" applies: unread in Nook, or still unread in the app.
-    var readable: Bool { unread > 0 || waitsInApp }
+    /// New messages here.
+    var unread: Int { read.count }
+    /// Read in Nook but still unread in the app itself: "Mark as read in <app>" can still pass it on.
+    var waitsInApp: Bool { read == .readInNook }
+    /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
+    var showsReadMark: Bool { read.isUnread || !lastIsMine }
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -60,10 +65,9 @@ extension ChatsEntry {
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          unread: whatsApp.unread(conversation.id), ticks: ticks,
-                                          members: conversation.members == nil ? nil : conversation.memberNames,
-                                          handle: handle(conversation.id),
-                                          avatar: whatsApp.avatars[conversation.id], waitsInApp: whatsApp.waitsInWhatsApp(conversation.id)))
+                                          read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
+                                          ticks: ticks, members: conversation.members == nil ? nil : conversation.memberNames,
+                                          handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id]))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
             // when one is opened.
@@ -74,8 +78,8 @@ extension ChatsEntry {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, unread: whatsApp.unread(chat.jid), handle: handle(chat.jid),
-                                          avatar: whatsApp.avatars[chat.jid], waitsInApp: whatsApp.waitsInWhatsApp(chat.jid)))
+                                          preview: "", last: chat.last, read: whatsApp.readState(chat.jid), handle: handle(chat.jid),
+                                          avatar: whatsApp.avatars[chat.jid]))
             }
         }
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
@@ -83,7 +87,8 @@ extension ChatsEntry {
             let newest = thread.messages.last
             let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, unread: thread.unread, ticks: ticks,
+                                      preview: preview, last: thread.last, read: thread.readState,
+                                      lastIsMine: newest?.isMine ?? false, ticks: ticks,
                                       members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
@@ -163,8 +168,10 @@ final class ChatsEntryMemo {
 }
 
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
-/// Nook collects (Telegram, Instagram, Messenger, Signal, Messages…), newest first in groups per day that fold shut.
-/// "All" and "Unread" on top, one row of app filters (icons, the rest behind "+N") with what is unread there, and a search. A chat opens on the right as bubbles; a WhatsApp chat can be answered there (one of its messages too, and each can get an emoji), any other opens in its own app. A photo enlarges right there.
+/// Nook collects or that Nook reads itself (Telegram, Instagram, Messenger, Signal, Messages…), all read the same way.
+/// Three columns: a sidebar with the views (All chats, New, Only in Nook, Read) and the apps, the list of chats in groups
+/// per day that fold shut, and the open chat with its bubbles, where it stands and its answer field. A chat you open is
+/// read in Nook (which stays after a restart); "Mark as read in <app>" passes that on to the app itself.
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -179,13 +186,13 @@ struct ChatsTab: View {
     @State private var selection: String? = ChatsTab.lastOpened
     /// One app's chats only (its source id), or all.
     @State private var filter: String?
-    /// Only the chats with something unread; the chat you opened stays while you read it.
-    @State private var unreadOnly = false
+    /// Which chats the list shows by where they stand; the chat you opened stays while you read it.
+    @AppStorage("nook.chats.view") private var view: ChatsView = .all
     @State private var query = ""
     /// The groups folded shut (a click on their header); a search shows every group open.
     @State private var collapsed: Set<ChatsGroup> = []
     @AppStorage("nook.chats.listWidth") private var listWidth = PanelLayout.chatsList
-    /// Settings › Chats: opening a chat marks it read, in Nook only. On by default; WhatsApp keeps it unread either way.
+    /// Settings › Chats: opening a chat reads it in Nook. On by default; the app itself hears it only from your click.
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
@@ -205,6 +212,10 @@ struct ChatsTab: View {
         return ChatCaptureService.shared.inbox.totalUnread + (link.isConnected ? link.inbox.visibleUnread(filters: link.filters) : 0)
     }
 
+    /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
+    private var compactSidebar: Bool { totalWidth > 0 && totalWidth < PanelLayout.chatsSidebarRoom }
+    private var sidebarWidth: Double { Double(compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if capture.status == .needsAccess { accessBar }
@@ -214,15 +225,19 @@ struct ChatsTab: View {
                 // No list yet: the footer keeps the list's width at the bottom.
                 if showsFooter { footer.frame(width: min(listWidth, max(totalWidth, PanelLayout.minimumList))) }
             } else {
-                // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
                 HStack(alignment: .top, spacing: 0) {
+                    sidebar
+                    NookDivider(vertical: true)
+                    // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         list
                         footer
                     }
+                    .padding(.leading, NookTheme.Spacing.md)
                     .padding(.trailing, NookTheme.Spacing.xs)
                     .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                    available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                                    available: max(totalWidth - sidebarWidth, 0),
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle,
                                     edge: .trailing, divider: true)
                     Group {
                         if let current {
@@ -270,14 +285,12 @@ struct ChatsTab: View {
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
         }
-        // With "Mark as read when opened" on, a chat you open is read, and so is what comes in while it is open: its
-        // badge goes. In Nook only: WhatsApp keeps it unread and the sender sees no blue ticks.
+        // With "Read in Nook when opened" on, a chat you open is read in Nook, and so is what comes in while it is open:
+        // its badge goes and stays gone after a restart. The app itself (and whoever wrote) hears nothing until you
+        // choose "Mark as read in <app>". The same for every app.
         .onChange(of: current.map { "\($0.id) \($0.unread)" }, initial: true) { _, _ in
-            guard readOnOpen, let entry = current, entry.unread > 0 else { return }
-            switch entry.origin {
-            case .captured(let thread): capture.markRead(thread)
-            case .whatsApp(let jid): whatsApp.markReadInNook(jid)
-            }
+            guard readOnOpen, let entry = current, entry.read.isUnread else { return }
+            app.markChatReadInNook(entry)
         }
     }
 
@@ -296,25 +309,11 @@ struct ChatsTab: View {
         withAnimation(NookTheme.reveal) { selection = nil }
     }
 
-    /// "Mark as read", by hand: its badge goes, and a WhatsApp chat is read in WhatsApp too, so the sender sees it.
-    private func markRead(_ entry: ChatsEntry) {
-        switch entry.origin {
-        case .captured(let thread):
-            capture.markRead(thread)
-            if let linked = app.linkedChat(app.chatRoute(for: entry)) { app.markLinkedChat(linked.id, read: true) }
-        case .whatsApp(let jid): whatsApp.markReadInWhatsApp(jid)
-        }
-    }
-
-    /// "Mark as unread", by hand: the badge comes back, and an open chat closes so that opening it again reads it.
+    /// "Mark as unread", by hand, in Nook only: the badge comes back, and an open chat closes so that opening it again
+    /// reads it.
     private func markUnread(_ entry: ChatsEntry) {
         if selection == entry.id { withAnimation(NookTheme.reveal) { selection = nil } }
-        switch entry.origin {
-        case .captured(let thread):
-            capture.markUnread(thread)
-            if let linked = app.linkedChat(app.chatRoute(for: entry)) { app.markLinkedChat(linked.id, read: false) }
-        case .whatsApp(let jid): whatsApp.markUnread(jid)
-        }
+        app.markChatUnread(entry)
     }
 
     /// Shows what "@chat …" asked for.
@@ -322,7 +321,7 @@ struct ChatsTab: View {
         guard let focus = viewModel.chatsFocus else { return }
         viewModel.chatsFocus = nil
         filter = focus.app
-        unreadOnly = false
+        view = .all
         query = focus.query
         selection = focus.chat
         collapsed = []
@@ -341,22 +340,23 @@ struct ChatsTab: View {
         return photos.photo(handle: entry.handle, name: entry.name)
     }
 
-    /// The chats that match the filter and the search (their names, their people and every message Nook has of them), in
-    /// the list's order: group by group, newest first in each.
-    /// A chat keeps its place when it is read, so nothing jumps while you read it.
+    /// The chats of the chosen app (or every app), before the view and the search narrow them.
+    private var inApp: [ChatsEntry] { filter.map { app in all.filter { $0.app == app } } ?? all }
+
+    /// The chats that match the view, the app and the search (their names, their people and every message Nook has of
+    /// them), in the list's order: group by group, newest first in each. A chat keeps its place when it is read, and the
+    /// open one stays in the view while you read it, so nothing jumps.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
         let now = Date()
-        let found = needle.isEmpty ? all : all.compactMap { $0.found(needle, whatsApp: whatsApp, capture: capture) }
-        return found.filter { entry in
-            (filter == nil || entry.app == filter) && (!unreadOnly || entry.unread > 0 || entry.id == selection)
-        }
-        .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
-        .sorted { a, b in
-            if a.group != b.group { return a.group < b.group }
-            return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
-        }
-        .map(\.entry)
+        let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, whatsApp: whatsApp, capture: capture) }
+        return found.filter { view.shows($0.read) || $0.id == selection }
+            .map { (entry: $0, group: ChatsGroup.of($0, now: now)) }
+            .sorted { a, b in
+                if a.group != b.group { return a.group < b.group }
+                return a.entry.last != b.entry.last ? a.entry.last > b.entry.last : a.entry.id < b.entry.id
+            }
+            .map(\.entry)
     }
 
     /// The shown chats per group, in order; empty groups left out.
@@ -379,24 +379,28 @@ struct ChatsTab: View {
         return shown.first { $0.id == selection }
     }
 
-    /// Unread messages per app, as the list shows them.
-    private var unreadByApp: [String: Int] {
-        Dictionary(grouping: all, by: \.app).mapValues { $0.reduce(0) { $0 + $1.unread } }
+    /// How many chats each view holds, in the chosen app.
+    private var viewCounts: [ChatsView: Int] {
+        var counts: [ChatsView: Int] = [:]
+        for item in ChatsView.allCases { counts[item] = inApp.filter { item.shows($0.read) }.count }
+        return counts
     }
 
-    /// Unread messages in the listed chats: the number on top always adds up to the counts in the list.
-    private var unreadTotal: Int { all.reduce(0) { $0 + $1.unread } }
+    /// Chats with something new, per app.
+    private var newByApp: [String: Int] {
+        Dictionary(grouping: all.filter { $0.read.isUnread }, by: \.app).mapValues(\.count)
+    }
 
-    /// The apps that have chats here: the ones with unread messages first, then the busiest, and the one filtered on
+    /// The apps that have chats here: the ones with something new first, then the busiest, and the one filtered on
     /// even when it has none yet. After them every source that is on and on this Mac (its app is installed, you added it
     /// yourself, or Nook reads it with your login, as Instagram), also before it brought in a message: a source you switched
     /// on shows up here, not only once it has chats.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
-        let unread = unreadByApp
+        let fresh = newByApp
         var result = counts.keys.sorted { a, b in
-            let (ua, ub) = (unread[a] ?? 0, unread[b] ?? 0)
-            if (ua > 0) != (ub > 0) { return ua > 0 }
+            let (fa, fb) = (fresh[a] ?? 0, fresh[b] ?? 0)
+            if (fa > 0) != (fb > 0) { return fa > 0 }
             return counts[a]! != counts[b]! ? counts[a]! > counts[b]! : a < b
         }
         if capture.enabled {
@@ -410,7 +414,7 @@ struct ChatsTab: View {
     }
 
     /// Whether a source belongs on this Mac: one you added, or a known app that is installed. The known web-only apps
-    /// (LinkedIn, X…) wait until they bring in a chat, or the row would list every app Nook knows.
+    /// (LinkedIn, X…) wait until they bring in a chat, or the sidebar would list every app Nook knows.
     @MainActor
     private static func isPresent(_ source: MessagingApp) -> Bool {
         if !MessagingApps.builtIn.contains(where: { $0.id == source.id }) { return true }
@@ -425,49 +429,24 @@ struct ChatsTab: View {
     /// Which apps are installed, looked up once per launch.
     @MainActor private static var installed: [String: Bool] = [:]
 
-    /// One calm row of sources however many there are: "All", the apps with chats as their icons (the one filtered on
-    /// with its name too) as many as fit, and the others behind "+N", unread ones first.
-    private var sourceFilters: some View {
-        let ranked = apps
-        let unread = unreadByApp
-        let withChats = Set(all.map(\.app))
-        return ViewThatFits(in: .horizontal) {
-            sourceRow(ranked, shown: 6, unread: unread, withChats: withChats)
-            sourceRow(ranked, shown: 5, unread: unread, withChats: withChats)
-            sourceRow(ranked, shown: 4, unread: unread, withChats: withChats)
-            sourceRow(ranked, shown: 3, unread: unread, withChats: withChats)
-            sourceRow(ranked, shown: 2, unread: unread, withChats: withChats)
-            sourceRow(ranked, shown: 1, unread: unread, withChats: withChats)
-        }
+    private var sidebar: some View {
+        ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
+                     addSource: { app.openSettings(section: .chats) })
+            .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
     }
 
-    private func sourceRow(_ ranked: [String], shown limit: Int, unread: [String: Int], withChats: Set<String>) -> some View {
-        let split = ChatsSourceSplit.make(ranked, limit: limit, selected: filter, withChats: withChats)
-        return HStack(spacing: NookTheme.Spacing.xs) {
-            ChatsFilterChip(title: tr("chats.filter.allSources"), app: nil, selected: filter == nil) { filter = nil }
-            ForEach(split.row, id: \.self) { id in
-                ChatsFilterChip(title: MessagingApps.app(id: id)?.name ?? id, app: id, unread: unread[id] ?? 0,
-                                selected: filter == id, compact: filter != id) {
-                    filter = filter == id ? nil : id
-                }
-            }
-            if !split.rest.isEmpty {
-                ChatsMoreSources(apps: split.rest, unread: unread) { filter = $0 }
-            }
-            Spacer(minLength: 0)
-        }
-        .fixedSize(horizontal: true, vertical: false)
+    /// The list's title: the view, and the app when one is chosen ("New · Telegram"), with the one action that fits it.
+    private var listTitle: String {
+        let appName = filter.map { MessagingApps.app(id: $0)?.name ?? $0 }
+        return appName.map { view.title + " · " + $0 } ?? view.title
     }
 
-    /// The list's title, as the Agents tab has it, with the list's two actions. What is unread is counted once, on the
-    /// Unread filter right under it, not again here.
     private var listHeader: some View {
-        PanelListHeader(tr("tab.chats")) {
-            // WhatsApp's unread marks belong to the phone: a chat there is read by what you do with it.
-            if capture.inbox.totalUnread > 0 {
-                ToolbarIconButton("checkmark.circle", tr("chats.markAllRead")) { capture.markAllRead() }
+        let fresh = inApp.filter { $0.read.isUnread }
+        return PanelListHeader(listTitle) {
+            if !fresh.isEmpty {
+                ToolbarIconButton("checkmark.circle", tr("chats.markAllReadInNook")) { app.markAllChatsReadInNook(fresh) }
             }
-            ToolbarIconButton("plus", tr("chats.addSource")) { app.openSettings(section: .chats) }
         }
     }
 
@@ -479,12 +458,6 @@ struct ChatsTab: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             listHeader
             searchField
-
-            NookTabBar(items: [.init(value: false, title: tr("chats.filter.all")),
-                               .init(value: true, title: tr("chats.group.unread"), count: unreadTotal)],
-                       selected: unreadOnly) { unreadOnly = $0 }
-
-            if apps.count > 1 { sourceFilters }
 
             ScrollView {
                 LazyVStack(spacing: NookTheme.Spacing.xxs) {
@@ -502,58 +475,86 @@ struct ChatsTab: View {
                             ForEach(section.entries) { entry in
                                 if entry.id != section.entries.first?.id { NookRowSeparator() }
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
-                                         onToggleRead: { entry.readable ? markRead(entry) : markUnread(entry) }) { selection = entry.id }
-                                    .contextMenu {
-                                        if entry.readable {
-                                            Button(tr("chats.markRead")) { markRead(entry) }
-                                        } else {
-                                            Button(tr("chats.markUnread")) { markUnread(entry) }
-                                        }
-                                    }
+                                         rowAction: rowAction(entry)) { selection = entry.id }
+                                    .contextMenu { readMenu(entry) }
                             }
                         }
                     }
                 }
             }
-            if shown.isEmpty {
-                if unreadOnly, !searching {
-                    // Everything read: one click back to every chat.
-                    VStack(spacing: NookTheme.Spacing.sm) {
-                        ListEmptyNote(tr("chats.unread.none"))
-                        SmallGhostButton(title: tr("chats.unread.showAll")) { unreadOnly = false }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, NookTheme.Spacing.xl)
-                } else if !searching, let filter {
-                    // A source that is on but brought in nothing yet: why, and what to do about it.
-                    let name = MessagingApps.app(id: filter)?.name ?? filter
-                    VStack(spacing: NookTheme.Spacing.sm) {
-                        if let problem = capture.bridgeProblems[filter] {
-                            Text(problem)
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.coralSoft)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } else if let bridge = capture.bridge(for: filter),
-                                  ![capture.messagesBridge.app, capture.whatsAppDesktopBridge.app].contains(bridge.app), !bridge.isReady {
-                            // Slack, Telegram, Teams and Beeper keep their history elsewhere: connected once, Nook reads
-                            // it from there.
-                            ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
-                            SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
-                        } else {
-                            ListEmptyNote(tr("chats.source.empty", name))
-                        }
-                        SmallGhostButton(title: tr("chats.openApp", name)) { app.openChatApp(filter) }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, NookTheme.Spacing.xl)
-                } else {
-                    ListEmptyNote(tr("chats.noMatch"))
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, NookTheme.Spacing.xl)
-                }
-            }
+            if shown.isEmpty { emptyList }
             listHints
+        }
+    }
+
+    /// The one step a row offers under the pointer: read what is new in Nook, pass a chat read in Nook on to its app,
+    /// or make a chat that is read everywhere unread again.
+    private func rowAction(_ entry: ChatsEntry) -> ChatsRowAction {
+        let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
+        switch entry.read {
+        case .unread:
+            return ChatsRowAction(symbol: "checkmark", label: tr("chats.markReadInNook")) { app.markChatReadInNook(entry) }
+        case .readInNook:
+            return ChatsRowAction(symbol: "checkmark.message", label: tr("chats.markReadInApp", appName)) {
+                app.markChatReadInApp(entry)
+            }
+        case .read:
+            return ChatsRowAction(symbol: "envelope.badge", label: tr("chats.markUnread")) { markUnread(entry) }
+        }
+    }
+
+    /// Read and unread for a chat, the same in its row's menu and its "…" menu: what applies to where it stands.
+    @ViewBuilder
+    private func readMenu(_ entry: ChatsEntry) -> some View {
+        let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
+        if entry.read.isUnread {
+            Button(tr("chats.markReadInNook")) { app.markChatReadInNook(entry) }
+        }
+        if entry.read != .read {
+            Button(tr("chats.markReadInApp", appName)) { app.markChatReadInApp(entry) }
+        }
+        if !entry.read.isUnread {
+            Button(tr("chats.markUnread")) { markUnread(entry) }
+        }
+    }
+
+    /// The list is empty for what the sidebar chose: why, and one click to what there is.
+    @ViewBuilder
+    private var emptyList: some View {
+        if !searching, view != .all {
+            VStack(spacing: NookTheme.Spacing.sm) {
+                ListEmptyNote(tr("chats.view.empty." + view.rawValue))
+                SmallGhostButton(title: tr("chats.unread.showAll")) { withAnimation(NookTheme.swap) { view = .all } }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, NookTheme.Spacing.xl)
+        } else if !searching, let filter {
+            // A source that is on but brought in nothing yet: why, and what to do about it.
+            let name = MessagingApps.app(id: filter)?.name ?? filter
+            VStack(spacing: NookTheme.Spacing.sm) {
+                if let problem = capture.bridgeProblems[filter] {
+                    Text(problem)
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.coralSoft)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let bridge = capture.bridge(for: filter),
+                          ![capture.messagesBridge.app, capture.whatsAppDesktopBridge.app].contains(bridge.app), !bridge.isReady {
+                    // Slack, Telegram, Teams and Beeper keep their history elsewhere: connected once, Nook reads it from
+                    // there.
+                    ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
+                    SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
+                } else {
+                    ListEmptyNote(tr("chats.source.empty", name))
+                }
+                SmallGhostButton(title: tr("chats.openApp", name)) { app.openChatApp(filter) }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, NookTheme.Spacing.xl)
+        } else {
+            ListEmptyNote(tr("chats.noMatch"))
+                .frame(maxWidth: .infinity)
+                .padding(.top, NookTheme.Spacing.xl)
         }
     }
 
@@ -640,8 +641,8 @@ struct ChatsTab: View {
     }
 }
 
-/// A group of the list: by when a chat last moved, as every chat app has it. What is unread stands out in its row and
-/// under "Unread", so reading a chat never moves it.
+/// A group of the list: by when a chat last moved, as every chat app has it. What is new stands out in its row and
+/// under "New" in the sidebar, so reading a chat never moves it.
 enum ChatsGroup: Int, Comparable, CaseIterable {
     case today, yesterday, week, month, earlier
 
@@ -718,109 +719,21 @@ private struct ChatsGroupHeader: View {
     }
 }
 
-/// An app in the filter row: its icon, its name and how many messages there are unread; a second click shows all again.
-private struct ChatsFilterChip: View {
-    let title: String
-    let app: String?
-    var unread = 0
-    let selected: Bool
-    /// Only the app's icon (its name on hover), so many apps fit on one line.
-    var compact = false
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                if let app {
-                    SiteIcon(domain: nil, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: compact ? 15 : 13,
-                             source: app)
-                }
-                if !compact || app == nil {
-                    Text(title)
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(selected ? NookTheme.paper : NookTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                if unread > 0 {
-                    // A dot, as on "+N": the count itself is on the Unread filter and in each chat's row.
-                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
-                }
-            }
-            .padding(.horizontal, compact ? NookTheme.Spacing.sm : NookTheme.Spacing.md)
-            .frame(height: 26)
-            .background(Capsule().fill(selected ? NookTheme.smoke : (hovering ? NookTheme.rowHover : Color.clear)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(unread > 0 ? "\(title), \(tr("chats.group.unread")): \(unread)" : title)
-        .fixedSize()
-        .accessibilityLabel(unread > 0 ? "\(title), \(tr("chats.group.unread")): \(unread)" : title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
+/// The one step a chat's row offers while the pointer is on it (see `ChatsTab.rowAction`).
+struct ChatsRowAction {
+    let symbol: String
+    let label: String
+    let perform: () -> Void
 }
 
-/// Which sources the filter row shows and which wait behind "+N": the first `limit` that have chats (in the order
-/// given, unread ones first), with the one filtered on always in the row; sources without chats always wait.
-enum ChatsSourceSplit {
-    static func make(_ ranked: [String], limit: Int, selected: String?, withChats: Set<String>) -> (row: [String], rest: [String]) {
-        var row = Array(ranked.filter { withChats.contains($0) }.prefix(max(limit, 0)))
-        if let selected, ranked.contains(selected), !row.contains(selected) {
-            if row.count >= max(limit, 1) { row.removeLast() }
-            row.append(selected)
-        }
-        return (row, ranked.filter { !row.contains($0) })
-    }
-}
-
-/// "+N" at the end of the filter row: the other sources in a menu, with what is unread in each, and a dot when
-/// something waits there.
-private struct ChatsMoreSources: View {
-    let apps: [String]
-    let unread: [String: Int]
-    let choose: (String) -> Void
-    @State private var hovering = false
-
-    private var waiting: Int { apps.reduce(0) { $0 + (unread[$1] ?? 0) } }
-
-    var body: some View {
-        Menu {
-            ForEach(apps, id: \.self) { id in
-                let name = MessagingApps.app(id: id)?.name ?? id
-                let count = unread[id] ?? 0
-                Button(count > 0 ? "\(name) (\(count))" : name) { choose(id) }
-            }
-        } label: {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Text("+\(apps.count)")
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
-                if waiting > 0 {
-                    Circle().fill(NookTheme.amber).frame(width: 6, height: 6)
-                }
-            }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .frame(height: 26)
-            .background(Capsule().fill(hovering ? NookTheme.rowHover : Color.clear))
-            .contentShape(Capsule())
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .onHover { hovering = $0 }
-        .help(tr("chats.filter.more"))
-        .accessibilityLabel(waiting > 0 ? "\(tr("chats.filter.more")), \(tr("chats.group.unread")): \(waiting)" : tr("chats.filter.more"))
-    }
-}
-
-/// A chat in the list: its app's icon, its name, when and the newest message, and how many you have not read.
+/// A chat in the list: its picture with its app's icon, its name, when, the newest message, and where it stands at the
+/// end of that line: the count of what is new, one tick for read in Nook, two for read in the app too.
 private struct ChatsRow: View {
     let entry: ChatsEntry
     let photo: NSImage?
     let selected: Bool
-    /// Read or unread by hand, from the button that shows while the pointer is on the row.
-    var onToggleRead: (() -> Void)? = nil
+    /// What a click on the button that shows under the pointer does.
+    var rowAction: ChatsRowAction? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -840,11 +753,10 @@ private struct ChatsRow: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             // VoiceOver reaches the row itself, so the action is named there; the hover button would only repeat it.
-            row.accessibilityAction(named: Text(tr(entry.readable ? "chats.markRead" : "chats.markUnread"))) { onToggleRead?() }
+            row.accessibilityAction(named: Text(rowAction?.label ?? "")) { rowAction?.perform() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
-            if let onToggleRead {
-                ToolbarIconButton(entry.readable ? "envelope.open" : "envelope.badge",
-                                  tr(entry.readable ? "chats.markRead" : "chats.markUnread"), height: 22, width: 22, onToggleRead)
+            if let rowAction {
+                ToolbarIconButton(rowAction.symbol, rowAction.label, height: 22, width: 22, rowAction.perform)
                     .pointerStyle(.link)
                     .padding(.top, NookTheme.Spacing.sm)
                     .padding(.trailing, NookTheme.Spacing.sm)
@@ -857,6 +769,15 @@ private struct ChatsRow: View {
         .animation(NookTheme.hover, value: hovering)
     }
 
+    /// Where the chat stands, in words, for VoiceOver.
+    private var stateLabel: String {
+        switch entry.read {
+        case .unread(let count): return tr("chats.status.unread", count)
+        case .readInNook: return tr("chats.legend.readInNook")
+        case .read: return tr("chats.legend.read")
+        }
+    }
+
     private var row: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
@@ -867,7 +788,7 @@ private struct ChatsRow: View {
                     HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
                         Text(entry.name)
                             .font(NookTheme.TextStyle.strong)
-                            .foregroundStyle(NookTheme.paper)
+                            .foregroundStyle(entry.read.isUnread ? NookTheme.paper : NookTheme.textStrong)
                             .lineLimit(1)
                         Spacer(minLength: NookTheme.Spacing.xs)
                         Text(when)
@@ -875,25 +796,21 @@ private struct ChatsRow: View {
                             .monospacedDigit()
                             .foregroundStyle(NookTheme.textTertiary)
                             .fixedSize()
-                            .opacity(hovering && onToggleRead != nil ? 0 : 1)
+                            .opacity(hovering && rowAction != nil ? 0 : 1)
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
                         if let ticks = entry.ticks { TicksView(ticks: ticks) }
                         // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
                         Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary : NookTheme.textSecondary)
+                            .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
+                                             : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
                             .lineLimit(1)
                         Spacer(minLength: NookTheme.Spacing.xs)
-                        NookCountBadge(count: entry.unread)
-                            .fixedSize()
-                        // Read in Nook, still unread in the app: a ring where the count was, until "Mark as read".
-                        if entry.unread == 0, entry.waitsInApp {
-                            Circle()
-                                .stroke(NookTheme.amber, lineWidth: 1.5)
-                                .frame(width: 8, height: 8)
-                                .help(tr("chats.waitsInApp", MessagingApps.app(id: entry.app)?.name ?? entry.app))
-                                .accessibilityLabel(tr("chats.waitsInApp", MessagingApps.app(id: entry.app)?.name ?? entry.app))
+                        // Where it stands, the same mark for every app; your own newest message has its ticks in front.
+                        if entry.showsReadMark {
+                            ChatReadMark(state: entry.read)
+                                .fixedSize()
                         }
                     }
                 }
@@ -906,16 +823,15 @@ private struct ChatsRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(entry.unread > 0
-            ? "\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name), \(tr("chats.group.unread")): \(entry.unread): \(entry.preview)"
-            : "\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name): \(entry.preview)")
+        .accessibilityLabel("\(MessagingApps.app(id: entry.app)?.name ?? entry.app), \(entry.name), \(stateLabel): \(entry.preview)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
 /// Who a chat is with: their photo from Contacts, else their initials on a tint of their own (the same color their name
-/// has in a group's bubbles), with the app the chat is in as a small badge on the corner.
-private struct ChatsAvatar: View {
+/// has in a group's bubbles), with the app the chat is in as a small badge on the corner. Search shows the same face on
+/// a chat result.
+struct ChatsAvatar: View {
     let name: String
     let app: String
     let photo: NSImage?
@@ -1043,8 +959,16 @@ private struct ChatsDetail: View {
                            onDelete: linkedChat?.canDelete == true ? { deleting = $0 } : nil,
                            onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Where the chat stands and the one step left, right above where you answer.
+            if entry.read.isUnread || (!entry.lastIsMine && !bubbles.isEmpty) {
+                ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                             markReadInNook: { app.markChatReadInNook(entry) },
+                             markReadInApp: { app.markChatReadInApp(entry) })
+                    .padding(.top, NookTheme.Spacing.sm)
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+            }
             footer
-                .padding(.top, NookTheme.Spacing.md)
+                .padding(.top, NookTheme.Spacing.sm)
         }
         .overlay {
             if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
@@ -1226,27 +1150,23 @@ private struct ChatsDetail: View {
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             // What you do most stays in sight (ask Nook, open the app); the rest waits in the "…" menu.
-            if let chat = whatsAppChat {
-                ToolbarIconButton("sparkles", tr("whatsapp.card.nook")) { app.askNookAboutWhatsApp(chat, name: entry.name) }
-            }
+            ToolbarIconButton("sparkles", tr("whatsapp.card.nook")) { app.askNookAboutChat(entry) }
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
             moreMenu
         }
     }
 
-    /// Read or unread by hand, for every chat, and removing a chat collected from notifications.
+    /// Read or unread by hand, the same for every chat (as its row's menu), what its app lets Nook do there, and removing
+    /// a chat collected from notifications.
     private var moreMenu: some View {
         Menu {
-            if entry.readable {
-                Button(tr("chats.markRead")) {
-                    switch entry.origin {
-                    case .captured(let id):
-                        capture.markRead(id)
-                        if let chat = linkedChat { app.markLinkedChat(chat.id, read: true) }
-                    case .whatsApp(let jid): whatsApp.markReadInWhatsApp(jid)
-                    }
-                }
-            } else {
+            if entry.read.isUnread {
+                Button(tr("chats.markReadInNook")) { app.markChatReadInNook(entry) }
+            }
+            if entry.read != .read {
+                Button(tr("chats.markReadInApp", appName)) { app.markChatReadInApp(entry) }
+            }
+            if !entry.read.isUnread {
                 Button(tr("chats.markUnread"), action: onMarkUnread)
             }
             if let chat = linkedChat, case .captured(let thread) = entry.origin {

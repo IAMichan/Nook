@@ -1,6 +1,6 @@
 import Foundation
 
-/// The worktree a session leaves behind when you delete it, offered for cleanup: its own worktree, when no
+/// The worktree a session leaves behind when you delete it: its own worktree, when no
 /// other session works in it or below it. A session in your main checkout leaves nothing to remove.
 enum WorktreeCleanup {
     static func orphaned(worktree: String?, otherFolders: [String]) -> String? {

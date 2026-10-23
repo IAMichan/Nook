@@ -29,28 +29,32 @@ struct NookNotice<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(alignment: wraps ? .top : .center, spacing: NookTheme.Spacing.md) {
-            if let symbol {
-                Image(systemName: symbol)
-                    .font(NookTheme.font(13, .bold))
-                    .foregroundStyle(tone)
-                    .frame(width: 16)
-                    .padding(.top, wraps ? 2 : 0)
-            }
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(title)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(wraps ? nil : 1)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: wraps)
-                if let detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textSecondary)
-                        .lineLimit(wraps ? 4 : 1)
+        // The message sits in the middle of the row's height, which the OK button sets; when it wraps, the mark stays
+        // on its first line.
+        HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+            HStack(alignment: wraps ? .top : .center, spacing: NookTheme.Spacing.md) {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(NookTheme.font(13, .bold))
+                        .foregroundStyle(tone)
+                        .frame(width: 16)
+                        .padding(.top, wraps ? 2 : 0)
+                }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(title)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(wraps ? nil : 1)
                         .truncationMode(.tail)
                         .fixedSize(horizontal: false, vertical: wraps)
+                    if let detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(wraps ? 4 : 1)
+                            .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: wraps)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
