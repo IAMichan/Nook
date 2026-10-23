@@ -27,6 +27,7 @@ Looking for something concrete? Check the issues labeled [`good first issue`](ht
    - macOS app or Swift core: `./scripts/core-tests.sh` (runs on Linux too), and `./scripts/ui-lint.sh` when you changed `apps/macos/NotchUI` or `apps/macos/App`.
    - Tauri app: the `npm` and `cargo` checks under [Windows, Linux & Android](#windows-linux--android-tauri).
 6. **Open a pull request** using the [PR template](.github/pull_request_template.md). Commits, branches, code, comments, and docs are written in English.
+7. **Link the issues it resolves.** Before opening the pull request, check the [open issues](https://github.com/IAMichan/nook/issues) for any your change resolves, and list them under *Related issues* as `Closes #123` so they close on merge. Use `Part of #123` when the issue stays open.
 
 CI runs on every pull request, and an automated reviewer (CodeRabbit) leaves comments. Don't worry if CI or a review asks for changes; that's normal, and maintainers are happy to help you get it green.
 
@@ -121,6 +122,7 @@ Core logic (source scoping, action validation, tool loop, session registry, work
 ## Pull Request Guidelines
 
 - Keep PRs focused on a single topic or fix.
+- Link every issue the PR resolves with `Closes #123` (or `Part of #123` for partial work).
 - Ensure the GitHub Actions CI build and test suite pass.
 - Match the surrounding style and conventions (Swift, Rust, or Svelte).
 - **Explicit user approval:** Any action that mutates user data or executes on the system (calendar, mail, shell commands, webhooks, system settings) must go through an interactive confirmation card/plan approved by the user and write an entry to the `audit` table in `nook.sqlite`.
