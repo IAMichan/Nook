@@ -644,7 +644,8 @@ final class WorkspaceBridge: ObservableObject {
         for provider in RunProvider.allCases {
             let installed = workspace.executable(provider) != nil
             var line = "- \(provider.rawValue) (\(provider.displayName)): " + (installed ? "available" : "not installed")
-            let models = provider.suggestedModels.filter { !$0.isEmpty }
+            // The models it runs now: older ones and ones waiting on an agent update stay out.
+            let models = workspace.modelChoices(for: provider).filter { !$0.isLegacy && !$0.needsUpdate }.map(\.id)
             if !models.isEmpty { line += " · models: " + models.joined(separator: ", ") }
             line += " · rights: " + provider.capabilities.policies.map(\.rawValue).joined(separator: ", ")
             lines.append(line)

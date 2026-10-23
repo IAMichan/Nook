@@ -147,6 +147,14 @@ final class WorkspaceManager: ObservableObject {
     /// Comments on a session's diff, waiting to go to the agent together.
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
+    /// The model manifest in use: the bundled one, or a newer valid copy from Nook's repository (see
+    /// WorkspaceManager+ModelManifest).
+    @Published var modelManifest: ModelManifest?
+    /// What `claude --version` and `codex --version` printed, for the models that need a newer agent.
+    @Published var agentVersions: [RunProvider: String] = [:]
+    /// When the repository was last asked for the manifest, and when each agent's version was read (with its path).
+    var manifestAttempted: Date?
+    var versionsRead: [RunProvider: (path: String, at: Date)] = [:]
     /// Sessions waiting for a usage limit to reset, to go on then; and Codex's latest limits per session.
     var limitResumes: [UUID: Task<Void, Never>] = [:]
     var codexLimitSnapshots: [UUID: JSONBox] = [:]
@@ -266,6 +274,7 @@ final class WorkspaceManager: ObservableObject {
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
+        modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
         Task.detached(priority: .userInitiated) { [weak self] in
             let loaded = store.loadRuns()
