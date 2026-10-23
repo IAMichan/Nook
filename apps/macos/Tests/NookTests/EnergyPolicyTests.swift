@@ -85,6 +85,18 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(hot: true), mode: .automatic).mirrorFrameRate, 30)
     }
 
+    func testAnimationsWhereYouDoNotPointRunAtHalfTheAmbientRate() {
+        let full = EnergyPolicy.plan(for: EnergySignals(), mode: .automatic)
+        XCTAssertEqual(full.unattendedFrameRate, 15)
+        XCTAssertEqual(full.frameRate(60, attended: true), 60, "where you point, as asked")
+        XCTAssertEqual(full.frameRate(60, attended: false), 15)
+        XCTAssertEqual(full.frameRate(7.5, attended: false), 7.5, "a slower rate stays as it is")
+
+        let light = EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic)
+        XCTAssertEqual(light.unattendedFrameRate, 7.5)
+        XCTAssertEqual(light.frameRate(light.ambientFrameRate, attended: false), 7.5)
+    }
+
     func testEveryReasonHasAText() {
         // The keys exist in the texts (I18nCoverageTests checks the languages); here only that each reason maps to one.
         XCTAssertEqual(Set(EnergyReason.allCases.map(\.textKey)).count, EnergyReason.allCases.count)

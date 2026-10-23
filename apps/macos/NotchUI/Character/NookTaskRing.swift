@@ -65,6 +65,7 @@ struct NookTaskRing: View {
     @State private var appeared = Date()
     @StateObject private var spring = RingSpring()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nookAttended) private var attended
     /// Published only when the plan changes: sets how often the ring redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
 
@@ -85,7 +86,9 @@ struct NookTaskRing: View {
         // Possibly for hours, closed or open: the ambient rate keeps the light fluid at a fraction of the redraws, and every
         // frame redraws the whole window the ring is in. Only while you point at a piece in the panel does it run at the
         // interactive rate.
-        let rate = compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
+        // On a screen or in a window the pointer is not on, at most the unattended rate.
+        let rate = energy.plan.frameRate(compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate,
+                                         attended: attended)
         // In a graph of its own (`SeparateGraph`), so its frames do not update the window it is in; hover and clicks stay
         // on the band below.
         SeparateGraph {

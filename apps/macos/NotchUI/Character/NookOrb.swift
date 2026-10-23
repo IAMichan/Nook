@@ -36,6 +36,7 @@ struct NookOrb: View {
     /// Published only when the plan changes: lets a dozing orb stop drawing while no one can see it.
     @ObservedObject private var energy = EnergyMonitor.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nookAttended) private var attended
     @State private var tracker = OrbTracker()
     @State private var moodSince = Date()
 
@@ -43,7 +44,8 @@ struct NookOrb: View {
         // A dozing Nook keeps animating on every screen, so all orbs nod off together; its slow breathing and nodding
         // need only a few frames a second, and it can doze for hours. While you are away or the display sleeps (the
         // energy plan pauses) nobody sees it breathe, so it holds still instead of drawing all night.
-        let awakeRate = frameRate ?? energy.plan.interactiveFrameRate
+        // On a screen or in a window the pointer is not on, at most the unattended rate.
+        let awakeRate = energy.plan.frameRate(frameRate ?? energy.plan.interactiveFrameRate, attended: attended)
         // The layout sees only a fixed square; Nook is drawn over it. In the layout itself, every frame asked the row
         // he sits in to place and align everything again, on every screen's notch.
         Color.clear

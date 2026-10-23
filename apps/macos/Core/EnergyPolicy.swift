@@ -115,6 +115,15 @@ struct EnergyPlan: Equatable {
     /// equalizer, the light sweeping through the task ring): fluid enough to read as motion, a fraction of the redraws.
     var ambientFrameRate: Double { pace == .full ? 30 : 15 }
 
+    /// Frames per second of the animations that run on their own (Nook, his ring, the equalizer, working dots) on a
+    /// screen or in a window the pointer is not on: half the ambient rate, so they stay on the shared clock.
+    var unattendedFrameRate: Double { ambientFrameRate / 2 }
+
+    /// `fps` where the pointer is (`attended`), at most `unattendedFrameRate` elsewhere.
+    func frameRate(_ fps: Double, attended: Bool) -> Double {
+        attended ? fps : min(fps, unattendedFrameRate)
+    }
+
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }
 

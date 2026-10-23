@@ -80,3 +80,95 @@ struct SeparateGraph<Content: View>: NSViewRepresentable {
 final class PassThroughHostingView<Content: View>: NSHostingView<Content> {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
+
+// MARK: Where you look
+
+/// Which screen and which of Nook's windows the pointer is over. Published only when that changes, not on every move.
+@MainActor
+final class PointerWhere: ObservableObject {
+    static let shared = PointerWhere()
+
+    @Published private(set) var screen: CGDirectDisplayID?
+    /// The window number of Nook's own window under the pointer; nil over another app or the desktop.
+    @Published private(set) var window: Int?
+
+    /// The pointer moved (`NotchController`'s monitors call this for every move, in Nook and outside it).
+    func moved() {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }.flatMap(Self.displayID)
+        if screen != self.screen { self.screen = screen }
+        let number = NSWindow.windowNumber(at: mouse, belowWindowWithWindowNumber: 0)
+        let window = NSApp.windows.contains { $0.windowNumber == number } ? number : nil
+        if window != self.window { self.window = window }
+    }
+
+    static func displayID(_ screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+}
+
+extension EnvironmentValues {
+    /// The pointer is where this view is: on the screen of its notch, or over its window. Elsewhere the animations that
+    /// run on their own draw at `EnergyPlan.unattendedFrameRate`.
+    @Entry var nookAttended = true
+}
+
+extension View {
+    /// Tells the views in this window whether the pointer is where they are (`nookAttended`): for a notch, on its screen;
+    /// for any other window, over it. Put on the root of each window.
+    func nookAttention() -> some View {
+        modifier(NookAttention())
+    }
+}
+
+private struct NookAttention: ViewModifier {
+    @ObservedObject private var pointer = PointerWhere.shared
+    @StateObject private var window = WeakWindow()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.nookAttended, attended)
+            .background(WindowProbe(found: window))
+    }
+
+    private var attended: Bool {
+        // Before the window is known (its first frame), as it was: at the full rate.
+        guard let window = window.window else { return true }
+        if window is NotchPanel {
+            guard let screen = window.screen.flatMap(PointerWhere.displayID), let pointer = pointer.screen else { return true }
+            return screen == pointer
+        }
+        return pointer.window == window.windowNumber
+    }
+}
+
+/// The window a view is in, held weakly, found once the view is in one; its views learn it at once.
+@MainActor
+private final class WeakWindow: ObservableObject {
+    weak var window: NSWindow? {
+        willSet { if newValue !== window { objectWillChange.send() } }
+    }
+}
+
+private struct WindowProbe: NSViewRepresentable {
+    let found: WeakWindow
+
+    func makeNSView(context: Context) -> NSView { Probe(found: found) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class Probe: NSView {
+        let found: WeakWindow
+        init(found: WeakWindow) {
+            self.found = found
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { nil }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            found.window = window
+            // The window is known now: tell the views at once instead of at the next move.
+            PointerWhere.shared.moved()
+        }
+    }
+}
