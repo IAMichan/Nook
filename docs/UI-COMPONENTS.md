@@ -42,8 +42,8 @@ and faint white fills instead of grey panels or lines, and color only where it c
   links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.
   An agent's brand color lives in its logo only, and a row's logo is grey until the pointer is on the row or it is
   selected (`AgentMark(quiet:)`). The composer keeps Nook's own quiet tint for every agent.
-- **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron, queued messages'
-  buttons, and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
+- **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron,
+  and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).
 - **No boxes around groups.** Toolbar groups (`.toolbarGroup()`) and the composer's choices have no fill or stroke of
   their own; a gap separates them (`ComposerDivider`), and a button gets a fill only under the pointer. Badges in a
