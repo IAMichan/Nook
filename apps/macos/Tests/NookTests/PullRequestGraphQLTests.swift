@@ -13,13 +13,14 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(variables["mineClosed"], "is:pr is:closed archived:false author:@me sort:updated-desc")
         XCTAssertTrue(variables["reviewsClosed"]?.contains("reviewed-by:@me") == true)
         XCTAssertTrue(query.contains("isDraft updatedAt state"), "open, closed or merged comes with the row")
+        XCTAssertTrue(query.contains("additions deletions"), "the lines changed come with the row")
     }
 
     func testParse() throws {
         let answer = #"""
         {"data":{"viewer":{"login":"michan"},
           "mine":{"nodes":[{"number":119,"title":"Agents-tab","url":"https://github.com/IAMichan/nook/pull/119","isDraft":false,
-            "updatedAt":"2026-10-18T19:00:00Z","author":{"login":"michan"},"repository":{"nameWithOwner":"IAMichan/nook"},
+            "additions":1059,"deletions":1512,"updatedAt":"2026-10-18T19:00:00Z","author":{"login":"michan"},"repository":{"nameWithOwner":"IAMichan/nook"},
             "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"FAILURE"}}}]}},
             {"number":7,"title":"Concept","url":"https://github.com/a/b/pull/7","isDraft":true,"updatedAt":"2026-10-17T10:00:00Z",
             "author":{"login":"michan"},"repository":{"nameWithOwner":"a/b"},"commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}},
@@ -42,6 +43,9 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertNotNil(list.mine[0].updated)
         XCTAssertEqual(list.reviews.first?.author, "anna")
         XCTAssertEqual(list.reviews.first?.ci, .pending)
+        XCTAssertEqual(list.mine[0].additions, 1059)
+        XCTAssertEqual(list.mine[0].deletions, 1512)
+        XCTAssertNil(list.mine[1].additions, "a row without the counts shows none")
     }
 
     func testErrorsAndStates() {
