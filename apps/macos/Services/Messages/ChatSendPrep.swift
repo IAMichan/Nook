@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// Makes a file fit what WhatsApp takes before it goes, as WhatsApp's own apps do: a photo as JPEG (an iPhone's HEIC is
 /// not taken), a video as MP4, a GIF as the short looping MP4 WhatsApp itself sends for one, a sticker as PNG when it is
-/// no PNG, JPEG, WebP or GIF yet. Telegram and Beeper take files as they are. Converted files and pasted pictures land in
+/// no PNG, JPEG, WebP or GIF yet. Telegram and Nook's chat helper take files as they are. Converted files and pasted pictures land in
 /// Nook's temporary folder, never next to the original.
 enum ChatSendPrep {
     /// Where files made for sending go: one folder each, under the Mac's temporary folder.

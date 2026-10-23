@@ -481,16 +481,15 @@ final class WhatsAppDesktopBridge: ChatBridge {
     }
 }
 
-// MARK: Beeper
+// MARK: Nook's chat helper
 
-/// Every network linked in Beeper Desktop (Instagram, Messenger, Discord, Signal, LinkedIn, X, Google Chat…), each chat
-/// under its own app, through Beeper's own local API on this Mac (Settings › Developers in Beeper) with the token set in
-/// Settings › Chats. Nothing leaves the Mac: the API is Beeper's, on localhost. A network Nook reads with a bridge of
-/// its own (Telegram, Slack…) is left to that bridge. While Beeper is the WhatsApp gateway, its chats already come in
-/// through the linked phone list (with answering in place), so this bridge stays out of the way.
+/// Every app linked through Nook's own chat helper (`ChatHelper`: Telegram, Signal, Messenger, Instagram, X, LinkedIn,
+/// Slack), each chat under its own app, through the helper's local API on this Mac with the token Nook makes at each
+/// start. Nothing leaves the Mac: the API is on 127.0.0.1. An app Nook reads with a bridge of its own is left to that
+/// bridge.
 @MainActor
-final class BeeperBridge: ObservableObject, ChatBridge {
-    let app = "beeper"
+final class ChatServiceBridge: ObservableObject, ChatBridge {
+    let app = "service"
     /// While the live line is open a read only catches what it may have missed; without it, every ten seconds.
     var interval: TimeInterval { live.isLive ? 120 : 10 }
     private(set) var isWorking = false
@@ -501,32 +500,25 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     /// An app another bridge already reads.
     var skips: (String) -> Bool = { _ in false }
 
-    static let tokenAccount = "chats.beeper.token"
-    /// Beeper Desktop's local API, used while Nook's own chat helper does not run.
-    private static let beeperBase = URL(string: "http://localhost:23373")!
-    /// The chat service Nook reads: its own helper (`ChatHelper`) while it runs, else Beeper Desktop.
-    static var base: URL { ChatHelper.shared.isRunning ? ChatHelper.base : beeperBase }
+    /// The chat service Nook reads: its own helper.
+    static var base: URL { ChatHelper.base }
     private static let chatCount = 40
     private static let history = 30
 
     /// The newest activity per chat at the last read: only chats that moved are read again.
     private var seen: [String: Date] = [:]
-    /// Files Beeper downloaded for Nook, by their `mxc://` address.
+    /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
-    /// Beeper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
+    /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
     private var chatIDs: [String: String] = [:]
     /// Every chat at the last read by its id, for what can be done in it (pinned, muted, editing…).
-    @Published private(set) var chats: [String: BeeperData.Chat] = [:]
+    @Published private(set) var chats: [String: ChatServiceData.Chat] = [:]
     /// The live line is open: changes come in the moment they happen (Settings › Chats shows it).
     @Published private(set) var isLive = false
     private let live = ChatLiveStream()
 
-    /// The token of the chat service Nook reads: the helper's own while it runs, else the one set for Beeper.
-    static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : beeperToken }
-    /// The token set for Beeper Desktop in Settings › Chats.
-    static var beeperToken: String? { CloudHelp.secret(tokenAccount) }
-    /// Where the live line was opened, to open it again when the chat service changes.
-    private var liveBase: URL?
+    /// The helper's own token, made at its start; nil while it does not run.
+    static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : nil }
 
     init() {
         live.onChange = { [weak self] chat in
@@ -547,10 +539,9 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         live.disconnect()
     }
 
+    /// Once something was linked through the helper (it then starts at the first read).
     var isReady: Bool {
-        // Nook's own helper once something was linked through it (it then starts at the first read).
-        if ChatHelper.isBuilt, FileManager.default.fileExists(atPath: ChatHelper.dataDirectory.path) { return true }
-        return !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.beeperToken != nil
+        ChatHelper.isBuilt && FileManager.default.fileExists(atPath: ChatHelper.dataDirectory.path)
     }
 
     func reset() {
@@ -568,23 +559,22 @@ final class BeeperBridge: ObservableObject, ChatBridge {
             live.disconnect()
             return []
         }
-        if liveBase != Self.base {
-            live.disconnect()
-            liveBase = Self.base
-        }
         var socket = URLComponents(url: Self.base.appendingPathComponent("v1/ws"), resolvingAgainstBaseURL: false)
         socket?.scheme = "ws"
         if !live.isConnecting, let url = socket?.url { live.connect(url, token: token) }
         do {
-            let listed = BeeperData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
+            var listed = ChatServiceData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
                 .filter { !skips($0.app) }
+            // What Beeper had set for these chats (pinned, muted, archived), once, when someone moved over from it.
+            let archived = await BeeperImporter.shared.apply(to: listed, in: self)
+            if !archived.isEmpty { listed.removeAll { archived.contains($0.id) } }
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
             for chat in listed where chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil) {
                 let answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
-                let messages = await withFiles(BeeperData.messages(answer, chat: chat), token: token)
-                let deleted = BeeperData.deleted(answer, chat: chat)
+                let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
+                let deleted = ChatServiceData.deleted(answer, chat: chat)
                 seen[chat.id] = chat.last ?? .distantPast
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
@@ -612,8 +602,8 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         return result
     }
 
-    /// Where a file Beeper names is on this Mac: a `file://` one as it is, an `mxc://` one once Beeper downloaded it
-    /// through its own API (it says where it put it). Nothing is fetched from anywhere but Beeper on this Mac.
+    /// Where a file the helper names is on this Mac: a `file://` one as it is, an `mxc://` one once the helper downloaded
+    /// it through its own API (it says where it put it). Nothing is fetched from anywhere but the helper on this Mac.
     private func local(_ source: String?, token: String) async -> String? {
         guard let source else { return nil }
         if let url = URL(string: source), url.isFileURL { return url.path }
@@ -633,21 +623,21 @@ final class BeeperBridge: ObservableObject, ChatBridge {
 
     // MARK: Sending
 
-    /// Beeper's id of the chat Nook shows as `name` in `app`, once Beeper brought it in.
+    /// The helper's id of the chat Nook shows as `name` in `app`, once the helper brought it in.
     func chatID(app: String, name: String) -> String? {
         isReady ? chatIDs[app + "|" + name] : nil
     }
 
-    /// What every network Beeper bridges can take from Nook: text and files; a place or a contact goes as text.
+    /// What every app the helper links can take from Nook: text and files; a place or a contact goes as text.
     var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
 
-    /// Sends what you typed, or a file, a place or a contact card, to a chat Beeper brought in (Instagram, Signal,
-    /// Messenger…), as an answer to `replyTo` (a message's id in Nook) when set. Beeper hands it to the network; the
-    /// chat shows it at Beeper's next read. Throws with a sentence you can act on.
+    /// Sends what you typed, or a file, a place or a contact card, to a chat the helper brought in (Instagram, Signal,
+    /// Messenger…), as an answer to `replyTo` (a message's id in Nook) when set. The helper hands it to the app; the
+    /// chat shows it at the next read. Throws with a sentence you can act on.
     func send(text: String? = nil, _ outgoing: ChatOutgoing? = nil, to chat: String, replyTo: String? = nil) async throws {
-        guard let token = Self.token else { throw NookError(tr("chats.beeper.unauthorized")) }
+        guard let token = Self.token else { throw NookError(tr("chats.service.unreachable")) }
         let messages = Self.path(chat) + "/messages"
-        let answered = replyTo.flatMap { BeeperData.networkID($0, chat: chat) }
+        let answered = replyTo.flatMap { ChatServiceData.networkID($0, chat: chat) }
         var request: WASendRequest
         if let outgoing {
             if case .poll = outgoing { throw NookError(tr("chat.compose.unsupported")) }
@@ -656,13 +646,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
                 guard !file.tooLarge, let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) else {
                     throw NookError(tr("chat.compose.tooLarge", file.name))
                 }
-                let upload = WASend.beeperUpload(file, data: data)
-                guard let id = WASend.beeperUploadID(try await post(upload.path, upload.json ?? [:], token: token, timeout: 120)) else {
+                let upload = WASend.serviceUpload(file, data: data)
+                guard let id = WASend.serviceUploadID(try await post(upload.path, upload.json ?? [:], token: token, timeout: 120)) else {
                     throw NookError(tr("chat.compose.notSent"))
                 }
                 uploadID = id
             }
-            request = WASend.beeperMessage(outgoing, path: messages, uploadID: uploadID, replyTo: answered)
+            request = WASend.serviceMessage(outgoing, path: messages, uploadID: uploadID, replyTo: answered)
         } else {
             let body = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
@@ -688,7 +678,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
 
     /// Your emoji on a message (Nook's id of it); `mine` takes yours back instead.
     func react(_ emoji: String, to message: String, in chat: String, mine: Bool) async throws {
-        guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
         let reactions = Self.path(chat) + "/messages/" + ChatJSON.segment(id) + "/reactions"
         if mine {
             try await act("DELETE", reactions + "/" + ChatJSON.segment(emoji), nil, chat: chat)
@@ -701,13 +691,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     func edit(_ message: String, in chat: String, to text: String) async throws {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
-        guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
         try await act("PUT", Self.path(chat) + "/messages/" + ChatJSON.segment(id), ["text": body], chat: chat)
     }
 
     /// Deletes your message for everyone in the chat, where its app can.
     func delete(_ message: String, in chat: String) async throws {
-        guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
         try await act("DELETE", Self.path(chat) + "/messages/" + ChatJSON.segment(id), nil, query: [URLQueryItem(name: "forEveryone", value: "true")],
                       chat: chat)
     }
@@ -763,13 +753,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         do {
             (data, response) = try await ConnectorHTTP.session.data(for: request)
         } catch {
-            throw NookError(plain ? failure : tr("chats.beeper.unreachable"))
+            throw NookError(plain ? failure : tr("chats.service.unreachable"))
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 || code == 403 { throw NookError(plain ? failure : tr("chats.beeper.unauthorized")) }
+        if code == 401 || code == 403 { throw NookError(plain ? failure : tr("chats.service.unreachable")) }
         guard (200..<300).contains(code) else {
             // The chat app's own reason, when it gives one (too old to edit, not allowed…).
-            throw NookError(failure + " " + (WABeeper.errorMessage(data) ?? "HTTP \(code)"))
+            throw NookError(failure + " " + (ChatServiceData.errorMessage(data) ?? "HTTP \(code)"))
         }
         return data
     }
@@ -778,7 +768,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         var components = URLComponents(url: Self.base, resolvingAgainstBaseURL: false)!
         components.percentEncodedPath = path
         components.queryItems = parameters.map { URLQueryItem(name: $0.key, value: $0.value) }
-        guard let url = components.url else { throw NookError("Beeper: \(path)") }
+        guard let url = components.url else { throw NookError(path) }
         var request = URLRequest(url: url)
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         let data: Data
@@ -786,11 +776,11 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         do {
             (data, response) = try await ConnectorHTTP.session.data(for: request)
         } catch {
-            throw NookError(tr("chats.beeper.unreachable"))
+            throw NookError(tr("chats.service.unreachable"))
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 || code == 403 { throw NookError(tr("chats.beeper.unauthorized")) }
-        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Beeper: HTTP \(code)") }
+        if code == 401 || code == 403 { throw NookError(tr("chats.service.unreachable")) }
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("HTTP \(code)") }
         return json
     }
 }

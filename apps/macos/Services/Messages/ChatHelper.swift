@@ -3,7 +3,7 @@ import Security
 
 /// Nook's own chat helper, nook-chatd (apps/chatd, built by scripts/build-chatd.sh and copied into
 /// Nook.app/Contents/Helpers): it links Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack on this Mac
-/// without Beeper, and answers the same local API Beeper Desktop does, so `ChatLinker` and `BeeperBridge` read it the same way.
+/// on its own, and answers the local API that `ChatLinker` and `ChatServiceBridge` read.
 /// Nook starts it as its child on 127.0.0.1 with a fresh token each time, and it stops when Nook quits (or by itself when
 /// Nook is gone). Its linked accounts and chats stay in Application Support/Nook/ChatHelper.
 @MainActor
@@ -111,7 +111,7 @@ final class ChatHelper: ObservableObject {
             }
             try? await Task.sleep(for: .milliseconds(300))
         }
-        problem = p.isRunning ? tr("chats.beeper.unreachable") : "exit \(p.terminationStatus)"
+        problem = p.isRunning ? tr("chats.service.unreachable") : "exit \(p.terminationStatus)"
         stop()
         return false
     }
@@ -129,7 +129,7 @@ final class ChatHelper: ObservableObject {
         if p.isRunning { kill(p.processIdentifier, SIGKILL) }
     }
 
-    /// Whether a chat service (this helper, or Beeper Desktop) answers at `base`: its info needs no token.
+    /// Whether a chat service answers at `base`: its info needs no token.
     static func answers(at base: URL = base) async -> Bool {
         var request = URLRequest(url: base.appendingPathComponent("v1/info"), timeoutInterval: 2)
         request.httpMethod = "GET"

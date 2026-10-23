@@ -44,7 +44,6 @@ enum MessagingApps {
         MessagingApp(id: "element", name: "Element", bundleIDs: ["im.riot.app"], domains: ["app.element.io"], site: "element.io"),
         MessagingApp(id: "threema", name: "Threema", bundleIDs: ["ch.threema.threema-desktop", "ch.threema.iapp"], site: "threema.ch"),
         MessagingApp(id: "wire", name: "Wire", bundleIDs: ["com.wearezeta.zclient.mac"], site: "wire.com"),
-        MessagingApp(id: "beeper", name: "Beeper", bundleIDs: ["com.automattic.beeper.desktop"], site: "beeper.com"),
         // Mostly in the browser, where their notifications name the site; LinkedIn's iPad app also runs on a Mac.
         MessagingApp(id: "linkedin", name: "LinkedIn", bundleIDs: ["com.linkedin.LinkedIn"], domains: ["linkedin.com"], site: "linkedin.com"),
         MessagingApp(id: "x", name: "X", domains: ["x.com", "twitter.com"], site: "x.com")

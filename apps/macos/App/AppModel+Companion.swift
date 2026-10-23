@@ -34,6 +34,8 @@ extension AppModel {
             self.viewModel.removePending(id: token)
             if self.viewModel.isShowing(card: token) { self.presentWhatsApp(chat) }
         }
+        // A WhatsApp that went through Beeper links in Nook's own way from now on.
+        BeeperImporter.migrateSettings()
         WhatsAppLink.shared.start()
     }
 

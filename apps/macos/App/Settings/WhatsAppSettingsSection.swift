@@ -60,9 +60,6 @@ struct WhatsAppLinkSection: View {
                     }
                     TextField(tr("whatsapp.settings.address"), text: $address, prompt: Text(gateway.defaultURL))
                         .onSubmit { WhatsAppSettings.url = address; link.settingsChanged() }
-                    if gateway == .beeper {
-                        SettingNote(tr("whatsapp.settings.beeperHelp"))
-                    }
                     SecureField(credentialLabel, text: $credential)
                         .onSubmit { WhatsAppSettings.setCredential(credential); link.settingsChanged() }
                     if gateway == .gowa, WhatsAppGOWAInstaller.isInstalled {
@@ -111,7 +108,6 @@ struct WhatsAppLinkSection: View {
         switch gateway {
         case .gowa: return tr("whatsapp.settings.basicAuth")
         case .openwa: return tr("whatsapp.settings.apiKey")
-        case .beeper: return tr("whatsapp.settings.beeperToken")
         }
     }
 

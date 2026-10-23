@@ -184,6 +184,7 @@ targets:
       - path: Core/I18n+Harness.swift
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
+      - path: Core/I18n+BeeperImport.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
@@ -213,7 +214,8 @@ targets:
       - path: Services/Messages/TeamsData.swift
       - path: Services/Messages/TeamsWebData.swift
       - path: Services/Messages/ChatJSON.swift
-      - path: Services/Messages/BeeperData.swift
+      - path: Services/Messages/ChatServiceData.swift
+      - path: Services/Messages/BeeperImport.swift
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
       - path: Services/Messages/ChatFormat.swift

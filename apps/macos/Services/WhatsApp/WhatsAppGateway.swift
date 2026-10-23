@@ -5,7 +5,6 @@
 // Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md). The gateway field names come from their docs:
 //   GOWA   — github.com/aldinokemal/go-whatsapp-web-multidevice (docs/webhook-payload.md, docs/openapi.yaml)
 //   OpenWA — github.com/rmyndharis/OpenWA (docs/06-api-specification.md)
-//   Beeper — github.com/beeper/desktop-api-js (the Beeper Desktop API, every chat network Beeper bridges)
 
 import Foundation
 import CryptoKit
@@ -16,7 +15,7 @@ struct WAChatInfo: Equatable, Sendable {
     var jid: String
     var name: String
     var last: Date
-    /// How many messages WhatsApp itself counts unread, when the gateway says (OpenWA, Beeper); 0 when it does not.
+    /// How many messages WhatsApp itself counts unread, when the gateway says (OpenWA); 0 when it does not.
     var unread: Int = 0
 }
 
@@ -303,24 +302,7 @@ enum WAJID {
     /// The kinds of chat WhatsApp has, told apart by the JID's server.
     enum Kind: String, Sendable { case person, group, status, channel }
 
-    /// Beeper's chats under an id of Nook's own: the Beeper chat id with "@beeper" (a person) or "@beeper.group" (a
-    /// group) after it, so the rules for people and groups apply to them too.
-    static let beeperSuffix = "@beeper"
-    static let beeperGroupSuffix = "@beeper.group"
-
-    static func isBeeper(_ jid: String) -> Bool { jid.hasSuffix(beeperSuffix) || jid.hasSuffix(beeperGroupSuffix) }
-
-    /// Nook's id for a Beeper chat.
-    static func beeper(_ chatID: String, group: Bool) -> String { chatID + (group ? beeperGroupSuffix : beeperSuffix) }
-
-    /// The Beeper chat id inside Nook's id.
-    static func beeperChat(_ jid: String) -> String {
-        if jid.hasSuffix(beeperGroupSuffix) { return String(jid.dropLast(beeperGroupSuffix.count)) }
-        if jid.hasSuffix(beeperSuffix) { return String(jid.dropLast(beeperSuffix.count)) }
-        return jid
-    }
-
-    static func isGroup(_ jid: String) -> Bool { jid.hasSuffix("@g.us") || jid.hasSuffix(beeperGroupSuffix) }
+    static func isGroup(_ jid: String) -> Bool { jid.hasSuffix("@g.us") }
     /// The status updates of your contacts arrive as one chat, status@broadcast.
     static func isStatus(_ jid: String) -> Bool { jid.lowercased().hasPrefix("status@") }
     /// A channel (a one-way broadcast you follow).
@@ -335,7 +317,6 @@ enum WAJID {
 
     /// "33612345678@s.whatsapp.net" → "+33 6 12 34 56 78"-ish: the digits with a plus.
     static func displayNumber(_ jid: String) -> String {
-        if isBeeper(jid) { return "Beeper" }
         let user = jid.split(separator: "@").first.map(String.init) ?? jid
         let digits = user.split(separator: ":").first.map(String.init) ?? user
         return digits.allSatisfy(\.isNumber) && !digits.isEmpty ? "+" + digits : digits
@@ -367,8 +348,6 @@ enum WAJID {
     /// The same person under its several forms: "33612345678:12@s.whatsapp.net" and
     /// "33612345678@c.us" are one chat.
     static func normalized(_ jid: String) -> String {
-        // A Beeper chat id ("!abc:beeper.com") is one already; its ':' is no device number.
-        if isBeeper(jid) { return jid }
         let parts = jid.split(separator: "@", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return jid }
         let user = parts[0].split(separator: ":").first.map(String.init) ?? parts[0]
@@ -786,35 +765,27 @@ func waConstantTimeEqual(_ a: String, _ b: String) -> Bool {
 }
 
 enum WAGatewayKind: String, CaseIterable, Sendable {
-    /// Beeper: Beeper Desktop's local API, with WhatsApp, Telegram, Signal, Instagram, … in one place.
-    case gowa, openwa, beeper
+    case gowa, openwa
 
     var name: String {
         switch self {
         case .gowa: return "GOWA"
         case .openwa: return "OpenWA"
-        case .beeper: return "Beeper"
         }
     }
     var defaultURL: String {
         switch self {
         case .gowa: return "http://127.0.0.1:3000"
         case .openwa: return "http://127.0.0.1:2785"
-        case .beeper: return "http://localhost:23373"
         }
     }
-    /// The header carrying the webhook's HMAC-SHA256 ("sha256=<hex>"), lowercased. Beeper has no webhook.
+    /// The header carrying the webhook's HMAC-SHA256 ("sha256=<hex>"), lowercased.
     var signatureHeader: String {
         switch self {
         case .gowa: return "x-hub-signature-256"
         case .openwa: return "x-openwa-signature"
-        case .beeper: return ""
         }
     }
-    /// Whether the gateway posts new messages to Nook's webhook. Beeper does not: Nook asks its local API instead.
-    var hasWebhook: Bool { self != .beeper }
-    /// What a chat is listed under in "@chat …": the network for WhatsApp's own gateways, Beeper for Beeper's.
-    var chatLabel: String { self == .beeper ? "Beeper" : "WhatsApp" }
 }
 
 /// What one webhook delivery holds for Nook.
@@ -968,7 +939,6 @@ enum WAWebhook {
         switch kind {
         case .gowa:   return parseGOWA(json, me: me)
         case .openwa: return parseOpenWA(json, me: me)
-        case .beeper: return .ignored
         }
     }
 
@@ -1560,14 +1530,14 @@ extension WAJID {
         return !x.isEmpty && x == y
     }
 
-    /// The same person reacting: their number, else (a Beeper user id, an @lid) the id itself.
+    /// The same person reacting: their number, else (an @lid) the id itself.
     static func sameReactor(_ a: String, _ b: String) -> Bool {
         sameUser(a, b) || a == b
     }
 }
 
 /// A group's members as a gateway lists them, whatever its field names: whatsmeow's (`JID`, `PhoneNumber`, `LID`,
-/// `DisplayName`), OpenWA's (`id`, `name`, `pushname`), Beeper's (`id`, `fullName`, `isSelf`), or bare ids.
+/// `DisplayName`), OpenWA's (`id`, `name`, `pushname`), others' (`id`, `fullName`, `isSelf`), or bare ids.
 enum WAMembers {
     static func list(_ value: Any?) -> [WAMember] {
         let items = (value as? [Any]) ?? (((value as? [String: Any])?["items"]) as? [Any]) ?? []
@@ -1591,108 +1561,6 @@ enum WAMembers {
         members.filter { member in
             !(me.map(member.matches) ?? false) && !selves.contains { member.ids.contains($0) }
         }
-    }
-}
-
-/// Beeper Desktop's local API (Settings › Developers in Beeper, port 23373). Every chat network linked in Beeper arrives
-/// as one list of chats; Nook names them `<chat id>@beeper` or `<chat id>@beeper.group` (see `WAJID.beeper`).
-enum WABeeper {
-    private static func json(_ data: Data) -> Any? { try? JSONSerialization.jsonObject(with: data) }
-
-    /// `GET /v1/accounts` → `[{accountID, status, user: {id}}]`: whether one is connected, and the user ids that are
-    /// this account (to tell a mention of you). Nil when there is no account at all.
-    static func accounts(_ data: Data) -> (link: WAStatus.Link, me: [String])? {
-        let root = json(data)
-        let list = (root as? [[String: Any]]) ?? ((root as? [String: Any])?["items"] as? [[String: Any]]) ?? []
-        guard !list.isEmpty else { return nil }
-        let connected = list.contains { account in
-            guard let status = account["status"] as? String else { return true }
-            return status == "connected" || status == "backfilling"
-        }
-        let me = list.compactMap { nonEmpty(($0["user"] as? [String: Any])?["id"]) }
-        return (connected ? .connected : .connecting, me)
-    }
-
-    /// One chat: Nook's id for it, its title, when it last moved. Archived chats, merged chats (they hold no messages of
-    /// their own) and those Beeper folded into a merged one are left out.
-    static func chat(_ c: [String: Any]) -> WAChatInfo? {
-        guard c["isArchived"] as? Bool != true, c["merge"] as? [String: Any] == nil, nonEmpty(c["mergedIntoChatID"]) == nil,
-              let id = nonEmpty(c["id"]) else { return nil }
-        return WAChatInfo(jid: WAJID.beeper(id, group: c["type"] as? String == "group"),
-                          name: (c["title"] as? String) ?? "",
-                          last: WADate.rfc3339(c["lastActivity"] as? String) ?? .distantPast,
-                          unread: (c["unreadCount"] as? Int) ?? 0)
-    }
-
-    /// `GET /v1/chats` → `{items: [Chat]}`, newest first.
-    static func chats(_ data: Data) -> [WAChatInfo] {
-        (((json(data) as? [String: Any])?["items"] as? [[String: Any]]) ?? []).compactMap(chat)
-    }
-
-    /// `GET /v1/chats/{chatID}/messages` → `{items: [Message]}`. `chat` is Nook's id for the chat, `name` its title, `me`
-    /// the user ids of this account. Reactions (they come with the message they are on), hidden and deleted messages are
-    /// left out.
-    static func messages(_ data: Data, chat: String, name: String?, me: [String]) -> [WAMessage] {
-        (((json(data) as? [String: Any])?["items"] as? [[String: Any]]) ?? []).compactMap { message($0, chat: chat, name: name, me: me) }
-    }
-
-    static func message(_ m: [String: Any], chat: String, name: String?, me: [String]) -> WAMessage? {
-        guard let id = nonEmpty(m["id"]), m["type"] as? String != "REACTION",
-              m["isHidden"] as? Bool != true, m["isDeleted"] as? Bool != true else { return nil }
-        let attachment = (m["attachments"] as? [[String: Any]])?.first
-        var msg = WAMessage(id: id, chat: chat, sender: nonEmpty(m["senderID"]) ?? chat,
-                            senderName: nonEmpty(m["senderName"]) ?? "", text: (m["text"] as? String) ?? "",
-                            media: media((m["type"] as? String) ?? "", attachment: attachment),
-                            date: WADate.rfc3339(m["timestamp"] as? String) ?? .distantPast,
-                            fromMe: m["isSender"] as? Bool ?? false)
-        if let name, !name.isEmpty { msg.chatName = name }
-        let mentions = (m["mentions"] as? [String]) ?? []
-        msg.mentionsMe = WAJID.isGroup(chat) && mentions.contains { $0 == "@room" || me.contains($0) }
-        msg.replyTo = nonEmpty(m["linkedMessageID"])
-        // A network's own reaction key ("smiling-face") is no emoji to show.
-        msg.reactions = ((m["reactions"] as? [[String: Any]]) ?? []).compactMap { r in
-            guard let key = nonEmpty(r["reactionKey"]), r["emoji"] as? Bool != false else { return nil }
-            let sender = (r["participantID"] as? String) ?? ""
-            return WAReaction(emoji: key, sender: sender, fromMe: me.contains(sender))
-        }
-        return msg
-    }
-
-    /// The message's `type`, and its first attachment for what the type leaves open.
-    static func media(_ kind: String, attachment: [String: Any]?) -> WAMedia {
-        let seconds = (attachment?["duration"] as? Double).map { Int($0.rounded()) }
-        let fileName = nonEmpty(attachment?["fileName"])
-        switch kind {
-        case "IMAGE": return attachment?["isSticker"] as? Bool == true ? .sticker : .image
-        case "VIDEO": return .video
-        case "VOICE": return .voice(seconds: seconds)
-        case "AUDIO": return attachment?["isVoiceNote"] as? Bool == true ? .voice(seconds: seconds) : .audio(seconds: seconds)
-        case "FILE": return .document(name: fileName)
-        case "STICKER": return .sticker
-        case "LOCATION": return .location
-        default:
-            guard let attachment else { return .none }
-            switch attachment["type"] as? String {
-            case "img": return .image
-            case "video": return .video
-            case "audio": return .voice(seconds: seconds)
-            default: return .document(name: fileName)
-            }
-        }
-    }
-
-    /// `GET /v1/chats/{chatID}/messages/{messageID}`: where its first attachment lives (`mxc://`, `localmxc://` or
-    /// `file://`), to hand back to Beeper's own `/v1/assets/serve`, and the file's name.
-    static func attachment(_ data: Data) -> (src: String, name: String?)? {
-        guard let first = ((json(data) as? [String: Any])?["attachments"] as? [[String: Any]])?.first,
-              let src = nonEmpty(first["srcURL"]) else { return nil }
-        return (src, nonEmpty(first["fileName"]))
-    }
-
-    /// `{code, message}` on an error.
-    static func errorMessage(_ data: Data) -> String? {
-        guard let obj = json(data) as? [String: Any] else { return nil }
-        return nonEmpty(obj["message"]) ?? nonEmpty(obj["code"])
     }
 }
 

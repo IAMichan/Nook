@@ -1,11 +1,11 @@
 import Foundation
 
-// What Nook sends to the WhatsApp gateways (and Beeper) for a file, a poll, a place or a contact: the route and its
+// What Nook sends to the WhatsApp gateways (and Nook's own chat helper) for a file, a poll, a place or a contact: the route and its
 // fields, per gateway. Foundation only and without the network, so every request can be tested anywhere; the providers
-// in WhatsAppProvider.swift send them. Field names follow each gateway's docs:
+// in WhatsAppProvider.swift (and `ChatServiceBridge`) send them. Field names follow each gateway's docs:
 //   GOWA   — docs/openapi.yaml (/send/image, /send/video, /send/audio, /send/file, /send/sticker, /send/poll, …)
 //   OpenWA — docs/06-api-specification.md (/messages/send-image … /messages/send-poll; unknown fields are refused)
-//   Beeper — the Desktop API (/v1/assets/upload/base64, then /v1/chats/{id}/messages with the upload's id)
+//   nook-chatd — apps/chatd/api.go (/v1/assets/upload/base64, then /v1/chats/{id}/messages with the upload's id)
 
 /// The file part of a multipart request: its form field, the file, and the name and type it goes with.
 struct WAUpload: Equatable, Sendable {
@@ -114,29 +114,29 @@ enum WASend {
         }
     }
 
-    // MARK: Beeper
+    // MARK: Nook's chat helper
 
-    /// Beeper first takes the file (as base64) and answers with an upload id.
-    static func beeperUpload(_ file: ChatAttachment, data: Data) -> WASendRequest {
+    /// The chat helper first takes the file (as base64) and answers with an upload id.
+    static func serviceUpload(_ file: ChatAttachment, data: Data) -> WASendRequest {
         WASendRequest(path: "/v1/assets/upload/base64", json: [
             "content": data.base64EncodedString(), "fileName": file.name, "mimeType": file.mimeType,
         ])
     }
 
-    /// The upload's id in Beeper's answer.
-    static func beeperUploadID(_ data: Data) -> String? {
+    /// The upload's id in the helper's answer.
+    static func serviceUploadID(_ data: Data) -> String? {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
         if let error = object["error"] as? String, !error.isEmpty { return nil }
         return (object["uploadID"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// The message that carries it, in the chat (`path` is the chat's messages route): the upload by its id with what it
-    /// is, the caption as its text. A place or a contact goes as text, which every network Beeper bridges can show.
-    static func beeperMessage(_ outgoing: ChatOutgoing, path: String, uploadID: String?, replyTo: String?) -> WASendRequest {
+    /// is, the caption as its text. A place or a contact goes as text, which every app the helper links can show.
+    static func serviceMessage(_ outgoing: ChatOutgoing, path: String, uploadID: String?, replyTo: String?) -> WASendRequest {
         var body: [String: any Sendable] = [:]
         if let replyTo { body["replyToMessageID"] = replyTo }
         if case .file(let file) = outgoing, let uploadID {
-            var attachment: [String: any Sendable] = ["uploadID": uploadID, "type": beeperType(file.kind),
+            var attachment: [String: any Sendable] = ["uploadID": uploadID, "type": serviceType(file.kind),
                                                       "fileName": file.name, "mimeType": file.mimeType]
             if let seconds = file.seconds { attachment["duration"] = seconds }
             body["attachment"] = attachment
@@ -148,7 +148,7 @@ enum WASend {
         return WASendRequest(path: path, json: body)
     }
 
-    static func beeperType(_ kind: ChatMedia.Kind) -> String {
+    static func serviceType(_ kind: ChatMedia.Kind) -> String {
         switch kind {
         case .photo: return "image"
         case .video: return "video"
