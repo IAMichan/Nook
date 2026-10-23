@@ -89,15 +89,12 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         views[app.id] = nil
         sides[app.id]?.removeFromSuperview()
         sides[app.id] = nil
-        // A chat app Nook reads with this sign-in (Instagram) lets go of it too: it is signed out with it.
-        ChatCaptureService.shared.signedOutOnThisMac(app.id)
         Self.stores[app.id] = nil
         try? await Task.sleep(nanoseconds: 300_000_000)
         try? await WKWebsiteDataStore.remove(forIdentifier: app.storeID)
     }
 
-    /// Every web app's own cookies and storage, one store per app for all its web views: the app beside the chat, and
-    /// the page a chat bridge reads it through out of sight (`InstagramBridge`), so signing in once serves both.
+    /// Every web app's own cookies and storage, one store per app for all its web views beside the chat.
     private static var stores: [String: WKWebsiteDataStore] = [:]
 
     static func dataStore(for app: EmbeddedApp) -> WKWebsiteDataStore {

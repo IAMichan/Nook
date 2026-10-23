@@ -86,6 +86,12 @@ targets:
         NookSourceRoot: "$(SRCROOT)"
         NookBuildConfiguration: "$(CONFIGURATION)"
         NookDeveloperDir: "$(DEVELOPER_DIR)"
+        # Nook's own app registrations, so linking Telegram and Teams needs nothing but your login. Set the build
+        # settings NOOK_TELEGRAM_API_ID / NOOK_TELEGRAM_API_HASH (my.telegram.org) and NOOK_TEAMS_CLIENT_ID (Microsoft
+        # Entra); while they are empty, Settings › Chats asks for your own.
+        NookTelegramAPIID: "$(NOOK_TELEGRAM_API_ID)"
+        NookTelegramAPIHash: "$(NOOK_TELEGRAM_API_HASH)"
+        NookTeamsClientID: "$(NOOK_TEAMS_CLIENT_ID)"
         CFBundleURLTypes:
           - CFBundleURLName: app.nook.link
             CFBundleURLSchemes: [nook]
@@ -132,6 +138,11 @@ targets:
         # Copies the TDLib that scripts/build-tdlib.sh built into the app and signs it like Nook, for the Telegram bridge
         # (see Config/embed-tdlib.sh). Without it, nothing happens.
         script: sh "$SRCROOT/Config/embed-tdlib.sh"
+        basedOnDependencyAnalysis: false
+      - name: Embed chat helper
+        # Copies nook-chatd, which scripts/build-chatd.sh built, into Contents/Helpers and signs it like Nook, for Signal,
+        # Messenger, Instagram, X and LinkedIn (see Config/embed-chatd.sh). Without it, nothing happens.
+        script: sh "$SRCROOT/Config/embed-chatd.sh"
         basedOnDependencyAnalysis: false
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).
   # This code relies solely on Foundation, so files are included directly in the test bundle: no app host required for testing.
@@ -198,7 +209,7 @@ targets:
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
-      - path: Services/Messages/InstagramData.swift
+      - path: Services/Messages/ChatJSON.swift
       - path: Services/Messages/BeeperData.swift
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift
@@ -275,6 +286,7 @@ targets:
       - path: Services/Workspace/SourceControlHost.swift
       - path: ../../packages/protocol/Sources/CompanionModels.swift
       - path: ../../packages/protocol/Sources/CompanionPush.swift
+      - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift

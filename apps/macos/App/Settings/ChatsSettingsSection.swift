@@ -5,11 +5,12 @@ import UniformTypeIdentifiers
 
 /// Settings › Chats: every chat app at a glance first (which are linked, as whom, and the others with a Link button that
 /// walks a link through its steps in `ChatAppSheet`), then the notifications Nook collects from any other app, how
-/// reading works, the chat service on this Mac, and the GIF key.
+/// reading works, a chat service on this Mac when one runs, and the GIF key.
 struct ChatsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var linker = ChatLinker.shared
+    @ObservedObject private var helper = ChatHelper.shared
     @State private var typed = ""
     @State private var notice: String?
     /// The last thing typed could not be added: its note reads as a warning.
@@ -27,7 +28,8 @@ struct ChatsSettingsSection: View {
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
                 if capture.enabled { status }
                 // A chat app that is linked is switched on and off in the overview; the rest come in by their notifications.
-                ForEach(capture.sources.apps.filter { !(ChatAppStates.state($0.id)?.linked ?? false) }) { source in
+                let linked = Set(ChatAppStates.all().filter(\.linked).map(\.id))
+                ForEach(capture.sources.apps.filter { !linked.contains($0.id) }) { source in
                     row(source)
                 }
                 addRow
@@ -43,12 +45,15 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.reading"))
             }
 
-            Section {
-                BeeperSettingsRows(capture: capture)
-            } header: {
-                Text(tr("chats.beeper.title"))
-            } footer: {
-                Text(tr("chats.beeper.footer"))
+            // Nook links its apps itself (with its own helper for some); Beeper only shows while it runs or is set up.
+            if BeeperBridge.beeperToken != nil || (linker.serviceRuns && !helper.isRunning) {
+                Section {
+                    BeeperSettingsRows(capture: capture)
+                } header: {
+                    Text(tr("chats.beeper.title"))
+                } footer: {
+                    Text(tr("chats.beeper.footer"))
+                }
             }
 
             Section {

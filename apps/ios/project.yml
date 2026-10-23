@@ -23,7 +23,10 @@ targets:
     platform: iOS
     sources:
       - path: NookCompanion
+      - path: Shared
       - path: ../../packages/protocol/Sources
+    dependencies:
+      - target: NookActivity
     info:
       path: NookCompanion/Info.plist
       properties:
@@ -40,6 +43,8 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: nl.imdigital.nook.companion
             CFBundleURLSchemes: [nook]
+        # One Live Activity per session that works on the Mac (NookActivity, docs/COMPANION.md › Live Activities).
+        NSSupportsLiveActivities: true
     settings:
       base:
         PRODUCT_NAME: Nook Companion
@@ -53,6 +58,39 @@ targets:
         # Becomes production in a distribution build. Needs Push Notifications on the app id nl.imdigital.nook.companion.
         aps-environment: development
         com.apple.developer.usernotifications.time-sensitive: true
+  # The Live Activity (Lock Screen and Dynamic Island) for sessions working on the Mac. The Mac starts, updates and ends
+  # it with liveactivity pushes (topic nl.imdigital.nook.companion.push-type.liveactivity); the app does too while open.
+  NookActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NookActivity
+      - path: Shared
+      - path: NookCompanion/Theme.swift
+      - path: NookCompanion/Localizable.xcstrings
+      # The only shared protocol file it needs: the activity's attributes and content.
+      - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
+    dependencies:
+      - sdk: ActivityKit.framework
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: NookActivity/Info.plist
+      properties:
+        CFBundleName: Nook Activity
+        CFBundleDisplayName: Nook Companion
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_NAME: NookActivity
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.activity
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
 schemes:
   NookCompanion:
     build:

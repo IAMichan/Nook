@@ -502,7 +502,10 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     var skips: (String) -> Bool = { _ in false }
 
     static let tokenAccount = "chats.beeper.token"
-    private static let base = URL(string: "http://localhost:23373")!
+    /// Beeper Desktop's local API, used while Nook's own chat helper does not run.
+    private static let beeperBase = URL(string: "http://localhost:23373")!
+    /// The chat service Nook reads: its own helper (`ChatHelper`) while it runs, else Beeper Desktop.
+    static var base: URL { ChatHelper.shared.isRunning ? ChatHelper.base : beeperBase }
     private static let chatCount = 40
     private static let history = 30
 
@@ -518,7 +521,12 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     @Published private(set) var isLive = false
     private let live = ChatLiveStream()
 
-    static var token: String? { CloudHelp.secret(tokenAccount) }
+    /// The token of the chat service Nook reads: the helper's own while it runs, else the one set for Beeper.
+    static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : beeperToken }
+    /// The token set for Beeper Desktop in Settings › Chats.
+    static var beeperToken: String? { CloudHelp.secret(tokenAccount) }
+    /// Where the live line was opened, to open it again when the chat service changes.
+    private var liveBase: URL?
 
     init() {
         live.onChange = { [weak self] chat in
@@ -540,7 +548,9 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     }
 
     var isReady: Bool {
-        !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.token != nil
+        // Nook's own helper once something was linked through it (it then starts at the first read).
+        if ChatHelper.isBuilt, FileManager.default.fileExists(atPath: ChatHelper.dataDirectory.path) { return true }
+        return !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.beeperToken != nil
     }
 
     func reset() {
@@ -549,21 +559,22 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         isWorking = false
     }
 
-    private static func path(_ chat: String) -> String {
-        "/v1/chats/" + (chat.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? chat)
-    }
-
-    private static func segment(_ id: String) -> String {
-        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? id
-    }
+    private static func path(_ chat: String) -> String { "/v1/chats/" + ChatJSON.segment(chat) }
 
     func read() async throws -> [BridgedChat] {
+        if ChatHelper.isBuilt, isReady, !ChatHelper.shared.isRunning { await ChatHelper.shared.start() }
         guard isReady, let token = Self.token else {
             isWorking = false
             live.disconnect()
             return []
         }
-        if !live.isConnecting, let url = URL(string: "ws://localhost:23373/v1/ws") { live.connect(url, token: token) }
+        if liveBase != Self.base {
+            live.disconnect()
+            liveBase = Self.base
+        }
+        var socket = URLComponents(url: Self.base.appendingPathComponent("v1/ws"), resolvingAgainstBaseURL: false)
+        socket?.scheme = "ws"
+        if !live.isConnecting, let url = socket?.url { live.connect(url, token: token) }
         do {
             let listed = BeeperData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
                 .filter { !skips($0.app) }
@@ -615,7 +626,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["url": source])
         guard let answer = try? await ConnectorHTTP.session.data(for: request),
               (answer.1 as? HTTPURLResponse)?.statusCode == 200,
-              let local = (BeeperData.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
+              let local = (ChatJSON.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
         downloaded[source] = local.path
         return local.path
     }
@@ -678,9 +689,9 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     /// Your emoji on a message (Nook's id of it); `mine` takes yours back instead.
     func react(_ emoji: String, to message: String, in chat: String, mine: Bool) async throws {
         guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
-        let reactions = Self.path(chat) + "/messages/" + Self.segment(id) + "/reactions"
+        let reactions = Self.path(chat) + "/messages/" + ChatJSON.segment(id) + "/reactions"
         if mine {
-            try await act("DELETE", reactions + "/" + Self.segment(emoji), nil, chat: chat)
+            try await act("DELETE", reactions + "/" + ChatJSON.segment(emoji), nil, chat: chat)
         } else {
             try await act("POST", reactions, ["reactionKey": emoji], chat: chat)
         }
@@ -691,13 +702,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
-        try await act("PUT", Self.path(chat) + "/messages/" + Self.segment(id), ["text": body], chat: chat)
+        try await act("PUT", Self.path(chat) + "/messages/" + ChatJSON.segment(id), ["text": body], chat: chat)
     }
 
     /// Deletes your message for everyone in the chat, where its app can.
     func delete(_ message: String, in chat: String) async throws {
         guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
-        try await act("DELETE", Self.path(chat) + "/messages/" + Self.segment(id), nil, query: [URLQueryItem(name: "forEveryone", value: "true")],
+        try await act("DELETE", Self.path(chat) + "/messages/" + ChatJSON.segment(id), nil, query: [URLQueryItem(name: "forEveryone", value: "true")],
                       chat: chat)
     }
 
@@ -779,7 +790,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw NookError(tr("chats.beeper.unauthorized")) }
-        guard (200..<300).contains(code), let json = BeeperData.object(data) else { throw NookError("Beeper: HTTP \(code)") }
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Beeper: HTTP \(code)") }
         return json
     }
 }
@@ -973,7 +984,7 @@ final class SlackBridge: ChatBridge {
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 429 { throw NookError(tr("chats.slack.rateLimited")) }
-        guard (200..<300).contains(code), let json = SlackData.object(data) else { throw NookError("Slack: HTTP \(code)") }
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Slack: HTTP \(code)") }
         if let error = SlackData.error(json) { throw NookError(tr("chats.slack.refused", error)) }
         return json
     }

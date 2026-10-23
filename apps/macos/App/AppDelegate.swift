@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
         AutocompleteController.shared.flush()
+        ChatHelper.shared.stop()
         Self.skipStaticDestructorsAtExit()
     }
 

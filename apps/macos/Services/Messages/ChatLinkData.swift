@@ -84,12 +84,16 @@ enum ChatLinkData {
         var isOptional: Bool
     }
 
-    /// A value the browser step collects: a cookie, a header or a local storage key.
+    /// A value the browser step collects: a cookie, a request header the page sends, or a local storage key.
     struct Collect: Equatable, Sendable {
         enum Source: String, Sendable { case cookie, header, localStorage = "local_storage" }
         var id: String
         var source: Source
         var name: String
+        /// The sign-in is only handed over once every required value is there.
+        var isRequired = true
+        /// What the value must contain to count (a regular expression), when the step says so.
+        var pattern: String? = nil
     }
 
     enum Display: Equatable, Sendable {
@@ -164,7 +168,9 @@ enum ChatLinkData {
             let collect: [Collect] = (json["fields"] as? [[String: Any]] ?? []).compactMap { field in
                 guard let fieldID = field["id"] as? String, !fieldID.isEmpty else { return nil }
                 let source = Collect.Source(rawValue: field["type"] as? String ?? "cookie") ?? .cookie
-                return Collect(id: fieldID, source: source, name: (field["name"] as? String) ?? fieldID)
+                return Collect(id: fieldID, source: source, name: (field["name"] as? String) ?? fieldID,
+                               isRequired: field["required"] as? Bool ?? true,
+                               pattern: (field["pattern"] as? String).flatMap { $0.isEmpty ? nil : $0 })
             }
             return .browser(id: id, instructions: instructions, url: url, userAgent: json["userAgent"] as? String, collect: collect,
                             done: (json["expectedFinalURLRegex"] as? String).flatMap { $0.isEmpty ? nil : $0 })
@@ -206,22 +212,41 @@ enum ChatLinkData {
         return address.range(of: pattern, options: .regularExpression) != nil
     }
 
-    /// The values a browser step collects from the cookies there (by name, for the step's host), and the rest by key.
-    static func collected(_ collect: [Collect], cookies: [String: String], storage: [String: String]) -> [String: String] {
+    /// The values a browser step collects from the cookies there (by name, for the step's host), the request headers
+    /// the page sent (by name, any case; a "Cookie" header is the cookies themselves) and local storage (by key). A value
+    /// that does not match the step's pattern does not count.
+    static func collected(_ collect: [Collect], cookies: [String: String], storage: [String: String],
+                          headers: [String: String] = [:]) -> [String: String] {
         var values: [String: String] = [:]
         for item in collect {
+            let value: String?
             switch item.source {
-            case .cookie: if let value = cookies[item.name], !value.isEmpty { values[item.id] = value }
-            case .localStorage: if let value = storage[item.name], !value.isEmpty { values[item.id] = value }
-            case .header: break
+            case .cookie: value = cookies[item.name]
+            case .localStorage: value = storage[item.name]
+            case .header:
+                value = item.name.lowercased() == "cookie" ? cookieHeader(cookies) : headers[item.name.lowercased()]
             }
+            guard let value, !value.isEmpty else { continue }
+            if let pattern = item.pattern, value.range(of: pattern, options: .regularExpression) == nil { continue }
+            values[item.id] = value
         }
         return values
     }
 
-    /// Every cookie the step needs is there.
+    /// The cookies as a browser sends them in its "Cookie" header.
+    static func cookieHeader(_ cookies: [String: String]) -> String? {
+        guard !cookies.isEmpty else { return nil }
+        return cookies.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }.joined(separator: "; ")
+    }
+
+    /// Every cookie and header the step needs is there.
     static func hasCookies(_ collect: [Collect], values: [String: String]) -> Bool {
-        let needed = collect.filter { $0.source == .cookie }
+        let needed = collect.filter { $0.source != .localStorage && $0.isRequired }
         return !needed.isEmpty && needed.allSatisfy { values[$0.id] != nil }
+    }
+
+    /// The request headers a step asks for that the page itself sets (all but "Cookie"), in lower case.
+    static func pageHeaders(_ collect: [Collect]) -> [String] {
+        collect.filter { $0.source == .header && $0.name.lowercased() != "cookie" }.map { $0.name.lowercased() }
     }
 }

@@ -9,6 +9,8 @@ final class ChatLinker: ObservableObject {
     static let shared = ChatLinker()
 
     @Published private(set) var networks: [ChatLinkData.Network] = []
+    /// The chat service answers on this Mac: only then is linking through it offered. Nook links its own apps without it.
+    @Published private(set) var serviceRuns = false
     @Published private(set) var isLoading = false
     /// Why the apps could not be listed; nil while it works.
     @Published private(set) var problem: String?
@@ -23,18 +25,16 @@ final class ChatLinker: ObservableObject {
     private var waiting: Task<Void, Never>?
     private var bridge: BeeperBridge { ChatCaptureService.shared.beeperBridge }
 
-    private static func path(_ network: String) -> String {
-        "/v1/bridges/" + (network.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? network)
-    }
-
-    private static func segment(_ id: String) -> String {
-        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? id
-    }
+    private static func path(_ network: String) -> String { "/v1/bridges/" + ChatJSON.segment(network) }
 
     /// The apps that can be linked, and their linked accounts.
     func refresh() async {
-        guard let token = BeeperBridge.token else {
+        // Nook's own helper, when this build has it: it links the apps Nook cannot link in the app itself.
+        if ChatHelper.isBuilt { await ChatHelper.shared.start() }
+        serviceRuns = ChatHelper.shared.isRunning ? true : await ChatHelper.answers(at: BeeperBridge.base)
+        guard serviceRuns, let token = BeeperBridge.token else {
             networks = []
+            problem = nil
             return
         }
         isLoading = true
@@ -45,6 +45,7 @@ final class ChatLinker: ObservableObject {
         } catch {
             problem = error.localizedDescription
         }
+        if let failed = ChatHelper.shared.problem, !ChatHelper.shared.isRunning { problem = tr("chats.link.helperFailed", failed) }
     }
 
     // MARK: Logging in
@@ -82,7 +83,7 @@ final class ChatLinker: ObservableObject {
             isSending = false
         }
         guard let session, !session.isOver, let token = BeeperBridge.token else { return }
-        _ = try? await bridge.call("DELETE", Self.path(session.network) + "/login-sessions/" + Self.segment(session.id), nil,
+        _ = try? await bridge.call("DELETE", Self.path(session.network) + "/login-sessions/" + ChatJSON.segment(session.id), nil,
                                    token: token, timeout: 15, failure: tr("chats.link.failed"), plain: true)
     }
 
@@ -90,7 +91,7 @@ final class ChatLinker: ObservableObject {
     func unlink(_ account: ChatLinkData.Account, in network: ChatLinkData.Network) async {
         guard let login = account.login, let token = BeeperBridge.token else { return }
         do {
-            _ = try await bridge.call("POST", Self.path(network.id) + "/logins/" + Self.segment(login) + "/remove",
+            _ = try await bridge.call("POST", Self.path(network.id) + "/logins/" + ChatJSON.segment(login) + "/remove",
                                       ["scope": "current-device"], token: token, timeout: 30, failure: tr("chats.link.failed"), plain: true)
             ToastCenter.shared.success(tr("chats.link.unlinked", network.name))
         } catch {
@@ -103,8 +104,8 @@ final class ChatLinker: ObservableObject {
         guard let session, let id = step.id else { return }
         stepProblem = nil
         await send { token in
-            try await self.bridge.call("POST", Self.path(session.network) + "/login-sessions/" + Self.segment(session.id)
-                                       + "/steps/" + Self.segment(id), body, token: token, timeout: 120,
+            try await self.bridge.call("POST", Self.path(session.network) + "/login-sessions/" + ChatJSON.segment(session.id)
+                                       + "/steps/" + ChatJSON.segment(id), body, token: token, timeout: 120,
                                        failure: tr("chats.link.failed"), plain: true)
         }
     }
@@ -119,7 +120,7 @@ final class ChatLinker: ObservableObject {
         defer { isSending = false }
         do {
             let data = try await request(token)
-            guard let next = BeeperData.object(data).flatMap(ChatLinkData.session) else { throw NookError(tr("chats.link.failed")) }
+            guard let next = ChatJSON.object(data).flatMap(ChatLinkData.session) else { throw NookError(tr("chats.link.failed")) }
             await took(next)
         } catch {
             stepProblem = error.localizedDescription
@@ -161,16 +162,16 @@ final class ChatLinker: ObservableObject {
         guard let step = shown.step, let stepID = step.id else { return }
         waiting = Task { [weak self] in
             guard let self, let token = BeeperBridge.token else { return }
-            let base = Self.path(shown.network) + "/login-sessions/" + Self.segment(shown.id)
+            let base = Self.path(shown.network) + "/login-sessions/" + ChatJSON.segment(shown.id)
             // A service that does not wait on the step answers at once with an error: from then on it is only looked at.
             var answers = true
             while !Task.isCancelled, self.session?.id == shown.id, self.session?.step == step {
                 if answers {
-                    let answered = try? await self.bridge.call("POST", base + "/steps/" + Self.segment(stepID),
+                    let answered = try? await self.bridge.call("POST", base + "/steps/" + ChatJSON.segment(stepID),
                                                                ChatLinkData.answer(step), token: token, timeout: 120,
                                                                failure: tr("chats.link.failed"), plain: true)
                     guard !Task.isCancelled, self.session?.id == shown.id else { return }
-                    if let answered, let next = BeeperData.object(answered).flatMap(ChatLinkData.session), next != shown {
+                    if let answered, let next = ChatJSON.object(answered).flatMap(ChatLinkData.session), next != shown {
                         self.waiting = nil
                         await self.took(next)
                         return

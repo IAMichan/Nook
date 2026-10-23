@@ -136,6 +136,21 @@ Nook uses the following open-source Swift packages:
 
 ---
 
+## Chat Helper (`apps/chatd`)
+
+`apps/chatd` is a separate program, **nook-chatd**, licensed under the **GNU Affero General Public License v3.0** (see
+`apps/chatd/LICENSE`), not under Nook's MIT License. It is built locally by `scripts/build-chatd.sh`, copied into
+`Nook.app/Contents/Helpers`, and runs as its own process that Nook talks to over a local socket; no code is shared
+between it and Nook. It is built on:
+
+- **mautrix-signal**, **mautrix-meta**, **mautrix-twitter**, **mautrix-linkedin** — AGPL-3.0 (© Tulir Asokan and contributors)
+- **libsignal** — AGPL-3.0 (© Signal Messenger, LLC)
+- **mautrix-go** — Mozilla Public License 2.0 (© Tulir Asokan)
+
+Its complete source is in `apps/chatd` of this repository.
+
+---
+
 ## Optional Downloaded Models & External Runtimes
 
 Nook does not bundle any AI model weights or proprietary agent binaries in this repository. When you choose to download local MLX/GGUF models (from Hugging Face) or connect external coding-agent CLIs (such as Claude Code, Codex, Gemini CLI, or Google Antigravity's ACP server), those downloads and tools are governed by their respective licenses and terms of use (for example, the [Google Gemma Terms of Use](https://ai.google.dev/gemma/terms), the [Meta Llama Community License](https://www.llama.com/llama3_1/license/), and the Apache-2.0 / Qwen licenses).

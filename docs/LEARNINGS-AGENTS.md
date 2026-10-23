@@ -40,14 +40,14 @@ pairing and push actions.
 | `thread_wait` in the orchestrator MCP server | `task_wait`: wait for any or all of up to eight delegated tasks | `WorkspaceBridge`, `DelegatedTask.WaitMode` |
 | Cite a selection of an answer in the composer | Right-click selected words of an agent's answer › Quote in your message | `EnvironmentValues.quoteSelection` |
 | Back through multiple agent questions, drafts kept | Back returns to an earlier question with its answer picked; what you started on the later one waits | `RunQuestionPanel` |
+| Live Activity per agent thread (`AgentActivity`, `agentLiveActivity.ios.ts`, `liveActivityPreferences.ts`): phase, project, model; finished results stay 15 minutes; a stale date; a switch in Settings | One Live Activity per session working on the Mac (Lock Screen and Dynamic Island): project, title, agent and model, *working / waiting for you / done / failed*. The Mac starts, updates and ends it with `liveactivity` pushes from its own APNs key (push-to-start and per-activity tokens through the companion protocol, rate-limited); a done or failed session stays 15 minutes; past the stale date it reads *Out of date*; a switch in the phone's menu turns it off. Unlike one card for all threads, and without a cloud relay | `LiveActivityPlanner` (`packages/protocol`), `CompanionNotifier`, `NookActivity` widget extension, `LiveActivities` |
 
 ## Still open
 
 Larger pieces, roughly by value. Each fits Nook's architecture; none is started.
 
-- **Live Activity and widgets on the iPhone.** A Lock Screen / Dynamic Island card per working session (project, phase,
-  model; finished results stay 15 minutes) and a usage widget. Needs a widget extension target in `apps/ios/project.yml`,
-  push-to-start tokens in the companion protocol and `liveactivity` pushes from `APNsClient`.
+- **A usage widget on the iPhone.** Plan limits on the Home Screen; the `NookActivity` widget extension that now carries
+  the Live Activity can host it.
 - **Composer chips.** Context references (`[label](nook-context:…)`) as inline chips that delete as one, with undo grouped
   per kind of edit. Needs the composer moved from `TextField` to an `NSTextView`.
 - **Keybindings wired to commands.** `Keybindings.swift` parses rules with `when` clauses but nothing dispatches them;

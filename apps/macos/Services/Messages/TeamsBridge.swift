@@ -59,7 +59,9 @@ final class TeamsBridge: ObservableObject, ChatBridge {
 
     /// Nook's own app in Microsoft Entra: a multi-tenant public client ("Allow public client flows" on) with the
     /// delegated permissions Chat.Read and User.Read. Signing in with it needs nothing but the account itself.
-    static let builtInClientID: String? = nil
+    /// Comes with the build (Info.plist, from the NOOK_TEAMS_CLIENT_ID build setting); nil while that is empty.
+    static let builtInClientID: String? = (Bundle.main.object(forInfoDictionaryKey: "NookTeamsClientID") as? String)
+        .flatMap { $0.isEmpty ? nil : $0 }
 
     init() {
         accounts = Self.loadAccounts()
@@ -322,7 +324,7 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let (data, _) = try await ConnectorHTTP.session.data(for: request)
         // The token endpoint answers 400 with the reason ("authorization_pending"): that is an answer, not a failure.
-        guard let json = TeamsData.object(data) else { throw NookError(tr("chats.teams.failed")) }
+        guard let json = ChatJSON.object(data) else { throw NookError(tr("chats.teams.failed")) }
         return json
     }
 
@@ -335,8 +337,8 @@ final class TeamsBridge: ObservableObject, ChatBridge {
             for id in sessions.keys where sessions[id]?.access?.token == token { sessions[id]?.access = nil }
         }
         if code == 429 { throw NookError(tr("chats.teams.rateLimited"), kind: .rateLimited) }
-        guard (200..<300).contains(code), let json = TeamsData.object(data) else {
-            let reason = (TeamsData.object(data)?["error"] as? [String: Any])?["message"] as? String
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else {
+            let reason = (ChatJSON.object(data)?["error"] as? [String: Any])?["message"] as? String
             throw NookError(tr("chats.teams.refused", reason ?? "HTTP \(code)"), kind: code == 401 ? .auth : .other)
         }
         return json

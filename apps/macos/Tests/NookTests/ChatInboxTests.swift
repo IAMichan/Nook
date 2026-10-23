@@ -715,6 +715,21 @@ final class ChatInboxTests: XCTestCase {
                        "a deletion already shown changes nothing")
     }
 
+    func testChatJSONHelpers() {
+        XCTAssertEqual(ChatJSON.object(Data(#"{"a": 1}"#.utf8))?["a"] as? Int, 1)
+        XCTAssertNil(ChatJSON.object(Data("[1]".utf8)), "a list is not an object")
+        XCTAssertNil(ChatJSON.object(Data("nope".utf8)))
+        let plain = ChatJSON.date("2026-10-22T09:14:56Z")
+        XCTAssertEqual(plain?.timeIntervalSince1970, 1_792_660_496)
+        XCTAssertEqual(ChatJSON.date("2026-10-22T09:14:56.500Z")?.timeIntervalSince1970, 1_792_660_496.5)
+        XCTAssertNil(ChatJSON.date(""))
+        XCTAssertNil(ChatJSON.date(42))
+        XCTAssertNil(ChatJSON.date("yesterday"))
+        XCTAssertEqual(ChatJSON.segment("!abc:beeper.com"), "!abc:beeper.com")
+        XCTAssertEqual(ChatJSON.segment("a/b?c#d"), "a%2Fb%3Fc%23d", "an id never leaves its segment")
+        XCTAssertEqual(ChatJSON.segment("❤️"), "%E2%9D%A4%EF%B8%8F")
+    }
+
     func testLinkingNetworksAndAccounts() {
         let networks = ChatLinkData.networks(["items": [
             ["id": "local-whatsapp", "type": "whatsapp", "provider": "local", "displayName": "WhatsApp", "status": "connected",
@@ -776,6 +791,25 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatLinkData.answer(browser!, values: all, lastURL: "https://www.instagram.com/")["source"] as? String, "webview")
         XCTAssertNil(ChatLinkData.step(["type": "cookies", "stepID": "c", "url": "http://insecure.example/", "fields": []]),
                      "a sign-in page is only opened over https")
+
+        // Nook's own chat helper: optional cookies do not hold up the sign-in, and LinkedIn's headers count too.
+        let optional = ChatLinkData.step(["type": "cookies", "stepID": "ig", "url": "https://www.instagram.com/accounts/login/",
+                                          "fields": [["id": "sessionid", "type": "cookie", "name": "sessionid", "required": true],
+                                                     ["id": "shbid", "type": "cookie", "name": "shbid", "required": false]]])
+        guard case .browser(_, _, _, _, let some2, _) = optional else { return XCTFail("a sign-in step") }
+        XCTAssertTrue(ChatLinkData.hasCookies(some2, values: ChatLinkData.collected(some2, cookies: ["sessionid": "1"], storage: [:])))
+        let linkedIn = ChatLinkData.step(["type": "cookies", "stepID": "li", "url": "https://linkedin.com/login",
+                                          "fields": [["id": "cookie", "type": "header", "name": "Cookie", "pattern": "\\bJSESSIONID=[^;]+"],
+                                                     ["id": "track", "type": "header", "name": "X-LI-Track", "pattern": "clientVersion"]]])
+        guard case .browser(_, _, _, _, let headers, _) = linkedIn else { return XCTFail("a sign-in step") }
+        XCTAssertEqual(ChatLinkData.pageHeaders(headers), ["x-li-track"], "the Cookie header is made from the cookies")
+        let early = ChatLinkData.collected(headers, cookies: ["li_at": "a"], storage: [:], headers: ["x-li-track": "{\"clientVersion\":\"1\"}"])
+        XCTAssertNil(early["cookie"], "a value that does not match the pattern does not count")
+        XCTAssertFalse(ChatLinkData.hasCookies(headers, values: early))
+        let signedIn = ChatLinkData.collected(headers, cookies: ["li_at": "a", "JSESSIONID": "b"], storage: [:],
+                                              headers: ["x-li-track": "{\"clientVersion\":\"1\"}"])
+        XCTAssertEqual(signedIn["cookie"], "JSESSIONID=b; li_at=a")
+        XCTAssertTrue(ChatLinkData.hasCookies(headers, values: signedIn))
 
         let failed = ChatLinkData.session(["loginSessionID": "s3", "bridgeID": "x", "status": "failed",
                                            "error": ["code": "bad", "message": "Wrong code"]])
@@ -924,7 +958,7 @@ final class ChatInboxTests: XCTestCase {
     }
 
     func testTeamsChatReadBeforeGraphListsItsNewestMessage() {
-        let last = TeamsData.date("2026-10-22T09:00:00.123Z")
+        let last = ChatJSON.date("2026-10-22T09:00:00.123Z")
         let early: [String: Any] = ["value": [["id": "m1", "createdDateTime": "2026-10-22T08:59:00Z"]]]
         XCTAssertFalse(TeamsData.caughtUp(early, last: last), "the announced message is not listed yet: read the chat again")
         XCTAssertFalse(TeamsData.caughtUp(["value": []], last: last))

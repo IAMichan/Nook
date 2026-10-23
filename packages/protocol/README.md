@@ -6,6 +6,7 @@ Shared communication and security primitives across Nook apps—currently the Co
 Sources/
   CompanionModels.swift   Messages, framing, and policy rules (tested in CompanionModelsTests)
   CompanionPush.swift     APNs push payload formatting and JWT signing helpers
+  CompanionLiveActivity.swift  Live Activity phases, attributes, planner and liveactivity payloads (also compiled into the iPhone widget extension)
   CompanionSeal.swift     Authenticated encryption with ChaCha20-Poly1305 (CryptoKit)
   WebhookSecurity.swift   Pure-Swift SHA-256 and HMAC verification (no CryptoKit dependency)
   PromptLink.swift        `nook://prompt` links that prefill a new session's draft, on the Mac and the iPhone (tested in PromptLinkTests)
