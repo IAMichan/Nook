@@ -8,7 +8,7 @@ enum ChatAppsCatalog {
                        "messages"]
 
     /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database).
-    static let ownWay: Set<String> = ["whatsapp", "instagram", "telegram", "teams", "slack", "messages"]
+    static let ownWay: Set<String> = ["whatsapp", "telegram", "teams", "slack", "messages"]
 }
 
 /// One app on Settings › Chats: whether it is linked, how and as whom, and whether its chats are on.
@@ -33,7 +33,6 @@ struct ChatAppsSection: View {
     @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
-    @ObservedObject private var instagram = ChatCaptureService.shared.instagramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
     @State private var open: ChatAppSheetItem?
     let setCollecting: (Bool) -> Void
@@ -107,7 +106,9 @@ enum ChatAppStates {
         let linker = ChatLinker.shared
         let offered = linker.networks.map(\.app).filter { !ChatAppsCatalog.apps.contains($0) }
         return (ChatAppsCatalog.apps + offered).compactMap(state).filter { app in
-            app.linked || ChatAppsCatalog.ownWay.contains(app.id) || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
+            // Nook's own helper links these: they show even in a build without it, whose sheet says how to add it.
+            app.linked || ChatAppsCatalog.ownWay.contains(app.id) || ChatHelper.apps.contains(app.id)
+                || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
                 || (linker.serviceRuns && BeeperBridge.token == nil)
         }
     }
@@ -158,7 +159,6 @@ enum ChatAppStates {
     static func ownLink(_ id: String) -> String? {
         let capture = ChatCaptureService.shared
         let telegram = capture.telegramBridge
-        let instagram = capture.instagramBridge
         let teams = capture.teamsBridge
         let whatsApp = WhatsAppLink.shared
         switch id {
@@ -167,8 +167,6 @@ enum ChatAppStates {
             return tr(WhatsAppSettings.gateway == .beeper ? "chats.apps.own.service" : "chats.apps.own.whatsapp")
         case telegram.app:
             return telegram.isReady ? tr("chats.apps.as", telegram.account ?? "Telegram") : nil
-        case instagram.app:
-            return instagram.isReady ? tr("chats.apps.own.instagram") : nil
         case teams.app:
             guard let account = teams.accounts.first else { return nil }
             return teams.accounts.count == 1 ? tr("chats.apps.as", account.name.isEmpty ? account.email : account.name)

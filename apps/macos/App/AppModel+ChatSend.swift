@@ -1,13 +1,12 @@
 // Sending from the Chats tab: text, files, polls, places and contact cards, to every chat Nook can write in.
 import Foundation
 
-/// Where what you send in a chat goes: WhatsApp through the linked phone's gateway, Telegram through TDLib, Instagram
-/// through its own web API once you logged in on it in Nook, or any network Beeper bridges (Messenger, Signal…). A chat
-/// without one is only read: its text is copied for its own app instead.
+/// Where what you send in a chat goes: WhatsApp through the linked phone's gateway, Telegram through TDLib, or any app the
+/// chat service on this Mac links (Instagram, Messenger, Signal…: Nook's own helper, else Beeper Desktop). A chat without
+/// one is only read: its text is copied for its own app instead.
 enum ChatRoute: Equatable {
     case whatsApp(String)
     case telegram(Int64)
-    case instagram(String)
     case beeper(String)
 }
 
@@ -21,8 +20,6 @@ extension AppModel {
             let capture = ChatCaptureService.shared
             let telegram = capture.telegramBridge
             if entry.app == telegram.app, telegram.isReady, let id = telegram.chatID(named: entry.name) { return .telegram(id) }
-            let instagram = capture.instagramBridge
-            if entry.app == instagram.app, let id = instagram.threadID(named: entry.name) { return .instagram(id) }
             if let id = capture.beeperBridge.chatID(app: entry.app, name: entry.name) { return .beeper(id) }
             return nil
         }
@@ -33,8 +30,6 @@ extension AppModel {
         switch route {
         case .whatsApp: return WhatsAppLink.shared.sends
         case .telegram: return ChatOutgoing.Kind.everything
-        // Text only: Instagram's web API takes files another way.
-        case .instagram: return []
         case .beeper: return ChatCaptureService.shared.beeperBridge.sends
         case nil: return []
         }
@@ -50,10 +45,6 @@ extension AppModel {
         case .telegram(let id):
             try ChatCaptureService.shared.telegramBridge.send(text: text, to: id, replyTo: replyTo)
             store.audit(tool: "telegram_send", args: name, result: "verstuurd")
-        case .instagram(let id):
-            try await ChatCaptureService.shared.instagramBridge.send(text: text, to: id)
-            store.audit(tool: "instagram_send", args: name, result: "verstuurd")
-            ChatCaptureService.shared.bridgeChanged(ChatCaptureService.shared.instagramBridge.app)
         case .beeper(let id):
             try await ChatCaptureService.shared.beeperBridge.send(text: text, to: id, replyTo: replyTo)
             store.audit(tool: "beeper_send", args: name, result: "verstuurd")
@@ -71,8 +62,6 @@ extension AppModel {
         case .telegram(let id):
             try ChatCaptureService.shared.telegramBridge.send(outgoing, to: id, replyTo: replyTo)
             tool = "telegram_send"
-        case .instagram:
-            throw NookError(tr("chats.instagram.textOnly"))
         case .beeper(let id):
             try await ChatCaptureService.shared.beeperBridge.send(outgoing, to: id, replyTo: replyTo)
             tool = "beeper_send"
@@ -89,7 +78,7 @@ extension AppModel {
 /// What else Nook can do in a chat it writes in through the linked chat service (Instagram, Messenger, Signal…): read
 /// state, emoji, your messages' edits and deletions, and pinning, muting and archiving it in its app.
 extension AppModel {
-    /// The linked chat behind a route, when it is one; nil for WhatsApp, Telegram and Instagram's own web login.
+    /// The linked chat behind a route, when it is one; nil for WhatsApp and Telegram.
     func linkedChat(_ route: ChatRoute?) -> BeeperData.Chat? {
         guard case .beeper(let id) = route else { return nil }
         return ChatCaptureService.shared.beeperBridge.chats[id]
