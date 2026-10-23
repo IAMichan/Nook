@@ -41,7 +41,7 @@ struct SmallPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let systemName { Image(systemName: systemName).font(NookTheme.font(11, .semibold)) }
+                if let systemName { NookSymbol(systemName, size: 12).font(NookTheme.font(11, .semibold)) }
                 Text(title).font(NookTheme.TextStyle.strong)
             }
             .foregroundStyle(NookTheme.ink)

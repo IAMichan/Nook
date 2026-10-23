@@ -514,23 +514,11 @@ private struct PullRequestRow: View {
         .contentShape(Rectangle())
     }
 
-    /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears a small amber
-    /// warning on its corner.
+    /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears the conflict mark.
     private var stateMark: some View {
         PullRequestStateGlyph(glyph: glyph, size: 16, lineWidth: 1.4, nodeRadius: 1.7)
             .foregroundStyle(tint)
             .frame(width: 16, height: 16)
-            .overlay(alignment: .bottomTrailing) {
-                if item.state == .open && item.conflict {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(NookTheme.font(7.5, .bold))
-                        .foregroundStyle(NookTheme.amber)
-                        .padding(1)
-                        .background(Circle().fill(NookTheme.canvas))
-                        .offset(x: 4, y: 4)
-                        .help(tr("agents.pulls.state.conflict"))
-                }
-            }
             .help(tr(stateKey))
     }
 
@@ -559,7 +547,7 @@ private struct PullRequestRow: View {
         switch item.state {
         case .merged: return .merged
         case .closed: return .closed
-        case .open: return item.draft ? .draft : .open
+        case .open: return item.conflict ? .conflict : item.draft ? .draft : .open
         }
     }
 
@@ -567,7 +555,7 @@ private struct PullRequestRow: View {
         switch item.state {
         case .merged: return NookTheme.violet
         case .closed: return NookTheme.coralSoft
-        case .open: return item.draft ? NookTheme.textTertiary : NookTheme.mint
+        case .open: return item.conflict ? NookTheme.coral : item.draft ? NookTheme.textTertiary : NookTheme.mint
         }
     }
 
@@ -575,7 +563,7 @@ private struct PullRequestRow: View {
         switch item.state {
         case .merged: return "agents.pulls.state.merged"
         case .closed: return "agents.pulls.state.closed"
-        case .open: return item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
+        case .open: return item.conflict ? "agents.pulls.state.conflict" : item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
         }
     }
 

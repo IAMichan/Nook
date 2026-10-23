@@ -269,9 +269,9 @@ struct PullRequestFilterMenu: View {
     private static func symbol(_ state: PullRequestFilter.State) -> String {
         switch state {
         case .all: return "square.stack"
-        case .open: return "arrow.triangle.pull"
+        case .open: return NookSymbol.open
         case .closed: return "xmark.circle"
-        case .merged: return "arrow.triangle.merge"
+        case .merged: return NookSymbol.merge
         }
     }
 
@@ -414,7 +414,7 @@ private struct FilterChoiceRow: View {
                     } else if labelDot {
                         LabelDot(color: labelColor, size: 8)
                     } else if let symbol {
-                        Image(systemName: symbol)
+                        NookSymbol(symbol, size: 13)
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(tint ?? NookTheme.textSecondary)
                     }

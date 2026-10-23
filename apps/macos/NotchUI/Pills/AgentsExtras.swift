@@ -35,7 +35,9 @@ struct PanelFooter: View {
     var body: some View {
         if selected == AgentsPage.pullRequests, let onBack {
             HStack(spacing: NookTheme.Spacing.xs) {
-                FooterIcon(label: tr("agents.pr.back"), active: false, action: onBack) { ToolGlyph(symbol: "chevron.left") }
+                FooterIcon(label: tr("agents.pr.back"), active: false, showsLabel: true, action: onBack) {
+                    ToolGlyph(symbol: "chevron.left")
+                }
                 Spacer(minLength: 0)
                 UpdateFooterButton { EmptyView() }
             }
@@ -78,17 +80,27 @@ struct PanelFooter: View {
 private struct FooterIcon<Glyph: View>: View {
     let label: String
     let active: Bool
+    /// Writes the label after the glyph (the back button), instead of only in the tooltip.
+    var showsLabel = false
     let action: () -> Void
     @ViewBuilder var glyph: () -> Glyph
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            glyph()
-                .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
-                .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
-                .contentShape(Rectangle())
+            HStack(spacing: NookTheme.Spacing.xs) {
+                glyph()
+                if showsLabel {
+                    Text(label)
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
+            .padding(.horizontal, showsLabel ? NookTheme.Spacing.sm : 0)
+            .frame(minWidth: 32, minHeight: 30, maxHeight: 30)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -105,8 +117,8 @@ private struct PullRequestGlyph: View {
 
 /// The pull request marks GitHub uses, drawn on a 16-point grid so they stay crisp at any size: open (a node, a line,
 /// and a second line that bends back with an arrow), draft (the bend replaced by dots), merged (a branch curving back
-/// into the main line), closed (the arrow replaced by a cross), a conflict (an exclamation mark beside the line) and a
-/// stack (three nodes in a chain).
+/// into the main line), closed (the arrow replaced by a cross), a conflict (the merge branch stopping short of the main
+/// line at a cross) and a stack (three nodes in a chain).
 struct PullRequestStateGlyph: View {
     let glyph: PullRequestBadge.Glyph
     var size: CGFloat = 16
@@ -149,9 +161,13 @@ struct PullRequestStateGlyph: View {
                 lines.move(to: point(13.8, 2.8)); lines.addLine(to: point(10.2, 6.4))
                 nodes.append(point(12, 12.4))
             case .conflict:
+                // The merge mark whose branch stops short of the main line, a cross where they would meet.
                 trunk()
-                lines.move(to: point(12, 2.8)); lines.addLine(to: point(12, 9))
-                dots.append(point(12, 12.6))
+                lines.move(to: point(12 - r, 9.6))
+                lines.addQuadCurve(to: point(7.14, 9.2), control: point(8.48, 9.6))
+                lines.move(to: point(4.9, 5.1)); lines.addLine(to: point(7.5, 7.7))
+                lines.move(to: point(7.5, 5.1)); lines.addLine(to: point(4.9, 7.7))
+                nodes.append(point(12, 9.6))
             case .merged:
                 trunk()
                 lines.move(to: point(4, 3.6 + r))
