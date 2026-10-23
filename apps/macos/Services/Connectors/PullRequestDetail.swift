@@ -208,6 +208,45 @@ struct PullRequestEvent: Identifiable, Equatable, Sendable {
     let body: String
     let date: Date?
     let url: URL?
+    /// A reply on a line: the id of the line comment that opened its thread ("line-123").
+    var replyTo: String? = nil
+    /// A line comment whose line a later push changed, so it no longer points at the code as it is.
+    var outdated = false
+    /// The opening comment of a thread on a line that someone marked as resolved.
+    var resolved = false
+    /// The emoji people answered with, in GitHub's order.
+    var reactions: [PullRequestReaction] = []
+}
+
+/// Whether a thread on a line was resolved, and whether a push moved the code under it.
+struct PullRequestThreadState: Equatable, Sendable {
+    let resolved: Bool
+    let outdated: Bool
+}
+
+/// One emoji on a comment and how many people chose it.
+struct PullRequestReaction: Identifiable, Equatable, Sendable {
+    /// GitHub's name for it: +1, -1, laugh, hooray, confused, heart, rocket or eyes.
+    let content: String
+    let count: Int
+
+    var id: String { content }
+
+    static let order = ["+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"]
+
+    var emoji: String {
+        switch content {
+        case "+1": return "👍"
+        case "-1": return "👎"
+        case "laugh": return "😄"
+        case "hooray": return "🎉"
+        case "confused": return "😕"
+        case "heart": return "❤️"
+        case "rocket": return "🚀"
+        case "eyes": return "👀"
+        default: return content
+        }
+    }
 }
 
 struct PullRequestCommit: Identifiable, Equatable, Sendable {
@@ -356,22 +395,87 @@ enum PullRequestDetailParser {
                                            url: (review["html_url"] as? String).flatMap(URL.init(string:))))
         }
         for comment in comments {
-            result.append(PullRequestEvent(id: "comment-\(int(comment["id"]) ?? result.count)", kind: .comment,
-                                           author: login(comment["user"]), body: GitHubMarkdown.markdown((comment["body"] as? String) ?? ""),
-                                           date: date(comment["created_at"]),
-                                           url: (comment["html_url"] as? String).flatMap(URL.init(string:))))
+            var event = PullRequestEvent(id: "comment-\(int(comment["id"]) ?? result.count)", kind: .comment,
+                                         author: login(comment["user"]), body: GitHubMarkdown.markdown((comment["body"] as? String) ?? ""),
+                                         date: date(comment["created_at"]),
+                                         url: (comment["html_url"] as? String).flatMap(URL.init(string:)))
+            event.reactions = reactions(comment["reactions"])
+            result.append(event)
         }
         for comment in lineComments {
-            result.append(PullRequestEvent(id: "line-\(int(comment["id"]) ?? result.count)",
-                                           kind: .lineComment(path: (comment["path"] as? String) ?? "",
-                                                              line: int(comment["line"]) ?? int(comment["original_line"])),
-                                           author: login(comment["user"]), body: GitHubMarkdown.markdown((comment["body"] as? String) ?? ""),
-                                           date: date(comment["created_at"]),
-                                           url: (comment["html_url"] as? String).flatMap(URL.init(string:))))
+            var event = PullRequestEvent(id: "line-\(int(comment["id"]) ?? result.count)",
+                                         kind: .lineComment(path: (comment["path"] as? String) ?? "",
+                                                            line: int(comment["line"]) ?? int(comment["original_line"])),
+                                         author: login(comment["user"]), body: GitHubMarkdown.markdown((comment["body"] as? String) ?? ""),
+                                         date: date(comment["created_at"]),
+                                         url: (comment["html_url"] as? String).flatMap(URL.init(string:)))
+            event.replyTo = int(comment["in_reply_to_id"]).map { "line-\($0)" }
+            // GitHub drops the line (and the old position) once a push moved the code under it; a comment on the whole
+            // file never had one.
+            event.outdated = (comment["subject_type"] as? String) != "file"
+                && int(comment["line"]) == nil && int(comment["position"]) == nil
+            event.reactions = reactions(comment["reactions"])
+            result.append(event)
         }
         return result.enumerated().sorted {
             ($0.element.date ?? .distantPast, $0.offset) < ($1.element.date ?? .distantPast, $1.offset)
         }.map(\.element)
+    }
+
+    /// The emoji of a comment's `reactions` summary that someone chose, in GitHub's order.
+    static func reactions(_ value: Any?) -> [PullRequestReaction] {
+        guard let summary = value as? [String: Any] else { return [] }
+        return PullRequestReaction.order.compactMap { content in
+            guard let count = int(summary[content]), count > 0 else { return nil }
+            return PullRequestReaction(content: content, count: count)
+        }
+    }
+
+    /// The GraphQL query for the threads on lines: whether each is resolved or outdated, keyed by its first comment.
+    /// REST does not say whether a thread was resolved.
+    static func reviewThreadsBody(repo: String, number: Int) -> Data? {
+        let parts = repo.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        let query = """
+        query($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) { nodes { isResolved isOutdated comments(first: 1) { nodes { databaseId } } } }
+            }
+          }
+        }
+        """
+        return try? JSONSerialization.data(withJSONObject: [
+            "query": query, "variables": ["owner": parts[0], "name": parts[1], "number": number],
+        ])
+    }
+
+    /// The threads' state from the answer to `reviewThreadsBody`, by the event id of each thread's first comment.
+    static func reviewThreads(_ answer: Any?) -> [String: PullRequestThreadState] {
+        let data = (answer as? [String: Any])?["data"] as? [String: Any]
+        let pull = ((data?["repository"] as? [String: Any])?["pullRequest"] as? [String: Any])
+        let nodes = ((pull?["reviewThreads"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
+        var result: [String: PullRequestThreadState] = [:]
+        for node in nodes {
+            let first = ((node["comments"] as? [String: Any])?["nodes"] as? [[String: Any]])?.first
+            guard let id = int(first?["databaseId"]) else { continue }
+            result["line-\(id)"] = PullRequestThreadState(resolved: (node["isResolved"] as? Bool) == true,
+                                                          outdated: (node["isOutdated"] as? Bool) == true)
+        }
+        return result
+    }
+
+    /// The events with the threads' state from GraphQL laid over them: resolved on a thread's first comment, outdated on
+    /// every comment of a thread GitHub calls outdated.
+    static func applying(_ threads: [String: PullRequestThreadState], to events: [PullRequestEvent]) -> [PullRequestEvent] {
+        guard !threads.isEmpty else { return events }
+        return events.map { event in
+            guard let state = threads[event.replyTo ?? event.id] else { return event }
+            var event = event
+            if event.replyTo == nil { event.resolved = state.resolved }
+            event.outdated = event.outdated || state.outdated
+            return event
+        }
     }
 
     /// What a timeline event is about, as shown after its sentence.
