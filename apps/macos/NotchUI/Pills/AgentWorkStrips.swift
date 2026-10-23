@@ -191,13 +191,19 @@ struct SubagentBar: View {
 struct PullRequestWatchStrip: View {
     let watch: PullRequestWatch
     let stop: () -> Void
+    @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             ComposerPill(symbol: "eye", dot: nil, text: tr("ws.prwatch.watching"), showsChevron: false)
-            // The state in the same badge as on the pull request page; CI and reviews after it.
-            PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch.state) ?? .open, number: number)
+            // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
+            Button(action: open) {
+                PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch.state) ?? .open, number: number)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("ws.prwatch.open"))
             if let ci {
                 // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
                 Button(action: openCI) {
@@ -223,8 +229,8 @@ struct PullRequestWatchStrip: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 6)
-            if let url = URL(string: watch.url) {
-                trayButton("arrow.up.right.square", tr("ws.prwatch.open")) { NSWorkspace.shared.open(url) }
+            if URL(string: watch.url) != nil {
+                trayButton("arrow.up.right.square", tr("ws.prwatch.open"), action: open)
             }
             trayButton("xmark", tr("ws.prwatch.stop"), action: stop)
         }
@@ -245,6 +251,13 @@ struct PullRequestWatchStrip: View {
         case "pending": return tr("ws.prwatch.ciPending")
         default: return nil
         }
+    }
+
+    /// A GitHub pull request opens in Nook, as a link to it in the conversation does: in the session's side panel. A
+    /// GitLab merge request (or no GitHub account) opens in your browser.
+    private func open() {
+        guard let url = URL(string: watch.url) else { return }
+        if !AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) { NSWorkspace.shared.open(url) }
     }
 
     private func openCI() {
