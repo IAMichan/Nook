@@ -206,6 +206,8 @@ struct QueuedMessagesStrip: View {
     /// neither can happen right now.
     var sendNow: ((UUID) -> Void)? = nil
     @State private var collapsed = false
+    /// A message's buttons show while the pointer is on it (or it is open in the box), as Code's row actions.
+    @State private var hovered: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -246,15 +248,20 @@ struct QueuedMessagesStrip: View {
             Image(systemName: isEditing ? "pencil" : "clock").font(NookTheme.font(10, .semibold))
             Text(ToolSummary.oneLine(ContextRefs.visible(message.text), 120)).lineLimit(1)
             Spacer(minLength: 6)
-            if let move, queue.count > 1 {
-                iconButton("chevron.up", tr("compose.queue.up"), enabled: index > 0) { move(message.id, index - 1) }
-                iconButton("chevron.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
+            HStack(spacing: NookTheme.Spacing.md) {
+                if let move, queue.count > 1 {
+                    iconButton("chevron.up", tr("compose.queue.up"), enabled: index > 0) { move(message.id, index - 1) }
+                    iconButton("chevron.down", tr("compose.queue.down"), enabled: index < queue.count - 1) { move(message.id, index + 1) }
+                }
+                if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
+                if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
+                iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
             }
-            if let edit { iconButton("pencil", tr("compose.queue.edit"), enabled: !isEditing) { edit(message.id) } }
-            if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
-            iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
+            .opacity(hovered == message.id || isEditing ? 1 : 0)
         }
-        .font(NookTheme.font(12))
+        .contentShape(Rectangle())
+        .onHover { inside in withAnimation(NookTheme.hover) { hovered = inside ? message.id : (hovered == message.id ? nil : hovered) } }
+        .font(NookTheme.TextStyle.detail)
         .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, NookTheme.Spacing.md)
         .padding(.vertical, NookTheme.Spacing.xs)

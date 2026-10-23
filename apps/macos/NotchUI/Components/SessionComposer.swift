@@ -611,10 +611,10 @@ struct ComposerIcon: View {
     }
 }
 
-/// A thin line between two choices in the composer.
+/// The room between two groups of choices in the composer: a gap, not a line, so the row stays quiet.
 struct ComposerDivider: View {
     var body: some View {
-        Rectangle().fill(NookTheme.line2).frame(width: 1, height: 16).padding(.horizontal, 3)
+        Color.clear.frame(width: NookTheme.Spacing.xs, height: 16)
     }
 }
 

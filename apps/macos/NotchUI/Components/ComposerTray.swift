@@ -20,7 +20,6 @@ struct ComposerTray<Content: View>: View {
             .padding(inner, Self.tuck + 4)
             .padding(outer, 4)
             .background(shape.fill(NookTheme.field))
-            .overlay(shape.stroke(NookTheme.fieldStroke, lineWidth: 1))
             .padding(inner, -Self.tuck)
             .padding(.horizontal, 14)
     }

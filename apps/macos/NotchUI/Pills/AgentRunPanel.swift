@@ -88,8 +88,9 @@ struct AgentRunPanel: View {
                             workspace.answer(runID, questionID: question.id, answers: answers)
                         }
                         .id(question.id)
+                        .chatColumn()
                     } else {
-                        composer(run)
+                        composer(run).chatColumn()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -236,12 +237,6 @@ struct AgentRunPanel: View {
             Spacer(minLength: 8)
             ResourceUsageBadge(workspace: workspace, runID: runID)
             outputsButton(run, outputs)
-            if let fraction = run.usage.contextFraction, fraction > 0.6 {
-                Text(tr("ws.header.context", Int((fraction * 100).rounded())))
-                    .font(NookTheme.TextStyle.label.monospacedDigit())
-                    .foregroundStyle(fraction > 0.85 ? NookTheme.coral : NookTheme.amber)
-                    .help(tr("ws.header.contextHelp"))
-            }
             if let remote = run.remote {
                 // On another machine: its name, and a terminal there over SSH instead of this Mac's git and tools.
                 Button { openRemoteTerminal(remote) } label: {
@@ -402,10 +397,10 @@ struct AgentRunPanel: View {
         focused = true
     }
 
-    /// What this composer offers beyond typing: the commands, files and sessions to point at, and the agent's own color.
+    /// What this composer offers beyond typing: the commands, files and sessions to point at. The box keeps Nook's own
+    /// quiet tint for every agent (as Code does): an agent's color stays in its logo.
     private func composerConfig(_ run: WorkspaceRun) -> ComposerConfig {
         var config = ComposerConfig()
-        config.tint = run.provider.composerTint
         config.fileRoot = run.workingDirectory
         config.repository = repository
         config.sessions = { [workspace, runID] in
@@ -536,7 +531,7 @@ struct AgentRunPanel: View {
                                         step: run.tasks.flatMap(TaskChecklist.activeStep),
                                         since: run.turnStartedAt,
                                         waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: run.provider.color,
+                                        accent: NookTheme.textSecondary,
                                         openConsole: CommandConsole.running(events).map { command -> () -> Void in
                                             { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
                                         })
@@ -546,7 +541,7 @@ struct AgentRunPanel: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .chatColumn()
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -678,7 +673,7 @@ struct AgentRunPanel: View {
             NookGhostButton(title: tr("ws.action.retry")) { workspace.retry(runID) }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(run.status.color.opacity(0.07)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.surface))
     }
 
     @ViewBuilder
@@ -769,7 +764,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.amber.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
     private func eventView(_ event: RunEvent) -> some View {
@@ -844,7 +839,7 @@ struct AgentRunPanel: View {
             }
         }
         .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.coral.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel).fill(NookTheme.surface))
     }
 
     // MARK: Composer

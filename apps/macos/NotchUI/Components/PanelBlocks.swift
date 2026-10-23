@@ -72,12 +72,13 @@ struct NookCountBadge: View {
 
     var body: some View {
         if count > 0 {
+            // Amber numerals on a faint wash, not a solid amber pill: it tells without shouting.
             Text("\(count)")
                 .font(NookTheme.rounded(10, .semibold))
-                .foregroundStyle(NookTheme.ink)
+                .foregroundStyle(NookTheme.amber)
                 .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(minWidth: 16, minHeight: 16)
-                .background(Capsule().fill(NookTheme.amber))
+                .background(Capsule().fill(NookTheme.amber.opacity(0.14)))
         }
     }
 }

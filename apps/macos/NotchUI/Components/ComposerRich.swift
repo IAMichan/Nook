@@ -24,7 +24,8 @@ struct ComposerSuggestion: Identifiable, Equatable {
 /// What a composer can do beyond typing. The chat leaves references off (its question goes to the brain as plain text);
 /// an agent gets files, other sessions and pull requests.
 struct ComposerConfig {
-    /// The composer's own tint: the send button, the focus ring and the list. Nook's iris for the chat, the agent's color.
+    /// The composer's own tint: the send button, the focus ring and the list. Nook's quiet iris everywhere; an agent's color
+    /// stays in its logo.
     var tint: Color = NookTheme.iris
     /// The folder `@` searches for files; nil turns `@` off.
     var fileRoot: String?

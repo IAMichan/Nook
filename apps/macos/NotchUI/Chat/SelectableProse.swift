@@ -51,8 +51,8 @@ struct SelectableProse: NSViewRepresentable {
         context.coordinator.fileLinkBase = context.environment.fileLinkBase
         context.coordinator.quote = context.environment.quoteSelection
         view.linkTextAttributes = [
-            .foregroundColor: NSColor(NookTheme.iris),
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            // Links in the link blue without an underline, as Code shows them; the pointer says they are links.
+            .foregroundColor: NSColor(NookTheme.blue),
             .cursor: NSCursor.pointingHand,
         ]
         let text = Self.attributed(blocks, size: size)
@@ -160,6 +160,7 @@ struct SelectableProse: NSViewRepresentable {
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
                 append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
             case .paragraph(let text):
+                // Running text a step softer than headings (Code sets answers at 80 % of its text color).
                 append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
@@ -173,7 +174,8 @@ struct SelectableProse: NSViewRepresentable {
         return result
     }
 
-    private static func style(before: CGFloat, lineSpacing: CGFloat = 4) -> NSMutableParagraphStyle {
+    /// `lineSpacing` 5 gives running text about Code's relaxed 1.6 line height.
+    private static func style(before: CGFloat, lineSpacing: CGFloat = 5) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = lineSpacing
         style.paragraphSpacingBefore = before

@@ -20,6 +20,9 @@ struct PanelView: View {
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⇧⌘F, or the magnifying glass in the header).
     @State private var searching = false
+    /// The header's rarer buttons (talk, the window) show while the pointer is on the header, as Code keeps its
+    /// toolbar to what you use most.
+    @State private var headerHover = false
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
     static let headerHeight: CGFloat = 32
@@ -135,13 +138,17 @@ struct PanelView: View {
                     NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
                         .help(tr("search.button"))
                 }
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
+                if headerHover {
+                    NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
+                        .transition(.opacity)
+                }
                 // What Nook told you lately, for a notice that closed before you looked.
                 if !app.demoMode { NoticeBellButton() }
-                if !inWindow {
+                if !inWindow, headerHover {
                     // Go on in the main window, on this tab, with more room.
                     NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
                         .help(tr("menu.window"))
+                        .transition(.opacity)
                 }
                 if gear {
                     NookIconButton(systemName: "gearshape", label: tr("button.settings"), size: 30) { app.openSettings() }
@@ -155,6 +162,7 @@ struct PanelView: View {
         }
         .frame(minHeight: Self.headerHeight)
         .padding(.leading, headerInset)
+        .onHover { hovering in withAnimation(NookTheme.hover) { headerHover = hovering } }
     }
 
     @ViewBuilder

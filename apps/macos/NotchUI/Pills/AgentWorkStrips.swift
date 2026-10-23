@@ -26,7 +26,7 @@ struct TasksStrip: View {
                     Spacer(minLength: 6)
                     Text("\(progress.done)/\(progress.total)")
                         .font(NookTheme.mono(11, .medium))
-                        .foregroundStyle(finished ? NookTheme.mint : NookTheme.textSecondary)
+                        .foregroundStyle(NookTheme.textSecondary)
                     if steps.count > 1 && steps.count <= 10 { segments }
                     Image(systemName: "chevron.up")
                         .font(NookTheme.font(8.5, .bold))
@@ -120,7 +120,7 @@ struct SubagentBar: View {
                     Spacer(minLength: 6)
                     Text(tr("ws.subagents.progress", done, agents.count))
                         .font(NookTheme.mono(11, .medium))
-                        .foregroundStyle(done == agents.count ? NookTheme.mint : NookTheme.textSecondary)
+                        .foregroundStyle(NookTheme.textSecondary)
                     Image(systemName: "chevron.up")
                         .font(NookTheme.font(8.5, .bold))
                         .rotationEffect(.degrees(open ? 180 : 0))
@@ -316,7 +316,6 @@ struct TurnChangesChip: View {
             .padding(.horizontal, 9)
             .padding(.vertical, NookTheme.Spacing.xs)
             .background(Capsule().fill(NookTheme.paper.opacity(0.06)))
-            .overlay(Capsule().stroke(NookTheme.line2, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

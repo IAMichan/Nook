@@ -184,8 +184,9 @@ struct FolderGitButton: View {
                         ToolbarGroupDivider()
                         Button(action: showChanges) {
                             HStack(spacing: NookTheme.Spacing.sm) {
-                                Text("+\(model.added)").foregroundStyle(NookTheme.mint)
-                                Text("−\(model.removed)").foregroundStyle(NookTheme.coral)
+                                // Neutral counts in the header; the diff itself keeps its colors.
+                                Text("+\(model.added)").foregroundStyle(NookTheme.textTertiary)
+                                Text("−\(model.removed)").foregroundStyle(NookTheme.textTertiary)
                             }
                             .font(NookTheme.TextStyle.label)
                             .padding(.horizontal, NookTheme.Spacing.sm)
