@@ -120,6 +120,8 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var doneTone: DoneTone = .done
     /// An agent notice in compact size: it stays in the notch's own row instead of a strip under it.
     @Published private(set) var doneInline = false
+    /// A click on the step of a task opens the panel, which lists all its steps (Double Tap's `DoubleTapRunBar`).
+    @Published private(set) var workOpensPanel = false
     /// The strip's own button does something (View, Open, Stop); without one the strip only has its OK.
     var doneHasAction: Bool { doneButtonAction != nil }
     /// New for every strip under the notch (a result, a suggestion, a moment), so its countdown starts over.
@@ -467,6 +469,7 @@ final class NotchViewModel: ObservableObject {
     /// notice that stays in the notch's own row when compact.
     func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, inline: Bool = false,
                 seconds: TimeInterval = NotchViewModel.doneSeconds, action: (() -> Void)? = nil) {
+        workOpensPanel = false
         doneButtonTitle = button
         doneButtonAction = action
         doneTone = tone
@@ -492,11 +495,13 @@ final class NotchViewModel: ObservableObject {
 
     /// A task Nook works on by itself (`AppModel+Takeover`): its current step in the slim strip under the notch, with
     /// Stop, until `endWork`. Never over a card, a question or the open panel; the next step shows again once they close.
-    func showWork(_ line: String, stop: @escaping () -> Void) {
+    /// `opensPanel`: a click on the step opens the panel, where the task lists every step it took.
+    func showWork(_ line: String, opensPanel: Bool = false, stop: @escaping () -> Void) {
         switch state {
         case .idle, .music, .track, .done, .nudge, .moment: break
         default: return
         }
+        workOpensPanel = opensPanel
         doneButtonTitle = tr("takeover.stop")
         doneButtonAction = stop
         doneTone = .waiting
@@ -511,6 +516,7 @@ final class NotchViewModel: ObservableObject {
     /// The task is over: the strip goes (a card or the panel that is open stays).
     func endWork() {
         doneButtonAction = nil
+        workOpensPanel = false
         if case .done = state { show(.idle) }
     }
 

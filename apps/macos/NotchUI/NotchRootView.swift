@@ -333,6 +333,9 @@ struct NotchRootView: View {
                 .id(viewModel.noticeStamp)
             }
         }
+        // The step of a Double Tap: a click opens the notch on all its steps.
+        .contentShape(Rectangle())
+        .onTapGesture { if viewModel.workOpensPanel { viewModel.openPanel() } }
     }
 
     /// The row under the notch that holds Nook in a strip (a result, a nudge, a moment), level with where he sits in
