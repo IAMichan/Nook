@@ -162,4 +162,41 @@ final class PullRequestGraphQLTests: XCTestCase {
         let again = try JSONDecoder().decode(AccountPullRequests.self, from: JSONEncoder().encode(account))
         XCTAssertEqual(again, account)
     }
+
+    func testWatchedEntriesAreSplitIntoSmallRequests() {
+        let entries = (1...10).map { "org\($0)" }
+        let parts = PullRequestWatchList.parts(entries, size: 4)
+        XCTAssertEqual(parts.map(\.count), [4, 4, 2])
+        XCTAssertEqual(parts.flatMap { $0 }, entries, "every entry once, in order")
+        XCTAssertTrue(PullRequestWatchList.parts([]).isEmpty)
+    }
+
+    func testCombinedWatchedRows() {
+        func item(_ repo: String, _ number: Int, _ state: PullRequestItem.State) -> PullRequestItem {
+            PullRequestItem(repo: repo, number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)
+        }
+        let combined = PullRequestWatchList.combined([[item("a/b", 1, .open), item("a/b", 2, .merged)],
+                                                      [item("c/d", 3, .open), item("a/b", 1, .open)]])
+        XCTAssertEqual(combined.map(\.id), ["a/b#1", "c/d#3", "a/b#2"], "open first, each pull request once")
+    }
+
+    func testAttachingWatchedRows() {
+        func item(_ number: Int) -> PullRequestItem {
+            PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "")
+        }
+        var first = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1)], reviews: [], error: nil, watched: [item(9)])
+        first.watchedFailed = true
+        let second = AccountPullRequests(id: "github.werk", name: "", login: "", mine: [], reviews: [], error: nil)
+
+        let kept = AccountPullRequests.attaching([:], to: [first, second])
+        XCTAssertEqual(kept[0].watched.map(\.number), [9], "rows from last time stay until the watched search answers")
+
+        let found = WatchedPullRequests(items: [item(1), item(2), item(3)], unreadable: ["typo"])
+        let both = AccountPullRequests.attaching(["github": found, "github.werk": WatchedPullRequests(items: [item(3), item(4)], unreadable: [])],
+                                                 to: [first, second])
+        XCTAssertEqual(both[0].watched.map(\.number), [2, 3], "yours stays under yours")
+        XCTAssertEqual(both[0].unreadable, ["typo"])
+        XCTAssertFalse(both[0].watchedFailed)
+        XCTAssertEqual(both[1].watched.map(\.number), [4], "a watched row shows under the first account that has it")
+    }
 }

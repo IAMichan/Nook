@@ -99,6 +99,30 @@ extension AccountPullRequests {
     }
 
     var isEmpty: Bool { mine.isEmpty && reviews.isEmpty && watched.isEmpty }
+
+    /// The accounts with the watched rows just found put in (an account missing from `watched` keeps the ones it has),
+    /// each pull request once: yours and your reviews stay where they are, and a watched one only shows under the first
+    /// account where nothing lists it yet.
+    static func attaching(_ watched: [String: WatchedPullRequests], to accounts: [AccountPullRequests]) -> [AccountPullRequests] {
+        var seen = Set(accounts.flatMap { ($0.mine + $0.reviews).map(\.id) })
+        return accounts.map { account in
+            var account = account
+            if let found = watched[account.id] {
+                account.watched = found.items
+                account.unreadable = found.unreadable
+                account.watchedFailed = false
+            }
+            account.watched = account.watched.filter { seen.insert($0.id).inserted }
+            return account
+        }
+    }
+}
+
+/// What one account's search of the watched organizations and repositories found.
+struct WatchedPullRequests: Equatable, Sendable {
+    var items: [PullRequestItem]
+    /// Typed entries this account could not search.
+    var unreadable: [String]
 }
 
 /// The organizations ("acme") and repositories ("acme/web") whose pull requests show in the list as well, beyond the
@@ -136,6 +160,21 @@ enum PullRequestWatchList {
     }
 
     static func isRepository(_ entry: String) -> Bool { entry.contains("/") }
+
+    /// Entries per watched request: two searches each, so a request stays small enough for GitHub to answer quickly.
+    static let entriesPerRequest = 4
+
+    /// The entries split into the requests that search them, in order.
+    static func parts(_ entries: [String], size: Int = entriesPerRequest) -> [[String]] {
+        stride(from: 0, to: entries.count, by: max(size, 1)).map { Array(entries[$0..<min($0 + max(size, 1), entries.count)]) }
+    }
+
+    /// The rows of several watched requests as one list: every pull request once, open ones first, in the order found.
+    static func combined(_ parts: [[PullRequestItem]]) -> [PullRequestItem] {
+        var seen = Set<String>()
+        let items = parts.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+        return items.filter { $0.state == .open } + items.filter { $0.state != .open }
+    }
 
     /// The typed entries, then the organizations you belong to that none of them names yet (GitHub names ignore case),
     /// up to `limit` in all: what one account searches when your organizations are watched as well.
