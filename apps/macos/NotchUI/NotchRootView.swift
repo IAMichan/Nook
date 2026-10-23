@@ -594,6 +594,8 @@ extension PanelOrb {
         NookPresence.shared.lookAngle = nil
         switch item.target {
         case .agent(let id):
+            // Looked at from here on: its piece leaves the ring now, not when the Agents tab has appeared.
+            SessionVisits.shared.visit(id)
             viewModel.selectedAgentID = id
             if inWindow {
                 viewModel.windowSheet = nil
@@ -602,7 +604,14 @@ extension PanelOrb {
                 viewModel.show(.panel(.agents), inNotch: true)
             }
         case .nook(let id):
-            app.openConversation(id)
+            if inWindow {
+                // Stays in the window; selecting reads the conversation, so its piece leaves the ring at once.
+                app.chat.select(id)
+                viewModel.windowSheet = nil
+                viewModel.windowTab = .chat
+            } else {
+                app.openConversation(id)
+            }
         }
     }
 }
