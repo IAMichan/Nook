@@ -9,6 +9,30 @@ final class WhatsAppTests: XCTestCase {
                   date: Date(timeIntervalSince1970: 1_800_000_000 + at), fromMe: fromMe, mentionsMe: mention)
     }
 
+    func testAMessageWithNothingToShowIsNoBubble() {
+        var inbox = WAInbox()
+        let group = "120363000000000001@g.us"
+        XCTAssertEqual(inbox.add(message("1", chat: group, text: "\u{200B}"), filters: WAFilters()), .ignored)
+        XCTAssertNil(inbox.conversations[group], "a reaction passed on as a message makes no chat and no bubble")
+        var photo = message("2", chat: group, text: "")
+        photo.media = .image
+        XCTAssertNotEqual(inbox.add(photo, filters: WAFilters()), .ignored, "a photo without a caption is a message")
+        XCTAssertEqual(inbox.conversations[group]?.messages.map(\.id), ["2"])
+    }
+
+    func testAGOWAReactionSentAsAMessageGoesOnItsMessage() {
+        let nested = Data(#"{"event":"message","payload":{"id":"R1","chat_id":"120363000000000001@g.us","from":"31633333333@s.whatsapp.net","is_from_me":false,"body":"","reaction":{"message":"🙏","id":"POST1"}}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: nested),
+                       .reaction(chat: "120363000000000001@g.us", message: "POST1", emoji: "🙏",
+                                 sender: "31633333333@s.whatsapp.net", fromMe: false))
+        let flat = Data(#"{"event":"message","payload":{"id":"R2","chat_id":"120363000000000001@g.us","from":"31633333333@s.whatsapp.net","reaction":"❤️","reacted_message_id":"POST1"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: flat),
+                       .reaction(chat: "120363000000000001@g.us", message: "POST1", emoji: "❤️",
+                                 sender: "31633333333@s.whatsapp.net", fromMe: false))
+        let openwa = Data(#"{"event":"message.received","data":{"id":"R3","chatId":"120363000000000001@g.us","type":"reaction","body":""}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwa), .ignored)
+    }
+
     func testInboxGroupsByChatAndCountsUnread() {
         var inbox = WAInbox()
         let filters = WAFilters()

@@ -402,6 +402,11 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var readInNook: Date? = nil
     /// When you told the app itself that you read this chat (from Nook), or the app said so: then it is read everywhere.
     var readInApp: Date? = nil
+    /// How many messages it keeps once you scrolled back to older ones; nil keeps `ChatInbox.keep`.
+    var capacity: Int? = nil
+
+    /// How many messages it keeps.
+    var keeps: Int { max(capacity ?? 0, ChatInbox.keep) }
 
     var last: Date { messages.last?.date ?? .distantPast }
     /// The newest message from someone else: what "read" is about.
@@ -485,7 +490,7 @@ enum ChatCapture {
         if fromBrowser, title.lowercased().hasSuffix(" - " + app.name.lowercased()) {
             title = String(title.dropLast(app.name.count + 3))
         }
-        guard !text.isEmpty else { return nil }
+        guard !ChatFormat.isBlank(text) else { return nil }
 
         // "Instagram" as the title: the text starts with who wrote ("anna: see you").
         if title.isEmpty || title.lowercased() == app.name.lowercased() {
@@ -589,6 +594,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// minute (an app that shows a notification again, or updates it).
     @discardableResult
     mutating func add(_ notice: ChatNotice, id: String) -> Bool {
+        let notice = placed(notice)
         let key = Self.key(app: notice.app, chat: notice.chat)
         // A chat you removed comes back with what is newer, not with the notifications it already had.
         if let gone = removed?[key], notice.date <= gone { return false }
@@ -600,12 +606,80 @@ struct ChatInbox: Codable, Equatable, Sendable {
         // Usually the newest, but a late notification goes in its place.
         let index = thread.messages.lastIndex { $0.date <= notice.date }.map { $0 + 1 } ?? 0
         thread.messages.insert(message, at: index)
-        if thread.messages.count > Self.keep { thread.messages.removeFirst(thread.messages.count - Self.keep) }
+        if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
         thread.name = notice.chat
         thread.unread += 1
         threads[key] = thread
+        regroup()
         dropQuietest()
         return true
+    }
+
+    /// The notice with the group as its chat and the person as its sender. A group's notification names both, and not
+    /// every app (nor every version of one) puts them in the same place: when the chat it names is a private chat Nook
+    /// knows, or the sender is a group Nook knows, the two were the other way around.
+    func placed(_ notice: ChatNotice) -> ChatNotice {
+        guard !notice.sender.isEmpty else { return notice }
+        let chat = threads[Self.key(app: notice.app, chat: notice.chat)]
+        let sender = threads[Self.key(app: notice.app, chat: notice.sender)]
+        let senderIsGroup = sender.map(Self.isClearlyGroup) == true && chat?.isGroup != true
+        let chatIsPerson = chat.map(Self.isPrivate) == true && sender.map(Self.isPrivate) != true
+        guard senderIsGroup || chatIsPerson else { return notice }
+        var swapped = notice
+        swapped.chat = notice.sender
+        swapped.sender = notice.chat
+        return swapped
+    }
+
+    /// A group beyond doubt: its app lists more than one other person, or more than one person wrote in it. A chat a
+    /// group's notifications landed in by mistake has one "sender" only: the group.
+    private static func isClearlyGroup(_ thread: InboxThread) -> Bool {
+        (thread.members?.count ?? 0) > 1 || Set(thread.messages.map(\.sender).filter { !$0.isEmpty }).count > 1
+    }
+
+    /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people.
+    private static func isPrivate(_ thread: InboxThread) -> Bool {
+        (thread.members?.count ?? 0) <= 1 && !thread.isGroup && thread.messages.contains { !$0.isMine }
+    }
+
+    /// Puts a group's messages that landed in someone's chat back in the group: in a chat without a list of people, a
+    /// message "written by" a group Nook knows is that group's, by the person the chat is named after. A chat left
+    /// without messages goes.
+    mutating func regroup() {
+        let groups = Set(threads.values.filter(Self.isClearlyGroup).map(\.id))
+        guard !groups.isEmpty else { return }
+        for (key, thread) in threads where thread.members == nil && !groups.contains(key) {
+            var moved: [String: [InboxMessage]] = [:]
+            for message in thread.messages where !message.isMine && !message.sender.isEmpty {
+                let groupKey = Self.key(app: thread.app, chat: message.sender)
+                guard groupKey != key, groups.contains(groupKey) else { continue }
+                var copy = message
+                copy.sender = thread.name
+                moved[groupKey, default: []].append(copy)
+            }
+            guard !moved.isEmpty else { continue }
+            let ids = Set(moved.values.flatMap { $0.map(\.id) })
+            var source = thread
+            source.messages.removeAll { ids.contains($0.id) }
+            source.unread = min(source.unread, source.messages.filter { !$0.isMine }.count)
+            // What was unread there is unread in the group now.
+            var freed = thread.unread - source.unread
+            for (groupKey, messages) in moved {
+                guard var target = threads[groupKey] else { continue }
+                for message in messages where !target.messages.contains(where: {
+                    $0.id == message.id || (!$0.isMine && $0.text == message.text
+                                            && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
+                }) {
+                    let index = target.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
+                    target.messages.insert(message, at: index)
+                }
+                target.unread += freed
+                freed = 0
+                if target.messages.count > target.keeps { target.messages.removeFirst(target.messages.count - target.keeps) }
+                threads[groupKey] = target
+            }
+            threads[key] = source.messages.isEmpty && source.listed == nil ? nil : source
+        }
     }
 
     /// Brings in what a bridge read: the messages this chat does not show yet, in their place. With `chat.unread` the
@@ -656,7 +730,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             thread.messages.insert(message, at: index)
             if chat.unread == nil, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
         }
-        if thread.messages.count > Self.keep { thread.messages.removeFirst(thread.messages.count - Self.keep) }
+        if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
         if let unread = chat.unread {
             if let read = thread.readInNook {
                 // Read in Nook: only what came in after that is new here, never more than the app itself counts.
@@ -673,8 +747,20 @@ struct ChatInbox: Codable, Equatable, Sendable {
         if chat.listed, thread.listed.map({ now.timeIntervalSince($0) >= Self.listedRenewal }) ?? true { thread.listed = now }
         guard thread != before else { return false }
         threads[key] = thread
+        // A group that is new here takes back its messages that its notifications put in someone's chat.
+        if known == nil, Self.isClearlyGroup(thread) { regroup() }
         dropQuietest()
         return true
+    }
+
+    /// Lets a chat keep `step` more messages than it has: the older ones you scrolled back to then stay. Its new
+    /// capacity, nil when Nook has no such chat.
+    @discardableResult
+    mutating func grow(_ id: String, by step: Int) -> Int? {
+        guard var thread = threads[id] else { return nil }
+        thread.capacity = max(thread.keeps, thread.messages.count) + step
+        threads[id] = thread
+        return thread.capacity
     }
 
     /// Read in Nook: the badge goes and stays gone after a restart. The app itself is not told.
@@ -715,6 +801,12 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`. A chat its app still lists
     /// stays either way.
     mutating func trim(now: Date = Date()) {
+        // Messages with nothing to show (a reaction an earlier version kept as one) go; then the chats they leave empty.
+        for (key, thread) in threads {
+            let shown = thread.messages.filter { !ChatFormat.isBlank($0.text) || $0.media != nil || $0.poll != nil }
+            if shown.count != thread.messages.count { threads[key]?.messages = shown }
+        }
+        regroup()
         threads = threads.filter { now.timeIntervalSince($0.value.last) < Self.maxAge || Self.isListed($0.value, now: now) }
         dropQuietest(now: now)
     }

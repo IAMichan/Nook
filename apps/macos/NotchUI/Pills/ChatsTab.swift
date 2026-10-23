@@ -58,7 +58,10 @@ extension ChatsEntry {
     @MainActor
     static func all(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
         var entries: [ChatsEntry] = []
-        if whatsApp.isConnected {
+        // WhatsApp comes from one place only: the chat helper once it links it (as Beeper did), else the phone's link.
+        let helperWhatsApp = ChatHelper.linked("whatsapp")
+        let linkedWhatsApp = whatsApp.isConnected && !helperWhatsApp
+        if linkedWhatsApp {
             for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
                 let preview = conversation.messages.last.map { line($0, group: conversation.isGroup) } ?? ""
                 let newest = conversation.messages.last
@@ -82,7 +85,10 @@ extension ChatsEntry {
                                           avatar: whatsApp.avatars[chat.jid]))
             }
         }
-        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
+        // While the phone is linked every WhatsApp chat comes from the link, with its history: what notifications (or an
+        // import) collected before stays out of the list, or each chat would show twice.
+        for thread in capture.inbox.sorted
+        where capture.sources.isOn(thread.app) && !(thread.app == "whatsapp" && linkedWhatsApp) {
             let preview = thread.messages.last.map(line) ?? ""
             let newest = thread.messages.last
             let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
@@ -1214,7 +1220,8 @@ private struct ChatsDetail: View {
                     .lineLimit(1)
                 HStack(spacing: NookTheme.Spacing.xs) {
                     // A chat a bridge reads is the app's own; any other is what its notifications showed.
-                    Text(whatsAppChat == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
+                    Text(whatsAppChat == nil && linkedChat == nil && !capture.bridged.contains(entry.app)
+                         ? tr("chats.fromNotifications", appName) : appName)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineLimit(1)
@@ -1460,15 +1467,20 @@ private struct ChatsDetail: View {
         }
     }
 
-    /// A WhatsApp chat that is full and may have older messages at the gateway.
+    /// A WhatsApp chat that is full and may have older messages at the gateway, or a chat the chat helper brings in,
+    /// which fetches older ones from the app as you scroll back (as Beeper does).
     private var canLoadOlder: Bool {
-        guard let chat = whatsAppChat else { return false }
-        return whatsApp.inbox.conversations[chat]?.canLoadOlder ?? false
+        switch entry.origin {
+        case .whatsApp(let chat): return whatsApp.inbox.conversations[chat]?.canLoadOlder ?? false
+        case .captured(let id): return capture.canLoadOlder(id)
+        }
     }
 
     private func loadOlder() async -> Bool {
-        guard let chat = whatsAppChat else { return false }
-        return await whatsApp.loadOlder(chat)
+        switch entry.origin {
+        case .whatsApp(let chat): return await whatsApp.loadOlder(chat)
+        case .captured(let id): return await capture.loadOlder(id)
+        }
     }
 
     /// Older messages and the newest photos of a WhatsApp chat, as its card fetches them.
