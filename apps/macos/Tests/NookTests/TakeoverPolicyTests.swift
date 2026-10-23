@@ -42,6 +42,36 @@ final class TakeoverPolicyTests: XCTestCase {
         XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: point, summary: "point"), "a point could be any button")
     }
 
+    func testStepsThatAreHardToTakeBackAskFirst() {
+        for label in ["Erase", "Wissen", "Reset", "Move to Trash", "Niet bewaren", "Don't Save", "Replace", "Restart", "Install",
+                      "Allow", "Toestaan", "FileVault", "Firewall", "Remote Login", "Automatisch inloggen", "Change Password"] {
+            let input = controlInput([["action": "click", "element": label]])
+            XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: input, summary: "x"), label)
+        }
+        for keys in ["cmd+delete", "Command+Backspace", "cmd+shift+delete", "⌘q"] {
+            let input = controlInput([["action": "key", "keys": keys]])
+            XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: input, summary: "x"), keys)
+        }
+        for label in ["Night Shift…", "Dark", "Bluetooth", "Formaat", "Done"] {
+            let input = controlInput([["action": "click", "element": label]])
+            XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: input, summary: "x"), label)
+        }
+        XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: controlInput([["action": "key", "keys": "cmd+b"]]), summary: "x"))
+    }
+
+    func testAClickOnAPointIsJudgedByWhatIsThere() {
+        let point = controlInput([["action": "click", "x": 640, "y": 512]])
+        XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: point, summary: "x", labelAt: { _, _ in "Dark" }))
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: point, summary: "x", labelAt: { _, _ in "Send" }))
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: point, summary: "x", labelAt: { _, _ in nil }),
+                        "nothing named there: it asks")
+        let toTrash = controlInput([["action": "drag", "element": "Rapport.pdf", "to_element": "Prullenmand"]])
+        XCTAssertNotNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: toTrash, summary: "x"), "dropping on the Trash asks")
+        let move = controlInput([["action": "drag", "element": "Rapport.pdf", "to_element": "Documenten"]])
+        XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: move, summary: "x"))
+        XCTAssertNil(TakeoverPolicy.checkpoint(tool: "control_ui", input: controlInput([["action": "hover", "element": "Menu"]]), summary: "x"))
+    }
+
     func testACookieBannerIsAcceptedWithoutAsking() {
         for label in ["Alles accepteren", "Accept all cookies", "Alle akzeptieren", "Tout accepter"] {
             let input = controlInput([["action": "click", "element": label]])

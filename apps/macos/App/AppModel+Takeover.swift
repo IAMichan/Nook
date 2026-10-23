@@ -52,7 +52,7 @@ extension AppModel {
     static let nookReplyCardPrefix = "nookdone-reply-"
 
     /// Tools the brain uses during a task, as far as they are available.
-    static let takeoverToolNames = ["read_ui", "control_ui", "open_url", "open_app", "search_web", "read_webpage", "recall_memory"]
+    static let takeoverToolNames = ["read_ui", "look_ui", "control_ui", "open_url", "open_app", "search_web", "read_webpage", "recall_memory"]
 
     // MARK: Tools
 
@@ -264,11 +264,13 @@ extension AppModel {
         if state.stopRequested { throw NookError(tr("takeover.stopped")) }
         let run = Task { @MainActor [weak self] () throws -> String in
             guard let self else { throw CancellationError() }
+            // What look_ui sees goes to a brain that can see, when the screen may go to this brain at all.
             return try await self.brain.runTask(system: TakeoverPolicy.system, prompt: prompt, tools: tools, images: images,
                                                 perform: { [weak self] tool, input in
                                                     guard let self else { return ("Nook is not available.", true) }
                                                     return await self.performTakeoverStep(tool, input, tools: tools)
-                                                })
+                                                },
+                                                pictures: { screenAllowed ? UIDriver.takePicture().map { [$0] } ?? [] : [] })
         }
         state.task = run
         let text: String
@@ -307,8 +309,11 @@ extension AppModel {
         }
         if let refusal = TakeoverPolicy.refusal(tool: tool, input: input) { return (refusal, true) }
         let summary = spec.summarize(input)
+        // A click on a point is judged by what is there: the button under it, read from the app in front.
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         if let line = TakeoverPolicy.checkpoint(tool: tool, input: input, summary: summary,
-                                                cookieBanner: TakeoverState.shared.cookieBanner) {
+                                                cookieBanner: TakeoverState.shared.cookieBanner,
+                                                labelAt: { x, y in front.flatMap { UIDriver.label(at: CGPoint(x: x, y: y), pid: $0) } }) {
             updateTakeover(tr("takeover.waiting"))
             let yes = await askTakeoverUser(title: tr("takeover.check.title"), line: line, yes: tr("takeover.check.yes"))
             guard yes else {

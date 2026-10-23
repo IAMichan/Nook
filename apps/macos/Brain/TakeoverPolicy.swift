@@ -11,8 +11,8 @@ import Foundation
 
 enum TakeoverPolicy {
     /// Model rounds and tool calls one task may take: a checkout or a booking is easily twenty read/act cycles.
-    static let rounds = 40
-    static let calls = 120
+    static let rounds = 60
+    static let calls = 180
     static let toolName = "take_over"
     static let waitTool = "wait_for_user"
 
@@ -103,33 +103,101 @@ enum TakeoverPolicy {
     /// action stops at a checkpoint.
     static let freeTools: Set<String> = ["open_url", "open_app", waitTool]
 
+    /// Words on a button or switch that change something on the Mac that is hard to take back, in every language Nook
+    /// speaks: erasing, resetting, overwriting, losing unsaved work, restarting, installing, granting access, and the
+    /// security settings of the Mac. Whole words only. A click on such a control waits for the user's yes too.
+    static let dangerWords: [String] = [
+        // erase, reset, overwrite, lose work
+        "erase", "wissen", "wis", "effacer", "borrar", "reset", "resetten", "herstel", "herstellen", "zurücksetzen",
+        "réinitialiser", "restablecer", "restore", "formatteren", "formatieren", "formatear",
+        "uninstall", "deinstalleren", "verwijder app", "deinstallieren", "désinstaller", "desinstalar",
+        "trash", "move to trash", "move to bin", "prullenmand", "naar prullenmand", "verplaats naar prullenmand", "in den papierkorb", "papierkorb",
+        "mettre à la corbeille", "corbeille", "papelera", "prullenmand legen", "papierkorb entleeren", "vider la corbeille",
+        "vaciar papelera", "don't save", "dont save", "niet bewaren", "niet opslaan", "nicht sichern", "nicht speichern",
+        "ne pas enregistrer", "no guardar", "discard", "weggooien", "verwerfen", "replace", "replace all", "vervangen",
+        "alles vervangen", "ersetzen", "remplacer", "reemplazar", "overwrite", "overschrijven", "überschreiben", "écraser",
+        "sobrescribir", "force quit", "geforceerd stoppen", "sofort beenden", "forcer à quitter", "forzar salida",
+        // restart, shut down, sign out
+        "restart", "herstart", "opnieuw opstarten", "neustart", "neu starten", "redémarrer", "reiniciar",
+        "shut down", "uitschakelen", "zet uit", "ausschalten", "éteindre", "apagar", "log out", "uitloggen", "se déconnecter",
+        "cerrar sesión", "sign out",
+        // install, grant access
+        "install", "installeren", "installieren", "installer", "instalar", "update now", "nu bijwerken", "nu updaten",
+        "jetzt aktualisieren", "mettre à jour maintenant", "actualizar ahora", "restart now", "nu herstarten",
+        "allow", "toestaan", "sta toe", "erlauben", "zulassen", "autoriser", "permitir", "open anyway", "toch openen",
+        "trotzdem öffnen", "ouvrir quand même", "abrir igualmente",
+        // the Mac's security
+        "filevault", "firewall", "lockdown mode", "isolatiemodus", "blockierungsmodus", "mode isolement", "modo de aislamiento",
+        "remote login", "extern inloggen", "entfernte anmeldung", "session à distance", "sesión remota",
+        "remote management", "extern beheer", "screen sharing", "scherm delen", "bildschirmfreigabe", "partage d'écran",
+        "compartir pantalla", "file sharing", "bestandsdeling", "dateifreigabe", "partage de fichiers", "compartir archivos",
+        "automatic login", "automatisch inloggen", "automatische anmeldung", "connexion automatique", "inicio de sesión automático",
+        "full disk access", "volledige schijftoegang", "festplattenvollzugriff", "accès complet au disque", "acceso total al disco",
+        "administrator", "beheerder", "admin", "change password", "wachtwoord wijzigen", "passwort ändern",
+        "modifier le mot de passe", "cambiar contraseña", "password", "wachtwoord", "passwort", "mot de passe", "contraseña"
+    ]
+
+    /// Shortcuts that delete, empty the Trash or quit (and so may lose unsaved work): they wait for the user's yes.
+    static let dangerKeys: Set<String> = [
+        "cmd+delete", "cmd+shift+delete", "cmd+option+delete", "cmd+shift+option+delete", "cmd+forwarddelete", "shift+delete",
+        "cmd+q", "cmd+option+q"
+    ]
+
+    /// Whether clicking a control with this label needs the user's yes: it commits something outside the Mac, or changes
+    /// something on it that is hard to take back.
+    static func isRisky(_ label: String, cookieBanner: Bool) -> Bool {
+        guard !isCookieConsent(label, cookieBanner: cookieBanner) else { return false }
+        return mentions(label, commitWords) || mentions(label, dangerWords)
+    }
+
     /// Nil when the call may run on its own; otherwise the line the user approves ("Click “Place order” in Safari").
     /// `summary` is how the tool describes the call to the user. `cookieBanner`: the last read of the window mentions
-    /// cookies, so a plain "Accept" there only accepts cookies and runs on its own.
-    static func checkpoint(tool: String, input: [String: Any], summary: String, cookieBanner: Bool = false) -> String? {
+    /// cookies, so a plain "Accept" there only accepts cookies and runs on its own. `labelAt`: the name of what is at a
+    /// screen point, so a click on a point is judged by the button under it; without a name there, it waits.
+    static func checkpoint(tool: String, input: [String: Any], summary: String, cookieBanner: Bool = false,
+                           labelAt: (Double, Double) -> String? = { _, _ in nil }) -> String? {
         if freeTools.contains(tool) { return nil }
         guard tool == "control_ui" else { return summary }
         let steps = UIControl.steps(input["steps"])
         var searching = false
+        /// What the step acts on: its element, else what is at its point.
+        func target(_ element: String?, _ x: Double?, _ y: Double?) -> String? {
+            element ?? x.flatMap { x in y.flatMap { labelAt(x, $0) } }
+        }
         for step in steps {
             switch step.action {
             case .click, .doubleClick:
-                // A point without a label could be any button: it waits too.
-                guard let label = step.element,
-                      isCookieConsent(label, cookieBanner: cookieBanner) || !mentions(label, commitWords) else { return summary }
+                // A point with nothing named under it could be any button: it waits too.
+                guard let label = target(step.element, step.x, step.y), !isRisky(label, cookieBanner: cookieBanner) else { return summary }
+                searching = false
+            case .drag:
+                // Dropping something somewhere (a file on the Trash, an app out of a folder): both ends must be harmless.
+                guard let from = target(step.element, step.x, step.y), let to = target(step.toElement, step.toX, step.toY),
+                      !isRisky(from, cookieBanner: false), !isRisky(to, cookieBanner: false) else { return summary }
                 searching = false
             case .type:
+                if let label = step.element, mentions(label, dangerWords) { return summary }
                 searching = step.role == "search" || step.element.map { mentions($0, searchWords) } ?? false
                     || isWebAddress(step.text ?? "")
             case .key:
                 let keys = (step.keys ?? "").lowercased().replacingOccurrences(of: " ", with: "")
                 // Return sends a form, unless it follows typing into a search or address field.
                 if ["return", "enter", "cmd+return", "cmd+enter"].contains(keys), !searching { return summary }
+                if dangerKeys.contains(normalizedKeys(keys)) { return summary }
             default:
                 break
             }
         }
         return nil
+    }
+
+    /// "Command+Shift+Backspace", "⌘⇧delete" written the one way `dangerKeys` uses: cmd, shift, option, ctrl, then the key.
+    static func normalizedKeys(_ keys: String) -> String {
+        guard let combo = UIControl.parseKeys(keys) else { return keys }
+        let order: [(UIControl.Modifier, String)] = [(.command, "cmd"), (.shift, "shift"), (.option, "option"), (.control, "ctrl")]
+        let names = order.filter { combo.modifiers.contains($0.0) }.map(\.1)
+        let key = combo.key == "backspace" ? "delete" : combo.key
+        return (names + [key]).joined(separator: "+")
     }
 
     /// Never typed by Nook, also not with the user's yes: card and social security numbers (the user types those).
@@ -186,6 +254,16 @@ enum TakeoverPolicy {
     typing replaces the selection. Automatic list numbers are not part of the text: "point 5" is the fifth item. Read the \
     window again to check the text reads as asked. Formatting: select, then the shortcut (cmd+b, cmd+i, cmd+u) or the menu.
     - Files and folders: Finder (open_app "Finder"); cmd+shift+g goes to a folder by path, Return renames the selected item.
+    - Looking: read_ui gives the controls by name; look_ui gives a fresh picture of the window and every text on it \
+    with its position. Use look_ui when read_ui shows little (apps that draw their own controls, canvases, web apps, \
+    images), to find something by how it looks, and to check a result with your own eyes. Click what you saw with \
+    control_ui x and y.
+    - The mouse can do what a hand does: drag (a file into a folder, a slider, a selection of text, a window) and hover \
+    (a tooltip, a menu that opens on hover).
+    - Steps that are hard to take back also wait for the user's yes, and Nook asks for them itself: erasing, resetting, \
+    moving to the Trash, overwriting or replacing, not saving, restarting or shutting down, installing, allowing access, \
+    and the Mac's security settings (FileVault, firewall, sharing, passwords). Just propose them; never try to get around \
+    the question another way.
     - Any other app: read it, find the control a person would use, act, read again. When a step does not do what you \
     expected, read the window, think about why, and try another way (a different button, the menu, a shortcut) before \
     giving up.

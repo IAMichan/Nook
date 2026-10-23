@@ -27,6 +27,20 @@ final class UIControlTests: XCTestCase {
         XCTAssertEqual(parsed[4].y, 200.5)
     }
 
+    func testDragAndHoverSteps() {
+        let parsed = UIControl.steps([
+            ["action": "drag", "element": "Rapport.pdf", "to_element": "Documenten"],
+            ["action": "drag", "x": 10, "y": 20, "to_x": 300, "to_y": "400"],
+            ["action": "hover", "element": "Menu"]
+        ])
+        XCTAssertEqual(parsed.map(\.action), [.drag, .drag, .hover])
+        XCTAssertEqual(parsed[0].toElement, "Documenten")
+        XCTAssertEqual(parsed[1].toY, 400)
+        XCTAssertTrue(parsed.allSatisfy { UIControl.problems($0).isEmpty })
+        XCTAssertFalse(UIControl.problems(UIControl.Step(action: .drag, element: "Rapport.pdf")).isEmpty, "a drag needs an end")
+        XCTAssertFalse(UIControl.problems(UIControl.Step(action: .hover)).isEmpty, "a hover needs a place")
+    }
+
     func testStepsSentAsAJSONString() {
         let steps = UIControl.steps(#"[{"action":"click","element":"OK"}]"#)
         XCTAssertEqual(steps.first?.element, "OK")

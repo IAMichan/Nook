@@ -254,6 +254,7 @@ final class BrainService {
     /// `images`: a picture of the screen for brains that can see. Returns the brain's last text.
     func runTask(system: String, prompt: String, tools: [ToolSpec], images: [ChatImage] = [],
                  perform: @escaping @MainActor (String, [String: Any]) async -> (output: String, isError: Bool),
+                 pictures: (@MainActor () -> [ChatImage])? = nil,
                  onText: ((String) -> Void)? = nil) async throws -> String {
         guard settings.brainReady else { throw NookError(tr("takeover.noBrain")) }
         let profile = settings.brainProfile
@@ -264,12 +265,22 @@ final class BrainService {
             normalize: { input, schema in ActionGate.normalized(input, schema: schema) }
         )
         runner.perform = perform
+        // Only with a first picture: the fallback in `execute` drops the pictures when the brain refuses that one.
+        if canSee, !images.isEmpty, let pictures {
+            runner.pictures = { pictures().map { PromptImage(mediaType: $0.mediaType, base64: $0.base64) } }
+        }
         let started = CFAbsoluteTimeGetCurrent()
         let plan = try await execute(system: system, prompt: prompt, fittedHistory: "", history: [], webAllowed: false,
                                      profile: profile, runner: runner, images: images, onText: onText)
         let seconds = CFAbsoluteTimeGetCurrent() - started
         Log.brain.info("takeover: \(runner.callCount, privacy: .public) calls in \(seconds, format: .fixed(precision: 1)) s")
         return plan.text
+    }
+
+    /// Whether the chosen brain takes pictures (MLX and Claude Code do not).
+    var canSee: Bool {
+        let selection = settings.selection
+        return selection.runtime != .mlx && !(selection.runtime == .external && selection.provider == .claudeCode)
     }
 
     /// Memory: reads the user's recent messages and names what is worth remembering (see `Reflection`). Runs in the
@@ -313,8 +324,6 @@ final class BrainService {
                          onText: ((String) -> Void)?) async throws -> BrainPlan {
         // Images go to the brains that can take them. A model without vision refuses the request: it then answers from
         // the text Nook read in the image, which is in the context for every brain.
-        let selection = settings.selection
-        let canSee = selection.runtime != .mlx && !(selection.runtime == .external && selection.provider == .claudeCode)
         if !images.isEmpty, canSee {
             do {
                 return try await execute(system: system, prompt: prompt, fittedHistory: fittedHistory, history: history,
@@ -325,6 +334,8 @@ final class BrainService {
             } catch {
                 guard !Task.isCancelled else { throw error }
                 Log.brain.info("images not accepted, answering from the recognized text: \(error.localizedDescription, privacy: .public)")
+                // Nor the pictures a tool takes later in the same run.
+                runner.pictures = nil
             }
         }
         return try await execute(system: system, prompt: prompt, fittedHistory: fittedHistory, history: history,
@@ -655,7 +666,7 @@ final class BrainService {
         - Mail: use compose_mail to draft an interactive email draft in chat; inbox_mail to see recent inbox mail; search_mail for targeted email search; read_mail to read a whole message; mail_unread for counts and statistics; trash_mail to move mail to the Trash and mark_mail to mark it read, unread or flagged (by ids from search_mail or by a sender/subject filter).
         - Acting in ANY app: when an app has no tool of its own, use list_app_menu to see its menu commands and app_menu_command to run one (after approval). Never say you cannot act in an app before trying this.
         - Whole tasks: for something that takes many steps in apps or on websites (order or buy something, book a trip, unsubscribe, fill out and send a form, finish what is on screen, change an option that sits a few screens deep in System Settings, edit a part of a document), call take_over with the task in the user's words. Nook then works through it by itself in the user's apps and browser, and asks the user before anything that pays, orders, sends, deletes or books.
-        - Mouse and keyboard: when neither a tool nor a menu command can do it (a switch or option in System Settings, a setting in another app, a button in a window), read the window with read_ui and propose the clicks, typing and key presses with control_ui, naming elements by their exact label from read_ui. The user approves each batch of steps; afterwards Nook reads the window again and you continue with the next batch until the goal is reached, then say what changed. For System Settings, open the pane first (control_ui action open with an x-apple.systempreferences: url, or click it in the sidebar, or type in its search field). Focus (Do Not Disturb), Wi-Fi and Bluetooth are switched on and off in Control Center (read_ui and control_ui with app \"Control Center\"): System Settings only configures them. App names work in any language. Nook's own settings go through change_setting, never through control_ui. Never type passwords, never act in a password or login dialog: ask the user to do that part.
+        - Mouse and keyboard: when neither a tool nor a menu command can do it (a switch or option in System Settings, a setting in another app, a button in a window), read the window with read_ui and propose the clicks, typing and key presses with control_ui, naming elements by their exact label from read_ui (when read_ui shows little, look_ui gives a picture of the window and every text on it with its position, to click with x and y; drag and hover work too). The user approves each batch of steps; afterwards Nook reads the window again and you continue with the next batch until the goal is reached, then say what changed. For System Settings, open the pane first (control_ui action open with an x-apple.systempreferences: url, or click it in the sidebar, or type in its search field). Focus (Do Not Disturb), Wi-Fi and Bluetooth are switched on and off in Control Center (read_ui and control_ui with app \"Control Center\"): System Settings only configures them. App names work in any language. Nook's own settings go through change_setting, never through control_ui. Never type passwords, never act in a password or login dialog: ask the user to do that part.
         - Chats and other apps: search_messages / read_messages (iMessage and sms), search_whatsapp / read_whatsapp, search_bear / read_bear, search_things search the whole history of those apps, not only what is on screen. For unread chats or who is waiting for a reply ("heb ik chats openstaan?"), use whatsapp_open_chats / messages_open_chats. Other apps: read_app, files via search_files, and any connected MCP server.
         - When the user names a source ("in WhatsApp", "in my mail"), answer about that source only. If Nook could not read it, say so and why; never answer yes or no about it from other sources, and never present files, notes or code that merely mention its name as the answer.
         - Calendar: use check_availability for free/busy checks across all calendars; list_events to inspect dates; create_event and update_event to manage events.
