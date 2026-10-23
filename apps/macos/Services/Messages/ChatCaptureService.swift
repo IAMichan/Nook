@@ -142,17 +142,31 @@ final class ChatCaptureService: ObservableObject {
         bridgeNudges = [:]
         // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Chats.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
             Task { @MainActor in
-                await self?.poll()
-                await self?.pollBridges()
+                await self?.pollTick()
             }
         }
-        timer?.tolerance = 0.5
         Task {
             await poll()
             await pollBridges()
         }
+    }
+
+    private var lastPollTime: Date = .distantPast
+
+    /// Evaluates energy policy and display sleep state before polling databases.
+    private func pollTick() async {
+        let plan = EnergyMonitor.shared.plan
+        if plan.reasons.contains(.displayAsleep) {
+            guard Date().timeIntervalSince(lastPollTime) >= 15 else { return }
+        } else {
+            let interval = Self.interval * plan.slowdown
+            guard Date().timeIntervalSince(lastPollTime) >= interval - 0.25 else { return }
+        }
+        lastPollTime = Date()
+        await poll()
+        await pollBridges()
     }
 
     func stop() {

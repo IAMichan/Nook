@@ -187,17 +187,31 @@ struct SubagentBar: View {
 }
 
 /// "Watching PR [#12 · Open] CI passed · 2 reviews" with a way to open it and to stop: a row of the tray above the composer,
-/// in the same pills as the tray under a new session's box.
+/// in the same pills as the tray under a new session's box. Stopped, it stays as "Not watching PR [#12]": a click on the
+/// pill watches it again, as a click while watching stops.
 struct PullRequestWatchStrip: View {
-    let watch: PullRequestWatch
-    let stop: () -> Void
+    let url: URL
+    /// nil while the session's pull request is not watched.
+    let watch: PullRequestWatch?
+    let toggle: () -> Void
+    @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            ComposerPill(symbol: "eye", dot: nil, text: tr("ws.prwatch.watching"), showsChevron: false)
-            // The state in the same badge as on the pull request page; CI and reviews after it.
-            PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch.state) ?? .open, number: number)
+            Button(action: toggle) {
+                ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
+                             text: tr(watch == nil ? "ws.prwatch.notWatching" : "ws.prwatch.watching"), showsChevron: false)
+            }
+            .buttonStyle(.plain)
+            .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
+            // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
+            Button(action: open) {
+                PullRequestStateBadge(glyph: watch.flatMap { PullRequestBadge.Glyph(rawValue: $0.state) } ?? .open, number: number)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("ws.prwatch.open"))
             if let ci {
                 // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
                 Button(action: openCI) {
@@ -206,13 +220,13 @@ struct PullRequestWatchStrip: View {
                         Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
                     }
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(watch.checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
+                    .foregroundStyle(watch?.checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(tr("ws.prwatch.ciHelp"))
                 .popover(isPresented: $showsCI, arrowEdge: .top) {
-                    if let url = URL(string: watch.url) { CIChecksPopover(pullRequest: url).frame(width: 680, height: 440) }
+                    CIChecksPopover(pullRequest: url).frame(width: 680, height: 440)
                 }
             }
             if !summary.isEmpty {
@@ -223,10 +237,8 @@ struct PullRequestWatchStrip: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 6)
-            if let url = URL(string: watch.url) {
-                trayButton("arrow.up.right.square", tr("ws.prwatch.open")) { NSWorkspace.shared.open(url) }
-            }
-            trayButton("xmark", tr("ws.prwatch.stop"), action: stop)
+            trayButton("arrow.up.right.square", tr("ws.prwatch.open"), action: open)
+            if watch != nil { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
         }
         .foregroundStyle(NookTheme.textSecondary)
     }
@@ -236,10 +248,10 @@ struct PullRequestWatchStrip: View {
     }
 
     /// "…/pull/12" or "…/-/merge_requests/12".
-    private var number: Int? { URL(string: watch.url).flatMap { Int($0.lastPathComponent) } }
+    private var number: Int? { Int(url.lastPathComponent) }
 
     private var ci: String? {
-        switch watch.checks {
+        switch watch?.checks ?? "" {
         case "success": return tr("ws.prwatch.ciPassed")
         case "failure": return tr("ws.prwatch.ciFailed")
         case "pending": return tr("ws.prwatch.ciPending")
@@ -247,8 +259,13 @@ struct PullRequestWatchStrip: View {
         }
     }
 
+    /// A GitHub pull request opens in Nook, as a link to it in the conversation does: in the session's side panel. A
+    /// GitLab merge request (or no GitHub account) opens in your browser.
+    private func open() {
+        if !AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) { NSWorkspace.shared.open(url) }
+    }
+
     private func openCI() {
-        guard let url = URL(string: watch.url) else { return }
         if GitHubPullRequests.parse(url) != nil {
             showsCI.toggle()
         } else {
@@ -258,6 +275,7 @@ struct PullRequestWatchStrip: View {
     }
 
     private var summary: String {
+        guard let watch else { return "" }
         var parts: [String] = []
         if watch.reviewCount > 0 { parts.append(tr("ws.prwatch.reviews", watch.reviewCount)) }
         if watch.checkedAt == nil { parts.append(tr("ws.prwatch.loading")) }

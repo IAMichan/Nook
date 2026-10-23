@@ -977,13 +977,17 @@ struct AgentRunPanel: View {
     /// The tray above the box, when there is something to show in it.
     @ViewBuilder
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
-        if watch != nil || !waiting.isEmpty {
+        // The watched pull request, or the session's open one you stopped watching (or never watched).
+        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchablePullRequest()
+        if pullRequest != nil || !waiting.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    if let watch {
-                        PullRequestWatchStrip(watch: watch) { workspace.watchPullRequest(runID, url: nil) }
+                    if let pullRequest {
+                        PullRequestWatchStrip(url: pullRequest, watch: watch) {
+                            workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
+                        }
                     }
-                    if watch != nil && !waiting.isEmpty { ComposerTrayDivider() }
+                    if pullRequest != nil && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
                         QueuedMessagesStrip(
                             queue: waiting, editing: editingQueued,
