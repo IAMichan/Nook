@@ -1,19 +1,47 @@
 import XCTest
 
-/// The pull request list in one GraphQL request per account.
+/// The pull request list in two GraphQL requests per account.
 final class PullRequestGraphQLTests: XCTestCase {
-    func testQueryAsksForEverythingAtOnce() throws {
-        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.body()) as? [String: Any])
-        let query = try XCTUnwrap(body["query"] as? String)
-        XCTAssertTrue(query.contains("viewer { login }"), "no separate /user request")
-        XCTAssertTrue(query.contains("statusCheckRollup { state }"), "CI comes with the row, not per pull request")
-        let variables = try XCTUnwrap(body["variables"] as? [String: String])
-        XCTAssertEqual(variables["mine"], "is:pr is:open archived:false author:@me sort:updated-desc")
+    func testQueryAsksForEverythingInTwoRequests() throws {
+        let bodies = try PullRequestGraphQL.bodies().map { try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        XCTAssertEqual(bodies.count, 2)
+        let own = try XCTUnwrap(bodies[0]["query"] as? String)
+        XCTAssertTrue(own.contains("viewer {"), "no separate /user request")
+        XCTAssertTrue(own.contains("mine: pullRequests(states: [OPEN]"), "your own are read from your account, not searched")
+        XCTAssertTrue(own.contains("mineClosed: pullRequests(states: [CLOSED, MERGED]"))
+        XCTAssertFalse(own.contains("search("), "a pull request just opened shows without waiting for the search index")
+        let reviews = try XCTUnwrap(bodies[1]["query"] as? String)
+        let variables = try XCTUnwrap(bodies[1]["variables"] as? [String: String])
         XCTAssertTrue(variables["reviews"]?.contains("review-requested:@me") == true)
-        XCTAssertEqual(variables["mineClosed"], "is:pr is:closed archived:false author:@me sort:updated-desc")
         XCTAssertTrue(variables["reviewsClosed"]?.contains("reviewed-by:@me") == true)
-        XCTAssertTrue(query.contains("isDraft updatedAt state"), "open, closed or merged comes with the row")
-        XCTAssertTrue(query.contains("additions deletions"), "the lines changed come with the row")
+        for query in [own, reviews] {
+            XCTAssertTrue(query.contains("\nfragment row on PullRequest"))
+            XCTAssertTrue(query.contains("statusCheckRollup { state }"), "CI comes with the row, not per pull request")
+            XCTAssertTrue(query.contains("isDraft updatedAt state"), "open, closed or merged comes with the row")
+            XCTAssertTrue(query.contains("additions deletions"), "the lines changed come with the row")
+            XCTAssertTrue(query.contains("nameWithOwner isArchived"))
+        }
+    }
+
+    func testParseTwoAnswers() throws {
+        let own = #"""
+        {"data":{"viewer":{"login":"michan",
+          "mine":{"nodes":[{"number":604,"title":"New","isDraft":false,"author":{"login":"michan"},
+            "repository":{"nameWithOwner":"IAMichan/Nook","isArchived":false}},
+            {"number":2,"title":"Old repo","isDraft":false,"author":{"login":"michan"},"repository":{"nameWithOwner":"a/old","isArchived":true}}]},
+          "mineClosed":{"nodes":[{"number":600,"title":"Done","state":"MERGED","isDraft":false,"author":{"login":"michan"},
+            "repository":{"nameWithOwner":"IAMichan/Nook","isArchived":false}}]}}}}
+        """#
+        let reviews = #"""
+        {"data":{"reviews":{"nodes":[{"number":3,"title":"Fix","isDraft":false,"author":{"login":"anna"},"repository":{"nameWithOwner":"c/d"}}]},
+          "reviewsClosed":{"nodes":[]}}}
+        """#
+        let list = try PullRequestGraphQL.parse([Data(own.utf8), Data(reviews.utf8)])
+        XCTAssertEqual(list.login, "michan")
+        XCTAssertEqual(list.mine.map(\.id), ["IAMichan/Nook#604", "IAMichan/Nook#600"], "an archived repository's pull request stays out")
+        XCTAssertEqual(list.reviews.map(\.id), ["c/d#3"])
+        XCTAssertThrowsError(try PullRequestGraphQL.parse([Data(own.utf8), Data(#"{"errors":[{"message":"Bad credentials"}]}"#.utf8)]),
+                             "one failed request fails the list, as one request did")
     }
 
     func testParse() throws {

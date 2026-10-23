@@ -1,7 +1,7 @@
 import Foundation
 
 /// Reads the open pull requests of every GitHub account that is connected, for the Pull requests view. Read-only.
-/// One GraphQL request per account (see PullRequestGraphQL), all accounts at once, parsed off the main thread.
+/// Two GraphQL requests per account side by side (see PullRequestGraphQL), all accounts at once, parsed off the main thread.
 enum GitHubPullRequestList {
     @MainActor
     static var isAvailable: Bool {
@@ -172,7 +172,10 @@ enum GitHubPullRequestList {
     }
 
     private static func fetch(token: String) async throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
-        try PullRequestGraphQL.parse(try await post(PullRequestGraphQL.body(), token: token))
+        let bodies = PullRequestGraphQL.bodies()
+        async let own = post(bodies[0], token: token)
+        async let reviews = post(bodies[1], token: token)
+        return try PullRequestGraphQL.parse([try await own, try await reviews])
     }
 
     /// One GraphQL request, asked again when it failed on something passing (see ConnectorRetry).

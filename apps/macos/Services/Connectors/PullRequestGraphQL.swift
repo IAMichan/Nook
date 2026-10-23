@@ -205,44 +205,69 @@ enum PullRequestWatchList {
     }
 }
 
-/// The whole list in one GraphQL request per account: four aliased searches (yours and the ones waiting for your
-/// review while open; yours and the ones you reviewed once closed or merged), your login, and each pull request's state,
-/// lines added and removed, and CI as one rolled-up state of its latest commit, instead of a request per pull request. Foundation only, so tests can use it.
+/// The whole list in two GraphQL requests per account, sent at once: your own pull requests (open, then closed or
+/// merged) read straight from your account, and two searches for the ones waiting for your review while open and the
+/// ones you reviewed once closed or merged. Your login comes along, and each pull request's state, lines added and
+/// removed, and CI as one rolled-up state of its latest commit, instead of a request per pull request. Your own are
+/// not searched: GitHub's search index can take minutes to see a pull request just opened or merged, and searches are
+/// the slow part of the query. Foundation only, so tests can use it.
 enum PullRequestGraphQL {
-    static let query = """
-    query NookPullRequests($mine: String!, $reviews: String!, $mineClosed: String!, $reviewsClosed: String!) {
-      viewer { login }
-      mine: search(query: $mine, type: ISSUE, first: 50) { nodes { ...row } }
+    static let ownQuery = """
+    query NookOwnPullRequests {
+      viewer {
+        login
+        mine: pullRequests(states: [OPEN], first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...row } }
+        mineClosed: pullRequests(states: [CLOSED, MERGED], first: 30, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...row } }
+      }
+    }
+    """
+
+    static let reviewQuery = """
+    query NookReviewPullRequests($reviews: String!, $reviewsClosed: String!) {
       reviews: search(query: $reviews, type: ISSUE, first: 50) { nodes { ...row } }
-      mineClosed: search(query: $mineClosed, type: ISSUE, first: 30) { nodes { ...row } }
       reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) { nodes { ...row } }
     }
+    """
+
+    static let fragment = """
     fragment row on PullRequest {
       id number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
       labels(first: 6) { nodes { name color } }
       author { login }
-      repository { nameWithOwner }
+      repository { nameWithOwner isArchived }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     }
     """
 
-    static func body() -> Data {
-        let variables = ["mine": "is:pr is:open archived:false author:@me sort:updated-desc",
-                         "reviews": "is:pr is:open archived:false review-requested:@me sort:updated-desc",
-                         "mineClosed": "is:pr is:closed archived:false author:@me sort:updated-desc",
-                         "reviewsClosed": "is:pr is:closed archived:false reviewed-by:@me -author:@me sort:updated-desc"]
-        return (try? JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])) ?? Data()
+    /// The two requests, sent side by side; `parse` takes their answers together.
+    static func bodies() -> [Data] {
+        let reviews = ["reviews": "is:pr is:open archived:false review-requested:@me sort:updated-desc",
+                       "reviewsClosed": "is:pr is:closed archived:false reviewed-by:@me -author:@me sort:updated-desc"]
+        let requests: [[String: Any]] = [["query": ownQuery + "\n" + fragment],
+                                         ["query": reviewQuery + "\n" + fragment, "variables": reviews]]
+        return requests.map { (try? JSONSerialization.data(withJSONObject: $0)) ?? Data() }
     }
 
     /// The answer: your login and both lists, open pull requests first, then the closed and merged ones. Throws GitHub's
-    /// own message when the query failed as a whole.
+    /// own message when a query failed as a whole.
     static func parse(_ data: Data) throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw NookError("GitHub returned an unexpected response.")
+        try parse([data])
+    }
+
+    /// The answers of `bodies()` together. Your own lists sit under `viewer`; an older answer had them at the top.
+    static func parse(_ answers: [Data]) throws -> (login: String, mine: [PullRequestItem], reviews: [PullRequestItem]) {
+        var payload: [String: Any] = [:]
+        for data in answers {
+            guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                throw NookError("GitHub returned an unexpected response.")
+            }
+            guard let part = root["data"] as? [String: Any] else { throw failure(root) }
+            payload.merge(part) { first, _ in first }
         }
-        guard let payload = root["data"] as? [String: Any] else { throw failure(root) }
-        let login = ((payload["viewer"] as? [String: Any])?["login"] as? String) ?? ""
-        return (login, rows(payload["mine"]) + rows(payload["mineClosed"]), rows(payload["reviews"]) + rows(payload["reviewsClosed"]))
+        let viewer = (payload["viewer"] as? [String: Any]) ?? [:]
+        let login = (viewer["login"] as? String) ?? ""
+        func list(_ name: String) -> [PullRequestItem] { rows(viewer[name] ?? payload[name]) }
+        return (login, list("mine") + list("mineClosed"), list("reviews") + list("reviewsClosed"))
     }
 
     /// The watched entries in one request: an open and a closed search per entry, aliased by position.
@@ -258,7 +283,6 @@ enum PullRequestGraphQL {
                 variables[name] = PullRequestWatchList.search(entry, closed: closed)
             }
         }
-        let fragment = query[query.range(of: "fragment row")!.lowerBound...]
         let text = "query NookWatchedPullRequests(\(declarations.joined(separator: ", "))) {\n\(fields.joined(separator: "\n"))\n}\n\(fragment)"
         return (try? JSONSerialization.data(withJSONObject: ["query": text, "variables": variables])) ?? Data()
     }
@@ -323,8 +347,10 @@ enum PullRequestGraphQL {
 
     private static func rows(_ search: Any?) -> [PullRequestItem] {
         (((search as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []).compactMap { node in
+            // Your own pull requests are not searched, so `archived:false` does not leave those of archived repositories out.
             guard let number = (node["number"] as? NSNumber)?.intValue,
-                  let repo = (node["repository"] as? [String: Any])?["nameWithOwner"] as? String else { return nil }
+                  let repository = node["repository"] as? [String: Any], (repository["isArchived"] as? Bool) != true,
+                  let repo = repository["nameWithOwner"] as? String else { return nil }
             let commits = ((node["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
             let commit = commits.last?["commit"] as? [String: Any]
             let rollup = (commit?["statusCheckRollup"] as? [String: Any])?["state"] as? String
