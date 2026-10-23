@@ -15,12 +15,15 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     let author: String
     var ci: CI = .unknown
     var state: State = .open
+    /// Lines added and removed across the whole pull request; nil in a list saved before the row showed them.
+    var additions: Int? = nil
+    var deletions: Int? = nil
 
     var id: String { "\(repo)#\(number)" }
 }
 
 extension PullRequestItem {
-    private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state }
+    private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions }
 
     /// A list saved before states existed only held open pull requests.
     init(from decoder: Decoder) throws {
@@ -29,7 +32,9 @@ extension PullRequestItem {
                   title: try c.decode(String.self, forKey: .title), url: try c.decodeIfPresent(URL.self, forKey: .url),
                   draft: try c.decode(Bool.self, forKey: .draft), updated: try c.decodeIfPresent(Date.self, forKey: .updated),
                   author: try c.decode(String.self, forKey: .author), ci: try c.decodeIfPresent(CI.self, forKey: .ci) ?? .unknown,
-                  state: try c.decodeIfPresent(State.self, forKey: .state) ?? .open)
+                  state: try c.decodeIfPresent(State.self, forKey: .state) ?? .open,
+                  additions: try c.decodeIfPresent(Int.self, forKey: .additions),
+                  deletions: try c.decodeIfPresent(Int.self, forKey: .deletions))
     }
 }
 
@@ -138,8 +143,8 @@ enum PullRequestWatchList {
 }
 
 /// The whole list in one GraphQL request per account: four aliased searches (yours and the ones waiting for your
-/// review while open; yours and the ones you reviewed once closed or merged), your login, and each pull request's state
-/// and CI as one rolled-up state of its latest commit, instead of a request per pull request. Foundation only, so tests can use it.
+/// review while open; yours and the ones you reviewed once closed or merged), your login, and each pull request's state,
+/// lines added and removed, and CI as one rolled-up state of its latest commit, instead of a request per pull request. Foundation only, so tests can use it.
 enum PullRequestGraphQL {
     static let query = """
     query NookPullRequests($mine: String!, $reviews: String!, $mineClosed: String!, $reviewsClosed: String!) {
@@ -150,7 +155,7 @@ enum PullRequestGraphQL {
       reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) { nodes { ...row } }
     }
     fragment row on PullRequest {
-      number title url isDraft updatedAt state
+      number title url isDraft updatedAt state additions deletions
       author { login }
       repository { nameWithOwner }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -263,7 +268,9 @@ enum PullRequestGraphQL {
                                    url: (node["url"] as? String).flatMap(URL.init(string:)), draft: (node["isDraft"] as? Bool) ?? false,
                                    updated: (node["updatedAt"] as? String).flatMap(date),
                                    author: ((node["author"] as? [String: Any])?["login"] as? String) ?? "", ci: ci(rollup),
-                                   state: state(node["state"] as? String))
+                                   state: state(node["state"] as? String),
+                                   additions: (node["additions"] as? NSNumber)?.intValue,
+                                   deletions: (node["deletions"] as? NSNumber)?.intValue)
         }
     }
 

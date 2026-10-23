@@ -83,6 +83,10 @@ The checklist for a new or changed view:
   or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
+- A key that runs a command (send, find, the command palette, a new session, undo…) is a keybinding command, offered
+  with `.keyCommand` / `.keyCommands` and listed in `Keybindings.commandIDs` and `defaults`, never a hidden
+  `Button("").keyboardShortcut(…)` or an `onKeyPress` with modifiers. That keeps it rebindable in
+  `~/.nook/keybindings.json` and listed under Settings › Shortcuts (see [`KEYBINDINGS.md`](KEYBINDINGS.md)).
 - A field where you write words (not a name, a path or a search) gets `@` through `.mentions` and `MentionSuggestions`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice under
@@ -136,6 +140,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
 | `FileContextMenu`, `.sessionFileMenu(_:runID:path:)` | `FileContextMenu.swift` | The right-click menu of a session's file: open in your editor (at a line, through `WorkspaceManager.openFile`), show in Finder, copy the path or the path in the repository. Use it on every row that shows a changed file |
+| `.keyCommand(_:perform:)`, `.keyCommands(_:context:enabled:priority:)`, `KeyCommandCenter` | `KeyCommands.swift` | Offers keybinding commands (`Keybindings.commandIDs`) to the panel's one key monitor while the view is in a window; `context` adds `when` flags (`paletteOpen`, `turnRunning`…), `enabled` limits it to while a field has the keyboard, `priority: -1` makes a window-wide fallback. See [`KEYBINDINGS.md`](KEYBINDINGS.md) |
 | `.onEscapeKey(enabled:perform:)` | `EscapeKey.swift` | Escape that closes what is open (a chat in the Chats tab) also when nothing in the window has the keyboard, where `onExitCommand` hears nothing; a text field being typed in keeps its own Escape |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |

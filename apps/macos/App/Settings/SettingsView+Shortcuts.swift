@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Shortcuts: every key of Nook in one list, for talking, dictating and completing.
+/// Settings › Shortcuts: every key of Nook in one list, for talking, dictating, the panel and completing.
 extension SettingsView {
     // MARK: Shortcuts
 
@@ -15,6 +15,7 @@ extension SettingsView {
             } header: {
                 Text(tr("settings.group.nook"))
             }
+            KeybindingsSettingsSection()
             Section {
                 Picker(tr("flow.settings.key"), selection: $flowStore.key) {
                     ForEach(FlowKey.allCases) { key in
