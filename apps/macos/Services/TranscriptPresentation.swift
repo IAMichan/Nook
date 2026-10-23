@@ -249,6 +249,57 @@ enum TranscriptPresentation {
     static func headline(_ text: String) -> String {
         TimelinePresentation.headline(text)
     }
+
+    /// Where each of your messages sits in the conversation, from 0 (the top) to 1 (the end): the marks on the rail
+    /// beside it, which take the place of a scroll bar. The conversation lays out only what is on screen, so the place
+    /// is an estimate from how long each row reads; a message folded into "Worked for …" marks its fold.
+    static func promptMarks(_ rows: [TranscriptRow]) -> [PromptMark] {
+        let weights = rows.map(weight)
+        let total = weights.reduce(0, +)
+        guard total > 0 else { return [] }
+        var marks: [PromptMark] = []
+        var above = 0.0
+        for (row, weight) in zip(rows, weights) {
+            let messages: [AgentChatMessage]
+            switch row {
+            case .user(let message): messages = [message]
+            case .fold(_, _, let inner):
+                messages = inner.compactMap { row -> AgentChatMessage? in
+                    if case .user(let message) = row { return message }
+                    return nil
+                }
+            default: messages = []
+            }
+            for message in messages {
+                marks.append(PromptMark(id: message.id, row: row.id, position: above / total, text: message.text))
+            }
+            above += weight
+        }
+        return marks
+    }
+
+    /// Roughly how many lines a row takes: enough to tell a long answer from a one-line step.
+    private static func weight(_ row: TranscriptRow) -> Double {
+        func lines(_ text: String, width: Int) -> Double {
+            Double(text.split(separator: "\n", omittingEmptySubsequences: false)
+                .reduce(0) { $0 + max(1, ($1.count + width - 1) / width) })
+        }
+        switch row {
+        // A long message folds to its first eight lines; the space above it starts the turn.
+        case .user(let message): return 3 + min(8, lines(message.text, width: 60))
+        case .assistant(let message, _): return 1 + lines(message.text, width: 90)
+        default: return 1.5
+        }
+    }
+}
+
+/// One of your messages on the rail beside the conversation. `row`: the row to scroll to, which is the message itself or
+/// the fold it is in.
+struct PromptMark: Identifiable, Equatable {
+    let id: String
+    let row: String
+    let position: Double
+    let text: String
 }
 
 extension SessionOutputs {

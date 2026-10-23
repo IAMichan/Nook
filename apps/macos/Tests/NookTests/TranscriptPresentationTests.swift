@@ -199,4 +199,27 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(AgentTranscript.codexExitCode("Exit code: 1\nWall time: 0.2 seconds\nOutput:\n"), 1)
         XCTAssertNil(AgentTranscript.codexExitCode("plain output"))
     }
+
+    func testEveryMessageYouSentGetsAMarkInOrderDownTheRail() {
+        let rows = TranscriptPresentation.rows(finishedTurn() + [message("u2", .user, "Nog iets", at: 100)], working: false)
+        let marks = TranscriptPresentation.promptMarks(rows)
+        XCTAssertEqual(marks.map(\.id), ["u1", "u2"])
+        XCTAssertEqual(marks.map(\.row), ["u1", "u2"], "a click scrolls to the message itself")
+        XCTAssertEqual(marks.first?.position, 0, "the first message is at the top")
+        XCTAssertTrue(marks[1].position > 0.5 && marks[1].position < 1, "the last message sits below its earlier turn")
+    }
+
+    func testALongAnswerPushesTheNextMarkFurtherDown() {
+        let short = [message("u1", .user, "Hoi"), message("x1", .assistant, "Ja."), message("u2", .user, "En nu?")]
+        let long = [message("u1", .user, "Hoi"), message("x1", .assistant, String(repeating: "Een lange regel tekst. ", count: 60)),
+                    message("u2", .user, "En nu?")]
+        let near = TranscriptPresentation.promptMarks(TranscriptPresentation.rows(short, working: false))[1].position
+        let far = TranscriptPresentation.promptMarks(TranscriptPresentation.rows(long, working: false))[1].position
+        XCTAssertGreaterThan(far, near)
+    }
+
+    func testAConversationWithoutYourMessagesHasNoMarks() {
+        XCTAssertTrue(TranscriptPresentation.promptMarks([]).isEmpty)
+        XCTAssertTrue(TranscriptPresentation.promptMarks(TranscriptPresentation.rows([message("x1", .assistant, "Hallo")], working: false)).isEmpty)
+    }
 }
