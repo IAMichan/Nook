@@ -52,3 +52,31 @@ extension TimelineSchedule where Self == NookFrames {
         NookFrames(fps: fps, paused: paused)
     }
 }
+
+/// Draws `content` in a hosting view of its own: its frames update only this small SwiftUI graph and layer tree, not the
+/// window it sits in. Without it, each frame of Nook or his ring laid out and committed the whole window (the open panel,
+/// the main window with a long transcript or chat), many times a second. It takes no clicks or hover: those stay with
+/// the views around it, so give the place it covers a `contentShape` there.
+struct SeparateGraph<Content: View>: NSViewRepresentable {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> PassThroughHostingView<Content> {
+        let host = PassThroughHostingView(rootView: content)
+        // SwiftUI around it decides its size; it does not ask for one of its own.
+        host.sizingOptions = []
+        return host
+    }
+
+    func updateNSView(_ host: PassThroughHostingView<Content>, context: Context) {
+        host.rootView = content
+    }
+}
+
+/// A hosting view that lets every click and hover through to the views behind it.
+final class PassThroughHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}

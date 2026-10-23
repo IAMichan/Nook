@@ -86,13 +86,19 @@ struct NookTaskRing: View {
         // frame redraws the whole window the ring is in. Only while you point at a piece in the panel does it run at the
         // interactive rate.
         let rate = compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
-        TimelineView(.nookFrames(fps: rate, paused: !moving && !following)) { context in
-            ring(at: context.date)
+        // In a graph of its own (`SeparateGraph`), so its frames do not update the window it is in; hover and clicks stay
+        // on the band below.
+        SeparateGraph {
+            TimelineView(.nookFrames(fps: rate, paused: !moving && !following)) { context in
+                ring(at: context.date)
+            }
+            // One picture per frame instead of a layer per piece, its light and its glow; twice its size, so the ring
+            // trailing behind Nook and stretching is not cut off.
+            .frame(width: side * 2, height: side * 2)
+            .drawingGroup()
         }
-        // One picture per frame instead of a layer per piece, its light and its glow; twice its size, so the ring
-        // trailing behind Nook and stretching is not cut off.
         .frame(width: side * 2, height: side * 2)
-        .drawingGroup()
+        .allowsHitTesting(false)
         .frame(width: side, height: side)
         .contentShape(RingBand(radius: radius, width: 16), eoFill: true)
         .onContinuousHover { phase in

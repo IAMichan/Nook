@@ -48,17 +48,23 @@ struct NookOrb: View {
         // he sits in to place and align everything again, on every screen's notch.
         Color.clear
             .frame(width: size, height: size)
+            // Clicks and hover land on his round shape here: the drawing over it lets them through.
+            .contentShape(Circle())
             .overlay {
-                TimelineView(.nookFrames(fps: animated ? awakeRate : Self.dozingFrameRate,
-                                        paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
-                    let p = pose(at: context.date)
-                    orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
+                // In a graph of its own (`SeparateGraph`), so his frames do not update the window he is in.
+                SeparateGraph {
+                    TimelineView(.nookFrames(fps: animated ? awakeRate : Self.dozingFrameRate,
+                                            paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
+                        let p = pose(at: context.date)
+                        orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
+                    }
+                    // Drawn as one picture: Nook is dozens of layers (shading, eyes, mouth, what he wears). Three times
+                    // his size, so the glow, a hat and a hop are not cut off; laid out at his own size.
+                    .frame(width: size * 3, height: size * 3)
+                    .drawingGroup()
                 }
-                // Drawn as one picture: Nook is dozens of layers (shading, eyes, mouth, what he wears), and every frame
-                // SwiftUI otherwise walks and updates all of them, in every screen's notch. Three times his size, so the
-                // glow, a hat and a hop are not cut off; laid out at his own size.
                 .frame(width: size * 3, height: size * 3)
-                .drawingGroup()
+                .allowsHitTesting(false)
                 .frame(width: size, height: size)
             }
             .background(PointerProbe(tracker: tracker))
