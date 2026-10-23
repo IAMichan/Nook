@@ -1,6 +1,6 @@
 # nook-chatd
 
-Nook's own chat helper. It links **Telegram, Signal, Messenger, Instagram, X and LinkedIn** on this Mac, without Beeper, and
+Nook's own chat helper. It links **Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack** on this Mac, without Beeper, and
 serves them to Nook's Chats tab. Licensed under the **AGPL-3.0** (see [LICENSE](LICENSE)), separate from Nook's MIT
 license, because it is built on the [mautrix](https://github.com/mautrix) bridgev2 network connectors. Why and how:
 [docs/ADR-CHAT-LINKS.md](../../docs/ADR-CHAT-LINKS.md).
@@ -16,7 +16,8 @@ license, because it is built on the [mautrix](https://github.com/mautrix) bridge
   messages, send, edit, delete, reactions, read/unread, pin, mute, archive, assets) and `live.go` the `/v1/ws` live line.
   It listens on `127.0.0.1` only, behind a token Nook makes at each start (`NOOK_CHATD_TOKEN`).
 - Logins (`login.go`) use a QR code (Signal), the app's own website in Nook's sign-in window (Instagram, Messenger,
-  X, LinkedIn), or fields Nook shows (Telegram: your phone number, the code Telegram sends, then your 2FA password if
+  X, LinkedIn, Slack: there the step's own script finds the token in the page, served as a `special` field with
+  `extractJS`), or fields Nook shows (Telegram: your phone number, the code Telegram sends, then your 2FA password if
   you set one, as on a new phone). Telegram's connector (mautrix-telegram, with its own Go copy of gotd) needs no TDLib.
 - Telegram needs an app id and hash from my.telegram.org. Nook passes the ones its build comes with (Info.plist keys
   `NookTelegramAPIID` / `NookTelegramAPIHash`) or your own from Settings as `NOOK_TELEGRAM_API_ID` /

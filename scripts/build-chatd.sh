@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds nook-chatd, Nook's own chat helper (apps/chatd, AGPL-3.0), once per Mac: it links Telegram, Signal, Messenger,
-# Instagram, X and LinkedIn without Beeper (see docs/ADR-CHAT-LINKS.md). Telegram then needs no scripts/build-tdlib.sh.
+# Instagram, X, LinkedIn and Slack without Beeper (see docs/ADR-CHAT-LINKS.md). Telegram then needs no scripts/build-tdlib.sh.
 #
 #   scripts/build-chatd.sh
 #

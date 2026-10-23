@@ -213,8 +213,12 @@ func stepJSON(step *bridgev2.LoginStep) map[string]any {
 			}
 			source := f.Sources[0]
 			kind := string(source.Type)
-			if source.Type == bridgev2.LoginCookieTypeRequestHeader {
+			switch source.Type {
+			case bridgev2.LoginCookieTypeRequestHeader:
 				kind = "header"
+			case bridgev2.LoginCookieTypeSpecial:
+				// Found by the step's own script in the page (Slack's token in its local settings), by the field's id.
+				kind = "special"
 			}
 			fields = append(fields, map[string]any{"id": f.ID, "type": kind, "name": source.Name, "domain": source.CookieDomain,
 				"requestURLRegex": source.RequestURLRegex, "required": f.Required, "pattern": f.Pattern})
@@ -226,6 +230,9 @@ func stepJSON(step *bridgev2.LoginStep) map[string]any {
 		}
 		if params.WaitForURLPattern != "" {
 			out["expectedFinalURLRegex"] = params.WaitForURLPattern
+		}
+		if params.ExtractJS != "" {
+			out["extractJS"] = params.ExtractJS
 		}
 	case step.DisplayAndWaitParams != nil:
 		out["display"] = map[string]any{"type": string(step.DisplayAndWaitParams.Type), "data": step.DisplayAndWaitParams.Data,

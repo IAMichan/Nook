@@ -9,6 +9,7 @@ require (
 	go.mau.fi/mautrix-linkedin v0.2609.0
 	go.mau.fi/mautrix-meta v0.2610.0
 	go.mau.fi/mautrix-signal v0.2610.0
+	go.mau.fi/mautrix-slack v0.2610.0
 	go.mau.fi/mautrix-telegram v0.2610.0
 	go.mau.fi/mautrix-twitter v0.2609.0
 	go.mau.fi/util v0.11.0
@@ -43,6 +44,7 @@ require (
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/gotd/ige v0.2.2 // indirect
 	github.com/gotd/neo v0.1.5 // indirect
 	github.com/gtank/ristretto255 v0.2.0 // indirect
@@ -60,6 +62,7 @@ require (
 	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
+	github.com/slack-go/slack v0.24.0 // indirect
 	github.com/tidwall/gjson v1.20.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -94,3 +97,6 @@ require (
 )
 
 replace github.com/imroc/req/v3 => github.com/beeper/req/v3 v3.0.0-20260925135712-b49593750e56
+
+// mautrix-slack builds on Beeper's fork of slack-go; keep this in step with mautrix-slack's own go.mod.
+replace github.com/slack-go/slack => github.com/beeper/slackgo v0.0.0-20261015121614-caa8a716ef7e

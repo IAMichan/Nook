@@ -8,10 +8,11 @@ enum ChatAppsCatalog {
                        "messages"]
 
     /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database).
-    /// Telegram links through Nook's own chat helper when this build has it, and through TDLib only without it.
+    /// Telegram and Slack link through Nook's own chat helper when this build has it (a phone number and code, or
+    /// signing in on slack.com), and in their own way (TDLib, a token) only without it.
     @MainActor static var ownWay: Set<String> {
-        let apps: Set<String> = ["whatsapp", "teams", "slack", "messages"]
-        return ChatHelper.isBuilt ? apps : apps.union(["telegram"])
+        let apps: Set<String> = ["whatsapp", "teams", "messages"]
+        return ChatHelper.isBuilt ? apps : apps.union(["telegram", "slack"])
     }
 }
 

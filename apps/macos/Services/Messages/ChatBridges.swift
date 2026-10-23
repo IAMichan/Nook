@@ -810,8 +810,9 @@ final class SlackBridge: ChatBridge {
     /// Where the token is kept.
     static let tokenAccount = "chats.slack.token"
 
+    /// Nil in a build with Nook's chat helper: Slack is linked there (signing in on slack.com), so it is not read twice.
     static var token: String? {
-        guard let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
+        guard !ChatHelper.isBuilt, let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
         return token
     }
 
