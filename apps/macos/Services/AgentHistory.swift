@@ -327,6 +327,8 @@ final class AgentHistory: ObservableObject {
     @Published private(set) var loading = false
     /// A scan is under way, whether or not it shows (`loading`).
     private var scanning = false
+    /// Which API-key accounts have their key in the Keychain, and for which account list and when that was read.
+    private var apiKeysRead: (profiles: [String], date: Date, keys: [String: Bool]) = ([], .distantPast, [:])
 
     /// Which accounts Nook reads; AppModel keeps this in sync with `AgentProfileStore`.
     var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
@@ -351,9 +353,18 @@ final class AgentHistory: ObservableObject {
         lastRefresh = Date()
         let scanner = scanner
         let ownFolder = NookPaths.supportDirectory.standardizedFileURL.path
+        // Whether an API-key account has its key: a Keychain read (a round trip to securityd on the main thread) only when asked
+        // for at once (a key was just saved), when the account list changed or ten minutes went by; not on every scan.
+        if minimumInterval == 0 || apiKeysRead.profiles != profiles.map(\.id) || Date().timeIntervalSince(apiKeysRead.date) > 600 {
+            var keys: [String: Bool] = [:]
+            for profile in profiles where profile.kind == .claude && profile.usesAPIKey {
+                keys[profile.id] = !(Keychain.read(profile.keychainAccount) ?? "").isEmpty
+            }
+            apiKeysRead = (profiles.map(\.id), Date(), keys)
+        }
         let homes = profiles.map { profile in
             ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
-                        apiKey: profile.kind == .claude && profile.usesAPIKey && !(Keychain.read(profile.keychainAccount) ?? "").isEmpty)
+                        apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
         }
         // Accounts first: the full scan below can take seconds, but who is logged in is known almost instantly.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in

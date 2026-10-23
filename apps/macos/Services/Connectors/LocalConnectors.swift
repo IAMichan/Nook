@@ -248,6 +248,15 @@ final class MailConnector: ContextSource {
     private var inboxes: [String: (unread: Int, rows: [MailStats.InboxRow])] = [:]
     /// Refreshes in a row in which Mail did not answer at all.
     private var failures = 0
+    /// The inbox's message and unread counts when it was last asked (see `refresh`).
+    private var changeMark: String?
+    /// Two numbers from Mail, one quick Apple Event: when both are what they were, the inbox is read again (every account,
+    /// forty messages each) only once the last full read is a quarter of an hour old.
+    private static let changeScript = """
+    tell application "Mail"
+        return ((count of messages of inbox) as text) & "|" & ((unread count of inbox) as text)
+    end tell
+    """
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
@@ -284,6 +293,9 @@ final class MailConnector: ContextSource {
         }
         // One load at a time: a question that arrives during a background refresh waits for that one.
         if let loading { await loading.value; return }
+        let mark = await ScriptText.run(Self.changeScript, timeout: 5).text
+        if let mark, mark == changeMark, let loadedAt, Date().timeIntervalSince(loadedAt) < 15 * 60 { return }
+        changeMark = mark
         let task = Task { await self.load() }
         loading = task
         await task.value

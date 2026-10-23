@@ -20,13 +20,28 @@ enum QuietWatch {
         return QuietSituation(sharing: QuietPolicy.isSharing(windows, countSystemCapture: countScreenshots), meeting: QuietPolicy.isMeeting(meeting))
     }
 
+    /// Each window owner's bundle ID, kept between reads (every two seconds): looking every app up again each time was a
+    /// round trip per process.
+    private static let bundleLock = NSLock()
+    private nonisolated(unsafe) static var knownBundles: [pid_t: String] = [:]
+
     /// Every window on screen except Nook's own.
     static func onScreenWindows() -> [QuietPolicy.Window] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
         let own = ProcessInfo.processInfo.processIdentifier
-        var bundles: [pid_t: String] = [:]
+        bundleLock.lock()
+        var bundles = knownBundles
+        bundleLock.unlock()
+        let pids = Set(list.compactMap { $0[kCGWindowOwnerPID as String] as? pid_t })
+        // Gone processes leave the cache; a pid macOS hands out again is then looked up afresh.
+        bundles = bundles.filter { pids.contains($0.key) }
+        defer {
+            bundleLock.lock()
+            knownBundles = bundles
+            bundleLock.unlock()
+        }
         return list.compactMap { info in
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own else { return nil }
             if bundles[pid] == nil { bundles[pid] = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "" }

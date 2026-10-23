@@ -329,7 +329,9 @@ final class ScreenContext: ObservableObject {
             }
             let configuration = SCStreamConfiguration()
             let scale: CGFloat = job.accurate ? 1.5 : 1.0
-            let maxSide = job.isFront ? 2400 : backgroundSide
+            // The timer's read of the front window is the background picture, read with fast OCR: 1600 px is enough for it,
+            // and less than half the pixels to capture and recognize. A question reads it at full size.
+            let maxSide = job.isFront ? (periodic ? 1600 : 2400) : backgroundSide
             configuration.width = min(Int(job.window.frame.width * scale), maxSide)
             configuration.height = min(Int(job.window.frame.height * scale), maxSide)
             configuration.showsCursor = false

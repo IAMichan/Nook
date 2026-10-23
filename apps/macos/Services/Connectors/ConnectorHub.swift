@@ -116,10 +116,10 @@ final class ConnectorHub: ObservableObject {
             guard let self else { return }
             self.running.remove(source.id)
             // Every view of the app redraws on a new revision. A refresh that found nothing new (same status, same data)
-            // only moved its "updated" time, which is shown per minute: redraw for that at most once a minute.
+            // only moved its "updated" time: redraw for that at most every five minutes (the whole app redraws for it).
             let unchanged = Self.fingerprint(source) == before
             let now = Date()
-            if !unchanged || now.timeIntervalSince(self.lastQuietRevision) >= 60 {
+            if !unchanged || now.timeIntervalSince(self.lastQuietRevision) >= 300 {
                 if unchanged { self.lastQuietRevision = now }
                 self.revision += 1
             }
