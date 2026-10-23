@@ -359,49 +359,41 @@ struct BrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Button { store.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                    .disabled(!store.canGoBack)
-                    .help(tr("a11y.back"))
-                    .accessibilityLabel(tr("a11y.back"))
-                Button { store.webView.goForward() } label: { Image(systemName: "chevron.right") }
-                    .disabled(!store.canGoForward)
-                    .help(tr("a11y.forward"))
-                    .accessibilityLabel(tr("a11y.forward"))
-                Button {
-                    if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
-                } label: {
-                    Image(systemName: store.loading ? "xmark" : "arrow.clockwise")
+            // The page's own bar: back, forward and reload together, the address, then
+            // what to do with the page.
+            HStack(spacing: NookTheme.Spacing.xs) {
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    ToolbarIconButton("chevron.left", tr("a11y.back"), enabled: store.canGoBack) { store.webView.goBack() }
+                    ToolbarIconButton("chevron.right", tr("a11y.forward"), enabled: store.canGoForward) { store.webView.goForward() }
+                    ToolbarIconButton(store.loading ? "xmark" : "arrow.clockwise", tr(store.loading ? "a11y.stopLoading" : "a11y.reload")) {
+                        if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
+                    }
                 }
-                .help(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
-                .accessibilityLabel(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
-                TextField(tr("workbench.browser.address"), text: $store.address)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(WS.subtle))
-                    .onSubmit { store.go(store.address) }
-                Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
-                    .help(tr("browser.openExternal"))
-                    .disabled(store.webView.url == nil)
-                Button {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Image(systemName: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
+                        .font(NookTheme.font(9.5, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    TextField(tr("workbench.browser.address"), text: $store.address)
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper)
+                        .onSubmit { store.go(store.address) }
+                }
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(WS.subtle))
+                ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal"), enabled: store.webView.url != nil) {
+                    store.openInDefaultBrowser()
+                }
+                ToolbarIconButton("plus.bubble", tr("workbench.browser.askHelp"), enabled: store.webView.url != nil && !asking) {
                     askAboutPage()
-                } label: {
-                    Label(tr("workbench.browser.ask"), systemImage: "plus.bubble")
                 }
-                .help(tr("workbench.browser.askHelp"))
-                .disabled(store.webView.url == nil || asking)
                 if let onClose {
-                    Button(action: onClose) { Image(systemName: "xmark") }
-                        .help(tr("embedded.close"))
+                    ToolbarIconButton("xmark", tr("embedded.close"), onClose)
                 }
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(NookTheme.textSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, NookTheme.Spacing.sm)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .frame(height: 36)
             if let agent = store.openedBy {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
