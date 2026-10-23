@@ -240,6 +240,7 @@ private struct NookRow: View {
             Button(action: action) { content }
                 .buttonStyle(.plain)
             hoverActions
+                .rowActionsBackdrop(background)
                 .padding(.top, NookTheme.Spacing.md)
                 .padding(.trailing, NookTheme.Spacing.md)
                 .opacity(hovering ? 1 : 0)

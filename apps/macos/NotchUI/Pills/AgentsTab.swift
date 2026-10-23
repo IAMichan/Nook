@@ -470,6 +470,7 @@ struct AgentListRow: View {
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
+                    .rowActionsBackdrop(background)
                     .padding(.top, slim ? NookTheme.Spacing.sm : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
@@ -605,7 +606,8 @@ struct AgentListRow: View {
     }
 
     private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { rowIcon(symbol, label) }.buttonStyle(.plain)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+            .pointerStyle(.link)
     }
 
     /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.
