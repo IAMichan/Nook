@@ -63,7 +63,7 @@ final class CalendarConnector: ContextSource {
                 ConnectorItem(
                     id: $0.id,
                     title: $0.title,
-                    subtitle: NookDates.short($0.start) + ($0.location.isEmpty ? "" : " · \($0.location)"),
+                    subtitle: NookDates.short($0.start, locale: NookDates.appLocale) + ($0.location.isEmpty ? "" : " · \($0.location)"),
                     tone: $0.start <= now ? .good : .neutral
                 )
             },
@@ -128,7 +128,7 @@ final class RemindersConnector: ContextSource {
                 ConnectorItem(
                     id: $0.id,
                     title: $0.title,
-                    subtitle: $0.due.map { tr("connect.local.remindersDue", NookDates.short($0)) } ?? $0.list,
+                    subtitle: $0.due.map { tr("connect.local.remindersDue", NookDates.short($0, locale: NookDates.appLocale)) } ?? $0.list,
                     tone: ($0.due ?? .distantFuture) < now ? .attention : .neutral
                 )
             },

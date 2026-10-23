@@ -88,7 +88,7 @@ extension AppModel {
             items.append(TodayItem(
                 id: "loop-\(loop.id)",
                 title: loop.title,
-                subtitle: tr("app.today.openSince", NookDates.short(loop.created)),
+                subtitle: tr("app.today.openSince", NookDates.short(loop.created, locale: NookDates.appLocale)),
                 action: tr("app.today.finish"),
                 color: NookTheme.amber,
                 target: .action { [weak self] in self?.presentLoop(loop) },
