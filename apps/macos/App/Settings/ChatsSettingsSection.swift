@@ -195,7 +195,10 @@ struct ChatsSettingsSection: View {
                            })
         switch source.id {
         case capture.instagramBridge.app:
-            InstagramSourceRow(bridge: capture.instagramBridge, isOn: isOn, logIn: logInToInstagram) { label(source) }
+            let instagram = capture.instagramBridge.app
+            InstagramSourceRow(bridge: capture.instagramBridge, isOn: isOn, problem: capture.bridgeProblems[instagram],
+                               loaded: capture.bridged.contains(instagram) ? capture.inbox.threads.values.filter { $0.app == instagram }.count : nil,
+                               logIn: logInToInstagram) { label(source) }
         case capture.teamsBridge.app where showsTeamsLogin:
             TeamsSourceRow(teams: capture.teamsBridge, isOn: isOn) { label(source) }
         default:

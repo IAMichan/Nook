@@ -4,7 +4,7 @@ import WebKit
 
 /// Your Instagram direct messages, read and sent the way Beeper does it: you sign in once on instagram.com inside Nook
 /// (Settings › Chats › Instagram › Log in, which opens Instagram beside the chat), and Nook then asks Instagram's own web
-/// API with that sign-in, every half minute. The requests run in a small instagram.com page Nook keeps out of sight, on
+/// API with that sign-in, every half minute. The requests run in Instagram's inbox page, which Nook keeps out of sight on
 /// the same cookies as Instagram beside the chat, so the sign-in stays in Nook's own store on this Mac and only ever
 /// goes to instagram.com. Signing out (here, or "Forget" on Instagram beside the chat) removes it.
 @MainActor
@@ -34,8 +34,6 @@ final class InstagramBridge: ObservableObject, ChatBridge {
     private var page: WKWebView?
     private var watching: Task<Void, Never>?
 
-    /// The page the requests run in: instagram.com's own, but light, so no website runs out of sight.
-    private static let requestPage = URL(string: "https://www.instagram.com/robots.txt")!
 
     init() {
         state = UserDefaults.standard.bool(forKey: Self.signedInKey) ? .signedIn : .signedOut
@@ -121,7 +119,10 @@ final class InstagramBridge: ObservableObject, ChatBridge {
     func read() async throws -> [BridgedChat] {
         guard isReady else { isWorking = false; return [] }
         do {
-            let threads = InstagramData.threads(try await call(InstagramData.inboxPath))
+            let inbox = try await call(InstagramData.inboxPath)
+            // An answer without an inbox is one Nook does not understand: say so, rather than show no chats at all.
+            guard InstagramData.hasInbox(inbox) else { throw NookError(tr("chats.instagram.refused", InstagramData.summary(inbox))) }
+            let threads = InstagramData.threads(inbox)
             var result: [BridgedChat] = []
             for thread in threads {
                 threadIDs[thread.name] = thread.id
@@ -168,8 +169,11 @@ final class InstagramBridge: ObservableObject, ChatBridge {
         }
         let page = try await requestPage()
         let script = """
+        // What the website itself sends with each request, the claim it keeps for this session included.
+        let claim = '0';
+        try { claim = sessionStorage.getItem('www-claim-v2') || '0'; } catch (error) {}
         const headers = { 'X-IG-App-ID': appID, 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
-                          'X-ASBD-ID': '129477', 'X-IG-WWW-Claim': '0', 'Accept': 'application/json' };
+                          'X-ASBD-ID': '129477', 'X-IG-WWW-Claim': claim, 'Accept': '*/*' };
         if (body !== null) headers['Content-Type'] = 'application/x-www-form-urlencoded';
         const response = await fetch(path, { method: body === null ? 'GET' : 'POST', headers, credentials: 'include',
                                               body: body === null ? undefined : body });
@@ -189,7 +193,7 @@ final class InstagramBridge: ObservableObject, ChatBridge {
         }
     }
 
-    /// The instagram.com page the requests run in, loaded once.
+    /// The page the requests run in, loaded once: Instagram's own inbox, so they come from where the website makes them.
     private func requestPage() async throws -> WKWebView {
         if let page, page.url?.host?.hasSuffix("instagram.com") == true, !page.isLoading { return page }
         guard let store else { throw NookError(tr("chats.instagram.signedOut"), kind: .auth) }
@@ -205,7 +209,7 @@ final class InstagramBridge: ObservableObject, ChatBridge {
             view = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 300), configuration: configuration)
             page = view
         }
-        view.load(URLRequest(url: Self.requestPage))
+        view.load(URLRequest(url: InstagramData.site))
         // The load starts a moment after it is asked for: until then the view still holds the page before.
         try await Task.sleep(nanoseconds: 500_000_000)
         let end = Date().addingTimeInterval(20)

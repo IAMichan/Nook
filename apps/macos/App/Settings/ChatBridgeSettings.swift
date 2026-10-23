@@ -301,21 +301,40 @@ struct LoginSourceRow<Label: View, Waiting: View>: View {
 }
 
 /// Instagram's row: Log in opens instagram.com beside the chat, and the row waits until you signed in there.
+/// Once signed in and switched on, the row says whether reading works: how many chats came in, or why none did.
 struct InstagramSourceRow<Label: View>: View {
     @ObservedObject var bridge: InstagramBridge
     @Binding var isOn: Bool
+    /// Why the last read failed, if it did.
+    let problem: String?
+    /// How many Instagram chats the Chats tab has, once a read worked; nil before.
+    let loaded: Int?
     let logIn: () -> Void
     @ViewBuilder let label: () -> Label
 
     var body: some View {
-        LoginSourceRow(step: step, isOn: $isOn, logIn: logIn, cancel: { bridge.cancelSignIn() },
-                       logOut: { Task { await bridge.signOut() } }, label: label) {
-            Text(tr("chats.login.waiting"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            LoginSourceRow(step: step, isOn: $isOn, logIn: logIn, cancel: { bridge.cancelSignIn() },
+                           logOut: { Task { await bridge.signOut() } }, label: label) {
+                Text(tr("chats.login.waiting"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+            }
+            if step == .signedIn, isOn { status }
         }
         // A sign-in made meanwhile elsewhere in Nook (Instagram beside the chat) shows here too.
         .task { await bridge.refresh() }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if let problem {
+            StatusRow(title: tr("chats.instagram.problem"), detail: problem, state: .error) { EmptyView() }
+        } else if let loaded {
+            StatusRow(title: tr("chats.instagram.loaded", loaded), detail: tr("chats.instagram.loadedDetail"), state: .done) { EmptyView() }
+        } else {
+            StatusRow(title: tr("chats.instagram.loading"), detail: tr("chats.instagram.loadingDetail"), state: .todo) { EmptyView() }
+        }
     }
 
     private var step: LoginStep {

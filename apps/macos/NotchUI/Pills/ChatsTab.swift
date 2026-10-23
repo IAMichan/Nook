@@ -347,8 +347,9 @@ struct ChatsTab: View {
     private var unreadTotal: Int { all.reduce(0) { $0 + $1.unread } }
 
     /// The apps that have chats here: the ones with unread messages first, then the busiest, and the one filtered on
-    /// even when it has none yet. After them every source that is on and on this Mac (its app is installed, or you added
-    /// it yourself), also before it brought in a message: a source you switched on shows up here, not only once it has chats.
+    /// even when it has none yet. After them every source that is on and on this Mac (its app is installed, you added it
+    /// yourself, or Nook reads it with your login, as Instagram), also before it brought in a message: a source you switched
+    /// on shows up here, not only once it has chats.
     private var apps: [String] {
         let counts = Dictionary(grouping: all, by: \.app).mapValues(\.count)
         let unread = unreadByApp
@@ -358,7 +359,8 @@ struct ChatsTab: View {
             return counts[a]! != counts[b]! ? counts[a]! > counts[b]! : a < b
         }
         if capture.enabled {
-            for source in capture.sources.active where !result.contains(source.id) && Self.isPresent(source) {
+            for source in capture.sources.active
+            where !result.contains(source.id) && (Self.isPresent(source) || capture.bridge(for: source.id)?.isReady == true) {
                 result.append(source.id)
             }
         }
