@@ -312,7 +312,11 @@ final class MailConnector: ContextSource {
             }
             // A removed or disabled account goes at once, also when no other account answers this time.
             inboxes = inboxes.filter { names.contains($0.key) }
-            recent = recent.filter { names.contains($0.account) }
+            if recent.contains(where: { !names.contains($0.account) }) {
+                recent = recent.filter { names.contains($0.account) }
+                unreadCount = inboxes.values.reduce(0) { $0 + $1.unread }
+                if status.state == .ok { publish() }
+            }
         } else {
             failure = (list.errorNumber, list.errorMessage)
         }
@@ -343,8 +347,12 @@ final class MailConnector: ContextSource {
         for index in rows.indices { rows[index].body = bodies[rows[index].key] ?? "" }
         recent = rows
         loadedAt = Date()
+        publish()
+    }
 
-        let unread = rows.filter { !$0.read }
+    /// The status for the inbox in memory.
+    private func publish() {
+        let unread = recent.filter { !$0.read }
         status = ConnectorStatus(
             state: .ok,
             headline: unreadCount == 0 ? tr("connect.local.mailAllRead") : tr("connect.local.mailUnread", unreadCount),
