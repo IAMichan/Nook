@@ -283,13 +283,20 @@ extension RailDropdown where Footer == EmptyView {
 }
 
 /// A scrolling list of choices under a header or search field, with a note when there is nothing to show.
+/// A ScrollView has no height of its own, so in a popover it would shrink to nothing under a header and account rows:
+/// the list measures its rows and asks for that height, up to `maxHeight`, and never gives up the first few rows.
 struct DropdownList<Rows: View>: View {
     var maxHeight: CGFloat = 260
     /// Shown instead of rows (nothing matches, nothing installed).
     var emptyNote: String? = nil
     @ViewBuilder let rows: () -> Rows
+    @State private var contentHeight: CGFloat = 0
+
+    /// About five rows stay visible when the panel runs out of room.
+    private static var minVisible: CGFloat { 156 }
 
     var body: some View {
+        let fitted = min(contentHeight, maxHeight)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if let emptyNote {
@@ -301,8 +308,9 @@ struct DropdownList<Rows: View>: View {
                 rows()
             }
             .padding(.vertical, 4)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
-        .frame(maxHeight: maxHeight)
+        .frame(minHeight: min(fitted, Self.minVisible), idealHeight: fitted, maxHeight: fitted)
     }
 }
 

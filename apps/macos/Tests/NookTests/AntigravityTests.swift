@@ -28,6 +28,18 @@ final class AntigravityTests: XCTestCase {
         XCTAssertNil(AntigravityAcp.validSignInURL(goodURL + "&state=two"), "exactly one state")
     }
 
+    func testSilentTurnContinues() {
+        XCTAssertTrue(AntigravityAcp.shouldContinue(reason: "end_turn", replied: false, stopping: false, continuations: 0))
+        XCTAssertFalse(AntigravityAcp.shouldContinue(reason: "end_turn", replied: true, stopping: false, continuations: 0), "it answered")
+        XCTAssertFalse(AntigravityAcp.shouldContinue(reason: "cancelled", replied: false, stopping: false, continuations: 0))
+        XCTAssertFalse(AntigravityAcp.shouldContinue(reason: "end_turn", replied: false, stopping: true, continuations: 0), "you stopped it")
+        XCTAssertFalse(AntigravityAcp.shouldContinue(reason: "end_turn", replied: false, stopping: false,
+                                                     continuations: AntigravityAcp.maxContinuations), "not forever")
+        XCTAssertTrue(AntigravityAcp.continuation(toolCalls: 3).contains("3 tool calls"))
+        XCTAssertTrue(AntigravityAcp.continuation(toolCalls: 1).contains("1 tool call "))
+        XCTAssertFalse(AntigravityAcp.continuation(toolCalls: 0).contains("tool"))
+    }
+
     func testEnvironmentAndMode() {
         let env = AntigravityAcp.environment(profile: "/p", harness: "/h/localharness_external", browserHelper: "/Users/a b/open.sh", temp: "/t")
         XCTAssertEqual(env["GEMINI_HOME"], "/p")

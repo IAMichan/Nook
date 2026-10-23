@@ -266,6 +266,66 @@ final class ChatInboxTests: XCTestCase {
         ChatNotice(app: app, chat: chat, sender: sender, text: text, date: now.addingTimeInterval(offset))
     }
 
+    func testAGroupsNotificationGoesToTheGroupWhicheverWayItNamesIt() {
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Regelzaken VVB9", messages: [
+            InboxMessage(id: "b1", sender: "Joram", text: "is gevraagd", date: now)], unread: 0,
+            members: ["Joram", "Daan van Oosterom", "Peter"]))
+        // The group in the title, the person in the subtitle: the parser took the person for the chat.
+        XCTAssertTrue(inbox.add(notice("Daan van Oosterom", "anders misschien", app: "whatsapp", sender: "Regelzaken VVB9", at: 60),
+                                id: "n1"))
+        let group = ChatInbox.key(app: "whatsapp", chat: "Regelzaken VVB9")
+        XCTAssertNil(inbox.threads[ChatInbox.key(app: "whatsapp", chat: "Daan van Oosterom")], "no chat of its own")
+        XCTAssertEqual(inbox.threads[group]?.messages.last?.text, "anders misschien")
+        XCTAssertEqual(inbox.threads[group]?.messages.last?.sender, "Daan van Oosterom")
+    }
+
+    func testAGroupsMessagesThatLandedInSomeonesChatGoBack() {
+        var inbox = ChatInbox()
+        // Collected before the group was known: a chat named after the person, "written by" the group.
+        inbox.add(notice("Daan van Oosterom", "anders misschien", app: "whatsapp", sender: "Regelzaken VVB9"), id: "n1")
+        inbox.add(notice("Daan van Oosterom", "of morgen", app: "whatsapp", sender: "Regelzaken VVB9", at: 10), id: "n2")
+        XCTAssertNotNil(inbox.threads[ChatInbox.key(app: "whatsapp", chat: "Daan van Oosterom")])
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Regelzaken VVB9", messages: [
+            InboxMessage(id: "b1", sender: "Joram", text: "is gevraagd", date: now.addingTimeInterval(-60))], unread: 0,
+            members: ["Joram", "Daan van Oosterom"]))
+        let group = try! XCTUnwrap(inbox.threads[ChatInbox.key(app: "whatsapp", chat: "Regelzaken VVB9")])
+        XCTAssertEqual(group.messages.map(\.text), ["is gevraagd", "anders misschien", "of morgen"])
+        XCTAssertEqual(group.messages.last?.sender, "Daan van Oosterom")
+        XCTAssertEqual(group.unread, 2, "what waited there waits in the group")
+        XCTAssertNil(inbox.threads[ChatInbox.key(app: "whatsapp", chat: "Daan van Oosterom")])
+    }
+
+    func testAGroupIsNeverFoldedIntoAPersonsChat() {
+        var inbox = ChatInbox()
+        // A group only its notifications know, where one person wrote: it stays a group.
+        inbox.add(notice("Family", "dinner?", app: "telegram", sender: "Jan"), id: "n1")
+        inbox.add(notice("Family", "at 7", app: "telegram", sender: "Anna", at: 10), id: "n2")
+        inbox.add(notice("Jan", "hoi", app: "telegram", at: 20), id: "n3")
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "telegram", chat: "Family")]?.messages.count, 2)
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "telegram", chat: "Jan")]?.messages.count, 1)
+        inbox.add(notice("Family", "ok", app: "telegram", sender: "Jan", at: 30), id: "n4")
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "telegram", chat: "Family")]?.messages.count, 3)
+    }
+
+    func testNothingToShowIsNoMessage() {
+        XCTAssertTrue(ChatFormat.isBlank(" \u{200B}\u{200E}\n"))
+        XCTAssertFalse(ChatFormat.isBlank("🙏"))
+        XCTAssertNil(ChatCapture.notice(notification("net.whatsapp.WhatsApp", title: "Jaap", body: "\u{200B}")))
+        let chat = ChatServiceData.Chat(id: "!r", app: "whatsapp", title: "Kerk", isGroup: true, unread: 0, last: nil)
+        let json: [String: Any] = ["items": [
+            ["id": "$1", "timestamp": "2026-10-18T21:20:00Z", "type": "TEXT", "text": "\u{200B}", "senderName": "Jaap"],
+            ["id": "$2", "timestamp": "2026-10-18T21:21:00Z", "type": "TEXT", "text": "Amen", "senderName": "Jaap"],
+        ]]
+        XCTAssertEqual(ChatServiceData.messages(json, chat: chat).map(\.text), ["Amen"])
+
+        var inbox = ChatInbox()
+        inbox.threads["x"] = InboxThread(id: "x", app: "whatsapp", name: "Kerk", messages: [
+            InboxMessage(id: "1", sender: "Jaap", text: "", date: now), InboxMessage(id: "2", sender: "Jaap", text: "Amen", date: now)])
+        inbox.trim(now: now)
+        XCTAssertEqual(inbox.threads["x"]?.messages.map(\.text), ["Amen"], "kept from before: it goes")
+    }
+
     func testMessagesGoToTheirChat() {
         var inbox = ChatInbox()
         XCTAssertTrue(inbox.add(notice("Anna", "one"), id: "1"))

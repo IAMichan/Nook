@@ -183,10 +183,24 @@ extension WorkspaceManager {
                     self.failAcpTurn(id, WorkspaceManager.cleanError(error.localizedDescription, status: 1))
                 case .success(let response):
                     let stop = AcpRPC.stop(response.dictionary)
+                    if self.continueSilentTurn(id, client, reason: stop.reason, usage: stop.usage) { return }
                     self.finishAcpTurn(id, reason: stop.reason, usage: stop.usage)
                 }
             }
         }
+    }
+
+    /// Antigravity ended the turn without a word: it is asked to carry on in the same turn instead (see
+    /// `AntigravityAcp.shouldContinue`). False when the turn really ends here.
+    private func continueSilentTurn(_ id: UUID, _ client: AcpClient, reason: String, usage: TurnUsage) -> Bool {
+        guard run(id)?.provider == .antigravity, acpClients[id] === client, let state = turns[id], !state.unprompted,
+              AntigravityAcp.shouldContinue(reason: reason, replied: state.acpReplied, stopping: state.stopping,
+                                            continuations: state.acpContinuations) else { return false }
+        turns[id]?.acpContinuations += 1
+        update(id) { $0.usage.add(usage) }
+        append(id, RunEvent(kind: .system, text: tr("ws.antigravity.continue")))
+        sendAcpPrompt(id, client, prompt: AntigravityAcp.continuation(toolCalls: state.acpToolCalls))
+        return true
     }
 
     func stopAcpTurn(_ id: UUID) -> Bool {
@@ -278,6 +292,7 @@ extension WorkspaceManager {
             switch event {
             case .messageChunk(let text):
                 finishAcpThought(id)
+                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { turns[id]?.acpReplied = true }
                 if let live = turns[id]?.liveTextID {
                     mutateEvent(id, live) { $0.text += text }
                 } else {
@@ -301,6 +316,7 @@ extension WorkspaceManager {
                                      callID: call.id, detail: call.input.map { ToolSummary.json($0.object) },
                                      output: call.output.isEmpty ? nil : RunEvent.clip(call.output), state: Self.state(call.status) ?? .running)
                 turns[id]?.toolEvents[call.id] = event.id
+                turns[id]?.acpToolCalls += 1
                 recap?.toolUse(call.toolName)
                 append(id, event)
                 if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
@@ -383,6 +399,10 @@ extension WorkspaceManager {
         if stopped { append(id, RunEvent(kind: .system, text: tr("ws.event.stopped"))) }
         if reason == "max_tokens" || reason == "max_turn_requests" { append(id, RunEvent(kind: .system, text: tr("ws.acp.limit"))) }
         if failed { append(id, RunEvent(kind: .error, text: tr("ws.acp.refused"))) }
+        // A turn that ends without a word should not look like an answer.
+        if !stopped, !failed, let state, !state.acpReplied, !state.unprompted {
+            append(id, RunEvent(kind: .system, text: tr("ws.acp.silent", run(id)?.provider.displayName ?? "")))
+        }
         append(id, RunEvent(kind: .result, text: resultLine(usage, denials: 0), state: failed ? .failed : .done))
         expireApprovals(id)
         turnDidFinish(id)

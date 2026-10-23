@@ -68,6 +68,12 @@ struct WAMessage: Identifiable, Equatable, Sendable {
     var poll: WAPoll? = nil
     /// A vote on a poll: not shown as a message of its own, it moves that poll's counts.
     var pollVote: WAPollVote? = nil
+
+    /// Nothing to show: no text, no attachment, no poll (a reaction or another protocol message the gateway passed on
+    /// as a message). It never becomes a bubble of its own.
+    var isBlank: Bool {
+        ChatFormat.isBlank(text) && media == .none && poll == nil && pollVote == nil
+    }
 }
 
 /// A WhatsApp poll: its question and options, and who chose what (one choice per person; a new vote replaces theirs).
@@ -604,6 +610,7 @@ struct WAInbox: Equatable, Sendable {
             applyVote(vote, chat: chat, voter: message.fromMe ? WAPoll.me : message.sender)
             return .quiet
         }
+        guard !message.isBlank else { return .ignored }
 
         let kind = WAJID.kind(chat)
         let isGroup = kind == .group
@@ -1131,6 +1138,8 @@ enum WAWebhook {
               let id = p["id"] as? String, !id.isEmpty,
               let chat = p["chat_id"] as? String, !chat.isEmpty else { return .ignored }
         if WAPollData.isChange(p["poll"]) { return .ignored }
+        // A reaction some GOWA versions send as a message: it goes on the message it is about, never in a bubble.
+        if let reaction = gowaReaction(p, chat: chat) { return reaction }
         let from = (p["from"] as? String) ?? chat
         let text = (p["body"] as? String) ?? ""
         let mine = me ?? (json["device_id"] as? String)
@@ -1162,6 +1171,20 @@ enum WAWebhook {
         let fromMe = p["is_from_me"] as? Bool ?? false
         return .reaction(chat: chat, message: target, emoji: (p["reaction"] as? String) ?? "",
                          sender: nonEmpty(p["from"]) ?? (fromMe ? "" : chat), fromMe: fromMe)
+    }
+
+    /// A reaction inside a `message` event: `reaction: {message: emoji, id: target}`, or `reaction: emoji` with
+    /// `reacted_message_id`. Nil for any other message.
+    private static func gowaReaction(_ p: [String: Any], chat: String) -> WAWebhookEvent? {
+        let fromMe = p["is_from_me"] as? Bool ?? false
+        let sender = nonEmpty(p["from"]) ?? (fromMe ? "" : chat)
+        if let reaction = p["reaction"] as? [String: Any] {
+            guard let target = nonEmpty(reaction["id"]) ?? nonEmpty(p["reacted_message_id"]) else { return .ignored }
+            return .reaction(chat: chat, message: target, emoji: (reaction["message"] as? String) ?? "", sender: sender, fromMe: fromMe)
+        }
+        guard p["reaction"] != nil || p["reacted_message_id"] != nil else { return nil }
+        guard let target = nonEmpty(p["reacted_message_id"]) else { return .ignored }
+        return .reaction(chat: chat, message: target, emoji: (p["reaction"] as? String) ?? "", sender: sender, fromMe: fromMe)
     }
 
     /// `{"event":"message.ack","payload":{ids, chat_id, from, sender_id, receipt_type: "delivered"|"read"|"played"|…}}`.
@@ -1212,7 +1235,7 @@ enum WAWebhook {
               let id = d["id"] as? String, !id.isEmpty,
               let chat = (d["chatId"] as? String) ?? (d["from"] as? String), !chat.isEmpty else { return .ignored }
         let type = (d["type"] as? String) ?? "text"
-        guard type != "revoked" else { return .ignored }
+        guard type != "revoked", type != "reaction" else { return .ignored }
         let fromMe = (d["fromMe"] as? Bool) ?? (event == "message.sent")
         let contact = d["contact"] as? [String: Any]
         let media = d["media"] as? [String: Any]
