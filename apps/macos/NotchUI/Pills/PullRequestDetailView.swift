@@ -157,7 +157,7 @@ struct PullRequestDetailView: View {
     private var topBar: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if let onBack, !inline {
-                ToolbarIconButton("arrow.left", tr("agents.pr.back"), action: onBack)
+                ToolbarIconButton("arrow.left", tr("agents.pr.back"), onBack)
             }
             crumbs
             Spacer(minLength: NookTheme.Spacing.sm)
@@ -175,7 +175,7 @@ struct PullRequestDetailView: View {
                 PullRequestMoreMenu(state: actions, detail: detail)
             }
             if let onBack, inline {
-                ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), action: onBack)
+                ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), onBack)
             }
         }
         .frame(height: 32)
