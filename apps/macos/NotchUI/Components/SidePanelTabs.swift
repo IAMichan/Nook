@@ -174,7 +174,7 @@ struct SidePanelLauncher: View {
         let lit = enabled && available.firstIndex(where: { $0.id == item.id }) == highlight
         return Button(action: item.open) {
             HStack(spacing: 10) {
-                Image(systemName: item.symbol)
+                NookSymbol(item.symbol, size: 13)
                     .font(NookTheme.font(12, .medium))
                     .frame(width: 16)
                 Text(item.title).lineLimit(1)

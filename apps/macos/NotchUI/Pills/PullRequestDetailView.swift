@@ -217,12 +217,11 @@ struct PullRequestDetailView: View {
             if let url = detail?.url ?? item.url { NSWorkspace.shared.open(url) }
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
-                PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
-                    .frame(width: 12, height: 12)
+                PullRequestStateIcon(glyph: glyph, tinted: false)
                 Text("#\(item.number)").monospacedDigit()
                 Image(systemName: "arrow.up.right").font(NookTheme.font(8, .bold))
             }
-            .foregroundStyle(PullRequestStateBadge.tint(glyph))
+            .foregroundStyle(PullRequestIcon.tint(glyph))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -312,16 +311,10 @@ struct PullRequestDetailView: View {
         .help(tr("agents.pr.action.copyCheckout"))
     }
 
+    /// The list's state until the page has loaded (so a known conflict shows at once), then the page's.
     private var glyph: PullRequestBadge.Glyph {
-        guard let detail else {
-            switch item.state {
-            case .merged: return .merged
-            case .closed: return .closed
-            case .open: return item.draft ? .draft : .open
-            }
-        }
-        if detail.state == .open && detail.conflicted { return .conflict }
-        return PullRequestBadge.Glyph(rawValue: detail.state.rawValue) ?? .open
+        guard let detail else { return item.stateGlyph }
+        return PullRequestBadge.Glyph(detail.state, conflicted: detail.conflicted)
     }
 
     /// "main ← feature" in mono (a click on the head copies it), the update button when the branch is behind, and on
@@ -433,8 +426,7 @@ struct PullRequestDetailView: View {
             }
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
-                PullRequestStateGlyph(glyph: .stack, size: 13, lineWidth: 1.5, nodeRadius: 1.8)
-                    .frame(width: 13, height: 13)
+                PullRequestStateIcon(glyph: .stack, tinted: false)
                 Text("\(index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
             }
             .foregroundStyle(NookTheme.textSecondary)
@@ -455,7 +447,7 @@ struct PullRequestDetailView: View {
                 ProgressView().controlSize(.small)
                 Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
             } else {
-                NookSymbol(NookSymbol.merge, size: 13).foregroundStyle(NookTheme.violet)
+                PullRequestStateIcon(glyph: .merged)
                 Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: NookTheme.Spacing.sm)
@@ -529,7 +521,8 @@ struct PullRequestDetailView: View {
                     Label("\(detail.commits.count)", systemImage: "circle.and.line.horizontal")
                         .help(tr("agents.pr.count.commits"))
                     if approvals > 0 {
-                        Label("\(approvals)", systemImage: "checkmark.circle").foregroundStyle(NookTheme.mint)
+                        Label("\(approvals)", systemImage: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
+                            .foregroundStyle(PullRequestIcon.tint(PullRequestIcon.Review.approved))
                             .help(tr("agents.pr.count.approvals"))
                     }
                 }
@@ -825,7 +818,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// The reviewers' pictures, ringed by what they said (mint approved, coral changes requested, grey still asked).
+    /// The reviewers' pictures, ringed by what they said (mint approved, amber changes requested, grey still asked).
     @ViewBuilder
     private func reviewers(_ detail: PullRequestDetail) -> some View {
         let verdicts = detail.verdicts
@@ -839,7 +832,7 @@ struct PullRequestDetailView: View {
         } else {
             HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(verdicts, id: \.author) { verdict in
-                    reviewer(verdict.author, ring: verdict.approved ? NookTheme.mint : NookTheme.coral,
+                    reviewer(verdict.author, ring: PullRequestIcon.tint(verdict.approved ? PullRequestIcon.Review.approved : .changesRequested),
                              help: tr(verdict.approved ? "agents.pr.reviews.approved" : "agents.pr.reviews.changes", "@" + verdict.author))
                 }
                 ForEach(waiting, id: \.self) { login in
@@ -895,7 +888,7 @@ struct PullRequestDetailView: View {
         return VStack(alignment: .leading, spacing: 0) {
             if let created = detail.created, !newestFirst {
                 TimelineRail(last: entries.isEmpty) {
-                    TimelineMarker(symbol: NookSymbol.open, color: NookTheme.mint)
+                    TimelineMarker(symbol: PullRequestIcon.symbol(.open), color: PullRequestIcon.tint(.open))
                 } content: {
                     activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
@@ -910,7 +903,7 @@ struct PullRequestDetailView: View {
             }
             if newestFirst, let created = detail.created {
                 TimelineRail(last: true) {
-                    TimelineMarker(symbol: NookSymbol.open, color: NookTheme.mint)
+                    TimelineMarker(symbol: PullRequestIcon.symbol(.open), color: PullRequestIcon.tint(.open))
                 } content: {
                     activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
@@ -999,18 +992,21 @@ struct PullRequestDetailView: View {
         switch type {
         case "labeled", "unlabeled": return ("tag", NookTheme.textTertiary)
         case "assigned", "unassigned": return ("person", NookTheme.textTertiary)
-        case "review_requested", "review_request_removed", "ready_for_review": return ("eye", NookTheme.textTertiary)
+        case "review_requested", "review_request_removed":
+            return (PullRequestIcon.symbol(PullRequestIcon.Review.required), PullRequestIcon.tint(PullRequestIcon.Review.required))
+        // An event shows the mark of the state it leads to.
+        case "ready_for_review", "reopened": return (PullRequestIcon.symbol(.open), PullRequestIcon.tint(.open))
         case "renamed": return ("pencil", NookTheme.textTertiary)
-        case "convert_to_draft": return ("pencil.circle", NookTheme.textTertiary)
+        case "convert_to_draft": return (PullRequestIcon.symbol(.draft), PullRequestIcon.tint(.draft))
         case "head_ref_force_pushed": return ("arrow.up.circle", NookTheme.amber)
         case "head_ref_deleted", "head_ref_restored", "base_ref_changed": return ("arrow.triangle.branch", NookTheme.textTertiary)
-        case "merged": return (NookSymbol.merge, NookTheme.violet)
-        case "closed": return ("xmark.circle", NookTheme.coral)
-        case "reopened": return ("arrow.uturn.left.circle", NookTheme.mint)
+        case "merged": return (PullRequestIcon.symbol(.merged), PullRequestIcon.tint(.merged))
+        case "closed": return (PullRequestIcon.symbol(.closed), PullRequestIcon.tint(.closed))
         case "cross-referenced", "referenced": return ("link", NookTheme.textTertiary)
         case "milestoned", "demilestoned": return ("flag", NookTheme.textTertiary)
         case "auto_merge_enabled", "auto_merge_disabled": return ("bolt", NookTheme.textTertiary)
-        case "review_dismissed": return ("xmark.bubble", NookTheme.textTertiary)
+        case "review_dismissed":
+            return (PullRequestIcon.symbol(PullRequestIcon.Review.dismissed), PullRequestIcon.tint(PullRequestIcon.Review.dismissed))
         default: return ("circle", NookTheme.textTertiary)
         }
     }
@@ -1186,7 +1182,7 @@ struct PullRequestDetailView: View {
             PullRequestStateBadge(glyph: glyph)
         case .draft:
             if !detail.nodeID.isEmpty, detail.canPush != false {
-                SmallPrimaryButton(title: tr("agents.pr.action.ready"), systemName: "checkmark.circle") {
+                SmallPrimaryButton(title: tr("agents.pr.action.ready"), systemName: PullRequestIcon.symbol(.open)) {
                     actions.close()
                     actions.pending = .markReady(nodeID: detail.nodeID)
                 }
@@ -1212,7 +1208,7 @@ struct PullRequestDetailView: View {
             }
             if merging { ProgressView().controlSize(.small) }
             SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge") : tr("agents.pr.merge"),
-                               systemName: armedMerge ? "checkmark" : NookSymbol.merge) {
+                               systemName: armedMerge ? "checkmark" : PullRequestIcon.symbol(.merged)) {
                 if armedMerge {
                     armedMerge = false
                     merge()
@@ -1246,10 +1242,12 @@ struct PullRequestDetailView: View {
     private func mergeBlocker(_ note: String, detail: PullRequestDetail) -> some View {
         let reason = String(note.split(separator: ".").last ?? "")
         let look: (symbol: String, color: Color, label: String) = switch reason {
-        case "blocked": ("lock.fill", NookTheme.amber, tr("agents.pr.blocker.blocked"))
-        case "behind": ("arrow.triangle.2.circlepath", NookTheme.amber, tr("agents.pr.blocker.behind", detail.baseBranch))
-        case "unstable": ("xmark.circle.fill", NookTheme.coral, tr("agents.pr.blocker.unstable"))
-        case "checking": ("clock", NookTheme.textTertiary, tr("agents.pr.blocker.checking"))
+        case "blocked": (PullRequestIcon.blocked, PullRequestIcon.blockerTint, tr("agents.pr.blocker.blocked"))
+        case "behind": (PullRequestIcon.behind, PullRequestIcon.blockerTint, tr("agents.pr.blocker.behind", detail.baseBranch))
+        case "unstable": (PullRequestIcon.symbol(PullRequestCheck.Outcome.failing), PullRequestIcon.tint(PullRequestCheck.Outcome.failing),
+                          tr("agents.pr.blocker.unstable"))
+        case "checking": (PullRequestIcon.symbol(PullRequestCheck.Outcome.pending), PullRequestIcon.tint(PullRequestCheck.Outcome.pending),
+                          tr("agents.pr.blocker.checking"))
         default: ("info.circle", NookTheme.textTertiary, tr(note))
         }
         return Button {

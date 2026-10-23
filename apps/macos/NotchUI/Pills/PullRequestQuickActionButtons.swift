@@ -95,10 +95,11 @@ struct PullRequestQuickActionButtons: View {
 
     static func symbol(_ action: PullRequestQuickAction) -> String {
         switch action {
-        case .close: return "xmark.circle"
-        case .merge: return NookSymbol.merge
-        case .ready: return "eye"
-        case .reopen: return "arrow.uturn.backward.circle"
+        // Each shows the mark of the state it leads to.
+        case .close: return PullRequestIcon.symbol(.closed)
+        case .merge: return PullRequestIcon.symbol(.merged)
+        case .ready: return PullRequestIcon.symbol(.open)
+        case .reopen: return PullRequestIcon.symbol(.open)
         }
     }
 }

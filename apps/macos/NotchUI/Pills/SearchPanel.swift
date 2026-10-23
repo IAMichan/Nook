@@ -229,7 +229,7 @@ struct SearchPanel: View {
         case .agent(let agent):
             AgentLogo(agent: agent, size: Self.faceSize - 4).frame(width: Self.faceSize, height: Self.faceSize)
         case nil:
-            Image(systemName: Self.symbol(document))
+            NookSymbol(Self.symbol(document), size: 13)
                 .font(NookTheme.font(12, .medium))
                 .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
                 .frame(width: Self.faceSize, height: 18)
@@ -404,7 +404,7 @@ struct SearchPanel: View {
             switch document.id {
             case "action:newChat": return "square.and.pencil"
             case "action:newSession": return "plus.bubble"
-            case "action:pullRequests": return "arrow.triangle.pull"
+            case "action:pullRequests": return PullRequestIcon.generic
             case "action:usage": return "chart.bar"
             case "action:terminals": return "terminal"
             case "action:browser": return "globe"
