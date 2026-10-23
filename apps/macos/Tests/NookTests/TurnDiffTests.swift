@@ -56,6 +56,7 @@ final class TurnDiffTests: XCTestCase {
         XCTAssertEqual(tree.map(\.path), ["A.swift", "B.swift"])
         XCTAssertEqual(tree.last?.kind, .added)
         XCTAssertEqual(turns[0].file("B.swift", relativeTo: "/p")?.path, "/p/B.swift")
+        XCTAssertEqual(turns[0].file("p/B.swift", relativeTo: nil)?.path, "/p/B.swift", "the tree drops the leading slash")
         let session = TurnDiff.session(turns)
         XCTAssertEqual(session.files.map(\.path), ["/p/A.swift", "/p/B.swift"])
         XCTAssertEqual(session.files[1].patches.count, 2)

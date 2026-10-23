@@ -171,7 +171,11 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
 
     /// The file with this path relative to `directory`, or as the agent named it.
     func file(_ path: String, relativeTo directory: String?) -> File? {
-        files.first { $0.path == path || Self.relative($0.path, to: directory) == path }
+        // The tree drops the leading slash of a path outside the folder.
+        files.first {
+            let relative = Self.relative($0.path, to: directory)
+            return $0.path == path || relative == path || relative == "/" + path
+        }
     }
 
     /// Every file of these files as one diff, one file after the other.
@@ -185,6 +189,9 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
         var number = 0
         for message in messages {
             switch message.kind {
+            // A message sent while the agent worked steers the same turn; it does not start a new one.
+            case .user where message.queued:
+                break
             case .user:
                 close()
                 number += 1

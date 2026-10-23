@@ -39,6 +39,7 @@ struct TranscriptConversation: View {
     /// Follows the end while the agent writes, until you scroll away; then a pill brings you back.
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    @State private var scrollPhase: ScrollPhase = .idle
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
@@ -86,7 +87,12 @@ struct TranscriptConversation: View {
                     if nowAtEnd { scroll.reachedEnd() }
                 }
                 .onScrollPhaseChange { _, phase in
+                    scrollPhase = phase
                     if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
+                }
+                // A drag that began at the end, or the scroll wheel, leaves the end while you scroll: stop following.
+                .onChange(of: atEnd) { _, now in
+                    if !now, scrollPhase != .idle && scrollPhase != .animating { scroll.userScrolled() }
                 }
                 .overlay(alignment: .bottom) {
                     if scroll.mode == .free, !atEnd, !shown.isEmpty {
@@ -178,7 +184,7 @@ struct TranscriptConversation: View {
                                    checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
                 if open.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        ForEach(inner) { flatRow($0, answerable: nil).id($0.id) }
+                        ForEach(inner) { flatRow($0, answerable: nil, cards: cards).id($0.id) }
                     }
                     .padding(.bottom, NookTheme.Spacing.xs)
                 }
