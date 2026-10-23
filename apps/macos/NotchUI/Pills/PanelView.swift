@@ -47,7 +47,7 @@ struct PanelView: View {
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
-                    .padding(.top, headerInset > 0 ? NookTheme.Spacing.xl + NookTheme.Spacing.xs : NookTheme.Spacing.xl)
+                    .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
                 // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents.
@@ -317,7 +317,7 @@ struct NotchSheetView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: headerInset > 0 ? NookTheme.Spacing.xl + NookTheme.Spacing.xs : NookTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.lg) {
             // Back, a thin line, then what this task is about: the title, and in quieter text whose it is.
             HStack(spacing: NookTheme.Spacing.md) {
                 SheetBackButton(action: close)
