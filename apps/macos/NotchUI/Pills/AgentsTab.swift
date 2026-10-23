@@ -16,6 +16,8 @@ struct AgentsTab: View {
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
+    /// What was open before the pull requests page; empty picks what waits for you, as on a fresh start.
+    @State private var beforePullRequests = ""
 
     private enum Selection {
         case live(AgentSession)
@@ -47,7 +49,8 @@ struct AgentsTab: View {
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
                 if !app.demoMode {
                     PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
-                                openSettings: { app.openSettings() }, history: app.history)
+                                openSettings: { app.openSettings() }, history: app.history,
+                                onBack: { viewModel.selectedAgentID = beforePullRequests })
                 }
             }
             .padding(.trailing, NookTheme.Spacing.xs)
@@ -96,6 +99,10 @@ struct AgentsTab: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        // Where back on the pull requests page returns to.
+        .onChange(of: viewModel.selectedAgentID) { previous, id in
+            if id == AgentsPage.pullRequests, previous != AgentsPage.pullRequests { beforePullRequests = previous }
+        }
         .overlay(alignment: .top) {
             if palette {
                 AgentCommandPalette(viewModel: viewModel) { palette = false }
