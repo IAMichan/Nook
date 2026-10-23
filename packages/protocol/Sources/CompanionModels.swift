@@ -100,6 +100,16 @@ enum CompanionOp: String, Codable, Sendable {
     /// Live Activities: the phone's push-to-start token, an activity's update token, an ended activity, or the switch
     /// turned off (`live`).
     case liveActivity
+    /// Manages a session from the phone (`session`; `item` is one of `SessionAction`, `text` the new name of `rename`).
+    case manage
+}
+
+/// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
+/// that apply in `SessionDigest.actions`.
+enum SessionAction: String, Codable, Sendable, CaseIterable {
+    case rename, archive, snoozeHour, snoozeEvening, snoozeTomorrow, unsnooze
+    /// Ends the process of an agent outside Nook; it saves its conversation, so it can be continued in Nook.
+    case end
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -114,7 +124,9 @@ enum CompanionFeature {
     static let inbox = "inbox"
     /// The Mac takes `liveActivity` requests and sends Live Activity pushes.
     static let liveActivity = "liveActivity"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity]
+    /// The Mac takes `manage` requests and lists `SessionDigest.actions`; terminal sessions come with their transcript.
+    static let manage = "manage"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -241,6 +253,8 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var canSend: Bool? = nil
     /// The model the session runs on, when the Mac knows it (for the Live Activity).
     var model: String? = nil
+    /// `SessionAction` raw values the phone may take on this session; nil from a Mac without `CompanionFeature.manage`.
+    var actions: [String]? = nil
 }
 
 extension LiveActivitySnapshot {
