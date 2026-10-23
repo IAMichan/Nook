@@ -529,6 +529,8 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "ws.inspector.approvalsUnavailable": "Codex fragt in diesem Modus nichts; die Sandbox entscheidet, was erlaubt ist.",
         "ws.inspector.base": "Basis",
         "ws.inspector.branch": "Branch",
+        "ws.inspector.git": "Git",
+        "ws.inspector.upstream": "Upstream",
         "ws.inspector.divergence": "Gegenüber Basis",
         "ws.inspector.folder": "Ordner",
         "ws.inspector.instructions": "Zusätzliche Anweisungen",

@@ -471,7 +471,15 @@ struct AgentInboxList: View {
 
     // MARK: Undo
 
+    /// Only ticks while there is something to undo: an idle inbox redrew this every second for nothing.
+    @ViewBuilder
     private var undoNotice: some View {
+        if store.canUndo {
+            undoTimeline
+        }
+    }
+
+    private var undoTimeline: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             if let entry = store.undoLog.current(now: context.date) {
                 HStack(spacing: NookTheme.Spacing.md) {

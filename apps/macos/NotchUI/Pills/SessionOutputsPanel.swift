@@ -147,7 +147,7 @@ private struct OutputViewer: View {
         case .document:
             if let path = output.path { DocumentPreview(path: path, version: output.date) }
         case .image:
-            if let path = output.path, let image = NSImage(contentsOfFile: path) {
+            if let path = output.path, let image = PreviewImages.image(path, version: output.date) {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
             } else {
                 missing
@@ -242,7 +242,7 @@ struct FilePreviewPanel: View {
         case .document?:
             DocumentPreview(path: path, version: opened)
         case .image?:
-            if let image = NSImage(contentsOfFile: path) {
+            if let image = PreviewImages.image(path, version: opened) {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
             } else {
                 FileTextPreview(path: path)
@@ -325,6 +325,24 @@ private struct FileTextPreview: View {
             .foregroundStyle(NookTheme.textTertiary)
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Pictures the outputs and the file preview show, read once per file and version: the panel redraws while the
+/// conversation beside it streams or you type, and reading a large picture from disk on each redraw made that stutter.
+private enum PreviewImages {
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 24
+        return cache
+    }()
+
+    static func image(_ path: String, version: Date) -> NSImage? {
+        let key = "\(path)@\(version.timeIntervalSince1970)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let image = NSImage(contentsOfFile: path) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
     }
 }
 

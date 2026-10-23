@@ -167,6 +167,34 @@ final class ChatsEntryMemo {
     }
 }
 
+/// `ChatsTab.shown`, kept while what it is made of stays the same. The body, the list, its empty note and the open chat
+/// each ask for it, and while you search it reads every message of every chat: once per keystroke is enough.
+@MainActor
+final class ChatsShownMemo {
+    private struct Key: Equatable {
+        var all: [ChatsEntry]
+        var needle: String
+        var view: ChatsView
+        var filter: String?
+        var selection: String?
+        /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
+        var day: Date
+    }
+
+    private var key: Key?
+    private var value: [ChatsEntry] = []
+
+    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, selection: String?,
+               make: () -> [ChatsEntry]) -> [ChatsEntry] {
+        let wanted = Key(all: all, needle: needle, view: view, filter: filter, selection: selection,
+                         day: Calendar.current.startOfDay(for: Date()))
+        if key == wanted { return value }
+        value = make()
+        key = wanted
+        return value
+    }
+}
+
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects or that Nook reads itself (Telegram, Instagram, Messenger, Signal, Messages…), all read the same way.
 /// Three columns: a sidebar with the views (All chats, New, Only in Nook, Read) and the apps, the list of chats in groups
@@ -196,6 +224,7 @@ struct ChatsTab: View {
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
+    @State private var shownMemo = ChatsShownMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
 
@@ -331,8 +360,9 @@ struct ChatsTab: View {
     private var all: [ChatsEntry] { entriesMemo.entries(whatsApp: whatsApp, capture: capture) }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
-        if let avatar = entry.avatar, FileManager.default.fileExists(atPath: avatar),
-           let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
+        // Straight to the image cache: a file check first cost a disk lookup per row on every redraw of the list. A
+        // missing file gives no image either way.
+        if let avatar = entry.avatar, let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
             return image
         }
         return photos.photo(handle: entry.handle, name: entry.name)
@@ -346,6 +376,10 @@ struct ChatsTab: View {
     /// open one stays in the view while you read it, so nothing jumps.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
+        return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, selection: selection) { makeShown(needle) }
+    }
+
+    private func makeShown(_ needle: String) -> [ChatsEntry] {
         let now = Date()
         let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, whatsApp: whatsApp, capture: capture) }
         return found.filter { view.shows($0.read) || $0.id == selection }
@@ -899,6 +933,8 @@ private struct ChatsDetail: View {
     @State private var editing: ChatBubble?
     /// Your message waiting for "Delete for everyone" to be confirmed.
     @State private var deleting: ChatBubble?
+    /// The collected chat whose removal waits for a yes.
+    @State private var removing: String?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
@@ -1189,7 +1225,7 @@ private struct ChatsDetail: View {
             }
             if case .captured(let id) = entry.origin {
                 Divider()
-                Button(tr("chats.remove"), role: .destructive) { capture.remove(id) }
+                Button(tr("chats.remove"), role: .destructive) { removing = id }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -1201,6 +1237,8 @@ private struct ChatsDetail: View {
         .composerMenu()
         .help(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
+        .confirmDelete($removing, question: { _ in tr("confirm.deleteChat", entry.name) },
+                       detail: tr("confirm.deleteChat.detail"), confirmTitle: tr("chats.remove")) { capture.remove($0) }
     }
 
     /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, an app the chat helper links),

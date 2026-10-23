@@ -353,6 +353,7 @@ private struct SessionToolPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             header
+            if tool == .terminal { terminalBar }
             if tool == .browser, !directory.isEmpty { DevServerStrip(directory: directory) }
             Group {
                 switch tool {
@@ -395,14 +396,6 @@ private struct SessionToolPanel: View {
             }
             addMenu
             Spacer(minLength: 8)
-            if tool == .terminal {
-                Text(AgentPathFormat.tilde(directory))
-                    .font(NookTheme.mono(11))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                SessionTerminalActions(directory: directory).id(directory)
-            }
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(NookTheme.font(10.5, .semibold))
@@ -415,6 +408,21 @@ private struct SessionToolPanel: View {
             .accessibilityLabel(closeHelp)
         }
         .frame(height: 34)
+    }
+
+    /// Under the tabs, so they keep the panel's full width: the terminal's folder and its actions.
+    private var terminalBar: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text(AgentPathFormat.tilde(directory))
+                .font(NookTheme.mono(11))
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(directory)
+            Spacer(minLength: 8)
+            SessionTerminalActions(directory: directory).id(directory)
+        }
+        .padding(.leading, NookTheme.Spacing.xs)
     }
 
     /// + : the tools to open, each in its own tab (or the tab it already has).

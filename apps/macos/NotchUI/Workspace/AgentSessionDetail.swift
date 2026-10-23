@@ -25,6 +25,10 @@ struct AgentSessionDetail: View {
     @State private var choice: AgentChoice?
     /// An action is in progress (sending, ending a process).
     @State private var working = false
+    /// The session whose terminal process is about to be ended (End session) or handed to Nook (Take over), while
+    /// the confirmation asks first.
+    @State private var endRequest: AgentSession?
+    @State private var takeOverRequest: AgentSession?
     /// Progress through a multi-part question from the agent.
     @State private var questionID = ""
     @State private var questionStep = 0
@@ -44,6 +48,14 @@ struct AgentSessionDetail: View {
             }
         }
         .onPreferenceChange(TranscriptOutputCount.self) { outputCount = $0 }
+        .confirmDelete($endRequest, question: { tr("confirm.endSession", $0.name) },
+                       detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.end")) { session in
+            perform { try app.endSession(session) }
+        }
+        .confirmDelete($takeOverRequest, question: { tr("confirm.endSession", $0.name) },
+                       detail: tr("confirm.endSession.detail"), confirmTitle: tr("agents.nook.takeOver")) { session in
+            perform { try await app.continueInNook(session, endingTerminal: true) }
+        }
         .onChange(of: selectionID) { _, _ in
             outputsOpen = false
             actionError = nil
@@ -342,13 +354,13 @@ struct AgentSessionDetail: View {
             if app.canEnd(session) && app.canTakeOver(session) {
                 DropdownDivider()
                 DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.takeOver")) {
-                    perform { try await app.continueInNook(session, endingTerminal: true) }
+                    takeOverRequest = session
                 }
             }
             if app.canEnd(session) {
                 if !app.canTakeOver(session) { DropdownDivider() }
                 DropdownRow(symbol: "xmark.octagon", title: tr("agents.nook.end"), tint: NookTheme.coralSoft) {
-                    perform { try app.endSession(session) }
+                    endRequest = session
                 }
             }
             if !session.cwd.isEmpty {
@@ -439,7 +451,6 @@ struct AgentSessionDetail: View {
                         answer(request, index: index, labels: Array(picks))
                     }
                     .disabled(picks.isEmpty)
-                    .opacity(picks.isEmpty ? 0.5 : 1)
                     Spacer()
                 }
             }

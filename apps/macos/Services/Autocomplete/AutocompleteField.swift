@@ -56,15 +56,16 @@ enum AutocompleteField {
         }
     }
 
-    /// Roles that take typed text.
-    private static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
-
     /// - Parameters:
     ///   - screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.
     ///   - screens: every screen's frame, taken on the main thread: a cursor on none of them is not believed.
     ///   - checkCode: tell a code editor or terminal from a chat input (code editors like VS Code, see `isCode`).
     static func read(screenHeight: CGFloat, screens: [CGRect] = [], checkCode: Bool = false) -> AutocompleteFieldSnapshot? {
-        guard AXIsProcessTrusted(), let element = focusedElement(), isEditable(element) else { return nil }
+        guard AXIsProcessTrusted(), let element = focusedElement() else { return nil }
+        // Nook's own fields are read through AppKit (`readOwn`): asking itself through accessibility would wait on its own
+        // main thread.
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success, pid != getpid(), isEditable(element) else { return nil }
         let role: String? = attribute(element, kAXRoleAttribute)
         let subrole: String? = attribute(element, kAXSubroleAttribute)
         guard role != "AXSecureTextField", subrole != (kAXSecureTextFieldSubrole as String) else { return nil }
@@ -116,6 +117,57 @@ enum AutocompleteField {
         return snapshot
     }
 
+    // MARK: Nook's own fields
+
+    /// Text views in Nook that never get suggestions: the Autocomplete Playground shows its own, and code or keys typed into
+    /// Nook are not prose. A view opts out by an identifier that starts with this.
+    static let ownOptOut = "nook.autocomplete.off"
+
+    /// The text view in Nook that has the focus, when it is one to suggest in. Nook does not read itself through the
+    /// accessibility API (it would have to answer its own questions on the main thread); it asks AppKit directly.
+    @MainActor
+    static func ownTextView() -> NSTextView? {
+        guard let window = NSApp.keyWindow, let textView = window.firstResponder as? NSTextView, textView.isEditable,
+              textView.isSelectable, !textView.isHidden else { return nil }
+        // A SwiftUI or AppKit text field edits through the window's field editor: the field itself is its delegate.
+        let field = textView.isFieldEditor ? textView.delegate as? NSTextField : nil
+        if field is NSSecureTextField || field is NSSearchField || field is NSTokenField || field is NSComboBox { return nil }
+        if [textView.identifier, field?.identifier, textView.enclosingScrollView?.identifier]
+            .contains(where: { $0?.rawValue.hasPrefix(ownOptOut) ?? false }) { return nil }
+        return textView
+    }
+
+    /// The focused field in Nook itself, like `read` reads another app's.
+    @MainActor
+    static func readOwn() -> AutocompleteFieldSnapshot? {
+        guard let textView = ownTextView(), let window = textView.window else { return nil }
+        let text = textView.string as NSString
+        let range = textView.selectedRange()
+        guard range.location != NSNotFound, NSMaxRange(range) <= text.length else { return nil }
+        var snapshot = AutocompleteFieldSnapshot(
+            before: clean(text.substring(to: range.location)), after: clean(text.substring(from: NSMaxRange(range))),
+            hasSelection: range.length > 0, caret: nil
+        )
+        // Screen coordinates with the origin bottom left, as the overlay wants them.
+        var actual = NSRange()
+        let caret = textView.firstRect(forCharacterRange: NSRange(location: NSMaxRange(range), length: 0), actualRange: &actual)
+        if caret.height > 1 { snapshot.caret = CGRect(x: caret.minX, y: caret.minY, width: 0, height: caret.height) }
+        if range.length > 0 {
+            snapshot.selectedText = text.substring(with: range)
+            snapshot.selectionRect = textView.firstRect(forCharacterRange: range, actualRange: &actual)
+        }
+        let field = textView.isFieldEditor ? textView.delegate as? NSTextField : nil
+        let frameView: NSView = field ?? textView.enclosingScrollView ?? textView
+        snapshot.fieldFrame = window.convertToScreen(frameView.convert(frameView.bounds, to: nil))
+        snapshot.windowTitle = window.title
+        snapshot.placeholder = field?.placeholderString
+        if let font = (textView.typingAttributes[.font] as? NSFont) ?? textView.font {
+            snapshot.fontName = font.fontName
+            snapshot.fontSize = font.pointSize
+        }
+        return snapshot
+    }
+
     /// Whether the field is a code editor or terminal, from the web classes of the field and the elements around it (Electron
     /// editors are web pages: Monaco, xterm.js) and its role description.
     private static func isCode(_ element: AXUIElement) -> Bool {
@@ -144,15 +196,20 @@ enum AutocompleteField {
         return attribute(owner, kAXFocusedUIElementAttribute)
     }
 
-    /// A field you can type in: a text role, a value that can be set, or (in browsers) an editable web element. A focused web
-    /// page you only read is not one.
+    /// A field you write in (see `CompletionFieldKind.isWritable`): a text field or area, or (in browsers) an editable web
+    /// element. Not a slider or stepper whose value can be set, a search box, an address bar or a page you only read.
     private static func isEditable(_ element: AXUIElement) -> Bool {
-        if let role: String = attribute(element, kAXRoleAttribute), textRoles.contains(role) { return true }
         var settable: DarwinBoolean = false
-        if AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success, settable.boolValue { return true }
-        if let editable: AXUIElement = attribute(element, "AXEditableAncestor"), CFGetTypeID(editable) == AXUIElementGetTypeID() { return true }
-        if let editable: Bool = attribute(element, "AXEditable"), editable { return true }
-        return false
+        let canSet = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+        let ancestor: AXUIElement? = attribute(element, "AXEditableAncestor")
+        let editable: Bool? = attribute(element, "AXEditable")
+        let value: String? = attribute(element, kAXValueAttribute)
+        return CompletionFieldKind.isWritable(CompletionFieldKind.Element(
+            role: attribute(element, kAXRoleAttribute), subrole: attribute(element, kAXSubroleAttribute),
+            roleDescription: attribute(element, kAXRoleDescriptionAttribute), identifier: attribute(element, kAXIdentifierAttribute),
+            label: attribute(element, kAXDescriptionAttribute), settable: canSet, editable: ancestor != nil || editable == true,
+            textValue: value != nil
+        ))
     }
 
     // MARK: Text

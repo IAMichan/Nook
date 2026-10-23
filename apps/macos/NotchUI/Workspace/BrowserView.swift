@@ -337,7 +337,7 @@ struct BrowserView: View {
                     .foregroundStyle(NookTheme.paper)
                     .padding(.horizontal, 10)
                     .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(Color.white.opacity(0.04)))
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(WS.subtle))
                     .onSubmit { store.go(store.address) }
                 Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
                     .help(tr("browser.openExternal"))

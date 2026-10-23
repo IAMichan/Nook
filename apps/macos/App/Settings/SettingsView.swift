@@ -54,6 +54,7 @@ struct SettingsView: View {
     @ObservedObject var energy = EnergyMonitor.shared
     @State var installing: String?
     @State var installFraction: Double = 0
+    @State var usingRecommendation = false
     @State var testing = false
     @State var testResult: (ok: Bool, message: String)?
     @State var pendingChange: AgentConfigInstaller.Change?
@@ -117,7 +118,10 @@ struct SettingsView: View {
             .font(NookTheme.TextStyle.body)
             .scrollContentBackground(.hidden)
             .background(NookTheme.canvas)
-            .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)-\(settings.accentHex)")
+            // Rebuilt for a new page or language. Not for the accent: Appearance is drawn in this view's own body and
+            // `WardrobeSettingsSection` observes the settings, so both redraw in the new color without the Form being
+            // rebuilt (which would scroll back to the top on every swatch click or color picker drag).
+            .id("\(app.settingsSection.rawValue)-\(settings.appLanguage.rawValue)")
         }
         .tint(NookTheme.iris)
         .preferredColorScheme(.dark)

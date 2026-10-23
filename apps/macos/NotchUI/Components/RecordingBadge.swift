@@ -11,13 +11,22 @@ final class RecordingBadge {
     func show() {
         let panel = self.panel ?? make()
         self.panel = panel
+        // Built again for each recording: see `hide`.
+        if panel.contentView == nil {
+            panel.contentView = NSHostingView(rootView: RecordingBadgeView(notes: NoteTaker.shared))
+        }
         guard let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame else { return }
         let size = NSSize(width: 210, height: 44)
         panel.setFrame(NSRect(x: frame.maxX - size.width - 16, y: frame.minY + 16, width: size.width, height: size.height), display: true)
         panel.orderFrontRegardless()
     }
 
-    func hide() { panel?.orderOut(nil) }
+    /// The content goes with the badge: a hidden badge would otherwise keep its clock ticking every second and redraw
+    /// for every change of the Notetaker, until the next recording.
+    func hide() {
+        panel?.orderOut(nil)
+        panel?.contentView = nil
+    }
 
     private func make() -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 210, height: 44),
@@ -27,7 +36,6 @@ final class RecordingBadge {
         panel.hasShadow = false
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.contentView = NSHostingView(rootView: RecordingBadgeView(notes: NoteTaker.shared))
         return panel
     }
 }

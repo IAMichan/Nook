@@ -55,11 +55,14 @@ struct AgentRunPanel: View {
     @State private var diffSelection: TurnDiffSelection?
     /// The lines git counted per turn (by the turn's id), in place of those read from the agent's edits.
     @State private var countedLines: [String: [String: EditLines]] = [:]
+    /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke).
+    @State private var derived = RunTimelineDerived()
 
     var body: some View {
         if let run = workspace.run(runID) {
-            let outputs = SessionOutputs.collect(workspace.timeline(runID), tasks: run.tasks, directory: run.workingDirectory)
-            let runningCommand = CommandConsole.running(workspace.timeline(runID))?.id
+            let _ = derived.update(workspace.timeline(runID), run: run)
+            let outputs = derived.outputs
+            let runningCommand = derived.runningCommand
             let consoleOpen = consoleEventID != nil
             HStack(alignment: .top, spacing: 0) {
                 if let consoleEventID, let event = workspace.timeline(runID).first(where: { $0.id == consoleEventID }) {
@@ -517,7 +520,7 @@ struct AgentRunPanel: View {
 
     /// The finished turns that changed files, with the lines git counted where it did.
     private func turnDiffs(_ run: WorkspaceRun) -> [TurnDiff] {
-        TurnDiff.collect(events: workspace.timeline(runID)).map { turn in
+        derived.update(workspace.timeline(runID), run: run).turns.map { turn in
             countedLines[turn.id].map { turn.counted($0, relativeTo: run.workingDirectory) } ?? turn
         }
     }
@@ -552,8 +555,9 @@ struct AgentRunPanel: View {
     // MARK: Timeline
 
     private func timeline(_ run: WorkspaceRun) -> some View {
-        let events = workspace.timeline(runID).filter { !($0.kind == .system && $0.tool == "launch") }
-        let blocks = TimelinePresentation.blocks(events, active: run.status.isActive)
+        let memo = derived.update(workspace.timeline(runID), run: run)
+        let events = memo.events
+        let blocks = memo.blocks
         let cards = Dictionary(turnDiffs(run).compactMap { turn in turn.answerID.map { ($0, turn) } }, uniquingKeysWith: { first, _ in first })
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
@@ -1064,5 +1068,35 @@ struct AgentRunPanel: View {
         }
         .disabled(run.mode == .plan)
         .help(run.permission.help(for: run.provider))
+    }
+}
+
+/// What `AgentRunPanel` draws from a session's events: the shown events, their blocks, the turns that changed files, the
+/// outputs and the running command. Each walks the whole timeline, and the panel's body runs on every keystroke in its
+/// composer (the draft is its state), on hover and while the side panels resize; this makes them again only when the
+/// events or the session's tasks, folder or activity change. Comparing the same array again is cheap: Swift sees it is
+/// the same storage.
+@MainActor
+private final class RunTimelineDerived {
+    private var key: (all: [RunEvent], active: Bool, tasks: [RunTaskStep]?, directory: String)?
+    private(set) var events: [RunEvent] = []
+    private(set) var blocks: [TimelineBlock] = []
+    private(set) var turns: [TurnDiff] = []
+    private(set) var outputs: [SessionOutput] = []
+    private(set) var runningCommand: UUID?
+
+    @discardableResult
+    func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
+        let active = run.status.isActive
+        if let key, key.active == active, key.directory == run.workingDirectory, key.tasks == run.tasks, key.all == all {
+            return self
+        }
+        key = (all, active, run.tasks, run.workingDirectory)
+        events = all.filter { !($0.kind == .system && $0.tool == "launch") }
+        blocks = TimelinePresentation.blocks(events, active: active)
+        turns = TurnDiff.collect(events: all)
+        outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
+        runningCommand = CommandConsole.running(all)?.id
+        return self
     }
 }
