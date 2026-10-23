@@ -507,6 +507,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
     /// The newest activity per chat at the last read: only chats that moved are read again.
     private var seen: [String: Date] = [:]
+    /// Chats told to have changed (the live line, something Nook did in them) that were not read since: read at the next
+    /// turn even when their newest activity looks the same. Kept apart from `seen`, so a change told while a read is
+    /// under way is not lost when that read ends (Instagram tells of the message a moment after the chat moved).
+    private var stale: Set<String> = []
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
     /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
@@ -523,7 +527,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     init() {
         live.onChange = { [weak self] chat in
             guard let self else { return }
-            self.seen[chat] = nil
+            self.stale.insert(chat)
             self.onChange()
         }
         live.onLive = { [weak self] live in self?.isLive = live }
@@ -546,6 +550,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
     func reset() {
         seen = [:]
+        stale = []
         covered = []
         isWorking = false
     }
@@ -571,8 +576,16 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
-            for chat in listed where chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil) {
-                let answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+            for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
+                // Before the read: a change told while it runs marks the chat again, for the next turn.
+                stale.remove(chat.id)
+                let answer: [String: Any]
+                do {
+                    answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                } catch {
+                    stale.insert(chat.id)
+                    throw error
+                }
                 let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
                 let deleted = ChatServiceData.deleted(answer, chat: chat)
                 seen[chat.id] = chat.last ?? .distantPast
@@ -661,7 +674,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         }
         _ = try await post(request.path, request.json ?? [:], token: token, timeout: 30)
         // The chat is read again at the next turn, with the message just sent.
-        seen[chat] = nil
+        stale.insert(chat)
     }
 
     // MARK: Doing things in a chat
@@ -726,7 +739,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         // Said as a chat's own failure: where Nook reads the chat from is not something to show here.
         guard let token = Self.token else { throw NookError(tr("chat.action.failed")) }
         _ = try await call(method, path, json, query: query, token: token, timeout: 30, failure: tr("chat.action.failed"), plain: true)
-        seen[chat] = nil
+        stale.insert(chat)
         onChange()
     }
 
