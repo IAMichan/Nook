@@ -240,8 +240,8 @@ struct SearchPanel: View {
 
     /// The chat's own picture from its app, else its photo in Contacts.
     private func photo(avatar: String?, handle: String?, name: String) -> NSImage? {
-        if let avatar, FileManager.default.fileExists(atPath: avatar),
-           let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
+        // Straight to the image cache, without a disk lookup per hit on every redraw; a missing file gives no image.
+        if let avatar, let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
             return image
         }
         return photos.photo(handle: handle, name: name)

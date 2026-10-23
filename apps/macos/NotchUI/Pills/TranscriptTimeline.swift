@@ -40,15 +40,17 @@ struct TranscriptConversation: View {
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
     @State private var scrollPhase: ScrollPhase = .idle
+    @State private var derived = TranscriptDerived()
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
     var body: some View {
-        let rows = TranscriptPresentation.rows(shown, working: working)
+        let _ = derived.update(shown, working: working, directory: directory)
+        let rows = derived.rows
         // Only the very last answer can still be answered by tapping one of its options.
         let answerable = working ? nil : shown.last(where: { $0.kind == .assistant })?.id
-        let outputs = SessionOutputs.collect(shown, directory: directory ?? "").filter { directory != nil || !$0.isFile }
-        let turns = TurnDiff.collect(shown)
+        let outputs = derived.outputs
+        let turns = derived.turns
         // A turn still at work gets its card when it is done.
         let lastPrompt = shown.last(where: { $0.kind == .user })?.id
         let cards = Dictionary(turns.filter { !(working && $0.id == lastPrompt) }.compactMap { turn in turn.answerID.map { ($0, turn) } },
@@ -355,6 +357,25 @@ struct TranscriptConversation: View {
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
         guard !shown.isEmpty || footer != nil else { return }
         proxy.scrollTo("bottom", anchor: .bottom)
+    }
+}
+
+/// The rows, outputs and turn diffs of a conversation, worked out again only when its messages change. The view's body
+/// runs far more often (a scroll starting and stopping, the side panel resizing, a fold opening), and each of these walks
+/// the whole transcript. Comparing the same array again is cheap: Swift sees it is the same storage.
+@MainActor
+private final class TranscriptDerived {
+    private var key: (messages: [AgentChatMessage], working: Bool, directory: String?)?
+    private(set) var rows: [TranscriptRow] = []
+    private(set) var outputs: [SessionOutput] = []
+    private(set) var turns: [TurnDiff] = []
+
+    func update(_ messages: [AgentChatMessage], working: Bool, directory: String?) {
+        if let key, key.working == working, key.directory == directory, key.messages == messages { return }
+        key = (messages, working, directory)
+        rows = TranscriptPresentation.rows(messages, working: working)
+        outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
+        turns = TurnDiff.collect(messages)
     }
 }
 
