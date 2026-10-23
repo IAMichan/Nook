@@ -244,44 +244,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cat > notes.md <<'EOF'
-          > [!NOTE]
-          > This is a beta: expect rough edges, and please report problems in Issues.
-
-          ## Install on macOS
-
-          Requires macOS 15 (Sequoia) or newer on an Apple Silicon Mac (M1 or newer).
-
-          1. Download `Nook-VERSION-macOS.dmg`, open it, and drag **Nook** to **Applications**.
-          OPEN_ANYWAY
-          3. Nook lives in your notch and the menu bar (no Dock icon).
-
-          This build does not include the Telegram bridge or the chat helper (Signal, Messenger, Instagram, X, LinkedIn);
-          those apps stay on notifications. The Update button in the Agents tab is for builds from a git checkout; to update
-          this build, download the next release.
-
-          ## Changes
-          EOF
-          sed -i '' "s/VERSION/$VERSION/g" notes.md
-          # A notarized build opens straight away; any other build needs the Gatekeeper step.
-          if [ "$NOTARIZED" = "true" ]; then
-            printf '2. Open Nook from Applications. The setup shows, step by step, what to allow.\n' > open.md
-          else
-            cat > open.md <<'EOF'
-          2. This build is not notarized by Apple yet, so macOS blocks the first launch. Open Nook once, then go to
-             **System Settings › Privacy & Security** and click **Open Anyway** next to the message about Nook. Or run:
-             ```sh
-             xattr -dr com.apple.quarantine /Applications/Nook.app
-             ```
-          EOF
-          fi
-          awk 'FNR==NR { text = text $0 "\n"; next } /^OPEN_ANYWAY$/ { printf "%s", text; next } { print }' open.md notes.md > notes.tmp
-          mv notes.tmp notes.md
+          # GitHub's own list of what changed since the last release; it goes folded away at the bottom of the page.
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > changes.md || : > changes.md
+          # The page: banner, download button and the downloads on top, then the install steps (scripts/release-notes.sh).
+          TAG="$TAG" VERSION="$VERSION" REPO="$GITHUB_REPOSITORY" PRERELEASE="${{ steps.version.outputs.prerelease }}" \
+            NOTARIZED="${NOTARIZED:-false}" DMG="Nook-$VERSION-macOS.dmg" ZIP="Nook-$VERSION-macOS.zip" CHANGES=changes.md \
+            "$GITHUB_WORKSPACE/scripts/release-notes.sh" > notes.md
           FLAGS=""
           [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.title }}" \
-            --notes-file notes.md --generate-notes $FLAGS \
+            --notes-file notes.md $FLAGS \
             "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" SHA256SUMS.txt
       - name: Keep the build log
         if: failure()
