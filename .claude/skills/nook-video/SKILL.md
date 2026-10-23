@@ -1,13 +1,14 @@
 ---
 name: nook-video
-description: Make a short video about Nook (an Instagram Reel, TikTok, YouTube Short, or a clip for the README or a release) in Nook's own look, with calm generated music and quiet sound cues, plus a cover image and a caption. Use when the user asks for a video, reel, promo, teaser, social post with motion, release clip, or "something for Instagram" about Nook or one of its features.
+description: Make a short video about Nook (an Instagram Reel, TikTok, YouTube Short, or a clip for the README or a release) in Nook's own look: catchy but calm, with Nook as the main character, cuts on the beat, a soft generated lo-fi groove and sound cues, plus a cover image and a caption. Use when the user asks for a video, reel, promo, teaser, social post with motion, release clip, or "something for Instagram" about Nook or one of its features.
 ---
 
 # Making a Nook video
 
-A Nook video looks like Nook and feels like Nook: a close-up of the real notch UI on a near-black canvas, one quiet idea
-per scene, slow fades, a breathing light, and soft music that stays in the background. Calm by design, like the app
-(see the comment on `enum NookTheme` in `apps/macos/NotchUI/Theme/NookTheme.swift`).
+A Nook video looks like Nook and feels like Nook, and it is fun to watch: Nook itself (the orb) as the main
+character, a hook in the first second, the real notch UI on a near-black canvas, words that land on the beat, and a
+soft lo-fi groove under it. Catchy, never loud: no flashes, no hard hits, nothing that shouts. Calm by design, like
+the app (see the comment on `enum NookTheme` in `apps/macos/NotchUI/Theme/NookTheme.swift`).
 
 Reply in the user's language. Everything inside the video and the files in this skill is English unless the user asks
 for another language; Nook speaks English, Dutch, German, French and Spanish, so those are the languages to offer.
@@ -17,10 +18,10 @@ for another language; Nook speaks English, Dutch, German, French and Spanish, so
 | Path | What it is |
 |---|---|
 | `kit/nook-video.css` | NookTheme's tokens for video (colors, radii and spacing at 2.6×), the orb, the notch panel, rows, state chips, composer, type, cards, steps, the end card, safe zones |
-| `kit/nook-video.js` | `NV`: the frame clock (`NV.boot`), calm motion (`fade`, `stagger`, `settle`, `ease`, `type`, `swapText`, `breathe`), the orb (`NV.orb` breathes and blinks like `NookOrb.swift`), and every app state with its color (`NV.STATES`, `NV.state`) |
+| `kit/nook-video.js` | `NV`: the frame clock (`NV.boot`) and beat grid (`NV.tempo`), motion (`fade`, `stagger`, `settle`, `pop`, `ease`, `swapText`, `breathe`), kinetic type (`words`, `cycle`, `type`), the orb (`NV.orb` breathes, blinks, looks around and winks like `NookOrb.swift`), Nook's celebration sparks (`NV.sparks`), and every app state with its color (`NV.STATES`, `NV.state`) |
 | `scripts/render.mjs` | Renders a page frame by frame with Playwright, composes the score, mixes and encodes the MP4, renders the cover, makes a storyboard |
-| `scripts/music.py` | The calm score: pads, soft bass, sparse bells and sound cues, generated from scratch (numpy only), so it is free to use anywhere |
-| `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 25 s Reel and its cover: copy these to start |
+| `scripts/music.py` | The score: pads, soft bass, a lo-fi groove (plucked arpeggio, round kick, snap, a whisper of hi-hat) and sound cues, generated from scratch (numpy only), so it is free to use anywhere |
+| `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 26 s Reel on an 84 BPM grid and its cover: copy these to start |
 
 Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On a Mac:
 `brew install ffmpeg node && npm i -g playwright && npx playwright install chromium && pip3 install numpy`.
@@ -31,13 +32,16 @@ Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On 
    is true before writing a word: `README.md`, `CONTRIBUTING.md`, `docs/ROADMAP.md`, the feature's doc in `docs/`, and
    the strings in `apps/macos/Core/I18n*.swift` so labels in the video match the app's own words. Never show a feature,
    number, platform or claim that the repository does not back up.
-2. **Write the script** as 4–6 scenes, each one sentence on screen (headline ≤ 8 words, one supporting line), plus what
-   the notch shows in that scene. 15–30 s in total; give every headline at least 2.5 s plus 0.3 s per word on screen.
-   Mark the moments that get a sound cue (the notch opening, a state turning to done or merged, the end card).
+2. **Write the script on the beat grid.** Pick a tempo (80–90 BPM; at 84 a bar is 2.86 s) and give every scene one
+   or two bars: a hook in bar 1, then one idea per bar, and an end card that holds at least 3 s. One line on screen per
+   scene (headline ≤ 6 words), plus what the notch or Nook does in it. 20–30 s in total. Mark the moments that get a
+   sound cue (the drop when the notch opens, cards arriving, a state turning to done or merged, the end card).
 3. **Build the page** in `.scratch/<name>/` (git-ignored; see AGENTS.md section 5) by copying
    `examples/contributor-reel.html`, and point its `<link>` and `<script>` at this skill's `kit/` with a relative path
    (from `.scratch/<name>/`: `../../.claude/skills/nook-video/kit/…`). A page is `render(t)`, which draws the frame at
-   `t` seconds, and one call `NV.boot({ duration, cues, render })`. Open it with `?t=12.5` for a still, `?safe=1` to
+   `t` seconds, and one call `NV.boot({ duration, cues, music, render })`; `music` sets the score
+   (`{ bpm, drumsFrom, drumsUntil, mood }`). Time everything with `NV.tempo(bpm)` (`BAR(n)`, `B(n)`) so pictures and
+   music stay locked together. Open it with `?t=12.5` for a still, `?safe=1` to
    see Instagram's safe zones.
 4. **Check stills before rendering the whole video.** Take stills at the middle of every scene and at each transition,
    look at them, and fix overflow, wrapping, safe-zone collisions and color meaning first. A full render takes about
@@ -45,7 +49,7 @@ Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On 
 5. **Render:**
    ```sh
    node .claude/skills/nook-video/scripts/render.mjs .scratch/<name>/video.html \
-     --cover .scratch/<name>/cover.html --out .scratch/<name> --name <name> [--mood calm|warm|bright] [--seed 7]
+     --cover .scratch/<name>/cover.html --out .scratch/<name> --name <name> [--mood calm|warm|bright] [--seed 7] [--no-groove]
    ```
    This writes `<name>.mp4`, `<name>-score.wav`, `<name>-storyboard.png` and `<name>-cover.png/.jpg`. Use `--silent`
    only when the user wants to add music in Instagram itself.
@@ -101,32 +105,50 @@ the orb), never to decorate a card, a tag or a headline; decoration stays grey (
 Chips are the state color at 14 % on its own tint, as in the app. Words on chips are the app's own (Done, Waiting,
 Open, Merged, Approved, Commented, Draft, Failed); check `I18n.swift` for the exact word.
 
-## Calm motion
+## Catchy, and still calm
 
-The app animates with springs and never jerks; a video goes one step slower and softer.
+People decide in the first second whether to keep watching. Make that second count, then keep a rhythm. The app
+animates with springs and never jerks; a video does the same, on the beat.
 
-- **Ins and outs:** `NV.fade` (settles in 1 s with a 24 px rise, eases out in 0.8 s). Nothing pops, bounces, shakes,
-  flashes, zooms fast or spins. No overshoot: `NV.settle` is a spring without bounce.
-- **Pace:** one change at a time. Stagger lists by 0.3 s (`NV.stagger`), overlap scene changes so there is never an
-  empty black frame, and let the last card stay up at least 4 s.
-- **Life without movement:** the background light breathes (`NV.breathe`, one breath per 9 s), the orb breathes and
-  blinks, the caret pulses softly. That is enough.
-- **State changes** crossfade (`NV.swapText`) or simply switch on a sound cue; the orb's mood carries the emotion.
-- **Typing** in the composer runs at 12–14 characters a second, like a person.
-- No rapid flashing (more than 3 a second), no strobing contrast: keep it comfortable for everyone.
+- **Hook in bar 1:** open on Nook (the orb, big and centered with its glow) doing something alive: it looks left, looks
+  right, blinks, looks at you (`NV.orb(el, t, { look })`), with one or two words ("Psst.", "Got a minute?"). No logo
+  splash, no title card.
+- **The drop:** on bar 2 the drums come in and the orb flies up into the notch, which opens around it. That moment is
+  the video's "aha"; give it the `open` cue.
+- **Cut on the beat:** every change lands on a beat or half-beat: cards slide into the notch one per beat, a big word
+  swaps per beat (`NV.cycle`: "Swift devs. Rust devs. … You."), tags pop in per half-beat. Something moves at least
+  every 2 beats, but only one thing at a time.
+- **Kinetic type:** headlines arrive word by word out of a soft blur (`NV.words`, half a beat apart), short and big
+  (≥ 96 px). The quiet half of a line in tertiary grey ("It's open <muted>source.</muted>").
+- **Nook acts:** the orb's mood carries the emotion: `celebrate` with sparks (`NV.sparks`) when something is merged,
+  happy eyes for done, a wink (`wink`) on the end card. Keep the orb in most scenes; it is the brand.
+- **Show the product moving:** states change in the notch one beat apart (checks running → passed → approved →
+  merged), each with a soft chip pulse. Real states, real words, real colors.
+- **Arrivals:** `NV.pop` (NookTheme.open's small overshoot) for things that pop in; `NV.settle` (no bounce) for things
+  that move; `NV.fade` for things that leave. Nothing shakes, spins, flashes, strobes or zooms fast; no more than 3
+  changes in brightness a second.
+- **Life in between:** the background light breathes (`NV.breathe`) and lifts softly on each kick, the orb breathes
+  and blinks. Never an empty black frame between scenes.
+- **The end card** holds ≥ 3 s after the drums stop: the orb, "Build Nook with us." style line, the URL, "Link in bio".
+- For a quiet piece (a release note, a thank-you), drop the groove (`--no-groove`, no `bpm`), slow the fades to 1 s and
+  give each scene 4–5 s: the same kit, the calm end of the dial.
 
-## Calm sound
+## Sound: a soft groove
 
 `render.mjs` composes the score with `music.py` and mixes it to -16 LUFS with 2 dB of true-peak headroom.
 
-- **Music:** slow open chords (major sevenths and ninths) that swell in over 2 s and crossfade over 2.6 s, a soft bass,
-  a few sparse bells on no fixed grid, reverb, a 2 s fade-in and a 3 s fade-out. No drums, no sharp attacks, nothing
-  above roughly 4 kHz except a little air. `--mood calm` (default), `warm` (a little darker, for evening or reflective
-  pieces) or `bright` (for launches and good news); `--chord 8` is slower still; `--seed` picks another variation.
+- **Groove (with `bpm`):** open chords (major sevenths and ninths), one per bar, a plucked arpeggio from the first
+  second (the hook already has music), and from the drop a round kick on 1 and 3, a finger snap on 2 and 4 and a
+  whisper of swung hi-hat; the pads dip softly on each kick so it all breathes. Lo-fi, warm, nothing bright or hard.
+  Stop the drums when the end card arrives (`drumsUntil`) and let the chords and the `end` bell ring out.
+- **Ambient (no `bpm`):** the same chords swelling slowly, a soft bass and sparse bells, no drums: for the quiet pieces.
+- **Moods:** `calm` (default), `warm` (a little darker, for evening or reflective pieces) or `bright` (for launches and
+  good news); `--seed` picks another variation.
 - **Cues** (`cues: [{ t, sound, gain }]` in `NV.boot`): `open` (an airy swell and a low bell, for the notch opening),
   `chime` (two soft bells, for something new appearing), `done` (a rising pair, for done or approved), `merge` (three
   rising notes, for merged), `end` (a low warm bell, for the end card), `tick` (barely there). They are tuned to the
-  chord that is sounding. Use 4–7 cues in 25 s; fewer is calmer. A cue lands on the frame its change becomes visible.
+  chord that is sounding. A cue lands on the frame its change becomes visible; use `tick` for cards arriving and keep
+  the bigger cues (`open`, `done`, `merge`, `end`) for the 4–5 moments that matter.
 - **Sound off:** most people watch muted. The text on screen carries the whole message; music only sets the mood.
 - The score is generated, so it is free of rights; do not add music from elsewhere unless the user supplies it and
   owns the rights.
@@ -169,6 +191,7 @@ Write it to `.scratch/<name>/caption.md`, English first and the user's language 
 - [ ] Every claim and label is backed by the repository; labels use the app's own words.
 - [ ] State colors keep their one meaning; nothing decorative is colored.
 - [ ] Nothing in the safe zones; nothing wraps or clips (check the stills at every scene).
-- [ ] Motion is soft: no pops, bounces, flashes or empty frames; every headline is up long enough to read twice.
+- [ ] The first second has a hook (Nook doing something), every change lands on the beat, and the orb acts.
+- [ ] Motion is soft: no shakes, flashes, hard zooms or empty frames; every headline is up long enough to read twice.
 - [ ] The MP4 has audio, the right length, loudness near -16 LUFS; cues land on their moments.
 - [ ] Cover, storyboard and caption are made and sent with `SendUserFile`; nothing from `.scratch/` is committed.

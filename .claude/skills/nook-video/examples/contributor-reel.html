@@ -7,13 +7,27 @@
 <style>
   #notch { top:150px; }
   #notchInner { position:absolute; left:0; top:0; width:960px; padding:44px 40px 40px; }
-  #s1, #s2 { top:1160px; }
-  #s3 { top:300px; }
-  #grid { left:var(--gutter); right:var(--gutter); top:800px; }
-  #grid .card { min-height:210px; }
-  #s4 { top:860px; } #s4 .h1 { font-size:84px; letter-spacing:-2.5px; }
-  #steps { left:var(--gutter); right:var(--gutter); top:1060px; }
-  #steps .step { padding:22px 0; }
+  .center { left:var(--gutter); right:var(--gutter); text-align:center; }
+  #hookOrb { left:390px; top:620px; }
+  #hook { top:1020px; }
+  #hook .h1 { font-size:120px; }
+  #intro { top:1000px; }
+  #intro .h1 { font-size:120px; letter-spacing:-4px; }
+  #open { top:760px; }
+  #open .h1 { font-size:132px; letter-spacing:-4.5px; }
+  #needs { top:560px; }
+  #needs .h2 { margin:0; font-size:56px; color:var(--secondary); }
+  #role { left:0; right:0; top:660px; text-align:center; font-size:150px; font-weight:700; letter-spacing:-5px; white-space:nowrap; }
+  #roleSub { top:880px; font-family:var(--mono); font-size:40px; color:var(--secondary); }
+  #nomac { top:560px; }
+  #nomac .h1 { font-size:132px; letter-spacing:-4.5px; }
+  #platforms { left:var(--gutter); right:var(--gutter); top:1000px; display:flex; flex-wrap:wrap; gap:20px; justify-content:center; }
+  #platforms .tag { font-size:44px; padding:18px 38px; }
+  #pr { top:1000px; }
+  #pr .h1 { font-size:96px; letter-spacing:-3px; }
+  #pr .h2 { font-size:52px; }
+  #burst { left:148px; top:242px; width:0; height:0; z-index:5; }
+  #cta .tags .tag { font-size:40px; }
 </style>
 </head>
 <body>
@@ -21,12 +35,17 @@
   <div id="glow"></div>
   <div id="menubar" class="abs menubar"><b>Finder</b><span>File</span><span class="clock">Thu 09:41</span></div>
 
+  <!-- Bar 1: the hook. Nook looks around. -->
+  <div class="orb glow abs" id="hookOrb" style="--d:300px"><i></i><i></i></div>
+  <div id="hook" class="abs center"><div class="h1" id="psst">Psst.</div><div class="h2" id="minute" style="font-size:56px">Got a minute?</div></div>
+
+  <!-- The notch -->
   <div id="notch" class="abs notch">
     <div id="notchInner">
       <div class="tabs">
         <div class="orb" id="nookOrb" style="--d:96px"><i></i><i></i></div>
         <span class="on">Nook</span><span>Chat</span><span>Agents</span><span>Shelf</span>
-        <span class="count" id="count">1 new</span>
+        <span class="count" id="count"></span>
       </div>
       <div class="row" id="row1" style="margin-top:22px">
         <div class="dot" id="dot1"></div>
@@ -38,127 +57,170 @@
         <div><div class="t" id="t2"></div><div class="d" id="d2"></div></div>
         <div class="when" id="w2"></div><div class="chip" id="c2"></div>
       </div>
-      <div class="composer"><span class="typed" id="typed"></span><span class="caret" id="caret"></span><span id="ph">Ask Nook anything…</span></div>
+      <div class="row" id="row3">
+        <div class="dot" id="dot3"></div>
+        <div><div class="t" id="t3"></div><div class="d" id="d3"></div></div>
+        <div class="when" id="w3"></div><div class="chip" id="c3"></div>
+      </div>
     </div>
   </div>
+  <div id="burst" class="abs"></div>
 
-  <div id="s1" class="abs headline">
-    <div class="h1">Nook is<br>open source.</div>
-    <div class="h2">Your AI assistant and coding-agent<br>command center, in the notch.</div>
-  </div>
-  <div id="s2" class="abs headline">
-    <div class="h1">We're looking<br>for contributors.</div>
-    <div class="h2">That could be you.</div>
-  </div>
-
-  <div id="s3" class="abs headline">
-    <div class="h1">No Mac?<br><span class="muted">No problem.</span></div>
-    <div class="h2">Pick what fits you.</div>
-  </div>
-  <div id="grid" class="abs grid">
-    <div class="card"><div class="k">macOS</div><div class="ttl">Swift & SwiftUI</div><div class="sub">The native notch app</div></div>
-    <div class="card"><div class="k">Windows · Linux</div><div class="ttl">Rust & Svelte</div><div class="sub">The Tauri app</div></div>
-    <div class="card"><div class="k">Android</div><div class="ttl">Test the APK</div><div class="sub">On a real device</div></div>
-    <div class="card"><div class="k">iPhone</div><div class="ttl">Companion</div><div class="sub">SwiftUI on iOS</div></div>
-    <div class="card"><div class="k">Languages</div><div class="ttl">NL · DE · FR · ES</div><div class="sub">Review translations</div></div>
-    <div class="card"><div class="k">Ten minutes</div><div class="ttl">Try it, report it</div><div class="sub">Every issue helps</div></div>
-  </div>
-
-  <div id="s4" class="abs headline"><div class="h1">Your first PR<br>in three steps.</div></div>
-  <div id="steps" class="abs">
-    <div class="step"><div class="n">1</div><div><div class="st">Find something to improve</div><div class="sd">open an issue with your idea</div></div></div>
-    <div class="step"><div class="n">2</div><div><div class="st">Fork & branch</div><div class="sd">git checkout -b fix/…</div></div></div>
-    <div class="step"><div class="n">3</div><div><div class="st">Open a pull request</div><div class="sd">we'll help you get it green</div></div></div>
-  </div>
-
+  <!-- Bar 2 -->
+  <div id="intro" class="abs headline"><div class="h1" id="intro1">This is Nook.</div><div class="h2" id="intro2">Your AI assistant and coding-agent command center, in the notch.</div></div>
+  <!-- Bar 3 -->
+  <div id="open" class="abs center"><div class="h1" id="open1">It's open<br><span class="muted">source.</span></div></div>
+  <!-- Bars 4–5: who it needs, one word per beat -->
+  <div id="needs" class="abs center"><div class="h2" id="needs1">Nook needs</div></div>
+  <div id="role" class="abs"></div>
+  <div id="roleSub" class="abs center"></div>
+  <!-- Bar 6 -->
+  <div id="nomac" class="abs center"><div class="h1" id="nomac1">No Mac?<br><span class="muted">No problem.</span></div></div>
+  <div id="platforms" class="abs"><span class="tag">Windows</span><span class="tag">Linux</span><span class="tag">Android</span><span class="tag">iPhone</span></div>
+  <!-- Bar 7 -->
+  <div id="pr" class="abs headline"><div class="h1" id="pr1">Your first pull request?</div><div class="h2" id="pr2">We'll help you get it green.</div></div>
+  <!-- Bar 8 -->
   <div id="cta" class="abs cta">
     <div class="orb glow" id="ctaOrb" style="--d:240px"><i></i><i></i></div>
-    <div class="word" style="margin-top:64px">Build Nook<br>with us.</div>
-    <div class="url">github.com/IAMichan/nook</div>
-    <div class="tags"><span class="tag">Bring your own idea</span><span class="tag">All skill levels</span></div>
-    <div class="foot">Link in bio</div>
+    <div class="word" id="ctaWord" style="margin-top:64px">Build Nook<br>with us.</div>
+    <div class="url" id="ctaUrl">github.com/IAMichan/nook</div>
+    <div class="tags" id="ctaTags"><span class="tag">Bring your own idea</span><span class="tag">All skill levels</span></div>
+    <div class="foot" id="ctaFoot">Link in bio</div>
   </div>
 </div>
 
 <script src="../kit/nook-video.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const { prog, settle, ease, lerp, fade, stagger, state, orb, type, clamp } = NV;
-const prompt = 'how can I help build Nook?';
+const { prog, settle, pop, ease, lerp, fade, state, orb, words, cycle, sparks, clamp } = NV;
+const T = NV.tempo(84), B = n => T.at(n), BAR = n => T.bar(n);   // beat 0.714 s, bar 2.857 s
 
-function rows(t) {
-  const set = (n, s, title, sub, when, word) => {
-    $('t' + n).textContent = title; $('d' + n).textContent = sub; $('w' + n).textContent = when;
-    state($('dot' + n), s); state($('c' + n), s, word);
-  };
-  if (t < 13) {
-    set(1, 'done', 'Claude Code · nook', 'Refactor finished, tests pass', '2m', 'Done');
-    set(2, 'waiting', 'Nook · open source', 'Looking for contributors', 'now', 'Waiting');
-    $('count').textContent = t < 4.3 ? '1 new' : '2 new';
+const roles = ['Swift devs.', 'Rust devs.', 'Svelte devs.', 'Translators.', 'Writers.', 'Testers.', 'Tinkerers.', 'You.'];
+const roleSubs = ['the Mac app', 'Windows & Linux', 'the interface', 'NL · DE · FR · ES', 'docs & copy', 'real devices', 'ten minutes is enough', ''];
+const roleTimes = roles.map((_, i) => BAR(3) + B(i));
+const MERGE = BAR(7);
+
+function setRow(n, s, title, sub, when, word) {
+  $('t' + n).textContent = title; $('d' + n).textContent = sub; $('w' + n).textContent = when;
+  state($('dot' + n), s); state($('c' + n), s, word);
+}
+
+function notchContent(t) {
+  if (t < BAR(5)) {
+    setRow(1, 'done', 'Claude Code · nook', 'Refactor finished, tests pass', '2m', 'Done');
+    setRow(2, 'waiting', 'Codex · api', 'Wants to run the migration', 'now', 'Waiting');
+    setRow(3, 'merged', 'PR #642', 'Load older WhatsApp messages', '5m', 'Merged');
+    const shown = [B(5), B(6), B(7)].filter(s => t >= BAR(1) + s - B(4)).length;
+    $('count').textContent = shown ? `${shown} new` : '';
+    [1, 2, 3].forEach(n => fade($('row' + n), t, BAR(1) + B(n), null, { rise: 30, dur: 0.6 }));
   } else {
-    const merged = t >= 17.6, approved = t >= 16.8;
-    set(1, merged ? 'merged' : 'open', 'You · first pull request', 'All checks passed', merged ? 'now' : '1h', merged ? 'Merged' : 'Open');
-    set(2, approved ? 'approved' : 'commented', 'Maintainer', approved ? 'Looks good to me' : 'One small suggestion', approved ? 'now' : '1h', approved ? 'Approved' : 'Commented');
-    $('count').textContent = merged ? '1 new' : '2 new';
+    // Your pull request moves one state per beat: open with checks running, checks passed, approved, merged.
+    const step = t >= MERGE ? 3 : t >= MERGE - B(1) ? 2 : t >= MERGE - B(2) ? 1 : 0;
+    setRow(1, step === 3 ? 'merged' : 'open', 'You · fix/onboarding-copy',
+      step === 0 ? 'Checks running…' : 'All checks passed', step === 3 ? 'now' : '2h', step === 3 ? 'Merged' : 'Open');
+    state($('dot1'), step === 0 ? 'checksRunning' : step === 3 ? 'merged' : 'open');
+    setRow(2, step >= 2 ? 'approved' : 'reviewRequired', 'Maintainer', step >= 2 ? 'Looks good to me' : 'Review requested', step >= 2 ? 'now' : '1h', step >= 2 ? 'Approved' : 'Review');
+    $('count').textContent = step === 3 ? '1 new' : '';
+    fade($('row1'), t, BAR(6) + 0.2, null, { rise: 30, dur: 0.6 });
+    fade($('row2'), t, BAR(6) + B(1), null, { rise: 30, dur: 0.6 });
+    $('row3').style.display = 'none';
+    // A soft pop on the chip each time its state changes.
+    [MERGE - B(2), MERGE - B(1), MERGE].forEach(at => {
+      const p = prog(t, at, 0.35);
+      if (p > 0 && p < 1) $('c1').style.transform = `scale(${1 + 0.12 * Math.sin(p * Math.PI)})`;
+    });
   }
 }
 
 function render(t) {
-  // The notch opens, steps back while the cards show, returns for the pull request, and leaves for the end card.
-  const open = settle(prog(t, 0.4, 1.4));
-  const away = ease(prog(t, 8.6, 1.2)), back = settle(prog(t, 13.8, 1.4)), gone = ease(prog(t, 19.2, 1.0));
-  const shown = (1 - away + back * away) * (1 - gone);
-  const n = $('notch');
+  // Bar 1 — the hook: Nook arrives, looks left, then right, then at you.
+  const hookIn = pop(prog(t, 0.1, 0.9));
+  const fly = settle(prog(t, BAR(1), 0.75));
+  const look = t < B(1) ? { x: 0, y: 0 } : t < B(2) ? { x: -1, y: 0.2 } : t < B(3) ? { x: 1, y: 0.2 } : { x: 0, y: 0 };
+  const ho = $('hookOrb');
+  // Flies up into the notch on the drop and becomes the orb in its tab bar.
+  const x = lerp(0, 148 - 540, fly), y = lerp(0, 242 - 770, fly), s = lerp(1, 96 / 300, fly) * lerp(0.6, 1, hookIn);
+  ho.dataset.base = `translate(${x}px, ${y}px)`;
+  orb(ho, t, { scale: s, look, blinkOffset: 2.6 });
+  ho.style.opacity = clamp(hookIn * 1.4) * (1 - clamp((t - BAR(1) - 0.6) / 0.15));
+  words($('psst'), t, B(2), 0.1, BAR(1) - 0.3);
+  words($('minute'), t, B(3), 0.12, BAR(1) - 0.3);
+
+  // The notch opens on the drop, steps away for the words, returns for the pull request, leaves for the end card.
+  const open = settle(prog(t, BAR(1), 0.9));
+  const away = ease(prog(t, BAR(2) - 0.2, 0.5)), back = settle(prog(t, BAR(6), 0.8)), gone = ease(prog(t, BAR(7) + B(2), 0.6));
+  const shown = (t < BAR(4) ? 1 - away : back) * (1 - gone);
+  const n = $('notch'), inner = $('notchInner');
+  const fullH = inner.offsetHeight;
   n.style.width = lerp(330, 960, open) + 'px';
-  n.style.height = lerp(70, 660, open) + 'px';
+  n.style.height = lerp(70, fullH, open) + 'px';
   n.style.borderRadius = `0 0 ${lerp(36, 62, open)}px ${lerp(36, 62, open)}px`;
-  n.style.opacity = shown;
-  n.style.transform = `translateX(-50%) translateY(${(1 - shown) * -60}px) scale(${lerp(0.97, 1, shown)})`;
-  $('notchInner').style.opacity = settle(prog(t, 1.0, 0.9));
-  $('menubar').style.opacity = 1 - away;
+  n.style.opacity = t < BAR(1) ? 0 : shown;
+  n.style.transform = `translateX(-50%) translateY(${(1 - shown) * -50}px) scale(${lerp(0.96, 1, shown)})`;
+  inner.style.opacity = settle(prog(t, BAR(1) + 0.4, 0.5));
+  $('menubar').style.opacity = clamp(open) * (1 - away);
+  notchContent(t);
+  const merged = t >= MERGE && t < MERGE + 2;
+  orb($('nookOrb'), t, { mood: merged ? 'celebrate' : 'rest', blinkOffset: 2.6 });
+  sparks($('burst'), t, MERGE, { reach: 200 });
 
-  rows(t);
-  fade($('row1'), t, 1.3, null, { rise: 16 });
-  fade($('row2'), t, 4.3, null, { rise: 16 });
-  // Proud happy eyes for a moment when the pull request is merged; otherwise Nook rests, breathes and blinks.
-  orb($('nookOrb'), t, { mood: t > 17.6 && t < 19.6 ? 'proud' : 'rest' });
-
-  const typing = t > 5.0 && t < 13;
-  const chars = typing ? type($('typed'), prompt, t, 5.2, 12) : ($('typed').textContent = '', 0);
-  $('ph').style.display = chars > 0 ? 'none' : '';
-  $('caret').style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.cos(t * Math.PI * 1.6));
-
-  fade($('s1'), t, 1.6, 3.9);
-  fade($('s2'), t, 4.6, 8.3);
-  fade($('s3'), t, 9.4, 13.3);
-  stagger(document.querySelectorAll('#grid .card'), t, 10.0, 0.3, 13.3, { rise: 30, dur: 1.2 });
-  fade($('s4'), t, 14.4, 18.9);
-  document.querySelectorAll('#steps .step').forEach((s, i) => {
-    fade(s, t, 15.0 + i * 0.7, 18.9, { rise: 0, x: -30 });
-    const lit = ease(prog(t, 15.6 + i * 0.7, 0.8));
-    const num = s.querySelector('.n');
-    num.style.background = `color-mix(in srgb, var(--paper) ${lit * 100}%, var(--smoke))`;
-    num.style.color = lit > 0.5 ? 'var(--ink)' : 'var(--strong)';
+  // Bar 2
+  words($('intro1'), t, BAR(1) + B(1), B(1) / 2, BAR(2) - 0.25);
+  words($('intro2'), t, BAR(1) + B(3), 0.06, BAR(2) - 0.25, { rise: 0.5 });
+  // Bar 3
+  words($('open1'), t, BAR(2) + B(0.5), B(1), BAR(3) - 0.25);
+  // Bars 4–5: one role per beat
+  words($('needs1'), t, BAR(3) - B(1), 0.12, BAR(5) - 0.3);
+  const k = cycle($('role'), t < BAR(5) - 0.3 ? t : -1, roles, roleTimes);
+  const role = $('role');
+  if (k >= 0) {
+    role.style.fontSize = '150px';
+    const w = role.scrollWidth; if (w > 920) role.style.fontSize = 150 * 920 / w + 'px';
+    if (k === roles.length - 1) role.style.transform += ` scale(${1 + 0.1 * pop(prog(t, roleTimes[k], 0.5))})`;
+  }
+  role.style.opacity = t > BAR(5) - 0.3 ? 1 - ease(prog(t, BAR(5) - 0.3, 0.3)) : role.style.opacity;
+  const sub = $('roleSub');
+  sub.textContent = k >= 0 ? roleSubs[k] : '';
+  sub.style.opacity = k >= 0 ? clamp(prog(t, roleTimes[k] + 0.1, 0.3)) * (1 - ease(prog(t, BAR(5) - 0.3, 0.3))) : 0;
+  // Bar 6
+  words($('nomac1'), t, BAR(5) + 0.1, B(1), BAR(6) - 0.25);
+  document.querySelectorAll('#platforms .tag').forEach((tag, i) => {
+    const p = pop(prog(t, BAR(5) + B(2) + i * B(0.5), 0.5));
+    tag.style.opacity = clamp(p) * (1 - ease(prog(t, BAR(6) - 0.25, 0.3)));
+    tag.style.transform = `translateY(${(1 - p) * 30}px) scale(${lerp(0.85, 1, p)})`;
   });
+  // Bar 7
+  words($('pr1'), t, BAR(6) + B(0.5), 0.12, BAR(7) + B(2));
+  words($('pr2'), t, BAR(6) + B(2), 0.1, BAR(7) + B(2));
 
-  // End card: Nook arrives softly with its glow and keeps breathing and blinking.
+  // Bar 8: the end card. Nook arrives, breathes, and winks.
   const cta = $('cta');
-  cta.style.opacity = ease(prog(t, 19.6, 1.0));
-  const o = $('ctaOrb'); o.dataset.base = '';
-  orb(o, t, { mood: 'rest', scale: lerp(0.85, 1, settle(prog(t, 19.6, 1.6))), blinkOffset: 0.4 });
-  stagger(cta.querySelectorAll('.word, .url, .tags, .foot'), t, 20.2, 0.35);
+  cta.style.opacity = ease(prog(t, BAR(7) + B(2.5), 0.6));
+  const co = $('ctaOrb'); co.dataset.base = '';
+  const wink = Math.sin(Math.PI * clamp(prog(t, BAR(8) + B(1), 0.5)));
+  orb(co, t, { scale: lerp(0.7, 1, pop(prog(t, BAR(7) + B(2.5), 0.9))), wink, blinkOffset: 0.4 });
+  words($('ctaWord'), t, BAR(7) + B(3), B(0.5));
+  fade($('ctaUrl'), t, BAR(8) - B(0.5), null, { dur: 0.6 });
+  fade($('ctaTags'), t, BAR(8), null, { dur: 0.6 });
+  fade($('ctaFoot'), t, BAR(8) + B(0.5), null, { dur: 0.6 });
+
+  // The light behind everything lifts a little on each kick while the drums play.
+  if (t > BAR(1) && t < BAR(8)) {
+    const bt = t - Math.floor(t / T.beat) * T.beat, onKick = T.index(t) % 2 === 0;
+    $('glow').style.opacity = parseFloat($('glow').style.opacity || 1) + (onKick ? 0.35 * Math.exp(-bt / 0.25) : 0);
+  }
 }
 
 NV.boot({
-  duration: 25,
+  duration: BAR(8) + 3.2,
+  music: { mood: 'calm', bpm: T.bpm, drumsFrom: BAR(1), drumsUntil: BAR(8) },
   cues: [
-    { t: 0.4, sound: 'open' },
-    { t: 4.3, sound: 'chime' },
-    { t: 10.0, sound: 'chime', gain: 0.6 },
-    { t: 13.8, sound: 'open', gain: 0.8 },
-    { t: 16.8, sound: 'done' },
-    { t: 17.6, sound: 'merge' },
-    { t: 20.0, sound: 'end' },
+    { t: BAR(1), sound: 'open' },
+    ...[1, 2, 3].map(n => ({ t: BAR(1) + B(n), sound: 'tick', gain: 1.5 })),
+    { t: BAR(5) + B(2), sound: 'chime', gain: 0.7 },
+    { t: MERGE - B(1), sound: 'done' },
+    { t: MERGE, sound: 'merge' },
+    { t: BAR(8), sound: 'end' },
   ],
   render,
 });

@@ -13,6 +13,19 @@
   /** A spring without bounce (NookTheme.close/swap/reveal: bounce 0); settles in its duration and never overshoots. */
   NV.settle = p => { p = NV.clamp(p); const w = 9; return p >= 1 ? 1 : 1 - (1 + w * p) * Math.exp(-w * p); };
 
+  /** A spring with NookTheme.open's small overshoot (bounce .08): for things that arrive with a little life. */
+  NV.pop = p => {
+    p = NV.clamp(p); if (p >= 1) return 1;
+    const z = 0.63, w = 9, wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * p) * (Math.cos(wd * p) + (z * w / wd) * Math.sin(wd * p));
+  };
+
+  /** The beat grid: NV.tempo(84) → { beat: seconds per beat, at(n): time of beat n, bar(n): time of bar n, index(t) }. */
+  NV.tempo = bpm => {
+    const beat = 60 / bpm;
+    return { bpm, beat, bar: n => n * 4 * beat, at: n => n * beat, index: t => Math.floor(t / beat + 1e-6) };
+  };
+
   /** Fades an element in while it rises a little, and out again. Calm defaults: 1 s in, .8 s out, 24 px. */
   NV.fade = (el, t, inAt, outAt = null, o = {}) => {
     const { rise = 24, dur = 1.0, outDur = 0.8, x = 0 } = o;
@@ -27,6 +40,75 @@
   /** Fades a list of elements in one after another. */
   NV.stagger = (els, t, inAt, gap, outAt = null, o = {}) =>
     Array.from(els).forEach((el, i) => NV.fade(el, t, inAt + i * gap, outAt, o));
+
+  /** Kinetic type: reveals the words of `el` one by one, each rising out of a soft blur. `gap` seconds between words
+      (use the beat or half of it), `outAt` fades the whole line. Words keep their markup (<br>, spans). */
+  NV.words = (el, t, inAt, gap = 0.12, outAt = null, o = {}) => {
+    const { rise = 0.35, blur = 14, dur = 0.7 } = o;
+    if (!el.dataset.split) {
+      const walk = node => Array.from(node.childNodes).forEach(c => {
+        if (c.nodeType === 3) {
+          const frag = document.createDocumentFragment();
+          c.textContent.split(/(\s+)/).forEach(part => {
+            if (!part) return;
+            if (/^\s+$/.test(part)) frag.appendChild(document.createTextNode(part));
+            else { const s = document.createElement('span'); s.className = 'w'; s.textContent = part; frag.appendChild(s); }
+          });
+          c.replaceWith(frag);
+        } else if (c.nodeType === 1 && c.tagName !== 'BR') walk(c);
+      });
+      walk(el); el.dataset.split = '1';
+    }
+    const out = outAt == null ? 0 : NV.ease(NV.prog(t, outAt, 0.5));
+    el.querySelectorAll('.w').forEach((w, i) => {
+      const p = NV.pop(NV.prog(t, inAt + i * gap, dur));
+      const f = NV.clamp(NV.prog(t, inAt + i * gap, dur * 0.6));
+      w.style.display = 'inline-block';
+      w.style.opacity = f * (1 - out);
+      w.style.transform = `translateY(${(1 - p) * rise}em)`;
+      w.style.filter = `blur(${(1 - f) * blur + out * 8}px)`;
+    });
+  };
+
+  /** One word that changes on every beat: `items` swap at `times` (seconds), each rising out of a blur. Returns the
+      index shown. Put the word in its own element; the element's width follows the word. */
+  NV.cycle = (el, t, items, times, o = {}) => {
+    const { dur = 0.4, rise = 40, blur = 10 } = o;
+    let k = -1; times.forEach((s, i) => { if (t >= s) k = i; });
+    if (k < 0) { el.style.opacity = 0; return -1; }
+    const item = items[Math.min(k, items.length - 1)];
+    if (el.dataset.item !== String(k)) { el.innerHTML = item; el.dataset.item = String(k); }
+    const p = NV.pop(NV.prog(t, times[k], dur)), f = NV.clamp(NV.prog(t, times[k], dur * 0.6));
+    el.style.opacity = f;
+    el.style.transform = `translateY(${(1 - p) * rise}px)`;
+    el.style.filter = `blur(${(1 - f) * blur}px)`;
+    return k;
+  };
+
+  /** Nook's celebration: a small burst of mint and white sparks flying outward and fading (as in NookOrb.swift).
+      `host` is an empty absolutely positioned element at the burst's center. */
+  NV.sparks = (host, t, at, o = {}) => {
+    const { count = 18, reach = 220, life = 1.1, seed = 3 } = o;
+    if (!host.childElementCount) {
+      for (let i = 0; i < count; i++) {
+        const s = document.createElement('i');
+        s.style.cssText = 'position:absolute;left:0;top:0;border-radius:50%;';
+        host.appendChild(s);
+      }
+    }
+    let r = seed;
+    const rand = () => (r = (r * 16807) % 2147483647) / 2147483647;
+    Array.from(host.children).forEach((s, i) => {
+      const a = (i / count) * 2 * Math.PI + rand() * 0.5, sp = 0.55 + rand() * 0.45, size = 8 + rand() * 10;
+      const k = (t - at) / life;
+      if (k < 0 || k > 1) { s.style.opacity = 0; return; }
+      const d = reach * sp * (1 - Math.exp(-k * 4.5));
+      s.style.width = s.style.height = size * (1 - k * 0.6) + 'px';
+      s.style.background = i % 3 === 0 ? 'var(--paper)' : 'var(--mint)';
+      s.style.opacity = (1 - k) * (k < 0.08 ? k / 0.08 : 1);
+      s.style.transform = `translate(${Math.cos(a) * d - size / 2}px, ${Math.sin(a) * d - size / 2 + k * k * 40}px)`;
+    });
+  };
 
   /** Types `text` into `el` at `cps` characters per second; returns how many are shown. */
   NV.type = (el, text, t, at, cps = 14) => {
@@ -63,7 +145,8 @@
   /** Draws Nook: breathing (scale ±5 % every 3.4 s, as in the app) and blinking. Moods: rest, done, waiting, worry,
       listen, think, proud, celebrate, cozy, caring, breathe, sleepy… (NookMood.swift). */
   NV.orb = (el, t, o = {}) => {
-    const { mood = el.dataset.mood || 'rest', scale = 1, breath = true, blinkOffset = 1.1 } = o;
+    // look: where the eyes look, {x, y} in -1…1 (the app follows the pointer); wink: 0…1 closes the right eye.
+    const { mood = el.dataset.mood || 'rest', scale = 1, breath = true, blinkOffset = 1.1, look = { x: 0, y: 0 }, wink = 0 } = o;
     el.dataset.mood = mood;
     const smiles = ['done', 'proud', 'celebrate', 'cozy'].includes(mood);
     const shut = ['breathe', 'sleepy'].includes(mood);
@@ -73,7 +156,11 @@
     const s = breath ? 1 + amp * Math.sin((t * 2 * Math.PI) / rate) : 1;
     el.style.transform = `${el.dataset.base || ''} scale(${s * scale})`;
     const k = smiles || shut || mood === 'think' ? 1 : NV.blink(t, blinkOffset);
-    el.querySelectorAll('i').forEach(i => (i.style.transform = `scaleY(${k})`));
+    const d = el.offsetWidth || 100;
+    el.querySelectorAll('i').forEach((i, n) => {
+      const close = n === 1 ? Math.min(k, 1 - 0.9 * NV.clamp(wink)) : k;
+      i.style.transform = `translate(${look.x * d * 0.14}px, ${look.y * d * 0.08}px) scaleY(${close})`;
+    });
   };
 
   /** Every state the app colors, with the color it uses. One meaning per color, as in the app. */
@@ -109,9 +196,10 @@
   };
 
   /** Starts the page. `?t=4.2` shows one frame (for stills); otherwise it plays in a loop for previewing. */
-  NV.boot = ({ duration, cues = [], render }) => {
+  /** `music` is passed to scripts/music.py: { mood, bpm, drumsFrom, drumsUntil, chord, seed }. */
+  NV.boot = ({ duration, cues = [], music = {}, render }) => {
     const draw = t => { NV.breathe(t); render(t); };
-    window.DURATION = duration; window.CUES = cues; window.render = draw;
+    window.DURATION = duration; window.CUES = cues; window.MUSIC = music; window.render = draw;
     const q = new URLSearchParams(location.search);
     if (q.has('safe')) document.body.classList.add('safe-debug');
     if (q.has('t')) return draw(parseFloat(q.get('t')));

@@ -3,7 +3,7 @@
 // when asked, a cover image.
 //
 //   node render.mjs <video.html> --out .scratch/<name> [--name nook-reel] [--fps 30] [--cover cover.html]
-//                   [--mood calm|warm|bright] [--seed 7] [--chord 6] [--silent] [--keep-frames]
+//                   [--mood calm|warm|bright] [--bpm 84] [--no-groove] [--seed 7] [--chord 6] [--silent] [--keep-frames]
 //
 // Needs Node with Playwright (Chromium), ffmpeg, and python3 with numpy.
 import { execFileSync, execSync } from 'node:child_process';
@@ -36,7 +36,7 @@ const browser = await chromium.launch();
 const tab = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
 await tab.goto(pathToFileURL(path.resolve(page)).href + '?still');
 await tab.evaluate(() => document.fonts.ready);
-const { duration, cues } = await tab.evaluate(() => ({ duration: window.DURATION, cues: window.CUES || [] }));
+const { duration, cues, music } = await tab.evaluate(() => ({ duration: window.DURATION, cues: window.CUES || [], music: window.MUSIC || {} }));
 if (!duration) throw new Error('The page must call NV.boot({ duration, cues, render }).');
 
 const count = Math.round(duration * fps);
@@ -68,8 +68,17 @@ if (flag('silent')) {
 } else {
   const wav = path.join(out, `${name}-score.wav`);
   console.log('Composing the score…');
-  execFileSync('python3', [path.join(here, 'music.py'), '--duration', String(duration), '--cues', JSON.stringify(cues),
-    '--mood', opt('mood', 'calm'), '--seed', opt('seed', '7'), '--chord', opt('chord', '6'), '--out', wav]);
+  // The page's NV.boot({ music }) sets the score; flags on the command line win.
+  const m = { mood: 'calm', seed: 7, chord: 6, ...music };
+  const score = ['--duration', String(duration), '--cues', JSON.stringify(cues), '--mood', opt('mood', m.mood),
+    '--seed', String(opt('seed', m.seed)), '--chord', String(opt('chord', m.chord)), '--out', wav];
+  const bpm = opt('bpm', m.bpm);
+  if (bpm && !flag('no-groove')) {
+    score.push('--bpm', String(bpm));
+    if (m.drumsFrom != null) score.push('--drums-from', String(m.drumsFrom));
+    if (m.drumsUntil != null) score.push('--drums-until', String(m.drumsUntil));
+  }
+  execFileSync('python3', [path.join(here, 'music.py'), ...score]);
   // Calm, not quiet: -16 LUFS sits just under what Instagram plays back, with 2 dB of true-peak headroom.
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...video, '-i', wav, ...encode,
     '-af', 'loudnorm=I=-16:TP=-2:LRA=7', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-shortest', mp4]);

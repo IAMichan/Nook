@@ -8,7 +8,8 @@ the music should feel like Nook itself, calm and in the background.
     python3 music.py --duration 25 --cues '[{"t":0.4,"sound":"open"}]' --out score.wav
 
 Cue sounds: open (an airy swell), chime (two soft bells), done (a gentle rising pair), merge (three rising notes),
-end (a low warm bell). Only numpy is needed.
+end (a low warm bell), tick. With --bpm the score gets a soft lo-fi groove (plucked arpeggio, round kick, snap, a
+whisper of hi-hat) for videos that cut on the beat. Only numpy is needed.
 """
 import argparse
 import json
@@ -98,16 +99,19 @@ def reverb(bus, rng, seconds=3.2, wet=0.35):
     return out
 
 
-def score(duration, cues, mood="calm", seed=7, chord_len=6.0, bells=True):
+def score(duration, cues, mood="calm", seed=7, chord_len=6.0, bells=True, bpm=None, drums_from=None, drums_until=None):
     rng = np.random.default_rng(seed)
     total = int((duration + 0.05) * SR)
     pads = np.zeros((2, total))
     bass = np.zeros((2, total))
     sparkle = np.zeros((2, total))
     prog = PROGRESSIONS[mood]
-    release = 2.6
+    release, attack = 2.6, 2.0
+    if bpm:
+        # Groove: a chord per bar so the harmony moves with the beat; quicker swells so changes land on the one.
+        chord_len, release, attack, bells = 4 * 60 / bpm, 1.4, 0.45, False
 
-    # Pads and bass: each chord swells in over 2 s and lets go over 2.6 s, so changes are crossfades, never cuts.
+    # Pads and bass: each chord swells in and lets go slowly, so changes are crossfades, never cuts.
     k = 0
     start = 0.0
     while start < duration:
@@ -115,7 +119,7 @@ def score(duration, cues, mood="calm", seed=7, chord_len=6.0, bells=True):
         n = int(chord_len * SR)
         length = n + int(release * SR)
         t = np.arange(length) / SR
-        env = envelope(n, 2.0, release, length)
+        env = envelope(n, attack, release, length)
         for j, note in enumerate(voicing):
             f = hz(note)
             voice = np.zeros(length)
@@ -127,7 +131,7 @@ def score(duration, cues, mood="calm", seed=7, chord_len=6.0, bells=True):
             lfo = 1 + 0.18 * np.sin(2 * np.pi * rng.uniform(0.07, 0.16) * t + rng.uniform(0, 6.3))
             add(pads, voice * env * lfo / 3, start, pan=(-0.35 if j % 2 else 0.35) * (0.4 + 0.6 * j / len(voicing)), gain=0.075)
         fb = hz(root)
-        b = (np.sin(2 * np.pi * fb * t) + 0.12 * np.sin(4 * np.pi * fb * t)) * envelope(n, 1.4, release, length)
+        b = (np.sin(2 * np.pi * fb * t) + 0.12 * np.sin(4 * np.pi * fb * t)) * envelope(n, min(1.4, attack), release, length)
         add(bass, b, start, gain=0.11)
 
         # Sparse bells from the chord's own notes, an octave or two up: a few per chord, never on a grid.
@@ -174,17 +178,73 @@ def score(duration, cues, mood="calm", seed=7, chord_len=6.0, bells=True):
         elif sound == "tick":
             add(fx, bell(hz(tones[4] + 24), 0.4, rng, decay=0.05, bright=0.2), at, pan=rng.uniform(-0.3, 0.3), gain=0.02 * gain)
 
-    mix = pads + bass + reverb(sparkle + fx, rng, wet=0.45) * 1.0
+    drums = np.zeros((2, total))
+    if bpm:
+        groove(pads, bass, sparkle, drums, prog, bpm, duration, rng,
+               drums_from if drums_from is not None else 0.0, drums_until if drums_until is not None else duration)
+
+    mix = pads + bass + drums + reverb(sparkle + fx, rng, wet=0.45) * 1.0
     mix = reverb(mix, np.random.default_rng(seed + 1), seconds=2.4, wet=0.2)
 
-    # Fade in over 2 s and out over the last 3 s; then a soft limiter and -3 dBFS peak.
+    # Fade in (quickly for a groove, whose first second is the hook) and out over the last 3 s; then a soft limiter.
     t = np.arange(total) / SR
-    fade = np.minimum(1, t / 2.0) * np.clip((duration - t) / 3.0, 0, 1)
+    fade = np.minimum(1, t / (0.5 if bpm else 2.0)) * np.clip((duration - t) / 3.0, 0, 1)
     fade = 0.5 - 0.5 * np.cos(np.pi * fade)
     mix *= fade
     mix = np.tanh(mix * 1.2) / 1.2
     peak = np.max(np.abs(mix)) or 1
     return mix / peak * 10 ** (-3 / 20)
+
+
+def groove(pads, bass, sparkle, drums, prog, bpm, duration, rng, drums_from, drums_until):
+    """A soft lo-fi pulse: a plucked arpeggio from the first bar, and from `drums_from` a round kick on 1 and 3, a
+    finger snap on 2 and 4 and a whisper of hi-hat on the off-beats, slightly swung. The pads dip gently on each kick
+    so the whole thing breathes with the beat. Still calm: nothing hits hard, nothing is bright."""
+    beat = 60 / bpm
+    bar = 4 * beat
+    swing = 0.06 * beat
+
+    tk = np.arange(int(0.45 * SR)) / SR
+    kick = np.sin(2 * np.pi * np.cumsum(46 + 64 * np.exp(-tk / 0.035)) / SR) * np.exp(-tk / 0.17)
+    kick *= np.minimum(1, tk / 0.002)
+    ts = np.arange(int(0.3 * SR)) / SR
+    snap = bandpass(rng.standard_normal(len(ts)), 1300, 4200) * np.exp(-ts / 0.045)
+    snap = snap / np.max(np.abs(snap)) + 0.35 * np.sin(2 * np.pi * 190 * ts) * np.exp(-ts / 0.03)
+    th = np.arange(int(0.08 * SR)) / SR
+    hat = bandpass(rng.standard_normal(len(th)), 6000, 12000) * np.exp(-th / 0.018)
+    hat /= np.max(np.abs(hat))
+
+    duck = np.ones(pads.shape[1])
+    arp = (0, 2, 4, 2, 1, 3, 4, 3)
+    n_bars = int(np.ceil(duration / bar))
+    for b in range(n_bars):
+        root, voicing = prog[b % len(prog)]
+        tones = sorted(voicing)
+        for step in range(8):
+            at = b * bar + step * beat / 2 + (swing if step % 2 else 0)
+            if at > duration - 1.5:
+                break
+            f = hz(tones[arp[step]] + 12)
+            tp = np.arange(int(0.9 * SR)) / SR
+            pl = (np.sin(2 * np.pi * f * tp) + 0.45 * np.sin(4 * np.pi * f * tp) * np.exp(-tp / 0.07)
+                  + 0.2 * np.sin(6 * np.pi * f * tp) * np.exp(-tp / 0.04)) * np.exp(-tp / 0.3) * np.minimum(1, tp / 0.004)
+            accent = 1.0 if step % 4 == 0 else 0.75
+            add(sparkle, pl, at, pan=0.35 if step % 2 else -0.35, gain=0.05 * accent)
+        if not (drums_from - 1e-3 <= b * bar < drums_until - 1e-3):
+            continue
+        for k_at in (0, 2) + ((2.5,) if b % 2 else ()):
+            at = b * bar + k_at * beat
+            add(drums, kick, at, gain=0.34 if k_at != 2.5 else 0.2)
+            i = int(at * SR)
+            d = np.arange(pads.shape[1] - i) / SR
+            duck[i:] *= 1 - 0.28 * np.exp(-d / 0.16)[: pads.shape[1] - i]
+        for s_at in (1, 3):
+            add(sparkle, snap, b * bar + s_at * beat, pan=0.1, gain=0.055)
+        for h in range(8):
+            if h % 2:
+                add(drums, hat, b * bar + h * beat / 2 + swing, pan=0.25, gain=0.012)
+    pads *= duck
+    bass *= duck
 
 
 def write_wav(path, stereo):
@@ -204,9 +264,13 @@ def main():
     ap.add_argument("--chord", type=float, default=6.0, help="seconds per chord (slower is calmer)")
     ap.add_argument("--seed", type=int, default=7, help="same seed, same music")
     ap.add_argument("--no-bells", action="store_true", help="pads only")
+    ap.add_argument("--bpm", type=float, help="adds a soft lo-fi groove at this tempo (80-90 feels relaxed)")
+    ap.add_argument("--drums-from", type=float, help="seconds where the drums come in (the 'drop'); default: start")
+    ap.add_argument("--drums-until", type=float, help="seconds where the drums stop; default: the end")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    write_wav(a.out, score(a.duration, json.loads(a.cues), a.mood, a.seed, a.chord, not a.no_bells))
+    write_wav(a.out, score(a.duration, json.loads(a.cues), a.mood, a.seed, a.chord, not a.no_bells,
+                              a.bpm, a.drums_from, a.drums_until))
 
 
 if __name__ == "__main__":
