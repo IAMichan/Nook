@@ -41,6 +41,8 @@ struct PullRequestDetailView: View {
     @State private var merging = false
     /// Scrolled past the title: the top folds to one line (number and title).
     @State private var condensed = false
+    /// The popover that says in full what may still hold the merge back.
+    @State private var showBlocker = false
     /// The composer, the ⋯ menu's actions and their confirmation.
     @StateObject private var actions = PullRequestActionState()
     /// The timeline newest first, when chosen.
@@ -442,7 +444,7 @@ struct PullRequestDetailView: View {
                 ProgressView().controlSize(.small)
                 Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
             } else {
-                Image(systemName: "arrow.triangle.merge").foregroundStyle(NookTheme.violet)
+                NookSymbol(NookSymbol.merge, size: 13).foregroundStyle(NookTheme.violet)
                 Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: NookTheme.Spacing.sm)
@@ -882,7 +884,7 @@ struct PullRequestDetailView: View {
         return VStack(alignment: .leading, spacing: 0) {
             if let created = detail.created, !newestFirst {
                 TimelineRail(last: entries.isEmpty) {
-                    TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
+                    TimelineMarker(symbol: NookSymbol.open, color: NookTheme.mint)
                 } content: {
                     activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
@@ -897,7 +899,7 @@ struct PullRequestDetailView: View {
             }
             if newestFirst, let created = detail.created {
                 TimelineRail(last: true) {
-                    TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
+                    TimelineMarker(symbol: NookSymbol.open, color: NookTheme.mint)
                 } content: {
                     activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
@@ -991,7 +993,7 @@ struct PullRequestDetailView: View {
         case "convert_to_draft": return ("pencil.circle", NookTheme.textTertiary)
         case "head_ref_force_pushed": return ("arrow.up.circle", NookTheme.amber)
         case "head_ref_deleted", "head_ref_restored", "base_ref_changed": return ("arrow.triangle.branch", NookTheme.textTertiary)
-        case "merged": return ("arrow.triangle.merge", NookTheme.violet)
+        case "merged": return (NookSymbol.merge, NookTheme.violet)
         case "closed": return ("xmark.circle", NookTheme.coral)
         case "reopened": return ("arrow.uturn.left.circle", NookTheme.mint)
         case "cross-referenced", "referenced": return ("link", NookTheme.textTertiary)
@@ -1190,20 +1192,16 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// Merge with its method beside it. The first click arms it, the second merges; a warning mark says why GitHub
-    /// may still hold it back (branch protection, a branch that is behind, failing checks).
+    /// Merge with its method beside it. The first click arms it, the second merges; beside it, what GitHub may still hold
+    /// it back on (branch protection, a branch that is behind, failing checks), named in a few words.
     private func mergeButton(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             if let note = detail.mergeNote, detail.canMerge {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.amber)
-                    .help(tr(note))
-                    .accessibilityLabel(tr(note))
+                mergeBlocker(note, detail: detail)
             }
             if merging { ProgressView().controlSize(.small) }
             SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge") : tr("agents.pr.merge"),
-                               systemName: armedMerge ? "checkmark" : "arrow.triangle.merge") {
+                               systemName: armedMerge ? "checkmark" : NookSymbol.merge) {
                 if armedMerge {
                     armedMerge = false
                     merge()
@@ -1229,6 +1227,53 @@ struct PullRequestDetailView: View {
             }
             .disabled(merging)
             .help(tr("agents.pr.mergeMethod.title"))
+        }
+    }
+
+    /// What may still hold the merge back, in its own mark and a few words ("Branch protection", "Behind main",
+    /// "Checks failing"); a click shows GitHub's whole reason, and for a branch that is behind the button that updates it.
+    private func mergeBlocker(_ note: String, detail: PullRequestDetail) -> some View {
+        let reason = String(note.split(separator: ".").last ?? "")
+        let look: (symbol: String, color: Color, label: String) = switch reason {
+        case "blocked": ("lock.fill", NookTheme.amber, tr("agents.pr.blocker.blocked"))
+        case "behind": ("arrow.triangle.2.circlepath", NookTheme.amber, tr("agents.pr.blocker.behind", detail.baseBranch))
+        case "unstable": ("xmark.circle.fill", NookTheme.coral, tr("agents.pr.blocker.unstable"))
+        case "checking": ("clock", NookTheme.textTertiary, tr("agents.pr.blocker.checking"))
+        default: ("info.circle", NookTheme.textTertiary, tr(note))
+        }
+        return Button {
+            showBlocker.toggle()
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                Image(systemName: look.symbol).font(NookTheme.font(10, .semibold))
+                Text(look.label).lineLimit(1)
+            }
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(look.color)
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .frame(height: 22)
+            .background(Capsule().fill(look.color.opacity(0.12)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr(note))
+        .accessibilityLabel(tr(note))
+        .popover(isPresented: $showBlocker, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                Text(tr(note))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                if reason == "behind" {
+                    SmallGhostButton(title: tr("agents.pr.action.updateBranch")) {
+                        showBlocker = false
+                        actions.close()
+                        actions.pending = .updateBranch(headSHA: detail.headSHA)
+                    }
+                }
+            }
+            .padding(NookTheme.Spacing.lg)
+            .frame(width: 280, alignment: .leading)
         }
     }
 
@@ -1367,7 +1412,7 @@ private struct TimelineMarker: View {
     let color: Color
 
     var body: some View {
-        Image(systemName: symbol)
+        NookSymbol(symbol, size: 12)
             .font(NookTheme.font(10.5, .medium))
             .foregroundStyle(color)
             .frame(width: 22, height: 22)

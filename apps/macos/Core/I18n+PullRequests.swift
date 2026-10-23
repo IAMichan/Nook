@@ -5,6 +5,10 @@ import Foundation
 
 let pullRequestTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.pr.blocker.blocked": "Branchbeveiliging",
+        "agents.pr.blocker.behind": "Achter op %@",
+        "agents.pr.blocker.unstable": "Checks falen",
+        "agents.pr.blocker.checking": "Wordt gecontroleerd",
         "agents.pr.pick.search": "Pull requests zoeken",
         "agents.pr.pick.branch": "Op %@",
         "agents.pr.pick.mine": "Van jou",
@@ -142,6 +146,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "voegde %ld commits toe",
     ],
     .en: [
+        "agents.pr.blocker.blocked": "Branch protection",
+        "agents.pr.blocker.behind": "Behind %@",
+        "agents.pr.blocker.unstable": "Checks failing",
+        "agents.pr.blocker.checking": "Checking",
         "agents.pr.pick.search": "Search pull requests",
         "agents.pr.pick.branch": "On %@",
         "agents.pr.pick.mine": "Yours",
@@ -279,6 +287,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "added %ld commits",
     ],
     .de: [
+        "agents.pr.blocker.blocked": "Branch-Schutz",
+        "agents.pr.blocker.behind": "Hinter %@",
+        "agents.pr.blocker.unstable": "Checks schlagen fehl",
+        "agents.pr.blocker.checking": "Wird geprüft",
         "agents.pr.pick.search": "Pull Requests suchen",
         "agents.pr.pick.branch": "Auf %@",
         "agents.pr.pick.mine": "Deine",
@@ -416,6 +428,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "hat %ld Commits hinzugefügt",
     ],
     .fr: [
+        "agents.pr.blocker.blocked": "Protection de branche",
+        "agents.pr.blocker.behind": "En retard sur %@",
+        "agents.pr.blocker.unstable": "Checks en échec",
+        "agents.pr.blocker.checking": "Vérification",
         "agents.pr.pick.search": "Rechercher des pull requests",
         "agents.pr.pick.branch": "Sur %@",
         "agents.pr.pick.mine": "Les vôtres",
@@ -553,6 +569,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "a ajouté %ld commits",
     ],
     .es: [
+        "agents.pr.blocker.blocked": "Protección de rama",
+        "agents.pr.blocker.behind": "Por detrás de %@",
+        "agents.pr.blocker.unstable": "Checks fallan",
+        "agents.pr.blocker.checking": "Comprobando",
         "agents.pr.pick.search": "Buscar pull requests",
         "agents.pr.pick.branch": "En %@",
         "agents.pr.pick.mine": "Tuyas",

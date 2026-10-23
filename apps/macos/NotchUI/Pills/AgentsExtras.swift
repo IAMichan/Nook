@@ -105,8 +105,8 @@ private struct PullRequestGlyph: View {
 
 /// The pull request marks GitHub uses, drawn on a 16-point grid so they stay crisp at any size: open (a node, a line,
 /// and a second line that bends back with an arrow), draft (the bend replaced by dots), merged (a branch curving back
-/// into the main line), closed (the arrow replaced by a cross), a conflict (an exclamation mark beside the line) and a
-/// stack (three nodes in a chain).
+/// into the main line), closed (the arrow replaced by a cross), a conflict (the merge branch stopping short of the main
+/// line at a cross) and a stack (three nodes in a chain).
 struct PullRequestStateGlyph: View {
     let glyph: PullRequestBadge.Glyph
     var size: CGFloat = 16
@@ -149,9 +149,13 @@ struct PullRequestStateGlyph: View {
                 lines.move(to: point(13.8, 2.8)); lines.addLine(to: point(10.2, 6.4))
                 nodes.append(point(12, 12.4))
             case .conflict:
+                // The merge mark whose branch stops short of the main line, a cross where they would meet.
                 trunk()
-                lines.move(to: point(12, 2.8)); lines.addLine(to: point(12, 9))
-                dots.append(point(12, 12.6))
+                lines.move(to: point(12 - r, 9.6))
+                lines.addQuadCurve(to: point(7.14, 9.2), control: point(8.48, 9.6))
+                lines.move(to: point(4.9, 5.1)); lines.addLine(to: point(7.5, 7.7))
+                lines.move(to: point(7.5, 5.1)); lines.addLine(to: point(4.9, 7.7))
+                nodes.append(point(12, 9.6))
             case .merged:
                 trunk()
                 lines.move(to: point(4, 3.6 + r))

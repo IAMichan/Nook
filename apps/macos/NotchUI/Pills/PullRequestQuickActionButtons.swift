@@ -63,7 +63,7 @@ struct PullRequestQuickActionButtons: View {
                 if running == action {
                     ProgressView().controlSize(.mini)
                 } else {
-                    Image(systemName: Self.symbol(action))
+                    NookSymbol(Self.symbol(action), size: 11)
                 }
                 Text(confirming ? tr("agents.pulls.quick.confirm." + action.rawValue) : tr("agents.pulls.quick." + action.rawValue))
             }
@@ -96,7 +96,7 @@ struct PullRequestQuickActionButtons: View {
     static func symbol(_ action: PullRequestQuickAction) -> String {
         switch action {
         case .close: return "xmark.circle"
-        case .merge: return "arrow.triangle.merge"
+        case .merge: return NookSymbol.merge
         case .ready: return "eye"
         case .reopen: return "arrow.uturn.backward.circle"
         }

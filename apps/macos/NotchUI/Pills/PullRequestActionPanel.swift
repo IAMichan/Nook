@@ -87,7 +87,7 @@ struct PullRequestMoreMenu: View {
                     }
                 }
                 if detail.mergeState == "behind" {
-                    DropdownRow(symbol: "arrow.triangle.merge", title: tr("agents.pr.action.updateBranch")) {
+                    DropdownRow(symbol: "arrow.triangle.2.circlepath", title: tr("agents.pr.action.updateBranch")) {
                         ask(.updateBranch(headSHA: detail.headSHA))
                     }
                 }
