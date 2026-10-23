@@ -177,7 +177,7 @@ enum TextGenerationRunner {
     }
 
     static func run(engine: TextGeneration.Engine, executable: String, environment: [String: String], prompt: String,
-                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120) -> [String: Any]? {
+                    schema: [String: Any], cwd: String, timeout: TimeInterval = 120, model: String? = nil) -> [String: Any]? {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("nook-text-" + UUID().uuidString, isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)) != nil else { return nil }
         defer { try? FileManager.default.removeItem(at: temp) }
@@ -185,7 +185,7 @@ enum TextGenerationRunner {
         let arguments: [String]
         switch engine {
         case .claude:
-            arguments = TextGeneration.claudeArguments(schema: schema)
+            arguments = TextGeneration.claudeArguments(schema: schema, model: model ?? "haiku")
         case .codex:
             let schemaFile = temp.appendingPathComponent("schema.json")
             guard (try? Data(TextGeneration.json(schema).utf8).write(to: schemaFile)) != nil else { return nil }

@@ -185,4 +185,22 @@ final class DelegationTests: XCTestCase {
         XCTAssertEqual(ToolSummary.describe(tool: "mcp__nook__delegate_task", input: ["task": "Review the diff"]),
                        "Delegate task · Review the diff")
     }
+
+    func testWaitingOnSeveralTasks() {
+        func snap(_ id: String, _ state: DelegatedTask.State, question: Bool = false) -> DelegatedTask.Snapshot {
+            DelegatedTask.Snapshot(taskID: id, title: id, state: state, summary: nil, hasPendingQuestion: question, model: nil, provider: "Codex")
+        }
+        let running = [snap("a", .running), snap("b", .queued)]
+        XCTAssertFalse(DelegatedTask.waitIsOver(running, mode: .any))
+        XCTAssertTrue(DelegatedTask.waitIsOver([snap("a", .running), snap("b", .completed)], mode: .any))
+        XCTAssertFalse(DelegatedTask.waitIsOver([snap("a", .running), snap("b", .completed)], mode: .all))
+        XCTAssertTrue(DelegatedTask.waitIsOver([snap("a", .running, question: true), snap("b", .failed)], mode: .all))
+        let text = DelegatedTask.renderWait([snap("a", .completed), snap("b", .running)], waitTimedOut: true)
+        let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        XCTAssertEqual(object?["settled"] as? [String], ["a"])
+        XCTAssertEqual(object?["waitTimedOut"] as? Bool, true)
+        XCTAssertEqual((object?["tasks"] as? [Any])?.count, 2)
+        XCTAssertEqual(BridgeTool.named("mcp__nook__task_wait"), .taskWait)
+        XCTAssertEqual(BridgeTool.taskWait.effect, .read)
+    }
 }

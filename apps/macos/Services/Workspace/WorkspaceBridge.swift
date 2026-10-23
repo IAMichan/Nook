@@ -212,7 +212,7 @@ final class WorkspaceBridge: ObservableObject {
             case .browserRead: return try await browserRead(caller)
             case .browserScreenshot: return try await browserScreenshot(arguments, caller)
             case .pullRequestCreate: return try await pullRequestCreate(arguments, caller, context)
-            case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskCancel:
+            case .orchestratorCapabilities, .delegateTask, .taskStatus, .taskWait, .taskCancel:
                 return try await delegation(tool, arguments, caller, context)
             case .sessionRead: return sessionRead(arguments)
             case .sessionList: return sessionList(arguments)
@@ -617,6 +617,28 @@ final class WorkspaceBridge: ObservableObject {
                 return .error("No such task. Use the task id that delegate_task returned.")
             }
             return BridgeRPC.ToolResult(text: DelegatedTask.render(workspace.snapshot(of: task)))
+        case .taskWait:
+            let ids = ((arguments["task_ids"] as? [Any]) ?? []).compactMap { $0 as? String }
+            guard !ids.isEmpty, ids.count <= 8 else { return .error("Pass between 1 and 8 task ids from delegate_task.") }
+            let tasks = ids.compactMap { workspace.delegatedTask($0, of: parentID) }
+            guard tasks.count == ids.count else { return .error("No such task among these ids. Use the task ids that delegate_task returned.") }
+            let mode = DelegatedTask.WaitMode(rawValue: (arguments["mode"] as? String) ?? "") ?? .any
+            let requested = (arguments["timeout_seconds"] as? Int) ?? Self.defaultWait
+            let deadline = Date().addingTimeInterval(TimeInterval(min(max(requested, 1), Self.maxWait)))
+            while true {
+                let snapshots = tasks.map { workspace.run($0.id).map(workspace.snapshot(of:)) ?? workspace.snapshot(of: $0) }
+                if DelegatedTask.waitIsOver(snapshots, mode: mode) {
+                    return BridgeRPC.ToolResult(text: DelegatedTask.renderWait(snapshots, waitTimedOut: false))
+                }
+                if Date() >= deadline || Task.isCancelled {
+                    // The tasks go on; each tells the parent when it finishes.
+                    for task in tasks where !DelegatedTask.isSettled(workspace.snapshot(of: workspace.run(task.id) ?? task)) {
+                        workspace.wakeParent(when: task.id)
+                    }
+                    return BridgeRPC.ToolResult(text: DelegatedTask.renderWait(snapshots, waitTimedOut: true))
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
         case .taskCancel:
             if case .refuse(let reason) = verdict(.taskCancel, caller) { return .error(Self.refusal(reason)) }
             guard let task = workspace.delegatedTask((arguments["task_id"] as? String) ?? "", of: parentID) else {
