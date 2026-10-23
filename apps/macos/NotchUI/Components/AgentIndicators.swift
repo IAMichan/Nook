@@ -121,7 +121,10 @@ struct PullRequestStateBadge: View {
     let glyph: PullRequestBadge.Glyph
     var number: Int? = nil
 
-    private var tint: Color {
+    private var tint: Color { Self.tint(glyph) }
+
+    /// The state's color, also used for a pull request's number in the page's crumbs.
+    static func tint(_ glyph: PullRequestBadge.Glyph) -> Color {
         switch glyph {
         case .open: return NookTheme.mint
         case .draft: return NookTheme.textSecondary
