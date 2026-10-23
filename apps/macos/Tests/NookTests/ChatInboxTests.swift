@@ -702,6 +702,20 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(group?.avatar, "/tmp/club.jpg")
     }
 
+    func testSlackWebSignIn() {
+        let config = #"{"teams":{"T1":{"name":"Acme","token":"xoxc-1"},"T2":{"name":"Side","token":"xoxc-2"}},"lastActiveTeamId":"T2"}"#
+        let auth = SlackData.webAuth(localConfig: config, cookie: "xoxd-abc%2F")
+        XCTAssertEqual(auth, SlackData.Auth(token: "xoxc-2", cookie: "xoxd-abc%2F", team: "Side"), "the workspace used last")
+        XCTAssertEqual(auth?.headers["Cookie"], "d=xoxd-abc%2F")
+        XCTAssertEqual(auth?.headers["Authorization"], "Bearer xoxc-2")
+        XCTAssertEqual(SlackData.webAuth(localConfig: #"{"teams":{"T1":{"name":"Acme","token":"xoxc-1"}}}"#, cookie: "xoxd-a")?.team,
+                       "Acme")
+        XCTAssertNil(SlackData.webAuth(localConfig: config, cookie: nil), "the token works only with its cookie")
+        XCTAssertNil(SlackData.webAuth(localConfig: #"{"teams":{}}"#, cookie: "xoxd-a"), "not signed in yet")
+        XCTAssertNil(SlackData.webAuth(localConfig: nil, cookie: "xoxd-a"))
+        XCTAssertNil(SlackData.Auth(token: "xoxp-1").headers["Cookie"], "a pasted token goes alone")
+    }
+
     func testSlackAndChatHelperFiles() {
         let clip = SlackData.file(["name": "clip.m4a", "mimetype": "audio/mp4", "subtype": "slack_audio", "duration_ms": 3500,
                                    "url_private_download": "https://files.slack.com/files-pri/T1-F1/download/clip.m4a"])

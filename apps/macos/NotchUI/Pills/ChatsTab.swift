@@ -175,8 +175,8 @@ final class ChatsEntryMemo {
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
-    /// Shows the panel footer under the list of chats, where Agents has it under its sessions, so the refresh and update
-    /// button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
+    /// Shows the panel footer at the foot of the leftmost column (under the sidebar's views and apps), where Agents has it
+    /// under its sessions, so the refresh and update button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
     var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
@@ -229,16 +229,13 @@ struct ChatsTab: View {
                     sidebar
                     NookDivider(vertical: true)
                     // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        list
-                        footer
-                    }
-                    .padding(.leading, NookTheme.Spacing.md)
-                    .padding(.trailing, NookTheme.Spacing.xs)
-                    .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                    available: max(totalWidth - sidebarWidth, 0),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                    edge: .trailing, divider: true)
+                    list
+                        .padding(.leading, NookTheme.Spacing.md)
+                        .padding(.trailing, NookTheme.Spacing.xs)
+                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
+                                        available: max(totalWidth - sidebarWidth, 0),
+                                        rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                                        edge: .trailing, divider: true)
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
@@ -299,7 +296,8 @@ struct ChatsTab: View {
     @ViewBuilder
     private var footer: some View {
         if let openOnAgents, showsFooter {
-            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
+            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history,
+                        vertical: compactSidebar && !all.isEmpty)
         }
     }
 
@@ -429,10 +427,16 @@ struct ChatsTab: View {
     /// Which apps are installed, looked up once per launch.
     @MainActor private static var installed: [String: Bool] = [:]
 
+    /// The leftmost column: the views and apps, and under them the panel footer (settings, pull requests, usage, refresh),
+    /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
-        ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
-                     addSource: { app.openSettings(section: .chats) })
-            .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
+                         addSource: { app.openSettings(section: .chats) })
+            footer
+                .frame(width: compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
+        }
+        .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
     }
 
     /// The list's title: the view, and the app when one is chosen ("New · Telegram"), with the one action that fits it.

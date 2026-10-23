@@ -178,6 +178,9 @@ struct TeamsSettingsRows: View {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
         if web.session == nil {
+            if let why = web.problem, !web.isSigningIn {
+                StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
+            }
             HStack {
                 SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
                 Spacer()
@@ -234,15 +237,53 @@ struct TeamsSettingsRows: View {
     }
 }
 
-/// Slack with its history: a user token, kept in the Keychain, and whether reading with it works. In Slack's sheet on
-/// Settings › Chats.
-struct SlackTokenRows: View {
+/// Slack with its history: signing in on slack.com, as with Teams, or a user token of an app of your own (kept in the
+/// Keychain), and whether reading works. In Slack's sheet on Settings › Chats.
+struct SlackSettingsRows: View {
     let setCollecting: (Bool) -> Void
     @ObservedObject private var capture = ChatCaptureService.shared
+    @ObservedObject private var web = SlackWebSession.shared
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
+    @State private var usesToken = SlackBridge.token != nil
 
     var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            if let auth = web.auth {
+                let title = auth.team.isEmpty ? "Slack" : auth.team
+                if let problem = capture.bridgeProblems[capture.slackBridge.app] {
+                    StatusRow(title: tr("chats.teams.connected", title), detail: problem, state: .error) {
+                        Button(tr("chats.teams.signInAgainButton")) { signIn() }
+                        Button(tr("chats.teams.signOut")) { signOut() }
+                    }
+                } else {
+                    StatusRow(title: tr("chats.teams.connected", title),
+                              detail: capture.enabled ? tr("chats.slack.web.connectedDetail") : tr("chats.slack.collectOff"),
+                              state: capture.enabled ? .done : .todo) {
+                        Button(tr("chats.teams.signOut")) { signOut() }
+                    }
+                }
+            } else if !slackSet {
+                HStack {
+                    SettingLabel(tr("chats.slack.web.signIn"), detail: tr("chats.slack.web.signInDetail"))
+                    Spacer()
+                    Button(tr("chats.slack.signIn")) { signIn() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(web.isSigningIn)
+                }
+            }
+            if web.auth == nil {
+                DisclosureGroup(isExpanded: $usesToken) {
+                    tokenRows
+                } label: {
+                    SettingLabel(tr("chats.slack.useToken"), detail: tr("chats.slack.useTokenDetail"))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tokenRows: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
             HStack(spacing: NookTheme.Spacing.sm) {
@@ -272,6 +313,23 @@ struct SlackTokenRows: View {
             }
             SettingNote(tr("chats.slack.footer"))
         }
+        .padding(.top, NookTheme.Spacing.xs)
+    }
+
+    private func signIn() {
+        web.signIn(title: tr("chats.link.browser.title", "Slack")) { linked() }
+    }
+
+    private func signOut() {
+        web.signOut()
+        capture.slackTokenChanged()
+    }
+
+    /// Slack is linked: its chats are switched on and read right away.
+    private func linked() {
+        capture.setSource(capture.slackBridge.app, on: true)
+        if !capture.enabled { setCollecting(true) }
+        capture.slackTokenChanged()
     }
 
     private func save() {
@@ -283,8 +341,6 @@ struct SlackTokenRows: View {
         }
         slackToken = ""
         slackSet = true
-        capture.setSource(capture.slackBridge.app, on: true)
-        if !capture.enabled { setCollecting(true) }
-        capture.slackTokenChanged()
+        linked()
     }
 }

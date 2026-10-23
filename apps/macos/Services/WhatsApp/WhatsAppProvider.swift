@@ -350,9 +350,26 @@ actor GOWAProvider: WhatsAppProvider {
         return WAGOWA.members(data)
     }
 
+    /// Page by page (GOWA refuses more than 100 at once) until the list runs out or `limit` chats are in. A page that
+    /// fails after the first keeps what came; one that brings nothing new ends it (a gateway that ignores the offset).
     func chats(limit: Int) async throws -> [WAChatInfo] {
-        WAGOWA.chats(try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(limit))]))
-            .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
+        var out: [WAChatInfo] = []
+        var seen = Set<String>()
+        var offset: Int? = 0
+        while let start = offset, out.count < limit {
+            let data: Data
+            do {
+                data = try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(WAGOWA.chatPage)),
+                                                                 URLQueryItem(name: "offset", value: String(start))])
+            } catch {
+                if out.isEmpty { throw error }
+                break
+            }
+            let page = WAGOWA.chats(data).filter { seen.insert($0.jid).inserted }
+            out += page.map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
+            offset = page.isEmpty ? nil : WAGOWA.nextChatOffset(data, offset: start)
+        }
+        return Array(out.prefix(limit))
     }
 
     func channels() async -> [WAChannel] {

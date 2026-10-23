@@ -24,6 +24,27 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertNil(TeamsWebData.session(url: url, header: "skypetoken=" + token(["exp": 1])), "a token that says who you are")
     }
 
+    func testTheSessionComesFromTheSignInService() {
+        let skype = token(["skypeid": "orgid:me", "exp": 1_900_000_000])
+        let answer: [String: Any] = ["tokens": ["skypeToken": skype, "expiresIn": 86_400], "region": "emea",
+                                     "regionGtms": ["chatServiceAfd": "https://teams.microsoft.com/api/chatsvc/emea/"]]
+        XCTAssertEqual(TeamsWebData.session(authz: answer)?.base, "https://teams.microsoft.com/api/chatsvc/emea")
+        XCTAssertEqual(TeamsWebData.session(authz: answer)?.me, me)
+        let regionOnly: [String: Any] = ["tokens": ["skypeToken": skype], "region": "amer"]
+        XCTAssertEqual(TeamsWebData.session(authz: regionOnly)?.base, "https://teams.microsoft.com/api/chatsvc/amer")
+        XCTAssertNil(TeamsWebData.session(authz: ["tokens": [:]]))
+        let bearer = TeamsWebData.session(url: "https://teams.cloud.microsoft/api/chatsvc/emea/v1/users/ME", header: "Bearer " + skype)
+        XCTAssertEqual(bearer?.token, skype, "the website may send the session token as a bearer")
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let spaces = token(["aud": "https://api.spaces.skype.com", "exp": 1_900_000_000])
+        XCTAssertTrue(TeamsWebData.isSpacesToken(spaces, now: now))
+        XCTAssertFalse(TeamsWebData.isSpacesToken(token(["aud": "https://graph.microsoft.com", "exp": 1_900_000_000]), now: now))
+        XCTAssertFalse(TeamsWebData.isSpacesToken(token(["aud": "https://api.spaces.skype.com", "exp": 1]), now: now), "run out")
+        XCTAssertEqual(TeamsWebData.bearer(cookie: "Bearer%3D" + spaces + "%26Origin%3Dhttps%3A%2F%2Fteams.microsoft.com"), spaces)
+        XCTAssertNil(TeamsWebData.bearer(cookie: "something-else"))
+    }
+
     func testChatsAndMessages() {
         let list: [String: Any] = ["conversations": [
             ["id": "19:a_b@unq.gbl.spaces", "threadProperties": [:], "properties": ["consumptionhorizon": "1700000000000;1;2"],

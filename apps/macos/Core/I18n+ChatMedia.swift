@@ -113,7 +113,7 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.whatsapp.optionsDetail": "Welke meldingen binnenkomen, gelezen bij beantwoorden en een andere koppeling.",
         "chats.own.telegram.step": "Log in met je telefoonnummer",
         "chats.own.teams.step": "Log in met je Microsoft-account",
-        "chats.own.slack.step": "Plak je Slack-token",
+        "chats.own.slack.step": "Log in bij Slack",
         "chats.own.messages.step": "Geef Nook schijftoegang",
     ],
     .en: [
@@ -225,7 +225,7 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.whatsapp.optionsDetail": "Which notifications come in, read when you reply, and another link.",
         "chats.own.telegram.step": "Log in with your phone number",
         "chats.own.teams.step": "Log in with your Microsoft account",
-        "chats.own.slack.step": "Paste your Slack token",
+        "chats.own.slack.step": "Sign in to Slack",
         "chats.own.messages.step": "Give Nook disk access",
     ],
     .de: [
@@ -337,7 +337,7 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.whatsapp.optionsDetail": "Welche Mitteilungen ankommen, gelesen beim Antworten und eine andere Verbindung.",
         "chats.own.telegram.step": "Melde dich mit deiner Telefonnummer an",
         "chats.own.teams.step": "Melde dich mit deinem Microsoft-Konto an",
-        "chats.own.slack.step": "Füge deinen Slack-Token ein",
+        "chats.own.slack.step": "Bei Slack anmelden",
         "chats.own.messages.step": "Gib Nook Festplattenzugriff",
     ],
     .fr: [
@@ -449,7 +449,7 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.whatsapp.optionsDetail": "Quelles notifications arrivent, lu en répondant et un autre lien.",
         "chats.own.telegram.step": "Connectez-vous avec votre numéro",
         "chats.own.teams.step": "Connectez-vous avec votre compte Microsoft",
-        "chats.own.slack.step": "Collez votre jeton Slack",
+        "chats.own.slack.step": "Connectez-vous à Slack",
         "chats.own.messages.step": "Donnez à Nook l’accès au disque",
     ],
     .es: [
@@ -561,7 +561,7 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.whatsapp.optionsDetail": "Qué notificaciones llegan, leído al responder y otro vínculo.",
         "chats.own.telegram.step": "Inicia sesión con tu número de teléfono",
         "chats.own.teams.step": "Inicia sesión con tu cuenta de Microsoft",
-        "chats.own.slack.step": "Pega tu token de Slack",
+        "chats.own.slack.step": "Inicia sesión en Slack",
         "chats.own.messages.step": "Da a Nook acceso al disco",
     ],
 ]

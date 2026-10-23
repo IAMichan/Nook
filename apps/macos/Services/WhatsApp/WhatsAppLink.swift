@@ -473,9 +473,20 @@ final class WhatsAppLink: ObservableObject {
         lastPoll = Date()
     }
 
+    /// How many of the phone's chats Nook lists at most: every one the gateway knows, short of an account so large
+    /// that listing it would slow the Chats tab and search down.
+    static let chatListLimit = 5000
+
     private func loadChats(_ provider: WhatsAppProvider, gen: Int) async {
         lastChatList = Date()
-        guard let chats = try? await provider.chats(limit: 200), gen == generation else { return }
+        let chats: [WAChatInfo]
+        do {
+            chats = try await provider.chats(limit: Self.chatListLimit)
+        } catch {
+            Log.connectors.error("WhatsApp: chat list failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard gen == generation else { return }
         knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread) }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {

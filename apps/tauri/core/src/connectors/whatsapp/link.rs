@@ -26,6 +26,10 @@ use crate::brain::LoopTool;
 use crate::connectors::hub::{Connector, Env, Scope};
 use crate::connectors::{CResult, ConnectorError, ConnectorItem, ConnectorState, ConnectorStatus, ErrorKind, Tone};
 
+/// How many of the phone's chats Nook lists at most: every one the gateway knows, short of an account so large that
+/// listing it would slow the chat list and search down.
+const CHAT_LIST_LIMIT: usize = 5000;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "message")]
 pub enum Link {
@@ -656,7 +660,13 @@ impl WhatsAppLink {
 
     async fn load_chats(&self, provider: &Provider, gen: u64) {
         self.with(|i| i.last_chat_list = Some(Utc::now()));
-        let Ok(chats) = provider.chats(200).await else { return };
+        let chats = match provider.chats(CHAT_LIST_LIMIT).await {
+            Ok(chats) => chats,
+            Err(e) => {
+                log::warn!("WhatsApp: chat list failed: {e:?}");
+                return;
+            }
+        };
         self.with(|i| {
             if i.generation == gen {
                 i.known = chats.into_iter().map(|c| ChatInfo { jid: jid::normalized(&c.jid), ..c }).collect();

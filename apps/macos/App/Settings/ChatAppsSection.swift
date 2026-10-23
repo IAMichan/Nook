@@ -183,6 +183,9 @@ enum ChatAppStates {
             return teams.accounts.count == 1 ? tr("chats.apps.as", account.name.isEmpty ? account.email : account.name)
                 : tr("chats.apps.accounts", teams.accounts.count)
         case capture.slackBridge.app:
+            if let auth = SlackWebSession.shared.auth, SlackBridge.auth != nil {
+                return tr("chats.apps.as", auth.team.isEmpty ? "Slack" : auth.team)
+            }
             return SlackBridge.token != nil ? tr("chats.apps.own.slack") : nil
         case capture.messagesBridge.app:
             guard capture.enabled, capture.messagesBridge.isReady, capture.status != .needsAccess else { return nil }

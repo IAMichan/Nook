@@ -1235,6 +1235,21 @@ enum WAGOWA {
         return message
     }
 
+    /// How many chats GOWA hands out per call: it refuses a `limit` above 100.
+    static let chatPage = 100
+
+    /// Where the page after one of `GET /chats` starts (its `offset`), or nil when that page was the last: a short page,
+    /// or the `pagination.total` reached.
+    static func nextChatOffset(_ data: Data, offset: Int) -> Int? {
+        let count = (((results(data) as? [String: Any])?["data"] as? [Any]) ?? []).count
+        let next = offset + count
+        guard count >= chatPage else { return nil }
+        if let total = ((results(data) as? [String: Any])?["pagination"] as? [String: Any])?["total"] as? Int, next >= total {
+            return nil
+        }
+        return next
+    }
+
     /// `GET /chats` → `results: {data: [{jid, name, last_message_time, …}], pagination}`.
     static func chats(_ data: Data) -> [(jid: String, name: String, last: Date)] {
         guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return [] }
