@@ -14,6 +14,8 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     @Published private(set) var session: TeamsWebData.Session?
     /// The sign-in window is open.
     @Published private(set) var isSigningIn = false
+    /// Why the last sign-in did not link Teams, shown until the next one.
+    @Published private(set) var problem: String?
 
     var isSignedIn: Bool { session != nil }
 
@@ -29,6 +31,11 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     /// A renewal out of sight under way, and who waits for it.
     private var renewing: [CheckedContinuation<TeamsWebData.Session?, Never>] = []
     private var renewTimeout: Task<Void, Never>?
+    /// Looks for the website's sign-in itself while the website is open, for when its requests come from where the
+    /// script cannot see them (a worker of its own).
+    private var watch: Timer?
+    /// Tokens already offered to Teams' sign-in service, so each is asked once.
+    private var tried: Set<String> = []
 
     override init() {
         super.init()
@@ -53,7 +60,9 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
         isSigningIn = true
+        problem = nil
         web.load(URLRequest(url: Self.start))
+        startWatching()
     }
 
     /// A fresh token from the website, loaded out of sight with the sign-in it kept; nil when it is signed out there
@@ -66,6 +75,7 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
             let web = makeWebView()
             self.web = web
             web.load(URLRequest(url: Self.start))
+            startWatching()
             renewTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
@@ -120,7 +130,12 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     }
 
     private func heard(url: String, header: String) {
-        guard let found = TeamsWebData.session(url: url, header: header) else { return }
+        let found = url == "authz" ? ChatJSON.object(Data(header.utf8)).flatMap { TeamsWebData.session(authz: $0) }
+            : TeamsWebData.session(url: url, header: header)
+        if let found { take(found) }
+    }
+
+    private func take(_ found: TeamsWebData.Session) {
         var kept = found
         if let name = session?.name, session?.me == found.me { kept.name = name }
         keep(kept)
@@ -132,8 +147,54 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         finishRenewing(kept)
     }
 
+    private func startWatching() {
+        watch?.invalidate()
+        tried = []
+        watch = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.look() }
+        }
+    }
+
+    /// The website's sign-in, found without its requests: the tokens for Teams' chat service it keeps in its storage
+    /// and its `authtoken` cookie, each offered once to Teams' sign-in service for a session token.
+    private func look() {
+        guard let web else { return }
+        Task {
+            var tokens: [String] = []
+            if let found = try? await web.evaluateJavaScript(Self.storedTokens) as? [String] { tokens += found }
+            tokens += await Self.cookieTokens()
+            await offer(tokens)
+        }
+    }
+
+    private func offer(_ tokens: [String]) async {
+        for token in tokens where !tried.contains(token) && TeamsWebData.isSpacesToken(token) {
+            tried.insert(token)
+            guard let found = await Self.authorize(token) else { continue }
+            take(found)
+            return
+        }
+    }
+
+    private static func cookieTokens() async -> [String] {
+        let cookies = await WKWebsiteDataStore(forIdentifier: storeID).httpCookieStore.allCookies()
+        return cookies.filter { $0.name.lowercased() == "authtoken" }.compactMap { TeamsWebData.bearer(cookie: $0.value) }
+    }
+
+    /// Asks Teams' sign-in service, as the website does, for the session token that goes with a token of yours.
+    private static func authorize(_ token: String) async -> TeamsWebData.Session? {
+        var request = URLRequest(url: URL(string: "https://teams.microsoft.com/api/authsvc/v1.0/authz")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.httpBody = Data()
+        guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200, let json = ChatJSON.object(data) else { return nil }
+        return TeamsWebData.session(authz: json)
+    }
+
     private func keep(_ found: TeamsWebData.Session) {
         session = found
+        problem = nil
         if let data = try? JSONEncoder().encode(found), let json = String(data: data, encoding: .utf8) {
             Keychain.write(json, account: Self.sessionAccount)
         }
@@ -145,11 +206,17 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         renewTimeout = nil
         let waiting = renewing
         renewing = []
-        if window == nil { dropWebView() }
+        if window == nil {
+            watch?.invalidate()
+            watch = nil
+            dropWebView()
+        }
         for continuation in waiting { continuation.resume(returning: found) }
     }
 
     private func close() {
+        watch?.invalidate()
+        watch = nil
         isSigningIn = false
         onSignedIn = nil
         if let window {
@@ -168,12 +235,40 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         web = nil
     }
 
+    /// Closed before Nook took over the sign-in: one more look in the website's cookies, and else why it did not link.
     func windowWillClose(_ notification: Notification) {
         window = nil
         isSigningIn = false
+        let done = onSignedIn
         onSignedIn = nil
+        watch?.invalidate()
+        watch = nil
         if renewing.isEmpty { dropWebView() }
+        let before = session
+        Task {
+            await offer(await Self.cookieTokens())
+            if session != before {
+                done?()
+            } else if session == nil {
+                problem = tr("chats.teams.web.notTaken")
+            }
+        }
     }
+
+    /// The tokens the website keeps in its storage (as MSAL keeps them: JSON with the token as its "secret").
+    private static let storedTokens = """
+    (() => {
+      const found = new Set();
+      for (const store of [localStorage, sessionStorage]) {
+        for (let index = 0; index < store.length; index++) {
+          const value = store.getItem(store.key(index)) || '';
+          if (!/spaces\\.skype\\.com/.test(value)) continue;
+          for (const token of value.match(/eyJ[\\w-]+\\.eyJ[\\w-]+\\.[\\w-]+/g) || []) found.add(token);
+        }
+      }
+      return Array.from(found).slice(0, 20);
+    })();
+    """
 
     /// Runs in the website before its own scripts: when it asks Teams' chat service for something (by fetch or
     /// XMLHttpRequest), the address and its session token go to Nook. Nothing else is looked at.
@@ -181,18 +276,27 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     (() => {
       const tell = (url, value) => {
         try {
-          if (!/\\/api\\/chatsvc\\//.test(String(url)) || !/skypetoken/i.test(String(value))) return;
+          if (!/\\/api\\/chatsvc\\//.test(String(url)) || !/skypetoken|^bearer /i.test(String(value))) return;
           window.webkit.messageHandlers.\(handler).postMessage([String(url), String(value)]);
         } catch (error) {}
       };
       const pick = (name, value, url) => {
         const key = String(name).toLowerCase();
-        if (key === 'authentication') tell(url, value);
+        if (key === 'authentication' || key === 'authorization') tell(url, value);
         if (key === 'x-skypetoken') tell(url, 'skypetoken=' + value);
       };
       const absolute = (url) => { try { return new URL(String(url), location.href).href; } catch (error) { return String(url); } };
+      // Teams' sign-in service answers with the session token and the chat service of your region.
+      const isAuthz = (url) => /\\/api\\/authsvc\\/v1\\.0\\/authz/.test(String(url));
+      const answered = (text) => {
+        try { if (/skypeToken/.test(String(text))) window.webkit.messageHandlers.\(handler).postMessage(['authz', String(text)]); } catch (error) {}
+      };
       const open = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function (method, url) { this.__nookURL = absolute(url); return open.apply(this, arguments); };
+      XMLHttpRequest.prototype.open = function (method, url) {
+        this.__nookURL = absolute(url);
+        if (isAuthz(this.__nookURL)) this.addEventListener('load', () => { try { answered(this.responseText); } catch (error) {} });
+        return open.apply(this, arguments);
+      };
       const setHeader = XMLHttpRequest.prototype.setRequestHeader;
       XMLHttpRequest.prototype.setRequestHeader = function (name, value) { pick(name, value, this.__nookURL); return setHeader.call(this, name, value); };
       const nativeFetch = window.fetch;
@@ -202,7 +306,12 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
           const given = (init && init.headers) || (input && input.headers);
           if (given) new Headers(given).forEach((value, name) => pick(name, value, url));
         } catch (error) {}
-        return nativeFetch.apply(this, arguments);
+        const answer = nativeFetch.apply(this, arguments);
+        try {
+          const url = absolute(typeof input === 'string' ? input : (input && input.url) || '');
+          if (isAuthz(url)) answer.then((response) => response.clone().text()).then(answered, () => {});
+        } catch (error) {}
+        return answer;
       };
     })();
     """

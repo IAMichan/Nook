@@ -23,12 +23,45 @@ enum TeamsWebData {
     static func session(url: String, header: String, now: Date = Date()) -> Session? {
         guard let range = url.range(of: #"^https://[^/?#]+/api/chatsvc/[^/?#]+(?=/v1/)"#, options: .regularExpression) else { return nil }
         let value = header.trimmingCharacters(in: .whitespaces)
-        let token = value.lowercased().hasPrefix("skypetoken=") ? String(value.dropFirst("skypetoken=".count)) : value
+        var token = value
+        for prefix in ["skypetoken=", "bearer "] where token.lowercased().hasPrefix(prefix) {
+            token = String(token.dropFirst(prefix.count))
+        }
         guard !token.isEmpty, let claims = claims(token), let id = claims["skypeid"] as? String, !id.isEmpty else { return nil }
         let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
         return Session(base: String(url[range]), token: token,
                       expires: exp.map(Date.init(timeIntervalSince1970:)) ?? now.addingTimeInterval(3600),
                       me: id.hasPrefix("8:") ? id : "8:" + id)
+    }
+
+    /// The session from what Teams' sign-in service (`/api/authsvc/v1.0/authz`) answers: the session token and the
+    /// chat service of your region. Nil for any other answer.
+    static func session(authz json: [String: Any], now: Date = Date()) -> Session? {
+        guard let token = (json["tokens"] as? [String: Any])?["skypeToken"] as? String, !token.isEmpty else { return nil }
+        let regions = json["regionGtms"] as? [String: Any] ?? [:]
+        var base = (regions["chatServiceAfd"] as? String) ?? ""
+        if base.range(of: "/api/chatsvc/") == nil, let region = json["region"] as? String, !region.isEmpty {
+            base = "https://teams.microsoft.com/api/chatsvc/" + region
+        }
+        while base.hasSuffix("/") { base.removeLast() }
+        return session(url: base + "/v1/", header: "skypetoken=" + token, now: now)
+    }
+
+    /// A token the website signed in with that Teams' sign-in service turns into a session token: one for
+    /// api.spaces.skype.com that has not run out.
+    static func isSpacesToken(_ token: String, now: Date = Date()) -> Bool {
+        guard let claims = claims(token), let audience = claims["aud"] as? String,
+              audience.contains("api.spaces.skype.com") else { return false }
+        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
+        return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+    }
+
+    /// The token in the website's `authtoken` cookie: "Bearer%3DeyJ…%26Origin%3D…".
+    static func bearer(cookie: String) -> String? {
+        let value = cookie.removingPercentEncoding ?? cookie
+        guard let range = value.range(of: "Bearer=") else { return nil }
+        let token = value[range.upperBound...].prefix { $0 != "&" }
+        return token.isEmpty ? nil : String(token)
     }
 
     /// The claims of a JSON web token, read without checking it: the token goes back only to the service that made it.
