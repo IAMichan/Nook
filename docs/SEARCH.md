@@ -1,6 +1,6 @@
 # Search Everything (macOS)
 
-Press **⇧⌘F** anywhere in the panel (the notch or the main window), or click the magnifying glass in the panel header,
+Press **⌘K** (or **⇧⌘F**) anywhere in the panel (the notch or the main window), or click the magnifying glass in the panel header,
 to search all of Nook at once:
 
 | Kind | What it searches | Opening a hit |

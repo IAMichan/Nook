@@ -18,10 +18,10 @@ struct PanelView: View {
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
-    /// Search everything is open over the tab (⇧⌘F, or the magnifying glass in the header).
+    /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
     @State private var searching = false
-    /// The header's rarer buttons (talk, the window) show while the pointer is on the header, so the
-    /// toolbar keeps to what you use most.
+    /// The header's rarer button (the window) shows while the pointer is on the header, so the toolbar keeps to what you
+    /// use most. Search and talk always show.
     @State private var headerHover = false
 
     /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
@@ -67,6 +67,8 @@ struct PanelView: View {
             Button("") { searching.toggle() }.keyboardShortcut("f", modifiers: [.command, .shift])
                 .opacity(0).accessibilityHidden(true)
         }
+        // ⌘K (a rule, see `Keybindings`): search everything from every tab, and again to close it.
+        .keyCommand("search.toggle", enabled: sheet == nil && !app.demoMode) { searching.toggle() }
         // Short results from anywhere in Nook (saved, approved, failed) show over the panel's bottom edge.
         .nookToastHost()
     }
@@ -138,10 +140,8 @@ struct PanelView: View {
                     NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
                         .help(tr("search.button"))
                 }
-                if headerHover {
-                    NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
-                        .transition(.opacity)
-                }
+                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
+                    .help(tr("button.talk"))
                 // What Nook told you lately, for a notice that closed before you looked.
                 if !app.demoMode { NoticeBellButton() }
                 if !inWindow, headerHover {
