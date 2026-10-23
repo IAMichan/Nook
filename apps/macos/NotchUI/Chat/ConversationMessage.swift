@@ -38,9 +38,8 @@ struct ConversationMessage: View {
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                        .padding(.horizontal, NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
-                        .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.graphite))
+                        .padding(NookTheme.Spacing.lg)
+                        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
             }
         }

@@ -24,20 +24,20 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NookTheme.notch.ignoresSafeArea())
         .background {
-            // ⌘1, ⌘2, ⌘3 switch tabs; ⌘N starts a session.
+            // ⌘1, ⌘2, ⌘3 switch tabs.
             Group {
                 ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
                     Button("") { select(tab) }
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
                 }
-                Button("") { newSession() }
-                    .keyboardShortcut("n", modifiers: .command)
             }
             .opacity(0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
         .animation(NookTheme.swap, value: viewModel.windowTab)
+        // ⌘N starts a session, unless a list on screen starts its own kind (a new Nook chat).
+        .keyCommand("session.new", priority: -1) { newSession() }
         .sheet(isPresented: $app.showOnboarding) {
             OnboardingView {
                 app.settings.onboardingDone = true

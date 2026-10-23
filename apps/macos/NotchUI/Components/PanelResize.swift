@@ -48,6 +48,9 @@ private struct ResizablePanel: ViewModifier {
 
 /// Where the resizable panels start out, and how much room the conversation beside them always keeps.
 enum PanelLayout {
+    /// The widest a conversation and its composer read (Code's 46rem): on a wide window they stay one centered
+    /// column instead of lines running from edge to edge.
+    static let chatColumn: CGFloat = 736
     /// The session list on the left of the Agents tab.
     static let agentsList: Double = 280
     /// A session's results on the right; "widen" in its header jumps to `outputsWide`.
@@ -83,5 +86,13 @@ enum PanelLayout {
     /// "Widen" in the results' header: on at the wide width or wider, and switching between the two starting widths.
     static func wide(_ width: Binding<Double>) -> Binding<Bool> {
         Binding(get: { width.wrappedValue >= outputsWide }, set: { width.wrappedValue = $0 ? outputsWide : outputs })
+    }
+}
+
+extension View {
+    /// Keeps a conversation (or its composer) to one centered column of `PanelLayout.chatColumn` at most.
+    func chatColumn() -> some View {
+        frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 }

@@ -176,8 +176,10 @@ struct ChatReplyField: View {
                 .foregroundStyle(NookTheme.paper)
                 .lineLimit(1...6)
                 .focused(focus)
-                // Return adds a line, Cmd+Return sends; with the `@` menu open Return chooses a line there.
-                .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
+                // Return adds a line; with the `@` menu open Return chooses a line there. ⌘Return (send) and ⇧Return are
+                // keybinding commands, run by the panel's key monitor while this field has the keyboard.
+                .onKeyPress(.return, phases: .down) { (_: KeyPress) -> KeyPress.Result in returnKey() }
+                .keyCommands(keyHandlers, context: ["composerFocus": true, "composerDraft": !empty], enabled: focus.wrappedValue)
                 .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
                 .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
                 .onKeyPress(.tab) { () -> KeyPress.Result in
@@ -259,15 +261,25 @@ struct ChatReplyField: View {
         choose(menu.suggestions[menu.selection])
     }
 
-    private func returnKey(_ press: KeyPress) -> KeyPress.Result {
+    private func returnKey() -> KeyPress.Result {
         if menu.isOpen {
             chooseSelected()
-        } else if press.modifiers.contains(.command) {
-            submit()
         } else {
             NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
         }
         return .handled
+    }
+
+    /// ⌘Return sends (or takes the menu's line); ⇧Return adds a line like Return. No turn runs in a reply, so the
+    /// alternate send never applies here.
+    private var keyHandlers: [String: () -> Bool] {
+        [
+            "composer.send": {
+                if menu.isOpen { chooseSelected() } else { submit() }
+                return true
+            },
+            "composer.newline": { _ = returnKey(); return true },
+        ]
     }
 
     private func moveInMenu(_ delta: Int) -> KeyPress.Result {

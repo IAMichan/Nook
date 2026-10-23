@@ -13,6 +13,8 @@ enum MarkdownBlock {
     case quote(String)
     case table(header: [String], rows: [[String]])
     case rule
+    /// A pull request an agent reports on a line of its own (`<pr-created>https://…/pull/12</pr-created>`).
+    case pullRequest(URL)
 
     private static let brRegex = try? NSRegularExpression(pattern: #"<br\s*/?>"#, options: [.caseInsensitive])
     private static let headingRegex = try? NSRegularExpression(pattern: #"^#{1,6}\s"#)
@@ -22,6 +24,10 @@ enum MarkdownBlock {
     private static let numberRegex = try? NSRegularExpression(pattern: #"^\s*\d{1,3}[.)]\s+"#)
     /// A bullet glyph a model typed after the list marker ("- • text"): it would show up as a second bullet.
     private static let strayBulletRegex = try? NSRegularExpression(pattern: #"^[•◦▪]\s+"#)
+
+    /// An agent's own tag around a value, as Claude Code reports what it made (`<pr-created>…</pr-created>`). Only names
+    /// with a dash or an underscore, so HTML a model writes on purpose (`<b>`, `<kbd>`) stays as it is.
+    private static let agentTagRegex = try? NSRegularExpression(pattern: #"<([a-z][a-z0-9]*(?:[-_][a-z0-9]+)+)>\s*([^<]*?)\s*</\1>"#)
 
     private static func matches(_ text: String, _ rx: NSRegularExpression?) -> Bool {
         guard let rx else { return false }
@@ -129,8 +135,46 @@ enum MarkdownBlock {
         return items
     }
 
+    /// The pull request of a line that is only an agent's tag around its link.
+    static func pullRequestLine(_ line: String) -> URL? {
+        guard line.hasPrefix("<"), line.hasSuffix(">"), let rx = agentTagRegex,
+              let match = rx.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              match.range.length == (line as NSString).length,
+              let value = Range(match.range(at: 2), in: line), let url = URL(string: String(line[value])),
+              pullRequestReference(url) != nil else { return nil }
+        return url
+    }
+
+    /// "owner/repo" and the number of a GitHub pull request or GitLab merge request link.
+    static func pullRequestReference(_ url: URL) -> (repo: String, number: Int)? {
+        guard url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http", isSafeLink(url) else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard let at = parts.firstIndex(where: { $0 == "pull" || $0 == "merge_requests" }), at >= 2, at + 1 < parts.count,
+              let number = Int(parts[at + 1]) else { return nil }
+        // GitLab puts a "-" between the project and its merge requests.
+        return (parts[..<at].filter { $0 != "-" }.joined(separator: "/"), number)
+    }
+
+    /// Takes agents' tags off a line and keeps what they hold; a link inside becomes a link.
+    static func untag(_ line: String) -> String {
+        guard line.contains("</"), let rx = agentTagRegex else { return line }
+        var result = line
+        for match in rx.matches(in: line, range: NSRange(line.startIndex..., in: line)).reversed() {
+            guard let whole = Range(match.range, in: result), let value = Range(match.range(at: 2), in: line) else { continue }
+            let inner = String(line[value])
+            result.replaceSubrange(whole, with: inner.hasPrefix("http://") || inner.hasPrefix("https://") ? "<\(inner)>" : inner)
+        }
+        return result
+    }
+
     static func parse(_ raw: String) -> [MarkdownBlock] {
-        let lines = clean(raw).components(separatedBy: "\n")
+        // Agents' tags come off every line outside a code block, except a pull request link of its own (a card below).
+        var inCode = false
+        let lines = clean(raw).components(separatedBy: "\n").map { line -> String in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") { inCode.toggle() }
+            return inCode || trimmed.hasPrefix("```") || pullRequestLine(trimmed) != nil ? line : untag(line)
+        }
         var blocks: [MarkdownBlock] = []
         var paragraph: [String] = []
         var index = 0
@@ -224,6 +268,12 @@ enum MarkdownBlock {
                     index += 1
                 }
                 blocks.append(.quote(quote.joined(separator: "\n")))
+                continue
+            }
+            if let url = pullRequestLine(trimmed) {
+                flush()
+                blocks.append(.pullRequest(url))
+                index += 1
                 continue
             }
             paragraph.append(line)

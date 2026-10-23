@@ -16,7 +16,6 @@ extension RunProvider {
     }
 
     var color: Color { kind.color }
-    var composerTint: Color { kind.composerTint }
 
     init?(kind: AgentKind) {
         switch kind {

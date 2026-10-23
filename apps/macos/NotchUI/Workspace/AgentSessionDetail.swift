@@ -116,9 +116,8 @@ struct AgentSessionDetail: View {
     }
 
     private func title(for session: AgentSession) -> String {
-        if !session.summary.isEmpty { return AgentFormat.title(session.summary) }
-        if let known = known(session), !known.title.isEmpty { return AgentFormat.title(known.title) }
-        return session.name
+        let named = AgentFormat.sessionTitle(session, known: known(session))
+        return named.isEmpty ? session.name : named
     }
 
     /// The session as the conversation view needs it: with the transcript of a session that was already running.
@@ -279,7 +278,7 @@ struct AgentSessionDetail: View {
                 agentMenu(name: session.name, kind: AgentKind(agentName: session.name), profile: app.profile(for: session),
                           canSwitch: app.canTakeOver(session))
             }
-            .rich(composerModel, composerConfig(folder: session.cwd, tint: NookTheme.iris))
+            .rich(composerModel, composerConfig(folder: session.cwd))
             .images($images)
             .trailing { ComposerMic(text: $draft) }
         }
@@ -544,7 +543,7 @@ struct AgentSessionDetail: View {
                 agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
                           canSwitch: app.canContinueInNook(session))
             }
-            .rich(composerModel, composerConfig(folder: session.cwd, tint: session.agent.composerTint))
+            .rich(composerModel, composerConfig(folder: session.cwd))
             .images($images)
             .trailing { ComposerMic(text: $draft) }
         }
@@ -567,9 +566,8 @@ struct AgentSessionDetail: View {
 
     /// The same box as the chat and the sessions Nook runs: `/` commands are for those; here `@` points at files and the
     /// agent's own tint colors the box.
-    private func composerConfig(folder: String, tint: Color) -> ComposerConfig {
+    private func composerConfig(folder: String) -> ComposerConfig {
         var config = ComposerConfig()
-        config.tint = tint
         config.fileRoot = folder.isEmpty ? nil : folder
         config.keepsBigPastes = true
         return config

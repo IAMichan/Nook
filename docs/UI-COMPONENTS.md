@@ -35,6 +35,26 @@ informs without shouting; motion settles without overshoot. When you add a view:
   action is filled.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
+These rules follow [Code]()'s dark theme, which reads calm because it uses so
+little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 3 % lighter, no blue cast), separation by tonal steps
+and faint white fills instead of grey panels or lines, and color only where it carries meaning. In practice:
+
+- **Color means state, nothing else.** A status mark and its word, an error, a diff's `+`/`−` in the diff itself, and
+  links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.
+  An agent's brand color lives in its logo only, and a row's logo is grey until the pointer is on the row or it is
+  selected (`AgentMark(quiet:)`). The composer keeps Nook's own quiet tint for every agent.
+- **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron, queued messages'
+  buttons, and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
+  into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).
+- **No boxes around groups.** Toolbar groups (`.toolbarGroup()`) and the composer's choices have no fill or stroke of
+  their own; a gap separates them (`ComposerDivider`), and a button gets a fill only under the pointer. Badges in a
+  row (`RowBadgeBackground`) have no fill: a mark and a word. A card that reports a problem (recovery, an error, a
+  usage limit) stands on `surface`; only its symbol carries the state color.
+- **One reading column.** A conversation and its composer are one centered column of at most 736 pt
+  (`.chatColumn()`, `PanelLayout.chatColumn`), so lines stay readable in a wide window. Your own message is a soft
+  `NookTheme.bubble` with `Radius.bubble` and no edge; the agent's answer has no bubble, its running text in
+  `textStrong` (a step under the headings in `paper`) with relaxed line spacing.
+
 ## Keeping it one design
 
 Nook has one visual language, and the repository guards it in three places:
@@ -83,12 +103,16 @@ The checklist for a new or changed view:
   or menu (`ToolbarIconButton` and `NookIconButton` set both from their label).
 - A destructive action asks first (`ConfirmedButton` / `.confirmDelete`) unless it can be undone; a sheet's Cancel has
   `.keyboardShortcut(.cancelAction)` and its main button `.defaultAction`.
+- A key that runs a command (send, find, the command palette, a new session, undo…) is a keybinding command, offered
+  with `.keyCommand` / `.keyCommands` and listed in `Keybindings.commandIDs` and `defaults`, never a hidden
+  `Button("").keyboardShortcut(…)` or an `onKeyPress` with modifiers. That keeps it rebindable in
+  `~/.nook/keybindings.json` and listed under Settings › Shortcuts (see [`KEYBINDINGS.md`](KEYBINDINGS.md)).
 - A field where you write words (not a name, a path or a search) gets `@` through `.mentions` and `MentionSuggestions`.
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice under
   the tabs a `PanelNoticeBar`. Change one of these and every tab follows.
 - Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
-  Errors: `coralSoft` text, or a coral-tinted `.cardBackground` notice with a retry.
+  Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry.
 
 ## Toasts — the result of what you did
 
@@ -135,7 +159,9 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `ListEmptyNote` | `ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
+| `.chatColumn()` | `PanelResize.swift` | Keeps a conversation, its composer or an agent's question to one centered column of `PanelLayout.chatColumn` (736 pt) |
 | `FileContextMenu`, `.sessionFileMenu(_:runID:path:)` | `FileContextMenu.swift` | The right-click menu of a session's file: open in your editor (at a line, through `WorkspaceManager.openFile`), show in Finder, copy the path or the path in the repository. Use it on every row that shows a changed file |
+| `.keyCommand(_:perform:)`, `.keyCommands(_:context:enabled:priority:)`, `KeyCommandCenter` | `KeyCommands.swift` | Offers keybinding commands (`Keybindings.commandIDs`) to the panel's one key monitor while the view is in a window; `context` adds `when` flags (`paletteOpen`, `turnRunning`…), `enabled` limits it to while a field has the keyboard, `priority: -1` makes a window-wide fallback. See [`KEYBINDINGS.md`](KEYBINDINGS.md) |
 | `.onEscapeKey(enabled:perform:)` | `EscapeKey.swift` | Escape that closes what is open (a chat in the Chats tab) also when nothing in the window has the keyboard, where `onExitCommand` hears nothing; a text field being typed in keeps its own Escape |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
@@ -143,7 +169,7 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `PullRequestFreshness` | `NotchUI/Pills/PullRequestsPanel.swift` | "Updated 20 s ago": how fresh a pull request list or page is, ticking along; next to its refresh button |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |
-| `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers |
+| `DropdownHeader`, `DropdownRow`, `DropdownDivider`, `ComposerDropdown` | `ComposerDropdown.swift` | Menus of the composer and pickers; `DropdownRow(favorite:)` adds a favorite star (the model menus) |
 | `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip. `SessionComposer.choicesBelowBox()` puts the agent, model and mode choices in such a tray, so the box stays one line (the chat of a running session uses it) |
 | `.mentions(_:text:config:)`, `MentionSuggestions`, `ComposerConfig.mentions(folder:)` | `MentionField.swift` | `@` in any field where you write words (a follow-up, a prompt, a mail, a commit message): `.mentions` on the text field itself, `MentionSuggestions` right above its box, both sharing a `ComposerModel` the view owns. `@` lists people from your chats and, with a folder, its files, put in as plain words. `SessionComposer` and `ChatReplyField` have the same list built in |
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |

@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-23T00:00:00Z",
+  "agents": {
+    "claude": {
+      "models": [
+        {
+          "id": "claude-fable-5-1",
+          "name": "Claude Fable 5.1",
+          "status": "current",
+          "aliases": [
+            "fable",
+            "fable-5.1",
+            "claude-fable-5.1"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.257"
+            }
+          }
+        },
+        {
+          "id": "claude-opus-5-5",
+          "name": "Claude Opus 5.5",
+          "status": "current",
+          "aliases": [
+            "opus",
+            "opus-5.5",
+            "claude-opus-5.5"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.280"
+            }
+          }
+        },
+        {
+          "id": "claude-sonnet-5-5",
+          "name": "Claude Sonnet 5.5",
+          "status": "current",
+          "aliases": [
+            "sonnet",
+            "sonnet-5.5",
+            "claude-sonnet-5.5"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.284"
+            }
+          }
+        },
+        {
+          "id": "claude-haiku-5-5",
+          "name": "Claude Haiku 5.5",
+          "status": "current",
+          "badge": "new",
+          "aliases": [
+            "haiku",
+            "haiku-5.5",
+            "claude-haiku-5.5"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.293"
+            }
+          }
+        },
+        {
+          "id": "claude-fable-5",
+          "name": "Claude Fable 5",
+          "status": "legacy",
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.169"
+            }
+          }
+        },
+        {
+          "id": "claude-opus-5",
+          "name": "Claude Opus 5",
+          "status": "legacy",
+          "aliases": [
+            "opus-5",
+            "claude-opus-5.0",
+            "claude-opus-5-0"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.219"
+            }
+          }
+        },
+        {
+          "id": "claude-opus-4-8",
+          "name": "Claude Opus 4.8",
+          "status": "legacy",
+          "aliases": [
+            "opus-4.8",
+            "claude-opus-4.8"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.154"
+            }
+          }
+        },
+        {
+          "id": "claude-opus-4-7",
+          "name": "Claude Opus 4.7",
+          "status": "legacy",
+          "aliases": [
+            "opus-4.7",
+            "claude-opus-4.7"
+          ],
+          "adapter": {
+            "claude": {
+              "minVersion": "2.1.111"
+            }
+          }
+        },
+        {
+          "id": "claude-opus-4-6",
+          "name": "Claude Opus 4.6",
+          "status": "legacy",
+          "aliases": [
+            "opus-4.6",
+            "claude-opus-4.6",
+            "claude-opus-4-6-20251117"
+          ]
+        },
+        {
+          "id": "claude-opus-4-5",
+          "name": "Claude Opus 4.5",
+          "status": "legacy"
+        },
+        {
+          "id": "claude-sonnet-5",
+          "name": "Claude Sonnet 5",
+          "status": "legacy",
+          "aliases": [
+            "sonnet-5",
+            "claude-sonnet-5.0",
+            "claude-sonnet-5-0"
+          ]
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "name": "Claude Sonnet 4.6",
+          "status": "legacy",
+          "aliases": [
+            "sonnet-4.6",
+            "claude-sonnet-4.6",
+            "claude-sonnet-4-6-20251117"
+          ]
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "name": "Claude Haiku 4.5",
+          "status": "legacy",
+          "aliases": [
+            "haiku-4.5",
+            "claude-haiku-4.5",
+            "claude-haiku-4-5-20251001"
+          ]
+        }
+      ]
+    },
+    "codex": {
+      "models": [
+        {
+          "id": "gpt-6.1-sol",
+          "name": "GPT-6.1 Sol",
+          "status": "current",
+          "adapter": {
+            "codex": {
+              "minVersion": "0.153.0"
+            }
+          }
+        },
+        {
+          "id": "gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "status": "current",
+          "adapter": {
+            "codex": {
+              "minVersion": "0.153.0"
+            }
+          }
+        },
+        {
+          "id": "gpt-6-luna",
+          "name": "GPT-6 Luna",
+          "status": "current",
+          "adapter": {
+            "codex": {
+              "minVersion": "0.155.0"
+            }
+          }
+        },
+        {
+          "id": "gpt-6-sol",
+          "name": "GPT-6 Sol",
+          "status": "legacy"
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "GPT-5.6 Sol",
+          "status": "legacy"
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "GPT-5.6 Terra",
+          "status": "legacy"
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "name": "GPT-5.6 Luna",
+          "status": "legacy"
+        },
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "status": "legacy"
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "GPT-5.4 Mini",
+          "status": "legacy"
+        },
+        {
+          "id": "gpt-5.3-codex-spark",
+          "name": "GPT-5.3 Codex Spark",
+          "status": "legacy"
+        }
+      ]
+    }
+  }
+}

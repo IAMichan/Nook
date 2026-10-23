@@ -390,11 +390,13 @@ struct WorkspaceSettingsSection: View {
                         get: { ws.model(for: provider) },
                         set: { ws.setModel($0, for: provider) }
                     )) {
-                        ForEach(Array(Set(provider.suggestedModels + [ws.model(for: provider)])).sorted(), id: \.self) { model in
-                            Text(model.isEmpty ? tr("ws.model.default") : model).tag(model)
+                        ForEach(defaultModelChoices(provider), id: \.self) { model in
+                            Text(app.modelName(model, for: provider)).tag(model)
                         }
                     }
                 }
+                // Off: the model list that came with the app is used, and nothing goes online for it.
+                SettingToggle(tr("settings.ws.onlineModels"), detail: onlineModelsDetail, isOn: $ws.onlineModelList)
             }
             Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
                 ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
@@ -447,6 +449,21 @@ struct WorkspaceSettingsSection: View {
             }
             BrowserSearchPicker()
         }
+    }
+
+    /// The models to pick a default from: the composer's menu without older models, with the saved one under its own
+    /// name ("opus" stays "opus", so the picker shows it chosen).
+    private func defaultModelChoices(_ provider: RunProvider) -> [String] {
+        let saved = ws.model(for: provider)
+        return app.workspace.menuModelIDs(for: provider, extra: [saved])
+            .filter { !app.workspace.hidesLegacyModel($0, for: provider, chosen: saved) }
+            .map { app.workspace.sameModel($0, saved, for: provider) ? saved : $0 }
+    }
+
+    /// Where the model list comes from, and how old it is.
+    private var onlineModelsDetail: String {
+        let date = app.workspace.modelManifest?.updatedAt.formatted(date: .abbreviated, time: .omitted)
+        return tr("settings.ws.onlineModelsDetail") + (date.map { " " + tr("settings.ws.modelListDate", $0) } ?? "")
     }
 
     /// How sessions behave and are tidied up, in three short groups: while a session runs, when it stops or Nook

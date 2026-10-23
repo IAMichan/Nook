@@ -51,23 +51,34 @@ extension AppModel {
         return connectedProfiles.filter { $0.kind == provider.kind }.sorted { a, b in a.id == preferred && b.id != preferred }
     }
 
-    /// Models to offer for an agent: its default, the models the agent itself offers (or the well-known ones until it
-    /// has told Nook), and every model you used with it recently.
+    /// Models to offer for an agent: its default, the models the agent itself offers and the ones the model manifest
+    /// knows (see WorkspaceManager+ModelManifest), the ones you typed, and the models you used with it recently; your
+    /// favorites first.
     func models(for provider: RunProvider) -> [String] {
-        let offered = workspace.agentModels[provider]?.map(\.id) ?? []
-        var list = offered.isEmpty ? provider.suggestedModels : [""] + offered
-        let base = list.count
+        var recent: [String] = []
         for session in history.sessions where session.agent == provider.kind && !session.model.isEmpty {
-            if !list.contains(session.model) { list.append(session.model) }
-            if list.count >= base + 6 { break }
+            if !recent.contains(session.model) { recent.append(session.model) }
+            if recent.count >= 6 { break }
         }
-        return list
+        return workspace.menuModelIDs(for: provider, extra: recent)
     }
 
-    /// How a model reads in a menu: the agent's own name for it ("GPT-5.1-Codex"), "Default" for none.
+    /// How a model reads in a menu: the agent's own name for it ("GPT-5.1-Codex") or the manifest's ("opus" reads
+    /// "Claude Opus 5.5"), "Default" for none.
     func modelName(_ model: String, for provider: RunProvider) -> String {
         if model.isEmpty { return tr("ws.model.default") }
-        return workspace.agentModels[provider]?.first { $0.id == model }?.name ?? model
+        return workspace.modelChoice(model, for: provider)?.name ?? model
+    }
+
+    /// What the menu says about a model that needs a newer agent: "Needs Claude Code 2.1.300 or newer".
+    func modelUpdateNote(_ model: String, for provider: RunProvider) -> String? {
+        workspace.modelChoice(model, for: provider)?.requiredVersion.map { tr("compose.modelNeedsUpdate", provider.displayName, $0) }
+    }
+
+    /// The tooltip of such a model: which update unlocks it, and the version installed now.
+    func modelUpdateHelp(_ model: String, for provider: RunProvider) -> String? {
+        guard let required = workspace.modelChoice(model, for: provider)?.requiredVersion else { return nil }
+        return tr("compose.modelUpdateHelp", provider.displayName, required, workspace.agentVersions[provider] ?? "?")
     }
 
     /// The family a model belongs to when the agent lists one model per thinking level (Antigravity's
@@ -95,11 +106,14 @@ extension AppModel {
         return ModelVariants.pick(model, keeping: current, in: offered)
     }
 
-    /// Asks the connected agents which models they offer (at most every five minutes each).
+    /// Asks the connected agents which models they offer (at most every five minutes each), reads their versions, and
+    /// looks for a newer model manifest when one is due.
     func refreshAgentModels() {
         workspace.refreshAgentModels(connectedProviders.compactMap { provider in
             connectedProfiles(for: provider).first.map { (provider: provider, profileID: $0.id) }
         })
+        workspace.readAgentVersions(connectedProviders)
+        workspace.refreshModelManifest()
     }
 
     /// Resolves account profile for a running session, or nil if unknown.

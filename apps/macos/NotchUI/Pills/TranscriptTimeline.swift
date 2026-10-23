@@ -316,7 +316,7 @@ struct TranscriptUserBubble: View {
             }
             if !parts.text.isEmpty {
                 HStack(spacing: 0) {
-                    Spacer(minLength: 48)
+                    Spacer(minLength: 64)
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         text(parts.text)
                         if long {
@@ -328,9 +328,8 @@ struct TranscriptUserBubble: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .padding(.horizontal, NookTheme.Spacing.lg)
-                    .padding(.vertical, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.smoke))
+                    .padding(NookTheme.Spacing.lg)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
             }
             HStack(spacing: NookTheme.Spacing.md) {
@@ -378,7 +377,7 @@ struct TranscriptAnswer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            MarkdownView(text: message.text, size: 13.5, onChoose: onChoose)
+            MarkdownView(text: message.text, size: 13, onChoose: onChoose)
             if isFinal {
                 HStack(spacing: NookTheme.Spacing.md) {
                     TranscriptCopyButton(text: message.text)
