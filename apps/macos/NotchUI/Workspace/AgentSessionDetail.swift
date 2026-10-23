@@ -23,6 +23,8 @@ struct AgentSessionDetail: View {
     @State private var actionError: String?
     /// Another agent, account or model picked in the composer; the next message continues the conversation with it.
     @State private var choice: AgentChoice?
+    /// The mode, permissions and effort picked in the composer, for the session Nook continues the conversation in.
+    @State private var turnSettings = AgentTurnSettings()
     /// An action is in progress (sending, ending a process).
     @State private var working = false
     /// The session whose terminal process is about to be ended (End session) or handed to Nook (Take over), while
@@ -61,6 +63,7 @@ struct AgentSessionDetail: View {
             actionError = nil
             draft = ""
             choice = nil
+            turnSettings = AgentTurnSettings()
         }
     }
 
@@ -266,16 +269,19 @@ struct AgentSessionDetail: View {
             guard !text.isEmpty, canSend else { return }
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
+            let settings = turnSettings
             perform {
-                try await app.reply(to: session, message: outgoing, choice: picked)
+                try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
                 draft = ""
                 choice = nil
+                turnSettings = AgentTurnSettings()
             }
         }
         if app.demoMode {
             SessionComposer(text: $draft, prompt: session.placeholder, onSend: { draft = "" }) {
                 agentPill(name: session.name, profile: nil)
             }
+            .choicesBelowBox()
             .images($images)
         } else {
             SessionComposer(
@@ -289,8 +295,10 @@ struct AgentSessionDetail: View {
                 sessionMenu(session)
                 agentMenu(name: session.name, kind: AgentKind(agentName: session.name), profile: app.profile(for: session),
                           canSwitch: app.canTakeOver(session))
+                if app.canTakeOver(session) { turnControls(kind: AgentKind(agentName: session.name)) }
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
+            .choicesBelowBox()
             .images($images)
             .trailing { ComposerMic(text: $draft) }
         }
@@ -336,50 +344,74 @@ struct AgentSessionDetail: View {
                             text: [name, label].compactMap { $0 }.joined(separator: " · "), short: name, showsChevron: false)
     }
 
-    /// End the session, or open its folder or a terminal there.
+    /// The mode, permissions and effort the conversation continues with in Nook, as a session Nook runs shows them.
+    @ViewBuilder
+    private func turnControls(kind: AgentKind?) -> some View {
+        if let own = app.nookProvider(for: kind) {
+            let provider = choice?.provider ?? own
+            let permission = turnSettings.permission ?? app.workspace.settings.permission(for: provider)
+            ComposerDivider()
+            ModeToggle(mode: $turnSettings.mode)
+            ComposerDivider()
+            ComposerDropdown(width: 300) {
+                ComposerPill(symbol: turnSettings.mode == .plan ? "lock" : permission.symbol,
+                             text: turnSettings.mode == .plan ? tr("compose.readOnly") : permission.label,
+                             tint: permission == .bypass && turnSettings.mode != .plan ? NookTheme.coralSoft : nil)
+            } content: {
+                DropdownHeader(title: tr("compose.access"))
+                ForEach(provider.capabilities.policies) { policy in
+                    DropdownRow(symbol: policy.symbol, title: policy.label, detail: policy.help(for: provider),
+                                chosen: permission == policy, tint: policy == .bypass ? NookTheme.coralSoft : nil) {
+                        turnSettings.permission = policy
+                    }
+                }
+            }
+            .disabled(turnSettings.mode == .plan)
+            .help(permission.help(for: provider))
+            let levels = EffortLevels.levels(for: provider, model: choice?.model ?? "")
+            if !levels.isEmpty {
+                ComposerDivider()
+                Menu {
+                    ForEach([nil] + levels.map { Optional($0) }, id: \.self) { level in
+                        Button { turnSettings.effort = level } label: {
+                            let title = tr(EffortLevels.label(level))
+                            if turnSettings.effort == level { Label(title, systemImage: "checkmark") } else { Text(title) }
+                        }
+                    }
+                } label: {
+                    ComposerPill(symbol: "gauge.with.dots.needle.33percent", text: tr(EffortLevels.label(turnSettings.effort)))
+                }
+                .composerMenu()
+                .help(tr("compose.effort.help"))
+            }
+        }
+    }
+
+    /// Attach a file, end the session, or open its folder or a terminal there.
     private func sessionMenu(_ session: AgentSession) -> some View {
         let finishKey = FinishedSessions.key(agent: session.name, conversation: app.conversationID(for: session), fallback: session.id)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
         let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
-        return ComposerDropdown(width: 250) {
-            moreLabel
-        } content: {
-            DropdownRow(symbol: "paperclip", title: tr("chat.attachShort")) { attachFile(in: session.cwd) }
-            DropdownDivider()
-            DropdownRow(symbol: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
-                        title: isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark"),
-                        disabledReason: busy ? tr("ws.error.busy") : nil) {
+        return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
+            Divider()
+            Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }
+            .disabled(busy)
             if app.canEnd(session) && app.canTakeOver(session) {
-                DropdownDivider()
-                DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.takeOver")) {
-                    takeOverRequest = session
-                }
+                Button(tr("agents.nook.takeOver")) { takeOverRequest = session }
             }
             if app.canEnd(session) {
-                if !app.canTakeOver(session) { DropdownDivider() }
-                DropdownRow(symbol: "xmark.octagon", title: tr("agents.nook.end"), tint: NookTheme.coralSoft) {
-                    endRequest = session
-                }
+                Button(tr("agents.nook.end"), role: .destructive) { endRequest = session }
             }
             if !session.cwd.isEmpty {
-                DropdownDivider()
-                DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
+                Divider()
+                Button(tr("button.openFolder")) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
                 }
-                DropdownRow(symbol: "terminal", title: tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
+                Button(tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
             }
         }
-        .help(tr("agents.nook.more"))
-    }
-
-    private var moreLabel: some View {
-        Image(systemName: "ellipsis")
-            .font(NookTheme.font(12, .bold))
-            .foregroundStyle(NookTheme.textSecondary)
-            .frame(width: 26, height: 26)
-            .contentShape(Rectangle())
     }
 
     /// A multiple-choice question from the agent (AskUserQuestion), answered right here: one question at a time.
@@ -518,10 +550,12 @@ struct AgentSessionDetail: View {
             guard !text.isEmpty, canContinue else { return }
             let outgoing = composerModel.outgoing(text).send
             let picked = choice
+            let settings = turnSettings
             perform {
-                try await app.reply(to: session, message: outgoing, choice: picked)
+                try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
                 draft = ""
                 choice = nil
+                turnSettings = AgentTurnSettings()
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -553,8 +587,10 @@ struct AgentSessionDetail: View {
                 pastMenu(session, canContinue: app.canContinueInNook(session))
                 agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
                           canSwitch: app.canContinueInNook(session))
+                if app.canContinueInNook(session) { turnControls(kind: session.agent) }
             }
             .rich(composerModel, composerConfig(folder: session.cwd))
+            .choicesBelowBox()
             .images($images)
             .trailing { ComposerMic(text: $draft) }
         }
@@ -584,27 +620,21 @@ struct AgentSessionDetail: View {
         return config
     }
 
-    /// Open the whole conversation in Nook without a message, or its folder or a terminal there.
+    /// Attach a file, open the whole conversation in Nook without a message, or its folder or a terminal there.
     private func pastMenu(_ session: PastSession, canContinue: Bool) -> some View {
-        ComposerDropdown(width: 250) {
-            moreLabel
-        } content: {
-            DropdownRow(symbol: "paperclip", title: tr("chat.attachShort")) { attachFile(in: session.cwd) }
-            DropdownDivider()
+        ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
             if canContinue {
-                DropdownRow(symbol: "arrow.right.circle", title: tr("agents.nook.open")) {
-                    perform { try await app.continueInNook(session) }
-                }
-                if !session.cwd.isEmpty { DropdownDivider() }
+                Divider()
+                Button(tr("agents.nook.open")) { perform { try await app.continueInNook(session) } }
             }
             if !session.cwd.isEmpty {
-                DropdownRow(symbol: "folder", title: tr("button.openFolder")) {
+                Divider()
+                Button(tr("button.openFolder")) {
                     NSWorkspace.shared.open(URL(fileURLWithPath: session.cwd, isDirectory: true))
                 }
-                DropdownRow(symbol: "terminal", title: tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
+                Button(tr("button.openTerminalHere")) { app.openTerminal(in: session.cwd) }
             }
         }
-        .help(tr("agents.nook.more"))
     }
 
     /// "Work", or for the first unnamed account: organization name, otherwise "Personal".
