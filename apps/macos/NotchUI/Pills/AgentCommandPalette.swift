@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// ⌘K in the Agents tab: one field to jump to a session or run an action. Typing filters;
+/// ⇧⌘K in the Agents tab (⌘K searches everything): one field to jump to a session or run an action. Typing filters;
 /// ↑/↓ move, Return runs, Esc closes. Sessions match on title, folder and branch.
 struct AgentCommandPalette: View {
     @EnvironmentObject private var app: AppModel

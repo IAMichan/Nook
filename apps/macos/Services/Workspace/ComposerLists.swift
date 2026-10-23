@@ -1,6 +1,6 @@
 import Foundation
 
-/// Markdown lists keep going while you write a prompt (as in Code's composer): a new line after `- item` starts with
+/// Markdown lists keep going while you write a prompt: a new line after `- item` starts with
 /// `- `, after `- [x] done` with `- [ ] `, after `7. step` with `8. ` (zero padding kept: `07.` → `08.`), and a new
 /// line after an item you left empty ends the list by removing its marker. Only a line break typed at the end of the
 /// text is continued, since the field cannot say where the caret is.

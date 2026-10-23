@@ -829,8 +829,9 @@ private struct ChatsRow: View {
 }
 
 /// Who a chat is with: their photo from Contacts, else their initials on a tint of their own (the same color their name
-/// has in a group's bubbles), with the app the chat is in as a small badge on the corner.
-private struct ChatsAvatar: View {
+/// has in a group's bubbles), with the app the chat is in as a small badge on the corner. Search shows the same face on
+/// a chat result.
+struct ChatsAvatar: View {
     let name: String
     let app: String
     let photo: NSImage?

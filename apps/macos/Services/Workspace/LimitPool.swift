@@ -1,6 +1,6 @@
 import Foundation
 
-/// Every subscription account of one agent read as one pool, as Code's Usage › Limits shows it: per window (5 hours,
+/// Every subscription account of one agent read as one pool, as Usage › Limits shows it: per window (5 hours,
 /// week) how much of the pool is left, with a segment per account that stays in the same column across windows, and
 /// when the next reset comes and how much of the pool it hands back. Accounts are ordered by their next refill of the
 /// first window, soonest first.

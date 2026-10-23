@@ -1,6 +1,6 @@
 import Foundation
 
-/// Machines you can probably reach, offered when you add one (as Code suggests SSH hosts): the aliases in
+/// Machines you can probably reach, offered when you add one: the aliases in
 /// `~/.ssh/config`, the hosts in `~/.ssh/known_hosts`, and the online devices of your tailnet (`tailscale status --json`,
 /// by their MagicDNS name). Nothing is contacted to find them; picking one only fills in the form.
 enum RemoteHostDiscovery {

@@ -356,7 +356,7 @@ enum Keybindings {
     /// Everything a rule can name, including commands without a default key (interrupt).
     static let commandIDs = [
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
-        "composer.historyNext", "queue.steerFirst", "chat.find", "commandPalette.toggle", "session.new",
+        "composer.historyNext", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle", "session.new",
         "session.previous", "session.next", "diff.toggle", "modelPicker.toggle", "session.settle", "session.pin",
         "session.undo", "session.interrupt",
     ]
@@ -372,7 +372,8 @@ enum Keybindings {
         KeybindingRule(key: "alt+down", command: "composer.historyNext", when: "composerFocus"),
         KeybindingRule(key: "mod+shift+enter", command: "queue.steerFirst", when: "composerFocus && turnRunning"),
         KeybindingRule(key: "mod+f", command: "chat.find", when: "!terminalFocus"),
-        KeybindingRule(key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+k", command: "search.toggle", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+shift+k", command: "commandPalette.toggle", when: "!terminalFocus"),
         KeybindingRule(key: "mod+n", command: "session.new", when: "!terminalFocus"),
         KeybindingRule(key: "mod+shift+[", command: "session.previous", when: nil),
         KeybindingRule(key: "mod+shift+]", command: "session.next", when: nil),

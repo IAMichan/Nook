@@ -1,8 +1,8 @@
 import Foundation
 
-/// Web addresses and file paths in a line of terminal output, so ⌘-click can open them (as Code's terminal does):
+/// Web addresses and file paths in a line of terminal output, so ⌘-click can open them:
 /// a local address in Nook's browser, any other in your browser, and a path (`src/app.swift:12:3`) in your editor at
-/// that line. The patterns are adapted from Code's terminal links (MIT, see THIRD-PARTY-NOTICES.md).
+/// that line. The patterns are adapted from MIT-licensed code (see THIRD-PARTY-NOTICES.md).
 enum TerminalLinks {
     enum Kind: Equatable { case url, path }
 

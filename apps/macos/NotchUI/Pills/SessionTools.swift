@@ -155,7 +155,7 @@ enum ToolbarGroup {
 }
 
 extension View {
-    /// Plain icons with a fill only under the pointer, as Code's header: the group needs no box of its own.
+    /// Plain icons with a fill only under the pointer: the group needs no box of its own.
     func toolbarGroup() -> some View {
         padding(ToolbarGroup.padding)
     }

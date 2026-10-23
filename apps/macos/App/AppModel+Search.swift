@@ -19,7 +19,7 @@ extension AppModel {
 
     // MARK: What it finds
 
-    /// Things to do, found by their name: the same as the Agents palette (⌘K), and a few more.
+    /// Things to do, found by their name: the same as the Agents palette (⇧⌘K), and a few more.
     private func searchActions() -> [SearchDocument] {
         let actions: [(id: String, title: String)] = [
             ("newChat", tr("search.action.newChat")),
@@ -100,7 +100,7 @@ extension AppModel {
             let subtitle = [run.provider.displayName, run.projectName, run.branch ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
             return SearchDocument(id: "run:" + run.id.uuidString, kind: .session, title: run.title, subtitle: subtitle,
                                   date: run.updatedAt, facets: facets, flags: flags, passages: passages,
-                                  boost: run.status.isActive ? 0.3 : 0)
+                                  boost: run.status.isActive ? 0.3 : 0, icon: .agent(run.provider.displayName))
         }
         let followed = hub.sessions.filter { !$0.id.hasPrefix("run:") }.map { session -> SearchDocument in
             var flags: Set<String> = []
@@ -117,7 +117,7 @@ extension AppModel {
             return SearchDocument(id: "agent:" + session.id, kind: .session, title: session.project.isEmpty ? session.name : session.project,
                                   subtitle: [session.name, AgentPathFormat.tilde(session.cwd)].filter { !$0.isEmpty }.joined(separator: " · "),
                                   date: session.updated ?? session.started, facets: ["agent": session.name, "project": session.project],
-                                  flags: flags, passages: passages)
+                                  flags: flags, passages: passages, icon: .agent(session.name))
         }
         return runs + followed
     }
@@ -160,7 +160,9 @@ extension AppModel {
                 if conversation.members != nil { facets["people"] = conversation.memberNames.joined(separator: " ") }
                 documents.append(SearchDocument(id: "chat:wa|" + conversation.id, kind: .chat, title: conversation.name, subtitle: "WhatsApp",
                                                 date: conversation.lastActivity, facets: facets, flags: flags,
-                                                passages: passages, boost: unread > 0 ? 0.3 : 0))
+                                                passages: passages, boost: unread > 0 ? 0.3 : 0,
+                                                icon: .chat(app: "whatsapp", name: conversation.name, avatar: link.avatars[conversation.id],
+                                                            handle: ChatsEntry.handle(conversation.id))))
             }
             // The phone's other chats, quiet since Nook was linked: found by their name, as the Chats tab lists them.
             var listed = Set(documents.map(\.id))
@@ -169,8 +171,11 @@ extension AppModel {
                 guard listed.insert(id).inserted else { continue }
                 var flags: Set<String> = WAJID.kind(chat.jid) == .group ? ["group"] : []
                 if link.unread(chat.jid) > 0 { flags.insert("unread") }
-                documents.append(SearchDocument(id: id, kind: .chat, title: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                                subtitle: "WhatsApp", date: chat.last, facets: ["app": "WhatsApp"], flags: flags))
+                let name = chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name
+                documents.append(SearchDocument(id: id, kind: .chat, title: name, subtitle: "WhatsApp", date: chat.last,
+                                                facets: ["app": "WhatsApp"], flags: flags,
+                                                icon: .chat(app: "whatsapp", name: name, avatar: link.avatars[chat.jid],
+                                                            handle: ChatsEntry.handle(chat.jid))))
             }
         }
         let capture = ChatCaptureService.shared
@@ -185,7 +190,8 @@ extension AppModel {
             var facets = ["app": app]
             if let members = thread.members, !members.isEmpty { facets["people"] = members.joined(separator: " ") }
             documents.append(SearchDocument(id: "chat:" + thread.id, kind: .chat, title: thread.name, subtitle: app, date: thread.last,
-                                            facets: facets, flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0))
+                                            facets: facets, flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0,
+                                            icon: .chat(app: thread.app, name: thread.name, avatar: thread.avatar, handle: nil)))
         }
         return documents
     }
