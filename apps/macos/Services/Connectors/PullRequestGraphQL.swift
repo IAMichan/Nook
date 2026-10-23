@@ -28,6 +28,10 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     var labelColors: [String: String] = [:]
     /// The branch the changes come from, so the search finds a pull request by its branch name too.
     var headBranch = ""
+    /// The branch it merges into; a pull request whose base is another one's head stands on it (a stack).
+    var baseBranch = ""
+    /// GitHub's node id, which marking a draft ready for review needs.
+    var nodeID = ""
 
     var id: String { "\(repo)#\(number)" }
     /// Lines changed in all, for the size sorts.
@@ -36,7 +40,7 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
 
 extension PullRequestItem {
     private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions, review, conflict, labels,
-                                            labelColors, headBranch }
+                                            labelColors, headBranch, baseBranch, nodeID }
 
     /// A list saved before states existed only held open pull requests.
     init(from decoder: Decoder) throws {
@@ -52,7 +56,9 @@ extension PullRequestItem {
                   conflict: try c.decodeIfPresent(Bool.self, forKey: .conflict) ?? false,
                   labels: try c.decodeIfPresent([String].self, forKey: .labels) ?? [],
                   labelColors: try c.decodeIfPresent([String: String].self, forKey: .labelColors) ?? [:],
-                  headBranch: try c.decodeIfPresent(String.self, forKey: .headBranch) ?? "")
+                  headBranch: try c.decodeIfPresent(String.self, forKey: .headBranch) ?? "",
+                  baseBranch: try c.decodeIfPresent(String.self, forKey: .baseBranch) ?? "",
+                  nodeID: try c.decodeIfPresent(String.self, forKey: .nodeID) ?? "")
     }
 }
 
@@ -173,7 +179,7 @@ enum PullRequestGraphQL {
       reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) { nodes { ...row } }
     }
     fragment row on PullRequest {
-      number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName
+      id number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
       labels(first: 6) { nodes { name color } }
       author { login }
       repository { nameWithOwner }
@@ -295,7 +301,9 @@ enum PullRequestGraphQL {
                                    conflict: (node["mergeable"] as? String) == "CONFLICTING",
                                    labels: labels.compactMap { $0["name"] as? String },
                                    labelColors: labelColors(labels),
-                                   headBranch: (node["headRefName"] as? String) ?? "")
+                                   headBranch: (node["headRefName"] as? String) ?? "",
+                                   baseBranch: (node["baseRefName"] as? String) ?? "",
+                                   nodeID: (node["id"] as? String) ?? "")
         }
     }
 

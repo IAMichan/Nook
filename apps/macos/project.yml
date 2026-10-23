@@ -265,6 +265,8 @@ targets:
       - path: Services/Connectors/GitHubMarkdown.swift
       - path: Services/Connectors/PullRequestFilter.swift
       - path: Services/Connectors/PullRequestQuery.swift
+      - path: Services/Connectors/PullRequestQuickActions.swift
+      - path: Services/Connectors/PullRequestStack.swift
       - path: Services/Connectors/MCP/MCPOAuth.swift
       - path: Services/Workspace/WorkspaceModels.swift
       - path: Services/Workspace/AgentAttention.swift

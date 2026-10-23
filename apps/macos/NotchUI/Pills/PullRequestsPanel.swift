@@ -19,8 +19,10 @@ struct PullRequestsPanel: View {
     private var accounts: [AccountPullRequests] { store.accounts }
     @ObservedObject private var gitHubSignIn = GitHubSignIn.shared
     @ObservedObject private var watching = PullRequestWatchSettings.shared
-    /// The pull request shown in full, with the account it is listed under.
-    @State private var opened: (account: String, item: PullRequestItem)?
+    /// The pull requests opened as tabs, and the one shown; nil shows the list alone (the tabs wait for the next click).
+    @State private var tabs: [OpenPullRequest] = []
+    @State private var activeTab: String?
+    private var active: OpenPullRequest? { tabs.first { $0.id == activeTab } }
     /// Search and filters; kept while a pull request is open, so going back shows the same list, and across launches.
     @State private var filter = PullRequestFilter.load()
     @FocusState private var searching: Bool
@@ -31,7 +33,7 @@ struct PullRequestsPanel: View {
     @AppStorage("nook.pulls.sort") private var sortRaw = PullRequestSort.attention.rawValue
     private var sort: PullRequestSort { PullRequestSort(rawValue: sortRaw) ?? .attention }
     /// The accounts with only the pull requests that match the filter.
-    private var shown: [AccountPullRequests] { accounts.map(filter.apply) }
+    private var shown: [AccountPullRequests] { filter.apply(accounts) }
     /// Watched entries that no account could search, still in the watch list.
     private var unreadable: [String] {
         let readers = accounts.filter { $0.error == nil }
@@ -50,7 +52,7 @@ struct PullRequestsPanel: View {
         GeometryReader { geometry in
             let split = geometry.size.width >= Self.splitWidth
             Group {
-                if let opened, split {
+                if let opened = active, split {
                     HStack(alignment: .top, spacing: 0) {
                         list(selected: opened.item.id)
                             .frame(width: min(max(geometry.size.width * 0.4, 360), 520))
@@ -59,7 +61,7 @@ struct PullRequestsPanel: View {
                         detail(opened, inline: true)
                             .padding(.leading, NookTheme.Spacing.lg)
                     }
-                } else if let opened {
+                } else if let opened = active {
                     detail(opened, inline: false)
                 } else {
                     list(selected: nil)
@@ -71,16 +73,48 @@ struct PullRequestsPanel: View {
         .onChange(of: filter) { _, filter in filter.save() }
     }
 
-    private func detail(_ opened: (account: String, item: PullRequestItem), inline: Bool) -> some View {
-        PullRequestDetailView(accountID: opened.account, item: opened.item, inline: inline) { self.opened = nil }
-            .id(opened.account + " " + opened.item.id)
+    private func detail(_ opened: OpenPullRequest, inline: Bool) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            PullRequestTabStrip(tabs: tabs, active: activeTab, select: { activeTab = $0 }, close: closeTabs)
+            PullRequestDetailView(accountID: opened.account, item: opened.item, inline: inline,
+                                  stack: PullRequestStack.stack(of: opened.item, in: items(of: opened.account)) ?? [],
+                                  onOpenPullRequest: { open(opened.account, $0) }) { activeTab = nil }
+                .id(opened.id)
+        }
+    }
+
+    /// Opens a pull request as a tab (or shows its tab when it is open already); at most eight, the oldest goes first.
+    private func open(_ account: String, _ item: PullRequestItem) {
+        let tab = OpenPullRequest(account: account, item: item)
+        if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
+            tabs[index].item = item
+        } else {
+            tabs.append(tab)
+            if tabs.count > 8 { tabs.removeFirst(tabs.count - 8) }
+        }
+        activeTab = tab.id
+    }
+
+    /// Closes tabs; when the shown one goes, its neighbour on the right (else the left) is shown.
+    private func closeTabs(_ ids: Set<String>) {
+        let index = tabs.firstIndex { $0.id == activeTab }
+        tabs.removeAll { ids.contains($0.id) }
+        guard let current = activeTab, ids.contains(current) else { return }
+        guard !tabs.isEmpty, let index else { activeTab = nil; return }
+        activeTab = tabs[min(index, tabs.count - 1)].id
+    }
+
+    /// Every pull request listed under an account, unfiltered, for finding stacks.
+    private func items(of account: String) -> [PullRequestItem] {
+        guard let found = accounts.first(where: { $0.id == account }) else { return [] }
+        return found.reviews + found.mine + found.watched
     }
 
     /// A pull request link clicked in a chat: it opens here, in full.
     private func take(_ request: PullRequestOpenRequest?) {
         guard let request else { return }
         app.viewModel.pullRequestToOpen = nil
-        opened = (request.account, request.item)
+        open(request.account, request.item)
     }
 
     private func list(selected: String?) -> some View {
@@ -163,6 +197,7 @@ struct PullRequestsPanel: View {
             PullRequestSortMenu(sort: Binding(get: { sort }, set: { sortRaw = $0.rawValue }),
                                 grouping: Binding(get: { grouping }, set: { groupingRaw = $0.rawValue }))
             PullRequestFilterMenu(filter: $filter, facets: PullRequestFilter.facets(in: accounts, state: filter.state),
+                                  accounts: accounts.map { (id: $0.id, name: $0.login.isEmpty ? $0.name : $0.name + " · @" + $0.login) },
                                   watching: !watching.entries.isEmpty)
         }
     }
@@ -313,10 +348,12 @@ struct PullRequestsPanel: View {
             .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
             .accessibilityValue(open ? tr("compose.queue.expanded") : "")
             if open {
+                let all = items(of: account)
                 ForEach(rows) { row in
                     PullRequestRow(item: row.item, role: row.role, showRepo: showRepo, accountID: account,
-                                   selected: selected == row.item.id) {
-                        opened = (account, row.item)
+                                   selected: selected == row.item.id,
+                                   stack: PullRequestStack.position(of: row.item, in: all)) {
+                        self.open(account, row.item)
                     }
                 }
             }
@@ -358,78 +395,20 @@ private struct PullRequestRow: View {
     let accountID: String
     /// The pull request open beside the list.
     var selected = false
+    /// Where it stands in a stack of pull requests built on each other, if it is in one.
+    var stack: (index: Int, count: Int)? = nil
     let onOpen: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                stateMark.padding(.top, 2)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        Text("#\(item.number)")
-                            .font(NookTheme.mono(11.5, .medium))
-                            .monospacedDigit()
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .fixedSize()
-                        Text(item.title)
-                            .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
-                            .lineLimit(1)
-                        HStack(spacing: NookTheme.Spacing.xs) {
-                            ciMark
-                            reviewMark
-                        }
-                        .fixedSize()
-                        Spacer(minLength: NookTheme.Spacing.sm)
-                        if let additions = item.additions, let deletions = item.deletions {
-                            HStack(spacing: NookTheme.Spacing.xs) {
-                                Text("+" + additions.formatted()).foregroundStyle(NookTheme.mint)
-                                Text("−" + deletions.formatted()).foregroundStyle(NookTheme.coral)
-                            }
-                            .font(NookTheme.mono(11, .medium))
-                            .monospacedDigit()
-                            .fixedSize()
-                            .help(tr("agents.pulls.linesChanged", additions, deletions))
-                        }
-                    }
-                    HStack(spacing: NookTheme.Spacing.sm) {
-                        if !item.author.isEmpty {
-                            HStack(spacing: NookTheme.Spacing.xs) {
-                                GitHubAvatar(login: item.author, size: 14)
-                                Text(item.author).lineLimit(1)
-                            }
-                            .help("@" + item.author)
-                        }
-                        if showRepo {
-                            Text(item.repo).lineLimit(1).truncationMode(.middle).layoutPriority(-1)
-                        }
-                        if item.draft, item.state == .open {
-                            PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
-                        }
-                        // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
-                        if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
-                        labels.layoutPriority(-2)
-                        Spacer(minLength: NookTheme.Spacing.sm)
-                        if let updated = item.updated {
-                            Text(AgentFormat.short(Date().timeIntervalSince(updated)))
-                                .monospacedDigit()
-                                .fixedSize()
-                                .help(updated.formatted(date: .abbreviated, time: .shortened))
-                        }
-                    }
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
-            .contentShape(Rectangle())
+        HStack(spacing: 0) {
+            Button(action: onOpen) { content }
+                .buttonStyle(.plain)
+            // Shift shows the quick actions; outside the row's own button, so their clicks stay theirs.
+            PullRequestQuickActionButtons(item: item, accountID: accountID)
         }
-        .buttonStyle(.plain)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+            .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
         .onHover { hovering = $0 }
         // Resting on a row reads it ahead, so the click opens it at once.
         .task(id: hovering) {
@@ -454,6 +433,82 @@ private struct PullRequestRow: View {
                 }
             }
         }
+    }
+
+    private var content: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+            stateMark.padding(.top, 2)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text("#\(item.number)")
+                        .font(NookTheme.mono(11.5, .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize()
+                    Text(item.title)
+                        .font(NookTheme.TextStyle.body)
+                        .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
+                        .lineLimit(1)
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        ciMark
+                        reviewMark
+                    }
+                    .fixedSize()
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    if let stack {
+                        HStack(spacing: NookTheme.Spacing.xxs) {
+                            PullRequestStateGlyph(glyph: .stack, size: 12, lineWidth: 1.5, nodeRadius: 1.8)
+                                .frame(width: 12, height: 12)
+                            Text("\(stack.index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+                        }
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize()
+                        .help(tr("agents.pulls.stack.position", stack.index, stack.count))
+                    }
+                    if let additions = item.additions, let deletions = item.deletions {
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            Text("+" + additions.formatted()).foregroundStyle(NookTheme.mint)
+                            Text("−" + deletions.formatted()).foregroundStyle(NookTheme.coral)
+                        }
+                        .font(NookTheme.mono(11, .medium))
+                        .monospacedDigit()
+                        .fixedSize()
+                        .help(tr("agents.pulls.linesChanged", additions, deletions))
+                    }
+                }
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    if !item.author.isEmpty {
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            GitHubAvatar(login: item.author, size: 14)
+                            Text(item.author).lineLimit(1)
+                        }
+                        .help("@" + item.author)
+                    }
+                    if showRepo {
+                        Text(item.repo).lineLimit(1).truncationMode(.middle).layoutPriority(-1)
+                    }
+                    if item.draft, item.state == .open {
+                        PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
+                    }
+                    // Grouped by repository, the row says it waits for your review; grouped by role, the heading does.
+                    if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
+                    labels.layoutPriority(-2)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    if let updated = item.updated {
+                        Text(AgentFormat.short(Date().timeIntervalSince(updated)))
+                            .monospacedDigit()
+                            .fixedSize()
+                            .help(updated.formatted(date: .abbreviated, time: .shortened))
+                    }
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+        .contentShape(Rectangle())
     }
 
     /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears a small amber

@@ -67,6 +67,9 @@ struct PullRequestMoreMenu: View {
                 Divider()
                 Button(tr("agents.pr.action.requestReviewers")) { state.open(.reviewers, detail: detail) }
                 Button(tr("agents.pr.action.edit")) { state.open(.edit, detail: detail) }
+                if detail.state == .draft, !detail.nodeID.isEmpty {
+                    Button(tr("agents.pr.action.ready")) { ask(.markReady(nodeID: detail.nodeID)) }
+                }
                 if detail.mergeState == "behind" {
                     Button(tr("agents.pr.action.updateBranch")) { ask(.updateBranch(headSHA: detail.headSHA)) }
                 }
@@ -321,6 +324,8 @@ struct PullRequestActionPanel: View {
             return tr("agents.pr.confirm.reviewers", PullRequestAction.logins(people).map { "@" + $0 }.joined(separator: ", "), target)
         case .updateBranch: return tr("agents.pr.confirm.updateBranch", detail.baseBranch, detail.headBranch)
         case .addLabels, .removeLabel: return tr("agents.pr.confirm.labels", target)
+        case .markReady: return tr("agents.pr.confirm.ready", target)
+        case .changeBase(let branch): return tr("agents.pr.confirm.changeBase", target, branch)
         }
     }
 
@@ -334,6 +339,8 @@ struct PullRequestActionPanel: View {
         case .requestReviewers: return "person.badge.plus"
         case .updateBranch: return "arrow.triangle.2.circlepath"
         case .addLabels, .removeLabel: return "tag"
+        case .markReady: return "eye"
+        case .changeBase: return "arrow.triangle.branch"
         }
     }
 

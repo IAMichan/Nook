@@ -165,9 +165,11 @@ enum GitHubPullRequestDetail {
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.patientSession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status) else {
-            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             throw NookError(PullRequestAction.error(status: status, object: object), kind: status == 401 ? .auth : .other)
         }
+        // GraphQL answers a refusal with 200 and an `errors` list.
+        if spec.path == "/graphql", let message = PullRequestAction.graphQLError(object) { throw NookError(message) }
     }
 }

@@ -45,9 +45,11 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
     var status: Status = .any
     /// "owner/name", or nil for every repository.
     var repo: String?
+    /// The id of the GitHub account to list, or nil for every connected account.
+    var account: String?
 
     init(query: String = "", state: State = .open, scope: Scope = .all, author: String? = nil, labels: [String] = [],
-         draft: Draft = .all, review: Review = .all, status: Status = .any, repo: String? = nil) {
+         draft: Draft = .all, review: Review = .all, status: Status = .any, repo: String? = nil, account: String? = nil) {
         self.query = query
         self.state = state
         self.scope = scope
@@ -57,11 +59,12 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
         self.review = review
         self.status = status
         self.repo = repo
+        self.account = account
     }
 
     /// How many dropdown choices differ from the default (the search not counted), for the badge on the Filters button.
     var activeCount: Int {
-        [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil]
+        [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil, account != nil]
             .filter { $0 }.count + labels.count
     }
 
@@ -125,6 +128,11 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
         }
     }
 
+    /// The accounts the Account choice keeps, each with only the pull requests that match.
+    func apply(_ accounts: [AccountPullRequests]) -> [AccountPullRequests] {
+        accounts.filter { account == nil || $0.id == account }.map(apply)
+    }
+
     /// The account with only the pull requests that match. An error stays, so a failing account never disappears.
     func apply(_ account: AccountPullRequests) -> AccountPullRequests {
         let parsed = self.parsed
@@ -184,7 +192,8 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
                   draft: (try? c.decodeIfPresent(Draft.self, forKey: .draft)) ?? .all,
                   review: (try? c.decodeIfPresent(Review.self, forKey: .review)) ?? .all,
                   status: (try? c.decodeIfPresent(Status.self, forKey: .status)) ?? .any,
-                  repo: try? c.decodeIfPresent(String.self, forKey: .repo))
+                  repo: try? c.decodeIfPresent(String.self, forKey: .repo),
+                  account: try? c.decodeIfPresent(String.self, forKey: .account))
     }
 }
 

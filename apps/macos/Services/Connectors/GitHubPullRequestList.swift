@@ -295,7 +295,9 @@ final class PullRequestStore: ObservableObject {
                                        state: mergedHere[item.id] != nil && state == .open ? .merged : state,
                                        additions: detail.additions, deletions: detail.deletions,
                                        review: item.review, conflict: detail.mergeState == "dirty", labels: detail.labels,
-                                       labelColors: detail.labelColors, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch)
+                                       labelColors: detail.labelColors, headBranch: detail.headBranch.isEmpty ? item.headBranch : detail.headBranch,
+                                       baseBranch: detail.baseBranch.isEmpty ? item.baseBranch : detail.baseBranch,
+                                       nodeID: detail.nodeID.isEmpty ? item.nodeID : detail.nodeID)
             }
         }
         let updated = accounts.map { account -> AccountPullRequests in

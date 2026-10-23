@@ -10,6 +10,8 @@ struct PullRequestFilterMenu: View {
     @Binding var filter: PullRequestFilter
     /// The authors, labels and repositories in the lists, counted in the chosen state.
     let facets: PullRequestFacets
+    /// The connected GitHub accounts, for the Account choice (shown with more than one).
+    var accounts: [(id: String, name: String)] = []
     /// Whether organizations or repositories are watched, for the Watched choice.
     var watching = false
     @State private var kind: Kind = .state
@@ -17,7 +19,7 @@ struct PullRequestFilterMenu: View {
     @State private var authorSearch = ""
 
     enum Kind: CaseIterable, Identifiable {
-        case state, involvement, author, labels, draft, review, checks, repository
+        case state, involvement, author, labels, draft, review, checks, repository, account
         var id: Self { self }
 
         var title: String {
@@ -30,6 +32,7 @@ struct PullRequestFilterMenu: View {
             case .review: return tr("agents.pulls.filter.review")
             case .checks: return tr("agents.pulls.filter.checks")
             case .repository: return tr("agents.pulls.filter.repository")
+            case .account: return tr("agents.pulls.filter.account")
             }
         }
 
@@ -43,6 +46,7 @@ struct PullRequestFilterMenu: View {
             case .review: return "checkmark.bubble"
             case .checks: return "checkmark.seal"
             case .repository: return "folder"
+            case .account: return "person.crop.circle"
             }
         }
     }
@@ -66,9 +70,12 @@ struct PullRequestFilterMenu: View {
                     ForEach([Kind.state, .involvement]) { kindRow($0) }
                     DropdownDivider()
                     ForEach([Kind.author, .labels, .draft, .review, .checks]) { kindRow($0) }
-                    if facets.repos.count > 1 || filter.repo != nil {
+                    let showsRepos = facets.repos.count > 1 || filter.repo != nil
+                    let showsAccounts = accounts.count > 1 || filter.account != nil
+                    if showsRepos || showsAccounts {
                         DropdownDivider()
-                        kindRow(.repository)
+                        if showsRepos { kindRow(.repository) }
+                        if showsAccounts { kindRow(.account) }
                     }
                     if filter.activeCount > 0 {
                         DropdownDivider()
@@ -126,6 +133,7 @@ struct PullRequestFilterMenu: View {
         case .review: return filter.effectiveReview == .all
         case .checks: return filter.effectiveStatus == .any
         case .repository: return filter.effectiveRepo == nil
+        case .account: return filter.account == nil
         }
     }
 
@@ -143,6 +151,7 @@ struct PullRequestFilterMenu: View {
         case .review: return tr("agents.pulls.review." + filter.effectiveReview.rawValue)
         case .checks: return tr("agents.pulls.status." + filter.effectiveStatus.rawValue)
         case .repository: return filter.effectiveRepo ?? tr("agents.pulls.repo.all")
+        case .account: return accounts.first { $0.id == filter.account }?.name ?? filter.account ?? tr("agents.pulls.account.all")
         }
     }
 
@@ -179,6 +188,13 @@ struct PullRequestFilterMenu: View {
             ForEach(PullRequestFilter.Status.allCases) { status in
                 FilterChoiceRow(symbol: Self.symbol(status), tint: Self.tint(status), title: tr("agents.pulls.status." + status.rawValue),
                                 chosen: filter.effectiveStatus == status) { set(["checks", "status"]) { $0.status = status } }
+            }
+        case .account:
+            FilterChoiceRow(symbol: "square.stack", title: tr("agents.pulls.account.all"), chosen: filter.account == nil) { filter.account = nil }
+            ForEach(Array(accounts.enumerated()), id: \.offset) { _, account in
+                FilterChoiceRow(symbol: "person.crop.circle", title: account.name, chosen: filter.account == account.id) {
+                    filter.account = account.id
+                }
             }
         case .repository:
             DropdownList(maxHeight: 240) {

@@ -47,10 +47,20 @@ struct PullRequestDetailView: View {
     /// Comments by bots (CI reports, coverage, previews) are left out of the Summary until you ask for them.
     @AppStorage("agents.pr.showBotComments") private var showBotComments = false
 
-    init(accountID: String, item: PullRequestItem, inline: Bool = false, onBack: (() -> Void)? = nil) {
+    /// The stack this pull request is part of, bottom first (empty when it stands alone), and how to open another one of it.
+    let stack: [PullRequestItem]
+    let onOpenPullRequest: ((PullRequestItem) -> Void)?
+    /// Merging the stack up to here waits for its second click, then runs.
+    @State private var confirmStackMerge = false
+    @State private var mergingStack = false
+
+    init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
+         onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onBack: (() -> Void)? = nil) {
         self.accountID = accountID
         self.item = item
         self.inline = inline
+        self.stack = stack
+        self.onOpenPullRequest = onOpenPullRequest
         self.onBack = onBack
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
     }
@@ -66,6 +76,7 @@ struct PullRequestDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             topBar
+            if confirmStackMerge || mergingStack { stackMergeBar }
             header
             if let detail {
                 tabs(detail)
@@ -131,6 +142,7 @@ struct PullRequestDetailView: View {
                 Task { await model.refresh(activity: true) }
             }
             .help(tr("agents.pulls.refresh"))
+            if stack.count > 1 { stackMenu }
             if let detail {
                 PullRequestMoreMenu(state: actions, detail: detail)
             }
@@ -149,6 +161,92 @@ struct PullRequestDetailView: View {
             }
         }
         .frame(height: 30)
+    }
+
+    // MARK: Stack
+
+    /// The pull requests to merge to land this one: from the bottom of the stack up to here.
+    private var stackToMerge: [PullRequestItem] {
+        guard let index = stack.firstIndex(where: { $0.id == item.id }) else { return [] }
+        return Array(stack[...index])
+    }
+
+    /// The stack this pull request stands in, bottom first: a click opens another one of it, and the last line merges
+    /// the stack up to here.
+    private var stackMenu: some View {
+        let index = (stack.firstIndex { $0.id == item.id } ?? 0) + 1
+        return Menu {
+            Section(tr("agents.pulls.stack.title", stack.count)) {
+                ForEach(Array(stack.enumerated()), id: \.element.id) { position, member in
+                    Button {
+                        if member.id != item.id { onOpenPullRequest?(member) }
+                    } label: {
+                        let mark = member.id == item.id ? "✓ " : ""
+                        Text(mark + "\(position + 1). #\(member.number) \(member.title)")
+                    }
+                    .disabled(onOpenPullRequest == nil && member.id != item.id)
+                }
+            }
+            if stackToMerge.count > 1 {
+                Divider()
+                Button(tr("agents.pulls.stack.merge", stackToMerge.count)) { confirmStackMerge = true }
+                    .disabled(mergingStack)
+            }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                PullRequestStateGlyph(glyph: .stack, size: 13, lineWidth: 1.5, nodeRadius: 1.8)
+                    .frame(width: 13, height: 13)
+                Text("\(index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+            }
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("agents.pulls.stack.position", index, stack.count))
+    }
+
+    /// "Merge #1, #2 and #3 from the bottom up?" with its second click, or the progress while it runs.
+    private var stackMergeBar: some View {
+        let numbers = stackToMerge.map { "#\($0.number)" }.joined(separator: ", ")
+        return HStack(spacing: NookTheme.Spacing.md) {
+            if mergingStack {
+                ProgressView().controlSize(.small)
+                Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
+            } else {
+                Image(systemName: "arrow.triangle.merge").foregroundStyle(NookTheme.violet)
+                Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                SmallGhostButton(title: tr("button.cancel")) { confirmStackMerge = false }
+                SmallPrimaryButton(title: tr("agents.pulls.stack.mergeConfirm")) { mergeStack() }
+            }
+        }
+        .font(NookTheme.TextStyle.body)
+        .padding(NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
+    }
+
+    private func mergeStack() {
+        let targets = stackToMerge
+        confirmStackMerge = false
+        mergingStack = true
+        model.paused = true
+        Task {
+            defer { model.paused = false }
+            do {
+                let merged = try await PullRequestQuickRunner.mergeStack(targets, accountID: accountID, app: app)
+                ToastCenter.shared.success(tr("agents.pulls.stack.merged", merged))
+            } catch {
+                ToastCenter.shared.error(error, title: tr("agents.pulls.stack.failed"))
+            }
+            mergingStack = false
+            await model.refresh(activity: true)
+            await PullRequestStore.shared.refresh(force: true)
+        }
     }
 
     /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers.
