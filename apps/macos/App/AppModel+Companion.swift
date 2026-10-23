@@ -163,7 +163,9 @@ extension AppModel {
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
             bubble.readers = Self.whatsAppReaders(message, in: conversation, names: &names)
             bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
-            bubble.poll = message.poll?.chatPoll
+            bubble.poll = message.poll?.chatPoll { voter in
+                conversation.isGroup ? names.name(voter) : conversation.name
+            }
             bubble.reactions = Self.bubbleReactions(message.reactions)
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image

@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// A poll in a chat bubble, the same in every chat: its question, each option with a bar for its share of the votes and
-/// how many chose it, and your own choice ticked. With `onVote` a click on an option votes (in a poll of one answer it
-/// replaces your choice, a second click takes it back); without, the poll says to vote in the app. Drawn by
-/// `ChatTranscript`; never draw a poll by hand.
+/// how many chose it, and your own choice ticked. Where the app names the voters, "View votes" lists them under each
+/// option, as WhatsApp does. With `onVote` a click on an option votes (in a poll of one answer it replaces your choice,
+/// a second click takes it back); without, the poll says to vote in the app. Drawn by `ChatTranscript`; never draw a
+/// poll by hand.
 struct ChatPollView: View {
     static let width: CGFloat = 260
 
@@ -11,8 +12,12 @@ struct ChatPollView: View {
     let onVote: (([String]) -> Void)?
     /// Your vote shows at once, before the app confirms it.
     @State private var pending: ChatPoll?
+    /// Who chose what shows under each option.
+    @State private var showVoters = false
 
     private var shown: ChatPoll { pending ?? poll }
+    /// Counts where they are known, also the ones Nook saw itself when earlier votes may be missing.
+    private var showsCounts: Bool { shown.counted || shown.partial }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -34,10 +39,19 @@ struct ChatPollView: View {
             ForEach(shown.options) { option in
                 row(option)
             }
-            HStack {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 // Counts only where they are known: a poll found later has its votes in the app.
-                if shown.counted, !shown.options.isEmpty {
+                if showsCounts, !shown.options.isEmpty {
                     Text(tr("chat.poll.votes", shown.total))
+                }
+                if shown.namesVoters {
+                    Button {
+                        withAnimation(NookTheme.reveal) { showVoters.toggle() }
+                    } label: {
+                        Text(showVoters ? tr("chat.poll.hideVotes") : tr("chat.poll.viewVotes"))
+                            .foregroundStyle(NookTheme.blue)
+                    }
+                    .buttonStyle(.plain)
                 }
                 if onVote == nil {
                     Spacer(minLength: NookTheme.Spacing.sm)
@@ -46,6 +60,12 @@ struct ChatPollView: View {
             }
             .font(NookTheme.TextStyle.caption)
             .foregroundStyle(NookTheme.textTertiary)
+            if shown.partial {
+                Text(tr("chat.poll.partial"))
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(width: Self.width, alignment: .leading)
         .onChange(of: poll) { _, _ in pending = nil }
@@ -69,14 +89,14 @@ struct ChatPollView: View {
                         .foregroundStyle(NookTheme.paper)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: NookTheme.Spacing.sm)
-                    if shown.counted {
+                    if showsCounts {
                         Text("\(option.votes)")
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(NookTheme.textSecondary)
                             .monospacedDigit()
                     }
                 }
-                if shown.counted {
+                if showsCounts {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule().fill(NookTheme.line2)
@@ -86,12 +106,26 @@ struct ChatPollView: View {
                     }
                     .frame(height: 4)
                 }
+                if showVoters, let voters = option.voters, !voters.isEmpty {
+                    Text(voters.joined(separator: ", "))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(onVote == nil)
-        .accessibilityLabel(shown.counted ? "\(option.text), \(tr("chat.poll.votes", option.votes))" : option.text)
+        .accessibilityLabel(accessibilityLabel(option))
         .accessibilityAddTraits(option.chosen ? .isSelected : [])
+    }
+
+    /// The option, how many chose it and who, for VoiceOver.
+    private func accessibilityLabel(_ option: ChatPoll.Option) -> String {
+        guard showsCounts else { return option.text }
+        let voters = (option.voters ?? []).joined(separator: ", ")
+        return [option.text, tr("chat.poll.votes", option.votes), voters].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }

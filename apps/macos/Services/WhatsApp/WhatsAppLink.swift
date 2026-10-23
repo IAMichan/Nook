@@ -105,7 +105,8 @@ enum WhatsAppSettings {
 /// WhatsApp, live: Nook talks to the local gateway the user runs (GOWA, which Nook can install and start, or OpenWA),
 /// receives new messages on a webhook bound to 127.0.0.1 (polling when none comes), and keeps the conversations in
 /// memory only: nothing of a message is written to disk or to a log, and everything is forgotten when Nook quits or
-/// WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
+/// WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
+/// since no gateway keeps them; they go when WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
 /// user typed the answer or approved Nook's plan.
 ///
 /// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
@@ -140,7 +141,10 @@ final class WhatsAppLink: ObservableObject {
         case refused(String)
     }
 
-    @Published private(set) var inbox = WAInbox()
+    /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
+    @Published private(set) var inbox = WAInbox(polls: WAPollStore.load()) {
+        didSet { if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) } }
+    }
     @Published private(set) var link: Link = .off
     @Published private(set) var webhook: Webhook = .off
     @Published private(set) var qrPNG: Data?
