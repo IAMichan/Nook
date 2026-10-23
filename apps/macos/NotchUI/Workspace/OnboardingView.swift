@@ -156,38 +156,54 @@ struct OnboardingView: View {
 
     // MARK: 2 · Permissions
 
-    /// The permissions not given yet, in the order the checklist shows them.
+    /// The recommended permissions not given yet. Only these count for the step's check and the "Allow" button that
+    /// walks through them; an optional one is never asked for unless you click it yourself.
     private var missingPermissions: [SystemPermission] {
-        SystemPermission.allCases.filter { !permissions.isGranted($0) }
+        SystemPermission.allCases.filter { $0.isRecommended && !permissions.isGranted($0) }
     }
 
-    /// Every permission Nook can use as a checklist: what it is for, whether it is given, and a button to give it. One
-    /// button walks through them in order, so allowing everything is a matter of clicking it until the list is done.
+    /// Every permission Nook can use as a checklist, in two groups: the two the setup recommends, and the optional rest,
+    /// each marked as such and said to be skippable, so a sensitive one (contacts, the microphone) is never mistaken for
+    /// something Nook needs.
     private var permissionsStep: some View {
         let _ = tick
-        let all = SystemPermission.allCases
+        let recommended = SystemPermission.allCases.filter(\.isRecommended)
+        let optional = SystemPermission.allCases.filter { !$0.isRecommended }
         let missing = missingPermissions
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             Text(tr("onboarding.permissions.title")).font(NookTheme.TextStyle.strong)
             Text(tr("onboarding.permissions.detail")).foregroundStyle(NookTheme.textSecondary)
-            HStack {
-                Text(tr("onboarding.permissions.progress", all.count - missing.count, all.count))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(missing.isEmpty ? NookTheme.mint : NookTheme.textSecondary)
-                    .monospacedDigit()
-                Spacer()
-                if let next = missing.first {
-                    SmallPrimaryButton(title: tr("onboarding.permissions.allowNext", next.title), systemName: "checkmark") {
-                        app.requestPermission { await permissions.request(next, app: app); tick += 1 }
-                    }
-                }
-            }
             ScrollView {
-                VStack(spacing: NookTheme.Spacing.sm) {
-                    ForEach(all) { permission in
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    HStack {
+                        NookSectionLabel(tr("onboarding.permissions.recommended"), inset: 0)
+                        Text(tr("onboarding.permissions.progress", recommended.count - missing.count, recommended.count))
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(missing.isEmpty ? NookTheme.mint : NookTheme.textSecondary)
+                            .monospacedDigit()
+                        Spacer()
+                        if let next = missing.first {
+                            SmallPrimaryButton(title: tr("onboarding.permissions.allowNext", next.title), systemName: "checkmark") {
+                                app.requestPermission { await permissions.request(next, app: app); tick += 1 }
+                            }
+                        }
+                    }
+                    ForEach(recommended) { permission in
+                        permissionRow(permission, granted: permissions.isGranted(permission))
+                    }
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        NookSectionLabel(tr("onboarding.permissions.optional"), inset: 0)
+                        Text(tr("onboarding.permissions.optionalDetail"))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, NookTheme.Spacing.lg)
+                    ForEach(optional) { permission in
                         permissionRow(permission, granted: permissions.isGranted(permission))
                     }
                     keychainNote
+                        .padding(.top, NookTheme.Spacing.lg)
                 }
             }
         }
@@ -195,11 +211,22 @@ struct OnboardingView: View {
         .onDisappear { permissions.unwatch() }
     }
 
+    /// One permission: a check once given, what it is for, "Optional" on one Nook does without, and its own button.
     private func permissionRow(_ permission: SystemPermission, granted: Bool) -> some View {
         StatusRow(title: permission.title, detail: permission.detail, state: granted ? .done : .todo) {
-            if !granted {
-                SmallGhostButton(title: tr("button.allow")) {
-                    app.requestPermission { await permissions.request(permission, app: app); tick += 1 }
+            HStack(spacing: NookTheme.Spacing.md) {
+                if !permission.isRecommended && !granted {
+                    Text(tr("onboarding.permissions.optionalBadge"))
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .padding(.horizontal, NookTheme.Spacing.md)
+                        .padding(.vertical, NookTheme.Spacing.xxs)
+                        .background(Capsule().fill(NookTheme.smoke))
+                }
+                if !granted {
+                    SmallGhostButton(title: tr("button.allow")) {
+                        app.requestPermission { await permissions.request(permission, app: app); tick += 1 }
+                    }
                 }
             }
         }
