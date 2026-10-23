@@ -10,8 +10,11 @@ struct NookCompanionApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(client)
-                // The Mac's QR code opens the app with the pairing link when scanned with the Camera app.
-                .onOpenURL { url in client.pair(link: url.absoluteString) }
+                // A tap on a Live Activity opens its session; the Mac's QR code, scanned with the Camera app, opens the
+                // app with the pairing link.
+                .onOpenURL { url in
+                    if let session = ActivityLink.session(from: url) { client.openSession = session } else { client.pair(link: url.absoluteString) }
+                }
         }
     }
 }
@@ -21,6 +24,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Notifications.registerCategories()
+        Task { @MainActor in LiveActivities.shared.start() }
         return true
     }
 

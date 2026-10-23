@@ -22,7 +22,7 @@ The phone sees two kinds of sessions:
 - **Chats tab:** the Mac's Chats tab: WhatsApp (through the phone linked to Nook) and every other chat app Nook collects on the Mac (Telegram, Messages, Slack…) in one list, newest first, with a search, *All / Unread*, and a badge for what is unread. A chat opens as bubbles (quotes, reactions, ticks, files by name). A WhatsApp chat can be answered from the phone, also as a reply to one of its messages (long-press it): your own words and your own tap, sent and logged as in the Chats tab on the Mac. Any other chat is read-only on the phone and answered in its own app; *@nook* drafting stays on the Mac. Opening a chat reads it the way opening it on the Mac does (Settings › Chats); *Mark as read / unread* is in a chat's menu.
 - **Nook tab:** Nook's own conversations (the same ones as in the notch). Ask a question in a new chat or continue one; the answer streams in. It runs through the same brain pipeline as on the Mac; plans, mail drafts, and charts in an answer are shown and approved on the Mac. A question from the phone does not open the notch.
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
 
 ## Security Architecture
 
@@ -43,6 +43,7 @@ Which of these the phone offers depends on the Mac: the `hello`/`list` answer li
 
 - **Shared protocol:** `packages/protocol/Sources/CompanionModels.swift` (protocol, framing, policy rules; tested in `CompanionModelsTests`), `CompanionSeal.swift` (CryptoKit ChaCha20-Poly1305), `WebhookSecurity.swift` (SHA-256 / HMAC).
 - **macOS app:** `apps/macos/Services/Companion/CompanionServer.swift` (`NWListener` + Bonjour `_nookcompanion._tcp`), `CompanionServer+Remote.swift` (starting sessions, timelines, Nook chats), `CompanionServer+Home.swift` (home, usage, player), `CompanionServer+Chats.swift` (the Chats tab, from the same `ChatsEntry.all` list as on the Mac), `CompanionStore.swift` (paired devices & pairing window), `apps/macos/App/Settings/CompanionSettings.swift`.
+- **Live Activities:** `packages/protocol/Sources/CompanionLiveActivity.swift` (phases, attributes, content, `LiveActivityPlanner`, `LiveActivityPayload`; tested in `CompanionModelsTests`), `apps/macos/Services/Companion/CompanionNotifier.swift` and `APNsClient.swift` (the pushes), `apps/ios/NookActivity/` (the widget extension), `apps/ios/NookCompanion/LiveActivities.swift` (tokens, the switch, updates while the app is open).
 - **iOS app:** `apps/ios/NookCompanion/` (XcodeGen project in `apps/ios/project.yml`; see [`apps/ios/README.md`](../apps/ios/README.md)).
 
 ## Direct APNs Push Notifications
@@ -56,3 +57,20 @@ Nook sends push notifications directly from your Mac without any intermediary se
 4. On your iPhone, allow notifications when prompted. The app sends its push token (encrypted) to your Mac.
 
 **Privacy:** Because push payloads pass through Apple's APNs servers, Nook sends only the agent name and status by default (e.g., `"Claude Code · Waiting for your approval"`). Session titles are omitted unless you explicitly opt in, and commands, file paths, or answers are never included in push payloads.
+
+## Live Activities
+
+While a session works on the Mac, Nook Companion shows it as a **Live Activity** on the Lock Screen and in the Dynamic Island: one per session, with its project, title, agent and model, and its phase: **working** (with a running timer), **waiting for you** (an approval or a question), **done** or **failed**. A tap opens the session in the app. Modelled on Code's agent activity ([`docs/LEARNINGS-AGENTS.md`](LEARNINGS-AGENTS.md)), without its cloud relay.
+
+**How it runs**
+
+- The phone hands the Mac its tokens with the `liveActivity` request (`LiveActivityRegistration`): the **push-to-start token** (iOS 17.2+) and the **update token** of every activity on the phone. It only does so with a Mac that lists the `liveActivity` feature, so an older Mac never sees the new request; an older phone simply never registers.
+- On every change of a session (and every 15 seconds) the Mac's `LiveActivityPlanner` works out, per phone, what to send: **start** when a session begins to work, **update** when its phase changes, **end** when it is done or failed or gone from the list. The pushes go straight to Apple with the user's own APNs key (the same setup as notifications), with `apns-push-type: liveactivity` and the topic `nl.imdigital.nook.companion.push-type.liveactivity`.
+- **A finished result stays up to 15 minutes**: the end push carries a dismissal date 15 minutes out, so it disappears on time even when the Mac is gone by then.
+- **A stale date** 10 minutes out goes with every start and update, and a working session gets a quiet (priority 5) refresh every 4 minutes that moves it on. When the Mac sleeps, quits or loses the network, the activity reads **Out of date** instead of claiming the agent still works.
+- **Rate limits:** a phase change goes out at once (priority 10) but not within 5 seconds of the previous push; a new title or model waits 30 seconds; at most 5 activities at once; a session whose activity just ended does not get a new one within a minute. Start and end pushes (and failed pushes) are logged as `companion_live` in the audit log; a token Apple refuses is dropped.
+- While the app is open it keeps the activities current itself with the same rules, and starts them when the Mac cannot (no push set up, or iOS before 17.2). A session gets one activity: a twin from a push-to-start that crossed a local start is ended.
+
+**Turning it off:** *Live Activities* in the menu (`…`) of the Agents tab on the phone. Off ends every activity and sends `off`: the Mac forgets the phone's tokens and sends nothing until it is turned on again. iOS's own switch (Settings › Nook Companion › Live Activities) works too. On the Mac, Live Activities need push notifications set up and on (Settings › iPhone Companion › Push Notifications).
+
+**Privacy:** Live Activity pushes pass through Apple like notifications, and follow the same choice: the session title and folder are only sent when **Include session title** is on. Otherwise a push-started activity shows the agent and its phase; one the app started itself keeps the title it had. Commands, files and answers are never sent.

@@ -189,6 +189,15 @@ final class CompanionServer: ObservableObject {
         case .unregister:
             CompanionStore.shared.setPush(device: deviceID, token: nil, production: nil)
             return CompanionResponse(id: request.id, ok: true)
+        case .liveActivity:
+            guard let live = request.live, live.isValid else { return .failure(request.id, .badRequest) }
+            CompanionStore.shared.applyLive(device: deviceID, live)
+            if live.kind == .off || live.kind == .pushToStart {
+                audit(live.kind == .off ? "live_off" : "live_registered", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
+            }
+            CompanionNotifier.shared.refreshLiveActivities()
+            return CompanionResponse(id: request.id, ok: true, macName: macName,
+                                     message: CompanionStore.shared.canPush && CompanionStore.shared.push.enabled ? "push" : "nopush")
         case .decide:
             // An agent in a terminal on the Mac, or a request through the workspace bridge.
             if let session = request.session, CompanionAgents.handles(session) {
@@ -307,7 +316,8 @@ final class CompanionServer: ObservableObject {
             return SessionDigest(id: run.id.uuidString, title: CompanionPolicy.excerpt(run.title), agent: run.provider.displayName,
                                  attention: String(describing: workspace.attention(run, unseen: false, now: now)),
                                  folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,
-                                 updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items)
+                                 updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
+                                 model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model))
         }
     }
 }
