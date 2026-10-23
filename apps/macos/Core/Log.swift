@@ -10,4 +10,5 @@ enum Log {
     static let agents = Logger(subsystem: subsystem, category: "agents")
     static let connectors = Logger(subsystem: subsystem, category: "connectors")
     static let actions = Logger(subsystem: subsystem, category: "actions")
+    static let autocomplete = Logger(subsystem: subsystem, category: "autocomplete")
 }
