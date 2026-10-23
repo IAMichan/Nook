@@ -471,6 +471,13 @@ struct PanelOrb: View {
     static let panelSize: CGFloat = 40
     /// The room the header row leaves for Nook and his task ring.
     static var headerInset: CGFloat { panelSize + 30 }
+    /// The room between the header row and the content below it. Nook is centered on the header row, but he and his task
+    /// ring stand taller than it: the content starts below the ring, with a margin for when he moves, so the first line
+    /// under the tabs (a list's title) never runs under him.
+    static var belowHeader: CGFloat {
+        let ringBottom = PanelView.headerHeight / 2 + NookTaskRing.radius(orbSize: panelSize) + NookTheme.Spacing.xxs
+        return max(ringBottom - PanelView.headerHeight, 0) + NookTheme.Spacing.lg
+    }
 
     @ObservedObject var viewModel: NotchViewModel
     let mood: NookMood
