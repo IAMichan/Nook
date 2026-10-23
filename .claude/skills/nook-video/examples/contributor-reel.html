@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Nook Contributor Reel</title>
+<link rel="stylesheet" href="../kit/nook-video.css">
+<style>
+  #notch { top:150px; }
+  #notchInner { position:absolute; left:0; top:0; width:960px; padding:44px 40px 40px; }
+  #s1, #s2 { top:1160px; }
+  #s3 { top:300px; }
+  #grid { left:var(--gutter); right:var(--gutter); top:800px; }
+  #grid .card { min-height:210px; }
+  #s4 { top:860px; } #s4 .h1 { font-size:84px; letter-spacing:-2.5px; }
+  #steps { left:var(--gutter); right:var(--gutter); top:1060px; }
+  #steps .step { padding:22px 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="menubar" class="abs menubar"><b>Finder</b><span>File</span><span class="clock">Thu 09:41</span></div>
+
+  <div id="notch" class="abs notch">
+    <div id="notchInner">
+      <div class="tabs">
+        <div class="orb" id="nookOrb" style="--d:96px"><i></i><i></i></div>
+        <span class="on">Nook</span><span>Chat</span><span>Agents</span><span>Shelf</span>
+        <span class="count" id="count">1 new</span>
+      </div>
+      <div class="row" id="row1" style="margin-top:22px">
+        <div class="dot" id="dot1"></div>
+        <div><div class="t" id="t1"></div><div class="d" id="d1"></div></div>
+        <div class="when" id="w1"></div><div class="chip" id="c1"></div>
+      </div>
+      <div class="row" id="row2">
+        <div class="dot" id="dot2"></div>
+        <div><div class="t" id="t2"></div><div class="d" id="d2"></div></div>
+        <div class="when" id="w2"></div><div class="chip" id="c2"></div>
+      </div>
+      <div class="composer"><span class="typed" id="typed"></span><span class="caret" id="caret"></span><span id="ph">Ask Nook anything…</span></div>
+    </div>
+  </div>
+
+  <div id="s1" class="abs headline">
+    <div class="h1">Nook is<br>open source.</div>
+    <div class="h2">Your AI assistant and coding-agent<br>command center, in the notch.</div>
+  </div>
+  <div id="s2" class="abs headline">
+    <div class="h1">We're looking<br>for contributors.</div>
+    <div class="h2">That could be you.</div>
+  </div>
+
+  <div id="s3" class="abs headline">
+    <div class="h1">No Mac?<br><span class="muted">No problem.</span></div>
+    <div class="h2">Pick what fits you.</div>
+  </div>
+  <div id="grid" class="abs grid">
+    <div class="card"><div class="k">macOS</div><div class="ttl">Swift & SwiftUI</div><div class="sub">The native notch app</div></div>
+    <div class="card"><div class="k">Windows · Linux</div><div class="ttl">Rust & Svelte</div><div class="sub">The Tauri app</div></div>
+    <div class="card"><div class="k">Android</div><div class="ttl">Test the APK</div><div class="sub">On a real device</div></div>
+    <div class="card"><div class="k">iPhone</div><div class="ttl">Companion</div><div class="sub">SwiftUI on iOS</div></div>
+    <div class="card"><div class="k">Languages</div><div class="ttl">NL · DE · FR · ES</div><div class="sub">Review translations</div></div>
+    <div class="card"><div class="k">Ten minutes</div><div class="ttl">Try it, report it</div><div class="sub">Every issue helps</div></div>
+  </div>
+
+  <div id="s4" class="abs headline"><div class="h1">Your first PR<br>in three steps.</div></div>
+  <div id="steps" class="abs">
+    <div class="step"><div class="n">1</div><div><div class="st">Find something to improve</div><div class="sd">open an issue with your idea</div></div></div>
+    <div class="step"><div class="n">2</div><div><div class="st">Fork & branch</div><div class="sd">git checkout -b fix/…</div></div></div>
+    <div class="step"><div class="n">3</div><div><div class="st">Open a pull request</div><div class="sd">we'll help you get it green</div></div></div>
+  </div>
+
+  <div id="cta" class="abs cta">
+    <div class="orb glow" id="ctaOrb" style="--d:240px"><i></i><i></i></div>
+    <div class="word" style="margin-top:64px">Build Nook<br>with us.</div>
+    <div class="url">github.com/IAMichan/nook</div>
+    <div class="tags"><span class="tag">Bring your own idea</span><span class="tag">All skill levels</span></div>
+    <div class="foot">Link in bio</div>
+  </div>
+</div>
+
+<script src="../kit/nook-video.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const { prog, settle, ease, lerp, fade, stagger, state, orb, type, clamp } = NV;
+const prompt = 'how can I help build Nook?';
+
+function rows(t) {
+  const set = (n, s, title, sub, when, word) => {
+    $('t' + n).textContent = title; $('d' + n).textContent = sub; $('w' + n).textContent = when;
+    state($('dot' + n), s); state($('c' + n), s, word);
+  };
+  if (t < 13) {
+    set(1, 'done', 'Claude Code · nook', 'Refactor finished, tests pass', '2m', 'Done');
+    set(2, 'waiting', 'Nook · open source', 'Looking for contributors', 'now', 'Waiting');
+    $('count').textContent = t < 4.3 ? '1 new' : '2 new';
+  } else {
+    const merged = t >= 17.6, approved = t >= 16.8;
+    set(1, merged ? 'merged' : 'open', 'You · first pull request', 'All checks passed', merged ? 'now' : '1h', merged ? 'Merged' : 'Open');
+    set(2, approved ? 'approved' : 'commented', 'Maintainer', approved ? 'Looks good to me' : 'One small suggestion', approved ? 'now' : '1h', approved ? 'Approved' : 'Commented');
+    $('count').textContent = merged ? '1 new' : '2 new';
+  }
+}
+
+function render(t) {
+  // The notch opens, steps back while the cards show, returns for the pull request, and leaves for the end card.
+  const open = settle(prog(t, 0.4, 1.4));
+  const away = ease(prog(t, 8.6, 1.2)), back = settle(prog(t, 13.8, 1.4)), gone = ease(prog(t, 19.2, 1.0));
+  const shown = (1 - away + back * away) * (1 - gone);
+  const n = $('notch');
+  n.style.width = lerp(330, 960, open) + 'px';
+  n.style.height = lerp(70, 660, open) + 'px';
+  n.style.borderRadius = `0 0 ${lerp(36, 62, open)}px ${lerp(36, 62, open)}px`;
+  n.style.opacity = shown;
+  n.style.transform = `translateX(-50%) translateY(${(1 - shown) * -60}px) scale(${lerp(0.97, 1, shown)})`;
+  $('notchInner').style.opacity = settle(prog(t, 1.0, 0.9));
+  $('menubar').style.opacity = 1 - away;
+
+  rows(t);
+  fade($('row1'), t, 1.3, null, { rise: 16 });
+  fade($('row2'), t, 4.3, null, { rise: 16 });
+  // Proud happy eyes for a moment when the pull request is merged; otherwise Nook rests, breathes and blinks.
+  orb($('nookOrb'), t, { mood: t > 17.6 && t < 19.6 ? 'proud' : 'rest' });
+
+  const typing = t > 5.0 && t < 13;
+  const chars = typing ? type($('typed'), prompt, t, 5.2, 12) : ($('typed').textContent = '', 0);
+  $('ph').style.display = chars > 0 ? 'none' : '';
+  $('caret').style.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.cos(t * Math.PI * 1.6));
+
+  fade($('s1'), t, 1.6, 3.9);
+  fade($('s2'), t, 4.6, 8.3);
+  fade($('s3'), t, 9.4, 13.3);
+  stagger(document.querySelectorAll('#grid .card'), t, 10.0, 0.3, 13.3, { rise: 30, dur: 1.2 });
+  fade($('s4'), t, 14.4, 18.9);
+  document.querySelectorAll('#steps .step').forEach((s, i) => {
+    fade(s, t, 15.0 + i * 0.7, 18.9, { rise: 0, x: -30 });
+    const lit = ease(prog(t, 15.6 + i * 0.7, 0.8));
+    const num = s.querySelector('.n');
+    num.style.background = `color-mix(in srgb, var(--paper) ${lit * 100}%, var(--smoke))`;
+    num.style.color = lit > 0.5 ? 'var(--ink)' : 'var(--strong)';
+  });
+
+  // End card: Nook arrives softly with its glow and keeps breathing and blinking.
+  const cta = $('cta');
+  cta.style.opacity = ease(prog(t, 19.6, 1.0));
+  const o = $('ctaOrb'); o.dataset.base = '';
+  orb(o, t, { mood: 'rest', scale: lerp(0.85, 1, settle(prog(t, 19.6, 1.6))), blinkOffset: 0.4 });
+  stagger(cta.querySelectorAll('.word, .url, .tags, .foot'), t, 20.2, 0.35);
+}
+
+NV.boot({
+  duration: 25,
+  cues: [
+    { t: 0.4, sound: 'open' },
+    { t: 4.3, sound: 'chime' },
+    { t: 10.0, sound: 'chime', gain: 0.6 },
+    { t: 13.8, sound: 'open', gain: 0.8 },
+    { t: 16.8, sound: 'done' },
+    { t: 17.6, sound: 'merge' },
+    { t: 20.0, sound: 'end' },
+  ],
+  render,
+});
+</script>
+</body>
+</html>
