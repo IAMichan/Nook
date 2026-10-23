@@ -329,8 +329,10 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func appChanged(_ app: NSRunningApplication?) {
-        if let app { readQueue.async { AutocompleteField.wake(app) } }
-        fieldObserver.watch(app?.processIdentifier)
+        let own = app?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        if let app, !own { readQueue.async { AutocompleteField.wake(app) } }
+        // Nook's own fields are read through AppKit (see `AutocompleteField.readOwn`), not watched through accessibility.
+        fieldObserver.watch(own ? nil : app?.processIdentifier)
         store.offUntilSwitch = nil
         lastSite = nil
         fieldContext = nil
@@ -345,17 +347,31 @@ final class AutocompleteController: ObservableObject {
 
     // MARK: State
 
-    private var frontApp: NSRunningApplication? { NSWorkspace.shared.frontmostApplication }
+    /// The app the keys go to. A Nook panel can take keys without making Nook the front app (the notch): then it is Nook.
+    private var frontApp: NSRunningApplication? {
+        NSApp.keyWindow != nil ? NSRunningApplication.current : NSWorkspace.shared.frontmostApplication
+    }
     private var ownAppInFront: Bool { frontApp?.processIdentifier == ProcessInfo.processInfo.processIdentifier }
+
+    /// A key recorder in Settings is waiting for keys: they are all its own, none goes to autocomplete.
+    var recordingKeys = 0
+
+    /// In Nook itself, only while a text view to write in has the focus (see `AutocompleteField.ownTextView`): every other key
+    /// (a shortcut, a key recorder) stays Nook's.
+    private var ownFieldFocused: Bool { recordingKeys == 0 && AutocompleteField.ownTextView() != nil }
 
     /// Read by `EnergyMonitor` for the whole app, so this is a cached value and not a trip to IOKit per keystroke.
     private var onBattery: Bool { EnergyMonitor.shared.signals.onBattery }
 
     private func isActive(in app: NSRunningApplication?) -> Bool {
-        guard let app, !ownAppInFront, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
+        guard let app, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
         let bundleID = app.bundleIdentifier
-        // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
-        if let bundleID, ScreenReader.excludedBundles.contains(bundleID) { return false }
+        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            guard ownFieldFocused else { return false }
+        } else if let bundleID, ScreenReader.excludedBundles.contains(bundleID) {
+            // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
+            return false
+        }
         return prefs.isEnabled(inApp: bundleID) && !store.isPaused(app: bundleID) && !(prefs.pauseOnBattery && onBattery)
     }
 
@@ -444,8 +460,8 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func handle(_ key: Key) -> Bool {
-        // The shortcut recorder in Settings must see every key.
-        if ownAppInFront { return false }
+        // In Nook only while writing in one of its text views: the shortcut recorders in Settings must see every key.
+        if ownAppInFront, !ownFieldFocused { dismiss(); return false }
         let app = frontApp
         let bundleID = app?.bundleIdentifier
 
@@ -734,6 +750,18 @@ final class AutocompleteController: ObservableObject {
         let screens = NSScreen.screens.map(\.frame)
         let pid = app.processIdentifier
         let checkCode = CompletionPreferences.proseOnly.contains(app.bundleIdentifier ?? "")
+        if pid == ProcessInfo.processInfo.processIdentifier {
+            // Nook itself: AppKit answers on the main thread, after the key just typed has been handled.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard token == self.readToken else { return }
+                    let snapshot = AutocompleteField.readOwn()
+                    self.lastRead = snapshot.map { (pid, $0) }
+                    done(snapshot)
+                }
+            }
+            return
+        }
         readQueue.async {
             let snapshot = AutocompleteField.read(screenHeight: height, screens: screens, checkCode: checkCode)
             // Chromium and Electron build their tree on request: ask again so the next key finds the field.
@@ -1104,7 +1132,8 @@ final class AutocompleteController: ObservableObject {
             input.fieldHint = snapshot.placeholder
             input.site = snapshot.site
         }
-        if prefs.screenContext, let bundleID {
+        // Nook never reads its own windows (see `ScreenReader.excludedBundles`).
+        if prefs.screenContext, let bundleID, app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             // Leave out the field's own text: it is already the body of the prompt.
             let own = snapshot.before + snapshot.after
             // The pane around the field first (the conversation, the mail being answered): it is what the text replies to.

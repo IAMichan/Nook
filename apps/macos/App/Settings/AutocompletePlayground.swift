@@ -220,6 +220,8 @@ private struct PlaygroundEditor: NSViewRepresentable {
         scroll.borderType = .noBorder
         // TextKit 1: the ghost is placed with the layout manager.
         let textView = PlaygroundTextView(usingTextLayoutManager: false)
+        // It shows its own suggestions: autocomplete in Nook's own fields leaves it alone.
+        textView.identifier = NSUserInterfaceItemIdentifier(AutocompleteField.ownOptOut + ".playground")
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true

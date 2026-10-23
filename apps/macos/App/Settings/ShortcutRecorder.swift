@@ -54,6 +54,7 @@ struct ShortcutRecorder: View {
         recording = true
         // Nook's own keys are paused while you press the new ones, so the old shortcut does not fire.
         app.hotKeys = []
+        AutocompleteController.shared.recordingKeys += 1
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             handle(event)
             return nil
@@ -63,7 +64,10 @@ struct ShortcutRecorder: View {
     private func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        if recording { app.reloadHotKeys() }
+        if recording {
+            app.reloadHotKeys()
+            AutocompleteController.shared.recordingKeys -= 1
+        }
         recording = false
     }
 
