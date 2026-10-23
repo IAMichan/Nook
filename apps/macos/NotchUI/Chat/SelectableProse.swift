@@ -114,7 +114,7 @@ struct SelectableProse: NSViewRepresentable {
                 // A heading takes more room above than below, so it clearly belongs to the text under it.
                 append(line, style: style(before: gap + (level <= 2 ? 8 : 4), lineSpacing: 1), to: result)
             case .paragraph(let text):
-                append(inline(text, size: size, weight: .regular, color: NookTheme.paper), style: style(before: gap), to: result)
+                append(inline(text, size: size, weight: .regular, color: NookTheme.textStrong), style: style(before: gap), to: result)
             case .list(let items):
                 for (itemIndex, item) in items.enumerated() {
                     appendItem(item, before: itemIndex == 0 ? gap : 6, size: size, to: result)
@@ -155,10 +155,10 @@ struct SelectableProse: NSViewRepresentable {
         let paragraph = style(before: before)
         paragraph.firstLineHeadIndent = indent
         var text = item.text
-        var color = item.level == 0 ? NookTheme.paper : NookTheme.textSecondary
+        var color = item.level == 0 ? NookTheme.textStrong : NookTheme.textSecondary
         if let task = MarkdownBlock.task(item.text) {
             text = task.text
-            color = task.done ? NookTheme.textSecondary : NookTheme.paper
+            color = task.done ? NookTheme.textSecondary : NookTheme.textStrong
             let box = NSAttributedString(string: task.done ? "☑" : "☐", attributes: [
                 .font: font, .foregroundColor: NSColor(task.done ? NookTheme.mint : NookTheme.textTertiary),
             ])
@@ -205,7 +205,8 @@ struct SelectableProse: NSViewRepresentable {
                 font = .monospacedSystemFont(ofSize: size - 1.5, weight: .regular)
                 attributes[.backgroundColor] = NSColor(NookTheme.field)
             } else {
-                font = .systemFont(ofSize: size, weight: intent.contains(.stronglyEmphasized) ? .bold : weight)
+                // Semibold rather than bold: bold runs already take the full white, a heavier weight made answers loud.
+                font = .systemFont(ofSize: size, weight: intent.contains(.stronglyEmphasized) ? .semibold : weight)
             }
             if intent.contains(.emphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }

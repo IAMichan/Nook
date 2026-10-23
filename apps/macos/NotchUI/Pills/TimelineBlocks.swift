@@ -319,7 +319,7 @@ struct PlanCard: View {
                 iconButton("square.and.arrow.down", tr("ws.plan.save"), save)
             }
             .foregroundStyle(NookTheme.iris)
-            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 13.5)
+            MarkdownView(text: collapsible && !open ? PlanPreview.preview(text) : text, size: 13)
             if collapsible {
                 Button { withAnimation(NookTheme.reveal) { open.toggle() } } label: {
                     Text(open ? tr("ws.plan.collapse") : tr("ws.plan.expand"))
