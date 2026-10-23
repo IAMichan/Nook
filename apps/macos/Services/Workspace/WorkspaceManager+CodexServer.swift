@@ -453,13 +453,7 @@ extension WorkspaceManager {
         turns[id] = nil
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)
-        if let next = pendingSendNow.removeValue(forKey: id) {
-            if !send(id, text: next, shown: false) {
-                queued[id, default: MessageQueue()].requeueFirst(next)
-            }
-        } else {
-            sendQueued(id)
-        }
+        if !sendPendingNow(id) { sendQueued(id) }
         scheduleCodexIdleClose(id)
     }
 
