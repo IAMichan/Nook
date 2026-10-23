@@ -890,6 +890,7 @@ struct AgentRunPanel: View {
                     effortMenu(run)
                 }
                 .rich(composerModel, composerConfig(run))
+                .choicesBelowBox()
                 .trailing { composerTrailing(run) }
                 // While it works, what you type steers the turn or waits in line, and Cmd+Return does the other.
                 .queueing(active ? deliver(preferred) : nil,

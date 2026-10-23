@@ -48,11 +48,10 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertNil(seconds)
     }
 
-    func testLastTurnStaysOpenOnceFinished() {
+    func testLastTurnFoldsOnceFinished() {
         let rows = TranscriptPresentation.rows(finishedTurn(), working: false)
-        XCTAssertEqual(rows.map(\.id), ["u1", "t1", "group:s1", "x1", "step:c", "x2"],
-                       "the turn you just watched reads as while it ran, without the working and live rows")
-        guard case .assistant(_, let isFinal) = rows[5] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2"], "the finished turn reads as 'Worked for 1m 3s' over its answer")
+        guard case .assistant(_, let isFinal) = rows[2] else { return XCTFail("\(rows)") }
         XCTAssertTrue(isFinal)
     }
 
@@ -66,7 +65,7 @@ final class TranscriptPresentationTests: XCTestCase {
         messages.append(message("s3", .tools, steps: [step("d", "Grep", "TODO"), step("e", "Bash", "swift test", .running)], at: 70))
         let rows = TranscriptPresentation.rows(Array(messages), working: true)
         XCTAssertEqual(rows.map(\.id), ["u1", "working", "t1", "group:s1", "x1", "group:s2", "live"])
-        guard case .working(let since) = rows[1], case .group(_, let steps) = rows[5], case .live(let current) = rows[6] else {
+        guard case .working(let since) = rows[1], case .group(_, let steps, _) = rows[5], case .live(let current) = rows[6] else {
             return XCTFail("\(rows)")
         }
         XCTAssertEqual(since, start)
@@ -94,6 +93,19 @@ final class TranscriptPresentationTests: XCTestCase {
             message("s2", .tools, steps: [step("b", "Read", "b.swift")])
         ], working: false)
         XCTAssertEqual(rows.map(\.id), ["u1", "group:s1"], "steps split only by silent thinking are one group")
+    }
+
+    func testThinkingBetweenStepsJoinsTheGroup() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Hoi"),
+            message("t0", .thinking, "Eerst kijken."),
+            message("s1", .tools, steps: [step("a", "Read", "a.swift")]),
+            message("t1", .thinking, "Nu de tests."),
+            message("s2", .tools, steps: [step("b", "Bash", "ls")]),
+            message("t2", .thinking, "Klaar met werken.")
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "t0", "group:s1", "t2"],
+                       "a thought before more steps joins their group; one that opens or ends the work stays")
     }
 
     func testTallyCountsEditedFilesOnce() {
