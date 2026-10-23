@@ -81,7 +81,7 @@ final class NotesConnector: ContextSource {
             failures += 1
             // A slow Notes (starting up, syncing iCloud) is no broken link: keep what was there, and only say something is
             // wrong once it keeps failing with nothing to show.
-            if loadedAt != nil || failures < 3 {
+            if loadedAt != nil || !recentNotes.isEmpty || failures < 3 {
                 if status.updated == nil { status = ConnectorStatus(state: .loading, detail: tr("connect.notes.loading")) }
                 return
             }
@@ -157,6 +157,7 @@ final class NotesConnector: ContextSource {
         return await ScriptText.run(recentScript(limit: limit, bulk: false), timeout: timeout)
     }
 
+    /// Parses `recentScript` output into the total count and the notes it listed.
     private static func parse(_ text: String) -> (total: Int, notes: [NoteSummary]) {
         var lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
         let total = Int(lines.first ?? "") ?? 0

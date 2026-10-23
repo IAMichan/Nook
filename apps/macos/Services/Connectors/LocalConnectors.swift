@@ -318,7 +318,7 @@ final class MailConnector: ContextSource {
             failures += 1
             // A slow Mail (starting up, syncing) is no broken link: keep what was there, and only say something is wrong
             // once it keeps failing with nothing to show.
-            if loadedAt != nil || failures < 3 {
+            if loadedAt != nil || !inboxes.isEmpty || failures < 3 {
                 if status.updated == nil { status = ConnectorStatus(state: .loading, detail: tr("connect.mail.loading")) }
                 return
             }
@@ -363,7 +363,8 @@ final class MailConnector: ContextSource {
             throw NookError(message)
         }
         // Mail has not answered even once yet (it is still starting or syncing): say so instead of "no mail".
-        guard loadedAt != nil else { throw NookError(tr("connect.mail.loading")) }
+        // A mail change clears `loadedAt` only to mark the inbox stale; the inbox of before still counts.
+        guard loadedAt != nil || !inboxes.isEmpty else { throw NookError(tr("connect.mail.loading")) }
         let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
         guard !rows.isEmpty else {
             return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
