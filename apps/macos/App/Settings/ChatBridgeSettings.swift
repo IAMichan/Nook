@@ -143,9 +143,22 @@ struct TeamsSettingsRows: View {
     /// Why the last read failed, if it did for every account.
     let problem: String?
     let onSignedIn: () -> Void
-    @State private var clientID = ""
+    @ObservedObject private var web = TeamsWebSession.shared
 
     var body: some View {
+        if let session = web.session {
+            let title = session.name.isEmpty ? "Teams" : session.name
+            if let why = teams.problems[TeamsBridge.webID] {
+                StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
+                    Button(tr("chats.teams.signInAgainButton")) { signInOnWeb() }
+                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                }
+            } else {
+                StatusRow(title: tr("chats.teams.connected", title), detail: tr("chats.teams.web.connectedDetail"), state: .done) {
+                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                }
+            }
+        }
         ForEach(teams.accounts) { account in
             let title = account.name.isEmpty ? (account.email.isEmpty ? "Teams" : account.email) : account.name
             if let why = teams.problems[account.id] {
@@ -164,9 +177,25 @@ struct TeamsSettingsRows: View {
         if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
-        signIn
-            // A new account reads right away instead of at the next turn.
-            .onChange(of: teams.accounts.map(\.id)) { _, _ in onSignedIn() }
+        if web.session == nil {
+            HStack {
+                SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
+                Spacer()
+                Button(tr("chats.teams.signIn")) { signInOnWeb() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(web.isSigningIn)
+            }
+        }
+        // With Nook's own app in Microsoft Entra, accounts can also be added through Microsoft Graph with a code.
+        if TeamsBridge.clientID != nil {
+            signIn
+                // A new account reads right away instead of at the next turn.
+                .onChange(of: teams.accounts.map(\.id)) { _, _ in onSignedIn() }
+        }
+    }
+
+    private func signInOnWeb() {
+        web.signIn(title: tr("chats.link.browser.title", "Teams")) { onSignedIn() }
     }
 
     @ViewBuilder
@@ -187,7 +216,7 @@ struct TeamsSettingsRows: View {
                 }
             }
         case .noClient:
-            clientField
+            EmptyView()
         case .idle, .failed:
             if case .failed(let why) = teams.state {
                 StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
@@ -202,35 +231,6 @@ struct TeamsSettingsRows: View {
                 Button(teams.accounts.isEmpty ? tr("chats.teams.signIn") : tr("chats.teams.addAccount")) { teams.signIn() }
             }
         }
-    }
-
-    /// A build without Nook's own app in Microsoft Entra: the id of one you registered, pasted once.
-    private var clientField: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            SettingLabel(tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"))
-            HStack(spacing: NookTheme.Spacing.sm) {
-                TextField("", text: $clientID, prompt: Text("00000000-0000-0000-0000-000000000000"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { saveClient() }
-                Button(tr("chats.slack.save")) { saveClient() }
-                    .disabled(UUID(uuidString: clientID.trimmingCharacters(in: .whitespaces)) == nil)
-            }
-            Button(tr("chats.teams.openEntra")) {
-                if let url = URL(string: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-            .buttonStyle(.link)
-        }
-    }
-
-    private func saveClient() {
-        guard teams.setClientID(clientID) else {
-            ToastCenter.shared.error(tr("chats.slack.notSaved"))
-            return
-        }
-        clientID = ""
     }
 }
 

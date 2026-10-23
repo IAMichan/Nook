@@ -177,6 +177,9 @@ enum ChatAppStates {
         case telegram.app:
             return telegram.isReady ? tr("chats.apps.as", telegram.account ?? "Telegram") : nil
         case teams.app:
+            if let session = TeamsWebSession.shared.session, teams.accounts.isEmpty {
+                return tr("chats.apps.as", session.name.isEmpty ? "Teams" : session.name)
+            }
             guard let account = teams.accounts.first else { return nil }
             return teams.accounts.count == 1 ? tr("chats.apps.as", account.name.isEmpty ? account.email : account.name)
                 : tr("chats.apps.accounts", teams.accounts.count)
