@@ -208,6 +208,7 @@ targets:
       - path: Services/Messages/SlackData.swift
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
+      - path: Services/Messages/ChatJSON.swift
       - path: Services/Messages/BeeperData.swift
       - path: Services/Messages/ChatLinkData.swift
       - path: Services/Messages/ChatMedia.swift

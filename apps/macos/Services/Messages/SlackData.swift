@@ -16,10 +16,6 @@ enum SlackData {
         var updated: Double
     }
 
-    /// The JSON object of an answer; nil when it is none.
-    static func object(_ data: Data) -> [String: Any]? {
-        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-    }
 
     /// Slack answers 200 with `"ok": false` and the reason ("invalid_auth", "missing_scope"…).
     static func error(_ json: [String: Any]) -> String? {

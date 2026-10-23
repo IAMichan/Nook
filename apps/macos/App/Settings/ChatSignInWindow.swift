@@ -13,6 +13,25 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
     private let web: WKWebView
     private var checking: Timer?
     private var finished = false
+    /// A look at the cookies is under way: the timer and a page load must not hand them over twice.
+    private var looking = false
+
+    /// The one sign-in window open: a new one closes it, so none is ever left behind out of sight.
+    private(set) static var current: ChatSignInWindow?
+
+    /// Opens the sign-in window of `step`, closing any other one first.
+    static func open(step: ChatLinkData.Step, title: String, onDone: @escaping ([String: String], String?) -> Void) {
+        closeAll()
+        let window = ChatSignInWindow(step: step, title: title, onDone: onDone)
+        current = window
+        window.show()
+    }
+
+    /// Closes the sign-in window, if one is open (the step finished, was stopped, or its sheet closed).
+    static func closeAll() {
+        current?.close()
+        current = nil
+    }
     /// The request headers the page sent that the step asks for (LinkedIn's), by lower-case name.
     private var headers: [String: String] = [:]
 
@@ -61,13 +80,16 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         checking = nil
         window.delegate = nil
         web.navigationDelegate = nil
+        web.stopLoading()
         window.orderOut(nil)
         window.close()
+        if Self.current === self { Self.current = nil }
     }
 
     func windowWillClose(_ notification: Notification) {
         checking?.invalidate()
         checking = nil
+        if Self.current === self { Self.current = nil }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -76,7 +98,9 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
     /// Hands over what the step asks for once you are signed in.
     private func check() async {
-        guard !finished, case .browser(_, _, let start, _, let collect, let done) = step else { return }
+        guard !finished, !looking, case .browser(_, _, let start, _, let collect, let done) = step else { return }
+        looking = true
+        defer { looking = false }
         let address = web.url?.absoluteString ?? ""
         let cookies = await web.configuration.websiteDataStore.httpCookieStore.allCookies()
         // The store holds only this sign-in: every cookie in it may be asked for (Messenger signs in on facebook.com
