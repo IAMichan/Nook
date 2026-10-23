@@ -46,4 +46,69 @@ final class GitHubMarkdownTests: XCTestCase {
     func testGenericsAreNotTags() {
         XCTAssertEqual(GitHubMarkdown.markdown("Returns Array<Int> when a < b"), "Returns Array<Int> when a < b")
     }
+
+    func testDefinitionListsAndTagsWithAttributesBecomeMarkdown() {
+        let text = """
+        <details open>
+        <summary><strong>Merge Risk:</strong> <strong>Low</strong> · up to <code>c4340</code></summary>
+        <dl>
+        <dd>
+
+        - [ ] <strong title="Keep fixing">Autofix</strong> · on
+
+        </dd>
+        </dl>
+        </details>
+        """
+        XCTAssertEqual(GitHubMarkdown.markdown(text), "**Merge Risk: Low · up to `c4340`**\n\n- [ ] **Autofix** · on")
+    }
+
+    func testSummaryBadgesKeepTheirAltText() {
+        let text = #"<summary><strong>Checks: <sup><img src="https://x/p.svg" alt="Passed"></sup> 4</strong></summary>"#
+        XCTAssertEqual(GitHubMarkdown.markdown(text), "**Checks: Passed 4**")
+    }
+
+    func testQuotedPlainParagraphsStayQuoted() {
+        XCTAssertEqual(GitHubMarkdown.markdown("> One <b>two</b>\n>\n> Three"), "> One **two**\n>\n> Three")
+    }
+
+    func testBlocksInAQuoteMoveOutAfterItsFirstParagraph() {
+        let text = """
+        > [!NOTE]
+        > Processing changes.
+        > 
+        > <details>
+        > <summary><strong>Run configuration</strong></summary>
+        > <dl>
+        > <dd>
+        > 
+        > - **Branch**: main
+        > 
+        > </dd>
+        > </dl>
+        > </details>
+        > 
+        > ```ascii
+        > +---+
+        > | x |
+        > ```
+
+        Walkthrough
+        """
+        XCTAssertEqual(GitHubMarkdown.markdown(text), """
+        > [!NOTE]
+        > Processing changes.
+
+        **Run configuration**
+
+        - **Branch**: main
+
+        ```ascii
+        +---+
+        | x |
+        ```
+
+        Walkthrough
+        """)
+    }
 }
