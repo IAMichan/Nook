@@ -1153,8 +1153,7 @@ private struct ChatsDetail: View {
                 }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
-            // What you do most stays in sight (ask Nook, open the app); the rest waits in the "…" menu.
-            ToolbarIconButton("sparkles", tr("whatsapp.card.nook")) { app.askNookAboutChat(entry) }
+            // Opening the app stays in sight; the rest waits in the "…" menu.
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
             moreMenu
         }

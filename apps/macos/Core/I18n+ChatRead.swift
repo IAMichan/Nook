@@ -24,7 +24,6 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.read": "Ook gelezen in %@",
         "chats.status.tells": "Nook laat %@ weten dat je dit las: de chat is dan ook op je telefoon gelezen en wie schreef, ziet het.",
         "chats.status.opensApp": "Nook kan %@ dit niet zelf laten weten: het opent de chat daar, zodat je hem daar leest.",
-        "chats.nookPrompt": "Schrijf een kort antwoord aan %@ op %@ dat ik kan versturen.",
     ],
     .en: [
         "chats.view.all": "All chats",
@@ -46,7 +45,6 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.read": "Read in %@ too",
         "chats.status.tells": "Nook tells %@ you read this: the chat is then read on your phone too, and whoever wrote sees it.",
         "chats.status.opensApp": "Nook can't tell %@ itself: it opens the chat there, so you read it there.",
-        "chats.nookPrompt": "Write a short reply to %@ on %@ that I can send.",
     ],
     .de: [
         "chats.view.all": "Alle Chats",
@@ -68,7 +66,6 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.read": "Auch in %@ gelesen",
         "chats.status.tells": "Nook sagt %@, dass du das gelesen hast: Der Chat ist dann auch auf deinem Handy gelesen, und wer geschrieben hat, sieht es.",
         "chats.status.opensApp": "Nook kann %@ das nicht selbst sagen: Es öffnet den Chat dort, damit du ihn dort liest.",
-        "chats.nookPrompt": "Schreib eine kurze Antwort an %@ auf %@, die ich senden kann.",
     ],
     .fr: [
         "chats.view.all": "Toutes les discussions",
@@ -90,7 +87,6 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.read": "Lu aussi dans %@",
         "chats.status.tells": "Nook indique à %@ que vous l’avez lu : la discussion est alors lue sur votre téléphone aussi, et qui a écrit le voit.",
         "chats.status.opensApp": "Nook ne peut pas le dire à %@ lui-même : il ouvre la discussion là-bas, pour que vous la lisiez là.",
-        "chats.nookPrompt": "Écris une courte réponse à %@ sur %@ que je peux envoyer.",
     ],
     .es: [
         "chats.view.all": "Todos los chats",
@@ -112,6 +108,5 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.read": "Leído también en %@",
         "chats.status.tells": "Nook le dice a %@ que lo leíste: el chat queda leído también en tu teléfono, y quien escribió lo ve.",
         "chats.status.opensApp": "Nook no puede decírselo a %@ por sí mismo: abre el chat allí, para que lo leas allí.",
-        "chats.nookPrompt": "Escribe una respuesta corta a %@ en %@ que pueda enviar.",
     ],
 ]
