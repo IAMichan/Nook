@@ -404,6 +404,14 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         changed.insert(ids.chat)
     }
 
+    /// Tells Telegram you read the chat, after your own click: its newest messages count as viewed, so the chat is read
+    /// on your phone too and the people who wrote see it. Telegram's own unread count follows by itself.
+    func markRead(chat: Int64) {
+        let ids = (messages[chat] ?? []).filter { !$0.isMine }.suffix(100).compactMap { TelegramData.ids($0.id)?.message }
+        guard !ids.isEmpty else { return }
+        send(["@type": "viewMessages", "chat_id": chat, "message_ids": ids, "force_read": true])
+    }
+
     /// Your vote on a poll, after your own click (an empty choice takes it back); the poll shows it at once.
     func vote(_ choice: [String], message id: String) {
         guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }),
