@@ -194,6 +194,7 @@ struct QRScanner: UIViewControllerRepresentable {
 /// you first, then what is working, then the rest.
 struct SessionListView: View {
     @EnvironmentObject private var client: CompanionClient
+    @ObservedObject private var live = LiveActivities.shared
     @Binding var path: [String]
     @State private var composing = false
 
@@ -243,6 +244,11 @@ struct SessionListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
+                    // Sessions working on the Mac on the Lock Screen and in the Dynamic Island.
+                    if client.can(CompanionFeature.liveActivity) {
+                        Toggle(isOn: $live.enabled) { Label("Live Activities", systemImage: "platter.filled.top.iphone") }
+                            .disabled(!live.allowedBySystem)
+                    }
                     Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                 } label: { Image(systemName: "ellipsis.circle").foregroundStyle(Theme.textSecondary) }
             }

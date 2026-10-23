@@ -97,6 +97,9 @@ enum CompanionOp: String, Codable, Sendable {
     /// `inboxLines` in the answer); your own words to a chat that can be answered from Nook (`item`, `text`, and
     /// `replyTo` when it answers one of its messages); and read or unread by hand (`item`, `allow`: true is read).
     case inbox, inboxChat, inboxSend, inboxMark
+    /// Live Activities: the phone's push-to-start token, an activity's update token, an ended activity, or the switch
+    /// turned off (`live`).
+    case liveActivity
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -109,7 +112,9 @@ enum CompanionFeature {
     static let usage = "usage"
     static let music = "music"
     static let inbox = "inbox"
-    static let all = [start, timeline, chat, home, usage, music, inbox]
+    /// The Mac takes `liveActivity` requests and sends Live Activity pushes.
+    static let liveActivity = "liveActivity"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -166,12 +171,14 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     var launch: LaunchRequest?
     /// The message of a chat that `inboxSend` answers.
     var replyTo: String?
+    /// What `liveActivity` registers.
+    var live: LiveActivityRegistration?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
-         replyTo: String? = nil) {
+         replyTo: String? = nil, live: LiveActivityRegistration? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
-        self.conversation = conversation; self.launch = launch; self.replyTo = replyTo
+        self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
     }
 }
 
@@ -232,6 +239,18 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     /// The phone can send this session a message or stop it. False for an agent running in a terminal on the Mac: the phone
     /// sees it and decides its approvals, but the conversation stays in the terminal. nil (an older Mac) means yes.
     var canSend: Bool? = nil
+    /// The model the session runs on, when the Mac knows it (for the Live Activity).
+    var model: String? = nil
+}
+
+extension LiveActivitySnapshot {
+    /// The session as a Live Activity shows it. `includeTitle` false keeps the title and folder out (they travel through
+    /// Apple when the Mac pushes), as `PushSettings.includeTitle` does for notifications.
+    init(digest: SessionDigest, includeTitle: Bool = true) {
+        self.init(session: digest.id, project: includeTitle ? digest.folder : "", title: includeTitle ? digest.title : "",
+                  agent: digest.agent, model: digest.model ?? "",
+                  phase: LiveActivityPhase(attention: digest.attention, waiting: !digest.items.isEmpty))
+    }
 }
 
 /// One step of a session's conversation, oldest first.
@@ -505,11 +524,48 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     /// Where pushes go; nil until the phone allowed notifications. Environment matters: a development build has sandbox tokens.
     var pushToken: String?
     var pushProduction: Bool?
+    /// Live Activities (`LiveActivityRegistration`): false once the phone turned them off; nil until it said anything.
+    var liveActivities: Bool?
+    /// The push-to-start token, and the update token of each activity on the phone by session id.
+    var liveStartToken: String?
+    var liveTokens: [String: String]?
+    var liveProduction: Bool?
 
     init(id: String, name: String, pairedAt: Date, lastSeen: Date? = nil, pushToken: String? = nil, pushProduction: Bool? = nil) {
         self.id = id; self.name = name; self.pairedAt = pairedAt; self.lastSeen = lastSeen
         self.pushToken = pushToken; self.pushProduction = pushProduction
     }
+
+    /// Most activity tokens a device keeps; iOS shows only a few activities per app anyway.
+    static let maxLiveTokens = 20
+
+    /// Takes in what the phone registered (already checked with `isValid`).
+    mutating func apply(_ registration: LiveActivityRegistration) {
+        switch registration.kind {
+        case .pushToStart:
+            liveActivities = true
+            liveStartToken = registration.token?.lowercased()
+            liveProduction = registration.production
+        case .activity:
+            guard let session = registration.session, let token = registration.token else { return }
+            liveActivities = true
+            liveProduction = registration.production
+            var tokens = liveTokens ?? [:]
+            if tokens[session] == nil, tokens.count >= Self.maxLiveTokens, let dropped = tokens.keys.sorted().first { tokens[dropped] = nil }
+            tokens[session] = token.lowercased()
+            liveTokens = tokens
+        case .ended:
+            guard let session = registration.session else { return }
+            liveTokens?[session] = nil
+        case .off:
+            liveActivities = false
+            liveStartToken = nil
+            liveTokens = nil
+        }
+    }
+
+    /// Whether the Mac has anything to send Live Activity pushes to.
+    var wantsLiveActivities: Bool { liveActivities != false && (liveStartToken != nil || !(liveTokens ?? [:]).isEmpty) }
 
     static func identifier(forKey key: Data) -> String {
         PureSHA256.hash(key).prefix(8).map { String(format: "%02x", $0) }.joined()

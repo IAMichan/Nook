@@ -283,6 +283,7 @@ targets:
       - path: Services/Workspace/SourceControlHost.swift
       - path: ../../packages/protocol/Sources/CompanionModels.swift
       - path: ../../packages/protocol/Sources/CompanionPush.swift
+      - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift
