@@ -8,14 +8,10 @@ enum ChatAppsCatalog {
                        "messages"]
 
     /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database).
-    /// Telegram links through Nook's own chat helper when this build has it, and through TDLib only without it. Teams
-    /// only in a build that can sign in to Microsoft (a client id), or once an account is linked: otherwise its sheet
-    /// would offer a step that cannot be taken, and Teams links through a chat service on this Mac instead.
+    /// Telegram links through Nook's own chat helper when this build has it, and through TDLib only without it.
     @MainActor static var ownWay: Set<String> {
-        var apps: Set<String> = ["whatsapp", "teams", "slack", "messages"]
-        if !ChatHelper.isBuilt { apps.insert("telegram") }
-        if TeamsBridge.clientID == nil, ChatCaptureService.shared.teamsBridge.accounts.isEmpty { apps.remove("teams") }
-        return apps
+        let apps: Set<String> = ["whatsapp", "teams", "slack", "messages"]
+        return ChatHelper.isBuilt ? apps : apps.union(["telegram"])
     }
 }
 
