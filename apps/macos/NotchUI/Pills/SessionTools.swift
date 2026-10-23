@@ -472,23 +472,24 @@ private struct SessionToolPanel: View {
         .padding(.leading, NookTheme.Spacing.xs)
     }
 
-    /// + : the tools to open, each in its own tab (or the tab it already has).
+    /// + : the tools to open, each in its own tab (or the tab it already has), in Nook's own dropdown panel.
+    /// The tool in view is faintly filled; one the session cannot use says why.
     private var addMenu: some View {
-        Menu {
-            ForEach(SessionTool.panelTools, id: \.self) { item in
-                Button { show(item) } label: { Label(item.title, systemImage: item.symbol) }
-                    .disabled(!item.available(in: directory))
-            }
-        } label: {
+        ComposerDropdown(width: 220) {
             Image(systemName: "plus")
                 .font(NookTheme.font(11, .semibold))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
+        } content: {
+            DropdownHeader(title: tr("agents.tool.add"))
+            ForEach(SessionTool.panelTools, id: \.self) { item in
+                DropdownRow(symbol: item.symbol, title: item.title, chosen: item == tool,
+                            disabledReason: item.available(in: directory) ? nil : tr("agents.tool.needsFolder")) {
+                    show(item)
+                }
+            }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .help(tr("agents.tool.add"))
         .accessibilityLabel(tr("agents.tool.add"))
     }

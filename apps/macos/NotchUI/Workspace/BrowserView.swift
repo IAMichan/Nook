@@ -389,8 +389,9 @@ struct BrowserView: View {
                 Button {
                     askAboutPage()
                 } label: {
-                    Label(tr("workbench.browser.ask"), systemImage: "sparkles")
+                    Label(tr("workbench.browser.ask"), systemImage: "plus.bubble")
                 }
+                .help(tr("workbench.browser.askHelp"))
                 .disabled(store.webView.url == nil || asking)
                 if let onClose {
                     Button(action: onClose) { Image(systemName: "xmark") }
@@ -443,6 +444,8 @@ struct BrowserView: View {
             defer { asking = false }
             do {
                 let page = try await store.pageText()
+                // Each page gets a chat of its own, never the end of an older conversation.
+                app.chat.startNew()
                 app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
                 // The page stays in sight next to the chat, unless an app is open there already.
                 if EmbeddedAppStore.shared.current == nil { app.viewModel.browserBesideChat = true }
