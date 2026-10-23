@@ -201,8 +201,12 @@ struct PullRequestFilterMenu: View {
     private static func symbol(_ sort: PullRequestSort) -> String {
         switch sort {
         case .attention: return "eye"
+        case .readiness: return "checkmark.seal"
+        case .blockedOnMe: return "hand.raised"
         case .recent: return "arrow.down"
         case .oldest: return "arrow.up"
+        case .largest: return "arrow.up.left.and.arrow.down.right"
+        case .smallest: return "arrow.down.right.and.arrow.up.left"
         }
     }
 

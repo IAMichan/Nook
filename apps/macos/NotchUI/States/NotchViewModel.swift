@@ -121,7 +121,7 @@ final class NotchViewModel: ObservableObject {
     /// task's step with Stop).
     @Published private(set) var noticeSeconds: TimeInterval?
     /// How long the confirmation strip stays.
-    static let doneSeconds: TimeInterval = 4.2
+    nonisolated static let doneSeconds: TimeInterval = 4.2
     /// The clock of the strip showing now: it holds while the pointer is on the notch, like the ring on its OK.
     private let noticeClock = NoticeClock()
     /// The clock of the notice in the open panel's bar: it holds while the pointer is on the bar.
