@@ -318,6 +318,8 @@ final class AgentHistory: ObservableObject {
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
     /// Per account: tokens and sessions for today and this week.
     @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
+    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Usage.
+    @Published private(set) var ledger = UsageLedger()
     /// Which agents are installed on this Mac (presence of ~/.claude or ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []
     /// Agents whose executable exists on this Mac.
@@ -365,6 +367,7 @@ final class AgentHistory: ObservableObject {
                 if self.sessions != result.sessions { self.sessions = result.sessions }
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
+                if self.ledger != result.ledger { self.ledger = result.ledger }
                 if self.installed != result.installed { self.installed = result.installed }
                 if self.executables != result.executables { self.executables = result.executables }
             }
@@ -398,6 +401,8 @@ private final class HistoryScanner: @unchecked Sendable {
         var sessions: [PastSession]
         var accounts: [String: AgentAccount]
         var usage: [String: AgentUsageSummary]
+        /// Every agent's tokens per hour and model over the last 90 days (the Usage page).
+        var ledger = UsageLedger()
         var installed: Set<AgentKind>
         var executables: [AgentKind: String]
     }
@@ -407,6 +412,8 @@ private final class HistoryScanner: @unchecked Sendable {
         var key: String
         var date: Date
         var tokens: TokenTally
+        /// The model that answered, for the Usage page's per-model figures and prices.
+        var model = ""
     }
 
     struct Parsed {
@@ -425,8 +432,10 @@ private final class HistoryScanner: @unchecked Sendable {
     private let lock = NSLock()
 
     /// How many days back to read transcripts.
-    private static let days = 30
-    private static let maxFiles = 400
+    /// Transcripts are read for 90 days (the Usage page's longest window); the session list shows the last 30.
+    private static let days = 90
+    private static let listDays = 30
+    private static let maxFiles = 1500
 
     private let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -445,6 +454,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
         let fm = FileManager.default
         let since = Date().addingTimeInterval(-Double(Self.days) * 86_400)
+        let listSince = Date().addingTimeInterval(-Double(Self.listDays) * 86_400)
         var installed: Set<AgentKind> = []
         var files: [(url: URL, agent: AgentKind, profile: String, key: CacheKey)] = []
         var seenFolders = Set<String>()
@@ -470,7 +480,7 @@ private final class HistoryScanner: @unchecked Sendable {
         // Antigravity's titles live in a database: opened only when one of its transcripts has to be read again.
         var antigravitySummaries: [String: (title: String, cwd: String)]?
         var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
-        var parsedAll: [(profile: String, parsed: Parsed)] = []
+        var parsedAll: [(profile: String, parsed: Parsed, agent: AgentKind)] = []
         for file in files {
             let path = file.url.path
             var parsed: Parsed
@@ -491,7 +501,7 @@ private final class HistoryScanner: @unchecked Sendable {
             parsed.session?.profileID = file.profile
             parsed.session?.path = file.url.path
             fresh[path] = (file.key, parsed)
-            parsedAll.append((file.profile, parsed))
+            parsedAll.append((file.profile, parsed, file.agent))
         }
         cache = fresh
         claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
@@ -499,7 +509,8 @@ private final class HistoryScanner: @unchecked Sendable {
 
         // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
         let listed = parsedAll.compactMap { entry in entry.parsed.session.map { (session: $0, links: entry.parsed.links) } }
-            .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder }
+            // The list keeps to the last 30 days; older transcripts are read for the Usage page only.
+            .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder && $0.session.ended >= listSince }
             .sorted { $0.session.ended > $1.session.ended }
         let sessions = Self.joinResumed(listed)
 
@@ -507,12 +518,25 @@ private final class HistoryScanner: @unchecked Sendable {
         for home in homes where fm.fileExists(atPath: home.url.path) {
             usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
         }
+        // Each reply once, also when a transcript was copied into a resumed conversation.
+        var ledger = UsageLedger()
+        var counted = Set<String>()
+        for entry in parsedAll {
+            if let session = entry.parsed.session, session.prompts > 0, session.cwd != ownFolder {
+                ledger.addSession(agent: entry.agent.rawValue, ended: session.ended)
+            }
+            for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
+                ledger.add(agent: entry.agent.rawValue, model: usage.model,
+                           date: usage.date, tokens: UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
+                                                                 cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite))
+            }
+        }
         let accounts = readAccounts(homes)
         for kind in [AgentKind.gemini, .antigravity] where homes.contains(where: { $0.kind == kind && fm.fileExists(atPath: $0.url.path) }) { installed.insert(kind) }
 
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
-        return Result(sessions: sessions, accounts: accounts, usage: usage, installed: installed, executables: executables)
+        return Result(sessions: sessions, accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
     }
 
     /// One session per conversation: the transcripts of a chat that was resumed into new files become one, under the
@@ -833,7 +857,7 @@ private final class HistoryScanner: @unchecked Sendable {
                     session.tokens += tally
                     let when = (message["timestamp"] as? String).flatMap { date($0) } ?? session.ended
                     let id = (message["id"] as? String) ?? "\(entries.count)"
-                    entries.append(UsageEntry(key: "gemini:\(session.sessionID):\(id)", date: when, tokens: tally))
+                    entries.append(UsageEntry(key: "gemini:\(session.sessionID):\(id)", date: when, tokens: tally, model: session.model))
                 }
             default:
                 continue
@@ -971,7 +995,7 @@ private final class HistoryScanner: @unchecked Sendable {
                     session.tokens += tally
                     let when = (object["created_at"] as? String).flatMap({ self.date($0) }) ?? session.ended
                     let step = (object["step_index"] as? Int) ?? entries.count
-                    entries.append(UsageEntry(key: "antigravity:\(sessionID):\(step)", date: when, tokens: tally))
+                    entries.append(UsageEntry(key: "antigravity:\(sessionID):\(step)", date: when, tokens: tally, model: session.model))
                 }
             }
         }
@@ -1135,7 +1159,8 @@ private final class HistoryScanner: @unchecked Sendable {
                 )
                 progress.session.tokens += tokens
                 let when = (object["timestamp"] as? String).flatMap({ self.date($0) }) ?? progress.session.ended
-                progress.entries.append(UsageEntry(key: id == ":" ? UUID().uuidString : id, date: when, tokens: tokens))
+                progress.entries.append(UsageEntry(key: id == ":" ? UUID().uuidString : id, date: when, tokens: tokens,
+                                                  model: (message["model"] as? String).flatMap { $0.hasPrefix("<") ? nil : $0 } ?? progress.session.model))
             }
         } else {
             if (object["isMeta"] as? Bool) == true || (object["isSidechain"] as? Bool) == true { return }
@@ -1261,7 +1286,8 @@ private final class HistoryScanner: @unchecked Sendable {
                 )
                 state.previous = current
                 state.session.tokens = current
-                state.entries.append(UsageEntry(key: "\(state.session.sessionID):\(current.total)", date: when ?? state.session.ended, tokens: delta))
+                state.entries.append(UsageEntry(key: "\(state.session.sessionID):\(current.total)", date: when ?? state.session.ended, tokens: delta,
+                                                model: state.session.model))
             default:
                 break
             }
