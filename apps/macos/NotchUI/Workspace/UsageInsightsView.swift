@@ -425,15 +425,17 @@ struct UsageAgentChart: View {
             Text(title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
             Chart {
                 ForEach(insights.points) { point in
-                    AreaMark(x: .value("Time", point.column, unit: insights.window.hourly ? .hour : .day),
+                    // No `unit:`: a unit centres each point inside its hour or day, half a column off the axis
+                    // labels, which sit on the start of each hour or day.
+                    AreaMark(x: .value("Time", point.column),
                              y: .value("Value", value(point)),
                              stacking: .standard)
                         .foregroundStyle(by: .value("Agent", AgentKind(rawValue: point.agent)?.shortName ?? point.agent))
                         .interpolationMethod(.monotone)
                         .opacity(0.85)
                 }
-                if let selected {
-                    RuleMark(x: .value("Time", selected, unit: insights.window.hourly ? .hour : .day))
+                if let selected = selected.flatMap(nearestColumn) {
+                    RuleMark(x: .value("Time", selected))
                         .foregroundStyle(NookTheme.textTertiary)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
@@ -478,10 +480,13 @@ struct UsageAgentChart: View {
         metric == .cost ? point.cost : Double(point.tokens)
     }
 
+    /// The column whose point lies closest to the pointer, so the rule lands on a point of the curve.
+    private func nearestColumn(_ date: Date) -> Date? {
+        insights.points.map(\.column).min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
+    }
+
     /// The column under the pointer: when, the total, and each agent with something in it.
-    private func tooltip(_ date: Date) -> some View {
-        let calendar = Calendar.current
-        let column = insights.window.hourly ? (calendar.dateInterval(of: .hour, for: date)?.start ?? date) : calendar.startOfDay(for: date)
+    private func tooltip(_ column: Date) -> some View {
         let cells = insights.points.filter { $0.column == column && value($0) > 0 }
         let total = cells.map(value).reduce(0, +)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
