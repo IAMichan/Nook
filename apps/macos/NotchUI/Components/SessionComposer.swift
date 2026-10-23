@@ -170,6 +170,9 @@ struct SessionComposer<Controls: View>: View {
                 box
             }
         }
+        // The composer keeps to the conversation's reading column on its own, so a wide window never stretches it
+        // from edge to edge, wherever it is placed.
+        .chatColumn()
     }
 
     private func assign(_ value: String) {
@@ -356,21 +359,20 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
         }
+        // The send button sits 8 pt from the bottom and trailing edges, so with `Radius.composer` its circle runs
+        // parallel to the corner; the text starts 16 pt in, and a one-line box is a 48 pt capsule.
         .padding(.leading, NookTheme.Spacing.xl)
         .padding(.trailing, NookTheme.Spacing.md)
-        .padding(.top, choicesBelow ? NookTheme.Spacing.md : NookTheme.Spacing.lg + NookTheme.Spacing.xxs)
+        .padding(.top, choicesBelow ? NookTheme.Spacing.md : NookTheme.Spacing.xl)
         .padding(.bottom, NookTheme.Spacing.md)
-        // One quiet surface; focus only brightens its edge a little, so the box does not flash while you type.
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous).fill(Self.surface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
-                .stroke(focused.wrappedValue ? tint.opacity(0.28) : NookTheme.fieldStroke, lineWidth: 1)
-        )
+        // One quiet surface with a hairline outline and a faint light along its top edge, so it lifts off the canvas;
+        // focus only brightens the outline a little, so the box does not flash while you type.
+        .background(shape.fill(Self.surface))
+        .overlay(shape.strokeBorder(focused.wrappedValue ? tint.opacity(0.28) : NookTheme.fieldStroke, lineWidth: 1))
+        .overlay(edgeLight)
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: NookTheme.Radius.pill, style: .continuous)
+                shape
                     .strokeBorder(NookTheme.iris, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .allowsHitTesting(false)
             }
@@ -386,13 +388,26 @@ struct SessionComposer<Controls: View>: View {
         .onDisappear { pasteMonitor.stop() }
     }
 
-    /// The choices for the turn, then the extra button and send (or stop) on the right.
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+    }
+
+    /// The faint light along the top edge of the box, fading out before its middle.
+    private var edgeLight: some View {
+        let light = LinearGradient(colors: [NookTheme.paper.opacity(0.06), NookTheme.paper.opacity(0)],
+                                   startPoint: .top, endPoint: .center)
+        return shape.strokeBorder(light, lineWidth: 1).allowsHitTesting(false)
+    }
+
+    /// The choices for the turn, then the extra button and send (or stop) on the right. The row starts a pill's own
+    /// padding further out, so the first choice's words line up with the text above it.
     private var controlRow: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
             controls()
             Spacer(minLength: NookTheme.Spacing.md)
             sendCluster
         }
+        .padding(.leading, -NookTheme.Spacing.md)
     }
 
     /// The choices alone, in the tray under the box; they give up their words step by step like the row in the box.

@@ -431,6 +431,8 @@ struct NookChatView: View {
                 .zIndex(1)
             }
         }
+        // The attachment and the queued questions keep to the composer's column too.
+        .chatColumn()
     }
 
     /// The questions waiting for the answer that runs, when there are any.
