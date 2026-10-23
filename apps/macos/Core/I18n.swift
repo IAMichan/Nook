@@ -405,8 +405,6 @@ private let translations: [AppLanguage: [String: String]] = [
         // MARK: Settings - Overview
         "settings.overview.readyToUse": "Klaar om te gebruiken",
         "settings.overview.countOf": "%d van %d",
-        "settings.overview.howToUse": "Zo gebruik je Nook",
-        "settings.overview.howToUseFooter": "Vraag gewoon wat je wilt: “wat staat er in die mail?”, “zet dit in mijn agenda”. Nook kijkt zelf op je schermen, in je agenda en in je koppelingen. Niets gebeurt zonder jouw klik.",
         "settings.overview.askTyping": "Vraag iets (typen)",
         "settings.overview.talkNook": "Praat met Nook",
         "settings.overview.lookScreen": "Laat Nook meekijken",
@@ -476,7 +474,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.webSearch": "Zoek op het web als dat nodig is",
         "settings.assistant.webSearchDetail": "Voor nieuws, weer, uitslagen, prijzen en openingstijden. Werkt met elk brein.",
         "settings.assistant.thinkAlongToggle": "Denk mee terwijl ik werk",
-        "settings.assistant.thinkAlongDetail": "Kan Nook iets overnemen of weet hij een slimmere aanpak, dan stelt hij het voor naast de notch. Zeg je vaker nee, dan houdt hij zich in. Stuurt af en toe de tekst van je voorste vensters naar je brein.",
+        "settings.assistant.thinkAlongDetail": "Nook stelt naast de notch voor wat het kan overnemen of slimmer kan, en houdt zich in als je vaak nee zegt. Leest af en toe het voorste venster.",
         "settings.assistant.autoRunSafe": "Kleine dingen meteen doen",
         "settings.assistant.autoRunSafeDetail": "Muziek, volume, een app, een herinnering of een open punt. Afspraken, mail, links, opdrachten en diensten vragen altijd eerst.",
 
@@ -736,7 +734,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.tooHeavyForMemory": "Te zwaar voor %lld GB",
         "settings.brain.localModelDownloadHint": "Eén keer downloaden (een paar GB), daarna werkt het zonder internet. Deze Mac heeft %lld GB geheugen. Het model gaat na anderhalve minuut zonder vraag weer uit het geheugen.",
         "settings.voice.customSoundsHint": "Zet attention, done of error (.wav, .mp3, .aiff, .m4a) in de map om een eigen geluid te gebruiken.",
-        "settings.privacy.permissionsFooter": "Mail, je browser, Spotify en Muziek vraagt macOS zelf om toestemming zodra Nook ze voor het eerst gebruikt. Na een nieuwe build met een ad-hoc handtekening kan macOS het opnieuw vragen.",
+        "settings.privacy.permissionsFooter": "macOS vraagt om toegang tot Mail, browser en muziek zodra Nook ze voor het eerst gebruikt.",
         "settings.agents.changeNotice": "Dit verandert in %@. Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.",
         "settings.agents.noChange": "Er verandert niets.",
 
@@ -886,13 +884,11 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.lastOK": "laatst gelukt %@",
         "settings.connections.notBuiltIn": "Nog niet ingebouwd",
         "settings.connections.notBuiltInFooter": "Hier staat eerlijk wat er nu wel kan. Een directe koppeling met inloggen vraagt per dienst een eigen app-registratie en OAuth; die komen nog.",
-        "notbuilt.slack": "Lezen en sturen: voeg bij Eigen bronnen het Slack-API-adres toe met een user-token (https://slack.com/api | Bearer xoxp-…, scopes search:read, channels:history, chat:write). Alleen sturen: een Slack-webhook. Inloggen met Slack zit er nog niet in.",
-        "notbuilt.teams": "Sturen kan via een Teams-webhook (Eigen bronnen). Berichten lezen vraagt Microsoft Graph met een eigen app-registratie en OAuth; dat zit nog niet in Nook.",
         "notbuilt.mail": "Voeg het account toe aan de app Mail van macOS; Nook zoekt en leest dan via Mail (inbox en verzonden). Mail moet open zijn.",
-        "notbuilt.calendar": "Voeg het account toe bij Systeeminstellingen › Internetaccounts (dan via Apple Agenda, ook schrijven), of plak het ICS-adres bij Andere agenda's (alleen lezen).",
-        "notbuilt.drive": "Laat de map synchroniseren met Finder; Bestanden vindt de documenten dan met Spotlight en leest pdf, Word en tekst. Een directe koppeling met inloggen is er nog niet.",
-        "notbuilt.tasks": "Lezen kan als eigen bron met hun REST-API en een sleutel, bijvoorbeeld https://api.todoist.com/rest/v2 | Bearer …. Taken aanmaken of bijwerken in deze diensten kan Nook nog niet; gebruik Herinneringen of open punten.",
-        "notbuilt.chat": "Sturen via een Discord-webhook of Telegram-bot als eigen bron. Telegram-berichten lezen kan met de bot (getUpdates); Discord lezen nog niet.",
+        "notbuilt.calendar": "Voeg het account toe in Systeeminstellingen › Internetaccounts, of plak het ICS-adres onder Andere agenda's (alleen lezen).",
+        "notbuilt.drive": "Synchroniseer de map met Finder: Nook vindt en leest dan de documenten.",
+        "notbuilt.tasks": "Lees ze als eigen bron met hun REST API en een sleutel (bijv. https://api.todoist.com/rest/v2 | Bearer …). Taken aanmaken kan nog niet.",
+        "notbuilt.chat": "Koppel Discord via Beeper Desktop in Chats, of verstuur via een Discord-webhook als eigen bron.",
     ],
     .en: [
         // MARK: Menu Bar & General
@@ -1182,8 +1178,6 @@ private let translations: [AppLanguage: [String: String]] = [
         // MARK: Settings - Overview
         "settings.overview.readyToUse": "Ready to use",
         "settings.overview.countOf": "%d of %d",
-        "settings.overview.howToUse": "How to use Nook",
-        "settings.overview.howToUseFooter": "Just ask what you want: “what does that email say?”, “put this on my calendar”. Nook inspects your screens, calendar, and connections. Nothing happens without your click.",
         "settings.overview.askTyping": "Ask something (typing)",
         "settings.overview.talkNook": "Talk to Nook",
         "settings.overview.lookScreen": "Let Nook look along",
@@ -1253,7 +1247,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.webSearch": "Search the web when needed",
         "settings.assistant.webSearchDetail": "For news, weather, scores, prices, and opening hours. Works with any brain.",
         "settings.assistant.thinkAlongToggle": "Suggest ideas while I work",
-        "settings.assistant.thinkAlongDetail": "If Nook can take something over or knows a smarter approach, it proposes it next to the notch. If you say no often, it holds back. Occasionally sends front window text to your brain.",
+        "settings.assistant.thinkAlongDetail": "Nook proposes next to the notch what it can take over or do smarter, and holds back if you often say no. Reads the front window now and then.",
         "settings.assistant.autoRunSafe": "Perform small tasks immediately",
         "settings.assistant.autoRunSafeDetail": "Music, volume, an app, a reminder, or a to-do. Events, emails, links, commands, and services always ask first.",
 
@@ -1513,7 +1507,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.tooHeavyForMemory": "Too demanding for %lld GB",
         "settings.brain.localModelDownloadHint": "Download once (a few GB), then works completely offline. This Mac has %lld GB memory. The model unloads after 90 seconds of inactivity.",
         "settings.voice.customSoundsHint": "Place attention, done or error (.wav, .mp3, .aiff, .m4a) files in the folder to use custom sounds.",
-        "settings.privacy.permissionsFooter": "macOS prompts for Mail, browser, Spotify and Music permissions when Nook first accesses them. Rebuilding with an ad-hoc signature may prompt again.",
+        "settings.privacy.permissionsFooter": "macOS asks for Mail, browser and music access the first time Nook uses them.",
         "settings.agents.changeNotice": "This changes in %@. Your existing settings remain intact; a backup is created alongside the file.",
         "settings.agents.noChange": "No changes.",
 
@@ -1663,13 +1657,11 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.lastOK": "last worked %@",
         "settings.connections.notBuiltIn": "Not built in yet",
         "settings.connections.notBuiltInFooter": "This is an honest list of what works today. A direct sign-in connection needs an app registration and OAuth per service; those are still to come.",
-        "notbuilt.slack": "Read and send: add the Slack API address with a user token under Custom sources (https://slack.com/api | Bearer xoxp-…, scopes search:read, channels:history, chat:write). Send only: a Slack webhook. Signing in with Slack is not built in yet.",
-        "notbuilt.teams": "Sending works through a Teams webhook (Custom sources). Reading messages needs Microsoft Graph with an app registration and OAuth; that is not in Nook yet.",
         "notbuilt.mail": "Add the account to the macOS Mail app; Nook then searches and reads through Mail (inbox and sent). Mail must be open.",
-        "notbuilt.calendar": "Add the account in System Settings › Internet Accounts (then through Apple Calendar, including writing), or paste the ICS address under Other calendars (read only).",
-        "notbuilt.drive": "Sync the folder with Finder; Files then finds the documents with Spotlight and reads PDF, Word and text. A direct sign-in connection is not available yet.",
-        "notbuilt.tasks": "Reading works as a custom source with their REST API and a key, for example https://api.todoist.com/rest/v2 | Bearer …. Nook cannot create or update tasks in these services yet; use Reminders or open loops.",
-        "notbuilt.chat": "Send through a Discord webhook or Telegram bot as a custom source. Telegram messages can be read with the bot (getUpdates); Discord reading is not available yet.",
+        "notbuilt.calendar": "Add the account in System Settings › Internet Accounts, or paste its ICS address under Other calendars (read only).",
+        "notbuilt.drive": "Sync the folder with Finder: Nook then finds and reads its documents.",
+        "notbuilt.tasks": "Read them as a custom source with their REST API and a key (e.g. https://api.todoist.com/rest/v2 | Bearer …). Creating tasks is not possible yet.",
+        "notbuilt.chat": "Link Discord through Beeper Desktop in Chats, or send through a Discord webhook as a custom source.",
     ],
     .de: [
         // MARK: Menu Bar & General
@@ -1959,8 +1951,6 @@ private let translations: [AppLanguage: [String: String]] = [
         // MARK: Settings - Overview
         "settings.overview.readyToUse": "Einsatzbereit",
         "settings.overview.countOf": "%d von %d",
-        "settings.overview.howToUse": "So nutzt du Nook",
-        "settings.overview.howToUseFooter": "Frag einfach, was du möchtest: „Was steht in dieser E-Mail?“, „Trag das in meinen Kalender ein“. Nook prüft deine Bildschirme, Termine und Verbindungen. Nichts geschieht ohne deinen Klick.",
         "settings.overview.askTyping": "Etwas fragen (tippen)",
         "settings.overview.talkNook": "Mit Nook sprechen",
         "settings.overview.lookScreen": "Lass Nook mitschauen",
@@ -2030,7 +2020,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.assistant.webSearch": "Bei Bedarf im Web suchen",
         "settings.assistant.webSearchDetail": "Für Nachrichten, Wetter, Sportergebnisse, Preise und Öffnungszeiten. Funktioniert mit jedem Gehirn.",
         "settings.assistant.thinkAlongToggle": "Mitdenken während ich arbeite",
-        "settings.assistant.thinkAlongDetail": "Kann Nook etwas übernehmen oder kennt einen besseren Weg, schlägt es dies neben der Notch vor. Sagst du öfter nein, hält es sich zurück. Sendet gelegentlich Vordergrundfenster-Texte an dein Gehirn.",
+        "settings.assistant.thinkAlongDetail": "Nook schlägt neben der Notch vor, was es übernehmen oder klüger machen kann, und hält sich zurück, wenn du oft nein sagst. Liest ab und zu das vordere Fenster.",
         "settings.assistant.autoRunSafe": "Kleine Aufgaben sofort erledigen",
         "settings.assistant.autoRunSafeDetail": "Musik, Lautstärke, eine App, eine Erinnerung oder offener Punkt. Termine, E-Mails, Links, Befehle und Dienste fragen immer zuerst.",
 
@@ -2285,7 +2275,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.tooHeavyForMemory": "Zu anspruchsvoll für %lld GB",
         "settings.brain.localModelDownloadHint": "Einmalig herunterladen (ein paar GB), danach funktioniert es komplett offline. Dieser Mac hat %lld GB Speicher. Das Modell entlädt sich nach 90 Sekunden Inaktivität.",
         "settings.voice.customSoundsHint": "Platziere attention-, done- oder error-Dateien (.wav, .mp3, .aiff, .m4a) im Ordner, um eigene Töne zu nutzen.",
-        "settings.privacy.permissionsFooter": "macOS fragt selbst nach Berechtigungen für Mail, Browser, Spotify und Musik, sobald Nook darauf zugreift. Nach einem Rebuild mit Ad-hoc-Signatur kann macOS erneut nachfragen.",
+        "settings.privacy.permissionsFooter": "macOS fragt nach Zugriff auf Mail, Browser und Musik, wenn Nook sie zum ersten Mal nutzt.",
         "settings.agents.changeNotice": "Dies ändert sich in %@. Deine eigenen Einstellungen bleiben erhalten; eine Sicherungskopie wird daneben angelegt.",
         "settings.agents.noChange": "Keine Änderungen.",
 
@@ -2435,12 +2425,10 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.lastOK": "zuletzt erfolgreich %@",
         "settings.connections.notBuiltIn": "Noch nicht eingebaut",
         "settings.connections.notBuiltInFooter": "Hier steht ehrlich, was heute geht. Eine direkte Anmeldung braucht pro Dienst eine eigene App-Registrierung und OAuth; die kommen noch.",
-        "notbuilt.slack": "Lesen und senden: füge unter Eigene Quellen die Slack-API-Adresse mit einem User-Token hinzu (https://slack.com/api | Bearer xoxp-…, Scopes search:read, channels:history, chat:write). Nur senden: ein Slack-Webhook. Anmelden mit Slack gibt es noch nicht.",
-        "notbuilt.teams": "Senden geht über einen Teams-Webhook (Eigene Quellen). Nachrichten lesen erfordert Microsoft Graph mit eigener App-Registrierung und OAuth; das ist noch nicht in Nook.",
         "notbuilt.mail": "Füge das Konto der Mail-App von macOS hinzu; Nook sucht und liest dann über Mail (Posteingang und Gesendet). Mail muss geöffnet sein.",
-        "notbuilt.calendar": "Füge das Konto unter Systemeinstellungen › Internetaccounts hinzu (dann über Apple Kalender, auch schreiben), oder füge die ICS-Adresse bei Andere Kalender ein (nur lesen).",
-        "notbuilt.drive": "Synchronisiere den Ordner mit dem Finder; Dateien findet die Dokumente dann per Spotlight und liest PDF, Word und Text. Eine direkte Anmeldung gibt es noch nicht.",
-        "notbuilt.tasks": "Lesen geht als eigene Quelle mit ihrer REST-API und einem Schlüssel, z. B. https://api.todoist.com/rest/v2 | Bearer …. Aufgaben in diesen Diensten anlegen oder ändern kann Nook noch nicht; nutze Erinnerungen oder offene Punkte.",
-        "notbuilt.chat": "Senden über einen Discord-Webhook oder Telegram-Bot als eigene Quelle. Telegram-Nachrichten lesen geht mit dem Bot (getUpdates); Discord lesen noch nicht.",
+        "notbuilt.calendar": "Füge das Konto in Systemeinstellungen › Internetaccounts hinzu oder setze die ICS-Adresse unter Andere Kalender ein (nur lesen).",
+        "notbuilt.drive": "Synchronisiere den Ordner mit dem Finder: Nook findet und liest dann die Dokumente.",
+        "notbuilt.tasks": "Lies sie als eigene Quelle mit ihrer REST-API und einem Schlüssel (z. B. https://api.todoist.com/rest/v2 | Bearer …). Aufgaben anlegen geht noch nicht.",
+        "notbuilt.chat": "Verknüpfe Discord über Beeper Desktop in Chats oder sende über einen Discord-Webhook als eigene Quelle.",
     ]
 ]

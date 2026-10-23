@@ -407,7 +407,7 @@ let completionTranslations: [AppLanguage: [String: String]] = [
         "settings.ws.days": "%ld Tagen",
         "settings.ws.editor": "Editor",
         "settings.ws.finder": "Finder",
-        "settings.ws.footer": "Was „Neue Sitzung“ vorschlägt. Wählst du dort etwas anderes, merkt Nook es sich. Berechtigungen, die ein Agent nicht unterstützt, fallen auf „Änderungen erlauben“ zurück.",
+        "settings.ws.footer": "Was eine neue Sitzung vorschlägt; wählst du dort etwas anderes, merkt Nook es sich.",
         "settings.ws.isolation": "Standard-Isolierung",
         "settings.ws.mode": "Standardmodus",
         "settings.ws.model": "Modell für %@",

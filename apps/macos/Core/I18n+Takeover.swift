@@ -26,7 +26,7 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
         "takeover.wait.title": "Nook heeft jou even nodig",
         "takeover.wait.yes": "Gedaan, ga verder",
         "takeover.settings.onTap": "Eén tik: geef Nook een taak",
-        "takeover.settings.onTapDetail": "Tik één keer op rechter %@: de notch vraagt wat Nook moet doen. Nook doet het dan zelf in je apps en browser, met een eigen cursor, en toont klein in de notch waar het is. Vóór betalen, bestellen, versturen of verwijderen vraagt Nook het je eerst. Nog een tik stopt de taak.",
+        "takeover.settings.onTapDetail": "Tik één keer op rechter %@ en zeg wat er moet gebeuren: Nook doet het in je apps met een eigen cursor, en vraagt eerst voor betalen, versturen of verwijderen. Tik nog eens om te stoppen.",
     ],
     .en: [
         "takeover.title": "Nook takes over",
@@ -51,7 +51,7 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
         "takeover.wait.title": "Nook needs you for a moment",
         "takeover.wait.yes": "Done, go on",
         "takeover.settings.onTap": "One tap: give Nook a task",
-        "takeover.settings.onTapDetail": "Tap right %@ once: the notch asks what Nook should do. Nook then does it itself in your apps and browser, with a cursor of its own, and shows in the notch where it is. Before paying, ordering, sending or deleting, Nook asks you first. Another tap stops the task.",
+        "takeover.settings.onTapDetail": "Tap right %@ once and say what to do: Nook does it in your apps with its own cursor, and asks before paying, sending or deleting. Tap again to stop.",
     ],
     .de: [
         "takeover.title": "Nook übernimmt",
@@ -76,7 +76,7 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
         "takeover.wait.title": "Nook braucht dich kurz",
         "takeover.wait.yes": "Erledigt, weiter",
         "takeover.settings.onTap": "Ein Tipp: gib Nook eine Aufgabe",
-        "takeover.settings.onTapDetail": "Tippe einmal auf die rechte %@-Taste: Die Notch fragt, was Nook tun soll. Nook erledigt es dann selbst in deinen Apps und im Browser, mit eigenem Cursor, und zeigt in der Notch, wo es gerade ist. Vor Bezahlen, Bestellen, Senden oder Löschen fragt Nook dich zuerst. Ein weiterer Tipp stoppt die Aufgabe.",
+        "takeover.settings.onTapDetail": "Tippe einmal auf die rechte %@-Taste und sag, was zu tun ist: Nook erledigt es in deinen Apps mit eigenem Cursor und fragt vor Zahlen, Senden oder Löschen. Erneut tippen stoppt.",
     ],
     .fr: [
         "takeover.title": "Nook prend le relais",
@@ -101,7 +101,7 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
         "takeover.wait.title": "Nook a besoin de vous un instant",
         "takeover.wait.yes": "C’est fait, continuer",
         "takeover.settings.onTap": "Un tap : confiez une tâche à Nook",
-        "takeover.settings.onTapDetail": "Touchez une fois la touche %@ de droite : l’encoche demande ce que Nook doit faire. Nook le fait alors lui-même dans vos apps et votre navigateur, avec son propre curseur, et montre dans l’encoche où il en est. Avant de payer, commander, envoyer ou supprimer, Nook vous demande d’abord. Un autre tap arrête la tâche.",
+        "takeover.settings.onTapDetail": "Touchez une fois la touche %@ de droite et dites quoi faire : Nook le fait dans vos apps avec son propre curseur, et demande avant de payer, envoyer ou supprimer. Touchez à nouveau pour arrêter.",
     ],
     .es: [
         "takeover.title": "Nook toma el control",
@@ -126,6 +126,6 @@ let takeoverTranslations: [AppLanguage: [String: String]] = [
         "takeover.wait.title": "Nook te necesita un momento",
         "takeover.wait.yes": "Hecho, sigue",
         "takeover.settings.onTap": "Un toque: dale una tarea a Nook",
-        "takeover.settings.onTapDetail": "Toca una vez la tecla %@ derecha: la muesca pregunta qué debe hacer Nook. Nook lo hace entonces solo en tus apps y navegador, con su propio cursor, y muestra en la muesca por dónde va. Antes de pagar, pedir, enviar o eliminar, Nook te pregunta primero. Otro toque detiene la tarea.",
+        "takeover.settings.onTapDetail": "Toca una vez la tecla %@ derecha y di qué hacer: Nook lo hace en tus apps con su propio cursor, y pregunta antes de pagar, enviar o borrar. Toca otra vez para parar.",
     ],
 ]
