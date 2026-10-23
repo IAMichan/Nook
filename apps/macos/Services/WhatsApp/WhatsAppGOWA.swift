@@ -117,7 +117,9 @@ extension WhatsAppGOWAProcess {
     /// The polls of `chat` that the GOWA Nook runs keeps in its own databases on this Mac (see `WAGOWAStoredPolls`), as
     /// messages. Empty when GOWA is not Nook's own, or keeps none (an older GOWA has no table for them).
     func storedPolls(chat: String) async -> [WAMessage] {
-        guard isRunning else { return [] }
+        // Nook's own GOWA, also one an earlier Nook started: stopped from Xcode or killed, Nook leaves it running, and
+        // the next Nook finds the port taken and does not start one itself. Its databases are still Nook's.
+        guard isRunning || (Self.autoStart && WhatsAppSettings.gateway == .gowa) else { return [] }
         let folder = Self.workingDirectory.appendingPathComponent("storages", isDirectory: true)
         let store = folder.appendingPathComponent("chatstorage.db").path
         let session = folder.appendingPathComponent("whatsapp.db").path

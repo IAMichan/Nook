@@ -88,6 +88,10 @@ struct NookTaskRing: View {
         TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving && !following)) { context in
             ring(at: context.date)
         }
+        // One picture per frame instead of a layer per piece, its light and its glow; twice its size, so the ring
+        // trailing behind Nook and stretching is not cut off.
+        .frame(width: side * 2, height: side * 2)
+        .drawingGroup()
         .frame(width: side, height: side)
         .contentShape(RingBand(radius: radius, width: 16), eoFill: true)
         .onContinuousHover { phase in

@@ -44,13 +44,24 @@ struct NookOrb: View {
         // need only a few frames a second, and it can doze for hours. While you are away or the display sleeps (the
         // energy plan pauses) nobody sees it breathe, so it holds still instead of drawing all night.
         let awakeRate = frameRate ?? energy.plan.interactiveFrameRate
-        TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, awakeRate) : 1.0 / Self.dozingFrameRate,
-                                paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
-            let p = pose(at: context.date)
-            orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
-        }
-        .frame(width: size, height: size)
-        .background(PointerProbe(tracker: tracker))
+        // The layout sees only a fixed square; Nook is drawn over it. In the layout itself, every frame asked the row
+        // he sits in to place and align everything again, on every screen's notch.
+        Color.clear
+            .frame(width: size, height: size)
+            .overlay {
+                TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, awakeRate) : 1.0 / Self.dozingFrameRate,
+                                        paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
+                    let p = pose(at: context.date)
+                    orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
+                }
+                // Drawn as one picture: Nook is dozens of layers (shading, eyes, mouth, what he wears), and every frame
+                // SwiftUI otherwise walks and updates all of them, in every screen's notch. Three times his size, so the
+                // glow, a hat and a hop are not cut off; laid out at his own size.
+                .frame(width: size * 3, height: size * 3)
+                .drawingGroup()
+                .frame(width: size, height: size)
+            }
+            .background(PointerProbe(tracker: tracker))
         .onChange(of: mood) { _, _ in moodSince = Date() }
         .accessibilityHidden(true)
     }

@@ -207,8 +207,9 @@ final class WhatsAppLink: ObservableObject {
     private var previews: [String: WAPreview] = [:] {
         didSet { previewRevision &+= 1 }
     }
-    /// Counts changes to the fetched files, so a chat's bubbles made earlier know when a photo came in since.
-    private(set) var previewRevision = 0
+    /// Counts changes to the fetched files. Published, so an open chat shows a photo, sticker or video the moment it
+    /// is fetched, and its bubbles made earlier know they are out of date.
+    @Published private(set) var previewRevision = 0
     private var previewOrder: [String] = []
     private var previewsLoading: Set<String> = []
     /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
