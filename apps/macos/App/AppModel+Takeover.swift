@@ -134,6 +134,16 @@ extension AppModel {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty else { return }
         viewModel.show(.idle)
+        // "Punt 5 moet dit worden", "verwijder de laatste zin": the part is changed in the document in front, selected and
+        // typed over like a person would. Without a document there, it is a chat message, and a task Nook can take over.
+        if DoubleTapLogic.asksToEdit(request) {
+            DoubleTap.shared.edit(request: request, after: 0.3) { [weak self] in
+                self?.chat.startNew()
+                self?.handleUserText(request, reveal: false)
+                self?.followInNotch()
+            }
+            return
+        }
         // "Vul het formulier in": Double Tap fills the form in front, once the app you were in has the keyboard back.
         if DoubleTapLogic.asksToFill(request) {
             DoubleTap.shared.fill(request: request, after: 0.3)

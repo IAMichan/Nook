@@ -6,7 +6,10 @@ import Combine
 /// (`onAsk`). Typing "fill in the form" there (`DoubleTapLogic.asksToFill`) fills the empty fields of the form or reply
 /// box in front with what Nook remembers about you and the text on screen (`fill(request:)`). See `DoubleTapLogic` for
 /// the rules of filling. Asking it to write ("schrijf een sollicitatiebrief", "translate this", `DoubleTapLogic.asksToWrite`)
-/// types the text where the cursor is, in any app: a Word document, a mail, a note, a chat (`write(request:)`).
+/// types the text where the cursor is, in any app: a Word document, a mail, a note, a chat (`write(request:)`). Asking it
+/// to change a part that is there ("punt 5 moet dit worden", "maak de tweede alinea korter", `DoubleTapLogic.asksToEdit`)
+/// finds that part in the document, selects it with the accessibility layer, the mouse or the keyboard, and types the new
+/// text over it (`edit(request:)`). Anything else goes to the chat, where Nook can take the task over with mouse and keyboard.
 ///
 /// - The key is watched with NSEvent `flagsChanged` monitors only: no event tap, so no Input Monitoring prompt.
 /// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return and never
@@ -43,6 +46,12 @@ final class DoubleTap: ObservableObject {
     var onStep: ((String) -> Void)?
     /// The steps are over; `last` is the last step shown, so a result shown since is left alone.
     var onStepsEnd: ((_ last: String) -> Void)?
+    /// What is on the clipboard, as the active brain may see it ("punt 5 moet dit worden" after copying the new text).
+    var clipboardText: () -> String? = { nil }
+    /// Nook's own cursor where it acts in the document (screen point, top-left origin), and nil when it is done.
+    var showCursor: ((CGPoint?, String) -> Void)?
+    /// Writes a line to the audit log: what was asked, what happened.
+    var record: ((_ args: String, _ result: String) -> Void)?
     /// One tap gives Nook a task (Settings › Shortcuts).
     @Published var taskOnTap: Bool {
         didSet { defaults.set(taskOnTap, forKey: "takeoverOnTap") }
@@ -157,6 +166,14 @@ final class DoubleTap: ObservableObject {
     /// when there is no cursor in a text to write at, so the request goes to the chat instead of getting lost.
     func write(request: String, after delay: Double = 0, fallback: (() -> Void)? = nil) {
         start(after: delay) { [weak self] in await self?.runWrite(request: request, fallback: fallback) }
+    }
+
+    /// Changes the part of the document in front that the user names ("punt 5 moet dit worden", "verwijder de laatste
+    /// zin"): selected and typed over the way a person would. When the brain finds nothing to change it writes at the cursor
+    /// instead; `fallback` runs when there is no document to edit, so the request goes to the chat (and from there to a
+    /// task Nook takes over) instead of getting lost.
+    func edit(request: String, after delay: Double = 0, fallback: (() -> Void)? = nil) {
+        start(after: delay) { [weak self] in await self?.runEdit(request: request, fallback: fallback) }
     }
 
     /// Stop in the notch: the brain's answer is no longer typed.
@@ -291,6 +308,83 @@ final class DoubleTap: ObservableObject {
         DoubleTapForm.wake(app)
         guard let cursor = await Self.cursor(in: app) else { return noCursor(fallback) }
         await write(request: request, at: cursor, in: app)
+    }
+
+    // MARK: Editing what is there
+
+    private func runEdit(request: String, fallback: (() -> Void)?) async {
+        guard AXIsProcessTrusted() else {
+            return ToastCenter.shared.warning(tr("doubletap.noAccess"), action: NookToastAction(title: tr("doubletap.openSettings")) {
+                SystemPermission.accessibility.openSettings()
+            })
+        }
+        guard let ask else { return ToastCenter.shared.warning(tr("doubletap.noBrain")) }
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != own else { return noCursor(fallback) }
+        let appName = app.localizedName ?? ""
+        guard !UIControl.isBlocked(app: appName, bundleID: app.bundleIdentifier) else {
+            return ToastCenter.shared.info(tr("doubletap.write.blocked", appName))
+        }
+        step(tr("doubletap.step.reading", appName))
+        DoubleTapForm.wake(app)
+        guard !DoubleTapForm.focusIsSecure(app), let document = DoubleTapDocument.read(app) else { return noCursor(fallback) }
+
+        step(tr("doubletap.step.thinking", DoubleTapLogic.preview(request)))
+        let screen = screenText(app.bundleIdentifier ?? "") ?? ""
+        let prompt = DoubleTapLogic.editPrompt(request: request, app: appName, window: document.title, document: document.text,
+                                               cursor: document.selection, clipboard: clipboardText() ?? "", facts: facts(),
+                                               screen: screen)
+        let reply = await ask(DoubleTapLogic.editSystem, prompt, Self.deadline)
+        guard !Task.isCancelled else { return }
+        guard let reply else { return ToastCenter.shared.warning(tr("doubletap.edit.failed")) }
+        let (edits, missed) = DoubleTapLogic.edits(from: reply, in: document.text)
+        guard !edits.isEmpty else {
+            // The part is not there as the brain wrote it: the chat reads the window itself and takes it over.
+            if missed > 0 { return fallback.map { $0() } ?? ToastCenter.shared.info(tr("doubletap.edit.notFound")) }
+            // Nothing there to change: new text after all ("schrijf de inleiding"), else a task for the chat ("verander de
+            // achtergrond in blauw"), which Nook can take over with mouse and keyboard.
+            guard DoubleTapLogic.asksToWrite(request), let cursor = await Self.cursor(in: app) else { return noCursor(fallback) }
+            return await write(request: request, at: cursor, in: app)
+        }
+
+        // What Nook is about to change stays in the notch for a moment, so Stop can still keep it out.
+        step(tr("doubletap.step.editing", appName, DoubleTapLogic.editPreview(edits[edits.count - 1])))
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        guard !Task.isCancelled else { return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
+            return ToastCenter.shared.info(tr("doubletap.moved"))
+        }
+        // The user may have typed while the brain thought: find each part again in the document as it is now.
+        guard let now = document.current() else { return ToastCenter.shared.warning(tr("doubletap.edit.refused", appName)) }
+        var fresh = document
+        fresh.text = now
+        let placed = edits.compactMap { edit -> DoubleTapEdit? in
+            guard let range = DoubleTapLogic.locate(edit.find, in: now) else { return nil }
+            return DoubleTapEdit(find: (now as NSString).substring(with: range), replace: edit.replace, range: range)
+        }.sorted { $0.range.location > $1.range.location }
+
+        var changed = 0
+        for (index, edit) in placed.enumerated() {
+            guard !Task.isCancelled,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else { break }
+            step(tr("doubletap.step.editing", appName, DoubleTapLogic.editPreview(edit)))
+            if await fresh.apply(edit, in: app, show: { [weak self] point, label in self?.showCursor?(point, label) }) {
+                changed += 1
+            }
+            // The clipboard gets back what it held before the next paste takes it.
+            if index < placed.count - 1 { try? await Task.sleep(nanoseconds: 800_000_000) }
+        }
+        showCursor?(nil, "")
+        record?(request, "\(changed)/\(edits.count) changed in \(appName)")
+        if changed == 0 {
+            // The app would not let Nook select the text this way: the chat takes the task over with mouse and keyboard.
+            if let fallback { return fallback() }
+            ToastCenter.shared.warning(tr("doubletap.edit.refused", appName))
+        } else if changed < edits.count {
+            ToastCenter.shared.info(tr("doubletap.editedSome", changed, edits.count, appName), detail: tr("doubletap.typed.undo"))
+        } else {
+            ToastCenter.shared.success(tr("doubletap.edited", appName), detail: tr("doubletap.typed.undo"))
+        }
     }
 
     private func noCursor(_ fallback: (() -> Void)?) {

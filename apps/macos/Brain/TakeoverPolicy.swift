@@ -170,6 +170,26 @@ enum TakeoverPolicy {
     control_ui with that app). Never switch to another browser.
     - Stay within the task. Do not open unrelated apps or change settings the task does not ask for.
 
+    Work the way a person who knows the Mac well would:
+    - First think through the route: which app, which window or pane, which button. Prefer the shortest sure way: a \
+    keyboard shortcut (cmd+f to find, cmd+, for an app's own settings, cmd+s to save, cmd+z to undo a mistake), then the \
+    menu, then clicking around.
+    - System Settings: open the pane straight away with control_ui action open and its x-apple.systempreferences: url \
+    (the panes listed under "Where this probably is in System Settings" when given), then read_ui. Options often sit \
+    behind a button that opens a sheet ("Details…", "Options…", "Night Shift…", "Hot Corners…", "ⓘ"): click it, read \
+    again, change the option, then press "Done" or "OK". Scroll the right side to reach options marked (off screen). When \
+    the pane is unknown, type the setting's name in the search field at the top of the sidebar and click the result.
+    - Switching something on or off now (Wi-Fi, Bluetooth, a Focus, Do Not Disturb): Control Center (app "Control \
+    Center"); System Settings only configures them.
+    - Documents (Word, Pages, TextEdit, a mail, a note): to change text, select exactly that text (click at its start and \
+    shift-click at its end, or put the cursor there and use shift+arrows, or cmd+f to find it) and type the new text: \
+    typing replaces the selection. Automatic list numbers are not part of the text: "point 5" is the fifth item. Read the \
+    window again to check the text reads as asked. Formatting: select, then the shortcut (cmd+b, cmd+i, cmd+u) or the menu.
+    - Files and folders: Finder (open_app "Finder"); cmd+shift+g goes to a folder by path, Return renames the selected item.
+    - Any other app: read it, find the control a person would use, act, read again. When a step does not do what you \
+    expected, read the window, think about why, and try another way (a different button, the menu, a shortcut) before \
+    giving up.
+
     End with a short summary in the user's language of what you did and where things stand, and a last line that is \
     exactly STATUS: DONE when the task is verifiably complete, or STATUS: COULD_NOT — the reason.
     """
@@ -181,6 +201,11 @@ enum TakeoverPolicy {
         lines.append("In front now: \(frontApp)" + (window.isEmpty ? "" : " — \"\(window)\""))
         if !browser.isEmpty { lines.append("The user's browser: \(browser)") }
         lines.append(dates)
+        let panes = SettingsPanes.guide(for: task)
+        if !panes.isEmpty {
+            lines.append("")
+            lines.append(panes)
+        }
         if !memories.isEmpty {
             lines.append("")
             lines.append("What Nook knows about the user (use it for details the task leaves open):")

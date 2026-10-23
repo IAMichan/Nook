@@ -398,6 +398,16 @@ extension AppModel {
             let windows = self.screenContext.windows.filter { $0.bundleID == bundleID }
             return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
         }
+        doubleTap.clipboardText = { [weak self] in
+            guard let self, !self.settings.privateSources.contains("clipboard"),
+                  let text = NSPasteboard.general.string(forType: .string) else { return nil }
+            return self.settings.shielded(String(text.prefix(4_000)))
+        }
+        // Nook's violet cursor shows where it selects and types in the document, as when it takes over a task.
+        doubleTap.showCursor = { point, label in
+            if let point { TakeoverCursor.shared.move(to: point, label: label) } else { TakeoverCursor.shared.hide() }
+        }
+        doubleTap.record = { [weak self] args, result in self?.store.audit(tool: "doubletap_edit", args: args, result: result) }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
         // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type.
         doubleTap.onStep = { [weak self] line in

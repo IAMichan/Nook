@@ -321,6 +321,8 @@ targets:
       - path: Services/WhatsApp/WhatsAppGateway.swift
       - path: Services/Flow/FlowLogic.swift
       - path: Services/DoubleTap/DoubleTapLogic.swift
+      - path: Services/DoubleTap/DoubleTapEditLogic.swift
+      - path: Brain/SettingsPanes.swift
       - path: Services/Autocomplete/GGUFReader.swift
       - path: Services/Autocomplete/CompletionModels.swift
       - path: Services/Autocomplete/CompletionSuggestion.swift
