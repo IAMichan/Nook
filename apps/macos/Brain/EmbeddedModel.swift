@@ -73,8 +73,8 @@ final class EmbeddedModel: ObservableObject {
     private func scheduleUnload() {
         idleTask?.cancel()
         // While autocomplete is in use the model stays longer: loading it again costs seconds, at the moment you type.
-        let typing = lastAutocomplete.map { Date().timeIntervalSince($0) < 30 * 60 } ?? false
-        let seconds = typing ? max(Self.idleSeconds, 15 * 60) : Self.idleSeconds
+        let typing = lastAutocomplete.map { Date().timeIntervalSince($0) < 10 * 60 } ?? false
+        let seconds = typing ? max(Self.idleSeconds, 5 * 60) : Self.idleSeconds
         idleTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled else { return }

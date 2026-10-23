@@ -4,8 +4,8 @@ import CoreGraphics
 
 /// Reads whether you share your screen or sit in a meeting, for `QuietPolicy`: the windows on screen (a sharing bar,
 /// a meeting site) and which apps have the microphone open. Reading needs no permission of its own; window names are
-/// only known with Screen Recording, which Nook already asks for to read the screen.
-@MainActor
+/// only known with Screen Recording, which Nook already asks for to read the screen. Not bound to the main thread: the
+/// window list and the audio process list are system round trips, and the timer reads them on a background queue.
 enum QuietWatch {
     /// What is going on right now.
     static func situation(events: [CalEvent], useCalendar: Bool, recording: Bool, countScreenshots: Bool = true,

@@ -4,7 +4,7 @@ import Foundation
 /// message goes straight to it, warm cache and all. A change of model, mode or rights (they are command-line flags),
 /// a copy of the conversation, or ten quiet minutes start a fresh process that resumes the conversation instead.
 extension WorkspaceManager {
-    private static let claudeIdleSeconds: UInt64 = 30 * 60
+    private static let claudeIdleSeconds: UInt64 = 10 * 60
 
     /// The flags a Claude Code process was started with; a process is reused only with the same ones.
     func claudeKey(_ run: WorkspaceRun) -> String {
@@ -90,7 +90,7 @@ extension WorkspaceManager {
         replace(run)
     }
 
-    /// How long a waiting session stays open: thirty minutes, or four hours while it has background work running
+    /// How long a waiting session stays open: ten minutes (each one is a process of a few hundred MB), or four hours while it has background work running
     ///, so the agent is still there to pick up the result.
     func idleSeconds(_ id: UUID, _ normal: UInt64) -> UInt64 {
         backgroundWork.contains(id) ? 4 * 60 * 60 : normal

@@ -79,7 +79,8 @@ final class PullRequestSync: ObservableObject {
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.tick)
+                // Away from the Mac or saving power, every git process and GitHub request can come less often.
+                try? await Task.sleep(for: Self.tick * EnergyMonitor.shared.plan.slowdown)
                 guard let self else { return }
                 self.refresh(now: Date())
             }

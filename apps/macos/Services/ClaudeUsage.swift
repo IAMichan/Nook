@@ -23,8 +23,9 @@ final class ClaudeUsage {
     private var lastFetch: [String: Date] = [:]
     private var busy = Set<String>()
 
-    /// Per account this often, multiplied by the energy plan's slowdown.
-    private static let interval: TimeInterval = 10 * 60
+    /// Per account this often, multiplied by the energy plan's slowdown. Each reading starts a whole `claude` process (a few
+    /// hundred MB of Node), and a turn or a limit event already reads again (`refreshNow`): the timer only covers the quiet hours.
+    private static let interval: TimeInterval = 30 * 60
     /// `refreshNow` asks again at most this often per account: it is called when a usage view opens, after a turn, on every
     /// rate limit event and while logging in.
     private static let minimumInterval: TimeInterval = 60

@@ -189,8 +189,14 @@ final class AutocompleteController: ObservableObject {
     private static let contextSeconds: TimeInterval = 180
     /// The clipboard goes into the prompt only this long after it was copied.
     private static let clipboardSeconds: TimeInterval = 5 * 60
-    /// The model leaves memory after this long without a suggestion.
-    private static let idleSeconds: UInt64 = 15 * 60
+    /// The model leaves memory after this long without a suggestion: a model of several GB held for a quarter of an hour
+    /// after the last key slowed down the rest of the Mac.
+    private static let idleSeconds: UInt64 = 5 * 60
+    /// At launch the model loads only after this long, not in the middle of everything else that starts then. A key
+    /// before that still loads it at once.
+    private static let launchDelay: UInt64 = 45
+    /// Set on the first `refresh`, which is at launch.
+    private static let launched = Date()
 
     private var prefs: CompletionPreferences { store.prefs }
 
@@ -236,7 +242,10 @@ final class AutocompleteController: ObservableObject {
             }
             guard let model else { state = .noModel; return }
             state = .ready
-            // Load it now, so the first suggestion does not wait.
+            // Load it now, so the first suggestion does not wait; at launch after `launchDelay`.
+            let wait = Double(Self.launchDelay) - Date().timeIntervalSince(Self.launched)
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard prefs.enabled, activeModel?.identity == model.identity else { return }
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
             if case .brain(let id, _) = model { EmbeddedModel.shared.preloadForAutocomplete(id) }
         }

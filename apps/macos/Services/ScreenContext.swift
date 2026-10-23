@@ -58,7 +58,10 @@ final class ScreenContext: ObservableObject {
 
     /// How many windows a read for a question keeps; the timer's own reads follow the energy plan (`EnergyPlan.screenWindowLimit`).
     private let maxWindows = 10
-    private let interval: TimeInterval = 7
+    /// The timer's read. A question reads the front window fresh anyway (`snapshot`) and switching apps reads the new one,
+    /// so the background read only keeps the other windows current: every 20 seconds is plenty, and three times less
+    /// capture and OCR than every seven.
+    private let interval: TimeInterval = 20
     /// Non-frontmost windows are refreshed at most this frequently by a read for a question; the timer follows the plan.
     private let backgroundMaxAge: TimeInterval = 30
     private var lastFailure: Date?
@@ -67,7 +70,7 @@ final class ScreenContext: ObservableObject {
     private var lastPeriodic: Date = .distantPast
     /// Per window: on how many periodic ticks in a row its picture changed, and when its text was last read. A window
     /// that changes on every tick (a video, a scrolling log, a game) is read at most every `volatileReadInterval`
-    /// instead of a full capture and OCR every seven seconds; a question still reads it fresh (`snapshot`).
+    /// instead of a full capture and OCR on every tick; a question still reads it fresh (`snapshot`).
     private var changeStreak: [CGWindowID: Int] = [:]
     private var lastRead: [CGWindowID: Date] = [:]
     private let volatileAfter = 3
@@ -94,7 +97,11 @@ final class ScreenContext: ObservableObject {
         observers.append(center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.clear() }
         })
-        Task { await tick() }
+        // The first read waits a little: at launch the rest of Nook (and often the rest of the Mac) is busy starting up.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            await self?.tick()
+        }
     }
 
     func stop() {

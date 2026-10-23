@@ -5,7 +5,7 @@ import Foundation
 /// `session/update`, tool calls show live, and the agent's permission requests are answered here (or right away when the
 /// session's rights allow it). A continued conversation is `session/load` when the agent supports it.
 extension WorkspaceManager {
-    private static let acpIdleSeconds: UInt64 = 30 * 60
+    private static let acpIdleSeconds: UInt64 = 10 * 60
 
     // MARK: Turns
 

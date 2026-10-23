@@ -47,14 +47,28 @@ enum AutocompleteField {
     ]
 
     /// Asks the app to build its accessibility tree: Electron apps listen to AXManualAccessibility, Chromium browsers to
-    /// AXEnhancedUserInterface.
+    /// AXEnhancedUserInterface. Once per process: the app keeps the setting until it quits, and asking again on every key
+    /// makes Chromium and Electron rebuild their tree, which slows them down for everyone. AXEnhancedUserInterface is never
+    /// set on other apps: there it only slows down window animations and window managers.
     static func wake(_ app: NSRunningApplication) {
-        let element = AXUIElementCreateApplication(app.processIdentifier)
+        wake(pid: app.processIdentifier, bundleID: app.bundleIdentifier)
+    }
+
+    static func wake(pid: pid_t, bundleID: String?) {
+        wokenLock.lock()
+        let first = woken.insert(pid).inserted
+        wokenLock.unlock()
+        guard first else { return }
+        let element = AXUIElementCreateApplication(pid)
         AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        if chromium.contains(app.bundleIdentifier ?? "") {
+        if chromium.contains(bundleID ?? "") {
             AXUIElementSetAttributeValue(element, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
         }
     }
+
+    /// The processes already asked to build their tree (see `wake`).
+    private static let wokenLock = NSLock()
+    private nonisolated(unsafe) static var woken: Set<pid_t> = []
 
     /// - Parameters:
     ///   - screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.

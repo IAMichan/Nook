@@ -24,10 +24,9 @@ enum AppTextReader {
     }
 
     /// Electron and Chromium apps (Slack, Teams, WhatsApp, Chrome) only build their accessibility tree when someone asks for it.
+    /// Shares `AutocompleteField.wake`: once per process, and AXEnhancedUserInterface only for Chromium browsers.
     static func wake(pid: pid_t) {
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        AutocompleteField.wake(pid: pid, bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier)
     }
 
     /// The text of the app's focused window, within `limit` characters; nil when there is nothing to read. Synchronous: call it

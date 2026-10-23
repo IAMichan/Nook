@@ -270,7 +270,8 @@ final class MailConnector: ContextSource {
         // Brief pause for Mail's scripting bridge to initialize.
         try? await Task.sleep(nanoseconds: 300_000_000)
     }
-    var refreshInterval: TimeInterval { 60 }
+    /// Every read scripts Mail (a count and a batch of messages), which keeps Mail busy too; a question reads it fresh anyway.
+    var refreshInterval: TimeInterval { 180 }
     private static let loadTimeout: TimeInterval = 30
 
     /// Fresh enough to answer from memory.
@@ -755,7 +756,8 @@ final class BrowserConnector: ContextSource {
     ]
 
     var isActive: Bool { ConnectorToggle.isOn(id) && Self.browsers.contains { ScriptText.isRunning($0.bundle) } }
-    var refreshInterval: TimeInterval { 45 }
+    /// Every read scripts each open browser tab by tab, which holds up the browser while it answers.
+    var refreshInterval: TimeInterval { 180 }
 
     func refresh() async {
         let runningBrowsers = Self.browsers.filter { ScriptText.isRunning($0.bundle) }

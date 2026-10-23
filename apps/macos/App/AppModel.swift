@@ -538,6 +538,8 @@ final class AppModel: ObservableObject {
     var quietViewers = 0
     /// When the meeting and sharing situation was last read.
     var lastQuietTick: Date = .distantPast
+    /// The timer's read of the meeting and sharing situation is under way on a background queue.
+    var quietReading = false
     /// When the agent history was last refreshed by the timer.
     var lastHistoryRefresh: Date = .distantPast
 }

@@ -92,13 +92,36 @@ final class PointerWhere: ObservableObject {
     /// The window number of Nook's own window under the pointer; nil over another app or the desktop.
     @Published private(set) var window: Int?
 
-    /// The pointer moved (`NotchController`'s monitors call this for every move, in Nook and outside it).
+    /// How often the pointer is looked up at most. A mouse reports up to 1000 moves a second, and every lookup asks the
+    /// WindowServer which window is under it.
+    private static let interval: TimeInterval = 0.1
+    private var lastCheck: TimeInterval = 0
+    private var checkPending = false
+
+    /// The pointer moved (`NotchController`'s monitors call this for every move, in Nook and outside it). Looked up at most
+    /// every `interval`; the last move of a burst is always looked up.
     func moved() {
+        let wait = lastCheck + Self.interval - ProcessInfo.processInfo.systemUptime
+        guard wait > 0 else { return check() }
+        guard !checkPending else { return }
+        checkPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.checkPending = false
+                self?.check()
+            }
+        }
+    }
+
+    private func check() {
+        lastCheck = ProcessInfo.processInfo.systemUptime
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }.flatMap(Self.displayID)
         if screen != self.screen { self.screen = screen }
-        let number = NSWindow.windowNumber(at: mouse, belowWindowWithWindowNumber: 0)
-        let window = NSApp.windows.contains { $0.windowNumber == number } ? number : nil
+        // Only ask the WindowServer when the pointer is over one of Nook's own windows at all.
+        let overNook = NSApp.windows.contains { $0.isVisible && NSMouseInRect(mouse, $0.frame, false) }
+        let number = overNook ? NSWindow.windowNumber(at: mouse, belowWindowWithWindowNumber: 0) : 0
+        let window = overNook && NSApp.windows.contains { $0.windowNumber == number } ? number : nil
         if window != self.window { self.window = window }
     }
 

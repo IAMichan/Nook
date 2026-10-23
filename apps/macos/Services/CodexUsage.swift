@@ -93,7 +93,7 @@ final class CodexUsage: ObservableObject {
 
     /// Query `codex app-server` at most this often, unless a session log was modified in the interim.
     private nonisolated static let appServerInterval: TimeInterval = 10 * 60
-    private nonisolated static let appServerRetryInterval: TimeInterval = 2 * 60
+    private nonisolated static let appServerRetryInterval: TimeInterval = 10 * 60
 
     func start() {
         timer?.invalidate()
@@ -212,7 +212,7 @@ final class CodexUsage: ObservableObject {
             return result
         }
         // Without any limits yet (Codex installed but not signed in, or an app-server that does not answer) a new try every
-        // two minutes, not on every one-minute tick: each one starts `codex app-server` and can wait 15 seconds for it.
+        // ten minutes, not on every one-minute tick: each one starts `codex app-server` and can wait 15 seconds for it.
         let retryDue = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerRetryInterval } ?? true
         if let codex = codexExecutable() {
             if hasSnapshot ? (sessionChanged || due) : retryDue {

@@ -74,6 +74,8 @@ final class ConnectorHub: ObservableObject {
     /// change in ways anyone sees, and each read wakes that app too, so they pause until you are back; a question still
     /// reads them fresh when they are stale (`MailConnector.inbox`).
     private static let followsYou: Set<String> = ["mail", "browser", "notes"]
+    /// How many sources one tick starts at most.
+    private static let perTick = 4
 
     private func tick() {
         let now = Date()
@@ -81,12 +83,18 @@ final class ConnectorHub: ObservableObject {
         // One scripted source per tick: started together they wait on the one AppleScript queue, and the ones behind it
         // fall back to starting an `osascript` process each. The others follow on the next ticks.
         var scripting = running.contains { Self.followsYou.contains($0) }
+        // A few sources per tick: at launch every source is due at once, and reading them all together (processes, databases,
+        // network) is a burst the rest of the Mac feels. Away or saving power, every source comes less often.
+        var started = 0
+        let slowdown = EnergyMonitor.shared.plan.slowdown
         for source in active where !running.contains(source.id) {
+            guard started < Self.perTick else { break }
             let scripted = Self.followsYou.contains(source.id)
             if scripted && (away || scripting) { continue }
             let last = lastRefresh[source.id] ?? .distantPast
-            if now.timeIntervalSince(last) >= source.refreshInterval {
+            if now.timeIntervalSince(last) >= source.refreshInterval * slowdown {
                 refresh(source)
+                started += 1
                 if scripted { scripting = true }
             }
         }
