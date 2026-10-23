@@ -32,16 +32,25 @@ extension RunProvider {
     }
 }
 
-/// The main window's controller. A single window; opening brings it to front.
+/// The main window's controller. A single window; opening brings it to front. It stays open until you close it, also
+/// across a restart of Nook (an update, a new build): it opens again where it was.
 @MainActor
 final class WorkspaceWindowController {
     static let shared = WorkspaceWindowController()
     private var window: NSWindow?
+    /// Quitting does not close the window: it is still open when Nook starts again.
+    private var quitting = false
+
+    private static let openKey = "window.open"
 
     var isKey: Bool { window?.isKeyWindow ?? false }
-    var isVisible: Bool { window?.isVisible ?? false }
+    /// Open, in front or not: also behind other apps or minimized in the Dock.
+    var isOpen: Bool { window.map { $0.isVisible || $0.isMiniaturized } ?? false }
 
-    func show(app: AppModel) {
+    /// Whether the window was open when Nook last quit.
+    static var wasOpen: Bool { UserDefaults.standard.bool(forKey: openKey) }
+
+    func show(app: AppModel, activate: Bool = true) {
         if window == nil {
             let root = WorkspaceView()
                 .environmentObject(app)
@@ -69,9 +78,23 @@ final class WorkspaceWindowController {
             window.isReleasedWhenClosed = false
             window.setFrameAutosaveName("NookWorkspace")
             if window.frame.origin == .zero { window.center() }
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard self?.quitting == false else { return }
+                    UserDefaults.standard.set(false, forKey: Self.openKey)
+                }
+            }
+            NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.quitting = true }
+            }
             self.window = window
         }
         if let window { DockPresence.shared.track(window) }
+        UserDefaults.standard.set(true, forKey: Self.openKey)
+        guard activate else {
+            window?.orderFront(nil)
+            return
+        }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -171,8 +194,8 @@ extension AppModel {
         presentApprovalCard(ApprovalCenter.make(request), context: context, open: open)
     }
 
-    /// Opens your agents in the notch (or in the main window while that is in front), optionally on one session or
-    /// straight into a new one.
+    /// Opens your agents in the notch (or in the main window while that is open, which comes forward), optionally on one
+    /// session or straight into a new one.
     func openWorkspace(run id: UUID? = nil, newSession: Bool = false) {
         if let id {
             workspace.selectedRunID = id
@@ -186,17 +209,18 @@ extension AppModel {
     }
 
     /// The main window: the notch's tabs with more room, opened only on request. `continuing`: the tab you were on in the
-    /// notch, which the window opens on.
-    func openWindow(continuing tab: PanelTab? = nil) {
+    /// notch, which the window opens on. `activate`: false when Nook starts with the window it had open when it quit, which
+    /// comes back without taking the keyboard from the app you are in.
+    func openWindow(continuing tab: PanelTab? = nil, activate: Bool = true) {
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if let tab {
             viewModel.windowSheet = nil
             viewModel.windowTab = tab == .nook ? .chat : tab
-        } else if !WorkspaceWindowController.shared.isVisible {
+        } else if !WorkspaceWindowController.shared.isOpen {
             // Already open, it stays where you are.
             viewModel.prepareWindow()
         }
-        WorkspaceWindowController.shared.show(app: self)
+        WorkspaceWindowController.shared.show(app: self, activate: activate)
     }
 
     /// Profile associated with a workspace run.
@@ -434,7 +458,7 @@ extension AgentProfile {
 
 extension AppModel {
     /// A terminal in Nook, in `folder`, optionally running `command` first. In the notch it opens with the agent session
-    /// working in that folder, or under Agents › Terminals when no session is; in the main window while that is in front.
+    /// working in that folder, or under Agents › Terminals when no session is; in the main window while that is open.
     func openTerminal(in folder: String, command: String? = nil, title: String? = nil) {
         TerminalStore.shared.open(in: folder, command: command, title: title)
         if let session = sessionID(workingIn: folder) {

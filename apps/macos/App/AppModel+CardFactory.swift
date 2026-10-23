@@ -163,10 +163,12 @@ extension AppModel {
         viewModel.show(.card(card))
     }
 
-    /// ⌥⌘ Space shortcut: immediately focus chat input from anywhere.
+    /// ⌥⌘ Space shortcut: immediately focus chat input from anywhere. In the notch, unless the main window is in front: an
+    /// open window behind other apps is not pulled forward for a quick question.
     func openAsk() {
         warmUp()
-        showChat(focus: true)
+        viewModel.focusChat = true
+        viewModel.show(.panel(.chat), inNotch: !WorkspaceWindowController.shared.isKey)
     }
 
     /// Opens the first-run flow in the main window.

@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Nook's main window: the open notch with the room of a window. The same panel (Nook with home and chat, Agents with
 /// every session and its tools, Music while something plays), with Nook and his task ring next to the same tabs, and
-/// tasks such as reviewing changes opening over the tab as they do in the notch. While the window is in front, anything
-/// that asks for a tab or a task opens here (see `NotchViewModel.routesToWindow`).
+/// tasks such as reviewing changes opening over the tab as they do in the notch. While the window is open, anything that
+/// asks for a tab or a task (View on a notch card too) opens here and brings it forward (see `NotchViewModel.routesToWindow`).
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var viewModel = AppModel.shared.viewModel

@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(.accessory)
         model.start()
         installStatusItem()
+        // The main window stays open until you close it: after a restart (an update, a new build) it is back.
+        if WorkspaceWindowController.wasOpen { model.openWindow(activate: false) }
     }
 
     /// Clicking Nook's Dock icon (there while one of its windows is open) brings that window back.
