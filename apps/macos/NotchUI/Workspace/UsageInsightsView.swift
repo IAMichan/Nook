@@ -7,7 +7,7 @@ enum UsageMetric: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Settings › Usage, the overview Code's Usage page shows: what every agent on this Mac used, read from their own
+/// Settings › Usage, the overview: what every agent on this Mac used, read from their own
 /// transcripts (also the sessions you run in a terminal), as cost at API prices or as tokens, over the last 24 hours or
 /// 7, 30 or 90 days. The same blocks (`UsageOverviewBlocks`) make the Usage page in the Agents tab.
 struct UsageInsightsView: View {
@@ -290,7 +290,7 @@ struct UsageMetricTile: View {
     }
 }
 
-/// One thin bar split in parts (Code's share bar), with a legend: each part's name and figure.
+/// One thin bar split in parts (a share bar), with a legend: each part's name and figure.
 struct UsageShareBar: View {
     struct Segment: Identifiable {
         var label: String
@@ -410,7 +410,7 @@ struct UsageModelRow: View {
     }
 }
 
-/// Tokens or cost per hour or day, one smooth band per agent stacked on the next, as Code draws it. Pointing at a
+/// Tokens or cost per hour or day, one smooth band per agent stacked on the next. Pointing at a
 /// column shows its figures.
 struct UsageAgentChart: View {
     let insights: UsageInsights

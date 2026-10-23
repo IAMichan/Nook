@@ -10,7 +10,7 @@ struct TurnDiffSelection: Equatable {
     var file: String? = nil
 }
 
-/// Under the answer of a turn that changed files (Code's changed-files card): "3 changed files +12 −4", the files
+/// Under the answer of a turn that changed files (the changed-files card): "3 changed files +12 −4", the files
 /// as a folder tree with what each got, and "Open diff". A click on a file opens its diff in the side panel.
 struct TurnChangesCard: View {
     let turn: TurnDiff
@@ -125,7 +125,7 @@ private struct TurnChangesRow: View {
     }
 }
 
-/// The diff panel next to a conversation (Code's): pick a turn or the whole session at the top, read the diff of
+/// The diff panel next to a conversation: pick a turn or the whole session at the top, read the diff of
 /// every file or of one, with the files of that choice in a column beside it. Made from the agent's own edits, so it
 /// shows what each turn did, also for a session whose folder is not on this Mac.
 struct TurnDiffPanel: View {

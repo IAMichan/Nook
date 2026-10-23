@@ -33,7 +33,7 @@ struct PullRequestDetailView: View {
     @State private var mergeError: String?
     /// The composer, the ⋯ menu's actions and their confirmation.
     @StateObject private var actions = PullRequestActionState()
-    /// The timeline newest first, as Code offers.
+    /// The timeline newest first, when you choose it.
     @AppStorage("agents.pr.timelineNewest") private var newestFirst = false
 
     init(accountID: String, item: PullRequestItem, onBack: (() -> Void)? = nil) {
@@ -296,7 +296,7 @@ struct PullRequestDetailView: View {
 
     // MARK: Review guide
 
-    /// A tour of the pull request in reading order (Code's review guide): what each part changes, the files with a
+    /// A tour of the pull request in reading order (its review guide): what each part changes, the files with a
     /// note (a click opens the file's diff), what to look at closely, and the questions only a maintainer can answer.
     @ViewBuilder
     private func reviewGuide(_ detail: PullRequestDetail) -> some View {
@@ -896,7 +896,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// The files in reading order (Code's): each source file with its tests, then documentation, then generated files.
+    /// The files in reading order: each source file with its tests, then documentation, then generated files.
     private func orderedFiles(_ detail: PullRequestDetail) -> [PullRequestFile] {
         let byPath = Dictionary(detail.files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
         return PullRequestFileOrder.ordered(detail.files.map(\.path)).compactMap { byPath[$0] }

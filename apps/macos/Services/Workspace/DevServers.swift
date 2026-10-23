@@ -86,7 +86,7 @@ enum DevServerScanner {
 }
 
 /// Keeps only the listeners that serve a page, so a database, debugger or language server working in the folder is not
-/// offered as something to open (as Code's port scanner does). Only ports that already belong to the session's folder
+/// offered as something to open. Only ports that already belong to the session's folder
 /// are asked, never an unknown port: some servers that speak their own protocol fall over on a stray HTTP request.
 enum DevServerProbe {
     /// A page: a redirect that says where to (a login, `/` → `/app`), or a 2xx answer with HTML. A 204/205 is no page, nor

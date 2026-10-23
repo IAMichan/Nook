@@ -20,7 +20,7 @@ The phone sees two kinds of sessions:
 - **Agents tab:** every session on the Mac, the ones waiting on you first. A session opens as a conversation: your messages, the agent's replies, the tools it ran and the files it changed, what waits on you (approve, deny, answer), and a field to send the next message. **Stop** ends a running session.
 - **New session (`+`):** type a task, pick a connected agent and one of the folders you recently worked in on the Mac, and optionally *plan first* or work *on its own branch (worktree)*. Account, model, and effort come from the Mac's remembered choices for that agent.
 - **Prompt links:** a `nook://prompt?text=…&project=…&agent=…` link (the same links the Mac opens) opens *New session* with the task filled in and the named folder and agent picked when the Mac offers them. It never starts by itself: you read the task and tap Start. Links are parsed by the shared `PromptLink` (`packages/protocol`), which strips hidden characters and refuses overlong text.
-- **Quiet for what you are looking at:** a push about the session open on screen arrives without a banner or sound (as in Code); the session's screen already shows what changed.
+- **Quiet for what you are looking at:** a push about the session open on screen arrives without a banner or sound; the session's screen already shows what changed.
 - **Chats tab:** the Mac's Chats tab: WhatsApp (through the phone linked to Nook) and every other chat app Nook collects on the Mac (Telegram, Messages, Slack…) in one list, newest first, with a search, *All / Unread*, and a badge for what is unread. A chat opens as bubbles (quotes, reactions, ticks, files by name). A WhatsApp chat can be answered from the phone, also as a reply to one of its messages (long-press it): your own words and your own tap, sent and logged as in the Chats tab on the Mac. Any other chat is read-only on the phone and answered in its own app; *@nook* drafting stays on the Mac. Opening a chat reads it the way opening it on the Mac does (Settings › Chats); *Mark as read / unread* is in a chat's menu.
 - **Nook tab:** Nook's own conversations (the same ones as in the notch). Ask a question in a new chat or continue one; the answer streams in. It runs through the same brain pipeline as on the Mac; plans, mail drafts, and charts in an answer are shown and approved on the Mac. A question from the phone does not open the notch.
 
@@ -62,7 +62,7 @@ Nook sends push notifications directly from your Mac without any intermediary se
 
 ## Live Activities
 
-While a session works on the Mac, Nook Companion shows it as a **Live Activity** on the Lock Screen and in the Dynamic Island: one per session, with its project, title, agent and model, and its phase: **working** (with a running timer), **waiting for you** (an approval or a question), **done** or **failed**. A tap opens the session in the app. Modelled on Code's agent activity ([`docs/LEARNINGS-AGENTS.md`](LEARNINGS-AGENTS.md)), without its cloud relay.
+While a session works on the Mac, Nook Companion shows it as a **Live Activity** on the Lock Screen and in the Dynamic Island: one per session, with its project, title, agent and model, and its phase: **working** (with a running timer), **waiting for you** (an approval or a question), **done** or **failed**. A tap opens the session in the app. It needs no cloud relay.
 
 **How it runs**
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// A file an agent pointed at, as Code opens one: `src/app.swift:12:3`, `./README.md`, `~/notes.txt`,
+/// A file an agent pointed at: `src/app.swift:12:3`, `./README.md`, `~/notes.txt`,
 /// `/abs/path.swift#L12`, or `file:///abs/path.swift`. Opening it puts the cursor on that line in your editor.
 struct FileTarget: Equatable, Sendable {
     var path: String
@@ -77,7 +77,7 @@ enum FileLink {
 }
 
 /// How to open a file at a line in the editor you chose in Settings › Workspace. Editors take the position in one of three
-/// ways (as in Code): `--goto path:line:col` (VS Code and its forks), `path:line:col` as is (Zed, Sublime Text), or
+/// ways: `--goto path:line:col` (VS Code and its forks), `path:line:col` as is (Zed, Sublime Text), or
 /// separate flags (Xcode's `xed --line`, JetBrains' `--line` with a column counted from 0).
 enum EditorLaunch: Equatable {
     /// Run the editor's own command line tool.

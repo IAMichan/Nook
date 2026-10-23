@@ -3,7 +3,7 @@ import Foundation
 import Darwin
 #endif
 
-/// What an agent session costs this Mac right now, as Code's resource telemetry shows it: the CPU and memory of the
+/// What an agent session costs this Mac right now: the CPU and memory of the
 /// agent's process and everything it started (a build, a test run, a dev server). Only measured while the session is
 /// on screen; nothing is kept.
 struct ResourceUsage: Equatable, Sendable {

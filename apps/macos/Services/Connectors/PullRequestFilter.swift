@@ -105,7 +105,7 @@ enum PullRequestGrouping: String, CaseIterable, Identifiable, Sendable {
 /// In what order the list shows its rows and repositories: what waits on you first (reviews asked of you, then your
 /// own pull requests with failing checks), or by when they last changed. Open ones always come before closed ones.
 enum PullRequestSort: String, CaseIterable, Identifiable, Sendable {
-    /// Code's orders besides Nook's own: merge readiness (approved with passing checks first, conflicts last, the
+    /// More orders besides the default: merge readiness (approved with passing checks first, conflicts last, the
     /// smaller change first among equals), what is blocked on you, and by size.
     case attention, readiness, blockedOnMe, recent, oldest, largest, smallest
     var id: String { rawValue }

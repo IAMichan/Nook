@@ -8,7 +8,7 @@ final class PullRequestActionState: ObservableObject {
     enum Panel: Equatable { case none, write, reviewers, edit }
 
     @Published var panel: Panel = .none
-    /// An action waiting for your second click (as Code confirms inline, never in a separate dialog).
+    /// An action waiting for your second click (confirmed inline, never in a separate dialog).
     @Published var pending: PullRequestAction?
     @Published var sending = false
     @Published var error: String?
@@ -50,7 +50,7 @@ final class PullRequestActionState: ObservableObject {
     }
 }
 
-/// The ⋯ menu of a pull request (Code's): copy its link, number or checkout command, ask for reviews, edit it, bring
+/// The ⋯ menu of a pull request: copy its link, number or checkout command, ask for reviews, edit it, bring
 /// its branch up to date, close or reopen it. What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
@@ -91,7 +91,7 @@ struct PullRequestMoreMenu: View {
         .disabled(state.sending)
     }
 
-    /// The command that checks the pull request out locally, as Code shows under the title.
+    /// The command that checks the pull request out locally, shown under the title.
     static func checkout(_ detail: PullRequestDetail) -> String {
         "gh pr checkout \(detail.number) --repo \(detail.repo)"
     }
