@@ -178,6 +178,9 @@ struct TeamsSettingsRows: View {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
         if web.session == nil {
+            if let why = web.problem, !web.isSigningIn {
+                StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
+            }
             HStack {
                 SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
                 Spacer()
