@@ -781,14 +781,21 @@ final class BrowserConnector: ContextSource {
                         try
                             set act to URL of \(activeKey) of w
                         end try
+                        -- Two requests per window for all its tabs, instead of two per tab: each request holds up the browser.
+                        set us to {}
+                        set ns to {}
+                        try
+                            set us to URL of tabs of w
+                            set ns to \(titleKey) of tabs of w
+                        end try
                         set ti to 0
-                        repeat with t in tabs of w
+                        repeat with u in us
                             set ti to ti + 1
-                            if ti > 15 then exit repeat
-                            set u to URL of t
+                            if ti > 15 or ti > (count of ns) then exit repeat
+                            set u to contents of u
                             set mark to "0"
                             if u is act then set mark to "1"
-                            set out to out & mark & "|||" & (\(titleKey) of t) & "|||" & u & linefeed
+                            set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
                         end repeat
                     end repeat
                     return out

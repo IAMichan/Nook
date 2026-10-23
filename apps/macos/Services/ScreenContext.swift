@@ -68,6 +68,20 @@ final class ScreenContext: ObservableObject {
     private let failureCooldown: TimeInterval = 60
     /// When the timer last read the screen: on battery or in saver mode it reads less often than the timer fires.
     private var lastPeriodic: Date = .distantPast
+    /// The windows on screen at the last timer read (see `windowSignature`).
+    private var lastWindows: [String] = []
+
+    /// Every window on screen, by number and frame: cheap to read, unlike the shareable content a capture needs.
+    private static func windowSignature() -> [String] {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        return list.map { info in
+            let number = info[kCGWindowNumber as String] as? Int ?? 0
+            let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
+            return "\(number)|\(bounds["X"] ?? 0)|\(bounds["Y"] ?? 0)|\(bounds["Width"] ?? 0)|\(bounds["Height"] ?? 0)"
+        }
+    }
     /// Per window: on how many periodic ticks in a row its picture changed, and when its text was last read. A window
     /// that changes on every tick (a video, a scrolling log, a game) is read at most every `volatileReadInterval`
     /// instead of a full capture and OCR on every tick; a question still reads it fresh (`snapshot`).
@@ -146,6 +160,11 @@ final class ScreenContext: ObservableObject {
         guard plan.readsScreen else { return }
         // The timer fires with a little slack; a tick that lands just short of the stretched interval still counts.
         guard Date().timeIntervalSince(lastPeriodic) >= interval * plan.slowdown - interval * 0.25 else { return }
+        // No key, click or move since the last read and the same windows in the same places: the screen shows what was
+        // read then, so the capture and OCR are skipped. A question still reads it fresh.
+        let windows = Self.windowSignature()
+        if idle >= Date().timeIntervalSince(lastPeriodic), windows == lastWindows { return }
+        lastWindows = windows
         lastPeriodic = Date()
         await refresh(frontOnly: false, accurateFront: false, periodic: true)
     }

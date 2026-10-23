@@ -6,6 +6,9 @@ import AppKit
 final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
+    /// The window the notch is drawn in: room for the largest state; a copy on another screen only rests, so its window
+    /// is smaller (`NotchController.mirrorSize`).
+    var canvas: CGSize = NotchController.panelSize
     @Published private(set) var pointerInside = false
     /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
     @Published private(set) var panelNotice: PanelNotice?

@@ -1,27 +1,28 @@
 import SwiftUI
 import AppKit
 import Contacts
+import SQLite3
 import os
 
 // MARK: Apps without an API of their own
 
 /// Messages, WhatsApp, Bear and Things keep everything in a local SQLite database. Nook reads those read-only with
-/// `sqlite3`, so a question can search the whole history of an app, not only what is on screen. Messages and WhatsApp
+/// SQLite, so a question can search the whole history of an app, not only what is on screen. Messages and WhatsApp
 /// need Full Disk Access for Nook; the connector says so when it is missing and stays out of searches until then.
 
 /// Runs one read-only query on an app's database.
 enum AppDatabase {
     static func query(_ path: String, _ sql: String, app: String) async throws -> [[String: Any]] {
         // The app writes to its database while it runs (Messages almost always): wait for its lock instead of failing.
-        var output = await run(arguments(path: path, sql: sql))
+        var output = await run(path: path, sql: sql)
         if case .failure(let error) = output, isLocked(error) {
             // Still locked: read the database file as it is on disk. The newest messages may still be in the app's
             // write-ahead log, but an answer from nearly everything beats none.
-            output = await run(arguments(path: snapshotURI(path), sql: sql))
+            output = await run(path: snapshotURI(path), sql: sql)
         }
         switch output {
-        case .success(let json):
-            return AppData.rows(json)
+        case .success(let rows):
+            return rows
         case .failure(let error):
             let message = error.localizedDescription.lowercased()
             if message.contains("authorization denied") || message.contains("unable to open") || message.contains("not permitted") {
@@ -32,11 +33,6 @@ enum AppDatabase {
             }
             throw NookError("\(app) kon niet gelezen worden: \(error.localizedDescription)")
         }
-    }
-
-    /// `sqlite3` arguments for one read-only query that waits up to 3 seconds for a lock the app holds.
-    static func arguments(path: String, sql: String) -> [String] {
-        ["-readonly", "-json", "-cmd", ".timeout 3000", path, sql]
     }
 
     /// The database opened as an unchanging file: no locks taken or waited for, and the write-ahead log is not read.
@@ -52,16 +48,63 @@ enum AppDatabase {
         return message.contains("database is locked") || message.contains("database is busy")
     }
 
-    private static func run(_ arguments: [String]) async -> Result<String, Error> {
+    private static func run(path: String, sql: String) async -> Result<[[String: Any]], Error> {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    continuation.resume(returning: .success(try SystemControl.runProcess("/usr/bin/sqlite3", arguments, timeout: 8.0)))
-                } catch {
-                    continuation.resume(returning: .failure(error))
-                }
+                continuation.resume(returning: read(path: path, sql: sql))
             }
         }
+    }
+
+    /// One read-only query in Nook itself, waiting up to 3 seconds for a lock the app holds. It used to start a `sqlite3`
+    /// process for every read, which for the chat bridges (every few seconds) cost far more than the query. The rows come
+    /// back as `sqlite3 -json` gave them: numbers as `NSNumber`, text as `String`, NULL as `NSNull`. `path` may be a
+    /// `file:` URI (`snapshotURI`).
+    private static func read(path: String, sql: String) -> Result<[[String: Any]], Error> {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK, let db else {
+            let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unable to open database file"
+            sqlite3_close(db)
+            return .failure(failure(message))
+        }
+        defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 3000)
+        var prepared: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &prepared, nil) == SQLITE_OK, let statement = prepared else {
+            return .failure(failure(String(cString: sqlite3_errmsg(db))))
+        }
+        defer { sqlite3_finalize(statement) }
+        let columns = sqlite3_column_count(statement)
+        var rows: [[String: Any]] = []
+        while true {
+            let step = sqlite3_step(statement)
+            if step == SQLITE_DONE { break }
+            guard step == SQLITE_ROW else { return .failure(failure(String(cString: sqlite3_errmsg(db)))) }
+            var row: [String: Any] = [:]
+            for index in 0..<columns {
+                let name = String(cString: sqlite3_column_name(statement, index))
+                switch sqlite3_column_type(statement, index) {
+                case SQLITE_INTEGER: row[name] = NSNumber(value: sqlite3_column_int64(statement, index))
+                case SQLITE_FLOAT: row[name] = NSNumber(value: sqlite3_column_double(statement, index))
+                case SQLITE_TEXT, SQLITE_BLOB:
+                    // The pointer first, then its length (SQLite's order, so no conversion runs in between).
+                    let bytes = sqlite3_column_blob(statement, index)
+                    let count = Int(sqlite3_column_bytes(statement, index))
+                    if let bytes, count > 0 {
+                        row[name] = String(decoding: UnsafeRawBufferPointer(start: bytes, count: count), as: UTF8.self)
+                    } else {
+                        row[name] = ""
+                    }
+                default: row[name] = NSNull()
+                }
+            }
+            rows.append(row)
+        }
+        return .success(rows)
+    }
+
+    private static func failure(_ message: String) -> Error {
+        NSError(domain: "nook.appdatabase", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     static func noAccess(_ app: String) -> NookError {

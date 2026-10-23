@@ -339,6 +339,8 @@ final class WorkspaceManager: ObservableObject {
         events[id] = store.loadEvents(id)
         quietEvents = false
         timelineUse[id] = Date()
+        // Read back from a view, so not now: another one may go once this update is done, or the limit no longer holds.
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.evictTimelines() } }
         return events[id] ?? []
     }
 

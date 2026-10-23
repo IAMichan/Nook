@@ -348,7 +348,7 @@ final class AppModel: ObservableObject {
                 guard Date().timeIntervalSince(self.lastHistoryRefresh) >= 30 * EnergyMonitor.shared.plan.slowdown - 5 else { return }
                 self.lastHistoryRefresh = Date()
                 self.adoptAccounts()
-                self.history.refresh()
+                self.history.refresh(showsProgress: false)
             }
         }
 

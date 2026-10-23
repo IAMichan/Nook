@@ -100,7 +100,10 @@ final class CodexUsage: ObservableObject {
         timer = Timer.scheduledCoalesced(withTimeInterval: 60) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
-        refresh()
+        // The first reading can start `codex app-server` (Node, a few seconds of CPU): a little after launch, not during it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
     }
 
     func stop() {

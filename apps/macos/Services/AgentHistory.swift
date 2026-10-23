@@ -175,7 +175,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
 }
 
 /// Tokens from a transcript. `cacheRead` represents cached reads: cheap, but still counted against rate limits.
-struct TokenTally: Equatable {
+struct TokenTally: Equatable, Codable {
     var input = 0
     var output = 0
     var cacheRead = 0
@@ -202,7 +202,7 @@ struct TokenTally: Equatable {
 }
 
 /// A completed (or still running) session, from the transcript saved by the agent itself.
-struct PastSession: Identifiable, Equatable {
+struct PastSession: Identifiable, Equatable, Codable {
     let agent: AgentKind
     var sessionID: String
     var title: String
@@ -325,6 +325,8 @@ final class AgentHistory: ObservableObject {
     /// Agents whose executable exists on this Mac.
     @Published private(set) var executables: [AgentKind: String] = [:]
     @Published private(set) var loading = false
+    /// A scan is under way, whether or not it shows (`loading`).
+    private var scanning = false
 
     /// Which accounts Nook reads; AppModel keeps this in sync with `AgentProfileStore`.
     var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
@@ -340,9 +342,12 @@ final class AgentHistory: ObservableObject {
     }
 
     /// Refreshes if more than `minimumInterval` has elapsed. Called by the Agents tab when opened.
-    func refresh(minimumInterval: TimeInterval = 20) {
-        guard !loading, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
-        loading = true
+    /// - Parameter showsProgress: publish `loading` while it runs. The 30-second timer does not: flipping it twice per scan
+    ///   redrew every view of the app (it is merged into `AppModel`) for a scan that usually finds nothing new.
+    func refresh(minimumInterval: TimeInterval = 20, showsProgress: Bool = true) {
+        guard !scanning, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
+        scanning = true
+        if showsProgress || sessions.isEmpty { loading = true }
         lastRefresh = Date()
         let scanner = scanner
         let ownFolder = NookPaths.supportDirectory.standardizedFileURL.path
@@ -363,7 +368,8 @@ final class AgentHistory: ObservableObject {
             let result = scanner.scan(homes, excludingFolder: ownFolder)
             Task { @MainActor in
                 guard let self else { return }
-                self.loading = false
+                self.scanning = false
+                if self.loading { self.loading = false }
                 if self.sessions != result.sessions { self.sessions = result.sessions }
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
@@ -408,7 +414,7 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     /// A single token entry, with a key to deduplicate entries across transcripts.
-    struct UsageEntry {
+    struct UsageEntry: Codable {
         var key: String
         var date: Date
         var tokens: TokenTally
@@ -416,16 +422,60 @@ private final class HistoryScanner: @unchecked Sendable {
         var model = ""
     }
 
-    struct Parsed {
+    struct Parsed: Codable {
         var session: PastSession?
         var entries: [UsageEntry]
         /// What ties this transcript to the other files of the same conversation (`ResumedConversations`).
         var links: Set<String> = []
     }
 
-    private struct CacheKey: Equatable {
+    private struct CacheKey: Equatable, Codable {
         var modified: Date
         var size: Int
+    }
+
+    /// The parsed transcripts, kept on disk between launches: without it every launch read and parsed up to 1500
+    /// transcripts again (hundreds of MB from disk, seconds of CPU) while the rest of the Mac was starting up too.
+    private struct DiskCache: Codable {
+        struct Entry: Codable {
+            var key: CacheKey
+            var parsed: Parsed
+        }
+        /// The build that wrote it: a new build parses differently, so it reads every transcript again.
+        var build: String
+        var entries: [String: Entry]
+    }
+    private var diskLoaded = false
+    private var diskDirty = false
+    private var lastDiskSave = Date.distantPast
+    private static let diskSaveInterval: TimeInterval = 10 * 60
+    private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
+    /// Raise when the parsing changes within a build number.
+    private static let diskFormat = 1
+    private static var diskBuild: String {
+        "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
+    }
+
+    private func loadDiskCache() {
+        guard !diskLoaded else { return }
+        diskLoaded = true
+        guard cache.isEmpty, let data = try? Data(contentsOf: Self.diskURL),
+              let stored = try? PropertyListDecoder().decode(DiskCache.self, from: data), stored.build == Self.diskBuild else { return }
+        cache = stored.entries.mapValues { (key: $0.key, parsed: $0.parsed) }
+    }
+
+    private func saveDiskCache() {
+        guard diskDirty, Date().timeIntervalSince(lastDiskSave) >= Self.diskSaveInterval else { return }
+        diskDirty = false
+        lastDiskSave = Date()
+        let stored = DiskCache(build: Self.diskBuild, entries: cache.mapValues { DiskCache.Entry(key: $0.key, parsed: $0.parsed) })
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(stored) else { return }
+        // Prompts and replies are in it: readable by the user alone, like the transcripts themselves.
+        if (try? data.write(to: Self.diskURL, options: .atomic)) != nil {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.diskURL.path)
+        }
     }
 
     private var cache: [String: (key: CacheKey, parsed: Parsed)] = [:]
@@ -456,6 +506,7 @@ private final class HistoryScanner: @unchecked Sendable {
         defer { lock.unlock() }
 
         let fm = FileManager.default
+        loadDiskCache()
         let since = Date().addingTimeInterval(-Double(Self.days) * 86_400)
         let listSince = Date().addingTimeInterval(-Double(Self.listDays) * 86_400)
         var installed: Set<AgentKind> = []
@@ -504,6 +555,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 if let hit = cache[path], hit.key == file.key {
                     parsed = hit.parsed
                 } else {
+                    diskDirty = true
                     switch file.agent {
                     case .claude: parsed = parseClaude(file.url, key: file.key)
                     case .codex: parsed = parseCodex(file.url, key: file.key)
@@ -520,7 +572,9 @@ private final class HistoryScanner: @unchecked Sendable {
                 fresh[path] = (file.key, parsed)
                 parsedAll.append((file.profile, parsed, file.agent))
             }
+            if fresh.count != cache.count { diskDirty = true }
             cache = fresh
+            saveDiskCache()
             claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
             codexProgress = codexProgress.filter { fresh[$0.key] != nil }
 

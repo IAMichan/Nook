@@ -8,6 +8,9 @@ final class NotchController {
     /// The panel has a fixed bounding size (accommodating the largest state, including a notch you dragged larger); SwiftUI
     /// renders the notch shape within it, and outside the shape clicks pass through.
     static let panelSize = CGSize(width: 2000, height: 1300)
+    /// The copies on other screens only show the resting notch (idle, music, a track): a window that size above every app
+    /// was about 40 MB of transparent backing per screen for the WindowServer to keep and composite.
+    static let mirrorSize = CGSize(width: 1000, height: 260)
 
     let viewModel = NotchViewModel()
     private var panel: NotchPanel?
@@ -420,6 +423,7 @@ final class NotchController {
                 continue
             }
             let mirrorModel = NotchViewModel()
+            mirrorModel.canvas = Self.mirrorSize
             mirrorModel.app = app
             mirrorModel.geometry = mirrorGeometry
             mirrorModel.show(resting)
@@ -430,7 +434,7 @@ final class NotchController {
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings))
             host.sizingOptions = []
-            host.frame = NSRect(origin: .zero, size: Self.panelSize)
+            host.frame = NSRect(origin: .zero, size: Self.mirrorSize)
             panel.contentView = host
             placeMirror(panel, on: screen.frame)
             // Display only: clicks pass through; the real Nook moves to this screen as soon as the mouse is on it.
@@ -442,7 +446,7 @@ final class NotchController {
     }
 
     private func placeMirror(_ panel: NotchPanel, on screenFrame: CGRect) {
-        let size = Self.panelSize
+        let size = Self.mirrorSize
         panel.setFrame(
             NSRect(x: screenFrame.midX - size.width / 2, y: screenFrame.maxY - size.height, width: size.width, height: size.height),
             display: false

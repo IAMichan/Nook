@@ -45,7 +45,8 @@ final class ConnectorHub: ObservableObject {
             unregister(config.sourceID)
             let connector = MCPConnector(config: config)
             sources.append(connector)
-            refresh(connector)
+            // At launch (before `start`) the timer's ticks start it, a few sources at a time; a server added later at once.
+            if timer != nil { refresh(connector) }
         }
     }
 
@@ -66,7 +67,11 @@ final class ConnectorHub: ObservableObject {
         timer = Timer.scheduledCoalesced(withTimeInterval: 15) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
-        Task { _ = await ContactDirectory.entries() }
+        // Every contact, read once for names in chats and mail: after the launch, not during it.
+        Task {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            _ = await ContactDirectory.entries()
+        }
         tick()
     }
 

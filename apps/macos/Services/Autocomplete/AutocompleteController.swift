@@ -931,6 +931,9 @@ final class AutocompleteController: ObservableObject {
     /// Reads the prompt for the focused field into the model ahead of the next key. The context before the typed text
     /// (memory, screen, samples) is most of the prompt; when it is new (another app or field, a message sent, the window's
     /// text just read) the model would otherwise read all of it on that key, which on a larger model takes seconds.
+    private var lastWarm: (pid: pid_t, date: Date)?
+    private static let warmGap: TimeInterval = 3
+
     private func scheduleWarm(after seconds: TimeInterval) {
         warmWork?.cancel()
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.warmFocusedField() } }
@@ -940,6 +943,10 @@ final class AutocompleteController: ObservableObject {
 
     private func warmFocusedField() {
         guard completer != nil, let app = frontApp, isActive(in: app) else { return }
+        // Every click warms: a few clicks in a row in the same app read the field (and run the model) once.
+        let now = Date()
+        if let last = lastWarm, last.pid == app.processIdentifier, now.timeIntervalSince(last.date) < Self.warmGap { return }
+        lastWarm = (app.processIdentifier, now)
         read(in: app) { [weak self] snapshot in
             guard let self, let snapshot, !snapshot.hasSelection, self.prefs.isEnabled(onSite: snapshot.site), !self.skipsCode(snapshot, in: app),
                   let completer = self.completer else { return }

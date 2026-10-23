@@ -51,6 +51,9 @@ enum AppTextReader {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.5)
         var found: String?
+        // One budget for the whole walk, not one per ancestor: twelve ancestors of 5000 elements each kept a chat app (Slack,
+        // Teams) busy answering for seconds.
+        var budget = Self.aroundFocusBudget
         if let focused = value(app, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() {
             var element = focused as! AXUIElement
             for _ in 0..<12 {
@@ -58,20 +61,23 @@ enum AppTextReader {
                 element = parent as! AXUIElement
                 let role = (value(element, kAXRoleAttribute) as? String) ?? ""
                 if role == "AXWindow" || role == "AXApplication" { break }
-                let text = collectedText(element, chars: limit * 4)
-                if text.count >= minimum { found = text; break }
+                let text = collectedText(element, chars: limit * 4, budget: &budget)
+                if text.count >= minimum || budget <= 0 { found = text; break }
             }
         }
         if found == nil, let window = value(app, kAXFocusedWindowAttribute), CFGetTypeID(window) == AXUIElementGetTypeID() {
-            found = collectedText(window as! AXUIElement, chars: limit * 4)
+            budget = max(budget, Self.aroundFocusBudget / 2)
+            found = collectedText(window as! AXUIElement, chars: limit * 4, budget: &budget)
         }
         guard let text = found, !text.isEmpty else { return nil }
         return String(text.suffix(limit))
     }
 
-    private static func collectedText(_ element: AXUIElement, chars: Int) -> String {
+    /// How many elements `textAroundFocus` asks the app about at most.
+    private static let aroundFocusBudget = 2000
+
+    private static func collectedText(_ element: AXUIElement, chars: Int, budget: inout Int) -> String {
         var lines: [String] = []
-        var budget = 5000
         var count = 0
         collect(element, depth: 0, into: &lines, budget: &budget, count: &count, chars: chars)
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)

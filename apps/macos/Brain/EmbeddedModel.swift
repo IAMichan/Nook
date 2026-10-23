@@ -55,6 +55,9 @@ final class EmbeddedModel: ObservableObject {
         }
     }
 
+    /// Posted after the model left memory.
+    nonisolated static let didUnload = Notification.Name("nook.embeddedModel.didUnload")
+
     /// Unloads the model from memory.
     func unload() {
         idleTask?.cancel()
@@ -62,6 +65,8 @@ final class EmbeddedModel: ObservableObject {
         container = nil
         loadedID = nil
         Memory.clearCache()
+        // Autocomplete's prompt cache belongs to this model: it goes with it, not on the next key.
+        NotificationCenter.default.post(name: Self.didUnload, object: nil)
     }
 
     /// Unloads the model unless a query is running: for background work (thinking along) that loaded it only for itself.

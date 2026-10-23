@@ -52,8 +52,8 @@ struct NotchRootView: View {
             .animation(NookTheme.hover, value: hoverGrow)
         }
         .frame(
-            width: NotchController.panelSize.width,
-            height: NotchController.panelSize.height,
+            width: viewModel.canvas.width,
+            height: viewModel.canvas.height,
             alignment: .top
         )
     }
