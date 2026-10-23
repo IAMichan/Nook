@@ -1,0 +1,179 @@
+name: Release (macOS)
+
+# Builds Nook.app in Release configuration and publishes it as a beta GitHub Release with a .dmg, a .zip and checksums.
+#
+# New release: Actions › Release (macOS) › Run workflow, pick what to bump (on the GitHub app too), and run it.
+#   beta   next beta of the current version: v0.1.0-beta.1 → v0.1.0-beta.2 (the default)
+#   patch / minor / major   first beta of the next version: v0.1.1-beta.1, v0.2.0-beta.1, v1.0.0-beta.1
+# The tag is computed by scripts/next-release-tag.sh. Pushing a tag yourself (`git push origin v0.3.0-beta.1`) works
+# too. A tag with a suffix (-beta.N) becomes a pre-release; one without (v1.0.0) a regular release.
+# The version without the suffix becomes the app's CFBundleShortVersionString.
+#
+# The app is signed ad hoc, not with a Developer ID, and is not notarized: on first launch macOS says it cannot verify
+# the developer. The release notes explain how to open it anyway (Privacy & Security › Open Anyway, or `xattr`).
+# TDLib and nook-chatd are not bundled (they need scripts/build-tdlib.sh and scripts/build-chatd.sh); Telegram and the
+# chat-helper apps stay on notifications in this build.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which version to release'
+        type: choice
+        default: beta
+        options:
+          - beta
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write # creates the tag and the release
+
+# One release at a time, so two runs never pick the same tag.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      DERIVED_DATA: ${{ github.workspace }}/.derived-data
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-tags: true # scripts/next-release-tag.sh reads the earlier release tags
+      - name: Choose the version
+        id: version
+        env:
+          BUMP: ${{ github.event.inputs.bump }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$(../../scripts/next-release-tag.sh "$BUMP")"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::'$TAG' is not a version tag like v0.1.0-beta.1 or v1.0.0."
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          MARKETING="${VERSION%%-*}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # The marketing version takes only digits and dots; the beta suffix stays in the tag and the release title.
+          echo "marketing=$MARKETING" >> "$GITHUB_OUTPUT"
+          case "$VERSION" in
+            *-beta.*) echo "title=Nook $MARKETING Beta ${VERSION##*-beta.}" >> "$GITHUB_OUTPUT"; echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *-*) echo "title=Nook $VERSION" >> "$GITHUB_OUTPUT"; echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "title=Nook $VERSION" >> "$GITHUB_OUTPUT"; echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "Releasing $TAG"
+      - name: Select newest Xcode (the MLX packages need Xcode 26)
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen
+      - name: Resolve Swift packages
+        run: |
+          # GitHub and the package hosts occasionally drop a clone; retry before failing the build on it.
+          for attempt in 1 2 3; do
+            xcodebuild -resolvePackageDependencies -project Nook.xcodeproj -scheme Nook -derivedDataPath "$DERIVED_DATA" && exit 0
+            echo "::warning::Package resolution failed (attempt $attempt); retrying."
+            sleep $((attempt * 20))
+          done
+          exit 1
+      # Unsigned build; the app is signed ad hoc below, after the source stamp is removed.
+      - name: Build (Release)
+        timeout-minutes: 50
+        run: |
+          set -o pipefail
+          xcodebuild build -project Nook.xcodeproj -scheme Nook -configuration Release -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
+            MARKETING_VERSION="${{ steps.version.outputs.marketing }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            2>&1 | tee build.log
+      - name: Errors and warnings
+        if: failure()
+        run: grep -E "error:" build.log | sort -u | head -100 || true
+      - name: Prepare the app
+        run: |
+          APP="$DERIVED_DATA/Build/Products/Release/Nook.app"
+          test -d "$APP"
+          PLIST="$APP/Contents/Info.plist"
+          # The update button in the Agents footer rebuilds Nook from the git checkout it was built from. A downloaded
+          # build has none (this one points at the runner), so remove the stamp and Nook offers no source updates.
+          for KEY in NookSourceCommit NookSourceBranch NookSourceRoot NookDeveloperDir; do
+            /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+          done
+          # Ad-hoc signature: Apple Silicon runs only signed code. Nested code first, then the app with its entitlements.
+          find "$APP/Contents" -depth \( -name '*.framework' -o -name '*.dylib' -o -name '*.xpc' -o -name '*.appex' \) -print |
+            while IFS= read -r ITEM; do codesign --force --sign - --timestamp=none "$ITEM"; done
+          codesign --force --sign - --timestamp=none --entitlements App/Nook.entitlements "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          mkdir -p "$RUNNER_TEMP/dist"
+          ditto "$APP" "$RUNNER_TEMP/dist/Nook.app"
+      - name: Package .dmg and .zip
+        working-directory: ${{ runner.temp }}/dist
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ditto -c -k --keepParent Nook.app "Nook-$VERSION-macOS.zip"
+          mkdir dmg
+          ditto Nook.app dmg/Nook.app
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Nook $VERSION" -srcfolder dmg -ov -format UDZO "Nook-$VERSION-macOS.dmg"
+          shasum -a 256 "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Publish the release
+        working-directory: ${{ runner.temp }}/dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > notes.md <<'EOF'
+          > [!NOTE]
+          > This is a beta: expect rough edges, and please report problems in Issues.
+
+          ## Install on macOS
+
+          Requires macOS 15 (Sequoia) or newer on an Apple Silicon Mac (M1 or newer).
+
+          1. Download `Nook-VERSION-macOS.dmg`, open it, and drag **Nook** to **Applications**.
+          2. This build is not notarized by Apple yet, so macOS blocks the first launch. Open Nook once, then go to
+             **System Settings › Privacy & Security** and click **Open Anyway** next to the message about Nook. Or run:
+             ```sh
+             xattr -dr com.apple.quarantine /Applications/Nook.app
+             ```
+          3. Nook lives in your notch and the menu bar (no Dock icon).
+
+          This build does not include the Telegram bridge or the chat helper (Signal, Messenger, Instagram, X, LinkedIn);
+          those apps stay on notifications. The Update button in the Agents tab is for builds from a git checkout; to update
+          this build, download the next release.
+
+          ## Changes
+          EOF
+          sed -i '' "s/VERSION/$VERSION/g" notes.md
+          FLAGS=""
+          [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
+          # shellcheck disable=SC2086 # FLAGS is empty or one flag
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.title }}" \
+            --notes-file notes.md --generate-notes $FLAGS \
+            "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" SHA256SUMS.txt
+      - name: Keep the build log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-build-log-${{ github.run_attempt }}
+          path: apps/macos/build.log
+          retention-days: 7
+          if-no-files-found: ignore

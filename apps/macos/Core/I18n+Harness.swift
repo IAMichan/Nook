@@ -147,6 +147,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.oldest": "Oudste eerst",
         "agents.pr.files.changedSince": "Gewijzigd",
         "agents.pr.files.generated": "Gegenereerd",
+        "usage.tab.limits": "Limieten",
     ],
     .en: [
         "ws.file.missing": "%@ is no longer there.",
@@ -291,6 +292,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.oldest": "Oldest first",
         "agents.pr.files.changedSince": "Changed",
         "agents.pr.files.generated": "Generated",
+        "usage.tab.limits": "Limits",
     ],
     .de: [
         "ws.file.missing": "%@ gibt es nicht mehr.",
@@ -435,6 +437,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.oldest": "Älteste zuerst",
         "agents.pr.files.changedSince": "Geändert",
         "agents.pr.files.generated": "Generiert",
+        "usage.tab.limits": "Limits",
     ],
     .fr: [
         "ws.file.missing": "%@ n'existe plus.",
@@ -579,6 +582,7 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.oldest": "Plus anciennes d’abord",
         "agents.pr.files.changedSince": "Modifié",
         "agents.pr.files.generated": "Généré",
+        "usage.tab.limits": "Limites",
     ],
     .es: [
         "ws.file.missing": "%@ ya no existe.",
@@ -723,5 +727,6 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.oldest": "Más antiguas primero",
         "agents.pr.files.changedSince": "Modificado",
         "agents.pr.files.generated": "Generado",
+        "usage.tab.limits": "Límites",
     ],
 ]

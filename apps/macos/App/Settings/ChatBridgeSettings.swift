@@ -143,8 +143,22 @@ struct TeamsSettingsRows: View {
     /// Why the last read failed, if it did for every account.
     let problem: String?
     let onSignedIn: () -> Void
+    @ObservedObject private var web = TeamsWebSession.shared
 
     var body: some View {
+        if let session = web.session {
+            let title = session.name.isEmpty ? "Teams" : session.name
+            if let why = teams.problems[TeamsBridge.webID] {
+                StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
+                    Button(tr("chats.teams.signInAgainButton")) { signInOnWeb() }
+                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                }
+            } else {
+                StatusRow(title: tr("chats.teams.connected", title), detail: tr("chats.teams.web.connectedDetail"), state: .done) {
+                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                }
+            }
+        }
         ForEach(teams.accounts) { account in
             let title = account.name.isEmpty ? (account.email.isEmpty ? "Teams" : account.email) : account.name
             if let why = teams.problems[account.id] {
@@ -163,9 +177,25 @@ struct TeamsSettingsRows: View {
         if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
-        signIn
-            // A new account reads right away instead of at the next turn.
-            .onChange(of: teams.accounts.map(\.id)) { _, _ in onSignedIn() }
+        if web.session == nil {
+            HStack {
+                SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
+                Spacer()
+                Button(tr("chats.teams.signIn")) { signInOnWeb() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(web.isSigningIn)
+            }
+        }
+        // With Nook's own app in Microsoft Entra, accounts can also be added through Microsoft Graph with a code.
+        if TeamsBridge.clientID != nil {
+            signIn
+                // A new account reads right away instead of at the next turn.
+                .onChange(of: teams.accounts.map(\.id)) { _, _ in onSignedIn() }
+        }
+    }
+
+    private func signInOnWeb() {
+        web.signIn(title: tr("chats.link.browser.title", "Teams")) { onSignedIn() }
     }
 
     @ViewBuilder
@@ -186,7 +216,7 @@ struct TeamsSettingsRows: View {
                 }
             }
         case .noClient:
-            StatusRow(title: tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"), state: .todo) { EmptyView() }
+            EmptyView()
         case .idle, .failed:
             if case .failed(let why) = teams.state {
                 StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
