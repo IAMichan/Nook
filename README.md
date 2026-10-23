@@ -27,6 +27,7 @@ By default, Nook runs **100% locally on your own computer** (on a Mac via built-
 
 - **Local-first and private.** The default brain runs on your own computer. Cloud models are opt-in, per source, and never get data you marked *Only on this Mac*.
 - **Always has context.** Live on-device OCR plus Calendar, Mail, Reminders, browser tabs, files, and your connected services, so you don't have to paste anything.
+- **All your chats in one inbox.** WhatsApp, Telegram, Instagram, Messenger, Signal, Messages, Slack and more in one list, answered from the notch.
 - **One place for your coding agents.** See what every agent is doing, review diffs, and approve tool calls from the notch instead of hunting through terminals.
 - **You stay in control.** Every side effect goes through an approval card and is written to a local audit log.
 - **One Nook on every platform.** A native macOS app, an iPhone companion, and one Tauri app for Windows, Linux, and Android that follows the Mac app's names and behavior.
@@ -49,6 +50,7 @@ By default, Nook runs **100% locally on your own computer** (on a Mac via built-
 - [Highlights](#highlights)
   - [Personal Assistant & Screen Context](#personal-assistant--screen-context)
   - [Coding Agents & Workspace](#coding-agents--workspace)
+  - [Chats: Every Chat in One Inbox](#chats-every-chat-in-one-inbox)
   - [Integrations & Connected Services](#integrations--connected-services)
   - [System-Wide Autocomplete, Dictation, Notes & Media](#system-wide-autocomplete-dictation-notes--media)
 - [Requirements](#requirements)
@@ -136,6 +138,21 @@ Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calenda
 | **Multiple Accounts & Quotas** | Configure multiple accounts per agent (e.g., *Claude Personal* and *Claude Work* with isolated `CLAUDE_CONFIG_DIR` / `CODEX_HOME` directories) and per service (e.g., two GitHub accounts). Track live **5-hour and weekly subscription limits** (Claude Pro/Max & Codex) plus token and cost breakdowns in **Settings › Usage** and the Monday **Weekly Recap**. |
 | **iPhone & Android Companion** | [`apps/ios`](apps/ios) contains **Nook Companion** for iPhone (the Android app in [`apps/tauri`](apps/tauri) has the same Companion tab): view active sessions needing attention, approve low-risk actions, answer questions, send prompts, or stop agents, and on iPhone also start new sessions, follow a session's conversation, and chat with Nook, over local Wi-Fi with end-to-end `ChaCha20-Poly1305` encryption and direct, serverless APNs push notifications. See [`docs/COMPANION.md`](docs/COMPANION.md). |
 
+### Chats: Every Chat in One Inbox
+
+The **Chats** tab in the notch and the main window shows all your conversations from every chat app in one list, so you can read and answer them without switching apps.
+
+| Feature | Details |
+|---|---|
+| **All Your Chats, One List** | WhatsApp (through your linked phone), Telegram, Instagram, Messenger, Signal, Messages, Slack, Teams, Discord, LinkedIn, X, and any other chat app that shows notifications on your Mac. Every chat on a linked WhatsApp phone is listed, also the ones that have not sent anything since linking. |
+| **Grouped & Searchable** | Chats are grouped by **Unread**, **Today**, **Yesterday**, **This week**, **This month**, and **Earlier** (click a group to fold it). Filter by app and search across all chats. From the chat, `@chat Anna` opens a chat from any app. |
+| **Full History** | Messages, Slack, Telegram, and Teams load right away with their history: Messages from its database on your Mac, Slack with a user token, Telegram by logging in with your number (through Nook's chat helper after `scripts/build-chatd.sh` once, or TDLib after `scripts/build-tdlib.sh`), Teams by signing in with a code, and WhatsApp from the WhatsApp app on your Mac. Instagram, Messenger, Signal, LinkedIn, and X go through Nook's own chat helper (`scripts/build-chatd.sh`). Other apps are collected from the notifications they show. |
+| **Answer in Place** | Reply to WhatsApp, Telegram, and every app the chat helper links (Instagram, Messenger, Signal…) right in Nook, with more than text: photos, videos, GIFs, stickers, files (choose them with **+**, drop them on the chat, or paste them), a recorded voice message, a poll, a location, a contact card, and emoji. Copy an answer into any other app. |
+| **Read Receipts & Groups** | See how far your own messages got (sent, delivered, read) in every chat an app reads directly, and in a group who is in it and who read your message. |
+| **Nook Helps** | Type `@nook` and what you want in a chat's answer field to let Nook write the message for you to check and send, or ask Nook about your chats from the Nook tab (`chat_inbox`). |
+| **Setup** | Everything is set up on its own page, **Settings › Chats** (or the **+** in the tab): switch each app on or off, add any other source in one line (a website such as `linkedin.com/messaging`, or a Mac app), and link WhatsApp. Collecting needs Full Disk Access, is off by default (one click in the empty tab turns it on), looks back two weeks at the first start, and stays on your Mac. |
+| **Moving from Beeper** | **Settings › Chats › Moving from Beeper** brings over, in one click, which apps were linked there and as whom, your chats with their recent history, and which chats were pinned, muted, or archived. Each app is then linked once more in Nook (Beeper does not hand out its sign-ins). |
+
 ### Integrations & Connected Services
 
 | Integration | Capabilities |
@@ -145,7 +162,6 @@ Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calenda
 | **1-Click OAuth (MCP)** | Connect **Notion, Linear, Stripe, Vercel, and Sentry** with a single click (**Connect** uses OAuth + PKCE against their official MCP servers; tokens live in the macOS Keychain and refresh automatically). |
 | **GitHub, Cal.com, n8n & Resend** | Review, approve, merge, and close GitHub PRs; manage bookings in Cal.com; trigger workflows in n8n; send transactional emails via Resend—all with multi-account support. |
 | **WhatsApp Live** | Pair your phone via a local bridge on your Mac (**Settings › Accounts & Integrations › WhatsApp Live**, scan QR code). Reply to incoming messages from the notch or ask Nook to draft a WhatsApp message (sent only after clicking **Run**). |
-| **Chats tab** | Every chat in one inbox: WhatsApp through the linked phone, plus Telegram, Instagram, Messenger, Signal, Messages, Slack, Discord, LinkedIn, X and other chat apps, collected from the notifications they show on your Mac. Messages, Slack, Telegram and Teams load right away with their history: Messages from its database on your Mac, Slack with a user token, Telegram by logging in with your number (through Nook's chat helper after `scripts/build-chatd.sh` once, or TDLib after `scripts/build-tdlib.sh`), Teams by signing in with a code, WhatsApp from the WhatsApp app on your Mac, and Instagram, Messenger, Signal, LinkedIn and X through Nook's own chat helper (`scripts/build-chatd.sh`), all in Settings › Chats. Coming from Beeper? **Settings › Chats › Moving from Beeper** brings over, in one click, which apps were linked there and as whom, your chats with their recent history, and which chats were pinned, muted or archived; each app is then linked once more in Nook (Beeper does not hand out its sign-ins). Everything is set up on its own page, **Settings › Chats** (or the **+** in the tab): switch each app on or off, add any other source in one line (a website such as `linkedin.com/messaging`, or a Mac app), and link WhatsApp. Collecting needs Full Disk Access, is off by default (one click in the empty tab turns it on), looks back two weeks at the first start, and stays on your Mac. The list is grouped (Unread, Today, Yesterday, This week, This month, Earlier; click a group to fold it) and shows every chat on a linked WhatsApp phone, also the ones that sent nothing since linking. Filter by app, search, see how far your own messages got (sent, delivered, read) in every chat an app reads directly, and in a group who is in it and who read your message, answer WhatsApp, Telegram and every app the chat helper links (Instagram, Messenger, Signal…) in place, with more than text, as in the app itself: photos, videos, GIFs, stickers, files (choose them with **+**, drop them on the chat, or paste them), a recorded voice message, a poll, a location, a contact card and emoji, copy an answer into any other app, type `@nook` and what you want in a chat's answer field to let Nook write the message for you to check and send, or ask Nook about them (`chat_inbox`). From the chat, `@chat Anna` opens a chat from any app. |
 | **Custom APIs, Webhooks & MCP** | Connect almost any HTTPS API or webhook under **Custom Sources** (auto-detects Slack, Discord, Teams, Telegram, Zapier, Make, n8n, Todoist, fetches service icons, and gates outgoing messages behind approval) or attach any **MCP server** (`stdio` or `HTTP`). |
 
 ### System-Wide Autocomplete, Dictation, Notes & Media
@@ -282,8 +298,8 @@ Want to explore Nook with sample data first? Enable **Demo data** in **Settings 
 
 - **The Notch** has three main tabs (plus **Music** when audio is playing):
   - **Nook:** Chat, Today overview, and your parallel Nook threads.
-  - **Agents:** Active coding sessions on the left, live transcript/diff/approvals on the right, and a `+` button to launch new sessions or Git worktrees.
-  - **Workspace:** Integrated terminals, browser, and worktree manager.
+  - **Agents:** Active coding sessions on the left, live transcript/diff/approvals on the right, and a `+` button to launch new sessions or Git worktrees. Terminals, the browser, and worktrees live with the agents that use them.
+  - **Chats:** Every chat from WhatsApp, Telegram, Instagram, Messenger, Signal, Messages, Slack, Teams and more in one inbox, to read and answer in place. See [Chats](#chats-every-chat-in-one-inbox).
 - **No Notch / Multiple Displays:**
   - Prefer a floating widget? Go to **Settings › General › Notch › Placement** and choose **Floating on screen** to drag Nook anywhere on any display.
   - Using multiple monitors? Enable **Show notch on every display** so Nook opens on whichever screen your cursor is on.
