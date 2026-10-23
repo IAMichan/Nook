@@ -368,10 +368,9 @@ extension AppModel {
     /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.
     func startAutocomplete() {
         let autocomplete = AutocompleteController.shared
-        autocomplete.facts = { [weak self] in
+        autocomplete.facts = { [weak self] context in
             guard let self, self.settings.useMemory else { return [] }
-            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil }
-                .sorted { $0.strength > $1.strength }.prefix(8).map(\.text)
+            return self.memory.book.forCompletion(context).map(\.text)
         }
         autocomplete.screenText = { [weak self] bundleID in
             let windows = self?.screenContext.windows.filter { $0.bundleID == bundleID } ?? []

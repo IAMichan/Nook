@@ -33,13 +33,28 @@ struct CompletionSamples: Codable, Equatable {
 
     var count: Int { samples.count }
 
-    /// The newest samples long enough to show a style, from this app first.
-    func relevant(for app: String, limit: Int = 3) -> [String] {
-        let long = samples.reversed().filter { $0.text.count >= minPromptLength }
-        let same = long.filter { $0.app == app }
-        let others = long.filter { $0.app != app }
-        return (same + others).prefix(limit).map(\.text)
+    /// The samples that show best how the user writes here: the ones about the same thing as `topic` (see
+    /// `CompletionContext.topic`) first, then this app's newest. Another app's writing only comes along when it shares words
+    /// with the topic: a work mail next to a chat with a friend, or another language, makes the model write the wrong thing.
+    /// A sample the text in the field already holds (`excluding`) is left out: the model would copy it.
+    func relevant(for app: String, about topic: String = "", excluding own: String = "", limit: Int = 3) -> [String] {
+        let wanted = MemoryText.tokens(topic)
+        let field = own.lowercased()
+        var scored: [(score: Double, index: Int)] = []
+        for (index, sample) in samples.enumerated() where sample.text.count >= minPromptLength {
+            if !field.isEmpty, field.contains(sample.text.prefix(80).lowercased()) { continue }
+            let shared = wanted.isEmpty ? 0 : MemoryText.tokens(sample.text).intersection(wanted).count
+            let sameApp = sample.app == app
+            guard sameApp || shared >= Self.sharedWordsFromOtherApps else { continue }
+            // Newer writing breaks a tie: 0 for the oldest, up to 1 for the newest.
+            let recency = Double(index + 1) / Double(samples.count)
+            scored.append((Double(min(shared, 6)) + (sameApp ? 1.5 : 0) + recency, index))
+        }
+        return scored.sorted { ($0.score, $0.index) > ($1.score, $1.index) }.prefix(limit).map { samples[$0.index].text }
     }
+
+    /// Words a sample from another app must share with the topic to be shown as the user's writing.
+    static let sharedWordsFromOtherApps = 2
 
     /// Words the user writes often, weighted 0…1. Short common words are left out: the model knows those.
     func vocabulary(limit: Int = 400) -> [String: Double] {
@@ -148,13 +163,18 @@ struct CompletionPhrases: Sendable {
     }
 
     /// The word that follows `context`, beginning with `partial` (the word being typed). The longest context with enough
-    /// writing behind it decides; when it has enough but no clear winner, there is no suggestion.
+    /// writing behind it decides; when it has enough but no clear winner, there is no suggestion. `penalized` is the first
+    /// word of a suggestion: turned-down phrases count less, and one word before it is not enough by itself.
     private func choose(after context: [String], startingWith partial: String, penalized: Bool) -> String? {
         let typed = partial.lowercased()
         let recent = context.suffix(Self.rejectionContext).joined(separator: " ")
         for length in stride(from: min(Self.order, context.count), through: 1, by: -1) {
             let key = context.suffix(length)
             if key.contains("") { continue }
+            // One word says too little to start a suggestion on its own: after "Hoi" the user wrote "Lisa" often, but that
+            // says nothing about who this message is for. Once they start typing the word ("Hoi L"), or the phrase is under
+            // way, it does.
+            if length == 1, penalized, partial.isEmpty { continue }
             guard let followers = next[key.joined(separator: " ")] else { continue }
             // Grouped by the word itself; the form written most often is the one typed.
             var totals: [String: Double] = [:]

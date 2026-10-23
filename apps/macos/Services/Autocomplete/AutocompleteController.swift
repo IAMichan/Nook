@@ -40,8 +40,8 @@ final class AutocompleteController: ObservableObject {
     @Published private(set) var seenApps: [String: String] = [:]
     @Published private(set) var lastSite: String?
 
-    /// What Nook's memory knows about the user (set by AppModel).
-    var facts: () -> [String] = { [] }
+    /// What Nook's memory knows about the user that matters for what is on screen and being written (set by AppModel).
+    var facts: (_ context: String) -> [String] = { _ in [] }
     /// The text Nook already read in the front window of this app (set by AppModel).
     var screenText: (_ bundleID: String) -> String? = { _ in nil }
 
@@ -1098,7 +1098,6 @@ final class AutocompleteController: ObservableObject {
         }
         var input = CompletionContext(before: "")
         input.instructions = prefs.instructions(app: bundleID, site: snapshot.site)
-        if prefs.memoryContext { input.facts = Array(facts().prefix(8)) }
         if prefs.windowContext {
             input.appName = app.localizedName
             input.windowTitle = snapshot.windowTitle
@@ -1128,8 +1127,13 @@ final class AutocompleteController: ObservableObject {
             let concealed = board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ?? false
             if recent, !concealed { input.clipboard = board.string(forType: .string).map { CompletionPrivacy.sanitize($0) } }
         }
+        // Memories and earlier writing are picked for what this field is about (the conversation, the mail, the page) rather
+        // than the newest or strongest overall: unrelated ones pull the model toward other people and other subjects.
+        let topic = input.topic(before: snapshot.before + snapshot.after, windowTitle: snapshot.windowTitle, site: snapshot.site,
+                                fieldHint: snapshot.placeholder)
+        if prefs.memoryContext { input.facts = facts(topic) }
         if prefs.learn, prefs.personalStrength > 0, let bundleID {
-            input.samples = store.samples.relevant(for: bundleID, limit: 2)
+            input.samples = store.samples.relevant(for: bundleID, about: topic, excluding: snapshot.before + snapshot.after, limit: 2)
             input.phrases = frequentPhrases
         }
         fieldContext = (key, Date(), input)
@@ -1372,7 +1376,7 @@ final class AutocompleteController: ObservableObject {
         guard let model = activeModel else { return nil }
         var input = CompletionContext(before: before)
         input.instructions = prefs.instructions(app: nil, site: nil)
-        if prefs.memoryContext { input.facts = Array(facts().prefix(8)) }
+        if prefs.memoryContext { input.facts = facts(input.topic(before: before)) }
         let prompt = builder.build(input)
         var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }
