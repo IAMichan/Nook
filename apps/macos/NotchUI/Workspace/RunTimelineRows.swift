@@ -21,8 +21,23 @@ struct EventRow: View {
                 .padding(.top, NookTheme.Spacing.sm)
 
         case .assistant:
-            ConversationMessage(fromUser: false, text: event.text)
-                .padding(.horizontal, NookTheme.Spacing.xxs)
+            let background = BackgroundWork.notice(event.text)
+            if background.isEmpty {
+                ConversationMessage(fromUser: false, text: event.text)
+                    .padding(.horizontal, NookTheme.Spacing.xxs)
+            } else {
+                // "task-148 has been launched in the background…": a quiet line, as a command is.
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Image(systemName: "clock.arrow.circlepath").font(NookTheme.font(10))
+                    Text(tr("ws.event.background", background.joined(separator: ", ")))
+                        .font(NookTheme.TextStyle.detail)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(WS.tertiary)
+                .help(event.text)
+            }
 
         case .thinking:
             // The agent's reasoning in the chat itself: muted, live while it is written, the first
