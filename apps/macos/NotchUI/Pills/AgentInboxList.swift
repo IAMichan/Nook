@@ -294,6 +294,8 @@ struct AgentInboxList: View {
                 click(item, entry, shown: shown)
             }
             .nested(entry.depth)
+            // Read the session's timeline while the pointer rests on it, so the click opens it without a hitch.
+            .onHover { inside in if inside, let id = runID(item) { app.workspace.prefetchTimeline(id) } }
             .selectable(active: selection.isActive, selected: selection.contains(item.id)) {
                 withAnimation(NookTheme.reveal) { selection.toggle(item.id) }
             }

@@ -10,6 +10,8 @@ struct CIChecksPopover: View {
     @State private var chosen: String?
     @State private var log: CILog?
     @State private var failure: String?
+    /// The checks of each pull request as last read, so opening the popover again shows them without waiting.
+    @MainActor private static var seen: [URL: [PullRequestCheck]] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -42,20 +44,26 @@ struct CIChecksPopover: View {
         } else if unavailable {
             message(tr("ws.ci.unavailable"))
         } else {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            PatientSpinner()
         }
     }
 
     private var current: PullRequestCheck? { checks?.first { $0.id == chosen } }
 
     private func loadChecks() async {
+        // The checks read last time show at once; the fresh read replaces them when GitHub answers.
+        if checks == nil, let seen = Self.seen[pullRequest] {
+            checks = seen
+            if chosen == nil, let first = seen.first { pick(first.id) }
+        }
         guard let found = await GitHubCILogs.checks(pullRequest: pullRequest) else {
-            unavailable = true
+            if checks == nil { unavailable = true }
             return
         }
+        Self.seen[pullRequest] = found
         checks = found
         // Failing checks come first, then the running ones: the one you most likely want to read.
-        if chosen == nil, let first = found.first { pick(first.id) }
+        if !found.contains(where: { $0.id == chosen }), let first = found.first { pick(first.id) }
     }
 
     private func pick(_ id: String?) {
@@ -79,7 +87,7 @@ struct CIChecksPopover: View {
                     steps(log.steps)
                     logText(log)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    PatientSpinner()
                 }
             }
             .padding(NookTheme.Spacing.md)

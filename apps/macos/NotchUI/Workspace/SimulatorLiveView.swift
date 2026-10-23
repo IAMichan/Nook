@@ -39,7 +39,7 @@ struct SimulatorView: View {
                     SimulatorSnapshotView()
                 }
             case .idle:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                PatientSpinner()
             }
         }
         .task { await hub.prepare() }

@@ -49,7 +49,7 @@ struct SimulatorSnapshotView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    PatientSpinner()
                 }
             }
         }

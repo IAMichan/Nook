@@ -221,6 +221,8 @@ final class WorkspaceManager: ObservableObject {
     private static let timelineIdleSeconds: TimeInterval = 300
     /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
     private var quietEvents = false
+    /// Timelines being read off the main thread by `prefetchTimeline`.
+    private var prefetching: Set<UUID> = []
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
@@ -357,6 +359,29 @@ final class WorkspaceManager: ObservableObject {
     func lastAnswer(_ id: UUID) -> String {
         if let loaded = events[id] { return loaded.last(where: { $0.kind == .assistant })?.text ?? "" }
         return evictedAnswers[id] ?? ""
+    }
+
+    /// Reads a timeline that is not in memory off the main thread, so opening its session right after (a row under the
+    /// pointer, the session the list is about to show) draws it at once instead of decoding up to `RunStore.eventLimit`
+    /// events on the main thread first. Opening before this is done still reads it the plain way.
+    func prefetchTimeline(_ id: UUID) {
+        guard events[id] == nil, !prefetching.contains(id), runs.contains(where: { $0.id == id }) else { return }
+        prefetching.insert(id)
+        let store = store
+        Task { [weak self] in
+            let loaded = await Task.detached(priority: .userInitiated) { store.loadEvents(id) }.value
+            guard let self else { return }
+            self.prefetching.remove(id)
+            // Opened (or written to) meanwhile: what is in memory is newer than what was read.
+            guard self.events[id] == nil else { return }
+            self.evictedTimelines.remove(id)
+            self.evictedAnswers[id] = nil
+            self.timelineUse[id] = Date()
+            self.quietEvents = true
+            self.events[id] = loaded
+            self.quietEvents = false
+            self.evictTimelines()
+        }
     }
 
     /// Loads timeline from disk if not yet in memory.

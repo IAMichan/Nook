@@ -4,6 +4,7 @@ import Foundation
 
 let toastTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "a11y.loading": "Laden",
         "toast.dismiss": "Sluiten",
         "toast.copy": "Melding kopiëren",
         "toast.error": "Er ging iets mis",
@@ -31,6 +32,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "Simulatoractie mislukt",
     ],
     .en: [
+        "a11y.loading": "Loading",
         "toast.dismiss": "Dismiss",
         "toast.copy": "Copy message",
         "toast.error": "Something went wrong",
@@ -58,6 +60,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "Simulator action failed",
     ],
     .de: [
+        "a11y.loading": "Wird geladen",
         "toast.dismiss": "Schließen",
         "toast.copy": "Meldung kopieren",
         "toast.error": "Etwas ist schiefgelaufen",
@@ -85,6 +88,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "Simulator-Aktion fehlgeschlagen",
     ],
     .fr: [
+        "a11y.loading": "Chargement",
         "toast.dismiss": "Fermer",
         "toast.copy": "Copier le message",
         "toast.error": "Un problème est survenu",
@@ -112,6 +116,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "L’action du simulateur a échoué",
     ],
     .es: [
+        "a11y.loading": "Cargando",
         "toast.dismiss": "Cerrar",
         "toast.copy": "Copiar mensaje",
         "toast.error": "Algo salió mal",

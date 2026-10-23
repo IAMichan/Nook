@@ -66,10 +66,18 @@ struct ChatTranscript: View {
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting || phase == .decelerating { scrolledByUser = true }
             }
-            .onChange(of: bubbles.last?.id) { _, last in
-                // A new message (or one you just sent) scrolls into view.
+            .onChange(of: bubbles.last?.id) { previous, last in
                 guard let last else { return }
-                withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                // A new message (or one you just sent) glides into view. Another chat, or a chat's history arriving
+                // at once, is not a new message: it is simply there, at its newest, without scrolling past everything.
+                let arrived = previous.map { old in bubbles.suffix(4).contains { $0.id == old } } ?? false
+                if arrived {
+                    withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                } else {
+                    var jump = Transaction()
+                    jump.disablesAnimations = true
+                    withTransaction(jump) { proxy.scrollTo(last, anchor: .bottom) }
+                }
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
             .onChange(of: contact) { scrolledByUser = false }

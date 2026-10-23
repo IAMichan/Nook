@@ -276,7 +276,7 @@ struct FolderChangesSheet: View {
             if stacked { Divider() }
             Group {
                 if loading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    PatientSpinner()
                 } else if let error {
                     WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.changes.error"), message: error)
                 } else if diff.isEmpty {
@@ -297,12 +297,20 @@ struct FolderChangesSheet: View {
 
     private func load(_ path: String?) {
         guard let path, let file = model.changes.first(where: { $0.path == path }) else { diff = ""; return }
-        loading = true
+        // A diff seen before shows at once and is read again behind it; only a new one waits for git.
+        let key = model.directory + "|" + path
+        let cached = DiffCache.diff(key)
+        if let cached { diff = cached }
+        loading = cached == nil
         error = nil
         Task {
             do {
-                diff = try await model.diff(file)
+                let fresh = try await model.diff(file)
+                DiffCache.store(fresh, key)
+                guard selected == path else { return }
+                diff = fresh
             } catch let failure {
+                guard selected == path else { return }
                 error = failure.localizedDescription
             }
             loading = false
