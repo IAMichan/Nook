@@ -2,8 +2,8 @@ import Foundation
 
 /// Pull requests that build on each other: one whose base branch is another open pull request's head stands on it.
 /// The stack runs from the one on the trunk (its base is no pull request's head) up through the ones built on it.
-/// Foundation only, so tests can use it.
-enum PullRequestStack {
+/// Foundation only, so tests can use it. The session-link layering lives on the same type in PullRequestLinks.swift.
+extension PullRequestStack {
     /// The stack `item` belongs to, bottom first, or nil when it stands alone. Only open pull requests of the same
     /// repository count; a branch with more than one pull request built on it continues with the lowest number first.
     static func stack(of item: PullRequestItem, in items: [PullRequestItem]) -> [PullRequestItem]? {
