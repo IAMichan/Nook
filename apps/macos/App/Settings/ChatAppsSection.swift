@@ -8,7 +8,13 @@ enum ChatAppsCatalog {
                        "messages"]
 
     /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database).
-    static let ownWay: Set<String> = ["whatsapp", "telegram", "teams", "slack", "messages"]
+    /// Teams only in a build that can sign in to Microsoft (a client id), or once an account is linked: otherwise its
+    /// sheet would offer a step that cannot be taken, and Teams links through a chat service on this Mac instead.
+    @MainActor static var ownWay: Set<String> {
+        var apps: Set<String> = ["whatsapp", "telegram", "teams", "slack", "messages"]
+        if TeamsBridge.clientID == nil, ChatCaptureService.shared.teamsBridge.accounts.isEmpty { apps.remove("teams") }
+        return apps
+    }
 }
 
 /// One app on Settings › Chats: whether it is linked, how and as whom, and whether its chats are on.
