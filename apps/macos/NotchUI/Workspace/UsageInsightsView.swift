@@ -622,15 +622,18 @@ struct UsageLimitPoolView: View {
                             .font(NookTheme.TextStyle.strong.monospacedDigit())
                             .foregroundStyle(UsageTone.text(100 - window.left))
                     }
-                    HStack(spacing: 3) {
+                    HStack(alignment: .top, spacing: 3) {
                         ForEach(window.segments) { segment in
-                            segmentBar(segment, restores: segment.resetsAt == window.nextReset && window.nextReset != nil)
-                                .help(segmentHelp(segment))
+                            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                                segmentBar(segment, restores: segment.resetsAt == window.nextReset && window.nextReset != nil)
+                                    .frame(height: 8)
+                                segmentLabel(segment)
+                            }
+                            .help(segmentHelp(segment))
                         }
                     }
-                    .frame(height: 8)
                     if let reset = window.nextReset {
-                        Text(tr("usage.pool.reset", AgentFormat.reset(reset) ?? "", Int(window.restores.rounded())))
+                        Text(tr("usage.pool.reset", resettingNames(window), AgentFormat.reset(reset) ?? "", Int(window.restores.rounded())))
                             .font(NookTheme.TextStyle.detail)
                             .foregroundStyle(NookTheme.textTertiary)
                     }
@@ -658,6 +661,22 @@ struct UsageLimitPoolView: View {
             }
         }
         .opacity(segment.left == nil ? 0.35 : 1)
+    }
+
+    /// Which account a segment is: its name, and what it has left of this window.
+    private func segmentLabel(_ segment: LimitPool.Segment) -> some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text(segment.name).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 0)
+            Text(segment.left.map { tr("usage.pool.segmentLeft", Int($0.rounded())) } ?? "–").monospacedDigit()
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textSecondary)
+    }
+
+    /// The accounts whose reset is the window's next one, so the reset line says whose limit comes back.
+    private func resettingNames(_ window: LimitPool.Window) -> String {
+        window.segments.filter { $0.resetsAt == window.nextReset }.map(\.name).joined(separator: ", ")
     }
 
     private func segmentHelp(_ segment: LimitPool.Segment) -> String {
