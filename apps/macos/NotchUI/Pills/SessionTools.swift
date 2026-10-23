@@ -35,11 +35,11 @@ enum SessionTool: String {
     var help: String { tr("agents.tool." + rawValue) }
 }
 
-/// The panels' quiet icons in a session's header: the terminal, the browser, and buttons that open (or close) the
-/// bottom panel and the side panel. A tool's icon opens the side panel on it; on the tool the panel shows, it closes
-/// the panel again. The bottom panel opens on what it showed last, the terminal by default; the side panel on what it
-/// showed last, or on the list of tools when no tab is open. When the agent started a process or opened a page there
-/// that you have not looked at yet, the icon carries a small dot.
+/// The panels' quiet icons in a session's header: buttons that open (or close) the bottom panel and the side panel.
+/// The terminal and the browser open from the panels themselves (their tabs, + and the list of tools). The bottom panel
+/// opens on what it showed last, the terminal by default; the side panel on what it showed last, or on the list of
+/// tools when no tab is open. When the agent started a process or opened a page that you have not looked at yet, the
+/// side panel's icon carries a small dot.
 struct SessionToolSwitch: View {
     @ObservedObject var viewModel: NotchViewModel
     /// The session's folder; empty means no terminal and no changes, only the browser.
@@ -50,29 +50,18 @@ struct SessionToolSwitch: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
-            if !directory.isEmpty { icon(.terminal) }
-            icon(.browser)
-            ToolbarGroupDivider()
             bottomToggle
             panelToggle
         }
         .toolbarGroup()
     }
 
-    private func icon(_ tool: SessionTool) -> some View {
-        let active = viewModel.sessionTool == tool
-        let fresh = !active && viewModel.bottomTool != tool && bridge.hasUnseen(directory, tool.rawValue)
-        let help = fresh ? tool.help + " · " + tr("bridge.tool.unseen") : tool.help
-        return Button {
-            viewModel.sessionTool = active ? .conversation : tool
-        } label: {
-            SessionToolIcon(symbol: tool.symbol, active: active, fresh: fresh)
+    /// The agent started a process or opened a page you have not seen: a tool with news that neither panel shows.
+    private var fresh: Bool {
+        SessionTool.panelTools.contains { tool in
+            tool.available(in: directory) && viewModel.sessionTool != tool && viewModel.bottomTool != tool
+                && bridge.hasUnseen(directory, tool.rawValue)
         }
-        .buttonStyle(.plain)
-        .animation(NookTheme.reveal, value: fresh)
-        .help(help)
-        .accessibilityLabel(help)
-        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     /// Opens the bottom panel on the tool it showed last (the terminal at first), or closes it.
@@ -105,7 +94,8 @@ struct SessionToolSwitch: View {
     /// Opens the side panel on the tool it showed last, or closes it.
     private var panelToggle: some View {
         let open = viewModel.sessionTool != .conversation
-        let help = open ? tr("agents.tool.close") : tr("agents.tool.panel")
+        let base = open ? tr("agents.tool.close") : tr("agents.tool.panel")
+        let help = fresh ? base + " · " + tr("bridge.tool.unseen") : base
         return Button {
             if open {
                 viewModel.sessionTool = .conversation
@@ -115,9 +105,10 @@ struct SessionToolSwitch: View {
                 viewModel.sessionTool = tabs.contains(last) ? last : tabs.first ?? .picker
             }
         } label: {
-            SessionToolIcon(symbol: "sidebar.right", active: open, fresh: false)
+            SessionToolIcon(symbol: "sidebar.right", active: open, fresh: fresh)
         }
         .buttonStyle(.plain)
+        .animation(NookTheme.reveal, value: fresh)
         .help(help)
         .accessibilityLabel(help)
         .accessibilityAddTraits(open ? .isSelected : [])
