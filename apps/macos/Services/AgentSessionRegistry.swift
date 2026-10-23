@@ -57,7 +57,13 @@ struct AgentSessionRecord: Identifiable, Equatable {
 
     /// The key two records share when they are the same conversation.
     var conversationKey: String? {
-        conversationID.isEmpty ? nil : "\(agent)|\(accountHome)|\(conversationID)"
+        conversationID.isEmpty ? nil : "\(Self.family(agent))|\(accountHome)|\(conversationID)"
+    }
+
+    /// The desktop app's Code sessions are Claude Code underneath and write the same transcript: a conversation continued
+    /// there (or started there and continued in the terminal) is one conversation.
+    static func family(_ agent: String) -> String {
+        agent == "Claude (app)" ? "Claude Code" : agent
     }
 }
 
