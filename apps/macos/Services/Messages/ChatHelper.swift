@@ -15,8 +15,9 @@ final class ChatHelper: ObservableObject {
     /// Why it did not start, in its own words; nil while it runs or was never tried.
     @Published private(set) var problem: String?
 
-    static let port = 29373
-    static let base = URL(string: "http://127.0.0.1:\(port)")!
+    // Nonisolated: `answers(at:)` uses `base` as a default argument, which is evaluated outside the main actor.
+    nonisolated static let port = 29373
+    nonisolated static let base = URL(string: "http://127.0.0.1:\(port)")!
     /// A new one every start, kept only in memory: only this Nook can use the helper.
     private(set) var token: String?
     private var process: Process?
