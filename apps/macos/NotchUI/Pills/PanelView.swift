@@ -39,6 +39,11 @@ struct PanelView: View {
                 header
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
                     .padding(.leading, headerInset)   // Clear of Nook's ring, under the tabs.
+                // A Double Tap Nook works on, or just finished: every step, and what it typed, to check.
+                if !app.demoMode {
+                    DoubleTapRunBar(doubleTap: DoubleTap.shared)
+                        .padding(.leading, headerInset)
+                }
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
