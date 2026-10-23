@@ -310,8 +310,8 @@ struct PullRequestFreshness: View {
     }
 }
 
-/// One pull request in the list: its state as GitHub's mark, the title with the checks at the end, and under it where
-/// it lives, its number, who wrote it and when it last changed.
+/// One pull request in the list: its state as GitHub's mark, its number and title with the checks right behind it, and
+/// under it who wrote it and where it lives; on the right the lines added and removed over when it last changed.
 private struct PullRequestRow: View {
     let item: PullRequestItem
     let role: PullRequestRepoGroup.Role
@@ -330,34 +330,52 @@ private struct PullRequestRow: View {
                     .padding(.top, 1)
                     .help(tr(stateKey))
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    HStack(spacing: NookTheme.Spacing.sm) {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        Text("#\(item.number)")
+                            .font(NookTheme.mono(11.5, .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .fixedSize()
                         Text(item.title)
                             .font(NookTheme.TextStyle.strong)
                             .foregroundStyle(item.state == .open ? NookTheme.paper : NookTheme.textSecondary)
                             .lineLimit(1)
-                        Spacer(minLength: NookTheme.Spacing.sm)
-                        if item.state == .open { ciMark }
+                        ciMark
                     }
                     HStack(spacing: NookTheme.Spacing.xs) {
+                        if role != .mine, !item.author.isEmpty { Text("@" + item.author).lineLimit(1) }
                         if showRepo {
                             Text(item.repo).lineLimit(1).truncationMode(.middle).layoutPriority(-1)
                         }
-                        Text("#\(item.number)").font(NookTheme.mono(11)).monospacedDigit()
-                        if role != .mine, !item.author.isEmpty { Text("· @" + item.author).lineLimit(1) }
                         if item.draft, item.state == .open {
                             PullRequestTag(text: tr("agents.pulls.draft").localizedCapitalized, color: NookTheme.textSecondary)
                         }
                         // Grouped by role, the group's heading already says so.
                         if role == .review, item.state == .open, !showRepo { PullRequestTag(text: tr("agents.pulls.scope.reviews"), color: NookTheme.amber) }
-                        Spacer(minLength: NookTheme.Spacing.sm)
-                        if let updated = item.updated {
-                            Text(AgentFormat.short(Date().timeIntervalSince(updated))).monospacedDigit().layoutPriority(1)
-                        }
                     }
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                 }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
+                    if let additions = item.additions, let deletions = item.deletions {
+                        HStack(spacing: NookTheme.Spacing.xs) {
+                            Text("+" + additions.formatted()).foregroundStyle(NookTheme.mint)
+                            Text("−" + deletions.formatted()).foregroundStyle(NookTheme.coral)
+                        }
+                        .font(NookTheme.mono(11.5, .medium))
+                        .help(tr("agents.pulls.linesChanged", additions, deletions))
+                    }
+                    if let updated = item.updated {
+                        Text(AgentFormat.short(Date().timeIntervalSince(updated)))
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                }
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
             }
             .padding(.horizontal, NookTheme.Spacing.lg)
             .padding(.vertical, NookTheme.Spacing.md)
@@ -408,18 +426,19 @@ private struct PullRequestRow: View {
         }
     }
 
+    /// The checks as GitHub's outlined circles, right behind the title, so you see at a glance whether CI passed.
     @ViewBuilder
     private var ciMark: some View {
         switch item.ci {
         case .passing:
-            Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
+            Image(systemName: "checkmark.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.mint)
                 .help(tr("agents.pulls.status.passing"))
         case .failing:
-            Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
+            Image(systemName: "xmark.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.coral)
                 .help(tr("agents.pulls.status.failing"))
         // Running checks wait on CI, not on you: no amber.
         case .pending:
-            Image(systemName: "clock").font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary)
+            Image(systemName: "smallcircle.filled.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
                 .help(tr("agents.pulls.status.pending"))
         case .unknown:
             EmptyView()
