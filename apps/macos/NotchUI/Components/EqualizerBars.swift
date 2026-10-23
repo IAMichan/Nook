@@ -16,20 +16,26 @@ struct EqualizerBars: View {
     @ObservedObject private var energy = EnergyMonitor.shared
     @Environment(\.nookAttended) private var attended
 
+    private static let totalWidth: CGFloat = CGFloat(AudioLevelMonitor.bandCount * 3 + (AudioLevelMonitor.bandCount - 1) * 3)
+
     var body: some View {
-        TimelineView(.nookFrames(fps: energy.plan.frameRate(frameRate, attended: attended), paused: !isPlaying)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let realBands = (isPlaying && AudioLevelMonitor.shared.hasSignal) ? AudioLevelMonitor.shared.snapshot() : []
-            HStack(alignment: .bottom, spacing: 3) {
-                ForEach(0..<AudioLevelMonitor.bandCount, id: \.self) { i in
-                    Capsule()
-                        .fill(color)
-                        .frame(width: 3, height: 4 + (height - 4) * CGFloat(level(i, t: t, realBands: realBands)))
+        SeparateGraph {
+            TimelineView(.nookFrames(fps: energy.plan.frameRate(frameRate, attended: attended), paused: !isPlaying)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let realBands = (isPlaying && AudioLevelMonitor.shared.hasSignal) ? AudioLevelMonitor.shared.snapshot() : []
+                HStack(alignment: .bottom, spacing: 3) {
+                    ForEach(0..<AudioLevelMonitor.bandCount, id: \.self) { i in
+                        Capsule()
+                            .fill(color)
+                            .frame(width: 3, height: 4 + (height - 4) * CGFloat(level(i, t: t, realBands: realBands)))
+                    }
                 }
+                .frame(width: Self.totalWidth, height: height, alignment: .bottom)
             }
-            .frame(height: height, alignment: .bottom)
-            .animation(NookTheme.reveal, value: isPlaying)
+            .drawingGroup()
         }
+        .frame(width: Self.totalWidth, height: height, alignment: .bottom)
+        .animation(NookTheme.reveal, value: isPlaying)
         .accessibilityHidden(true)
         // Real levels are only measured while some equalizer is on screen.
         .onAppear { AudioLevelMonitor.shared.addViewer() }

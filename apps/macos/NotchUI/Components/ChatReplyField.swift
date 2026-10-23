@@ -617,10 +617,13 @@ private struct SendingPanel: View {
 /// A paper plane that lifts off, flies out and comes back in, over and over while a message is sent; still with
 /// Reduce Motion.
 private struct GlidingPlane: View {
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.nookFrames(fps: 30, paused: reduceMotion)) { context in
+        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
             let phase = reduceMotion ? 0.35 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
             // Out to the top right while it fades, then in again from the bottom left.
             let travel = (phase - 0.35) * 14
@@ -637,11 +640,14 @@ private struct GlidingPlane: View {
 
 /// A short light that runs along the bottom of the sending panel, so it reads as under way even for a slow send.
 private struct SendingSweep: View {
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
         GeometryReader { proxy in
-            TimelineView(.nookFrames(fps: 30, paused: reduceMotion)) { context in
+            TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
                 let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
                 let width = proxy.size.width * 0.3
                 Capsule()
@@ -659,10 +665,13 @@ private struct SendingSweep: View {
 
 /// Three dots that rise in turn while Nook writes; still with Reduce Motion.
 private struct WritingDots: View {
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.nookFrames(fps: 30, paused: reduceMotion)) { context in
+        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(0..<3) { index in
