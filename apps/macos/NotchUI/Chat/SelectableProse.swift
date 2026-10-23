@@ -49,6 +49,7 @@ struct SelectableProse: NSViewRepresentable {
 
     func updateNSView(_ view: NSTextView, context: Context) {
         context.coordinator.fileLinkBase = context.environment.fileLinkBase
+        context.coordinator.pullRequestLinksBeside = context.environment.pullRequestLinksBeside
         context.coordinator.quote = context.environment.quoteSelection
         view.linkTextAttributes = [
             // Links in the link blue without an underline, as Code shows them; the pointer says they are links.
@@ -79,6 +80,7 @@ struct SelectableProse: NSViewRepresentable {
         let measure = NSTextStorage()
         /// The session's folder, for a relative file link in the text.
         var fileLinkBase: String?
+        var pullRequestLinksBeside = false
         /// Quotes selected words into the reply box, when there is one.
         var quote: ((String) -> Void)?
         /// A quote longer than this is refused: the reply should point at a passage, not repeat the answer.
@@ -127,8 +129,12 @@ struct SelectableProse: NSViewRepresentable {
                 return true
             }
             guard let url, MarkdownBlock.isSafeLink(url) else { return true }
-            // An artifact opens beside the chat, next to the app that made it; any other link in the browser.
-            if EmbeddedArtifact.app(for: url) != nil {
+            // A pull request opens in Nook (beside the session, or on the Pull requests page), an artifact beside the
+            // chat next to the app that made it; any other link in the browser.
+            let beside = pullRequestLinksBeside
+            if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: beside) }) {
+                return true
+            } else if EmbeddedArtifact.app(for: url) != nil {
                 Task { @MainActor in AppModel.shared.openArtifact(url) }
             } else {
                 NSWorkspace.shared.open(url)

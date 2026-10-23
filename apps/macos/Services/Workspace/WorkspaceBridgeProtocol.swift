@@ -221,7 +221,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
                 "title": ["type": "string", "description": "Title of the pull request."],
                 "body": ["type": "string", "description": "Description in Markdown: what changed and how it was tested."],
                 "base": ["type": "string", "description": "Branch to merge into. Defaults to the session's base branch or the repository's default branch."],
-                "draft": ["type": "boolean", "description": "Open as draft. Default true."]
+                "draft": ["type": "boolean", "description": "Open as draft. Default false: only when the user asks for a draft."]
             ], required: ["title"])
         }
     }

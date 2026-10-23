@@ -4,10 +4,13 @@ import SwiftUI
 /// folder (or worktree), Nook's browser, for instance on the dev server the agent started, or the folder's changes.
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, picker
+    case conversation, terminal, browser, changes, pullRequest, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.terminal, .browser, .changes]
+    /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
+    /// + menu, and not kept across launches).
+    static let sideTabs: [SessionTool] = panelTools + [.pullRequest]
 
     var symbol: String {
         switch self {
@@ -15,13 +18,15 @@ enum SessionTool: String {
         case .terminal: return "terminal"
         case .browser: return "safari"
         case .changes: return "plus.forwardslash.minus"
+        case .pullRequest: return "arrow.triangle.pull"
         case .picker: return "square.grid.2x2"
         }
     }
 
     /// Whether the tool works for a session in `directory`: without a folder there is only the browser.
     func available(in directory: String) -> Bool {
-        directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
+        if self == .pullRequest { return true }
+        return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
     /// The tab's name in the side panel.
@@ -210,6 +215,8 @@ struct SessionWorkbench<Conversation: View>: View {
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory)))
+                    // A pull request link in the conversation opens in the side panel.
+                    .environment(\.pullRequestLinksBeside, true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
                     VStack(spacing: 0) {
@@ -252,7 +259,8 @@ struct SessionWorkbench<Conversation: View>: View {
     }
 
     private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
-        SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), closeHelp: tr(slot.closeHelp),
+        SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
+                         closeHelp: tr(slot.closeHelp),
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
                          closeTab: { closeTab($0, in: slot) },
                          close: { viewModel[keyPath: slot.tool] = .conversation })
@@ -265,6 +273,7 @@ struct SessionWorkbench<Conversation: View>: View {
         let rest = visible.filter { $0 != item }
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
+            if item == .pullRequest { viewModel.sidePullRequest = nil }
             if viewModel[keyPath: slot.tool] == item {
                 viewModel[keyPath: slot.tool] = rest.isEmpty ? .picker : rest[min(index, rest.count - 1)]
             }
@@ -334,6 +343,7 @@ private struct SessionToolPanel: View {
     let runID: UUID?
     let tool: SessionTool
     let tabs: [SessionTool]
+    let pullRequest: PullRequestOpenRequest?
     let closeHelp: String
     let show: (SessionTool) -> Void
     let closeTab: (SessionTool) -> Void
@@ -354,6 +364,13 @@ private struct SessionToolPanel: View {
                         ChangesSheet(runID: runID, initialFile: nil, onClose: close, stacked: true).id(runID)
                     } else {
                         FolderChangesSheet(directory: directory, stacked: true).id(directory)
+                    }
+                case .pullRequest:
+                    if let pullRequest {
+                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item)
+                            .id(pullRequest.account + " " + pullRequest.item.id)
+                    } else {
+                        SessionToolPicker(directory: directory) { show($0) }
                     }
                 default: BrowserView()
                 }

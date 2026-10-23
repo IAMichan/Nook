@@ -129,12 +129,22 @@ private struct FileLinkBaseKey: EnvironmentKey {
     static let defaultValue: String? = nil
 }
 
+private struct PullRequestLinksBesideKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// The folder a relative file link in an answer is read from: the session's folder in an agent's conversation. Without
     /// it, only absolute paths open.
     var fileLinkBase: String? {
         get { self[FileLinkBaseKey.self] }
         set { self[FileLinkBaseKey.self] = newValue }
+    }
+
+    /// In an agent's conversation: a pull request link opens in the session's side panel, not on the Pull requests page.
+    var pullRequestLinksBeside: Bool {
+        get { self[PullRequestLinksBesideKey.self] }
+        set { self[PullRequestLinksBesideKey.self] = newValue }
     }
 }
 
@@ -158,6 +168,7 @@ extension MarkdownBlock {
 
 struct MarkdownView: View {
     @Environment(\.fileLinkBase) private var fileLinkBase
+    @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     let text: String
     var size: CGFloat = 14
     /// When set, the options of a question at the end of the answer become buttons that answer it.
@@ -179,11 +190,13 @@ struct MarkdownView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
-        .environment(\.openURL, OpenURLAction { [fileLinkBase] url in
+        .environment(\.openURL, OpenURLAction { [fileLinkBase, pullRequestLinksBeside] url in
             if MarkdownBlock.isFileLink(url) {
                 return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase) } ? .handled : .discarded
             }
             guard MarkdownBlock.isSafeLink(url) else { return .discarded }
+            // A pull request opens in Nook: beside the session, or on the Pull requests page.
+            if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
             Task { @MainActor in AppModel.shared.openArtifact(url) }

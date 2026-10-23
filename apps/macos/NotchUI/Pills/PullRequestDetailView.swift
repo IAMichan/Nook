@@ -13,7 +13,8 @@ struct PullRequestDetailView: View {
     @EnvironmentObject private var app: AppModel
     let accountID: String
     let item: PullRequestItem
-    let onBack: () -> Void
+    /// Nil beside a session, where the side panel's tab closes it instead.
+    let onBack: (() -> Void)?
 
     enum Tab: Hashable { case overview, guide, timeline, commits, checks, files }
 
@@ -31,7 +32,7 @@ struct PullRequestDetailView: View {
     @State private var merging = false
     @State private var mergeError: String?
 
-    init(accountID: String, item: PullRequestItem, onBack: @escaping () -> Void) {
+    init(accountID: String, item: PullRequestItem, onBack: (() -> Void)? = nil) {
         self.accountID = accountID
         self.item = item
         self.onBack = onBack
@@ -89,8 +90,10 @@ struct PullRequestDetailView: View {
 
     private var topBar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
-                .help(tr("agents.pr.back"))
+            if let onBack {
+                NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
+                    .help(tr("agents.pr.back"))
+            }
             HStack(spacing: NookTheme.Spacing.xs) {
                 Text(item.repo).lineLimit(1).truncationMode(.middle)
                 Image(systemName: "chevron.right").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)

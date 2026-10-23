@@ -81,6 +81,17 @@ struct PullRequestRef: Equatable, Sendable {
     }
 }
 
+extension PullRequestRef {
+    /// A github.com pull request link as the row Nook's pull request page opens with; nil for any other forge, a
+    /// GitHub Enterprise host, or "#12" without a repository. Title and author follow once GitHub answers.
+    var gitHubItem: PullRequestItem? {
+        guard host == .github, hostName == "github.com", let repository, !repository.isEmpty else { return nil }
+        return PullRequestItem(repo: repository, number: number, title: "", url: url, draft: false, updated: nil, author: "")
+    }
+
+    static func gitHubItem(_ url: URL) -> PullRequestItem? { parse(url.absoluteString)?.gitHubItem }
+}
+
 enum PullRequestState: String, Codable, Sendable {
     case draft, open, merged, closed
 

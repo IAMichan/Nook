@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 
+/// A pull request to open on the Pull requests page, with the account to read it with.
+struct PullRequestOpenRequest: Equatable {
+    let account: String
+    let item: PullRequestItem
+}
+
 /// The pull requests of your GitHub accounts: the ones you wrote, the ones waiting for your review, and the others in the
 /// organizations and repositories you watch (Settings › Apps & accounts). Open ones by
 /// default; the Filters dropdown (see PullRequestFilterMenu) also shows closed and merged ones. A click opens the pull
@@ -39,9 +45,18 @@ struct PullRequestsPanel: View {
         if let opened {
             PullRequestDetailView(accountID: opened.account, item: opened.item) { self.opened = nil }
                 .id(opened.account + " " + opened.item.id)
+                .onReceive(app.viewModel.$pullRequestToOpen) { take($0) }
         } else {
             list
+                .onReceive(app.viewModel.$pullRequestToOpen) { take($0) }
         }
+    }
+
+    /// A pull request link clicked in a chat: it opens here, in full.
+    private func take(_ request: PullRequestOpenRequest?) {
+        guard let request else { return }
+        app.viewModel.pullRequestToOpen = nil
+        opened = (request.account, request.item)
     }
 
     private var list: some View {

@@ -534,7 +534,7 @@ final class WorkspaceBridge: ObservableObject {
         let title = ((arguments["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return .error("Give the pull request a title.") }
         let body = (arguments["body"] as? String) ?? ""
-        let draft = (arguments["draft"] as? Bool) ?? true
+        let draft = (arguments["draft"] as? Bool) ?? false
         if case .refuse(let reason) = verdict(.pullRequestCreate, caller) { return .error(Self.refusal(reason)) }
         guard let git = GitService.shared else { throw NookError("Git is not available on this Mac.") }
 

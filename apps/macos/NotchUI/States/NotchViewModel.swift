@@ -24,7 +24,7 @@ final class NotchViewModel: ObservableObject {
     /// A tool that opens gets its own tab in the side panel, and leaves the bottom panel if it was open there.
     @Published var sessionTool: SessionTool = .conversation {
         didSet {
-            if SessionTool.panelTools.contains(sessionTool) {
+            if SessionTool.sideTabs.contains(sessionTool) {
                 if !sessionTabs.contains(sessionTool) { sessionTabs.append(sessionTool) }
                 take(sessionTool, from: \.bottomTool, tabs: \.bottomTabs)
             }
@@ -89,6 +89,13 @@ final class NotchViewModel: ObservableObject {
 
     /// What the Chats tab shows next ("@chat Anna"): it takes this once and clears it.
     @Published var chatsFocus: ChatsFocus?
+
+    /// The pull request in the side panel's Pull request tab, opened from a link in the session's conversation.
+    @Published var sidePullRequest: PullRequestOpenRequest?
+
+    /// The pull request the Pull requests page opens next (a pull request link clicked in a chat): it takes this once and
+    /// clears it.
+    @Published var pullRequestToOpen: PullRequestOpenRequest?
 
     /// Words the session opened next finds in its timeline (a search hit in it): it takes this once and clears it.
     @Published var sessionFind: String?
