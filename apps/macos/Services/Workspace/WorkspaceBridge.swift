@@ -267,7 +267,8 @@ final class WorkspaceBridge: ObservableObject {
         if terminals.isEmpty { lines.append("- none") }
         for terminal in terminals { lines.append("- " + describe(terminal, caller)) }
 
-        let servers = await Task.detached(priority: .utility) { DevServerScanner.scan(folder: WorkspacePathPolicy.normalize(directory)) }.value
+        let servers = await DevServerProbe.pages(
+            await Task.detached(priority: .utility) { DevServerScanner.scan(folder: WorkspacePathPolicy.normalize(directory)) }.value)
         lines.append("")
         lines.append("## Local servers in this folder")
         if servers.isEmpty { lines.append("- none listening") }

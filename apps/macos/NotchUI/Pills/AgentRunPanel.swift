@@ -114,6 +114,8 @@ struct AgentRunPanel: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
+            .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }

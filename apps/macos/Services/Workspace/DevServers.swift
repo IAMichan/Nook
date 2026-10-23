@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A local server a session started: a process working in the session's folder that listens on a TCP port.
 struct DevServer: Equatable, Identifiable, Sendable {
@@ -79,5 +82,74 @@ enum DevServerScanner {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// Keeps only the listeners that serve a page, so a database, debugger or language server working in the folder is not
+/// offered as something to open (as Code's port scanner does). Only ports that already belong to the session's folder
+/// are asked, never an unknown port: some servers that speak their own protocol fall over on a stray HTTP request.
+enum DevServerProbe {
+    /// A page: a redirect that says where to (a login, `/` → `/app`), or a 2xx answer with HTML. A 204/205 is no page, nor
+    /// JSON or plain text (an API).
+    static func isWebPage(status: Int, contentType: String?, location: String?) -> Bool {
+        if (300..<400).contains(status) { return !(location ?? "").isEmpty }
+        guard (200..<300).contains(status), status != 204, status != 205 else { return false }
+        let type = (contentType ?? "").lowercased()
+        return type.contains("text/html") || type.contains("application/xhtml+xml")
+    }
+
+    /// The servers that answer as a page. A server the project names itself (`pid` 0, its `previewUrl`) is kept as is.
+    static func pages(_ servers: [DevServer]) async -> [DevServer] {
+        var kept: [DevServer] = []
+        for server in servers {
+            if server.pid == 0 { kept.append(server); continue }
+            if await cache.isPage(server) { kept.append(server) }
+        }
+        return kept
+    }
+
+    private static let cache = ProbeCache()
+
+    /// Answers are kept for 15 seconds per process and port, so the scan every few seconds does not knock on every port.
+    private actor ProbeCache {
+        private var answers: [String: (page: Bool, at: Date)] = [:]
+
+        func isPage(_ server: DevServer) async -> Bool {
+            let key = "\(server.pid):\(server.port)"
+            if let hit = answers[key], Date().timeIntervalSince(hit.at) < 15 { return hit.page }
+            var page = await DevServerProbe.ask(URL(string: "http://127.0.0.1:\(server.port)/")!)
+            if !page { page = await DevServerProbe.ask(URL(string: "https://localhost:\(server.port)/")!) }
+            answers[key] = (page, Date())
+            if answers.count > 64 { answers = answers.filter { Date().timeIntervalSince($0.value.at) < 15 } }
+            return page
+        }
+    }
+
+    private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+            completionHandler(nil)
+        }
+    }
+
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 1
+        configuration.timeoutIntervalForResource = 1.5
+        return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
+    }()
+
+    fileprivate static func ask(_ url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        return await withCheckedContinuation { continuation in
+            session.dataTask(with: request) { _, response, _ in
+                guard let http = response as? HTTPURLResponse else { return continuation.resume(returning: false) }
+                continuation.resume(returning: isWebPage(status: http.statusCode,
+                                                         contentType: http.value(forHTTPHeaderField: "Content-Type"),
+                                                         location: http.value(forHTTPHeaderField: "Location")))
+            }.resume()
+        }
     }
 }

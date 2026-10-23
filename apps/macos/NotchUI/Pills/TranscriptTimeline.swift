@@ -94,6 +94,8 @@ struct TranscriptConversation: View {
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
+        .environment(\.fileLinkBase, directory)
         .preference(key: TranscriptOutputCount.self, value: outputs.count)
         // The outputs button in the header asks for the outputs, also while a file is open.
         .onChange(of: outputsOpen.wrappedValue) { _, isOpen in

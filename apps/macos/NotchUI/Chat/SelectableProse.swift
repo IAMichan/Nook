@@ -35,6 +35,7 @@ struct SelectableProse: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSTextView, context: Context) {
+        context.coordinator.fileLinkBase = context.environment.fileLinkBase
         view.linkTextAttributes = [
             .foregroundColor: NSColor(NookTheme.iris),
             .underlineStyle: NSUnderlineStyle.single.rawValue,
@@ -62,6 +63,8 @@ struct SelectableProse: NSViewRepresentable {
     /// Measures on its own layout stack: probing sizes on the text view's container would leave it at a probed width.
     final class Coordinator: NSObject, NSTextViewDelegate {
         let measure = NSTextStorage()
+        /// The session's folder, for a relative file link in the text.
+        var fileLinkBase: String?
         private let layout = NSLayoutManager()
         private let container = NSTextContainer()
 
@@ -80,6 +83,11 @@ struct SelectableProse: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+            if let url, MarkdownBlock.isFileLink(url) {
+                let base = fileLinkBase
+                Task { @MainActor in _ = MarkdownBlock.openFileLink(url, base: base) }
+                return true
+            }
             guard let url, MarkdownBlock.isSafeLink(url) else { return true }
             // An artifact opens beside the chat, next to the app that made it; any other link in the browser.
             if EmbeddedArtifact.app(for: url) != nil {
