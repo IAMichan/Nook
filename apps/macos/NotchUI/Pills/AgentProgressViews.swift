@@ -190,19 +190,22 @@ struct TaskStepRow: View {
 /// A ring with a gap that turns: the step that runs now.
 struct SpinningRing: View {
     let color: Color
-    @State private var turning = false
+    /// Published only when the plan changes: sets how often the ring turns a step.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
         ZStack {
             Circle().stroke(color.opacity(0.2), lineWidth: 1.6)
-            Circle()
-                .trim(from: 0, to: 0.7)
-                .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                .rotationEffect(.degrees(turning ? 360 : 0))
+            // A turn every 0.9 s on a timeline at the ambient rate: a `repeatForever` animation turns it at the display's
+            // own rate and redraws the whole window with it, for as long as the agent works.
+            TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
+                let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                    .rotationEffect(.degrees(360 * turn))
+            }
         }
         .padding(1)
-        .onAppear {
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { turning = true }
-        }
     }
 }

@@ -22,24 +22,28 @@ struct Bar: View {
 struct PulseDot: View {
     let color: Color
     let animated: Bool
-    @State private var pulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Published only when the plan changes: sets how often the ring redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
         ZStack {
             if animated && !reduceMotion {
-                Circle()
-                    .stroke(color.opacity(pulse ? 0 : 0.7), lineWidth: 1.5)
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(pulse ? 2.3 : 1)
+                // A timeline at the ambient rate, not a `repeatForever` animation: that runs at the display's own rate (up to
+                // 120 times a second) for as long as the dot is there, and every frame redraws the whole window it is in.
+                TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
+                    // An ease-out over 1.4 s, starting over: the ring grows and fades.
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+                    let eased = 1 - (1 - phase) * (1 - phase)
+                    Circle()
+                        .stroke(color.opacity(0.7 * (1 - eased)), lineWidth: 1.5)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(1 + 1.3 * eased)
+                }
             }
             Circle().fill(color).frame(width: 8, height: 8)
         }
         .frame(width: 16, height: 16)
-        .onAppear {
-            guard animated, !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
-        }
     }
 }
 

@@ -79,27 +79,26 @@ struct RowBadgeBackground: ViewModifier {
     }
 }
 
-/// The "working" dot: a steady core with a soft halo that breathes. Its body steps through a few values instead of
-/// being evaluated every frame; the renderer glides from one step to the next, so the halo grows smoothly. It stands
-/// still when it is not on screen or when you asked for less motion.
+/// The "working" dot: a steady core with a soft halo that breathes, at the ambient rate. Not a SwiftUI animation between
+/// steps: that is drawn at the display's own rate, and redraws the whole window on every frame for as long as an agent
+/// works. It stands still when it is not on screen or when you asked for less motion.
 struct SteppedPulseDot: View {
     let color: Color
     var size: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Published only when the plan changes: sets how often the halo redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
     @State private var visible = false
 
-    private static let steps: [(halo: Double, scale: CGFloat)] = [
-        (0.55, 1.0), (0.45, 1.25), (0.32, 1.5), (0.2, 1.75), (0.1, 1.95), (0, 2.1),
-    ]
+    /// One breath: the halo grows from the dot and fades out in this long, then a new one starts.
+    private static let period = 1.5
 
     var body: some View {
         Group {
             if visible && !reduceMotion {
-                TimelineView(.periodic(from: .now, by: 1.0 / 4.0)) { context in
-                    let step = Int(context.date.timeIntervalSinceReferenceDate * 4) % Self.steps.count
-                    // Back to the first step the halo starts over at once: a new ring, not one shrinking back.
-                    dot(halo: Self.steps[step].halo, scale: Self.steps[step].scale)
-                        .animation(step == 0 ? nil : .linear(duration: 0.25), value: step)
+                TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate, paused: energy.plan.pace == .paused)) { context in
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
+                    dot(halo: 0.55 * (1 - phase), scale: 1 + 1.1 * phase)
                 }
             } else {
                 dot(halo: 0, scale: 1)
