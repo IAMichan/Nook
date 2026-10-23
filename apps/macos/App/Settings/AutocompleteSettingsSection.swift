@@ -797,6 +797,7 @@ struct CompletionKeyRecorder: View {
 
     private func start() {
         recording = true
+        AutocompleteController.shared.recordingKeys += 1
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 { stop() }
             else if event.keyCode == 51, allowsOff { shortcut = nil; stop() }
@@ -806,6 +807,7 @@ struct CompletionKeyRecorder: View {
     }
 
     private func stop() {
+        if recording { AutocompleteController.shared.recordingKeys -= 1 }
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil

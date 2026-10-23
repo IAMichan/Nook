@@ -224,4 +224,54 @@ enum CompletionFieldKind {
         if names.contains(where: { codeClasses.contains($0) }) { return true }
         return ["editor", "terminal"].contains(roleDescription?.lowercased() ?? "")
     }
+
+    /// What the accessibility tree says about the focused element, to tell a place where the user writes text from the other
+    /// things that can hold the focus or take a value.
+    struct Element: Equatable {
+        var role: String?
+        var subrole: String?
+        var roleDescription: String?
+        /// `AXIdentifier` and `AXDescription`: how the app names the field ("Address and search bar").
+        var identifier: String?
+        var label: String?
+        /// The value can be set.
+        var settable = false
+        /// A web element inside something editable (`AXEditableAncestor`), or that says it is editable (`AXEditable`).
+        var editable = false
+        /// The value is text (a slider's or a checkbox's is a number).
+        var textValue = false
+    }
+
+    /// Roles that take typed text.
+    static let textRoles: Set<String> = ["AXTextField", "AXTextArea"]
+    /// Controls that hold the focus or take a value but are never written in: a slider's or a stepper's value can be set
+    /// too, and a focused list, table or web page is read, not typed into.
+    static let controlRoles: Set<String> = [
+        "AXSecureTextField", "AXSearchField", "AXComboBox", "AXPopUpButton", "AXMenuButton", "AXButton", "AXCheckBox", "AXRadioButton",
+        "AXSlider", "AXIncrementor", "AXStepper", "AXColorWell", "AXDateField", "AXTimeField", "AXLevelIndicator", "AXScrollBar",
+        "AXDisclosureTriangle", "AXSplitter", "AXTabGroup", "AXList", "AXOutline", "AXTable", "AXRow", "AXCell", "AXColumn",
+        "AXMenu", "AXMenuBar", "AXMenuItem", "AXMenuBarItem", "AXImage", "AXWindow", "AXToolbar", "AXBrowser", "AXRuler",
+    ]
+    /// Subroles of fields that are not for prose: a search box, a password, a token field (the recipients of a mail).
+    static let controlSubroles: Set<String> = ["AXSearchField", "AXSecureTextField", "AXTokenField"]
+    /// Words in a field's name that mark a browser's address bar or a search box: a suggestion there opens a wrong page or
+    /// searches for something else. English, Dutch, German, French and Spanish, as apps name them in the user's language.
+    static let searchWords = [
+        "address", "url", "omnibox", "location", "search", "adres", "zoek", "adresse", "such", "recherche", "dirección", "direccion",
+        "buscar", "búsqueda", "busqueda",
+    ]
+
+    /// Whether the focused element is a place to write in: a text field or text area, a rich web editor, or a custom text view
+    /// whose text can be set. Never a control, a search box, an address bar or a page that is only read.
+    static func isWritable(_ element: Element) -> Bool {
+        if let role = element.role, controlRoles.contains(role) { return false }
+        if let subrole = element.subrole, controlSubroles.contains(subrole) { return false }
+        if (element.roleDescription ?? "").lowercased().contains("token") { return false }
+        let names = [element.identifier, element.label].compactMap { $0?.lowercased() }
+        if names.contains(where: { name in searchWords.contains { name.contains($0) } }) { return false }
+        if let role = element.role, textRoles.contains(role) { return true }
+        // A web page is editable as a whole only in an editor (a mail being written); one that is only read is not.
+        if element.editable { return true }
+        return element.settable && element.textValue
+    }
 }

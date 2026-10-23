@@ -116,6 +116,18 @@ final class MemoryTests: XCTestCase {
         XCTAssertEqual(book.items.count, 1)
     }
 
+    func testAutocompleteGetsTheFactsTheTextIsAboutAndFewOthers() {
+        var book = sampleBook()
+        book.remember("Kees is de buurman van de gebruiker", kind: .fact, subject: "Kees", origin: .told, now: now)
+        book.remember("Lisa houdt van tulpen", kind: .fact, subject: "Lisa", origin: .learned, now: now.addingTimeInterval(-200 * 86_400))
+        let facts = book.forCompletion("Lisa\nHoi Lisa, zullen we zaterdag", background: 1, now: now)
+        XCTAssertEqual(facts.first?.subject, "Lisa")
+        XCTAssertEqual(facts.count, 2, "the fact the text is about, and one general fact")
+        XCTAssertFalse(facts.contains { $0.kind == .preference }, "how Nook should answer is not what the user writes")
+        XCTAssertFalse(facts.contains { $0.text == "Lisa houdt van tulpen" }, "a faded guess is left out")
+        XCTAssertEqual(book.forCompletion("", background: 3, now: now).count, 3, "without a topic, the surest facts")
+    }
+
     func testTheSectionNamesIdsTheBrainCanPointAt() {
         let book = sampleBook()
         let section = MemoryBook.section(book.items)

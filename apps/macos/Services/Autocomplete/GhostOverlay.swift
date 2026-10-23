@@ -25,7 +25,8 @@ final class GhostOverlay {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .statusBar
+        // Above the notch too: Nook's own fields there get suggestions as well.
+        panel.level = NSWindow.Level(rawValue: NotchPanel.notchLevel.rawValue + 1)
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false

@@ -487,6 +487,36 @@ final class AutocompleteTests: XCTestCase {
         XCTAssertTrue(samples.relevant(for: "chat").isEmpty, "too short to show a style in the prompt")
     }
 
+    func testSamplesAboutTheSameThingComeFirst() {
+        var samples = CompletionSamples()
+        samples.add("De offerte voor Jansen staat klaar, de planning volgt morgen", app: "mail")
+        samples.add("Haha ja, zaterdag naar het strand lijkt me echt top", app: "chat")
+        samples.add("Zullen we vrijdag gaan eten bij dat nieuwe restaurant?", app: "chat")
+        let about = samples.relevant(for: "chat", about: "Gaan we zaterdag naar het strand?", limit: 1)
+        XCTAssertEqual(about.first?.hasPrefix("Haha ja"), true, "the same subject beats the newest")
+        XCTAssertFalse(samples.relevant(for: "chat", about: "Gaan we zaterdag?").contains { $0.hasPrefix("De offerte") },
+                       "another app's writing about something else stays out")
+        XCTAssertEqual(samples.relevant(for: "chat", about: "Is de offerte voor Jansen al klaar?", limit: 1).first?.hasPrefix("De offerte"), true)
+        let own = "Zullen we vrijdag gaan eten bij dat nieuwe restaurant? Ik heb er zin in"
+        XCTAssertFalse(samples.relevant(for: "chat", excluding: own).contains { $0.hasPrefix("Zullen we") }, "the field's own text is not a sample")
+    }
+
+    func testTopicReadsWhereAndWhatIsWritten() {
+        var input = CompletionContext(before: "")
+        input.windowTitle = "Lisa"
+        input.screenText = String(repeating: "oud ", count: 500) + "Gaan we zaterdag naar het strand?"
+        let topic = input.topic(before: "Ja leuk, ik ", site: "web.whatsapp.com")
+        XCTAssertTrue(topic.hasPrefix("Lisa\nweb.whatsapp.com"))
+        XCTAssertTrue(topic.contains("strand?\nJa leuk, ik"))
+        XCTAssertLessThan(topic.count, 2_000)
+    }
+
+    func testOneWordAloneDoesNotStartALearnedPhrase() {
+        let learned = phrases(Array(repeating: "Hoi Lisa, hoe is het?", count: 5))
+        XCTAssertNil(learned.predict(after: "Hoi ", maxWords: 3), "who the message is for is not in one word")
+        XCTAssertEqual(learned.predict(after: "Hoi L", maxWords: 1), "isa,")
+    }
+
     private func phrases(_ texts: [String], age: TimeInterval = 0, now: Date = Date(timeIntervalSince1970: 1_800_000_000)) -> CompletionPhrases {
         CompletionPhrases(samples: texts.map { CompletionSamples.Sample(app: "mail", text: $0, date: now.addingTimeInterval(-age)) }, now: now)
     }
@@ -526,6 +556,30 @@ final class AutocompleteTests: XCTestCase {
     func testFrequentPhrasesForThePrompt() {
         let frequent = phrases(greetings).frequent()
         XCTAssertEqual(frequent, ["ik hoop dat", "met vriendelijke groet Michan"])
+    }
+
+    func testOnlyPlacesToWriteInCountAsFields() {
+        typealias Element = CompletionFieldKind.Element
+        // Text fields, text areas and rich web editors.
+        XCTAssertTrue(CompletionFieldKind.isWritable(Element(role: "AXTextArea", label: "Message", textValue: true)))
+        XCTAssertTrue(CompletionFieldKind.isWritable(Element(role: "AXTextField", textValue: true)))
+        XCTAssertTrue(CompletionFieldKind.isWritable(Element(role: "AXGroup", editable: true)))
+        XCTAssertTrue(CompletionFieldKind.isWritable(Element(role: "AXWebArea", editable: true)), "a mail being written")
+        XCTAssertTrue(CompletionFieldKind.isWritable(Element(role: nil, settable: true, textValue: true)), "a custom text view")
+        // Controls whose value can be set are not written in.
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXSlider", settable: true)))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXCheckBox", settable: true)))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXGroup", settable: true)), "a value that is not text")
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXWebArea")), "a page that is only read")
+        // Search boxes, address bars and recipient fields.
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXSearchField", settable: true, textValue: true)))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXTextField", subrole: "AXSearchField", textValue: true)))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXComboBox", settable: true, textValue: true)))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXTextField", label: "Address and search bar", textValue: true)))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXTextField", identifier: "WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD")))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXTextField", label: "Adres- en zoekbalk")))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXTextField", roleDescription: "token field")))
+        XCTAssertFalse(CompletionFieldKind.isWritable(Element(role: "AXSecureTextField", settable: true, textValue: true)))
     }
 
     func testCodeFieldsInEditorsAreToldFromChatInputs() {
