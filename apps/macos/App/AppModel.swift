@@ -245,7 +245,9 @@ final class AppModel: ObservableObject {
 
     private init() {
         // Every view of the app redraws when one of these changes. Launching sends dozens of changes in a row (each
-        // connector, history, usage, the first screen read), so they are combined: at most one redraw per frame or so.
+        // connector, history, usage, the first screen read), and a running agent changes the hub with every step it
+        // takes, so they are combined: the first change redraws at once, a burst at most four times a second. At one
+        // redraw per frame, a busy agent kept the notch, its panel and the main window redrawing in full all the time.
         let children: [AnyPublisher<Void, Never>] = [
             hub.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
             nowPlaying.objectWillChange.map { _ in () }.eraseToAnyPublisher(),
@@ -260,7 +262,7 @@ final class AppModel: ObservableObject {
             memory.objectWillChange.map { _ in () }.eraseToAnyPublisher()
         ]
         Publishers.MergeMany(children)
-            .throttle(for: .milliseconds(33), scheduler: DispatchQueue.main, latest: true)
+            .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
         // Nook's task ring reads the sessions Nook runs itself. The workspace changes with every streamed token, so only a
