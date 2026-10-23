@@ -313,8 +313,9 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var capacity = WAInbox.keep
     /// False once the gateway has no older messages than the ones kept.
     var hasOlder = true
-    /// Whether the chat can load older messages: it is full, and the gateway may have more.
-    var canLoadOlder: Bool { hasOlder && messages.count >= capacity }
+    /// Whether the chat can load older messages: the gateway may have more. Not tied to how many are kept: a message
+    /// that shows nothing (a blank, a vote) leaves the chat short of its capacity without being its start.
+    var canLoadOlder: Bool { hasOlder && !messages.isEmpty }
     var unread: Int = 0
     var lastActivity: Date
     /// A group's other members (you left out), once the gateway was asked; nil while that is not known.
@@ -1496,6 +1497,14 @@ enum WAGOWA {
         let name = (field("Name") ?? nonEmpty((info["GroupName"] as? [String: Any])?["Name"]))?
             .trimmingCharacters(in: .whitespaces)
         return (name?.isEmpty == false ? name : nil, field("LinkedParentJID").map(WAJID.normalized))
+    }
+
+    /// The most messages GOWA hands out at once.
+    static let messagePage = 100
+
+    /// How many entries a page of `GET /chat/{jid}/messages` held, votes included: what the next page's offset moves by.
+    static func messageCount(_ data: Data) -> Int {
+        (((results(data) as? [String: Any])?["data"] as? [Any]) ?? []).count
     }
 
     /// `GET /chat/{jid}/messages` → `results: {data: [{id, chat_jid, sender_jid, sender_display_name,

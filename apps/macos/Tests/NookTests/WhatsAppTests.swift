@@ -135,6 +135,21 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, false)
     }
 
+    func testAChatShortOfItsCapacityCanStillLoadOlder() {
+        var inbox = WAInbox()
+        let chat = "1@s.whatsapp.net"
+        for index in 0..<WAInbox.keep { inbox.add(message("m\(index)", chat: chat, at: Double(index + 1)), filters: WAFilters()) }
+        // A load that brought fewer than it made room for (blanks and votes show nothing) is not the chat's start.
+        XCTAssertEqual(inbox.growCapacity(chat), WAInbox.keep + WAInbox.olderStep)
+        XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, true)
+    }
+
+    func testGOWAMessagePagesCountEveryEntry() {
+        let page = Data(#"{"results":{"data":[{"id":"a","chat_jid":"1@s.whatsapp.net","content":"hi"},{"id":"b"}]}}"#.utf8)
+        XCTAssertEqual(WAGOWA.messageCount(page), 2, "the offset moves by what the page held, not by what Nook keeps")
+        XCTAssertEqual(WAGOWA.messageCount(Data("{}".utf8)), 0)
+    }
+
     func testAGroupKnownOnlyByItsIdIsAskedItsName() {
         let old = "31622360496-1542111077@g.us"
         XCTAssertTrue(WAJID.isPlaceholderName("Group 31622360496-1542111077", for: old), "the gateway's stand-in")
