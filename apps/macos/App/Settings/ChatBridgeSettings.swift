@@ -204,9 +204,12 @@ struct TeamsSettingsRows: View {
     }
 }
 
-/// Settings › Chats › Beeper: the token of Beeper Desktop's local API, for every network linked in Beeper.
+/// Settings › Chats › Linked chats: the token of the chat app's local API on this Mac (`BeeperBridge`), whether its
+/// live line is up, which apps come in through it and what Nook can do in their chats. Named after what it does, not
+/// after the app behind it.
 struct BeeperSettingsRows: View {
     @ObservedObject var capture: ChatCaptureService
+    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
     @State private var token = ""
     @State private var saved = BeeperBridge.token != nil
 
@@ -237,10 +240,20 @@ struct BeeperSettingsRows: View {
                 if let problem = capture.bridgeProblems[capture.beeperBridge.app] {
                     StatusRow(title: tr("chats.beeper.problem"), detail: problem, state: .error) { EmptyView() }
                 } else if capture.bridged.contains(capture.beeperBridge.app) {
-                    StatusRow(title: tr("chats.beeper.connected"), detail: tr("chats.beeper.connectedDetail"), state: .done) { EmptyView() }
+                    StatusRow(title: tr("chats.beeper.connected"), detail: connectedDetail, state: .done) { EmptyView() }
+                    StatusRow(title: tr(linked.isLive ? "chats.linked.live" : "chats.linked.polling"),
+                              detail: tr(linked.isLive ? "chats.linked.liveDetail" : "chats.linked.pollingDetail"),
+                              state: linked.isLive ? .done : .warning) { EmptyView() }
+                    SettingNote(tr("chats.linked.actions"))
                 }
             }
         }
+    }
+
+    /// Which apps come in, by their own names ("Linked: Instagram, Signal"), once their chats were read.
+    private var connectedDetail: String {
+        let names = Set(linked.chats.values.map(\.app)).compactMap { MessagingApps.app(id: $0)?.name }.sorted()
+        return names.isEmpty ? tr("chats.beeper.connectedDetail") : tr("chats.linked.apps", names.joined(separator: ", "))
     }
 
     private func save() {

@@ -262,7 +262,9 @@ struct ChatsTab: View {
     /// "Mark as read", by hand: its badge goes, and a WhatsApp chat is read in WhatsApp too, so the sender sees it.
     private func markRead(_ entry: ChatsEntry) {
         switch entry.origin {
-        case .captured(let thread): capture.markRead(thread)
+        case .captured(let thread):
+            capture.markRead(thread)
+            if let linked = app.linkedChat(app.chatRoute(for: entry)) { app.markLinkedChat(linked.id, read: true) }
         case .whatsApp(let jid): whatsApp.markReadInWhatsApp(jid)
         }
     }
@@ -271,7 +273,9 @@ struct ChatsTab: View {
     private func markUnread(_ entry: ChatsEntry) {
         if selection == entry.id { withAnimation(NookTheme.reveal) { selection = nil } }
         switch entry.origin {
-        case .captured(let thread): capture.markUnread(thread)
+        case .captured(let thread):
+            capture.markUnread(thread)
+            if let linked = app.linkedChat(app.chatRoute(for: entry)) { app.markLinkedChat(linked.id, read: false) }
         case .whatsApp(let jid): whatsApp.markUnread(jid)
         }
     }
@@ -934,6 +938,12 @@ private struct ChatsDetail: View {
     @State private var zoomed: ChatBubble?
     /// The message the field answers, quoted above it until it is sent or let go.
     @State private var replyingTo: ChatBubble?
+    /// Your message whose text the field changes, shown above it until the change goes or is let go.
+    @State private var editing: ChatBubble?
+    /// Your message waiting for "Delete for everyone" to be confirmed.
+    @State private var deleting: ChatBubble?
+    /// The chats Nook writes in through the linked chat service, for what can be done in this one.
+    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
     @StateObject private var composer = ChatComposerModel()
 
@@ -955,6 +965,12 @@ private struct ChatsDetail: View {
 
     /// Where what you send goes: WhatsApp, Telegram or Beeper; nil copies the text for the chat's own app.
     private var route: ChatRoute? { app.chatRoute(for: entry) }
+
+    /// This chat as the linked chat service has it (pinned, muted, what it takes); nil when it is not one of those.
+    private var linkedChat: BeeperData.Chat? {
+        guard case .beeper(let id) = route else { return nil }
+        return linked.chats[id]
+    }
 
     /// The stickers and GIFs in this chat, newest first, for the sticker panel.
     private var shelfItems: [ChatShelfItem] {
@@ -984,7 +1000,10 @@ private struct ChatsDetail: View {
             NookDivider()
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { zoom($0) },
-                           onReply: route == nil ? nil : quote, onReact: whatsAppChat == nil ? nil : react,
+                           onReply: route == nil ? nil : quote,
+                           onReact: whatsAppChat != nil || linkedChat?.canReact == true ? react : nil,
+                           onEdit: linkedChat?.canEdit == true ? edit : nil,
+                           onDelete: linkedChat?.canDelete == true ? { deleting = $0 } : nil,
                            onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
@@ -998,17 +1017,24 @@ private struct ChatsDetail: View {
                     .transition(.opacity)
             }
         }
+        .confirmDelete($deleting, question: { _ in tr("chat.delete.question") }, detail: tr("chat.delete.detail", appName),
+                       confirmTitle: tr("chat.delete")) { delete($0) }
         .task(id: entry.id) { await loadWhatsApp() }
         // Nothing waiting for one chat goes to the next.
         .onChange(of: entry.id) { _, id in
             composer.reset()
+            editing = nil
             reply = ComposerDraftStore.shared.draft(for: Self.draftKey(id)) ?? ""
         }
         // What you were typing to this chat stays when the notch closes, and comes back when you open the chat again.
         .onAppear {
             if reply.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey(entry.id)) { reply = saved }
         }
-        .onChange(of: reply) { _, text in ComposerDraftStore.shared.save(sessionID: Self.draftKey(entry.id), text: text) }
+        // A message's text being changed is not an unsent answer.
+        .onChange(of: reply) { _, text in
+            guard editing == nil else { return }
+            ComposerDraftStore.shared.save(sessionID: Self.draftKey(entry.id), text: text)
+        }
         // A file or picture dropped on the chat waits above the field, as one chosen with "+".
         .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
             !app.chatSends(route).isEmpty && composer.accept(providers)
@@ -1018,12 +1044,15 @@ private struct ChatsDetail: View {
     }
 
     /// Escape first shrinks an enlarged photo back, closes a poll, place, contact or sticker panel, and lets go of a
-    /// quoted message; only then does it close the chat.
+    /// message being changed or quoted; only then does it close the chat.
     private func escape() {
         if zoomed != nil {
             withAnimation(NookTheme.reveal) { zoomed = nil }
         } else if composer.panel != nil {
             composer.closePanel()
+        } else if editing != nil {
+            withAnimation(NookTheme.reveal) { editing = nil }
+            reply = ""
         } else if replyingTo != nil {
             withAnimation(NookTheme.reveal) { replyingTo = nil }
         } else {
@@ -1066,13 +1095,71 @@ private struct ChatsDetail: View {
 
     /// Your emoji on a message, after your own click (the same one again takes it back); the chat shows it at once.
     private func react(_ bubble: ChatBubble, _ emoji: String) {
-        guard let chat = whatsAppChat else { return }
         Task { @MainActor in
             do {
-                try await app.reactWhatsApp(emoji, to: bubble.id, chat: chat)
+                if let chat = whatsAppChat {
+                    try await app.reactWhatsApp(emoji, to: bubble.id, chat: chat)
+                } else if let chat = linkedChat {
+                    try await app.reactInLinkedChat(emoji, to: bubble, chat: chat.id, name: entry.name)
+                }
             } catch {
                 notice = error.localizedDescription
             }
+        }
+    }
+
+    /// The field takes your message's text to change it; Return sends the change instead of a new message.
+    private func edit(_ bubble: ChatBubble) {
+        withAnimation(NookTheme.reveal) {
+            replyingTo = nil
+            editing = bubble
+        }
+        reply = bubble.text
+        replyFocused = true
+    }
+
+    /// The changed text goes to your message; when it fails the text stays in the field to try again.
+    private func sendEdit(_ bubble: ChatBubble, chat: String) {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, outgoing?.sent ?? true else { return }
+        guard text != bubble.text else {
+            withAnimation(NookTheme.reveal) { editing = nil }
+            reply = ""
+            return
+        }
+        let shown = ChatSending(text: text)
+        outgoing = shown
+        notice = nil
+        reply = ""
+        Task { @MainActor in
+            do {
+                try await app.editInLinkedChat(bubble, text: text, chat: chat, name: entry.name)
+                if editing?.id == bubble.id { withAnimation(NookTheme.reveal) { editing = nil } }
+                await showSent(shown)
+            } catch {
+                outgoing = nil
+                if reply.isEmpty { reply = text }
+                notice = error.localizedDescription
+            }
+        }
+    }
+
+    /// Your message goes for everyone in the chat, once you confirmed it.
+    private func delete(_ bubble: ChatBubble) {
+        guard let chat = linkedChat else { return }
+        Task { @MainActor in
+            do {
+                try await app.deleteInLinkedChat(bubble, chat: chat.id, name: entry.name)
+            } catch {
+                notice = error.localizedDescription
+            }
+        }
+    }
+
+    /// Pins, mutes or archives the chat in its app; a failure shows under the field.
+    private func change(_ action: @escaping () async throws -> Void) {
+        Task { @MainActor in
+            do { try await action() } catch { notice = error.localizedDescription }
         }
     }
 
@@ -1116,12 +1203,29 @@ private struct ChatsDetail: View {
             if entry.readable {
                 Button(tr("chats.markRead")) {
                     switch entry.origin {
-                    case .captured(let id): capture.markRead(id)
+                    case .captured(let id):
+                        capture.markRead(id)
+                        if let chat = linkedChat { app.markLinkedChat(chat.id, read: true) }
                     case .whatsApp(let jid): whatsApp.markReadInWhatsApp(jid)
                     }
                 }
             } else {
                 Button(tr("chats.markUnread"), action: onMarkUnread)
+            }
+            if let chat = linkedChat, case .captured(let thread) = entry.origin {
+                Divider()
+                Button(tr(chat.isPinned ? "chats.unpinInApp" : "chats.pinInApp", appName)) {
+                    change { try await app.setLinkedChatPinned(!chat.isPinned, chat: chat.id, name: entry.name) }
+                }
+                Button(tr(chat.isMuted ? "chats.unmuteInApp" : "chats.muteInApp", appName)) {
+                    change { try await app.setLinkedChatMuted(!chat.isMuted, chat: chat.id, name: entry.name) }
+                }
+                Button(tr("chats.archiveInApp", appName)) {
+                    change {
+                        try await app.archiveLinkedChat(chat.id, thread: thread, name: entry.name)
+                        onClose()
+                    }
+                }
             }
             if case .captured(let id) = entry.origin {
                 Divider()
@@ -1155,8 +1259,15 @@ private struct ChatsDetail: View {
             readyNotice: route == nil ? tr("chats.draft.readyCopy", appName) : tr("chats.draft.ready"),
             outgoing: outgoing,
             recipient: entry.name,
-            quote: replyingTo?.quote(contact: entry.name),
-            cancelQuote: { withAnimation(NookTheme.reveal) { replyingTo = nil } },
+            quote: editing.map { BubbleQuote(sender: tr("chat.editing"), text: $0.text, mine: true) }
+                ?? replyingTo?.quote(contact: entry.name),
+            cancelQuote: {
+                withAnimation(NookTheme.reveal) {
+                    if editing != nil { reply = "" }
+                    editing = nil
+                    replyingTo = nil
+                }
+            },
             onEscape: escape,
             draft: { instruction in
                 let transcript = ChatBubble.transcript(Array(bubbles.suffix(30)), contact: entry.name)
@@ -1164,7 +1275,13 @@ private struct ChatsDetail: View {
                                                       instruction: instruction)
             },
             send: {
-                if let route { send(via: route) } else { copyForApp() }
+                if let editing, let chat = linkedChat {
+                    sendEdit(editing, chat: chat.id)
+                } else if let route {
+                    send(via: route)
+                } else {
+                    copyForApp()
+                }
             })
         if sends.isEmpty {
             field

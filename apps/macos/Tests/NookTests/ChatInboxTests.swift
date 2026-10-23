@@ -658,6 +658,73 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(BeeperData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
     }
 
+    func testLinkedChatStateReactionsAndReceipts() {
+        let listed = BeeperData.chats(["items": [[
+            "id": "!a", "title": "Anna", "network": "Instagram", "accountID": "instagramgo", "type": "single",
+            "isPinned": true, "isMuted": false, "capabilities": ["edit": 0, "delete": 2],
+            "participants": ["items": [["id": "@me", "isSelf": true], ["id": "@anna", "fullName": "Anna"]]],
+        ]]])
+        let chat = try! XCTUnwrap(listed.first)
+        XCTAssertEqual(chat.me, "@me")
+        XCTAssertTrue(chat.isPinned)
+        XCTAssertFalse(chat.isMuted)
+        XCTAssertFalse(chat.canEdit, "an app that cannot edit gets no Edit")
+        XCTAssertTrue(chat.canDelete)
+        XCTAssertTrue(chat.canReact, "a capability that is not given counts as there")
+
+        let reactions = BeeperData.reactions(["reactions": [
+            ["reactionKey": "👍", "participantID": "@anna"], ["reactionKey": "❤️", "participantID": "@anna"],
+            ["reactionKey": "❤️", "participantID": "@me"],
+        ]], me: chat.me)
+        XCTAssertEqual(reactions, [InboxReaction(emoji: "❤️", count: 2, mine: true), InboxReaction(emoji: "👍", count: 1, mine: false)])
+
+        XCTAssertEqual(BeeperData.receipt(["sendStatus": ["status": "PENDING"]]), .pending)
+        XCTAssertEqual(BeeperData.receipt(["sendStatus": ["status": "FAIL_PERMANENT"], "seen": true]), .failed)
+        XCTAssertEqual(BeeperData.receipt(["sendStatus": ["status": "SUCCESS", "deliveredToUsers": ["@anna"]]]), .delivered)
+        XCTAssertEqual(BeeperData.receipt(["seen": "2026-10-23T10:00:00Z"]), .read)
+        XCTAssertEqual(BeeperData.receipt(["seen": ["@anna": false, "@bob": true]]), .read)
+        XCTAssertEqual(BeeperData.receipt([:]), .sent)
+
+        let answer: [String: Any] = ["items": [
+            ["id": "1", "text": "hoi", "timestamp": "2026-10-23T10:00:00Z", "isSender": true, "seen": true,
+             "reactions": [["reactionKey": "😂", "participantID": "@anna"]]],
+            ["id": "2", "text": "weg", "timestamp": "2026-10-23T10:01:00Z", "isDeleted": true],
+        ]]
+        let messages = BeeperData.messages(answer, chat: chat)
+        XCTAssertEqual(messages.map(\.id), ["beeper-!a-1"])
+        XCTAssertEqual(messages.first?.receipt, .read)
+        XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false)])
+        XCTAssertEqual(BeeperData.deleted(answer, chat: chat), ["beeper-!a-2"])
+        XCTAssertEqual(BeeperData.networkID("beeper-!a-1", chat: "!a"), "1")
+        XCTAssertNil(BeeperData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
+    }
+
+    func testLinkedChatDeletionsAndReactionsMerge() {
+        var inbox = ChatInbox()
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = InboxMessage(id: "m1", text: "hoi", date: date, fromMe: true)
+        let second = InboxMessage(id: "m2", text: "oeps", date: date.addingTimeInterval(1), fromMe: true)
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [first, second], unread: 0), now: date))
+        var liked = first
+        liked.reactions = [InboxReaction(emoji: "❤️", count: 1, mine: false)]
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [liked], unread: 0, deleted: ["m2"]), now: date))
+        let thread = try! XCTUnwrap(inbox.threads.values.first)
+        XCTAssertEqual(thread.messages.map(\.id), ["m1"], "a message deleted in its app leaves the chat")
+        XCTAssertEqual(thread.messages.first?.reactions?.first?.emoji, "❤️")
+        XCTAssertFalse(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0, deleted: ["m2"]), now: date),
+                       "a deletion already shown changes nothing")
+    }
+
+    func testLinkedChatLiveEvents() {
+        XCTAssertEqual(BeeperData.event(["type": "ready", "version": 1, "chatIDs": []]), .ready)
+        XCTAssertEqual(BeeperData.event(["type": "subscriptions.updated"]), .subscribed)
+        XCTAssertEqual(BeeperData.event(["type": "message.upserted", "seq": 3, "chatID": "!a", "ids": ["1"]]), .changed(chat: "!a"))
+        XCTAssertEqual(BeeperData.event(["type": "chat.deleted", "chatID": "!b", "ids": []]), .changed(chat: "!b"))
+        XCTAssertEqual(BeeperData.event(["type": "message.upserted", "ids": []]), .other, "an event without a chat")
+        XCTAssertEqual(BeeperData.event(["type": "app.state.updated"]), .other)
+        XCTAssertEqual(BeeperData.subscribeAll["chatIDs"] as? [String], ["*"])
+    }
+
     // MARK: Slack
 
     func testSlackMarkup() {

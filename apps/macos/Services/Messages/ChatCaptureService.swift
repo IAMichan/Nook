@@ -126,6 +126,11 @@ final class ChatCaptureService: ObservableObject {
             guard let self else { return false }
             return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.beeperBridge }
         }
+        // A chat changed there this moment (its live line said so): read it at the next tick, not at its next turn.
+        beeperBridge.onChange = { [weak self] in
+            guard let self else { return }
+            self.bridgeDue[self.beeperBridge.app] = nil
+        }
     }
 
     private var databasePath: String { NotificationRecord.databasePath(home: AppDatabase.home) }
@@ -165,6 +170,7 @@ final class ChatCaptureService: ObservableObject {
         timer = nil
         generation += 1
         telegramBridge.stop()
+        beeperBridge.stop()
         status = .off
     }
 
