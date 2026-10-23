@@ -30,6 +30,16 @@ final class ChatHelper: ObservableObject {
 
     static var isBuilt: Bool { binary != nil }
 
+    /// An account of this app is linked through the helper.
+    static func linked(_ app: String) -> Bool {
+        shared.isRunning && ChatLinker.shared.networks.contains { $0.app == app && !$0.accounts.isEmpty }
+    }
+
+    /// The helper runs and links this app: one built before it had an app (Slack) does not.
+    static func offers(_ app: String) -> Bool {
+        shared.isRunning && ChatLinker.shared.networks.contains { $0.app == app && $0.canLink }
+    }
+
     /// The apps the helper links.
     static let apps: Set<String> = ["telegram", "signal", "messenger", "instagram", "x", "linkedin", "slack"]
     /// The apps whose terms forbid other clients and that do restrict accounts for it: linking them says so first.
