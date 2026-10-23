@@ -32,6 +32,16 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertEqual(action("open Safari"), "open_app")
     }
 
+    func testPostingOnAWebsiteIsATaskToTakeOver() {
+        // From the bug report: Double Tap answered "nothing was sent" instead of posting on Reddit through the browser.
+        XCTAssertEqual(action("Maak posts op reddit om Nook repo te promoten of om contributors te werven"), "take_over")
+        XCTAssertEqual(action("Post this on LinkedIn"), "take_over")
+        XCTAssertEqual(action("Schrijf een post op r/macapps over Nook"), "take_over")
+        XCTAssertEqual(action("Erstelle einen Beitrag auf Reddit über Nook"), "take_over")
+        XCTAssertFalse(ChatIntent.postsOnline("wat staat er vandaag op reddit"), "reading a site is not posting")
+        XCTAssertFalse(ChatIntent.postsOnline("schrijf een tweet voor mijn launch"), "text for a site is only text")
+    }
+
     func testFollowUpCarriesTheMessageOfTheConversation() {
         // The conversation from the bug report: Nook said it sent the WhatsApp message without proposing it.
         let history = [

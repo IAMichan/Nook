@@ -173,7 +173,8 @@ final class DoubleTapTests: XCTestCase {
             XCTAssertTrue(DoubleTapLogic.asksToWrite(text), text)
         }
         for text in ["wat is het weer morgen", "maak een afspraak om 3 uur", "how do I write a for loop in Swift",
-                     "finish this for me", "voeg een afspraak toe", "schrijf me in op bol.com", "open Spotify", ""] {
+                     "finish this for me", "voeg een afspraak toe", "schrijf me in op bol.com", "open Spotify",
+                     "schrijf een post op Reddit over Nook", ""] {
             XCTAssertFalse(DoubleTapLogic.asksToWrite(text), text)
         }
     }

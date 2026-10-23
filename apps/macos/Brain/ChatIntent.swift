@@ -113,6 +113,9 @@ struct ChatIntent: Equatable {
         if has(#"systeeminstelling|system ?settings|systemeinstellung|réglages système|ajustes del sistema|\bklik|\bclick|\bklick|\bcliqu|\bmuis|\bmouse|\bmaus\b|toetsenbord|keyboard|tastatur|\bdruk op\b|\btyp (in|het|dit|dat)\b|\btype (in|this|it)\b|(instelling|setting|einstellung)\w* (aan|uit|wijzig|verander|aanpass|on|off|change|ändern)|(zet|schakel|turn|switch|schalte?)\b[^.?!]{0,40}\b(aan|uit|on|off|ein|aus)\b[^.?!]{0,30}\b(instelling|setting|einstellung)|\b(night ?shift|dark mode|donkere modus|bluetooth|wi-?fi|niet storen|do not disturb|true tone|screen saver|schermbeveiliging)\b"#) { kinds.append(.control) }
         // A task of many steps Nook carries out itself: ordering, booking, unsubscribing, finishing what is on screen.
         if has(#"\b(bestel|bestellen|koop|kopen|kaufe|kaufen|bestelle|commande|commander|achète|acheter|compra|comprar|pide)\b|\b(order|buy) (a|an|the|some|me|more|new)\b|place an order|\b(boek|book|buche|buchen|réserve|reserva|reserveer)\b[^.?!]{0,40}\b(vlucht|vluchten|flight|flights|ticket|tickets|kaartje|kaartjes|hotel|kamer|room|trein|train|tafel|table|flug|vol|vuelo)\b|\b(afmelden|uitschrijven|unsubscribe|abmelden|désabonne|darme de baja)\b|\b(finish|do) (this|it) for me\b|\bmaak (dit|het) (voor me )?af\b|\bdoe (dit|het) voor me\b|\bneem (dit|het) over\b|\btake (this )?over\b|\bmach (das|es) für mich\b|\b(vul|fill) (dit|het|this|the|out)\b[^.?!]{0,30}\b(formulier|form)\b"#) { kinds.append(.takeover) }
+        // Posting on a website ("maak posts op Reddit om Nook te promoten"): Nook writes the post and places it there
+        // through the browser, with mouse and keyboard; the Post button waits for the user's yes.
+        if !kinds.contains(.takeover), postsOnline(text) { kinds.append(.takeover) }
         // Changing a setting the Mac keeps somewhere in System Settings ("laat het batterijpercentage zien", "zet mijn
         // standaardbrowser op Firefox"): done by hand, with mouse and keyboard.
         let changesSomething = has(#"\b(zet|verander|wijzig|pas\b[^.?!]{0,40}\baan|aanpassen|schakel|laat|maak|stel|set|change|turn|switch|enable|disable|show|hide|make|adjust|ändere|stelle|schalte|aktiviere|deaktiviere|zeige|active|désactive|affiche|règle|cambia|activa|desactiva|muestra|ajusta)\b"#)
@@ -236,6 +239,16 @@ struct ChatIntent: Equatable {
     static func sends(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         return text.range(of: #"^(stuur|verstuur|verzend|send|schick|sende)\b|\b(stuur|stuurt|sturen|verstuur|versturen|verzend|verzenden|send|sending|schicken|senden|sende)\b[^.?!]{0,60}\b(bericht|berichtje|message|nachricht|tekst|text)\b|\b(bericht|berichtje|message|nachricht|tekst|text)\b[^.?!]{0,60}\b(sturen|versturen|verzenden|send|schicken|senden)\b"#, options: .regularExpression) != nil
+    }
+
+    /// Placing something on a website: "maak posts op Reddit", "post this on LinkedIn", "deel het op Hacker News".
+    /// A post written *for* a site ("schrijf een tweet voor mijn launch") is only text; one *on* a site is a task.
+    static func postsOnline(_ raw: String) -> Bool {
+        let text = raw.lowercased()
+        let site = #"(op|on|in|auf|sur|en|naar|to) (de |het |the |een |a )?(r/[a-z0-9_]+|subreddits?|reddit|twitter|x|x\.com|linkedin|facebook|instagram|mastodon|bluesky|hacker ?news|product ?hunt|dev\.to|discord|forum)\b"#
+        let places = #"\b(post|posten|plaats|plaatsen|publiceer|publiceren|deel|delen|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b[^.?!]{0,60}\b"# + site
+        let makes = #"\b(maak|schrijf|zet|make|write|create|put|erstelle|schreib|crée|écris|crea|escribe)\b[^.?!]{0,40}\b(posts?|berichten|bericht|topic|thread|draadje|tweets?|beitrag|beiträge|publications?|publicaci[oó]n(es)?)\b[^.?!]{0,30}\b"# + site
+        return text.range(of: places, options: .regularExpression) != nil || text.range(of: makes, options: .regularExpression) != nil
     }
 
     /// "Schrijf een nieuw bericht over…": a message to write, with the channel left to the conversation. A mistyped
