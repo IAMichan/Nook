@@ -153,7 +153,13 @@ struct NotchRootView: View {
                 .floatingDrag(viewModel)
             }
         case .music:
-            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+            // Music keeps the idle notch's task ring: Nook still thinks along (or waits) while an agent or a chat works.
+            let active = app.activeAgents
+            let busy = !active.isEmpty || app.chat.anyBusy
+            let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+            let mood: NookMood = busy ? (waiting ? .waiting : .think) : (viewModel.pointerInside ? .seen : .rest)
+            wings(nh: nh, nw: nw, mood: mood, animated: busy || viewModel.pointerInside, orbSize: 20,
+                  ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
                 EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true,
                               frameRate: energy.plan.ambientFrameRate)
             }
@@ -333,6 +339,9 @@ struct NotchRootView: View {
                 .id(viewModel.noticeStamp)
             }
         }
+        // The step of a Double Tap: a click opens the notch on all its steps.
+        .contentShape(Rectangle())
+        .onTapGesture { if viewModel.workOpensPanel { viewModel.openPanel() } }
     }
 
     /// The row under the notch that holds Nook in a strip (a result, a nudge, a moment), level with where he sits in

@@ -40,10 +40,15 @@ impl ConnectorStore {
     /// Een bestand dat niet te lezen is, wordt bewaard als `.bak` en Nook begint leeg (nooit stil overschrijven).
     pub fn open(path: PathBuf) -> Self {
         let data = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-                let _ = std::fs::copy(&path, path.with_extension("json.bak"));
-                ConnectorConfig::default()
-            }),
+            Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
+                .and_then(|mut value| {
+                    super::whatsapp::migrate_beeper(&mut value);
+                    serde_json::from_value(value)
+                })
+                .unwrap_or_else(|_| {
+                    let _ = std::fs::copy(&path, path.with_extension("json.bak"));
+                    ConnectorConfig::default()
+                }),
             Err(_) => ConnectorConfig::default(),
         };
         Self { path: Some(path), data: RwLock::new(data) }
@@ -121,6 +126,25 @@ mod tests {
         let store = ConnectorStore::open(file.clone());
         assert!(store.is_on("x"));
         assert!(file.with_extension("json.bak").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_beeper_gateway_moves_to_gowa_and_keeps_the_rest() {
+        let dir = std::env::temp_dir().join(format!("nook-connectors-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("connectors.json");
+        let saved =
+            r#"{"toggles":{"github":false},"whatsapp":{"enabled":true,"gateway":"beeper","url":"http://localhost:23373","notify":false}}"#;
+        std::fs::write(&file, saved).unwrap();
+        let store = ConnectorStore::open(file.clone());
+        assert!(!store.is_on("github"), "the other settings stay");
+        let whatsapp = store.read(|c| c.whatsapp.clone());
+        assert_eq!(whatsapp.gateway, crate::connectors::whatsapp::GatewayKind::Gowa);
+        assert!(whatsapp.url.is_empty());
+        assert!(!whatsapp.enabled, "off until it is linked again");
+        assert!(!whatsapp.notify);
+        assert!(!file.with_extension("json.bak").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

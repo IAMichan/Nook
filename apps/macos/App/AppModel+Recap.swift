@@ -47,7 +47,7 @@ extension AppModel {
         let card = NookCard(
             id: "recap",
             mood: .done,
-            context: tr("app.recap.since", label, NookDates.dayMonth(summary.start)),
+            context: tr("app.recap.since", label, NookDates.dayMonth(summary.start, locale: NookDates.appLocale)),
             title: tr("app.recap.worked", tr("app.recap.yourAgents"), RecapStore.duration(summary.activeSeconds)),
             detail: .facts(facts),
             primary: CardAction(label: tr("app.ok"), outcome: .dismiss),

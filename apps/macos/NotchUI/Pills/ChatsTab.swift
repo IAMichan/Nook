@@ -29,8 +29,8 @@ struct ChatsEntry: Identifiable, Equatable {
     var ticks: BubbleTicks? = nil
     /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
     var members: [String]? = nil
-    /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a Beeper chat
-    /// and a chat collected from notifications, which are matched by name.
+    /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a chat from the
+    /// chat helper and a chat collected from notifications, which are matched by name.
     var handle: String? = nil
     /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
     var avatar: String? = nil
@@ -138,9 +138,9 @@ extension ChatsEntry {
         return entry
     }
 
-    /// A private WhatsApp chat's phone number; nil for groups, channels and Beeper chats, which have none.
+    /// A private WhatsApp chat's phone number; nil for groups and channels, which have none.
     static func handle(_ jid: String) -> String? {
-        WAJID.kind(jid) == .person && !WAJID.isBeeper(jid) ? jid : nil
+        WAJID.kind(jid) == .person ? jid : nil
     }
 }
 
@@ -199,6 +199,34 @@ final class ChatBubblesMemo {
     }
 }
 
+/// `ChatsTab.shown`, kept while what it is made of stays the same. The body, the list, its empty note and the open chat
+/// each ask for it, and while you search it reads every message of every chat: once per keystroke is enough.
+@MainActor
+final class ChatsShownMemo {
+    private struct Key: Equatable {
+        var all: [ChatsEntry]
+        var needle: String
+        var view: ChatsView
+        var filter: String?
+        var selection: String?
+        /// The groups go by day ("Today", "Yesterday"), so a new day sorts again.
+        var day: Date
+    }
+
+    private var key: Key?
+    private var value: [ChatsEntry] = []
+
+    func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, selection: String?,
+               make: () -> [ChatsEntry]) -> [ChatsEntry] {
+        let wanted = Key(all: all, needle: needle, view: view, filter: filter, selection: selection,
+                         day: Calendar.current.startOfDay(for: Date()))
+        if key == wanted { return value }
+        value = make()
+        key = wanted
+        return value
+    }
+}
+
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects or that Nook reads itself (Telegram, Instagram, Messenger, Signal, Messages…), all read the same way.
 /// Three columns: a sidebar with the views (All chats, New, Only in Nook, Read) and the apps, the list of chats in groups
@@ -207,8 +235,8 @@ final class ChatBubblesMemo {
 /// Collecting is turned on in Settings › Connections › On your Mac › Chats.
 struct ChatsTab: View {
     @ObservedObject var viewModel: NotchViewModel
-    /// Shows the panel footer under the list of chats, where Agents has it under its sessions, so the refresh and update
-    /// button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
+    /// Shows the panel footer at the foot of the leftmost column (under the sidebar's views and apps), where Agents has it
+    /// under its sessions, so the refresh and update button sits in the same place on every tab. A footer page (pull requests, usage) opens on Agents through it.
     var openOnAgents: ((String) -> Void)?
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
@@ -228,6 +256,7 @@ struct ChatsTab: View {
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
+    @State private var shownMemo = ChatsShownMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
 
@@ -261,16 +290,13 @@ struct ChatsTab: View {
                     sidebar
                     NookDivider(vertical: true)
                     // The same split as the Agents tab: a list you can widen, a line, and the open chat beside it.
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        list
-                        footer
-                    }
-                    .padding(.leading, NookTheme.Spacing.md)
-                    .padding(.trailing, NookTheme.Spacing.xs)
-                    .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
-                                    available: max(totalWidth - sidebarWidth, 0),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                    edge: .trailing, divider: true)
+                    list
+                        .padding(.leading, NookTheme.Spacing.md)
+                        .padding(.trailing, NookTheme.Spacing.xs)
+                        .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.chatsList, minimum: PanelLayout.minimumList,
+                                        available: max(totalWidth - sidebarWidth, 0),
+                                        rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                                        edge: .trailing, divider: true)
                     Group {
                         if let current {
                             ChatsDetail(entry: current, photo: photo(current), capture: capture, whatsApp: whatsApp,
@@ -331,7 +357,8 @@ struct ChatsTab: View {
     @ViewBuilder
     private var footer: some View {
         if let openOnAgents, showsFooter {
-            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history)
+            PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history,
+                        vertical: compactSidebar && !all.isEmpty)
         }
     }
 
@@ -365,8 +392,9 @@ struct ChatsTab: View {
     private var all: [ChatsEntry] { entriesMemo.entries(whatsApp: whatsApp, capture: capture) }
 
     private func photo(_ entry: ChatsEntry) -> NSImage? {
-        if let avatar = entry.avatar, FileManager.default.fileExists(atPath: avatar),
-           let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
+        // Straight to the image cache: a file check first cost a disk lookup per row on every redraw of the list. A
+        // missing file gives no image either way.
+        if let avatar = entry.avatar, let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
             return image
         }
         return photos.photo(handle: entry.handle, name: entry.name)
@@ -380,6 +408,10 @@ struct ChatsTab: View {
     /// open one stays in the view while you read it, so nothing jumps.
     private var shown: [ChatsEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces)
+        return shownMemo.shown(all: all, needle: needle, view: view, filter: filter, selection: selection) { makeShown(needle) }
+    }
+
+    private func makeShown(_ needle: String) -> [ChatsEntry] {
         let now = Date()
         let found = needle.isEmpty ? inApp : inApp.compactMap { $0.found(needle, whatsApp: whatsApp, capture: capture) }
         return found.filter { view.shows($0.read) || $0.id == selection }
@@ -461,10 +493,16 @@ struct ChatsTab: View {
     /// Which apps are installed, looked up once per launch.
     @MainActor private static var installed: [String: Bool] = [:]
 
+    /// The leftmost column: the views and apps, and under them the panel footer (settings, pull requests, usage, refresh),
+    /// as wide as the sidebar, or one icon under the other in the rail.
     private var sidebar: some View {
-        ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
-                     addSource: { app.openSettings(section: .chats) })
-            .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            ChatsSidebar(compact: compactSidebar, view: $view, app: $filter, counts: viewCounts, apps: apps, newByApp: newByApp,
+                         addSource: { app.openSettings(section: .chats) })
+            footer
+                .frame(width: compactSidebar ? PanelLayout.chatsRail : PanelLayout.chatsSidebar)
+        }
+        .padding(.trailing, compactSidebar ? NookTheme.Spacing.xs : NookTheme.Spacing.sm)
     }
 
     /// The list's title: the view, and the app when one is chosen ("New · Telegram"), with the one action that fits it.
@@ -572,7 +610,7 @@ struct ChatsTab: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let bridge = capture.bridge(for: filter),
                           ![capture.messagesBridge.app, capture.whatsAppDesktopBridge.app].contains(bridge.app), !bridge.isReady {
-                    // Slack, Telegram, Teams and Beeper keep their history elsewhere: connected once, Nook reads it from
+                    // Slack, Telegram, Teams and the chat helper's apps keep their history elsewhere: connected once, Nook reads it from
                     // there.
                     ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
                     SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
@@ -928,8 +966,10 @@ private struct ChatsDetail: View {
     /// Your message waiting for "Delete for everyone" to be confirmed.
     @State private var deleting: ChatBubble?
     @State private var bubblesMemo = ChatBubblesMemo()
+    /// The collected chat whose removal waits for a yes.
+    @State private var removing: String?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
-    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
+    @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
     @StateObject private var composer = ChatComposerModel()
 
@@ -949,12 +989,12 @@ private struct ChatsDetail: View {
         return nil
     }
 
-    /// Where what you send goes: WhatsApp, Telegram or Beeper; nil copies the text for the chat's own app.
+    /// Where what you send goes: WhatsApp, Telegram or Nook's chat helper; nil copies the text for the chat's own app.
     private var route: ChatRoute? { app.chatRoute(for: entry) }
 
     /// This chat as the linked chat service has it (pinned, muted, what it takes); nil when it is not one of those.
-    private var linkedChat: BeeperData.Chat? {
-        guard case .beeper(let id) = route else { return nil }
+    private var linkedChat: ChatServiceData.Chat? {
+        guard case .linked(let id) = route else { return nil }
         return linked.chats[id]
     }
 
@@ -1183,8 +1223,7 @@ private struct ChatsDetail: View {
                 }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
-            // What you do most stays in sight (ask Nook, open the app); the rest waits in the "…" menu.
-            ToolbarIconButton("sparkles", tr("whatsapp.card.nook")) { app.askNookAboutChat(entry) }
+            // Opening the app stays in sight; the rest waits in the "…" menu.
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
             moreMenu
         }
@@ -1220,7 +1259,7 @@ private struct ChatsDetail: View {
             }
             if case .captured(let id) = entry.origin {
                 Divider()
-                Button(tr("chats.remove"), role: .destructive) { capture.remove(id) }
+                Button(tr("chats.remove"), role: .destructive) { removing = id }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -1232,9 +1271,11 @@ private struct ChatsDetail: View {
         .composerMenu()
         .help(tr("chat.moreActions"))
         .accessibilityLabel(tr("chat.moreActions"))
+        .confirmDelete($removing, question: { _ in tr("confirm.deleteChat", entry.name) },
+                       detail: tr("confirm.deleteChat.detail"), confirmTitle: tr("chats.remove")) { capture.remove($0) }
     }
 
-    /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, a Beeper network),
+    /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, an app the chat helper links),
     /// or is copied for the app of any other chat; "@nook …" lets Nook write the message first, into this field, for
     /// you to read before it goes anywhere. Where Nook can write, the field takes more than text, as the app's own does:
     /// photos, videos, GIFs, stickers, files, a voice message, a poll, a place, a contact, an emoji.

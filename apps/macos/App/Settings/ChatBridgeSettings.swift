@@ -64,7 +64,7 @@ struct TelegramSettingsRows: View {
         case .ready:
             StatusRow(title: tr("chats.telegram.connected", telegram.account ?? "Telegram"),
                       detail: tr("chats.telegram.connectedDetail"), state: .done) {
-                Button(tr("chats.telegram.logOut")) { telegram.logOut() }
+                ConfirmedButton(tr("chats.telegram.logOut"), question: tr("confirm.logout", "Telegram")) { telegram.logOut() }
             }
             .onAppear(perform: onReady)
         case .loggingOut, .closed:
@@ -151,11 +151,11 @@ struct TeamsSettingsRows: View {
             if let why = teams.problems[TeamsBridge.webID] {
                 StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
                     Button(tr("chats.teams.signInAgainButton")) { signInOnWeb() }
-                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut() }
                 }
             } else {
                 StatusRow(title: tr("chats.teams.connected", title), detail: tr("chats.teams.web.connectedDetail"), state: .done) {
-                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut() }
                 }
             }
         }
@@ -164,13 +164,13 @@ struct TeamsSettingsRows: View {
             if let why = teams.problems[account.id] {
                 StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
                     Button(tr("chats.teams.signInAgainButton")) { teams.signIn() }
-                    Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
                 }
             } else {
                 StatusRow(title: tr("chats.teams.connected", title),
                           detail: account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email,
                           state: .done) {
-                    Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
                 }
             }
         }
@@ -178,6 +178,9 @@ struct TeamsSettingsRows: View {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
         if web.session == nil {
+            if let why = web.problem, !web.isSigningIn {
+                StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
+            }
             HStack {
                 SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
                 Spacer()
@@ -234,81 +237,53 @@ struct TeamsSettingsRows: View {
     }
 }
 
-/// Settings › Chats › Linked chats: the token of the chat app's local API on this Mac (`BeeperBridge`), whether its
-/// live line is up, which apps come in through it and what Nook can do in their chats. Named after what it does, not
-/// after the app behind it.
-struct BeeperSettingsRows: View {
-    @ObservedObject var capture: ChatCaptureService
-    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
-    @State private var token = ""
-    @State private var saved = BeeperBridge.beeperToken != nil
-
-    var body: some View {
-        if WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper {
-            // Its chats already come in through the WhatsApp link, with answering in place.
-            StatusRow(title: tr("chats.beeper.viaGateway"), detail: tr("chats.beeper.viaGatewayDetail"), state: .done) { EmptyView() }
-        } else {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                SettingLabel(tr("chats.beeper.token"), detail: tr("chats.beeper.tokenDetail"))
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    SecureField("", text: $token, prompt: Text(saved ? "••••••••" : tr("chats.beeper.token")))
-                        .labelsHidden().textFieldStyle(.roundedBorder)
-                        .onSubmit { save() }
-                    Button(tr("chats.slack.save")) { save() }
-                        .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
-                    if saved {
-                        Button(tr("chats.slack.disconnect")) {
-                            Keychain.remove(BeeperBridge.tokenAccount)
-                            saved = false
-                            capture.beeperBridge.reset()
-                            capture.bridgeChanged(capture.beeperBridge.app)
-                        }
-                    }
-                }
-            }
-            if saved {
-                if let problem = capture.bridgeProblems[capture.beeperBridge.app] {
-                    StatusRow(title: tr("chats.beeper.problem"), detail: problem, state: .error) { EmptyView() }
-                } else if capture.bridged.contains(capture.beeperBridge.app) {
-                    StatusRow(title: tr("chats.beeper.connected"), detail: connectedDetail, state: .done) { EmptyView() }
-                    StatusRow(title: tr(linked.isLive ? "chats.linked.live" : "chats.linked.polling"),
-                              detail: tr(linked.isLive ? "chats.linked.liveDetail" : "chats.linked.pollingDetail"),
-                              state: linked.isLive ? .done : .warning) { EmptyView() }
-                    SettingNote(tr("chats.linked.actions"))
-                }
-            }
-        }
-    }
-
-    /// Which apps come in, by their own names ("Linked: Instagram, Signal"), once their chats were read.
-    private var connectedDetail: String {
-        let names = Set(linked.chats.values.map(\.app)).compactMap { MessagingApps.app(id: $0)?.name }.sorted()
-        return names.isEmpty ? tr("chats.beeper.connectedDetail") : tr("chats.linked.apps", names.joined(separator: ", "))
-    }
-
-    private func save() {
-        let value = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, Keychain.write(value, account: BeeperBridge.tokenAccount) == errSecSuccess else {
-            ToastCenter.shared.error(tr("chats.slack.notSaved"))
-            return
-        }
-        token = ""
-        saved = true
-        capture.setSource(capture.beeperBridge.app, on: true)
-        capture.beeperBridge.reset()
-        capture.bridgeChanged(capture.beeperBridge.app)
-    }
-}
-
-/// Slack with its history: a user token, kept in the Keychain, and whether reading with it works. In Slack's sheet on
-/// Settings › Chats.
-struct SlackTokenRows: View {
+/// Slack with its history: signing in on slack.com, as with Teams, or a user token of an app of your own (kept in the
+/// Keychain), and whether reading works. In Slack's sheet on Settings › Chats.
+struct SlackSettingsRows: View {
     let setCollecting: (Bool) -> Void
     @ObservedObject private var capture = ChatCaptureService.shared
+    @ObservedObject private var web = SlackWebSession.shared
     @State private var slackToken = ""
     @State private var slackSet = SlackBridge.token != nil
+    @State private var usesToken = SlackBridge.token != nil
 
     var body: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            if let auth = web.auth {
+                let title = auth.team.isEmpty ? "Slack" : auth.team
+                if let problem = capture.bridgeProblems[capture.slackBridge.app] {
+                    StatusRow(title: tr("chats.teams.connected", title), detail: problem, state: .error) {
+                        Button(tr("chats.teams.signInAgainButton")) { signIn() }
+                        ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
+                    }
+                } else {
+                    StatusRow(title: tr("chats.teams.connected", title),
+                              detail: capture.enabled ? tr("chats.slack.web.connectedDetail") : tr("chats.slack.collectOff"),
+                              state: capture.enabled ? .done : .todo) {
+                        ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
+                    }
+                }
+            } else if !slackSet {
+                HStack {
+                    SettingLabel(tr("chats.slack.web.signIn"), detail: tr("chats.slack.web.signInDetail"))
+                    Spacer()
+                    Button(tr("chats.slack.signIn")) { signIn() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(web.isSigningIn)
+                }
+            }
+            if web.auth == nil {
+                DisclosureGroup(isExpanded: $usesToken) {
+                    tokenRows
+                } label: {
+                    SettingLabel(tr("chats.slack.useToken"), detail: tr("chats.slack.useTokenDetail"))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tokenRows: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
             HStack(spacing: NookTheme.Spacing.sm) {
@@ -320,7 +295,8 @@ struct SlackTokenRows: View {
                 Button(tr("chats.slack.save")) { save() }
                     .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
                 if slackSet {
-                    Button(tr("chats.slack.disconnect")) {
+                    ConfirmedButton(tr("chats.slack.disconnect"), question: tr("confirm.logout", "Slack"),
+                                    detail: tr("confirm.keychain.detail")) {
                         Keychain.remove(SlackBridge.tokenAccount)
                         slackSet = false
                         capture.slackTokenChanged()
@@ -338,6 +314,23 @@ struct SlackTokenRows: View {
             }
             SettingNote(tr("chats.slack.footer"))
         }
+        .padding(.top, NookTheme.Spacing.xs)
+    }
+
+    private func signIn() {
+        web.signIn(title: tr("chats.link.browser.title", "Slack")) { linked() }
+    }
+
+    private func signOut() {
+        web.signOut()
+        capture.slackTokenChanged()
+    }
+
+    /// Slack is linked: its chats are switched on and read right away.
+    private func linked() {
+        capture.setSource(capture.slackBridge.app, on: true)
+        if !capture.enabled { setCollecting(true) }
+        capture.slackTokenChanged()
     }
 
     private func save() {
@@ -349,8 +342,6 @@ struct SlackTokenRows: View {
         }
         slackToken = ""
         slackSet = true
-        capture.setSource(capture.slackBridge.app, on: true)
-        if !capture.enabled { setCollecting(true) }
-        capture.slackTokenChanged()
+        linked()
     }
 }

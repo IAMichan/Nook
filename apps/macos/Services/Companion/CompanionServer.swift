@@ -236,6 +236,13 @@ final class CompanionServer: ObservableObject {
             audit("answer", workspace.run(runID)?.title ?? "")
             return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
         case .send:
+            // An agent outside Nook (the Claude app, a terminal): answered as on the Mac, by continuing it in Nook.
+            if let session = request.session, CompanionAgents.handles(session) {
+                guard let text = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
+                if let error = await CompanionAgents.send(app, session: session, text: text) { return .failure(request.id, error) }
+                audit("send", session)
+                return CompanionResponse(id: request.id, ok: true, sessions: digests(app), message: "sent")
+            }
             guard let runID = request.session.flatMap(UUID.init(uuidString:)), let run = workspace.run(runID) else {
                 return .failure(request.id, .unknownSession)
             }
@@ -255,7 +262,9 @@ final class CompanionServer: ObservableObject {
         case .start:
             return await launch(request, app: app)
         case .timeline:
-            return timeline(request, workspace: workspace)
+            return await timeline(request, app: app)
+        case .manage:
+            return manage(request, app: app)
         case .chats:
             return chats(request, app: app)
         case .chat:
@@ -317,7 +326,8 @@ final class CompanionServer: ObservableObject {
                                  attention: String(describing: workspace.attention(run, unseen: false, now: now)),
                                  folder: URL(fileURLWithPath: run.workingDirectory).lastPathComponent, branch: run.branch,
                                  updated: run.updatedAt.timeIntervalSince1970, excerpt: CompanionPolicy.excerpt(lastAnswer), items: items,
-                                 model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model))
+                                 model: (run.resolvedModel ?? run.model).isEmpty ? nil : CompanionPolicy.excerpt(run.resolvedModel ?? run.model),
+                                 actions: Self.actions(run, now: now).map(\.rawValue))
         }
     }
 }

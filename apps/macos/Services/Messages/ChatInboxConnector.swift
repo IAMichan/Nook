@@ -21,7 +21,7 @@ final class ChatInboxConnector: ContextSource {
         // are everyday words).
         SourceCatalog.register(SourceDescriptor(id: id, title: "Chats", kind: .builtIn), tools: ["chat_inbox"],
                                aliases: ["telegram", "instagram", "insta", "messenger", "signal", "snapchat", "viber", "wechat",
-                                         "skype", "threema", "beeper", "dm'?s?"])
+                                         "skype", "threema", "dm'?s?"])
     }
 
     var isActive: Bool { ConnectorToggle.isOn(id, default: false) }

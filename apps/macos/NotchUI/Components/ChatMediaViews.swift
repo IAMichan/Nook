@@ -5,7 +5,7 @@ import Combine
 import ImageIO
 
 // What a chat message's file looks like in a bubble, the same in every chat (the notch card and the Chats tab, for
-// WhatsApp, Messages, Telegram, Slack, Beeper…): a sticker as itself without a bubble, a GIF that plays by itself in a
+// WhatsApp, Messages, Telegram, Slack, Signal…): a sticker as itself without a bubble, a GIF that plays by itself in a
 // loop, an audio or voice message with a play button and how far it got. Photos, videos and other files are drawn by
 // `ChatTranscript` itself. A bridge only has to fill `InboxMessage.media`; `ChatBubble.init(_:time:)` does the rest.
 

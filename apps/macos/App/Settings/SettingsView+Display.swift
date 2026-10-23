@@ -18,7 +18,8 @@ extension SettingsView {
                 }
                 Picker(tr("flow.settings.translate"), selection: $flowStore.translateTo) {
                     Text(tr("flow.settings.asSpoken")).tag("")
-                    ForEach(["Nederlands", "English", "Deutsch", "Français", "Español"], id: \.self) { Text($0).tag($0) }
+                    // The stored choice is the language's own name, as `AppLanguage.displayName` writes it.
+                    ForEach(AppLanguage.allCases) { lang in Text(lang.displayName).tag(lang.displayName) }
                 }
             } header: {
                 Text(tr("settings.overview.languageSection"))
@@ -77,7 +78,7 @@ extension SettingsView {
             .pickerStyle(.segmented)
             SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Image(systemName: energySymbol)
                         .foregroundStyle(energy.plan.pace == .full ? NookTheme.mint : NookTheme.amber)
                     Text(energy.statusText).foregroundStyle(NookTheme.textSecondary)

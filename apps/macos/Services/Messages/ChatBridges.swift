@@ -481,16 +481,15 @@ final class WhatsAppDesktopBridge: ChatBridge {
     }
 }
 
-// MARK: Beeper
+// MARK: Nook's chat helper
 
-/// Every network linked in Beeper Desktop (Instagram, Messenger, Discord, Signal, LinkedIn, X, Google Chat…), each chat
-/// under its own app, through Beeper's own local API on this Mac (Settings › Developers in Beeper) with the token set in
-/// Settings › Chats. Nothing leaves the Mac: the API is Beeper's, on localhost. A network Nook reads with a bridge of
-/// its own (Telegram, Slack…) is left to that bridge. While Beeper is the WhatsApp gateway, its chats already come in
-/// through the linked phone list (with answering in place), so this bridge stays out of the way.
+/// Every app linked through Nook's own chat helper (`ChatHelper`: Telegram, Signal, Messenger, Instagram, X, LinkedIn,
+/// Slack), each chat under its own app, through the helper's local API on this Mac with the token Nook makes at each
+/// start. Nothing leaves the Mac: the API is on 127.0.0.1. An app Nook reads with a bridge of its own is left to that
+/// bridge.
 @MainActor
-final class BeeperBridge: ObservableObject, ChatBridge {
-    let app = "beeper"
+final class ChatServiceBridge: ObservableObject, ChatBridge {
+    let app = "service"
     /// While the live line is open a read only catches what it may have missed; without it, every ten seconds.
     var interval: TimeInterval { live.isLive ? 120 : 10 }
     private(set) var isWorking = false
@@ -501,37 +500,34 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     /// An app another bridge already reads.
     var skips: (String) -> Bool = { _ in false }
 
-    static let tokenAccount = "chats.beeper.token"
-    /// Beeper Desktop's local API, used while Nook's own chat helper does not run.
-    private static let beeperBase = URL(string: "http://localhost:23373")!
-    /// The chat service Nook reads: its own helper (`ChatHelper`) while it runs, else Beeper Desktop.
-    static var base: URL { ChatHelper.shared.isRunning ? ChatHelper.base : beeperBase }
+    /// The chat service Nook reads: its own helper.
+    static var base: URL { ChatHelper.base }
     private static let chatCount = 40
     private static let history = 30
 
     /// The newest activity per chat at the last read: only chats that moved are read again.
     private var seen: [String: Date] = [:]
-    /// Files Beeper downloaded for Nook, by their `mxc://` address.
+    /// Chats told to have changed (the live line, something Nook did in them) that were not read since: read at the next
+    /// turn even when their newest activity looks the same. Kept apart from `seen`, so a change told while a read is
+    /// under way is not lost when that read ends (Instagram tells of the message a moment after the chat moved).
+    private var stale: Set<String> = []
+    /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
-    /// Beeper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
+    /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
     private var chatIDs: [String: String] = [:]
     /// Every chat at the last read by its id, for what can be done in it (pinned, muted, editing…).
-    @Published private(set) var chats: [String: BeeperData.Chat] = [:]
+    @Published private(set) var chats: [String: ChatServiceData.Chat] = [:]
     /// The live line is open: changes come in the moment they happen (Settings › Chats shows it).
     @Published private(set) var isLive = false
     private let live = ChatLiveStream()
 
-    /// The token of the chat service Nook reads: the helper's own while it runs, else the one set for Beeper.
-    static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : beeperToken }
-    /// The token set for Beeper Desktop in Settings › Chats.
-    static var beeperToken: String? { CloudHelp.secret(tokenAccount) }
-    /// Where the live line was opened, to open it again when the chat service changes.
-    private var liveBase: URL?
+    /// The helper's own token, made at its start; nil while it does not run.
+    static var token: String? { ChatHelper.shared.isRunning ? ChatHelper.shared.token : nil }
 
     init() {
         live.onChange = { [weak self] chat in
             guard let self else { return }
-            self.seen[chat] = nil
+            self.stale.insert(chat)
             self.onChange()
         }
         live.onLive = { [weak self] live in if self?.isLive != live { self?.isLive = live } }
@@ -547,14 +543,14 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         live.disconnect()
     }
 
+    /// Once something was linked through the helper (it then starts at the first read).
     var isReady: Bool {
-        // Nook's own helper once something was linked through it (it then starts at the first read).
-        if ChatHelper.isBuilt, FileManager.default.fileExists(atPath: ChatHelper.dataDirectory.path) { return true }
-        return !(WhatsAppSettings.enabled && WhatsAppSettings.gateway == .beeper) && Self.beeperToken != nil
+        ChatHelper.isBuilt && FileManager.default.fileExists(atPath: ChatHelper.dataDirectory.path)
     }
 
     func reset() {
         seen = [:]
+        stale = []
         covered = []
         isWorking = false
     }
@@ -568,23 +564,30 @@ final class BeeperBridge: ObservableObject, ChatBridge {
             live.disconnect()
             return []
         }
-        if liveBase != Self.base {
-            live.disconnect()
-            liveBase = Self.base
-        }
         var socket = URLComponents(url: Self.base.appendingPathComponent("v1/ws"), resolvingAgainstBaseURL: false)
         socket?.scheme = "ws"
         if !live.isConnecting, let url = socket?.url { live.connect(url, token: token) }
         do {
-            let listed = BeeperData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
+            var listed = ChatServiceData.chats(try await get("/v1/chats", ["limit": String(Self.chatCount)], token: token))
                 .filter { !skips($0.app) }
+            // What Beeper had set for these chats (pinned, muted, archived), once, when someone moved over from it.
+            let archived = await BeeperImporter.shared.apply(to: listed, in: self)
+            if !archived.isEmpty { listed.removeAll { archived.contains($0.id) } }
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
-            for chat in listed where chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil) {
-                let answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
-                let messages = await withFiles(BeeperData.messages(answer, chat: chat), token: token)
-                let deleted = BeeperData.deleted(answer, chat: chat)
+            for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
+                // Before the read: a change told while it runs marks the chat again, for the next turn.
+                stale.remove(chat.id)
+                let answer: [String: Any]
+                do {
+                    answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                } catch {
+                    stale.insert(chat.id)
+                    throw error
+                }
+                let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
+                let deleted = ChatServiceData.deleted(answer, chat: chat)
                 seen[chat.id] = chat.last ?? .distantPast
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
@@ -612,8 +615,8 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         return result
     }
 
-    /// Where a file Beeper names is on this Mac: a `file://` one as it is, an `mxc://` one once Beeper downloaded it
-    /// through its own API (it says where it put it). Nothing is fetched from anywhere but Beeper on this Mac.
+    /// Where a file the helper names is on this Mac: a `file://` one as it is, an `mxc://` one once the helper downloaded
+    /// it through its own API (it says where it put it). Nothing is fetched from anywhere but the helper on this Mac.
     private func local(_ source: String?, token: String) async -> String? {
         guard let source else { return nil }
         if let url = URL(string: source), url.isFileURL { return url.path }
@@ -633,21 +636,21 @@ final class BeeperBridge: ObservableObject, ChatBridge {
 
     // MARK: Sending
 
-    /// Beeper's id of the chat Nook shows as `name` in `app`, once Beeper brought it in.
+    /// The helper's id of the chat Nook shows as `name` in `app`, once the helper brought it in.
     func chatID(app: String, name: String) -> String? {
         isReady ? chatIDs[app + "|" + name] : nil
     }
 
-    /// What every network Beeper bridges can take from Nook: text and files; a place or a contact goes as text.
+    /// What every app the helper links can take from Nook: text and files; a place or a contact goes as text.
     var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
 
-    /// Sends what you typed, or a file, a place or a contact card, to a chat Beeper brought in (Instagram, Signal,
-    /// Messenger…), as an answer to `replyTo` (a message's id in Nook) when set. Beeper hands it to the network; the
-    /// chat shows it at Beeper's next read. Throws with a sentence you can act on.
+    /// Sends what you typed, or a file, a place or a contact card, to a chat the helper brought in (Instagram, Signal,
+    /// Messenger…), as an answer to `replyTo` (a message's id in Nook) when set. The helper hands it to the app; the
+    /// chat shows it at the next read. Throws with a sentence you can act on.
     func send(text: String? = nil, _ outgoing: ChatOutgoing? = nil, to chat: String, replyTo: String? = nil) async throws {
-        guard let token = Self.token else { throw NookError(tr("chats.beeper.unauthorized")) }
+        guard let token = Self.token else { throw NookError(tr("chats.service.unreachable")) }
         let messages = Self.path(chat) + "/messages"
-        let answered = replyTo.flatMap { BeeperData.networkID($0, chat: chat) }
+        let answered = replyTo.flatMap { ChatServiceData.networkID($0, chat: chat) }
         var request: WASendRequest
         if let outgoing {
             if case .poll = outgoing { throw NookError(tr("chat.compose.unsupported")) }
@@ -656,13 +659,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
                 guard !file.tooLarge, let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) else {
                     throw NookError(tr("chat.compose.tooLarge", file.name))
                 }
-                let upload = WASend.beeperUpload(file, data: data)
-                guard let id = WASend.beeperUploadID(try await post(upload.path, upload.json ?? [:], token: token, timeout: 120)) else {
+                let upload = WASend.serviceUpload(file, data: data)
+                guard let id = WASend.serviceUploadID(try await post(upload.path, upload.json ?? [:], token: token, timeout: 120)) else {
                     throw NookError(tr("chat.compose.notSent"))
                 }
                 uploadID = id
             }
-            request = WASend.beeperMessage(outgoing, path: messages, uploadID: uploadID, replyTo: answered)
+            request = WASend.serviceMessage(outgoing, path: messages, uploadID: uploadID, replyTo: answered)
         } else {
             let body = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
@@ -671,7 +674,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         }
         _ = try await post(request.path, request.json ?? [:], token: token, timeout: 30)
         // The chat is read again at the next turn, with the message just sent.
-        seen[chat] = nil
+        stale.insert(chat)
     }
 
     // MARK: Doing things in a chat
@@ -688,7 +691,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
 
     /// Your emoji on a message (Nook's id of it); `mine` takes yours back instead.
     func react(_ emoji: String, to message: String, in chat: String, mine: Bool) async throws {
-        guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
         let reactions = Self.path(chat) + "/messages/" + ChatJSON.segment(id) + "/reactions"
         if mine {
             try await act("DELETE", reactions + "/" + ChatJSON.segment(emoji), nil, chat: chat)
@@ -701,13 +704,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
     func edit(_ message: String, in chat: String, to text: String) async throws {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
-        guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
         try await act("PUT", Self.path(chat) + "/messages/" + ChatJSON.segment(id), ["text": body], chat: chat)
     }
 
     /// Deletes your message for everyone in the chat, where its app can.
     func delete(_ message: String, in chat: String) async throws {
-        guard let id = BeeperData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
+        guard let id = ChatServiceData.networkID(message, chat: chat) else { throw NookError(tr("chat.action.failed")) }
         try await act("DELETE", Self.path(chat) + "/messages/" + ChatJSON.segment(id), nil, query: [URLQueryItem(name: "forEveryone", value: "true")],
                       chat: chat)
     }
@@ -736,7 +739,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         // Said as a chat's own failure: where Nook reads the chat from is not something to show here.
         guard let token = Self.token else { throw NookError(tr("chat.action.failed")) }
         _ = try await call(method, path, json, query: query, token: token, timeout: 30, failure: tr("chat.action.failed"), plain: true)
-        seen[chat] = nil
+        stale.insert(chat)
         onChange()
     }
 
@@ -763,13 +766,13 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         do {
             (data, response) = try await ConnectorHTTP.session.data(for: request)
         } catch {
-            throw NookError(plain ? failure : tr("chats.beeper.unreachable"))
+            throw NookError(plain ? failure : tr("chats.service.unreachable"))
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 || code == 403 { throw NookError(plain ? failure : tr("chats.beeper.unauthorized")) }
+        if code == 401 || code == 403 { throw NookError(plain ? failure : tr("chats.service.unreachable")) }
         guard (200..<300).contains(code) else {
             // The chat app's own reason, when it gives one (too old to edit, not allowed…).
-            throw NookError(failure + " " + (WABeeper.errorMessage(data) ?? "HTTP \(code)"))
+            throw NookError(failure + " " + (ChatServiceData.errorMessage(data) ?? "HTTP \(code)"))
         }
         return data
     }
@@ -778,7 +781,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         var components = URLComponents(url: Self.base, resolvingAgainstBaseURL: false)!
         components.percentEncodedPath = path
         components.queryItems = parameters.map { URLQueryItem(name: $0.key, value: $0.value) }
-        guard let url = components.url else { throw NookError("Beeper: \(path)") }
+        guard let url = components.url else { throw NookError(path) }
         var request = URLRequest(url: url)
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         let data: Data
@@ -786,21 +789,21 @@ final class BeeperBridge: ObservableObject, ChatBridge {
         do {
             (data, response) = try await ConnectorHTTP.session.data(for: request)
         } catch {
-            throw NookError(tr("chats.beeper.unreachable"))
+            throw NookError(tr("chats.service.unreachable"))
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 || code == 403 { throw NookError(tr("chats.beeper.unauthorized")) }
-        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Beeper: HTTP \(code)") }
+        if code == 401 || code == 403 { throw NookError(tr("chats.service.unreachable")) }
+        guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("HTTP \(code)") }
         return json
     }
 }
 
 // MARK: Slack
 
-/// Your Slack direct messages and group messages, with their history, through Slack's Web API and a user token you set
-/// in Settings › Chats (kept in the Keychain). Read-only scopes are enough: im:history, mpim:history, im:read,
-/// mpim:read, users:read and files:read (for the photos, GIFs and voice clips in them). Only Slack is asked, and only
-/// for your own conversations.
+/// Your Slack direct messages and group messages, with their history, through Slack's Web API: with the sign-in of
+/// Slack's website after you signed in on slack.com (`SlackWebSession`), or with a user token you set in Settings ›
+/// Chats (kept in the Keychain; read-only scopes are enough: im:history, mpim:history, im:read, mpim:read, users:read
+/// and files:read). Only Slack is asked, and only for your own conversations.
 @MainActor
 final class SlackBridge: ChatBridge {
     let app = "slack"
@@ -810,10 +813,19 @@ final class SlackBridge: ChatBridge {
     /// Where the token is kept.
     static let tokenAccount = "chats.slack.token"
 
-    /// Nil once Slack is linked through Nook's chat helper (signing in on slack.com), so it is not read twice.
+    /// What Slack is asked with: the website's sign-in, else the token you pasted. Nil once Slack is linked through
+    /// Nook's chat helper, so it is not read twice.
+    static var auth: SlackData.Auth? {
+        guard !ChatHelper.linked("slack") else { return nil }
+        if let web = SlackWebSession.shared.auth { return web }
+        guard let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
+        return SlackData.Auth(token: token)
+    }
+
+    /// The token you pasted, if that is how Slack is linked.
     static var token: String? {
-        guard !ChatHelper.linked("slack"), let token = CloudHelp.secret(tokenAccount), token.hasPrefix("xox") else { return nil }
-        return token
+        guard let auth = Self.auth, auth.cookie == nil else { return nil }
+        return auth.token
     }
 
     /// Conversations read in one go: the most recently active first, then a few of the others in turn, so every one is
@@ -838,7 +850,7 @@ final class SlackBridge: ChatBridge {
     private var people: [String: [String]] = [:]
     private var turn = 0
 
-    var isReady: Bool { Self.token != nil }
+    var isReady: Bool { Self.auth != nil }
 
     /// Forgets what was read (a new token may be another workspace).
     func reset() {
@@ -856,18 +868,18 @@ final class SlackBridge: ChatBridge {
     }
 
     func read() async throws -> [BridgedChat] {
-        guard let token = Self.token else { isWorking = false; return [] }
+        guard let auth = Self.auth else { isWorking = false; return [] }
         do {
-            if me == nil { me = SlackData.me(try await call("auth.test", [:], token: token)) }
+            if me == nil { me = SlackData.me(try await call("auth.test", [:], auth: auth)) }
             if usersAt.map({ Date().timeIntervalSince($0) > 3600 }) ?? true {
-                let members = try await pages("users.list", ["limit": "200"], token: token, maxPages: 5)
+                let members = try await pages("users.list", ["limit": "200"], auth: auth, maxPages: 5)
                 users = members.reduce(into: [:]) { $0.merge(SlackData.users($1)) { a, _ in a } }
                 avatars = members.reduce(into: [:]) { $0.merge(SlackData.avatars($1)) { a, _ in a } }
                 usersAt = Date()
             }
             if conversationsAt.map({ Date().timeIntervalSince($0) > 600 }) ?? true {
                 conversations = try await pages("conversations.list", ["types": "im,mpim", "exclude_archived": "true", "limit": "200"],
-                                                token: token, maxPages: 5).flatMap(SlackData.conversations)
+                                                auth: auth, maxPages: 5).flatMap(SlackData.conversations)
                 for conversation in conversations { active[conversation.id] = max(active[conversation.id] ?? 0, conversation.updated) }
                 conversationsAt = Date()
             }
@@ -875,9 +887,9 @@ final class SlackBridge: ChatBridge {
             for conversation in pick() {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
-                let json = try await call("conversations.history", parameters, token: token)
+                let json = try await call("conversations.history", parameters, auth: auth)
                 let read = SlackData.messages(json, conversation: conversation, users: users, me: me)
-                let messages = await withFiles(read, token: token)
+                let messages = await withFiles(read, auth: auth)
                 if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
@@ -889,7 +901,7 @@ final class SlackBridge: ChatBridge {
                 let picture = await avatar(of: conversation.user)
                 if conversation.isGroup, people[conversation.id] == nil {
                     // One refused list (a missing scope) leaves the group without its people, not without its messages.
-                    let json = try? await call("conversations.members", ["channel": conversation.id, "limit": "200"], token: token)
+                    let json = try? await call("conversations.members", ["channel": conversation.id, "limit": "200"], auth: auth)
                     people[conversation.id] = json.map { SlackData.members($0, users: users, me: me) } ?? []
                 }
                 let members = people[conversation.id] ?? []
@@ -921,15 +933,14 @@ final class SlackBridge: ChatBridge {
     /// The messages with their files fetched from Slack (with the token, only from Slack's own addresses), so a photo,
     /// GIF or voice clip shows as itself. One that cannot be fetched (the token lacks files:read) stays a file to open
     /// in Slack.
-    private func withFiles(_ messages: [InboxMessage], token: String) async -> [InboxMessage] {
+    private func withFiles(_ messages: [InboxMessage], auth: SlackData.Auth) async -> [InboxMessage] {
         var result = messages
         for index in result.indices {
             guard var media = result[index].media, media.path == nil, let source = media.source,
                   let url = URL(string: source), SlackData.isSlack(url) else { continue }
             let target = ChatMedia.destination(key: result[index].id, name: media.name ?? url.lastPathComponent)
             if !FileManager.default.fileExists(atPath: target.path) {
-                var request = URLRequest(url: url)
-                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                let request = Self.request(url, auth: auth)
                 guard let answer = try? await ConnectorHTTP.session.data(for: request),
                       let response = answer.1 as? HTTPURLResponse, response.statusCode == 200,
                       answer.0.count <= ChatMedia.maxBytes,
@@ -961,13 +972,13 @@ final class SlackBridge: ChatBridge {
         return picked
     }
 
-    private func pages(_ method: String, _ parameters: [String: String], token: String, maxPages: Int) async throws -> [[String: Any]] {
+    private func pages(_ method: String, _ parameters: [String: String], auth: SlackData.Auth, maxPages: Int) async throws -> [[String: Any]] {
         var results: [[String: Any]] = []
         var cursor: String?
         for _ in 0..<maxPages {
             var query = parameters
             if let cursor { query["cursor"] = cursor }
-            let json = try await call(method, query, token: token)
+            let json = try await call(method, query, auth: auth)
             results.append(json)
             cursor = SlackData.nextCursor(json)
             if cursor == nil { break }
@@ -975,12 +986,20 @@ final class SlackBridge: ChatBridge {
         return results
     }
 
-    private func call(_ method: String, _ parameters: [String: String], token: String) async throws -> [String: Any] {
+    /// A request to Slack with the token, and the website's cookie when it is signed in that way (sent as given, not
+    /// mixed with cookies of the session).
+    private static func request(_ url: URL, auth: SlackData.Auth) -> URLRequest {
+        var request = URLRequest(url: url)
+        for (name, value) in auth.headers { request.setValue(value, forHTTPHeaderField: name) }
+        if auth.cookie != nil { request.httpShouldHandleCookies = false }
+        return request
+    }
+
+    private func call(_ method: String, _ parameters: [String: String], auth: SlackData.Auth) async throws -> [String: Any] {
         var components = URLComponents(string: "https://slack.com/api/" + method)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = components.url else { throw NookError("Slack: \(method)") }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        var request = Self.request(url, auth: auth)
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0

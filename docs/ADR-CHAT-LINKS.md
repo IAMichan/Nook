@@ -204,3 +204,12 @@ program that shares no code with Nook, and it saves a second repository, CI and 
   and hash still come from Nook's Info.plist (or your own in Settings), passed as `NOOK_TELEGRAM_API_ID` /
   `NOOK_TELEGRAM_API_HASH`. A Nook build with the helper routes Telegram through it and leaves `TelegramBridge` off;
   a build with only TDLib keeps using `TelegramBridge`.
+- Beeper removed (later): Nook no longer reads Beeper Desktop at all. The Beeper chat service, the Beeper WhatsApp
+  gateway and the Beeper MCP preset are gone; the client that read Beeper's API now only reads the helper and is named
+  after it (`ChatServiceBridge`, `ChatServiceData`). Someone coming from Beeper moves over once in Settings › Chats ›
+  Moving from Beeper (`BeeperImport`, `BeeperImporter`): Beeper Desktop's local API is asked for its accounts, its chats
+  with their recent text history, and which chats are pinned, muted or archived. Those apps are switched on, the history
+  lands in the Chats tab, and each chat's settings are applied by the helper once its app is linked in Nook. Sign-ins
+  cannot come over (Beeper keeps them and its API does not hand them out), so each app is linked once more, with the
+  account Beeper knew shown next to it. A WhatsApp that went through Beeper is moved to Nook's own gateway at launch and
+  stays off until it is linked again.

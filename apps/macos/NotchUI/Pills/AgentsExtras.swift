@@ -25,17 +25,21 @@ struct PanelFooter: View {
     let open: (String) -> Void
     let openSettings: () -> Void
     @ObservedObject var history: AgentHistory
+    /// The icons one under the other, for a narrow column (the Chats tab's rail of icons).
+    var vertical = false
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: NookTheme.Spacing.xs))
+            : AnyLayout(HStackLayout(spacing: NookTheme.Spacing.xs))
+        layout {
             FooterIcon(label: tr("agents.footer.settings"), active: false,
                        action: openSettings) { ToolGlyph(symbol: "gearshape") }
             FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
-            Spacer(minLength: 0)
+            if !vertical { Spacer(minLength: 0) }
             UpdateFooterButton {
                 let busy = history.loading || updater.phase == .checking
                 FooterIcon(label: tr("agents.footer.refresh"), active: false, action: {
@@ -50,7 +54,7 @@ struct PanelFooter: View {
             }
         }
         .padding(.horizontal, NookTheme.Spacing.xs)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: vertical ? .center : .leading)
     }
 }
 

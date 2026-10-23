@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
@@ -898,7 +898,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "notbuilt.calendar": "Voeg het account toe in Systeeminstellingen › Internetaccounts, of plak het ICS-adres onder Andere agenda's (alleen lezen).",
         "notbuilt.drive": "Synchroniseer de map met Finder: Nook vindt en leest dan de documenten.",
         "notbuilt.tasks": "Lees ze als eigen bron met hun REST API en een sleutel (bijv. https://api.todoist.com/rest/v2 | Bearer …). Taken aanmaken kan nog niet.",
-        "notbuilt.chat": "Koppel Discord via Beeper Desktop in Chats, of verstuur via een Discord-webhook als eigen bron.",
+        "notbuilt.chat": "Discord-berichten komen binnen via hun meldingen in Chats, of verstuur via een Discord-webhook als eigen bron.",
     ],
     .en: [
         // MARK: Menu Bar & General
@@ -1681,7 +1681,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "notbuilt.calendar": "Add the account in System Settings › Internet Accounts, or paste its ICS address under Other calendars (read only).",
         "notbuilt.drive": "Sync the folder with Finder: Nook then finds and reads its documents.",
         "notbuilt.tasks": "Read them as a custom source with their REST API and a key (e.g. https://api.todoist.com/rest/v2 | Bearer …). Creating tasks is not possible yet.",
-        "notbuilt.chat": "Link Discord through Beeper Desktop in Chats, or send through a Discord webhook as a custom source.",
+        "notbuilt.chat": "Discord messages come in through their notifications in Chats, or send through a Discord webhook as a custom source.",
     ],
     .de: [
         // MARK: Menu Bar & General
@@ -2459,6 +2459,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "notbuilt.calendar": "Füge das Konto in Systemeinstellungen › Internetaccounts hinzu oder setze die ICS-Adresse unter Andere Kalender ein (nur lesen).",
         "notbuilt.drive": "Synchronisiere den Ordner mit dem Finder: Nook findet und liest dann die Dokumente.",
         "notbuilt.tasks": "Lies sie als eigene Quelle mit ihrer REST-API und einem Schlüssel (z. B. https://api.todoist.com/rest/v2 | Bearer …). Aufgaben anlegen geht noch nicht.",
-        "notbuilt.chat": "Verknüpfe Discord über Beeper Desktop in Chats oder sende über einen Discord-Webhook als eigene Quelle.",
+        "notbuilt.chat": "Discord-Nachrichten kommen über ihre Mitteilungen in Chats, oder sende über einen Discord-Webhook als eigene Quelle.",
     ]
 ]

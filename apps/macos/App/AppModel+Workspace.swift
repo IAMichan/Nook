@@ -343,11 +343,15 @@ extension AppModel {
             ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
+        // Each refresh scans every agent's session files: once the account shows the new login, stop asking.
+        let before = history.profileAccounts[profile.id]
         Task { [weak self] in
             for _ in 0..<60 {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
-                self?.history.refresh(minimumInterval: 0)
-                self?.refreshQuotas()
+                guard let self else { return }
+                self.history.refresh(minimumInterval: 0)
+                self.refreshQuotas()
+                if self.history.profileAccounts[profile.id] != before { return }
             }
         }
     }
@@ -372,10 +376,14 @@ extension AppModel {
             ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
             return
         }
+        let before = history.profileAccounts[profile.id]
         Task { [weak self] in
             for _ in 0..<12 {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
-                self?.history.refresh(minimumInterval: 0)
+                guard let self else { return }
+                self.history.refresh(minimumInterval: 0)
+                // Signed out: the scan that showed it was the last one needed.
+                if self.history.profileAccounts[profile.id] != before { return }
             }
         }
     }

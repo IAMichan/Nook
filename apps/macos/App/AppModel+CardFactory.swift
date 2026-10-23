@@ -153,7 +153,7 @@ extension AppModel {
         let card = NookCard(
             id: token,
             mood: .remind,
-            context: tr("app.loop.since", NookDates.short(loop.created)),
+            context: tr("app.loop.since", NookDates.short(loop.created, locale: NookDates.appLocale)),
             title: loop.title,
             detail: .none,
             primary: CardAction(label: tr("app.loop.done"), outcome: .callback("\(token)#done", tr("app.loop.checked"))),

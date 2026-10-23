@@ -3,7 +3,7 @@ import AppKit
 
 /// How Nook passes "read" on to a chat's own app.
 enum ChatReadHandoff: Equatable {
-    /// Nook tells the app itself (WhatsApp through the linked phone, Telegram once linked, a chat app linked in Beeper).
+    /// Nook tells the app itself (WhatsApp through the linked phone, Telegram once linked, a chat app linked through Nook's chat helper).
     case tells
     /// Nook cannot tell this app: it opens the chat's app, where you read it, and keeps it as read there.
     case opensApp
@@ -49,7 +49,7 @@ extension AppModel {
         case (.captured(let thread), .telegram(let chat)?):
             ChatCaptureService.shared.telegramBridge.markRead(chat: chat)
             ChatCaptureService.shared.markReadInApp(thread)
-        case (.captured(let thread), .beeper(let chat)?):
+        case (.captured(let thread), .linked(let chat)?):
             markLinkedChat(chat, read: true)
             ChatCaptureService.shared.markReadInApp(thread)
         case (.captured(let thread), _):
@@ -59,21 +59,5 @@ extension AppModel {
         }
         store.audit(tool: "chat_mark_read", args: "\(appName): \(entry.name)",
                     result: chatReadHandoff(entry) == .tells ? "doorgegeven" : "app geopend")
-    }
-}
-
-extension AppModel {
-    /// "Let Nook answer" for any chat, as on a WhatsApp card: Nook reads only this chat and writes an answer you approve
-    /// (where Nook cannot send, it is copied for the app).
-    func askNookAboutChat(_ entry: ChatsEntry) {
-        switch entry.origin {
-        case .whatsApp(let jid):
-            askNookAboutWhatsApp(jid, name: entry.name)
-        case .captured:
-            let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
-            ask(tr("chats.nookPrompt", entry.name, appName),
-                focus: [Prefetch.Call(tool: "chat_inbox", input: ["chat": entry.name, "app": entry.app, "limit": 20])],
-                reflects: false)
-        }
     }
 }

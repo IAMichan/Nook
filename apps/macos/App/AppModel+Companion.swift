@@ -34,6 +34,8 @@ extension AppModel {
             self.viewModel.removePending(id: token)
             if self.viewModel.isShowing(card: token) { self.presentWhatsApp(chat) }
         }
+        // A WhatsApp that went through Beeper links in Nook's own way from now on.
+        BeeperImporter.migrateSettings()
         WhatsAppLink.shared.start()
     }
 
@@ -370,10 +372,9 @@ extension AppModel {
     /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.
     func startAutocomplete() {
         let autocomplete = AutocompleteController.shared
-        autocomplete.facts = { [weak self] in
+        autocomplete.facts = { [weak self] context in
             guard let self, self.settings.useMemory else { return [] }
-            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil }
-                .sorted { $0.strength > $1.strength }.prefix(8).map(\.text)
+            return self.memory.book.forCompletion(context).map(\.text)
         }
         autocomplete.screenText = { [weak self] bundleID in
             let windows = self?.screenContext.windows.filter { $0.bundleID == bundleID } ?? []
@@ -413,9 +414,16 @@ extension AppModel {
         }
         doubleTap.record = { [weak self] args, result in self?.store.audit(tool: "doubletap_edit", args: args, result: result) }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
-        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type.
+        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type. A click
+        // on it opens the notch, which lists every step and, once done, what Nook typed (`DoubleTapRunBar`).
         doubleTap.onStep = { [weak self] line in
-            self?.viewModel.showWork(line) { DoubleTap.shared.stop() }
+            self?.viewModel.showWork(line, opensPanel: true) { DoubleTap.shared.stop() }
+        }
+        doubleTap.showSteps = { [weak self] in
+            // An open panel already shows the steps under its tabs.
+            guard let self else { return }
+            if case .panel = self.viewModel.state { return }
+            self.viewModel.openPanel()
         }
         doubleTap.onStepsEnd = { [weak self] last in
             // Only the step line goes: a result shown in its place since (a toast, a card) stays.

@@ -1,7 +1,7 @@
 import Foundation
 
 /// What every chat bridge's data needs from a JSON answer, in one place: the object of an answer, an ISO 8601 date (with
-/// or without a fraction, as Beeper, Nook's helper and Microsoft Graph write them) and an id as one segment of a path.
+/// or without a fraction, as Nook's chat helper and Microsoft Graph write them) and an id as one segment of a path.
 /// Foundation only, so it can be tested anywhere.
 enum ChatJSON {
     /// The JSON object of an answer; nil when it is none.

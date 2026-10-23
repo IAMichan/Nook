@@ -1,9 +1,9 @@
 import Foundation
 
 /// Links chat apps (Instagram, WhatsApp, Telegram, Teams…) from Settings › Chats › Linked chats, one login at a time,
-/// through the local chat service on this Mac that `BeeperBridge` reads: it lists what can be linked, walks a login
+/// through the local chat service on this Mac that `ChatServiceBridge` reads: it lists what can be linked, walks a login
 /// through its steps (fields to fill in, a QR code to scan, signing in on the app's website) and unlinks an account.
-/// Once a login is complete the app's chats come in through `BeeperBridge` like every linked chat.
+/// Once a login is complete the app's chats come in through `ChatServiceBridge` like every linked chat.
 @MainActor
 final class ChatLinker: ObservableObject {
     static let shared = ChatLinker()
@@ -23,7 +23,7 @@ final class ChatLinker: ObservableObject {
     @Published private(set) var stepProblem: String?
 
     private var waiting: Task<Void, Never>?
-    private var bridge: BeeperBridge { ChatCaptureService.shared.beeperBridge }
+    private var bridge: ChatServiceBridge { ChatCaptureService.shared.serviceBridge }
 
     private static func path(_ network: String) -> String { "/v1/bridges/" + ChatJSON.segment(network) }
 
@@ -31,8 +31,8 @@ final class ChatLinker: ObservableObject {
     func refresh() async {
         // Nook's own helper, when this build has it: it links the apps Nook cannot link in the app itself.
         if ChatHelper.isBuilt { await ChatHelper.shared.start() }
-        serviceRuns = ChatHelper.shared.isRunning ? true : await ChatHelper.answers(at: BeeperBridge.base)
-        guard serviceRuns, let token = BeeperBridge.token else {
+        serviceRuns = ChatHelper.shared.isRunning
+        guard serviceRuns, let token = ChatServiceBridge.token else {
             networks = []
             problem = nil
             return
@@ -82,14 +82,14 @@ final class ChatLinker: ObservableObject {
             linking = nil
             isSending = false
         }
-        guard let session, !session.isOver, let token = BeeperBridge.token else { return }
+        guard let session, !session.isOver, let token = ChatServiceBridge.token else { return }
         _ = try? await bridge.call("DELETE", Self.path(session.network) + "/login-sessions/" + ChatJSON.segment(session.id), nil,
                                    token: token, timeout: 15, failure: tr("chats.link.failed"), plain: true)
     }
 
     /// Unlinks an account from this Mac, after you confirmed it.
     func unlink(_ account: ChatLinkData.Account, in network: ChatLinkData.Network) async {
-        guard let login = account.login, let token = BeeperBridge.token else { return }
+        guard let login = account.login, let token = ChatServiceBridge.token else { return }
         do {
             _ = try await bridge.call("POST", Self.path(network.id) + "/logins/" + ChatJSON.segment(login) + "/remove",
                                       ["scope": "current-device"], token: token, timeout: 30, failure: tr("chats.link.failed"), plain: true)
@@ -112,8 +112,8 @@ final class ChatLinker: ObservableObject {
 
     /// Sends one request of the login and takes the session it answers with.
     private func send(_ request: @escaping (String) async throws -> Data) async {
-        guard let token = BeeperBridge.token else {
-            stepProblem = tr("chats.link.noToken")
+        guard let token = ChatServiceBridge.token else {
+            stepProblem = tr("chats.service.unreachable")
             return
         }
         isSending = true
@@ -139,9 +139,9 @@ final class ChatLinker: ObservableObject {
             ToastCenter.shared.success(tr("chats.link.done", name))
             // The new account's chats come in right away, through the linked chats.
             let capture = ChatCaptureService.shared
-            capture.setSource(capture.beeperBridge.app, on: true)
-            capture.beeperBridge.reset()
-            capture.bridgeChanged(capture.beeperBridge.app)
+            capture.setSource(capture.serviceBridge.app, on: true)
+            capture.serviceBridge.reset()
+            capture.bridgeChanged(capture.serviceBridge.app)
             await refresh()
         case .failed:
             stepProblem = next.problem ?? tr("chats.link.failed")
@@ -161,7 +161,7 @@ final class ChatLinker: ObservableObject {
         waiting?.cancel()
         guard let step = shown.step, let stepID = step.id else { return }
         waiting = Task { [weak self] in
-            guard let self, let token = BeeperBridge.token else { return }
+            guard let self, let token = ChatServiceBridge.token else { return }
             let base = Self.path(shown.network) + "/login-sessions/" + ChatJSON.segment(shown.id)
             // A service that does not wait on the step answers at once with an error: from then on it is only looked at.
             var answers = true

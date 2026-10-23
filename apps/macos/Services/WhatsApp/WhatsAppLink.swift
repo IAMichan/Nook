@@ -73,7 +73,7 @@ enum WhatsAppSettings {
         }
     }
 
-    /// GOWA: `user:pass` for basic auth. OpenWA: the API key. Beeper: the access token.
+    /// GOWA: `user:pass` for basic auth. OpenWA: the API key.
     static var credential: String? { SecretStore.read(credentialAccount) }
 
     static func setCredential(_ value: String) {
@@ -95,7 +95,6 @@ enum WhatsAppSettings {
         switch gateway {
         case .gowa: return GOWAProvider(base: base, basicAuth: credential)
         case .openwa: return OpenWAProvider(base: base, apiKey: credential)
-        case .beeper: return BeeperProvider(base: base, token: credential)
         }
     }
 }
@@ -268,7 +267,7 @@ final class WhatsAppLink: ObservableObject {
         self.provider = provider
         generation += 1
         link = .connecting
-        if provider.kind.hasWebhook { startListener(kind: provider.kind) }
+        startListener(kind: provider.kind)
         WhatsAppGOWAProcess.shared.sync()
         let timer = Timer(timeInterval: 5, repeats: true) { _ in
             MainActor.assumeIsolated { WhatsAppLink.shared.onTick() }
@@ -324,8 +323,7 @@ final class WhatsAppLink: ObservableObject {
             refresh()
         } else {
             if tick % 12 == 0 { refresh() }
-            // Without a webhook (Beeper) every tick: its API is on this Mac, so asking costs nothing.
-            if tick % 4 == 0 || provider?.kind.hasWebhook == false { poll() }
+            if tick % 4 == 0 { poll() }
         }
     }
 
@@ -341,7 +339,7 @@ final class WhatsAppLink: ObservableObject {
                 let status = try await provider.status()
                 guard gen == generation else { return }
                 failures = 0
-                // Written only when changed: every write redraws whatever watches the link.
+                // Asked every few seconds: publish only what changed, since the panel redraws for every write.
                 if me != status.me { me = status.me }
                 switch status.link {
                 case .connected:
@@ -374,15 +372,15 @@ final class WhatsAppLink: ObservableObject {
     }
 
     private func apply(_ error: WAError) {
-        let failed: Link
+        let next: Link
         switch error {
-        case .unreachable: failed = .unreachable
-        case .unauthorized: failed = .unauthorized
-        case .notLoggedIn: failed = .needsQR
-        case .refused(let why): failed = .failed(why)
+        case .unreachable: next = .unreachable
+        case .unauthorized: next = .unauthorized
+        case .notLoggedIn: next = .needsQR
+        case .refused(let why): next = .failed(why)
         }
-        // A gateway that stays down is asked every few seconds: the same answer redraws nothing.
-        if link != failed { link = failed }
+        // A gateway that stays down reports the same every few seconds.
+        if link != next { link = next }
         guard error != .notLoggedIn else { return }
         failures += 1
         // GOWA started by Nook and gone (crash, killed): started again, once a minute at most.
@@ -490,9 +488,20 @@ final class WhatsAppLink: ObservableObject {
         lastPoll = Date()
     }
 
+    /// How many of the phone's chats Nook lists at most: every one the gateway knows, short of an account so large
+    /// that listing it would slow the Chats tab and search down.
+    static let chatListLimit = 5000
+
     private func loadChats(_ provider: WhatsAppProvider, gen: Int) async {
         lastChatList = Date()
-        guard let chats = try? await provider.chats(limit: 200), gen == generation else { return }
+        let chats: [WAChatInfo]
+        do {
+            chats = try await provider.chats(limit: Self.chatListLimit)
+        } catch {
+            Log.connectors.error("WhatsApp: chat list failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard gen == generation else { return }
         knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread) }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
@@ -561,15 +570,18 @@ final class WhatsAppLink: ObservableObject {
     private func ingest(_ messages: [WAMessage], announce: Bool) {
         var fresh: String?
         let quietBefore = Date().addingTimeInterval(-Self.freshness)
-        // Added to a copy and published once, only when something changed: a poll overlaps the one before, so most of
-        // what it brings is already here, and each `add` on `inbox` itself would redraw every chat view.
+        // Added to a copy and published once, only when something changed: a poll overlaps the last one, so most of what
+        // it brings is already here, and every write to the published inbox redraws the panel.
         var next = inbox
+        var keys: [String] = []
         for message in messages {
+            let key = WAJID.normalized(message.chat)
             let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
-            if outcome == .notify, !message.fromMe { fresh = WAJID.normalized(message.chat) }
+            if !keys.contains(key) { keys.append(key) }
+            if outcome == .notify, !message.fromMe { fresh = key }
         }
         if next != inbox { inbox = next }
-        for key in Set(messages.map { WAJID.normalized($0.chat) }) { nameGroupIfNeeded(key) }
+        for key in keys { nameGroupIfNeeded(key) }
         if announce, let fresh { onMessage?(fresh) }
     }
 
@@ -609,7 +621,7 @@ final class WhatsAppLink: ObservableObject {
     func loadAvatars(_ chats: [String]) async {
         guard let provider, isConnected else { return }
         let gen = generation
-        for chat in chats.map(WAJID.normalized) where !WAJID.isBeeper(chat) && WAJID.kind(chat) != .status {
+        for chat in chats.map(WAJID.normalized) where WAJID.kind(chat) != .status {
             // The Chats tab starts this again (and cancels the run before) when the chat list comes in: a cancelled run
             // stops here, before it marks the chats it did not get to as asked for six hours.
             if Task.isCancelled { return }
@@ -940,7 +952,7 @@ final class WhatsAppLink: ObservableObject {
     func chatChoices() -> [(name: String, detail: String)] {
         var seen: Set<String> = []
         var choices: [(name: String, detail: String)] = []
-        let label = WhatsAppSettings.gateway.chatLabel
+        let label = "WhatsApp"
         for conversation in inbox.sorted where seen.insert(conversation.id).inserted {
             choices.append((conversation.name, conversation.unread > 0
                 ? label + " · " + tr("whatsapp.card.unread", conversation.unread) : label))

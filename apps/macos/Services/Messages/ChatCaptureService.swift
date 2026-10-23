@@ -45,12 +45,13 @@ final class ChatCaptureService: ObservableObject {
     let slackBridge = SlackBridge()
     let telegramBridge = TelegramBridge()
     let teamsBridge = TeamsBridge()
-    /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every network linked in Beeper.
+    /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every app linked through Nook's own chat
+    /// helper.
     let whatsAppDesktopBridge = WhatsAppDesktopBridge()
-    let beeperBridge = BeeperBridge()
-    /// Beeper goes last: a network another bridge reads is left to that one.
+    let serviceBridge = ChatServiceBridge()
+    /// The chat helper goes last: an app another bridge reads is left to that one.
     private var bridges: [ChatBridge] {
-        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, beeperBridge]
+        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, serviceBridge]
     }
 
     /// You logged in to an app from its row in Settings › Chats: it is switched on, collecting with it, and read now.
@@ -109,14 +110,14 @@ final class ChatCaptureService: ObservableObject {
         inbox.trim()
         self.inbox = inbox
         enabled = ConnectorToggle.isOn(ChatInboxConnector.sourceID, default: false)
-        beeperBridge.skips = { [weak self] app in
+        serviceBridge.skips = { [weak self] app in
             guard let self else { return false }
-            return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.beeperBridge }
+            return self.bridges.contains { $0.app == app && $0.isWorking && $0 !== self.serviceBridge }
         }
         // A chat changed there this moment (its live line said so): read it at the next tick, not at its next turn.
-        beeperBridge.onChange = { [weak self] in
+        serviceBridge.onChange = { [weak self] in
             guard let self else { return }
-            self.bridgeDue[self.beeperBridge.app] = nil
+            self.bridgeDue[self.serviceBridge.app] = nil
         }
     }
 
@@ -157,7 +158,7 @@ final class ChatCaptureService: ObservableObject {
         timer = nil
         generation += 1
         telegramBridge.stop()
-        beeperBridge.stop()
+        serviceBridge.stop()
         status = .off
     }
 
@@ -254,7 +255,7 @@ final class ChatCaptureService: ObservableObject {
 
     /// A working bridge brings this app's messages itself: its notifications would only repeat them.
     private func isBridged(_ app: String) -> Bool {
-        bridges.contains { $0.app == app && $0.isWorking } || (beeperBridge.isWorking && beeperBridge.covered.contains(app))
+        bridges.contains { $0.app == app && $0.isWorking } || (serviceBridge.isWorking && serviceBridge.covered.contains(app))
     }
 
     /// Time between the quick reads after a bridged app's notification.
@@ -278,6 +279,8 @@ final class ChatCaptureService: ObservableObject {
             // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
             // quiet tick every second costs no redraw.
             guard sources.isOn(bridge.app), bridge.isReady else {
+                // This runs every second for every bridge that is off: write only on a change, since each write to a
+                // published property redraws every view that watches the inbox.
                 if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
                 if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
                 continue
@@ -288,11 +291,11 @@ final class ChatCaptureService: ObservableObject {
             bridgeDue[bridge.app] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
             do {
                 let chats = try await bridge.read()
-                // Merged into a copy: a merge on `inbox` itself publishes even when the chat was already there.
+                // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
                 var merged = inbox
-                var any = false
-                for chat in chats where merged.merge(chat) { any = true }
-                if any {
+                var mergedAny = false
+                for chat in chats where merged.merge(chat) { mergedAny = true }
+                if mergedAny {
                     inbox = merged
                     changed = true
                 }
@@ -392,6 +395,14 @@ final class ChatCaptureService: ObservableObject {
     func remove(_ id: String) {
         inbox.remove(id)
         save()
+    }
+
+    /// Chats brought over from another app (`BeeperImporter`), merged like a bridge's; how many changed.
+    func importChats(_ chats: [BridgedChat]) -> Int {
+        var changed = 0
+        for chat in chats where inbox.merge(chat) { changed += 1 }
+        if changed > 0 { save() }
+        return changed
     }
 
     /// Forgets every collected chat; the next look starts after the newest notification.

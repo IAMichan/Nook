@@ -19,6 +19,8 @@ struct MemorySettingsSection: View {
     @State private var draftProblem: String?
     @State private var editing: String?
     @State private var editText = ""
+    /// Why the edited text cannot be kept; the field stays open until it can.
+    @State private var editProblem: String?
     @State private var confirmClear = false
     @State private var importable: [ImportFile] = []
     @State private var imported: Int?
@@ -125,7 +127,7 @@ struct MemorySettingsSection: View {
         Section {
             ForEach(importable) { file in
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(tr("memory.import.found", file.count))
                         Text(file.url.path).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
                     }
@@ -163,10 +165,14 @@ struct MemorySettingsSection: View {
                 if editing == item.id {
                     TextField("", text: $editText)
                         .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            app.memory.edit(item.id, text: editText)
+                        .onSubmit { commitEdit(item) }
+                        .onExitCommand {
                             editing = nil
+                            editProblem = nil
                         }
+                    if let editProblem {
+                        SettingNote(editProblem, tone: .warning)
+                    }
                 } else {
                     Text(Self.display(item)).textSelection(.enabled)
                 }
@@ -178,10 +184,10 @@ struct MemorySettingsSection: View {
         } actions: {
             Button {
                 if editing == item.id {
-                    app.memory.edit(item.id, text: editText)
-                    editing = nil
+                    commitEdit(item)
                 } else {
                     editText = Self.display(item)
+                    editProblem = nil
                     editing = item.id
                 }
             } label: {
@@ -199,13 +205,26 @@ struct MemorySettingsSection: View {
             }
             .help(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
             .accessibilityLabel(tr(item.localOnly ? "memory.settings.shareable" : "memory.settings.localOnly"))
-            Button(role: .destructive) { app.memory.delete(item.id) } label: {
-                Image(systemName: "trash")
+            ConfirmedButton(symbol: "trash", title: tr("memory.settings.delete"), question: tr("confirm.remove", Self.display(item))) {
+                app.memory.delete(item.id)
             }
-            .help(tr("memory.settings.delete"))
-            .accessibilityLabel(tr("memory.settings.delete"))
+            .labelled(tr("memory.settings.delete"))
         }
         .buttonStyle(.borderless)
+    }
+
+    /// Keeps the edited text, or leaves the field open with the reason when Nook would not keep it.
+    private func commitEdit(_ item: MemoryItem) {
+        // The same check `NookMemory.edit` makes on the cleaned text, so a rejected edit never closes silently.
+        let cleaned = MemoryText.clean(editText)
+        if let reason = MemoryText.problem(cleaned) {
+            editProblem = tr("memory.rejected." + reason)
+            return
+        }
+        if cleaned.isEmpty { return }
+        app.memory.edit(item.id, text: editText)
+        editProblem = nil
+        editing = nil
     }
 
     /// A habit reads as a sentence for the user; everything else as Nook stored it.

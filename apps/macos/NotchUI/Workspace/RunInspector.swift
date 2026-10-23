@@ -52,12 +52,12 @@ struct RunInspector: View {
             InfoRow(label: tr("ws.inspector.project"), value: run.projectName)
             InfoRow(label: tr("ws.inspector.folder"), value: AgentPathFormat.tilde(run.workingDirectory), mono: true)
             if run.repoRoot == nil {
-                InfoRow(label: "Git", value: tr("ws.inspector.noRepo"))
+                InfoRow(label: tr("ws.inspector.git"), value: tr("ws.inspector.noRepo"))
             } else {
                 InfoRow(label: tr("ws.inspector.branch"), value: workspace.git[runID]?.status?.branch ?? run.branch, mono: true)
                 if run.isolation == .worktree {
                     InfoRow(label: tr("ws.inspector.base"), value: run.baseBranch, mono: true)
-                    InfoRow(label: "Worktree", value: workspace.worktreeExists(run) ? tr("ws.inspector.worktreeIsolated") : tr("ws.inspector.worktreeRemoved"))
+                    InfoRow(label: tr("ws.worktrees.col.worktree"), value: workspace.worktreeExists(run) ? tr("ws.inspector.worktreeIsolated") : tr("ws.inspector.worktreeRemoved"))
                 } else {
                     InfoRow(label: tr("ws.inspector.isolation"), value: tr("ws.inspector.sharedFolder"),
                             help: tr("ws.inspector.sharedFolderHelp"))
@@ -66,7 +66,7 @@ struct RunInspector: View {
                     InfoRow(label: tr("ws.inspector.divergence"), value: tr("ws.inspector.aheadBehind", divergence.ahead, divergence.behind))
                 }
                 if let status = workspace.git[runID]?.status, status.upstream != nil {
-                    InfoRow(label: "Upstream", value: "\(status.upstream ?? "") (↑\(status.ahead) ↓\(status.behind))", mono: true)
+                    InfoRow(label: tr("ws.inspector.upstream"), value: "\(status.upstream ?? "") (↑\(status.ahead) ↓\(status.behind))", mono: true)
                 }
             }
             HStack(spacing: NookTheme.Spacing.sm) {

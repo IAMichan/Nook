@@ -1,7 +1,7 @@
 import Foundation
 
-/// A live line to the local chat service of `BeeperBridge` (its `/v1/ws` socket on this Mac): it says which chat changed
-/// the moment it does, so the bridge reads that chat now instead of at its next turn. It says nothing more; what changed
+/// A live line to Nook's chat helper that `ChatServiceBridge` reads (its `/v1/ws` socket on this Mac): it says which chat
+/// changed the moment it does, so the bridge reads that chat now instead of at its next turn. It says nothing more; what changed
 /// is read the usual way. Delivery is at most once and nothing is replayed after a drop, so `onDrop` reads everything
 /// again once.
 @MainActor
@@ -99,9 +99,9 @@ final class ChatLiveStream {
         @unknown default: data = nil
         }
         guard let data, let json = ChatJSON.object(data) else { return }
-        switch BeeperData.event(json) {
+        switch ChatServiceData.event(json) {
         case .ready:
-            guard let body = try? JSONSerialization.data(withJSONObject: BeeperData.subscribeAll),
+            guard let body = try? JSONSerialization.data(withJSONObject: ChatServiceData.subscribeAll),
                   let text = String(data: body, encoding: .utf8) else { return }
             task.send(.string(text)) { _ in }
         case .subscribed:

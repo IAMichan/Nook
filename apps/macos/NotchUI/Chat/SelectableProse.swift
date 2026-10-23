@@ -57,18 +57,25 @@ struct SelectableProse: NSViewRepresentable {
             .cursor: NSCursor.pointingHand,
         ]
         let text = Self.attributed(blocks, size: size)
-        guard let storage = view.textStorage, !storage.isEqual(to: text) else { return }
+        // The cache hands back the same text for the same blocks: skip comparing it character by character on every
+        // redraw (hover, scrolling, another message streaming in).
+        guard text !== context.coordinator.shown else { return }
+        guard let storage = view.textStorage, !storage.isEqual(to: text) else {
+            context.coordinator.shown = text
+            return
+        }
+        context.coordinator.shown = text
         // A streaming answer only grows: keep what the user already selected.
         let selection = view.selectedRanges
         storage.setAttributedString(text)
-        context.coordinator.measure.setAttributedString(text)
+        context.coordinator.setMeasured(text)
         let kept = selection.filter { NSMaxRange($0.rangeValue) <= text.length }
         view.selectedRanges = kept.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : kept
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: NSTextView, context: Context) -> CGSize? {
         if let storage = view.textStorage, context.coordinator.measure.length != storage.length {
-            context.coordinator.measure.setAttributedString(storage)
+            context.coordinator.setMeasured(storage)
         }
         let proposed = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         let used = context.coordinator.usedSize(width: proposed ?? 10_000)
@@ -78,6 +85,10 @@ struct SelectableProse: NSViewRepresentable {
     /// Measures on its own layout stack: probing sizes on the text view's container would leave it at a probed width.
     final class Coordinator: NSObject, NSTextViewDelegate {
         let measure = NSTextStorage()
+        /// The text last put in the view, so an unchanged redraw returns at once.
+        var shown: NSAttributedString?
+        /// The last measured width and its size: SwiftUI asks again for the same width on every layout pass.
+        private var measured: (width: CGFloat, size: CGSize)?
         /// The session's folder, for a relative file link in the text.
         var fileLinkBase: String?
         var pullRequestLinksBeside = false
@@ -115,10 +126,19 @@ struct SelectableProse: NSViewRepresentable {
             measure.addLayoutManager(layout)
         }
 
+        /// Puts new text in the measuring stack and forgets the sizes measured for the old one.
+        func setMeasured(_ text: NSAttributedString) {
+            measure.setAttributedString(text)
+            measured = nil
+        }
+
         func usedSize(width: CGFloat) -> CGSize {
+            if let measured, measured.width == width { return measured.size }
             container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
             layout.ensureLayout(for: container)
-            return layout.usedRect(for: container).size
+            let size = layout.usedRect(for: container).size
+            measured = (width, size)
+            return size
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {

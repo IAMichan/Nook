@@ -2,7 +2,7 @@ import Foundation
 
 /// What you send in a chat besides text, the same for every chat app: a file (a photo, a video, a GIF, a sticker, an
 /// audio or voice message, any document) with an optional caption, a poll, a place, or a contact card. The Chats tab
-/// builds it; each app's bridge turns it into that app's own request (`WASend` for the WhatsApp gateways and Beeper,
+/// builds it; each app's bridge turns it into that app's own request (`WASend` for the WhatsApp gateways and Nook's chat helper,
 /// `TelegramData.content` for Telegram). Foundation only, so it can be tested anywhere.
 enum ChatOutgoing: Equatable, Sendable {
     case file(ChatAttachment)
@@ -28,7 +28,7 @@ enum ChatOutgoing: Equatable, Sendable {
 
         /// Everything WhatsApp and Telegram send themselves.
         static let everything = Set(allCases)
-        /// What an app sends when it has no polls of its own (Beeper's networks): files, and a place or a contact as text.
+        /// What an app sends when it has no polls of its own (the apps Nook's chat helper links): files, and a place or a contact as text.
         static let noPolls = everything.subtracting([.poll])
     }
 
@@ -54,7 +54,7 @@ enum ChatOutgoing: Equatable, Sendable {
         }
     }
 
-    /// The same as plain text, for an app that cannot send it as itself (a place or a contact in a Beeper chat).
+    /// The same as plain text, for an app that cannot send it as itself (a place or a contact in a chat the helper links).
     var text: String {
         switch self {
         case .file(let attachment): return attachment.caption

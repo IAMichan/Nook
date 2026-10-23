@@ -13,7 +13,7 @@ struct MCPPreset: Identifiable {
     let envLabels: [String: String]
     let envPlaceholders: [String: String]
     let helpURL: URL?
-    /// The default command is the address of a server that is already running (Beeper Desktop), not a program to start.
+    /// The default command is the address of a server that is already running, not a program to start.
     var isRemote = false
     /// Goes before the typed value, such as "Bearer " for an Authorization header.
     var envPrefixes: [String: String] = [:]
@@ -69,19 +69,6 @@ struct MCPPreset: Identifiable {
                 envLabels: ["BRAVE_API_KEY": tr("mcp.preset.brave-search.key")],
                 envPlaceholders: ["BRAVE_API_KEY": "BSA..."],
                 helpURL: URL(string: "https://brave.com/search/api/")
-            ),
-            MCPPreset(
-                id: "beeper",
-                iconDomain: "beeper.com",
-                fallbackIcon: "bubble.left.and.bubble.right.fill",
-                tint: Color(hex: 0x6B5CE7),
-                defaultCommand: "http://localhost:23373/v0/mcp",
-                requiredEnv: ["Authorization"],
-                envLabels: ["Authorization": tr("mcp.preset.beeper.key")],
-                envPlaceholders: ["Authorization": tr("mcp.wizard.keyPrompt")],
-                helpURL: URL(string: "https://developers.beeper.com/desktop-api/"),
-                isRemote: true,
-                envPrefixes: ["Authorization": "Bearer "]
             ),
             MCPPreset(
                 id: "puppeteer",
@@ -578,7 +565,7 @@ struct AddMCPServerWizardSheet: View {
         let transport: MCPServerConfig.Transport
 
         if isRemote {
-            // https anywhere, plain http only on this Mac (Beeper Desktop listens on localhost).
+            // https anywhere, plain http only on this Mac.
             guard let url = URL(string: commandOrURL.trimmingCharacters(in: .whitespaces)),
                   let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased(),
                   scheme == "https" || (scheme == "http" && (host == "localhost" || host == "127.0.0.1")) else {

@@ -637,8 +637,8 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(WAMembers.others(members, me: "31699999999@s.whatsapp.net").map(\.name), ["Anna"], "you are left out")
         let openwa = WAMembers.list([["id": ["_serialized": "31600000001@c.us"], "isAdmin": true], "31600000002@c.us"])
         XCTAssertEqual(openwa.map(\.ids), [["31600000001@c.us"], ["31600000002@c.us"]])
-        let beeper = WAMembers.list(["items": [["id": "@me", "isSelf": true], ["id": "@jan", "fullName": "Jan"]]])
-        XCTAssertEqual(beeper.map(\.name), ["Jan"])
+        let listed = WAMembers.list(["items": [["id": "@me", "isSelf": true], ["id": "@jan", "fullName": "Jan"]]])
+        XCTAssertEqual(listed.map(\.name), ["Jan"])
     }
 
     func testGatewayReceipts() {
@@ -671,60 +671,6 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(WAReceipt(status: "retry"))
     }
 
-    func testBeeperChatsAndAccounts() {
-        let accounts = Data(#"[{"accountID":"wa","status":"connected","user":{"id":"@me:beeper.com"}},{"accountID":"tg","status":"connecting","user":{"id":"@tg:beeper.local"}}]"#.utf8)
-        XCTAssertEqual(WABeeper.accounts(accounts)?.link, .connected)
-        XCTAssertEqual(WABeeper.accounts(accounts)?.me, ["@me:beeper.com", "@tg:beeper.local"])
-        XCTAssertEqual(WABeeper.accounts(Data(#"[{"status":"connecting","user":{"id":"x"}}]"#.utf8))?.link, .connecting)
-        XCTAssertNil(WABeeper.accounts(Data("[]".utf8)))
-
-        let chats = WABeeper.chats(Data(#"""
-        {"items":[
-          {"id":"!a:beeper.com","title":"Jan","type":"single","lastActivity":"2026-10-20T10:00:00.000Z"},
-          {"id":"!b:beeper.com","title":"Familie","type":"group","lastActivity":"2026-10-20T09:00:00.000Z"},
-          {"id":"!c:beeper.com","title":"Oud","type":"single","isArchived":true},
-          {"id":"!d:beeper.com","title":"Jan (alles)","type":"single","merge":{}},
-          {"id":"!e:beeper.com","title":"Jan op Telegram","type":"single","mergedIntoChatID":"!d:beeper.com"}
-        ]}
-        """#.utf8))
-        XCTAssertEqual(chats.map(\.jid), ["!a:beeper.com@beeper", "!b:beeper.com@beeper.group"])
-        XCTAssertEqual(chats.first?.name, "Jan")
-        XCTAssertEqual(WAJID.kind(chats[0].jid), .person)
-        XCTAssertEqual(WAJID.kind(chats[1].jid), .group)
-        // The ':' of a Beeper id is no device number.
-        XCTAssertEqual(WAJID.normalized(chats[0].jid), "!a:beeper.com@beeper")
-        XCTAssertEqual(WAJID.beeperChat(chats[1].jid), "!b:beeper.com")
-        XCTAssertNil(WAJID.appLink(chats[0].jid))
-    }
-
-    func testBeeperMessagesFeedTheInbox() {
-        let group = "!b:beeper.com@beeper.group"
-        let messages = WABeeper.messages(Data(#"""
-        {"items":[
-          {"id":"m1","senderID":"@piet:beeper.com","senderName":"Piet","text":"hoi","timestamp":"2026-10-20T09:00:00.000Z","mentions":["@me:beeper.com"]},
-          {"id":"m2","senderID":"@me:beeper.com","isSender":true,"type":"FILE","attachments":[{"type":"unknown","fileName":"offerte.pdf"}],"timestamp":"2026-10-20T09:01:00.000Z"},
-          {"id":"m3","senderID":"@piet:beeper.com","type":"REACTION","timestamp":"2026-10-20T09:02:00.000Z"},
-          {"id":"m4","senderID":"@piet:beeper.com","type":"AUDIO","attachments":[{"type":"audio","isVoiceNote":true,"duration":12}],"timestamp":"2026-10-20T09:03:00.000Z"}
-        ]}
-        """#.utf8), chat: group, name: "Familie", me: ["@me:beeper.com"])
-        XCTAssertEqual(messages.map(\.id), ["m1", "m2", "m4"])
-        XCTAssertTrue(messages[0].mentionsMe)
-        XCTAssertTrue(messages[1].fromMe)
-        XCTAssertEqual(messages[1].media, .document(name: "offerte.pdf"))
-        XCTAssertEqual(messages[2].media, .voice(seconds: 12))
-
-        // A mention in a quiet group still reaches you, like on WhatsApp.
-        var inbox = WAInbox()
-        XCTAssertEqual(inbox.add(messages[0], filters: WAFilters()), .notify)
-        XCTAssertEqual(inbox.conversations[group]?.name, "Familie")
-        XCTAssertTrue(inbox.conversations[group]?.isGroup == true)
-
-        XCTAssertEqual(WABeeper.attachment(Data(#"{"attachments":[{"srcURL":"mxc://beeper.com/x","fileName":"a.jpg"}]}"#.utf8))?.src,
-                       "mxc://beeper.com/x")
-        XCTAssertEqual(WAWebhook.parse(kind: .beeper, body: Data("{}".utf8)), .ignored)
-        XCTAssertFalse(WAGatewayKind.beeper.hasWebhook)
-    }
-
     /// An answer to a message carries what it answers, from the webhook and from the history of every gateway.
     func testRepliesKnowWhatTheyAnswer() {
         let gowa = Data(#"""
@@ -746,13 +692,6 @@ final class WhatsAppTests: XCTestCase {
         """#.utf8), me: nil)
         XCTAssertEqual(history.first?.replyTo, "Q3")
         XCTAssertEqual(history.first?.reactions, [WAReaction(emoji: "👍", sender: "317@s.whatsapp.net", fromMe: true)])
-
-        let beeper = WABeeper.messages(Data(#"""
-        {"items":[{"id":"m1","senderID":"@piet:beeper.com","text":"Prima","timestamp":"2026-10-20T09:00:00.000Z","linkedMessageID":"m0","reactions":[{"id":"@me:beeper.com","participantID":"@me:beeper.com","reactionKey":"❤️","emoji":true},{"id":"@piet:beeper.com","participantID":"@piet:beeper.com","reactionKey":"smiling-face","emoji":false}]}]}
-        """#.utf8), chat: "!a:beeper.com@beeper", name: "Piet", me: ["@me:beeper.com"])
-        XCTAssertEqual(beeper.first?.replyTo, "m0")
-        // A network's own reaction key is no emoji to show.
-        XCTAssertEqual(beeper.first?.reactions, [WAReaction(emoji: "❤️", sender: "@me:beeper.com", fromMe: true)])
     }
 
     /// One emoji per person: a new one replaces theirs, an empty one takes it back, and history brings them up to date.
