@@ -430,31 +430,36 @@ private struct SessionToolPanel: View {
         .onChange(of: bridge.unseen) { _, _ in bridge.markSeen(directory, tool.rawValue) }
     }
 
-    /// The open tabs, + to open another, and the button that closes the panel.
+    /// The open tabs, + to open another, and the button that closes the panel. The tabs scroll sideways when they do
+    /// not fit, so + and the close button always stay in view, also in a narrow panel with many tabs open.
     private var header: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            if !tabs.isEmpty {
-                NookTabBar(items: tabs.map { item in
-                    NookTabBar<SessionTool>.Item(value: item, title: item.title, symbol: item.symbol,
-                                                 fresh: item != tool && (item == .outputs ? outputsFresh
-                                                                                         : bridge.hasUnseen(directory, item.rawValue)),
-                                                 help: item.help)
-                }, selected: tool, onSelect: show, onClose: closeTab)
+        HStack(spacing: NookTheme.Spacing.sm) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    tabBar
+                    addMenu
+                }
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    ScrollView(.horizontal, showsIndicators: false) { tabBar }
+                    addMenu
+                }
             }
-            addMenu
-            Spacer(minLength: 8)
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(NookTheme.font(10.5, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(closeHelp)
-            .accessibilityLabel(closeHelp)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            ToolbarIconButton("xmark", closeHelp, height: 26, width: 26, close)
         }
         .frame(height: 34)
+    }
+
+    @ViewBuilder
+    private var tabBar: some View {
+        if !tabs.isEmpty {
+            NookTabBar(items: tabs.map { item in
+                NookTabBar<SessionTool>.Item(value: item, title: item.title, symbol: item.symbol,
+                                             fresh: item != tool && (item == .outputs ? outputsFresh
+                                                                                     : bridge.hasUnseen(directory, item.rawValue)),
+                                             help: item.help)
+            }, selected: tool, onSelect: show, onClose: closeTab)
+        }
     }
 
     /// Under the tabs, so they keep the panel's full width: the terminal's folder and its actions.
