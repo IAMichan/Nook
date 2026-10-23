@@ -32,7 +32,7 @@ struct UsageView: View {
                     .foregroundStyle(NookTheme.textSecondary)
             }
             // Several accounts of one agent read as one pool first, then each account on its own.
-            ForEach(pools) { entry in
+            ForEach(UsagePools.entries(app)) { entry in
                 UsageLimitPoolView(kind: entry.kind, pool: entry.pool)
             }
             ForEach(app.connectedProfiles) { profile in
@@ -46,25 +46,6 @@ struct UsageView: View {
             }
         } footer: {
             Text(tr("ws.usage.quotaNote"))
-        }
-    }
-
-    /// Per agent with two or more accounts that report limits: their pool (`LimitPool`).
-    private struct PoolEntry: Identifiable {
-        var kind: AgentKind
-        var pool: LimitPool
-        var id: String { kind.rawValue }
-    }
-
-    private var pools: [PoolEntry] {
-        let byKind = Dictionary(grouping: app.connectedProfiles, by: \.kind)
-        return AgentKind.allCases.compactMap { kind in
-            guard let profiles = byKind[kind], profiles.count > 1 else { return nil }
-            let accounts = profiles.map { profile in
-                LimitPool.Account(id: profile.id, name: AccountLabel.name(profile, app: app),
-                                  limits: app.quota.limits(for: profile).map { LimitPool.Limit(label: $0.label, used: $0.percent, resetsAt: $0.resetsAt) })
-            }
-            return LimitPool.make(accounts).map { PoolEntry(kind: kind, pool: $0) }
         }
     }
 
