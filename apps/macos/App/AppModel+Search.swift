@@ -141,7 +141,8 @@ extension AppModel {
         }
     }
 
-    /// Every chat in the Chats tab: WhatsApp's with a linked phone, and the ones collected from other apps.
+    /// Every chat in the Chats tab: WhatsApp's with a linked phone, and the ones from other apps (Instagram, Telegram,
+    /// Messenger, Messages, Slack…), each with every message Nook has of it and a group's people.
     private func searchChats() -> [SearchDocument] {
         var documents: [SearchDocument] = []
         let link = WhatsAppLink.shared
@@ -155,9 +156,21 @@ extension AppModel {
                                   author: message.fromMe ? "me" : (message.senderName.isEmpty ? conversation.name : message.senderName),
                                   date: message.date, anchor: message.id)
                 }
+                var facets = ["app": "WhatsApp"]
+                if conversation.members != nil { facets["people"] = conversation.memberNames.joined(separator: " ") }
                 documents.append(SearchDocument(id: "chat:wa|" + conversation.id, kind: .chat, title: conversation.name, subtitle: "WhatsApp",
-                                                date: conversation.lastActivity, facets: ["app": "WhatsApp"], flags: flags,
+                                                date: conversation.lastActivity, facets: facets, flags: flags,
                                                 passages: passages, boost: unread > 0 ? 0.3 : 0))
+            }
+            // The phone's other chats, quiet since Nook was linked: found by their name, as the Chats tab lists them.
+            var listed = Set(documents.map(\.id))
+            for chat in link.knownChats where WAJID.kind(chat.jid) != .status && !link.filters.ignored.contains(chat.jid) {
+                let id = "chat:wa|" + chat.jid
+                guard listed.insert(id).inserted else { continue }
+                var flags: Set<String> = WAJID.kind(chat.jid) == .group ? ["group"] : []
+                if link.unread(chat.jid) > 0 { flags.insert("unread") }
+                documents.append(SearchDocument(id: id, kind: .chat, title: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
+                                                subtitle: "WhatsApp", date: chat.last, facets: ["app": "WhatsApp"], flags: flags))
             }
         }
         let capture = ChatCaptureService.shared
@@ -169,8 +182,10 @@ extension AppModel {
                 SearchPassage(text: message.summary, author: message.isMine ? "me" : (message.sender.isEmpty ? thread.name : message.sender),
                               date: message.date, anchor: message.id)
             }
+            var facets = ["app": app]
+            if let members = thread.members, !members.isEmpty { facets["people"] = members.joined(separator: " ") }
             documents.append(SearchDocument(id: "chat:" + thread.id, kind: .chat, title: thread.name, subtitle: app, date: thread.last,
-                                            facets: ["app": app], flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0))
+                                            facets: facets, flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0))
         }
         return documents
     }
