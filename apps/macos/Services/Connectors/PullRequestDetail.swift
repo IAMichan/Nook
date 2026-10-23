@@ -563,3 +563,19 @@ enum PullRequestDetailParser {
         return NookDates.isoPlain.date(from: text) ?? NookDates.isoFractional.date(from: text)
     }
 }
+
+extension PullRequestItem {
+    /// This row as the pull request's page last read it: its state, draft and conflict, so a tab or a side panel tab
+    /// that holds the row shows a merge, a close or a conflict as soon as the page knows.
+    func updated(from detail: PullRequestDetail) -> PullRequestItem {
+        var item = self
+        switch detail.state {
+        case .merged: item.state = .merged
+        case .closed: item.state = .closed
+        case .open, .draft: item.state = .open
+        }
+        item.draft = detail.state == .draft
+        item.conflict = detail.state == .open && detail.conflicted
+        return item
+    }
+}

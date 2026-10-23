@@ -115,6 +115,17 @@ struct PullRequestPill: View {
     }
 }
 
+extension PullRequestItem {
+    /// The mark for this pull request's state, as its tab and row show it: a conflict wears the conflict mark.
+    var stateGlyph: PullRequestBadge.Glyph {
+        switch state {
+        case .merged: return .merged
+        case .closed: return .closed
+        case .open: return conflict ? .conflict : draft ? .draft : .open
+        }
+    }
+}
+
 /// A pull request's state as a tinted capsule: GitHub's mark and the word ("Open", "Merged"), optionally after its
 /// number. The pull request page and the watched pull request above the composer both wear it.
 struct PullRequestStateBadge: View {

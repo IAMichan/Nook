@@ -78,7 +78,10 @@ struct PullRequestsPanel: View {
             PullRequestTabStrip(tabs: tabs, active: activeTab, select: { activeTab = $0 }, close: closeTabs)
             PullRequestDetailView(accountID: opened.account, item: opened.item, inline: inline,
                                   stack: PullRequestStack.stack(of: opened.item, in: items(of: opened.account)) ?? [],
-                                  onOpenPullRequest: { open(opened.account, $0) }) { activeTab = nil }
+                                  onOpenPullRequest: { open(opened.account, $0) },
+                                  onUpdate: { updated in
+                                      if let index = tabs.firstIndex(where: { $0.id == opened.id }) { tabs[index].item = updated }
+                                  }) { activeTab = nil }
                 .id(opened.id)
         }
     }
