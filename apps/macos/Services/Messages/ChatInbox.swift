@@ -504,6 +504,11 @@ enum ChatCapture {
             subtitle = name
             text = rest
         }
+        // The WhatsApp app titles a group's message with who wrote it and puts the group in the subtitle: the chat is
+        // the group, not a private chat with that person.
+        if app.id == "whatsapp", !fromBrowser, !subtitle.isEmpty {
+            swap(&title, &subtitle)
+        }
         // WhatsApp writes a group's message as "Anna @ Family".
         if subtitle.isEmpty, app.id == "whatsapp", let range = title.range(of: " @ ") {
             subtitle = String(title[..<range.lowerBound])
