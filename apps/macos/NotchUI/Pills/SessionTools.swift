@@ -10,6 +10,9 @@ enum SessionTool: String {
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.outputs, .terminal, .browser, .changes]
+    /// What the side panel's + menu and list of tools offer: the tools, then a pull request to pick (it opens beside
+    /// the session, never in the bottom panel).
+    static let launchable: [SessionTool] = panelTools + [.pullRequest]
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
     /// + menu, and not kept across launches).
     static let sideTabs: [SessionTool] = panelTools + [.pullRequest]
@@ -319,8 +322,22 @@ struct SessionWorkbench<Conversation: View>: View {
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
                          closeHelp: tr(slot.closeHelp), closeSymbol: slot.closeSymbol,
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
+                         openPullRequest: openPullRequest,
                          closeTab: { closeTab($0, in: slot) },
                          close: { viewModel[keyPath: slot.tool] = .conversation })
+    }
+
+    /// Opens the Pull request tab beside the session: on `request`, or on the list to pick one. Asked again while a pull
+    /// request is open there, it goes back to that list to pick another.
+    private func openPullRequest(_ request: PullRequestOpenRequest?) {
+        withAnimation(NookTheme.swap) {
+            if let request {
+                viewModel.sidePullRequest = request
+            } else if viewModel.sessionTool == .pullRequest {
+                viewModel.sidePullRequest = nil
+            }
+            viewModel.sessionTool = .pullRequest
+        }
     }
 
     /// Closes a tab; when it was the one in view, the tab next to it takes its place, or the list of tools.
@@ -407,6 +424,8 @@ private struct SessionToolPanel: View {
     let closeHelp: String
     let closeSymbol: String
     let show: (SessionTool) -> Void
+    /// Opens the Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
+    let openPullRequest: (PullRequestOpenRequest?) -> Void
     let closeTab: (SessionTool) -> Void
     let close: () -> Void
     @ObservedObject private var bridge = WorkspaceBridge.shared
@@ -421,7 +440,7 @@ private struct SessionToolPanel: View {
             Group {
                 switch tool {
                 case .picker:
-                    SessionToolPicker(directory: directory) { show($0) }
+                    SessionToolPicker(directory: directory) { launch($0) }
                 case .terminal: SessionTerminalsView(directory: directory).id(directory)
                 case .outputs: SessionOutputsPanel(outputs: outputs, selection: $outputSelection)
                 case .changes:
@@ -435,7 +454,7 @@ private struct SessionToolPanel: View {
                         PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item)
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
-                        SessionToolPicker(directory: directory) { show($0) }
+                        SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
                 default: BrowserView()
                 }
@@ -513,15 +532,20 @@ private struct SessionToolPanel: View {
                 .contentShape(Rectangle())
         } content: {
             DropdownHeader(title: tr("agents.tool.add"))
-            ForEach(SessionTool.panelTools, id: \.self) { item in
+            ForEach(SessionTool.launchable, id: \.self) { item in
                 DropdownRow(symbol: item.symbol, title: item.title, chosen: item == tool,
                             disabledReason: item.available(in: directory) ? nil : tr("agents.tool.needsFolder")) {
-                    show(item)
+                    launch(item)
                 }
             }
         }
         .help(tr("agents.tool.add"))
         .accessibilityLabel(tr("agents.tool.add"))
+    }
+
+    /// Opens a tool from the + menu or the list of tools; a pull request opens beside the session, on the list to pick.
+    private func launch(_ item: SessionTool) {
+        if item == .pullRequest { openPullRequest(nil) } else { show(item) }
     }
 }
 
@@ -532,7 +556,7 @@ private struct SessionToolPicker: View {
     let onOpen: (SessionTool) -> Void
 
     var body: some View {
-        SidePanelLauncher(title: tr("agents.tool.pick"), items: SessionTool.panelTools.map { tool in
+        SidePanelLauncher(title: tr("agents.tool.pick"), items: SessionTool.launchable.map { tool in
             SidePanelLaunch(id: tool.rawValue, symbol: tool.symbol, title: tool.title, key: tool.key,
                             disabledReason: tool.available(in: directory) ? nil : tr("agents.tool.needsFolder")) { onOpen(tool) }
         })
