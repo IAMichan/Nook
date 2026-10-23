@@ -289,9 +289,7 @@ impl WhatsAppLink {
             i.link = Some(Link::Connecting);
             i.rate = Some(RateLimit::new(6, 60));
         });
-        if kind.has_webhook() {
-            self.start_listener(kind);
-        }
+        self.start_listener(kind);
         self.sync_gowa();
         let me = Arc::downgrade(self);
         let timer = tokio::spawn(async move {
@@ -339,9 +337,9 @@ impl WhatsAppLink {
     }
 
     fn on_tick(self: &Arc<Self>) {
-        let (tick, connected, failures, webhook) = self.with(|i| {
+        let (tick, connected, failures) = self.with(|i| {
             i.tick += 1;
-            (i.tick, i.link == Some(Link::Connected), i.failures, i.provider.as_ref().is_none_or(|p| p.kind.has_webhook()))
+            (i.tick, i.link == Some(Link::Connected), i.failures)
         });
         if !connected {
             // Elke 5 s tijdens het koppelen; elke 30 s als de koppeling al een minuut weg is.
@@ -353,8 +351,7 @@ impl WhatsAppLink {
             if tick % 12 == 0 {
                 self.refresh();
             }
-            // Without a webhook (Beeper) every tick: its API is on this computer, so asking costs nothing.
-            if tick % 4 == 0 || !webhook {
+            if tick % 4 == 0 {
                 self.poll();
             }
         }

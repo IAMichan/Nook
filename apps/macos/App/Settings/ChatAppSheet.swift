@@ -5,8 +5,8 @@ import WebKit
 /// Linking one chat app, or managing it once it is linked, in numbered steps. Nook links the apps it reads itself in its
 /// own way, with nothing else needed: WhatsApp with a QR code from your phone, Teams with a code from Microsoft, Slack
 /// with a token, Messages from this Mac. Telegram, Instagram, Messenger, Signal, X and LinkedIn link through the chat
-/// service on this Mac (Nook's own helper, as Beeper does it: your phone number and a code, logging in on the app's own
-/// website, or a QR code), which is also offered as another way for the rest while it runs. A build without the helper
+/// service on this Mac (Nook's own helper: your phone number and a code, logging in on the app's own website, or a QR
+/// code), which is also offered as another way for the rest while it runs. A build without the helper
 /// links Telegram itself, through TDLib.
 struct ChatAppSheet: View {
     let app: String
@@ -14,7 +14,7 @@ struct ChatAppSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var linker = ChatLinker.shared
-    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
+    @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     @State private var unlinking: ChatLinkData.Account?
     @State private var showService = false
 
@@ -93,7 +93,7 @@ struct ChatAppSheet: View {
     private func accounts(_ network: ChatLinkData.Network) -> some View {
         ForEach(network.accounts) { account in
             ServiceRowLayout(domain: site, symbol: "person.crop.circle", tint: NookTheme.iris, title: account.name,
-                             detail: account.isConnected ? (linked.isLive ? tr("chats.linked.liveDetail") : tr("chats.beeper.connectedDetail"))
+                             detail: account.isConnected ? (linked.isLive ? tr("chats.linked.liveDetail") : tr("chats.service.connectedDetail"))
                                  : (account.status ?? tr("chats.apps.reconnect")),
                              status: account.isConnected ? .connected : .expired, source: app) {
                 if !account.isConnected, network.canLink {
@@ -108,21 +108,20 @@ struct ChatAppSheet: View {
 
     // MARK: Linking through the chat service
 
-    /// Its access token (once), then the app's login as the service asks for it.
+    /// The helper running (it starts by itself), then the app's login as the helper asks for it.
     @ViewBuilder
     private var serviceSteps: some View {
-        let ready = BeeperBridge.token != nil && linker.problem == nil && !linker.networks.isEmpty
+        let ready = ChatServiceBridge.token != nil && linker.problem == nil && !linker.networks.isEmpty
         if !ready {
             SetupStep(number: 1, title: tr("chats.link.step.service"), done: false) {
                 Text(tr("chats.link.step.serviceDetail"))
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                BeeperSettingsRows(capture: capture)
-                if let problem = linker.problem, BeeperBridge.token != nil {
+                if let problem = linker.problem ?? ChatHelper.shared.problem {
                     SettingNote(problem, tone: .error)
-                    Button(tr("chats.status.retry")) { Task { await linker.refresh() } }
                 }
+                Button(tr("chats.status.retry")) { Task { await linker.refresh() } }
             }
         }
         SetupStep(number: ready ? 1 : 2, title: tr("chats.link.step.login", name), done: false) {

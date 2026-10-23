@@ -1,9 +1,10 @@
 import Foundation
 
-/// Beeper Desktop's local API (Settings › Developers in Beeper, port 23373) as chats for the Chats tab: every network
-/// linked in Beeper, each chat under its own app (Instagram, Messenger, Discord, Signal, LinkedIn, X…). Foundation only,
-/// so it can be tested anywhere; `BeeperBridge` makes the calls. Endpoints: /v1/chats, /v1/chats/{id}/messages.
-enum BeeperData {
+/// The local API of Nook's own chat helper (nook-chatd, see `ChatHelper`) as chats for the Chats tab: every app linked
+/// through it, each chat under its own app (Instagram, Messenger, Signal, LinkedIn, X…). Foundation only, so it can be
+/// tested anywhere; `ChatServiceBridge` makes the calls. Endpoints: /v1/chats, /v1/chats/{id}/messages. Beeper Desktop's
+/// API has the same shape, so `BeeperImport` reads it with these too.
+enum ChatServiceData {
     struct Chat: Equatable, Sendable {
         var id: String
         /// The app in Nook (`MessagingApp.id`) for its network.
@@ -12,10 +13,10 @@ enum BeeperData {
         var isGroup: Bool
         var unread: Int
         var last: Date?
-        /// The chat's picture as Beeper gives it (a file on this Mac or an `mxc://` address): the group's own, or the
-        /// other person's in a private chat.
+        /// The chat's picture as the service gives it (a file on this Mac or an `mxc://` address): the group's own, or
+        /// the other person's in a private chat.
         var picture: String? = nil
-        /// A group's other people by name (you left out), as far as Beeper lists them with the chat.
+        /// A group's other people by name (you left out), as far as the service lists them with the chat.
         var members: [String] = []
         /// Your own id in it, to tell your emoji from the others'.
         var me: String? = nil
@@ -28,13 +29,13 @@ enum BeeperData {
         var canReact = true
     }
 
-    /// Beeper's networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"),
-    /// most specific first.
+    /// The networks by the words in their name or account id ("instagramgo", "Facebook/Messenger", "Twitter/X"), most
+    /// specific first.
     private static let networks: [(word: String, app: String)] = [
         ("whatsapp", "whatsapp"), ("instagram", "instagram"), ("messenger", "messenger"), ("facebook", "messenger"),
         ("telegram", "telegram"), ("signal", "signal"), ("discord", "discord"), ("linkedin", "linkedin"),
         ("twitter", "x"), ("slack", "slack"), ("teams", "teams"), ("imessage", "messages"), ("googlechat", "googlechat"),
-        ("google chat", "googlechat"), ("hungryserv", "beeper"), ("beeper", "beeper"), ("matrix", "beeper"),
+        ("google chat", "googlechat"),
     ]
 
     /// The app for a chat's network; nil for a network Nook has no source for (it is left out).
@@ -71,12 +72,24 @@ enum BeeperData {
         return level > 0
     }
 
-    /// Nook's id of a message in a chat, and back: "beeper-<chat>-<message>".
-    static func messageID(_ id: String, chat: String) -> String { "beeper-\(chat)-\(id)" }
+    /// Nook's id of a message in a chat, and back: "beeper-<chat>-<message>". The prefix is what the chats already in
+    /// `chat-inbox.json` were stored with, so it stays: a new one would bring every message in again.
+    static func messageID(_ id: String, chat: String) -> String { "\(idPrefix)\(chat)-\(id)" }
 
     static func networkID(_ id: String, chat: String) -> String? {
-        let prefix = "beeper-\(chat)-"
+        let prefix = "\(idPrefix)\(chat)-"
         return id.hasPrefix(prefix) ? String(id.dropFirst(prefix.count)) : nil
+    }
+
+    private static let idPrefix = "beeper-"
+
+    /// The service's own reason in an error answer (`{code, message}`).
+    static func errorMessage(_ data: Data) -> String? {
+        guard let object = ChatJSON.object(data) else { return nil }
+        for key in ["message", "code"] {
+            if let text = object[key] as? String, !text.isEmpty { return text }
+        }
+        return nil
     }
 
     /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook.
@@ -145,7 +158,7 @@ enum BeeperData {
     /// What the socket sends once it is ready: every chat's changes.
     static let subscribeAll: [String: Any] = ["type": "subscriptions.set", "chatIDs": ["*"]]
 
-    /// The people of a chat Beeper lists with it, yourself (`isSelf`) left out: their full name, else their username.
+    /// The people of a chat the service lists with it, yourself (`isSelf`) left out: their full name, else their username.
     static func members(_ chat: [String: Any]) -> [String] {
         let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
         return people.compactMap { person in
@@ -172,7 +185,7 @@ enum BeeperData {
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let media = (message["attachments"] as? [[String: Any]])?.first.flatMap(Self.file)
             if text.isEmpty, media == nil { text = label(message) }
-            // Beeper writes a file's name as the text of a message with only that file.
+            // The service writes a file's name as the text of a message with only that file.
             if let name = media?.name, text == name { text = "" }
             guard !text.isEmpty || media != nil else { return nil }
             let mine = message["isSender"] as? Bool == true
@@ -187,8 +200,8 @@ enum BeeperData {
         return messages.sorted { $0.date < $1.date }
     }
 
-    /// An attachment: what it is (Beeper says whether it is a GIF, a sticker or a voice message), and where it is:
-    /// a file on this Mac once Beeper has it, else Beeper's own address for it, fetched through its API.
+    /// An attachment: what it is (the service says whether it is a GIF, a sticker or a voice message), and where it is:
+    /// a file on this Mac once the service has it, else its own address for it, fetched through its API.
     static func file(_ attachment: [String: Any]) -> ChatMedia? {
         let name = (attachment["fileName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let source = (attachment["srcURL"] as? String).flatMap { $0.isEmpty ? nil : $0 }

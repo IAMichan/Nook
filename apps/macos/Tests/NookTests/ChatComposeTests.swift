@@ -1,7 +1,7 @@
 import XCTest
 
 /// Sending more than text from a chat: what a file goes as, polls, places and contact cards, and the requests each
-/// gateway (GOWA, OpenWA, Beeper) and Telegram get for them.
+/// gateway (GOWA, OpenWA), Nook's chat helper and Telegram get for them.
 final class ChatComposeTests: XCTestCase {
     private func file(_ name: String, _ kind: ChatMedia.Kind, caption: String = "", seconds: Double? = nil) -> ChatAttachment {
         ChatAttachment(path: "/tmp/" + name, kind: kind, name: name,
@@ -240,25 +240,25 @@ final class ChatComposeTests: XCTestCase {
         XCTAssertEqual(contact.json?["contactNumber"] as? String, "0612345678")
     }
 
-    // MARK: Beeper
+    // MARK: Nook's chat helper
 
-    func testBeeperUploadsFirst() throws {
+    func testChatHelperUploadsFirst() throws {
         let photo = file("beach.jpg", .photo, caption: "Zon")
-        let upload = WASend.beeperUpload(photo, data: Data("JPEG".utf8))
+        let upload = WASend.serviceUpload(photo, data: Data("JPEG".utf8))
         XCTAssertEqual(upload.path, "/v1/assets/upload/base64")
         XCTAssertEqual(upload.json?["fileName"] as? String, "beach.jpg")
-        XCTAssertEqual(WASend.beeperUploadID(Data(#"{"uploadID":"up1","mimeType":"image/jpeg"}"#.utf8)), "up1")
-        XCTAssertNil(WASend.beeperUploadID(Data(#"{"error":"too big"}"#.utf8)))
+        XCTAssertEqual(WASend.serviceUploadID(Data(#"{"uploadID":"up1","mimeType":"image/jpeg"}"#.utf8)), "up1")
+        XCTAssertNil(WASend.serviceUploadID(Data(#"{"error":"too big"}"#.utf8)))
 
-        let message = WASend.beeperMessage(.file(photo), path: "/v1/chats/c/messages", uploadID: "up1", replyTo: "m1")
+        let message = WASend.serviceMessage(.file(photo), path: "/v1/chats/c/messages", uploadID: "up1", replyTo: "m1")
         let attachment = try XCTUnwrap(message.json?["attachment"] as? [String: Any])
         XCTAssertEqual(attachment["uploadID"] as? String, "up1")
         XCTAssertEqual(attachment["type"] as? String, "image")
         XCTAssertEqual(message.json?["text"] as? String, "Zon")
         XCTAssertEqual(message.json?["replyToMessageID"] as? String, "m1")
-        XCTAssertEqual(WASend.beeperType(.voice), "voice-note")
+        XCTAssertEqual(WASend.serviceType(.voice), "voice-note")
 
-        let place = WASend.beeperMessage(.location(ChatPlace(latitude: 52.37, longitude: 4.89, name: "Dam")),
+        let place = WASend.serviceMessage(.location(ChatPlace(latitude: 52.37, longitude: 4.89, name: "Dam")),
                                          path: "/v1/chats/c/messages", uploadID: nil, replyTo: nil)
         XCTAssertNil(place.json?["attachment"])
         XCTAssertTrue((place.json?["text"] as? String)?.hasPrefix("📍 Dam\nhttps://maps.apple.com/?ll=52.370000,4.890000") == true)

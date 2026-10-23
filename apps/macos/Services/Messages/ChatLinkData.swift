@@ -1,7 +1,7 @@
 import Foundation
 
 /// Linking a chat app (Instagram, WhatsApp, Telegram, Teams…) from Settings › Chats › Linked chats, through the local
-/// chat service on this Mac that `BeeperBridge` reads: which apps it can link and with which accounts (/v1/bridges), and
+/// chat helper on this Mac that `ChatServiceBridge` reads: which apps it can link and with which accounts (/v1/bridges), and
 /// the steps of one login (/v1/bridges/{id}/login-sessions). Foundation only, so it can be tested anywhere; `ChatLinker`
 /// makes the calls and Settings shows the steps.
 enum ChatLinkData {
@@ -114,7 +114,7 @@ enum ChatLinkData {
         for bridge in json["items"] as? [[String: Any]] ?? [] {
             guard let id = bridge["id"] as? String, !id.isEmpty else { continue }
             let words = [bridge["type"], bridge["displayName"], bridge["network"], id].compactMap { $0 as? String }.joined(separator: " ")
-            guard let app = BeeperData.app(network: words, account: ""), app != "beeper" else { continue }
+            guard let app = ChatServiceData.app(network: words, account: "") else { continue }
             let name = MessagingApps.app(id: app)?.name ?? (bridge["displayName"] as? String) ?? id
             let status = bridge["status"] as? String ?? ""
             let network = Network(id: id, app: app, name: name, canLink: status == "available" || status == "connected",

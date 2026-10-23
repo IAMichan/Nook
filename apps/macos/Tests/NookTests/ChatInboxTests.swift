@@ -716,7 +716,7 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(SlackData.Auth(token: "xoxp-1").headers["Cookie"], "a pasted token goes alone")
     }
 
-    func testSlackAndBeeperFiles() {
+    func testSlackAndChatHelperFiles() {
         let clip = SlackData.file(["name": "clip.m4a", "mimetype": "audio/mp4", "subtype": "slack_audio", "duration_ms": 3500,
                                    "url_private_download": "https://files.slack.com/files-pri/T1-F1/download/clip.m4a"])
         XCTAssertEqual(clip?.kind, .voice)
@@ -728,19 +728,19 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(SlackData.avatars(["members": [["id": "U1", "profile": ["image_72": "https://avatars.slack-edge.com/a.png"]]]]),
                        ["U1": "https://avatars.slack-edge.com/a.png"])
 
-        let gif = BeeperData.file(["type": "img", "mimeType": "video/mp4", "isGif": true, "srcURL": "file:///tmp/a.mp4"])
+        let gif = ChatServiceData.file(["type": "img", "mimeType": "video/mp4", "isGif": true, "srcURL": "file:///tmp/a.mp4"])
         XCTAssertEqual(gif?.kind, .gif)
         XCTAssertEqual(gif?.path, "/tmp/a.mp4")
-        let photo = BeeperData.file(["type": "img", "srcURL": "mxc://beeper.com/abc", "fileName": "a"])
+        let photo = ChatServiceData.file(["type": "img", "srcURL": "mxc://beeper.com/abc", "fileName": "a"])
         XCTAssertEqual(photo?.kind, .photo)
         XCTAssertEqual(photo?.source, "mxc://beeper.com/abc")
-        XCTAssertEqual(BeeperData.picture(["type": "single", "participants": ["items": [
+        XCTAssertEqual(ChatServiceData.picture(["type": "single", "participants": ["items": [
             ["isSelf": true, "imgURL": "file:///me.jpg"], ["imgURL": "file:///anna.jpg"]]]]), "file:///anna.jpg")
-        XCTAssertNil(BeeperData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
+        XCTAssertNil(ChatServiceData.picture(["type": "group", "participants": ["items": [["imgURL": "file:///anna.jpg"]]]]))
     }
 
     func testLinkedChatStateReactionsAndReceipts() {
-        let listed = BeeperData.chats(["items": [[
+        let listed = ChatServiceData.chats(["items": [[
             "id": "!a", "title": "Anna", "network": "Instagram", "accountID": "instagramgo", "type": "single",
             "isPinned": true, "isMuted": false, "capabilities": ["edit": 0, "delete": 2],
             "participants": ["items": [["id": "@me", "isSelf": true], ["id": "@anna", "fullName": "Anna"]]],
@@ -753,31 +753,31 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertTrue(chat.canDelete)
         XCTAssertTrue(chat.canReact, "a capability that is not given counts as there")
 
-        let reactions = BeeperData.reactions(["reactions": [
+        let reactions = ChatServiceData.reactions(["reactions": [
             ["reactionKey": "👍", "participantID": "@anna"], ["reactionKey": "❤️", "participantID": "@anna"],
             ["reactionKey": "❤️", "participantID": "@me"],
         ]], me: chat.me)
         XCTAssertEqual(reactions, [InboxReaction(emoji: "❤️", count: 2, mine: true), InboxReaction(emoji: "👍", count: 1, mine: false)])
 
-        XCTAssertEqual(BeeperData.receipt(["sendStatus": ["status": "PENDING"]]), .pending)
-        XCTAssertEqual(BeeperData.receipt(["sendStatus": ["status": "FAIL_PERMANENT"], "seen": true]), .failed)
-        XCTAssertEqual(BeeperData.receipt(["sendStatus": ["status": "SUCCESS", "deliveredToUsers": ["@anna"]]]), .delivered)
-        XCTAssertEqual(BeeperData.receipt(["seen": "2026-10-23T10:00:00Z"]), .read)
-        XCTAssertEqual(BeeperData.receipt(["seen": ["@anna": false, "@bob": true]]), .read)
-        XCTAssertEqual(BeeperData.receipt([:]), .sent)
+        XCTAssertEqual(ChatServiceData.receipt(["sendStatus": ["status": "PENDING"]]), .pending)
+        XCTAssertEqual(ChatServiceData.receipt(["sendStatus": ["status": "FAIL_PERMANENT"], "seen": true]), .failed)
+        XCTAssertEqual(ChatServiceData.receipt(["sendStatus": ["status": "SUCCESS", "deliveredToUsers": ["@anna"]]]), .delivered)
+        XCTAssertEqual(ChatServiceData.receipt(["seen": "2026-10-23T10:00:00Z"]), .read)
+        XCTAssertEqual(ChatServiceData.receipt(["seen": ["@anna": false, "@bob": true]]), .read)
+        XCTAssertEqual(ChatServiceData.receipt([:]), .sent)
 
         let answer: [String: Any] = ["items": [
             ["id": "1", "text": "hoi", "timestamp": "2026-10-23T10:00:00Z", "isSender": true, "seen": true,
              "reactions": [["reactionKey": "😂", "participantID": "@anna"]]],
             ["id": "2", "text": "weg", "timestamp": "2026-10-23T10:01:00Z", "isDeleted": true],
         ]]
-        let messages = BeeperData.messages(answer, chat: chat)
+        let messages = ChatServiceData.messages(answer, chat: chat)
         XCTAssertEqual(messages.map(\.id), ["beeper-!a-1"])
         XCTAssertEqual(messages.first?.receipt, .read)
         XCTAssertEqual(messages.first?.reactions, [InboxReaction(emoji: "😂", count: 1, mine: false)])
-        XCTAssertEqual(BeeperData.deleted(answer, chat: chat), ["beeper-!a-2"])
-        XCTAssertEqual(BeeperData.networkID("beeper-!a-1", chat: "!a"), "1")
-        XCTAssertNil(BeeperData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
+        XCTAssertEqual(ChatServiceData.deleted(answer, chat: chat), ["beeper-!a-2"])
+        XCTAssertEqual(ChatServiceData.networkID("beeper-!a-1", chat: "!a"), "1")
+        XCTAssertNil(ChatServiceData.networkID("beeper-!b-1", chat: "!a"), "a message of another chat")
     }
 
     func testLinkedChatDeletionsAndReactionsMerge() {
@@ -910,13 +910,13 @@ final class ChatInboxTests: XCTestCase {
     }
 
     func testLinkedChatLiveEvents() {
-        XCTAssertEqual(BeeperData.event(["type": "ready", "version": 1, "chatIDs": []]), .ready)
-        XCTAssertEqual(BeeperData.event(["type": "subscriptions.updated"]), .subscribed)
-        XCTAssertEqual(BeeperData.event(["type": "message.upserted", "seq": 3, "chatID": "!a", "ids": ["1"]]), .changed(chat: "!a"))
-        XCTAssertEqual(BeeperData.event(["type": "chat.deleted", "chatID": "!b", "ids": []]), .changed(chat: "!b"))
-        XCTAssertEqual(BeeperData.event(["type": "message.upserted", "ids": []]), .other, "an event without a chat")
-        XCTAssertEqual(BeeperData.event(["type": "app.state.updated"]), .other)
-        XCTAssertEqual(BeeperData.subscribeAll["chatIDs"] as? [String], ["*"])
+        XCTAssertEqual(ChatServiceData.event(["type": "ready", "version": 1, "chatIDs": []]), .ready)
+        XCTAssertEqual(ChatServiceData.event(["type": "subscriptions.updated"]), .subscribed)
+        XCTAssertEqual(ChatServiceData.event(["type": "message.upserted", "seq": 3, "chatID": "!a", "ids": ["1"]]), .changed(chat: "!a"))
+        XCTAssertEqual(ChatServiceData.event(["type": "chat.deleted", "chatID": "!b", "ids": []]), .changed(chat: "!b"))
+        XCTAssertEqual(ChatServiceData.event(["type": "message.upserted", "ids": []]), .other, "an event without a chat")
+        XCTAssertEqual(ChatServiceData.event(["type": "app.state.updated"]), .other)
+        XCTAssertEqual(ChatServiceData.subscribeAll["chatIDs"] as? [String], ["*"])
     }
 
     // MARK: Slack
@@ -1095,34 +1095,35 @@ final class ChatInboxTests: XCTestCase {
                        "one account alone keeps its names")
     }
 
-    // MARK: Beeper
+    // MARK: Nook's chat helper
 
-    func testBeeperNetworksGoToTheirApps() {
-        XCTAssertEqual(BeeperData.app(network: "Instagram", account: "instagramgo"), "instagram")
-        XCTAssertEqual(BeeperData.app(network: "Facebook/Messenger", account: "facebookgo"), "messenger")
-        XCTAssertEqual(BeeperData.app(network: "", account: "discordgo"), "discord")
-        XCTAssertEqual(BeeperData.app(network: "Twitter/X", account: "twitter"), "x")
-        XCTAssertEqual(BeeperData.app(network: "Signal", account: "signal"), "signal")
-        XCTAssertNil(BeeperData.app(network: "Google Messages", account: "gmessages"), "a network without a source is left out")
+    func testNetworksGoToTheirApps() {
+        XCTAssertEqual(ChatServiceData.app(network: "Instagram", account: "instagramgo"), "instagram")
+        XCTAssertEqual(ChatServiceData.app(network: "Facebook/Messenger", account: "facebookgo"), "messenger")
+        XCTAssertEqual(ChatServiceData.app(network: "", account: "discordgo"), "discord")
+        XCTAssertEqual(ChatServiceData.app(network: "Twitter/X", account: "twitter"), "x")
+        XCTAssertEqual(ChatServiceData.app(network: "Signal", account: "signal"), "signal")
+        XCTAssertNil(ChatServiceData.app(network: "Google Messages", account: "gmessages"), "a network without a source is left out")
+        XCTAssertNil(ChatServiceData.app(network: "Beeper", account: "hungryserv"), "Beeper is no app of its own in Nook")
     }
 
-    func testBeeperChatsAndMessages() {
+    func testChatHelperChatsAndMessages() {
         let list: [String: Any] = ["items": [
             ["id": "!a:beeper.local", "accountID": "instagramgo", "network": "Instagram", "title": "Anna", "type": "single",
              "unreadCount": 2, "lastActivity": "2026-10-22T09:00:00.000Z"],
             ["id": "!b", "accountID": "discordgo", "title": "Gamers", "type": "group", "isArchived": true],
             ["id": "!c", "accountID": "gmessages", "title": "Bank", "type": "single"]
         ]]
-        let chats = BeeperData.chats(list)
+        let chats = ChatServiceData.chats(list)
         XCTAssertEqual(chats.map(\.app), ["instagram"])
         XCTAssertEqual(chats.first?.unread, 2)
-        let group = BeeperData.Chat(id: "!g", app: "discord", title: "Gamers", isGroup: true, unread: 0, last: nil)
+        let group = ChatServiceData.Chat(id: "!g", app: "discord", title: "Gamers", isGroup: true, unread: 0, last: nil)
         let history: [String: Any] = ["items": [
             ["id": "2", "timestamp": "2026-10-22T09:00:00Z", "text": "gg", "senderName": "Jan", "isSender": false],
             ["id": "1", "timestamp": "2026-10-22T08:00:00Z", "text": "", "type": "IMAGE", "isSender": true],
             ["id": "3", "timestamp": "2026-10-22T09:01:00Z", "text": "👍", "type": "REACTION"]
         ]]
-        let messages = BeeperData.messages(history, chat: group)
+        let messages = ChatServiceData.messages(history, chat: group)
         XCTAssertEqual(messages.map(\.text), [tr("whatsapp.file.photo"), "gg"])
         XCTAssertTrue(messages[0].isMine)
         XCTAssertEqual(messages[1].sender, "Jan")
@@ -1341,13 +1342,13 @@ final class ChatInboxTests: XCTestCase {
     }
 
     func testOtherAppsNameAGroupsPeopleAndSayYourMessageWasSent() {
-        let beeper = BeeperData.chats(["items": [
+        let beeper = ChatServiceData.chats(["items": [
             ["id": "!g", "accountID": "discordgo", "title": "Gamers", "type": "group",
              "participants": ["items": [["id": "@me", "fullName": "Me", "isSelf": true], ["id": "@jan", "fullName": "Jan"],
                                         ["id": "@bo", "username": "bo"]]]]
         ]])
         XCTAssertEqual(beeper.first?.members, ["Jan", "bo"])
-        let mine = BeeperData.messages(["items": [["id": "1", "timestamp": "2026-10-22T08:00:00Z", "text": "gg", "isSender": true]]],
+        let mine = ChatServiceData.messages(["items": [["id": "1", "timestamp": "2026-10-22T08:00:00Z", "text": "gg", "isSender": true]]],
                                        chat: beeper[0])
         XCTAssertEqual(mine.first?.receipt, .sent)
 

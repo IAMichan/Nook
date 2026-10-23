@@ -3,7 +3,7 @@ import AppKit
 
 /// How Nook passes "read" on to a chat's own app.
 enum ChatReadHandoff: Equatable {
-    /// Nook tells the app itself (WhatsApp through the linked phone, Telegram once linked, a chat app linked in Beeper).
+    /// Nook tells the app itself (WhatsApp through the linked phone, Telegram once linked, a chat app linked through Nook's chat helper).
     case tells
     /// Nook cannot tell this app: it opens the chat's app, where you read it, and keeps it as read there.
     case opensApp
@@ -49,7 +49,7 @@ extension AppModel {
         case (.captured(let thread), .telegram(let chat)?):
             ChatCaptureService.shared.telegramBridge.markRead(chat: chat)
             ChatCaptureService.shared.markReadInApp(thread)
-        case (.captured(let thread), .beeper(let chat)?):
+        case (.captured(let thread), .linked(let chat)?):
             markLinkedChat(chat, read: true)
             ChatCaptureService.shared.markReadInApp(thread)
         case (.captured(let thread), _):

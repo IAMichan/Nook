@@ -5,12 +5,11 @@ import UniformTypeIdentifiers
 
 /// Settings › Chats: every chat app at a glance first (which are linked, as whom, and the others with a Link button that
 /// walks a link through its steps in `ChatAppSheet`), then the notifications Nook collects from any other app, how
-/// reading works, a chat service on this Mac when one runs, and the GIF key.
+/// reading works, and the GIF key. Someone coming from Beeper first sees what Nook can bring over from it.
 struct ChatsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var linker = ChatLinker.shared
-    @ObservedObject private var helper = ChatHelper.shared
+    @ObservedObject private var beeper = BeeperImporter.shared
     @State private var typed = ""
     @State private var notice: String?
     /// The last thing typed could not be added: its note reads as a warning.
@@ -21,6 +20,10 @@ struct ChatsSettingsSection: View {
 
     var body: some View {
         Group {
+            if beeper.isOffered {
+                BeeperImportSection(setCollecting: setCollecting)
+            }
+
             ChatAppsSection(setCollecting: setCollecting)
 
             Section {
@@ -44,17 +47,6 @@ struct ChatsSettingsSection: View {
                 SettingToggle(tr("chats.settings.readOnOpen"), detail: tr("chats.settings.readOnOpenDetail"), isOn: $readOnOpen)
             } header: {
                 Text(tr("chats.settings.reading"))
-            }
-
-            // Nook links its apps itself (with its own helper for some); Beeper only shows while it runs or is set up.
-            if BeeperBridge.beeperToken != nil || (linker.serviceRuns && !helper.isRunning) {
-                Section {
-                    BeeperSettingsRows(capture: capture)
-                } header: {
-                    Text(tr("chats.beeper.title"))
-                } footer: {
-                    Text(tr("chats.beeper.footer"))
-                }
             }
 
             Section {

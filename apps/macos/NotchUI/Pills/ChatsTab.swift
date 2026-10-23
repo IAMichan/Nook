@@ -29,8 +29,8 @@ struct ChatsEntry: Identifiable, Equatable {
     var ticks: BubbleTicks? = nil
     /// A group's other people by name, when its app lists them: the chat's header says how many and lists them.
     var members: [String]? = nil
-    /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a Beeper chat
-    /// and a chat collected from notifications, which are matched by name.
+    /// The phone number behind a private WhatsApp chat, to find its photo in Contacts. Nil for a group, a chat from the
+    /// chat helper and a chat collected from notifications, which are matched by name.
     var handle: String? = nil
     /// The chat's own picture from its app (a group's, a channel's, a person's), which goes before Contacts.
     var avatar: String? = nil
@@ -138,9 +138,9 @@ extension ChatsEntry {
         return entry
     }
 
-    /// A private WhatsApp chat's phone number; nil for groups, channels and Beeper chats, which have none.
+    /// A private WhatsApp chat's phone number; nil for groups and channels, which have none.
     static func handle(_ jid: String) -> String? {
-        WAJID.kind(jid) == .person && !WAJID.isBeeper(jid) ? jid : nil
+        WAJID.kind(jid) == .person ? jid : nil
     }
 }
 
@@ -544,7 +544,7 @@ struct ChatsTab: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let bridge = capture.bridge(for: filter),
                           ![capture.messagesBridge.app, capture.whatsAppDesktopBridge.app].contains(bridge.app), !bridge.isReady {
-                    // Slack, Telegram, Teams and Beeper keep their history elsewhere: connected once, Nook reads it from
+                    // Slack, Telegram, Teams and the chat helper's apps keep their history elsewhere: connected once, Nook reads it from
                     // there.
                     ListEmptyNote(tr("chats.\(bridge.app).connectHint"))
                     SmallGhostButton(title: tr("chats.\(bridge.app).connect")) { app.openSettings(section: .chats) }
@@ -900,7 +900,7 @@ private struct ChatsDetail: View {
     /// Your message waiting for "Delete for everyone" to be confirmed.
     @State private var deleting: ChatBubble?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
-    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
+    @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
     @StateObject private var composer = ChatComposerModel()
 
@@ -920,12 +920,12 @@ private struct ChatsDetail: View {
         return nil
     }
 
-    /// Where what you send goes: WhatsApp, Telegram or Beeper; nil copies the text for the chat's own app.
+    /// Where what you send goes: WhatsApp, Telegram or Nook's chat helper; nil copies the text for the chat's own app.
     private var route: ChatRoute? { app.chatRoute(for: entry) }
 
     /// This chat as the linked chat service has it (pinned, muted, what it takes); nil when it is not one of those.
-    private var linkedChat: BeeperData.Chat? {
-        guard case .beeper(let id) = route else { return nil }
+    private var linkedChat: ChatServiceData.Chat? {
+        guard case .linked(let id) = route else { return nil }
         return linked.chats[id]
     }
 
@@ -1204,7 +1204,7 @@ private struct ChatsDetail: View {
         .accessibilityLabel(tr("chat.moreActions"))
     }
 
-    /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, a Beeper network),
+    /// One field for every chat: what you type goes to a chat Nook can write in (WhatsApp, Telegram, an app the chat helper links),
     /// or is copied for the app of any other chat; "@nook …" lets Nook write the message first, into this field, for
     /// you to read before it goes anywhere. Where Nook can write, the field takes more than text, as the app's own does:
     /// photos, videos, GIFs, stickers, files, a voice message, a poll, a place, a contact, an emoji.

@@ -38,7 +38,7 @@ struct ChatAppState: Identifiable, Equatable {
 struct ChatAppsSection: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var linker = ChatLinker.shared
-    @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
+    @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
@@ -63,7 +63,7 @@ struct ChatAppsSection: View {
                     ForEach(todo) { card($0) }
                 }
             }
-            if let problem = linker.problem, BeeperBridge.token != nil {
+            if let problem = linker.problem, ChatServiceBridge.token != nil {
                 SettingNote(problem, tone: .warning)
             }
         } header: {
@@ -73,7 +73,7 @@ struct ChatAppsSection: View {
             ChatAppSheet(app: item.id, setCollecting: setCollecting)
         }
         .task { await linker.refresh() }
-        // A token saved or removed lists what can be linked again.
+        // The helper started or stopped: what can be linked is listed again.
         .onChange(of: linked.isWorking) { _, _ in Task { await linker.refresh() } }
     }
 
@@ -118,14 +118,13 @@ enum ChatAppStates {
             // Nook's own helper links these: they show even in a build without it, whose sheet says how to add it.
             app.linked || ChatAppsCatalog.ownWay.contains(app.id) || ChatHelper.apps.contains(app.id)
                 || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
-                || (linker.serviceRuns && BeeperBridge.token == nil)
         }
     }
 
     static func state(_ id: String, chats: Int? = nil) -> ChatAppState? {
         let capture = ChatCaptureService.shared
         let linker = ChatLinker.shared
-        let linked = capture.beeperBridge
+        let linked = capture.serviceBridge
         guard let app = MessagingApps.app(id: id) else { return nil }
         let network = linker.networks.first { $0.app == id }
         let accounts = network?.accounts ?? []
@@ -173,7 +172,7 @@ enum ChatAppStates {
         switch id {
         case "whatsapp":
             guard WhatsAppSettings.enabled, whatsApp.isConnected else { return nil }
-            return tr(WhatsAppSettings.gateway == .beeper ? "chats.apps.own.service" : "chats.apps.own.whatsapp")
+            return tr("chats.apps.own.whatsapp")
         case telegram.app:
             return telegram.isReady ? tr("chats.apps.as", telegram.account ?? "Telegram") : nil
         case teams.app:

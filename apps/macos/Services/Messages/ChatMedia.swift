@@ -16,7 +16,7 @@ struct ChatMedia: Codable, Equatable, Sendable {
     var path: String? = nil
     /// How long a video or an audio message lasts.
     var seconds: Double? = nil
-    /// Where the bridge fetches it from (Slack's or Beeper's address for it), while it is not on this Mac yet.
+    /// Where the bridge fetches it from (Slack's or the chat helper's address for it), while it is not on this Mac yet.
     var source: String? = nil
 
     /// The file on this Mac, if it is (still) there.
