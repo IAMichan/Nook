@@ -56,3 +56,16 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
 Copy the `on:` block (with `closed` in the pull request types), the `concurrency` block, and the `if:` on the first job
 from `build.yml`. For a job on a macOS runner, put `verified-check` in a cheap ubuntu job before it (with the same paths
 as the filter) and `verified-mark` as the last step of the macOS job.
+
+## Release signing (`release.yml`)
+
+The release workflow signs Nook with the best identity the repository secrets provide:
+
+| Secrets | Result |
+| --- | --- |
+| `MACOS_DEVELOPER_ID_P12`, `MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_NOTARY_APPLE_ID`, `APPLE_NOTARY_PASSWORD` (app-specific password), `APPLE_TEAM_ID` | Developer ID, notarized and stapled: macOS opens Nook without the "Apple could not verify" block, and Keychain access and privacy permissions stay granted across updates. Needs a paid Apple Developer account. |
+| `MACOS_SIGNING_P12`, `MACOS_SIGNING_P12_PASSWORD` (make them once with `scripts/make-release-identity.sh`) | A stable self-signed identity: the first launch is still blocked, but every update keeps the same signature, so the Keychain password and the permissions are asked for once. |
+| none | Ad hoc, as before: blocked on first launch, and every update is a new app to macOS. |
+
+The installer window's background is `apps/macos/Config/DMG/background.png` (and `@2x`), drawn by
+`scripts/generate_dmg_background.py`; `apps/macos/Config/DMG/settings.py` lays out the window with `dmgbuild`.
