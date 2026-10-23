@@ -1265,6 +1265,21 @@ enum WAGOWA {
         return message
     }
 
+    /// How many chats GOWA hands out per call: it refuses a `limit` above 100.
+    static let chatPage = 100
+
+    /// Where the page after one of `GET /chats` starts (its `offset`), or nil when that page was the last: a short page,
+    /// or the `pagination.total` reached.
+    static func nextChatOffset(_ data: Data, offset: Int) -> Int? {
+        let count = (((results(data) as? [String: Any])?["data"] as? [Any]) ?? []).count
+        let next = offset + count
+        guard count >= chatPage else { return nil }
+        if let total = ((results(data) as? [String: Any])?["pagination"] as? [String: Any])?["total"] as? Int, next >= total {
+            return nil
+        }
+        return next
+    }
+
     /// `GET /chats` → `results: {data: [{jid, name, last_message_time, …}], pagination}`.
     static func chats(_ data: Data) -> [(jid: String, name: String, last: Date)] {
         guard let r = results(data) as? [String: Any], let list = r["data"] as? [[String: Any]] else { return [] }
@@ -1627,6 +1642,15 @@ enum WABeeper {
     /// `GET /v1/chats` → `{items: [Chat]}`, newest first.
     static func chats(_ data: Data) -> [WAChatInfo] {
         (((json(data) as? [String: Any])?["items"] as? [[String: Any]]) ?? []).compactMap(chat)
+    }
+
+    /// How many chats Beeper hands out per call (`limit` 1–200).
+    static let chatPage = 200
+
+    /// `GET /v1/chats` → `{hasMore, oldestCursor}`: the cursor of the next, older page, or nil when this one was the last.
+    static func olderChats(_ data: Data) -> String? {
+        guard let obj = json(data) as? [String: Any], obj["hasMore"] as? Bool == true else { return nil }
+        return nonEmpty(obj["oldestCursor"])
     }
 
     /// `GET /v1/chats/{chatID}/messages` → `{items: [Message]}`. `chat` is Nook's id for the chat, `name` its title, `me`
