@@ -240,9 +240,9 @@ extension AppModel {
         )
     }
 
-    /// Safe actions that can run without prompt when Auto-run Safe Actions is enabled: easily reversible
-    /// and without side effects on third parties. Events, emails, links, shortcuts require approval.
-    static let safeTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder", "complete_open_loop", "open_settings"]
+    /// Safe actions that can run without prompt from "Small things right away" on: easily reversible and without side
+    /// effects on third parties. What the higher levels add is in `NookAccess`; emails, links, shortcuts always ask.
+    static let safeTools: Set<String> = NookAccess.smallTools
 
     /// Only when the user's own words ask for each action. The prompt also carries text from others (screen, mail, web, invites),
     /// and such text must never be enough to make Nook act without a click. `request == nil` means no user request is known.
@@ -251,8 +251,8 @@ extension AppModel {
         // Remembering or forgetting what the user's own words ask for: it stays on this Mac and is undone in
         // Settings › Memory, so it needs no click (and no "small things" setting).
         if plan.actions.allSatisfy({ Self.memoryTools.contains($0.tool) && Self.request(request, asksFor: $0) }) { return true }
-        guard settings.autoRunSafe else { return false }
-        return plan.actions.allSatisfy { Self.safeTools.contains($0.tool) && Self.request(request, asksFor: $0) }
+        let access = settings.nookAccess
+        return plan.actions.allSatisfy { access.allows($0.tool) && Self.request(request, asksFor: $0) }
     }
 
     nonisolated static func request(_ request: String, asksFor action: PlannedAction) -> Bool {
@@ -278,6 +278,12 @@ extension AppModel {
         case "open_settings":
             // Only opening the window: changing a setting (change_setting) always waits for a click.
             return mentions(#"instelling|setting|einstellung|réglage|reglage|paramètre|ajuste|configuración|preferen"#)
+        case TakeoverPolicy.toolName:
+            return NookAccess.grounded(task: (action.input["task"] as? String) ?? "", in: request)
+        case "create_event":
+            return mentions(#"afspraak|agenda|kalender|calendar|event|meeting|vergadering|termin|kalendar|rendez-vous|réunion|reunion|cita|evento|reunión|inplannen|plan .+ in|schedule|book"#)
+        case "create_note":
+            return mentions(#"notitie|notities|note|notes|notiz|nota|notas|schrijf .+ op|write .+ down"#)
         case "add_open_loop", "complete_open_loop":
             return mentions(#"onthoud|noteer|open punt|todo|to-do|taak|taken|remember|note|aufgabe|afgerond|klaar|done|erledigt"#)
         default:

@@ -415,11 +415,12 @@ extension AppModel {
             chatTasks[conversation] = nil
             chat.setBusy(false, conversation: conversation)
             NookPresence.shared.nod()
+            // Actions the chosen access lets Nook do by itself start before the notice, so a notice only asks for a
+            // click on what still waits for one.
+            if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
             nookFinished(conversation)
             // What this answer teaches Nook (which sources answered, and now and then a reflection on what the user said).
             learnAfterAnswer(question: text, history: history, reply: id, conversation: conversation, actions: actions)
-            // Automatically execute safe small actions if auto-run is enabled and inputs validate.
-            if canRunWithoutAsking(BrainPlan(text: plan.text, actions: actions), request: text), problems.allSatisfy({ (p: [String]) in p.isEmpty }) { runPlan(id) }
             sendQueued(conversation)
         } catch {
             guard !Task.isCancelled, replies[conversation] == id else { return }
@@ -428,6 +429,8 @@ extension AppModel {
     }
 
     func finishReply(_ id: UUID, error: String, conversation: UUID) {
+        // Asked from the notch: what went wrong shows there, where you wait for the answer.
+        if NotchFollow.shared.conversations.remove(conversation) != nil { showInNotch(errorCard(error)) }
         chat.update(id) { message in
             message.streaming = false
             message.status = ""
@@ -448,15 +451,32 @@ extension AppModel {
     /// Conversation finished in background while looking elsewhere: a notice the way Settings › Notifications says for
     /// Nook himself.
     func nookFinished(_ id: UUID) {
+        // Asked from the notch (the Double Tap field, a notice's field): you wait for it there.
+        let followed = NotchFollow.shared.conversations.remove(id) != nil
         let watching = viewModel.isShowing(.chat) && chat.activeID == id
         guard !watching, let conversation = chat.conversation(id) else { return }
         chat.markUnread(id)
         let preview = conversation.preview.isEmpty ? tr("nooks.finishedFallback") : conversation.preview
         let title = tr("nooks.finished", conversation.title)
         logNotice(.done, title: title, detail: preview, target: .conversation(id))
+        // A plan that waits for your click comes to the notch with Run, so asking from the notch never ends in a chat
+        // you do not see.
+        if followed, let last = conversation.messages.last(where: { $0.role == .nook }), !last.actions.isEmpty, !last.planArchived {
+            switch last.planState {
+            case .pending:
+                showInNotch(notchPlanCard(last, conversation: id))
+                return
+            case .running:
+                // The access you chose lets Nook do it by itself: what came of it shows in the notch.
+                followPlanInNotch(last.id)
+                return
+            default:
+                break
+            }
+        }
         // The card shows the whole answer; the notice log, the strip and a macOS notification keep the short preview.
         presentNookNotice(title: title, detail: preview, full: conversation.lastAnswer, button: tr("nooks.view"), mood: .done,
-                          replyTo: id) { [weak self] in
+                          replyTo: id, inNotch: followed) { [weak self] in
             self?.openConversation(id)
         }
     }
@@ -465,32 +485,39 @@ extension AppModel {
     /// Notifications says: a card with `button` and Later, one line with `button`, or a macOS notification.
     /// `replyTo`: the conversation the card's field answers, so a question Nook asks back is answered in the notch
     /// (`answerFromNotice`) instead of only through View or Later. `full`: what the card shows instead of `detail` (the
-    /// whole answer, where `detail` is its one-line preview).
+    /// whole answer, where `detail` is its one-line preview). `inNotch`: you asked from the notch and wait for the
+    /// answer there, so it is a card whatever the notice rules say (also in a meeting).
     func presentNookNotice(title: String, detail: String, full: String = "", button: String, mood: NookMood,
-                           replyTo conversation: UUID? = nil, open: @escaping () -> Void) {
+                           replyTo conversation: UUID? = nil, inNotch: Bool = false, open: @escaping () -> Void) {
         let token = conversation.map { Self.nookReplyCardPrefix + $0.uuidString + "/" + UUID().uuidString }
             ?? "nookdone-" + UUID().uuidString
+        let shown = String((full.isEmpty ? (detail.isEmpty ? title : detail) : full).prefix(4000))
+        // Room for the whole text up to nine lines, as an answer card has; a longer one scrolls inside the card.
+        let lines = max(1, min(9, Int(ceil(Double(shown.count) / (shown.count > 140 ? 62.0 : 46.0)))))
+        let card = NookCard(
+            id: token,
+            mood: mood,
+            context: detail.isEmpty ? "" : title,
+            title: shown,
+            detail: .none,
+            primary: CardAction(label: button, outcome: .callback("\(token)#open", "")),
+            secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
+            contentHeight: min(470, 100 + CGFloat(lines) * (shown.count > 140 ? 21 : 24) + (conversation == nil ? 0 : 50)),
+            input: conversation != nil,
+            inputPrompt: tr("nooks.replyPrompt"),
+            // A question back ("What should I send Arjan?") takes the keyboard so the answer can be typed at once;
+            // any other answer leaves you typing where you were, and a click in the field answers.
+            focusesInput: shown.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?")
+        )
+        if inNotch {
+            viewModel.register("\(token)#open", open)
+            showInNotch(card)
+            return
+        }
         deliverNotice(.nook, id: token, title: title, body: detail, card: { [weak self] in
             guard let self else { return }
             self.viewModel.register("\(token)#open", open)
-            let shown = String((full.isEmpty ? (detail.isEmpty ? title : detail) : full).prefix(4000))
-            // Room for the whole text up to nine lines, as an answer card has; a longer one scrolls inside the card.
-            let lines = max(1, min(9, Int(ceil(Double(shown.count) / (shown.count > 140 ? 62.0 : 46.0)))))
-            self.viewModel.present(NookCard(
-                id: token,
-                mood: mood,
-                context: detail.isEmpty ? "" : title,
-                title: shown,
-                detail: .none,
-                primary: CardAction(label: button, outcome: .callback("\(token)#open", "")),
-                secondary: CardAction(label: tr("nooks.later"), outcome: .dismiss),
-                contentHeight: min(470, 100 + CGFloat(lines) * (shown.count > 140 ? 21 : 24) + (conversation == nil ? 0 : 50)),
-                input: conversation != nil,
-                inputPrompt: tr("nooks.replyPrompt"),
-                // A question back ("What should I send Arjan?") takes the keyboard so the answer can be typed at once;
-                // any other answer leaves you typing where you were, and a click in the field answers.
-                focusesInput: shown.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?")
-            ))
+            self.viewModel.present(card)
         }, strip: { [weak self] in
             self?.viewModel.notify(title, button: button, action: open)
         }, open: open)

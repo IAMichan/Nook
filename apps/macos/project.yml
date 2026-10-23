@@ -372,6 +372,7 @@ targets:
       - path: Core/Shortcuts.swift
       - path: Services/Music/MusicLibrary.swift
       - path: Brain/Undo.swift
+      - path: Brain/NookAccess.swift
       - path: Brain/SettingsCatalog.swift
       - path: Brain/Fuzzy.swift
       - path: Services/Search/NookSearch.swift

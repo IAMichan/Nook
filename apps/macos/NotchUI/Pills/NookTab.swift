@@ -397,8 +397,8 @@ struct NookChatView: View {
 
     // MARK: Input
 
-    /// The same composer as the agents: the text on top, a plus menu and two quiet choices underneath, a round send button
-    /// on the right. A file you attach shows above the box, only while there is one.
+    /// The same composer as the agents: the text on top, a plus menu and the quiet choices underneath (model, access,
+    /// sources), a round send button on the right. A file you attach shows above the box, only while there is one.
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             if let name = app.attachmentName {
@@ -415,9 +415,12 @@ struct NookChatView: View {
                     focus: $inputFocused,
                     onSend: send
                 ) {
-                    // The same row as the agents' choices: a plus menu, then model and sources split by a thin line.
+                    // The same row as the agents' choices: a plus menu and the model, then what Nook may do by itself
+                    // (an agent's access, ⇧Tab moves on) and the sources, split by a gap.
                     ComposerMoreMenu(chat: chat)
                     BrainChip()
+                    ComposerDivider()
+                    NookAccessMenu(focused: inputFocused)
                     ComposerDivider()
                     ScopeMenu(chat: chat)
                 }

@@ -66,7 +66,7 @@ enum SettingsSearch {
         ("settings.assistant.useScreensEveryQuestion", .assistant),
         ("settings.assistant.webSearch", .assistant),
         ("settings.assistant.thinkAlongToggle", .assistant),
-        ("settings.assistant.autoRunSafe", .assistant),
+        ("nookAccess.title", .assistant),
         ("memory.settings.use", .memory),
         ("memory.settings.learn", .memory),
         ("memory.settings.clear", .memory),

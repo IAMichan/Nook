@@ -190,7 +190,7 @@ struct CardView: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             // The answer field has its own `@` menu ("@nook"); the compact field offers people from your chats.
             if card.compact {
-                MentionSuggestions(model: mentionModel, text: $reply, config: mentionConfig, focus: $replyFocused)
+                // The composer shows its own `@` list above the box.
                 promptField
             } else {
                 chatField
@@ -229,38 +229,25 @@ struct CardView: View {
                        draft: onDraft, send: submitReply)
     }
 
-    /// The compact card's one field: Return or the arrow inside the field sends, Escape closes the card. A long
-    /// message wraps and the field grows with it (the notch follows through `onHeight`), so all of it stays readable.
+    /// The compact card's one field (the Double Tap field): the same composer as the Nook chat, with the model and what
+    /// Nook may do by itself (⇧Tab) in a tray under the box. Return sends, Escape closes the card. A long message wraps
+    /// and the box grows with it (the notch follows through `onHeight`), so all of it stays readable.
     private var promptField: some View {
-        let ready = !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(alignment: .bottom, spacing: NookTheme.Spacing.sm) {
-            TextField("", text: $reply, prompt: Text(card.inputPrompt ?? tr("chat.followupPrompt")).foregroundStyle(NookTheme.textTertiary),
-                      axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.paper)
-                .lineLimit(1...6)
-                // One line sits level with the send button; each further line makes the field (and the notch) taller.
-                .frame(minHeight: 28)
-                .focused($replyFocused)
-                .onSubmit { if !mentionModel.isOpen { submitReply() } }
-                .onChange(of: reply) { _, new in NookPresence.shared.typed(count: new.count) }
-                .mentions(mentionModel, text: $reply, config: mentionConfig)
-                // In the non-activating notch panel the binding can lag behind the field until Return commits it,
-                // which left the send arrow looking disabled; take every keystroke straight from the field itself.
-                .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
-                    guard replyFocused, let field = note.object as? NSTextField, field.window is NotchPanel,
-                          field.stringValue != reply else { return }
-                    reply = field.stringValue
-                }
-            NookIconButton(systemName: "arrow.up", label: tr("card.send"), filled: true, size: 28, action: submitReply)
-                .disabled(!ready)
-                .opacity(ready ? 1 : 0.4)
+        SessionComposer(text: $reply, prompt: card.inputPrompt ?? tr("chat.followupPrompt"), sendLabel: tr("card.send"),
+                        focus: $replyFocused, onSend: submitReply) {
+            BrainChip()
+            ComposerDivider()
+            NookAccessMenu(focused: replyFocused)
         }
-        .padding(.leading, NookTheme.Spacing.md)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+        .rich(mentionModel, mentionConfig)
+        .choicesBelowBox()
+        // In the non-activating notch panel the binding can lag behind the field until Return commits it, which left
+        // the send arrow looking disabled; take every keystroke straight from the field itself.
+        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidChangeNotification)) { note in
+            guard replyFocused, let field = note.object as? NSTextField, field.window is NotchPanel,
+                  field.stringValue != reply else { return }
+            reply = field.stringValue
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(card.title)
     }
