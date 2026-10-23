@@ -259,6 +259,7 @@ targets:
       - path: Services/Connectors/MCP/MCPClient.swift
       - path: Services/Connectors/PullRequestGraphQL.swift
       - path: Services/Connectors/PullRequestDetail.swift
+      - path: Services/Connectors/PullRequestConversation.swift
       - path: Services/Connectors/PullRequestViewedFiles.swift
       - path: Services/Connectors/PullRequestReviewGuide.swift
       - path: Services/Connectors/PullRequestActions.swift

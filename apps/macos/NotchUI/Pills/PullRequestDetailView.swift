@@ -3,7 +3,8 @@ import SwiftUI
 
 /// One pull request, read in full inside Nook. On top what it is (title, state,
 /// author, branches, size), then four tabs: Summary (reviewers and labels, then the description, the checks and
-/// the comments in sections that fold), Guide, Timeline (everything that happened, commits included) and Code (every
+/// the comments in sections that fold, the comments as threads them; see
+/// PullRequestConversationList), Guide, Timeline (everything that happened, commits included) and Code (every
 /// changed file with its diff). The bar under the tabs says what the open tab holds: the checks on Summary, the
 /// comments, commits and approvals with the order on Timeline, the files viewed on Code. The bar at the bottom merges
 /// it, after you confirm, with the account it was listed under.
@@ -44,8 +45,10 @@ struct PullRequestDetailView: View {
     @State private var checksOpen = false
     @State private var commentsOpen = true
     @AppStorage("agents.pr.commentsNewest") private var commentsNewestFirst = false
-    /// Comments by bots (CI reports, coverage, previews) are left out of the Summary until you ask for them.
+    /// Comments by bots (CI reports, coverage, previews), resolved threads and dismissed reviews are left out of the
+    /// Summary until you ask for them in its filter.
     @AppStorage("agents.pr.showBotComments") private var showBotComments = false
+    @AppStorage("agents.pr.showFinishedComments") private var showFinishedComments = false
 
     /// The stack this pull request is part of, bottom first (empty when it stands alone), and how to open another one of it.
     let stack: [PullRequestItem]
@@ -389,7 +392,7 @@ struct PullRequestDetailView: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 if detail.activityLoaded {
                     let approvals = detail.verdicts.filter(\.approved).count
-                    Label("\(comments(detail, includeBots: true).count)", systemImage: "bubble.left")
+                    Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", systemImage: "bubble.left")
                         .help(tr("agents.pr.count.comments"))
                     Label("\(detail.commits.count)", systemImage: "circle.and.line.horizontal")
                         .help(tr("agents.pr.count.commits"))
@@ -606,8 +609,10 @@ struct PullRequestDetailView: View {
     /// The Summary: who reviews and which labels, then the description, the checks and the comments, each a section
     /// that folds under its heading.
     private func summary(_ detail: PullRequestDetail, now: Date) -> some View {
-        let shownComments = comments(detail, includeBots: showBotComments)
-        let hiddenBots = comments(detail, includeBots: true).count - comments(detail, includeBots: false).count
+        let conversation = PullRequestConversation.items(detail.events)
+        let total = PullRequestConversation.commentCount(conversation)
+        let hidden = total - PullRequestConversation.commentCount(
+            PullRequestConversation.filtered(conversation, bots: showBotComments, finished: showFinishedComments))
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 metaRow(symbol: "person.2", title: tr("agents.pr.status.reviewers")) { reviewers(detail) }
@@ -642,45 +647,22 @@ struct PullRequestDetailView: View {
                 checksSummary(detail).font(NookTheme.TextStyle.detail)
             }
 
-            SummarySection(title: tr("agents.pr.comments", detail.activityLoaded ? shownComments.count : (detail.commentCount ?? 0)),
+            SummarySection(title: tr("agents.pr.comments", detail.activityLoaded ? total : (detail.commentCount ?? 0)),
                            open: $commentsOpen) {
                 if !detail.activityLoaded {
                     ForEach(0..<2, id: \.self) { _ in GhostRow() }
-                } else if shownComments.isEmpty {
-                    ListEmptyNote(tr("agents.pr.conversation.none"))
                 } else {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        ForEach(commentsNewestFirst ? Array(shownComments.reversed()) : shownComments) { event in
-                            eventCard(event, now: now, avatar: true)
-                        }
-                    }
+                    PullRequestConversationList(detail: detail, now: now, newestFirst: commentsNewestFirst,
+                                                showBots: showBotComments, showFinished: showFinishedComments)
                 }
             } accessory: {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    if hiddenBots > 0 || showBotComments {
-                        Button {
-                            showBotComments.toggle()
-                        } label: {
-                            Text(showBotComments ? tr("agents.pr.comments.hideBots") : tr("agents.pr.comments.botsHidden", hiddenBots))
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.textTertiary)
-                        }
-                        .buttonStyle(.plain)
+                    if detail.activityLoaded, total > 0 {
+                        PullRequestConversationFilter(showBots: $showBotComments, showFinished: $showFinishedComments,
+                                                      hidden: hidden)
                     }
                     orderButton(newestFirst: $commentsNewestFirst)
                 }
-            }
-        }
-    }
-
-    /// The conversation: comments, reviews with something to say or a verdict, and comments on lines, oldest first.
-    private func comments(_ detail: PullRequestDetail, includeBots: Bool) -> [PullRequestEvent] {
-        detail.events.filter { event in
-            if !includeBots && event.author.lowercased().hasSuffix("[bot]") { return false }
-            switch event.kind {
-            case .comment, .lineComment: return true
-            case .review: return !event.body.isEmpty || isVerdict(event.kind)
-            case .commit, .activity: return false
             }
         }
     }
@@ -813,7 +795,7 @@ struct PullRequestDetailView: View {
                 TimelineRail(last: last) {
                     GitHubAvatar(login: event.author, size: 22)
                 } content: {
-                    eventCard(event, now: now)
+                    PullRequestCommentCard(event: event, now: now, showsAvatar: false)
                 }
             }
         }
@@ -883,65 +865,6 @@ struct PullRequestDetailView: View {
         case "auto_merge_enabled", "auto_merge_disabled": return ("bolt", NookTheme.textTertiary)
         case "review_dismissed": return ("xmark.bubble", NookTheme.textTertiary)
         default: return ("circle", NookTheme.textTertiary)
-        }
-    }
-
-    /// A comment or review as a card: who and what on top (a review's verdict in its color), the text under it.
-    /// With `avatar` the author's picture leads the card (the Summary's comments, which have no rail beside them).
-    private func eventCard(_ event: PullRequestEvent, now: Date, avatar: Bool = false) -> some View {
-        let (label, color) = eventLabel(event.kind)
-        let verdict = isVerdict(event.kind)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                if avatar { GitHubAvatar(login: event.author, size: 18) }
-                Text("@" + event.author).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
-                if verdict {
-                    Text(label)
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(color)
-                        .padding(.horizontal, NookTheme.Spacing.sm)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(color.opacity(0.14)))
-                        .lineLimit(1)
-                } else {
-                    Text(label).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
-                }
-                Spacer(minLength: 4)
-                if let date = event.date { timeLabel(date, now: now) }
-                if let url = event.url {
-                    ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            }
-            if !event.body.isEmpty {
-                MarkdownView(text: event.body, size: 13.5)
-            }
-        }
-        .padding(NookTheme.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .panelCard()
-    }
-
-    /// An approval or a request for changes, which wears its verdict as a tinted pill.
-    private func isVerdict(_ kind: PullRequestEvent.Kind) -> Bool {
-        if case .review(let state) = kind { return state == "APPROVED" || state == "CHANGES_REQUESTED" }
-        return false
-    }
-
-    private func eventLabel(_ kind: PullRequestEvent.Kind) -> (String, Color) {
-        switch kind {
-        case .comment: return (tr("agents.pr.event.comment"), NookTheme.textTertiary)
-        case .commit, .activity: return ("", NookTheme.textTertiary)
-        case .lineComment(let path, let line):
-            return (tr("agents.pr.event.line", line.map { "\(path):\($0)" } ?? path), NookTheme.textTertiary)
-        case .review(let state):
-            switch state {
-            case "APPROVED": return (tr("agents.pr.event.approved"), NookTheme.mint)
-            case "CHANGES_REQUESTED": return (tr("agents.pr.event.changes"), NookTheme.coral)
-            case "DISMISSED": return (tr("agents.pr.event.dismissed"), NookTheme.textTertiary)
-            default: return (tr("agents.pr.event.reviewed"), NookTheme.textTertiary)
-            }
         }
     }
 
