@@ -4,15 +4,15 @@ import Combine
 
 /// Your Teams chats with their history, through Microsoft Graph, read-only (Chat.Read), for every account you add. You
 /// sign in once per account with a code on Microsoft's own page; Nook keeps each refresh token in the Keychain and talks
-/// only to login.microsoftonline.com and graph.microsoft.com. The app it signs in as is one you register in Microsoft
-/// Entra (a public client), whose application id you set in Settings › Chats. Work or school accounts only.
+/// only to login.microsoftonline.com and graph.microsoft.com. It signs in as Nook's own app in Microsoft Entra, so
+/// logging in is all it takes. Work or school accounts only.
 @MainActor
 final class TeamsBridge: ObservableObject, ChatBridge {
     let app = "teams"
     let interval: TimeInterval = 60
 
     enum State: Equatable {
-        /// The application id is not set yet.
+        /// This build of Nook has no app id to sign in as.
         case noClient
         /// Ready to sign in (another) account.
         case idle
@@ -54,12 +54,11 @@ final class TeamsBridge: ObservableObject, ChatBridge {
     var isReady: Bool { Self.clientID != nil && accounts.contains { CloudHelp.secret($0.refreshAccount) != nil } }
     private(set) var isWorking = false
 
-    /// The app Nook signs in as: the one you registered and set in Settings › Chats, else Nook's own.
+    /// The app Nook signs in as: its own, or the one an earlier version of Nook asked you to register.
     static var clientID: String? { CloudHelp.secret(clientAccount) ?? builtInClientID }
 
     /// Nook's own app in Microsoft Entra: a multi-tenant public client ("Allow public client flows" on) with the
-    /// delegated permissions Chat.Read and User.Read. With it, Log in on Teams' row in Settings › Chats is all Teams
-    /// needs. Nil until it is registered; then everyone registers an app of their own.
+    /// delegated permissions Chat.Read and User.Read. Signing in with it needs nothing but the account itself.
     static let builtInClientID: String? = nil
 
     init() {
@@ -79,18 +78,6 @@ final class TeamsBridge: ObservableObject, ChatBridge {
 
     private func saveAccounts() {
         if let data = try? JSONEncoder().encode(accounts) { UserDefaults.standard.set(data, forKey: Self.accountsKey) }
-    }
-
-    /// The application id changed in Settings: every account signs in again.
-    func clientChanged() {
-        waiting?.cancel()
-        for account in accounts { Keychain.remove(account.refreshAccount) }
-        accounts = []
-        saveAccounts()
-        sessions = [:]
-        problems = [:]
-        isWorking = false
-        state = Self.clientID == nil ? .noClient : .idle
     }
 
     // MARK: Signing in

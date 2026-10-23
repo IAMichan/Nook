@@ -136,51 +136,36 @@ struct TelegramSettingsRows: View {
     }
 }
 
-/// Settings › Chats › Teams: the application id of the app you registered in Microsoft Entra, then every account you
-/// signed in with a code on Microsoft's own page, and a button to add one more.
+/// Settings › Chats › Teams: every account you signed in with a code on Microsoft's own page, and a button to add one
+/// more. Nook signs in as its own app, so signing in is all it takes.
 struct TeamsSettingsRows: View {
     @ObservedObject var teams: TeamsBridge
     /// Why the last read failed, if it did for every account.
     let problem: String?
     let onSignedIn: () -> Void
-    @State private var clientID = ""
 
     var body: some View {
-        if case .noClient = teams.state {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                SettingLabel(tr("chats.teams.client"), detail: tr("chats.teams.clientDetail"))
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    TextField("", text: $clientID, prompt: Text("00000000-0000-0000-0000-000000000000"))
-                        .labelsHidden().textFieldStyle(.roundedBorder)
-                        .onSubmit { saveClient() }
-                    Button(tr("chats.slack.save")) { saveClient() }
-                        .disabled(UUID(uuidString: clientID.trimmingCharacters(in: .whitespaces)) == nil)
+        ForEach(teams.accounts) { account in
+            let title = account.name.isEmpty ? (account.email.isEmpty ? "Teams" : account.email) : account.name
+            if let why = teams.problems[account.id] {
+                StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
+                    Button(tr("chats.teams.signInAgainButton")) { teams.signIn() }
+                    Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
+                }
+            } else {
+                StatusRow(title: tr("chats.teams.connected", title),
+                          detail: account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email,
+                          state: .done) {
+                    Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
                 }
             }
-        } else {
-            ForEach(teams.accounts) { account in
-                let title = account.name.isEmpty ? (account.email.isEmpty ? "Teams" : account.email) : account.name
-                if let why = teams.problems[account.id] {
-                    StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
-                        Button(tr("chats.teams.signInAgainButton")) { teams.signIn() }
-                        Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
-                    }
-                } else {
-                    StatusRow(title: tr("chats.teams.connected", title),
-                              detail: account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email,
-                              state: .done) {
-                        Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
-                    }
-                }
-            }
-            if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
-                StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
-            }
-            signIn
-            changeClient
-                // A new account reads right away instead of at the next turn.
-                .onChange(of: teams.accounts.map(\.id)) { _, _ in onSignedIn() }
         }
+        if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
+            StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
+        }
+        signIn
+            // A new account reads right away instead of at the next turn.
+            .onChange(of: teams.accounts.map(\.id)) { _, _ in onSignedIn() }
     }
 
     @ViewBuilder
@@ -200,7 +185,9 @@ struct TeamsSettingsRows: View {
                     Button(tr("chats.teams.cancel")) { teams.cancelSignIn() }
                 }
             }
-        case .idle, .failed, .noClient:
+        case .noClient:
+            StatusRow(title: tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"), state: .todo) { EmptyView() }
+        case .idle, .failed:
             if case .failed(let why) = teams.state {
                 StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
             }
@@ -214,24 +201,6 @@ struct TeamsSettingsRows: View {
                 Button(teams.accounts.isEmpty ? tr("chats.teams.signIn") : tr("chats.teams.addAccount")) { teams.signIn() }
             }
         }
-    }
-
-    private var changeClient: some View {
-        Button(tr("chats.teams.changeClient")) {
-            Keychain.remove(TeamsBridge.clientAccount)
-            teams.clientChanged()
-        }
-        .buttonStyle(.link)
-    }
-
-    private func saveClient() {
-        let id = clientID.trimmingCharacters(in: .whitespaces)
-        guard UUID(uuidString: id) != nil, Keychain.write(id, account: TeamsBridge.clientAccount) == errSecSuccess else {
-            ToastCenter.shared.error(tr("chats.slack.notSaved"))
-            return
-        }
-        clientID = ""
-        teams.clientChanged()
     }
 }
 
@@ -382,9 +351,8 @@ struct TeamsSourceRow<Label: View>: View {
     }
 
     private func logIn() {
-        // Without Nook's own app id, the one you registered is asked for in the Teams section below.
         guard TeamsBridge.clientID != nil else {
-            ToastCenter.shared.error(tr("chats.login.teamsNeedsClient"))
+            ToastCenter.shared.error(tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"))
             return
         }
         teams.signIn()
