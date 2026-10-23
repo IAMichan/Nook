@@ -5,8 +5,9 @@ import Foundation
 /// Opening is quick because the page never waits for everything: the summary (the pull request, its repository and the
 /// checks of its head) shows as soon as it is in, the timeline, commits and files follow. Every pull request read while
 /// Nook runs is kept, so opening it again shows it at once and refreshes underneath; one under the pointer in the list
-/// is read ahead (`prefetch`). While open, the summary is read again every 15 seconds while checks run or GitHub is still
-/// working out mergeability, else every 30; the activity only when the summary says something changed.
+/// is read ahead (`prefetch`), and a click while that read runs shows its summary as soon as it is in. While open, the
+/// summary is read again every 15 seconds while checks run or GitHub is still working out mergeability, else every 30;
+/// the activity only when the summary says something changed.
 @MainActor
 final class PullRequestDetailModel: ObservableObject {
     let accountID: String
@@ -46,8 +47,11 @@ final class PullRequestDetailModel: ObservableObject {
 
     /// Reads the pull request while the page is open; ends when the task that runs it is cancelled.
     func run() async {
+        // Read ahead from the list: show its summary as soon as that is in, rather than when the files are too.
         if let pending = Self.prefetching[key] {
-            await pending.value
+            await pending.summary.value
+            adoptCache()
+            await pending.done.value
             adoptCache()
         }
         let recent = fetchedAt.map { Date().timeIntervalSince($0) < 10 } ?? false
@@ -159,7 +163,14 @@ final class PullRequestDetailModel: ObservableObject {
     }
 
     private static var cache: [String: Cached] = [:]
-    private static var prefetching: [String: Task<Void, Never>] = [:]
+    private static var prefetching: [String: Prefetch] = [:]
+
+    /// A read ahead: `summary` ends once the summary is kept (what a page opened meanwhile shows first), `done` once
+    /// the activity is too.
+    private struct Prefetch {
+        let summary: Task<Void, Never>
+        let done: Task<Void, Never>
+    }
     /// Enough for a morning of reviews; the oldest go first.
     private static let cacheLimit = 40
 
@@ -191,16 +202,34 @@ final class PullRequestDetailModel: ObservableObject {
         if let cached = cache[entry], Date().timeIntervalSince(cached.at) < 60 { return }
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else { return }
         let repo = item.repo, number = item.number, started = Date()
-        prefetching[entry] = Task {
-            let read = await Task.detached(priority: .utility) {
-                try? await GitHubPullRequestDetail.load(repo: repo, number: number, token: token)
+        // Both at once, as on a page; the summary is kept the moment it lands, so a click meanwhile shows it.
+        let activity = Task.detached(priority: .userInitiated) {
+            await GitHubPullRequestDetail.loadActivity(repo: repo, number: number, token: token, counts: nil)
+        }
+        let summary = Task { () -> (detail: PullRequestDetail, at: Date)? in
+            let read = await Task.detached(priority: .userInitiated) {
+                try? await GitHubPullRequestDetail.summary(repo: repo, number: number, token: token)
             }.value
             // An open page may have read it meanwhile; its read is newer.
-            if let read, (cache[entry]?.at ?? .distantPast) < started {
-                remember(read, key: entry)
-                PullRequestStore.shared.update(with: read)
+            guard let read, (cache[entry]?.at ?? .distantPast) < started else { return nil }
+            remember(read.keepingActivity(of: cache[entry]?.detail), key: entry)
+            PullRequestStore.shared.update(with: read)
+            return (read, cache[entry]?.at ?? started)
+        }
+        let done = Task {
+            guard let kept = await summary.value else {
+                activity.cancel()
+                prefetching[entry] = nil
+                return
+            }
+            var full = kept.detail
+            full.apply(await activity.value)
+            if (cache[entry]?.at ?? .distantPast) <= kept.at {
+                remember(full, key: entry)
+                PullRequestStore.shared.update(with: full)
             }
             prefetching[entry] = nil
         }
+        prefetching[entry] = Prefetch(summary: Task { _ = await summary.value }, done: done)
     }
 }
