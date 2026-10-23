@@ -276,6 +276,13 @@ enum DoubleTapLogic {
     /// The text to type from the brain's answer: without a code fence or quotes around it, without Markdown bold and
     /// headings. Nil when there is nothing, when it is too long, or when it holds a card or social security number.
     static func written(from reply: String) -> String? {
+        let text = plain(reply)
+        guard !text.isEmpty, text.count <= maxWrittenLength, !containsHighRiskNumber(text) else { return nil }
+        return text
+    }
+
+    /// The brain's text without a code fence or quotes around it, without Markdown bold and headings.
+    static func plain(_ reply: String) -> String {
         var text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
             var lines = text.components(separatedBy: "\n").dropFirst()
@@ -291,7 +298,6 @@ enum DoubleTapLogic {
             guard let match = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) else { return line }
             return String(line[match.upperBound...])
         }.joined(separator: "\n")
-        guard !text.isEmpty, text.count <= maxWrittenLength, !containsHighRiskNumber(text) else { return nil }
         return text
     }
 

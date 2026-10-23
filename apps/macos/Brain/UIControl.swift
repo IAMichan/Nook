@@ -9,7 +9,7 @@ import Foundation
 /// earlier read, and are looked up again right before each step, so a window that changed since is not clicked blindly.
 enum UIControl {
     enum Action: String, CaseIterable {
-        case click, doubleClick = "double_click", rightClick = "right_click", type, key, scroll, open, wait
+        case click, doubleClick = "double_click", rightClick = "right_click", type, key, scroll, open, wait, drag, hover
     }
 
     /// One step as the brain proposes it. Which fields matter depends on the action.
@@ -36,6 +36,10 @@ enum UIControl {
         /// For `open`: a System Settings pane (x-apple.systempreferences:…). Without it, the app itself is opened.
         var url: String?
         var seconds: Double?
+        /// For `drag`: where it ends, a named element or a point.
+        var toElement: String?
+        var toX: Double?
+        var toY: Double?
     }
 
     static let maxSteps = 15
@@ -86,6 +90,9 @@ enum UIControl {
             step.amount = number("amount").flatMap { Int(exactly: $0.rounded()) }
             step.url = text("url")
             step.seconds = number("seconds")
+            step.toElement = text("to_element") ?? text("to")
+            step.toX = number("to_x")
+            step.toY = number("to_y")
             return step
         }
     }
@@ -137,6 +144,15 @@ enum UIControl {
             if let url = step.url, !isSettingsPane(url) { problems.append("only System Settings panes (x-apple.systempreferences:…) can be opened here; use open_url for web pages") }
         case .wait:
             if let seconds = step.seconds, !(seconds > 0 && seconds <= maxWait) { problems.append("wait at most \(Int(maxWait)) seconds") }
+        case .drag:
+            if step.element == nil && !hasPoint { problems.append("name the element to drag or give x and y") }
+            if (step.toX == nil) != (step.toY == nil) { problems.append("give both to_x and to_y") }
+            if step.toElement == nil && (step.toX == nil || step.toY == nil) { problems.append("name where it goes (to_element) or give to_x and to_y") }
+            if let x = step.toX, let y = step.toY, !(x.isFinite && y.isFinite && x > -20_000 && x < 20_000 && y > -20_000 && y < 20_000) {
+                problems.append("the end point is not on a screen")
+            }
+        case .hover:
+            if step.element == nil && !hasPoint { problems.append("name the element (its label) or give x and y") }
         }
         return problems
     }

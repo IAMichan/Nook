@@ -13,6 +13,16 @@ import ApplicationServices
 enum UIDriver {
     static let readTool = "read_ui"
     static let controlTool = "control_ui"
+    static let lookTool = "look_ui"
+
+    /// The last picture `look_ui` took, for a brain that can see: handed over with the tool's result (`takePicture`).
+    private static var picture: ChatImage?
+
+    /// The picture of the last `look_ui`, once; nil when there is none.
+    static func takePicture() -> ChatImage? {
+        defer { picture = nil }
+        return picture
+    }
 
     /// A pause after each step, so the app can draw what changed before the next step looks for it.
     private static let settle: UInt64 = 400_000_000
@@ -32,7 +42,7 @@ enum UIDriver {
         [
             ToolSpec(
                 name: readTool,
-                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. In a web page, links carry the text a person sees (a product's name, a title) and prices are listed as text; elements marked (off screen) are on the page but scrolled out of view: scroll to reach them before clicking. A dropdown that is open lists its options as menu items. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again. For Focus (Do Not Disturb), Wi-Fi, Bluetooth, sound and display brightness: read \"Control Center\", click its menu bar item (Control Center, or Focus when it is in the menu bar), then read again to see the panel. App names work in any language: \"System Settings\" also finds \"Systeeminstellingen\".",
+                description: "Reads the buttons, switches, checkboxes, fields, menus and texts in the front window of a Mac app (locally, through the accessibility layer), with the label to name each one by and where it is on screen. Use it before control_ui, and again after control_ui ran, to see what changed. In a web page, links carry the text a person sees (a product's name, a title) and prices are listed as text; elements marked (off screen) are on the page but scrolled out of view: scroll to reach them before clicking. A dropdown that is open lists its options as menu items. When the app draws its own controls, it also lists the text it sees on screen with its position: click those with x and y. When it still shows too little, use look_ui. For System Settings: open the right pane with control_ui (action open with an x-apple.systempreferences: url) or by clicking it in the sidebar, then read again. For Focus (Do Not Disturb), Wi-Fi, Bluetooth, sound and display brightness: read \"Control Center\", click its menu bar item (Control Center, or Focus when it is in the menu bar), then read again to see the panel. App names work in any language: \"System Settings\" also finds \"Systeeminstellingen\".",
                 schema: [
                     "type": "object",
                     "properties": ["app": ["type": "string", "description": "Name of the app, e.g. \"System Settings\", \"Control Center\" or \"Safari\". Without it: the app in front."]] as [String: Any],
@@ -55,6 +65,23 @@ enum UIDriver {
                 }
             ),
             ToolSpec(
+                name: lookTool,
+                description: "Looks at the front window of a Mac app the way a person does: takes a fresh picture of it and lists every text seen on it with its screen position (x,y of its centre). Brains that can see also get the picture itself. Use it when read_ui shows little or nothing useful (apps that draw their own controls, canvases, games, remote screens, images, web apps), to find something by how it looks (an icon, a colour, a position), and to check the result of a step with your own eyes. In the picture, pixel (px, py) is screen point (window x + px, window y + py): click there with control_ui x and y.",
+                schema: [
+                    "type": "object",
+                    "properties": ["app": ["type": "string", "description": "Name of the app. Without it: the app in front."]] as [String: Any],
+                    "required": [String]()
+                ],
+                kind: .read,
+                summarize: { input in tr("control.look.plan", (input["app"] as? String) ?? tr("control.frontApp")) },
+                tag: { _ in ("", .neutral) },
+                run: { input in
+                    try checkAccess()
+                    let app = try await target((input["app"] as? String) ?? "")
+                    return await look(app)
+                }
+            ),
+            ToolSpec(
                 name: controlTool,
                 description: "Uses the mouse and keyboard in one Mac app, the way the user would: click buttons, switches, checkboxes, sidebar rows and menu items, type in fields, press keys and shortcuts, scroll. Use it when the user asks to change a setting or do something in an app that no other tool or menu command (app_menu_command) can do, e.g. turn on Night Shift or change the appearance in System Settings, or turn on Do Not Disturb in Control Center (app \"Control Center\": System Settings has no switch that turns a Focus on now). Read the window with read_ui first and name elements by their exact label (add role or index when labels repeat; x and y only when an element has no label). Steps run in order after the user approved them; propose only the steps you can see or are sure will appear (a menu that opens after a click). After they ran, Nook reads the window again and you continue with the next steps until the goal is reached.",
                 schema: controlSchema,
@@ -70,7 +97,7 @@ enum UIDriver {
         let step: [String: Any] = [
             "type": "object",
             "properties": [
-                "action": ["type": "string", "enum": UIControl.Action.allCases.map(\.rawValue), "description": "click, double_click, right_click, type (into the focused field, or into element), key (a key or shortcut), scroll, open (the app, or a System Settings pane with url), wait."] as [String: Any],
+                "action": ["type": "string", "enum": UIControl.Action.allCases.map(\.rawValue), "description": "click, double_click, right_click, type (into the focused field, or into element), key (a key or shortcut), scroll, open (the app, or a System Settings pane with url), wait, drag (press on element or x,y, move to to_element or to_x,to_y, release: move a file, a slider, a window, select text), hover (move the mouse over element or x,y without clicking, to show a tooltip or a menu that opens on hover)."] as [String: Any],
                 "element": ["type": "string", "description": "Label of the element exactly as read_ui shows it."],
                 "role": ["type": "string", "description": "Role from read_ui to tell same labels apart: button, checkbox, switch, radio, popup, field, row, menuitem, tab…"],
                 "index": ["type": "integer", "description": "Which of several matching elements, counted from the top left; 1 is the first."],
@@ -82,7 +109,10 @@ enum UIDriver {
                 "direction": ["type": "string", "enum": ["up", "down", "left", "right"], "description": "For scroll."] as [String: Any],
                 "amount": ["type": "integer", "description": "For scroll: lines (1–\(UIControl.maxScroll))."],
                 "url": ["type": "string", "description": "For open in System Settings: a pane, e.g. x-apple.systempreferences:com.apple.Displays-Settings.extension"],
-                "seconds": ["type": "number", "description": "For wait: seconds (at most \(Int(UIControl.maxWait)))."]
+                "seconds": ["type": "number", "description": "For wait: seconds (at most \(Int(UIControl.maxWait)))."],
+                "to_element": ["type": "string", "description": "For drag: label of the element to drop on, exactly as read_ui shows it."],
+                "to_x": ["type": "number", "description": "For drag: screen x where it ends."],
+                "to_y": ["type": "number", "description": "For drag: screen y where it ends."]
             ] as [String: Any],
             "required": ["action"]
         ]
@@ -114,6 +144,10 @@ enum UIDriver {
         case .scroll: return tr("control.step.scroll", tr("control.direction.\(step.direction ?? "down")"), step.amount ?? 3)
         case .open: return step.url == nil ? tr("control.step.open") : tr("control.step.openPane", step.url ?? "")
         case .wait: return tr("control.step.wait", String(format: "%.1f", step.seconds ?? 1))
+        case .drag:
+            let target = step.toElement.map { "“\($0)”" } ?? "\(Int(step.toX ?? 0)),\(Int(step.toY ?? 0))"
+            return tr("control.step.drag", place, target)
+        case .hover: return tr("control.step.hover", place)
         }
     }
 
@@ -260,10 +294,62 @@ enum UIDriver {
             let at = point ?? frontWindowCenter(pid)
             guard let at, owns(at, pid: pid) else { throw NookError(tr("control.error.covered", name)) }
             scroll(at: at, direction: step.direction ?? "down", lines: min(max(step.amount ?? 3, 1), UIControl.maxScroll))
+        case .hover:
+            guard let point else { throw NookError(tr("control.error.noTarget")) }
+            try await bringToFront(app)
+            guard owns(point, pid: pid) else { throw NookError(tr("control.error.covered", name)) }
+            let source = CGEventSource(stateID: .combinedSessionState)
+            CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+            try? await Task.sleep(nanoseconds: 700_000_000)
+        case .drag:
+            guard let point else { throw NookError(tr("control.error.noTarget")) }
+            var end = step.toX.flatMap { x in step.toY.map { CGPoint(x: x, y: $0) } }
+            if let label = step.toElement {
+                let items = read(app).items
+                switch UIControl.match(label, role: nil, index: nil, in: items.map(\.element)) {
+                case .success(let found): end = CGPoint(x: found.centerX, y: found.centerY)
+                case .failure(.ambiguous(_, let count)): throw NookError(tr("control.error.ambiguous", count, label))
+                case .failure: throw NookError(tr("control.error.notFound", label, name))
+                }
+            }
+            guard let end else { throw NookError(tr("control.error.noTarget")) }
+            try await bringToFront(app)
+            guard owns(point, pid: pid) else { throw NookError(tr("control.error.covered", name)) }
+            await drag(from: point, to: end)
         case .open, .wait:
             break
         }
         return nil
+    }
+
+    // MARK: Looking
+
+    /// A fresh picture of the app's window and the text seen on it with positions; the picture is kept for `takePicture`.
+    static func look(_ app: NSRunningApplication) async -> String {
+        guard let shot = await ScreenReader.windowImage(of: app, scale: 1) else {
+            return "Nook could not take a picture of \(app.localizedName ?? "the app") (no window on screen, or screen recording is not allowed). Use read_ui."
+        }
+        picture = ChatImage.encode(shot.image)
+        let frame = shot.frame
+        var lines = ["Window of \(app.localizedName ?? "the app") at x \(Int(frame.minX)), y \(Int(frame.minY)), \(Int(frame.width))×\(Int(frame.height)) points. In the picture, pixel (px, py) is screen point (\(Int(frame.minX)) + px, \(Int(frame.minY)) + py)."]
+        let seen = UIControl.describeSeen(await ScreenReader.seenLines(of: app, limit: 250), limit: 6_000)
+        lines.append(seen.isEmpty ? "No text recognized in the window." : seen)
+        return lines.joined(separator: "\n\n")
+    }
+
+    /// The name of the element at a screen point (top-left origin) in that app, as a person would call it: for the
+    /// checkpoint of a click on a point. Nil when there is none, or it belongs to another app.
+    static func label(at point: CGPoint, pid: pid_t) -> String? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.5)
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success, let hit else { return nil }
+        var owner: pid_t = 0
+        guard AXUIElementGetPid(hit, &owner) == .success, owner == pid else { return nil }
+        let role: String = attribute(hit, kAXRoleAttribute) ?? ""
+        let name = label(of: hit, role: UIControl.role(role, subrole: attribute(hit, kAXSubroleAttribute)))
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
     }
 
     /// After a click on a checkbox, switch or radio button: a note when it still shows what it showed before (or a radio
@@ -595,6 +681,29 @@ enum UIDriver {
                 try? await Task.sleep(nanoseconds: 30_000_000)
             }
         }
+    }
+
+    /// Presses at one point, moves there in small steps the way a hand does (apps only follow a drag that moves), and
+    /// releases at the other.
+    private static func drag(from start: CGPoint, to end: CGPoint) async {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        func post(_ type: CGEventType, _ point: CGPoint) {
+            guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
+            event.setIntegerValueField(.eventSourceUserData, value: AutocompleteTyper.marker)
+            event.post(tap: .cghidEventTap)
+        }
+        post(.mouseMoved, start)
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        post(.leftMouseDown, start)
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        let steps = 20
+        for index in 1...steps {
+            let t = CGFloat(index) / CGFloat(steps)
+            post(.leftMouseDragged, CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+            try? await Task.sleep(nanoseconds: 15_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        post(.leftMouseUp, end)
     }
 
     private static func press(_ combo: UIControl.KeyCombo, in app: NSRunningApplication) async throws {
