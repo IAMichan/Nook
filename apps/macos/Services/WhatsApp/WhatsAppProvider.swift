@@ -350,9 +350,26 @@ actor GOWAProvider: WhatsAppProvider {
         return WAGOWA.members(data)
     }
 
+    /// Page by page (GOWA refuses more than 100 at once) until the list runs out or `limit` chats are in. A page that
+    /// fails after the first keeps what came; one that brings nothing new ends it (a gateway that ignores the offset).
     func chats(limit: Int) async throws -> [WAChatInfo] {
-        WAGOWA.chats(try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(limit))]))
-            .map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
+        var out: [WAChatInfo] = []
+        var seen = Set<String>()
+        var offset: Int? = 0
+        while let start = offset, out.count < limit {
+            let data: Data
+            do {
+                data = try await scoped("GET", "/chats", query: [URLQueryItem(name: "limit", value: String(WAGOWA.chatPage)),
+                                                                 URLQueryItem(name: "offset", value: String(start))])
+            } catch {
+                if out.isEmpty { throw error }
+                break
+            }
+            let page = WAGOWA.chats(data).filter { seen.insert($0.jid).inserted }
+            out += page.map { WAChatInfo(jid: $0.jid, name: $0.name, last: $0.last) }
+            offset = page.isEmpty ? nil : WAGOWA.nextChatOffset(data, offset: start)
+        }
+        return Array(out.prefix(limit))
     }
 
     func channels() async -> [WAChannel] {
@@ -700,8 +717,27 @@ actor BeeperProvider: WhatsAppProvider {
         return WAMembers.others(WAMembers.list(obj["participants"]), me: nil, selves: selves)
     }
 
+    /// Page by page, older each time (Beeper's cursor), until the list runs out or `limit` chats are in. A page that
+    /// fails after the first keeps what came.
     func chats(limit: Int) async throws -> [WAChatInfo] {
-        WABeeper.chats(try await call("GET", "/v1/chats", query: [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 200)))]))
+        var out: [WAChatInfo] = []
+        var seen = Set<String>()
+        var cursor: String?
+        repeat {
+            var query = [URLQueryItem(name: "limit", value: String(WABeeper.chatPage))]
+            if let cursor { query += [URLQueryItem(name: "cursor", value: cursor), URLQueryItem(name: "direction", value: "before")] }
+            let data: Data
+            do {
+                data = try await call("GET", "/v1/chats", query: query)
+            } catch {
+                if out.isEmpty { throw error }
+                break
+            }
+            out += WABeeper.chats(data).filter { seen.insert($0.jid).inserted }
+            let older = WABeeper.olderChats(data)
+            cursor = older == cursor ? nil : older
+        } while cursor != nil && out.count < limit
+        return Array(out.prefix(limit))
     }
 
     /// Where Beeper keeps the file, then the file itself from Beeper's own server: never another host.

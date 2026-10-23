@@ -565,6 +565,21 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(WAJID.appLink(chats[0].jid))
     }
 
+    /// GOWA refuses a `limit` above 100 and Beeper above 200: the chat list is fetched page by page until it runs out.
+    func testChatListsArePagedUntilTheyRunOut() {
+        func page(_ count: Int, total: String = "") -> Data {
+            let rows = (0..<count).map { #"{"jid":"\#($0)@s.whatsapp.net"}"# }.joined(separator: ",")
+            return Data(#"{"results":{"data":[\#(rows)],"pagination":{"limit":100,"offset":0\#(total)}}}"#.utf8)
+        }
+        XCTAssertEqual(WAGOWA.nextChatOffset(page(100), offset: 0), 100)
+        XCTAssertEqual(WAGOWA.nextChatOffset(page(100, total: #","total":350"#), offset: 200), 300)
+        XCTAssertNil(WAGOWA.nextChatOffset(page(100, total: #","total":200"#), offset: 100))
+        XCTAssertNil(WAGOWA.nextChatOffset(page(40), offset: 300))
+        XCTAssertEqual(WABeeper.olderChats(Data(#"{"items":[],"hasMore":true,"oldestCursor":"c2"}"#.utf8)), "c2")
+        XCTAssertNil(WABeeper.olderChats(Data(#"{"items":[],"hasMore":false,"oldestCursor":"c2"}"#.utf8)))
+        XCTAssertNil(WABeeper.olderChats(Data(#"{"items":[]}"#.utf8)))
+    }
+
     func testBeeperMessagesFeedTheInbox() {
         let group = "!b:beeper.com@beeper.group"
         let messages = WABeeper.messages(Data(#"""

@@ -194,6 +194,21 @@ pub mod gowa {
         non_empty(&parse(data)["code"])
     }
 
+    /// How many chats GOWA hands out per call: it refuses a `limit` above 100.
+    pub const CHAT_PAGE: usize = 100;
+
+    /// Where the page after one of `GET /chats` starts (its `offset`), or `None` when that page was the last: a short
+    /// page, or the `pagination.total` reached.
+    pub fn next_chat_offset(data: &[u8], offset: usize) -> Option<usize> {
+        let r = results(data);
+        let count = crate::connectors::list(&r["data"]).len();
+        let next = offset + count;
+        if count < CHAT_PAGE || r["pagination"]["total"].as_u64().is_some_and(|total| next as u64 >= total) {
+            return None;
+        }
+        Some(next)
+    }
+
     pub fn chats(data: &[u8]) -> Vec<ChatInfo> {
         crate::connectors::list(&results(data)["data"])
             .iter()
@@ -405,6 +420,15 @@ pub mod beeper {
     /// `GET /v1/chats` → `{items: [Chat]}`, newest first.
     pub fn chats(data: &[u8]) -> Vec<ChatInfo> {
         crate::connectors::list(&parse(data)["items"]).iter().filter_map(chat).collect()
+    }
+
+    /// How many chats Beeper hands out per call (`limit` 1–200).
+    pub const CHAT_PAGE: usize = 200;
+
+    /// `GET /v1/chats` → `{hasMore, oldestCursor}`: the cursor of the next, older page, or `None` when this one was the last.
+    pub fn older_chats(data: &[u8]) -> Option<String> {
+        let v = parse(data);
+        (v["hasMore"] == true).then(|| non_empty(&v["oldestCursor"])).flatten()
     }
 
     /// `GET /v1/chats/{chatID}/messages` → `{items: [Message]}`. `chat` is Nook's id for the chat, `name` its title;
@@ -883,10 +907,11 @@ impl Provider {
         }
     }
 
-    /// De chats op de telefoon, nieuwste eerst: naar wie Nook op naam mag sturen.
+    /// De chats op de telefoon, nieuwste eerst: naar wie Nook op naam mag sturen. GOWA and Beeper are paged through
+    /// until the list runs out or `limit` chats are in.
     pub async fn chats(&self, limit: usize) -> WaResult<Vec<ChatInfo>> {
         Ok(match self.kind {
-            GatewayKind::Gowa => gowa::chats(&self.gowa_scoped("GET", "/chats", &[("limit", limit.to_string())], None).await?),
+            GatewayKind::Gowa => self.gowa_chats(limit).await?,
             GatewayKind::Openwa => openwa::chats(&self.openwa_scoped("GET", "/chats", &[], None).await?)
                 .into_iter()
                 .take(limit)
@@ -895,10 +920,55 @@ impl Provider {
                     c
                 })
                 .collect(),
-            GatewayKind::Beeper => {
-                beeper::chats(&self.call("GET", "/v1/chats", &[("limit", limit.clamp(1, 200).to_string())], None).await?)
-            }
+            GatewayKind::Beeper => self.beeper_chats(limit).await?,
         })
+    }
+
+    /// Page by page (GOWA refuses more than 100 at once). A page that fails after the first keeps what came; one that
+    /// brings nothing new ends it (a gateway that ignores the offset).
+    async fn gowa_chats(&self, limit: usize) -> WaResult<Vec<ChatInfo>> {
+        let mut out: Vec<ChatInfo> = vec![];
+        let mut seen = std::collections::HashSet::new();
+        let mut offset = Some(0);
+        while let Some(start) = offset.filter(|_| out.len() < limit) {
+            let query = [("limit", gowa::CHAT_PAGE.to_string()), ("offset", start.to_string())];
+            let data = match self.gowa_scoped("GET", "/chats", &query, None).await {
+                Ok(data) => data,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(_) => break,
+            };
+            let page: Vec<ChatInfo> = gowa::chats(&data).into_iter().filter(|c| seen.insert(c.jid.clone())).collect();
+            offset = if page.is_empty() { None } else { gowa::next_chat_offset(&data, start) };
+            out.extend(page);
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    /// Page by page, older each time (Beeper's cursor). A page that fails after the first keeps what came.
+    async fn beeper_chats(&self, limit: usize) -> WaResult<Vec<ChatInfo>> {
+        let mut out: Vec<ChatInfo> = vec![];
+        let mut seen = std::collections::HashSet::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut query = vec![("limit", beeper::CHAT_PAGE.to_string())];
+            if let Some(c) = &cursor {
+                query.extend([("cursor", c.clone()), ("direction", "before".to_string())]);
+            }
+            let data = match self.call("GET", "/v1/chats", &query, None).await {
+                Ok(data) => data,
+                Err(e) if out.is_empty() => return Err(e),
+                Err(_) => break,
+            };
+            out.extend(beeper::chats(&data).into_iter().filter(|c| seen.insert(c.jid.clone())));
+            let older = beeper::older_chats(&data);
+            if older.is_none() || older == cursor || out.len() >= limit {
+                break;
+            }
+            cursor = older;
+        }
+        out.truncate(limit);
+        Ok(out)
     }
 }
 
@@ -934,6 +1004,21 @@ mod tests {
         assert_eq!(spaced.map(|d| d.0).as_deref(), Some("/statics/media/a%20b.pdf"));
         assert_eq!(gowa::download(br#"{"results":{"file_path":"/etc/passwd"}}"#), None);
         assert_eq!(gowa::download(br#"{"results":{"file_path":"statics/../../etc/passwd"}}"#), None);
+    }
+
+    #[test]
+    fn chat_lists_are_paged_until_they_run_out() {
+        let page = |count: usize, total: &str| {
+            let rows: Vec<String> = (0..count).map(|i| format!(r#"{{"jid":"{i}@s.whatsapp.net"}}"#)).collect();
+            format!(r#"{{"results":{{"data":[{}],"pagination":{{"limit":100,"offset":0{total}}}}}}}"#, rows.join(","))
+        };
+        assert_eq!(gowa::next_chat_offset(page(100, "").as_bytes(), 0), Some(100));
+        assert_eq!(gowa::next_chat_offset(page(100, r#","total":350"#).as_bytes(), 200), Some(300));
+        assert_eq!(gowa::next_chat_offset(page(100, r#","total":200"#).as_bytes(), 100), None);
+        assert_eq!(gowa::next_chat_offset(page(40, "").as_bytes(), 300), None);
+        assert_eq!(beeper::older_chats(br#"{"items":[],"hasMore":true,"oldestCursor":"c2"}"#).as_deref(), Some("c2"));
+        assert_eq!(beeper::older_chats(br#"{"items":[],"hasMore":false,"oldestCursor":"c2"}"#), None);
+        assert_eq!(beeper::older_chats(br#"{"items":[]}"#), None);
     }
 
     #[tokio::test]
