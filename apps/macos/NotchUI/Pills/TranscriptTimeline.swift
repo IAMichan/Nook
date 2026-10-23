@@ -254,16 +254,20 @@ struct TranscriptConversation: View {
         let tally = ToolTally(steps: steps)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: ToolTallyText.sentence(tally),
-                               failed: tally.failed, checks: tally.checks, lines: tally.lines, open: open.contains(key)) { toggle(key) }
+                               failed: tally.failed, checks: tally.checks, open: open.contains(key)) { toggle(key) }
             if open.contains(key) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    ForEach(steps) { step in
-                        ForEach(thoughts[step.id] ?? []) { thinking($0) }
-                        stepLine(step)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        ForEach(steps) { step in
+                            ForEach(thoughts[step.id] ?? []) { thinking($0) }
+                            stepLine(step)
+                        }
                     }
                 }
-                .padding(.leading, NookTheme.Spacing.lg)
-                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 1).padding(.leading, 9) }
+                // A step that joins the group during a live turn stays in view at the end of the short scroll.
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                .frame(maxHeight: 288)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -279,7 +283,6 @@ struct TranscriptConversation: View {
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
-                               lines: step.state == .failed ? nil : step.lines,
                                open: tasks == nil ? nil : open.contains(key), reveals: file.map { $0 == preview }) {
                 if let file { show(file) } else { toggle(key) }
             }
@@ -288,12 +291,12 @@ struct TranscriptConversation: View {
             if let error {
                 Text(error)
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coral.opacity(0.85))
-                    .lineLimit(2)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
                     .truncationMode(.tail)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 26)
+                    .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
                     .padding(.bottom, NookTheme.Spacing.xxs)
                     .help(error)
             }
@@ -559,19 +562,19 @@ struct TranscriptWorkLine: View {
 
     /// The label, then its detail on the same line, so a long command or path truncates as one sentence.
     private var labelText: Text {
-        let color = reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.paper.opacity(0.85) : NookTheme.textSecondary
+        let color = reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.textSecondary : NookTheme.textTertiary
         let head = Text(label).foregroundStyle(color)
         guard let detail, !detail.isEmpty else { return head }
-        return head + Text("  ") + Text(detail)
+        return head + Text(" ") + Text(detail)
             .font(mono ? NookTheme.mono(12) : NookTheme.TextStyle.body)
-            .foregroundStyle(reveals == true ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
+            .foregroundStyle(color)
     }
 
     var body: some View {
         let content = HStack(spacing: NookTheme.Spacing.sm) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
                 .font(NookTheme.TextStyle.body)
-                .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
+                .foregroundStyle(failed ? NookTheme.coral.opacity(0.6) : NookTheme.textTertiary)
                 .frame(width: 24)
             if live {
                 ShimmerText(text: label)
@@ -584,8 +587,11 @@ struct TranscriptWorkLine: View {
             if let open {
                 Image(systemName: "chevron.right")
                     .font(NookTheme.font(9, .bold))
-                    .foregroundStyle(NookTheme.textTertiary)
+                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
                     .rotationEffect(.degrees(open ? 90 : 0))
+            }
+            if failed {
+                Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral.opacity(0.6))
             }
             if let reveals {
                 Image(systemName: "sidebar.right")
