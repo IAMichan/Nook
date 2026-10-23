@@ -116,6 +116,11 @@ struct AgentRunPanel: View {
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
+            // Selected words of an answer can be quoted into the reply (right-click › Quote in reply).
+            .environment(\.quoteSelection, { text in
+                draft = ReviewComments.quote(text, into: draft)
+                focused = true
+            })
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }

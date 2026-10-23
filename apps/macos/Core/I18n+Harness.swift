@@ -43,6 +43,9 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.guide.written": "Geschreven %@",
         "agents.pr.guide.close": "Goed bekijken",
         "agents.pr.guide.skim": "Even doorlopen",
+        "ws.review.quoteSelection": "Citeer in je bericht",
+        "ws.review.quoteTooLong": "Selecteer een korter stuk om het te citeren.",
+        "ws.question.back": "Vorige vraag",
     ],
     .en: [
         "ws.file.missing": "%@ is no longer there.",
@@ -83,6 +86,9 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.guide.written": "Written %@",
         "agents.pr.guide.close": "Look closely",
         "agents.pr.guide.skim": "Skim",
+        "ws.review.quoteSelection": "Quote in Your Message",
+        "ws.review.quoteTooLong": "Select a shorter passage to quote it.",
+        "ws.question.back": "Previous question",
     ],
     .de: [
         "ws.file.missing": "%@ gibt es nicht mehr.",
@@ -123,6 +129,9 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.guide.written": "Geschrieben %@",
         "agents.pr.guide.close": "Genau ansehen",
         "agents.pr.guide.skim": "Überfliegen",
+        "ws.review.quoteSelection": "In deiner Nachricht zitieren",
+        "ws.review.quoteTooLong": "Wähle eine kürzere Stelle, um sie zu zitieren.",
+        "ws.question.back": "Vorherige Frage",
     ],
     .fr: [
         "ws.file.missing": "%@ n'existe plus.",
@@ -163,6 +172,9 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.guide.written": "Rédigé %@",
         "agents.pr.guide.close": "À examiner",
         "agents.pr.guide.skim": "En survol",
+        "ws.review.quoteSelection": "Citer dans votre message",
+        "ws.review.quoteTooLong": "Sélectionnez un passage plus court pour le citer.",
+        "ws.question.back": "Question précédente",
     ],
     .es: [
         "ws.file.missing": "%@ ya no existe.",
@@ -203,5 +215,8 @@ let harnessTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.guide.written": "Escrita %@",
         "agents.pr.guide.close": "Mirar con atención",
         "agents.pr.guide.skim": "Por encima",
+        "ws.review.quoteSelection": "Citar en tu mensaje",
+        "ws.review.quoteTooLong": "Selecciona un fragmento más corto para citarlo.",
+        "ws.question.back": "Pregunta anterior",
     ],
 ]

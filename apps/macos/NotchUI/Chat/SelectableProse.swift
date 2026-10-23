@@ -1,6 +1,19 @@
 import SwiftUI
 import AppKit
 
+private struct QuoteSelectionKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    /// Set where an answer has a reply box under it (a session's conversation): selected words of the answer can be
+    /// quoted into it from the right-click menu, as Code cites a selection in its composer.
+    var quoteSelection: ((String) -> Void)? {
+        get { self[QuoteSelectionKey.self] }
+        set { self[QuoteSelectionKey.self] = newValue }
+    }
+}
+
 /// Headings, paragraphs, and lists that follow each other in an answer, drawn as one read-only text view so a selection
 /// can run across several paragraphs. SwiftUI only selects within a single `Text`, so a drag stopped at every paragraph.
 struct SelectableProse: NSViewRepresentable {
@@ -36,6 +49,7 @@ struct SelectableProse: NSViewRepresentable {
 
     func updateNSView(_ view: NSTextView, context: Context) {
         context.coordinator.fileLinkBase = context.environment.fileLinkBase
+        context.coordinator.quote = context.environment.quoteSelection
         view.linkTextAttributes = [
             .foregroundColor: NSColor(NookTheme.iris),
             .underlineStyle: NSUnderlineStyle.single.rawValue,
@@ -65,6 +79,30 @@ struct SelectableProse: NSViewRepresentable {
         let measure = NSTextStorage()
         /// The session's folder, for a relative file link in the text.
         var fileLinkBase: String?
+        /// Quotes selected words into the reply box, when there is one.
+        var quote: ((String) -> Void)?
+        /// A quote longer than this is refused: the reply should point at a passage, not repeat the answer.
+        static let quoteLimit = 4_000
+
+        func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            let range = view.selectedRange()
+            guard quote != nil, range.length > 0 else { return menu }
+            let text = (view.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return menu }
+            let item = NSMenuItem(title: tr("ws.review.quoteSelection"), action: #selector(quoteSelection(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = text
+            item.isEnabled = text.count <= Self.quoteLimit
+            if !item.isEnabled { item.toolTip = tr("ws.review.quoteTooLong") }
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+            return menu
+        }
+
+        @objc private func quoteSelection(_ sender: NSMenuItem) {
+            guard let text = sender.representedObject as? String else { return }
+            quote?(text)
+        }
         private let layout = NSLayoutManager()
         private let container = NSTextContainer()
 
