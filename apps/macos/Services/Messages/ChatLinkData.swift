@@ -52,14 +52,16 @@ enum ChatLinkData {
         /// Fields to fill in (a phone number, a code, a password).
         case input(id: String, instructions: String, fields: [Field])
         /// Signing in on the app's own website, in a window Nook opens: what to collect from it once the address matches.
-        case browser(id: String, instructions: String, url: URL, userAgent: String?, collect: [Collect], done: String?)
+        /// `extract` is the step's own script, run in the sign-in page, that finds the `special` values (Slack's token).
+        case browser(id: String, instructions: String, url: URL, userAgent: String?, collect: [Collect], done: String?,
+                     extract: String?)
         /// Something to show while the login waits (a QR code to scan, a code to type on the phone).
         case display(id: String, instructions: String, show: Display)
         case complete(instructions: String)
 
         var id: String? {
             switch self {
-            case .input(let id, _, _), .browser(let id, _, _, _, _, _), .display(let id, _, _): return id
+            case .input(let id, _, _), .browser(let id, _, _, _, _, _, _), .display(let id, _, _): return id
             case .complete: return nil
             }
         }
@@ -84,9 +86,10 @@ enum ChatLinkData {
         var isOptional: Bool
     }
 
-    /// A value the browser step collects: a cookie, a request header the page sends, or a local storage key.
+    /// A value the browser step collects: a cookie, a request header the page sends, a local storage key, or one the
+    /// step's own script finds in the page (by the value's id).
     struct Collect: Equatable, Sendable {
-        enum Source: String, Sendable { case cookie, header, localStorage = "local_storage" }
+        enum Source: String, Sendable { case cookie, header, localStorage = "local_storage", special }
         var id: String
         var source: Source
         var name: String
@@ -173,7 +176,8 @@ enum ChatLinkData {
                                pattern: (field["pattern"] as? String).flatMap { $0.isEmpty ? nil : $0 })
             }
             return .browser(id: id, instructions: instructions, url: url, userAgent: json["userAgent"] as? String, collect: collect,
-                            done: (json["expectedFinalURLRegex"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+                            done: (json["expectedFinalURLRegex"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                            extract: (json["extractJS"] as? String).flatMap { $0.isEmpty ? nil : $0 })
         case "display_and_wait":
             guard !id.isEmpty else { return nil }
             let display = json["display"] as? [String: Any] ?? [:]
@@ -216,13 +220,14 @@ enum ChatLinkData {
     /// the page sent (by name, any case; a "Cookie" header is the cookies themselves) and local storage (by key). A value
     /// that does not match the step's pattern does not count.
     static func collected(_ collect: [Collect], cookies: [String: String], storage: [String: String],
-                          headers: [String: String] = [:]) -> [String: String] {
+                          headers: [String: String] = [:], special: [String: String] = [:]) -> [String: String] {
         var values: [String: String] = [:]
         for item in collect {
             let value: String?
             switch item.source {
             case .cookie: value = cookies[item.name]
             case .localStorage: value = storage[item.name]
+            case .special: value = special[item.id]
             case .header:
                 value = item.name.lowercased() == "cookie" ? cookieHeader(cookies) : headers[item.name.lowercased()]
             }

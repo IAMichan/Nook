@@ -21,6 +21,7 @@ import (
 	meta "go.mau.fi/mautrix-meta/pkg/connector"
 	"go.mau.fi/mautrix-meta/pkg/igconnector"
 	signal "go.mau.fi/mautrix-signal/pkg/connector"
+	slack "go.mau.fi/mautrix-slack/pkg/connector"
 	telegram "go.mau.fi/mautrix-telegram/pkg/connector"
 	twitter "go.mau.fi/mautrix-twitter/pkg/connector"
 )
@@ -57,6 +58,8 @@ func allNetworks() []*Network {
 			Connector: &twitter.TwitterConnector{}},
 		{ID: "local-linkedin", App: "linkedin", Name: "LinkedIn", Flows: []string{linkedin.FlowIDCookies},
 			Connector: &linkedin.LinkedInConnector{}},
+		{ID: "local-slack", App: "slack", Name: "Slack", Flows: []string{slack.LoginFlowIDAuthToken},
+			Connector: &slack.SlackConnector{}},
 	}
 }
 

@@ -42,7 +42,7 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         // Its own store, gone with the window: the sign-in lives in the chat service, not in Nook.
         configuration.websiteDataStore = .nonPersistent()
         let wanted: [String]
-        if case .browser(_, _, _, _, let collect, _) = step { wanted = ChatLinkData.pageHeaders(collect) } else { wanted = [] }
+        if case .browser(_, _, _, _, let collect, _, _) = step { wanted = ChatLinkData.pageHeaders(collect) } else { wanted = [] }
         let listener = HeaderListener()
         if let script = Self.headerScript(wanted) {
             configuration.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart,
@@ -59,7 +59,7 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         window.contentView = web
         window.delegate = self
         web.navigationDelegate = self
-        if case .browser(_, _, let url, let agent, _, _) = step {
+        if case .browser(_, _, let url, let agent, _, _, _) = step {
             if let agent, !agent.isEmpty { web.customUserAgent = agent }
             web.load(URLRequest(url: url))
         }
@@ -98,7 +98,7 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
 
     /// Hands over what the step asks for once you are signed in.
     private func check() async {
-        guard !finished, !looking, case .browser(_, _, let start, _, let collect, let done) = step else { return }
+        guard !finished, !looking, case .browser(_, _, let start, _, let collect, let done, let extract) = step else { return }
         looking = true
         defer { looking = false }
         let address = web.url?.absoluteString ?? ""
@@ -109,7 +109,8 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         for cookie in cookies where !Self.belongs(cookie.domain, to: start) { jar[cookie.name] = cookie.value }
         for cookie in cookies where Self.belongs(cookie.domain, to: start) { jar[cookie.name] = cookie.value }
         let storage = await localStorage(collect.filter { $0.source == .localStorage }.map(\.name))
-        let values = ChatLinkData.collected(collect, cookies: jar, storage: storage, headers: headers)
+        if let extract, collect.contains(where: { $0.source == .special }) { runExtract(extract) }
+        let values = ChatLinkData.collected(collect, cookies: jar, storage: storage, headers: headers, special: special)
         guard ChatLinkData.hasCookies(collect, values: values) else { return }
         // A pattern for the page after signing in waits for it; without one the cookies are enough.
         if done != nil, !ChatLinkData.isDone(address, pattern: done) { return }
@@ -146,6 +147,27 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
           };
         })();
         """
+    }
+
+    /// The values the step's own script found in the page, by their ids.
+    private var special: [String: String] = [:]
+    /// The script is waiting in the page it was started in; a new page starts it again.
+    private var extracting: URL?
+
+    /// Runs the step's script in the page: it waits there until it finds what the step asks for (Slack's token, once
+    /// you are signed in) and answers with it. It comes from the chat helper on this Mac and runs only in this window.
+    private func runExtract(_ script: String) {
+        guard let page = web.url, extracting != page else { return }
+        extracting = page
+        Task { [weak self] in
+            let found = try? await self?.web.callAsyncJavaScript("return await (\(script))", contentWorld: .page)
+            guard let self, let found = found as? [String: Any] else {
+                if self?.extracting == page { self?.extracting = nil }
+                return
+            }
+            for (key, value) in found { if let value = value as? String { self.special[key] = value } }
+            await self.check()
+        }
     }
 
     /// The local storage values the step asks for, by key.
