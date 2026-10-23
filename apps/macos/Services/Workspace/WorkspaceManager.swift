@@ -729,6 +729,17 @@ final class WorkspaceManager: ObservableObject {
         send(id, text: text, shown: true)
     }
 
+    /// Sends the message you asked to go out right away once the turn ended; if it cannot go out now it waits
+    /// first in the queue. False when nothing was waiting.
+    @discardableResult
+    func sendPendingNow(_ id: UUID) -> Bool {
+        guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
+        if !send(id, text: next, shown: false) {
+            queued[id, default: MessageQueue()].requeueFirst(next)
+        }
+        return true
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
@@ -954,11 +965,7 @@ final class WorkspaceManager: ObservableObject {
         guard let process = processes[id] else {
             // No running process: update state only.
             update(id) { $0.move(to: .stopped) }
-            if let next = pendingSendNow.removeValue(forKey: id) {
-                if !send(id, text: next, shown: false) {
-                    queued[id, default: MessageQueue()].requeueFirst(next)
-                }
-            }
+            sendPendingNow(id)
             return
         }
         turns[id]?.stopping = true
@@ -1445,11 +1452,7 @@ final class WorkspaceManager: ObservableObject {
             update(id) { $0.move(to: .stopped) }
             append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
             scheduleGitRefresh(id, delay: 0.2)
-            if let next = pendingSendNow.removeValue(forKey: id) {
-                if !send(id, text: next, shown: false) {
-                    queued[id, default: MessageQueue()].requeueFirst(next)
-                }
-            }
+            sendPendingNow(id)
             return
         } else {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
