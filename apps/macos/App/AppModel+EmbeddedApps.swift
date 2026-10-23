@@ -77,6 +77,30 @@ extension AppModel {
         return owner
     }
 
+    /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
+    /// account): in the session's side panel when clicked in an agent's conversation (`beside`), else on the Pull
+    /// requests page. Its top bar opens it on GitHub. Returns false when Nook cannot read it (another forge, GitHub
+    /// not connected), so the link opens in the browser instead.
+    @discardableResult
+    func openPullRequestLink(_ url: URL, beside: Bool = false) -> Bool {
+        guard !demoMode, GitHubPullRequestList.isAvailable, let link = PullRequestRef.gitHubItem(url) else { return false }
+        let key = link.id.lowercased()
+        let listed = PullRequestStore.shared.accounts.lazy.compactMap { account in
+            (account.mine + account.reviews + account.watched).first { $0.id.lowercased() == key }.map { (account.id, $0) }
+        }.first
+        let account = listed?.0 ?? AccountRegistry.shared.accounts(for: "github").first?.id ?? "github"
+        let request = PullRequestOpenRequest(account: account, item: listed?.1 ?? link)
+        if beside {
+            viewModel.sidePullRequest = request
+            viewModel.sessionTool = .pullRequest
+            return true
+        }
+        viewModel.pullRequestToOpen = request
+        viewModel.selectedAgentID = AgentsPage.pullRequests
+        viewModel.show(.panel(.agents))
+        return true
+    }
+
     /// "@chat Jan": with a linked phone, Jan's chat shows as the card a new message from Jan brings up (the chat so
     /// far and a field to answer). Without one WhatsApp opens next to the chat, the way you open it ("@open whatsapp"),
     /// with Jan's chat in it: in WhatsApp Web Nook searches the chat and clicks it, and in the Mac app you pick it there

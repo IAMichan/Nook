@@ -7,6 +7,23 @@ final class PullRequestLinksTests: XCTestCase {
                         updatedAt: at.map { Date(timeIntervalSince1970: $0) }, baseBranch: base, headBranch: head)
     }
 
+    // MARK: Opening a link in Nook
+
+    func testGitHubLinkOpensAsItem() throws {
+        let item = try XCTUnwrap(PullRequestRef.gitHubItem(try XCTUnwrap(URL(string: "https://github.com/IAMichan/Nook/pull/558"))))
+        XCTAssertEqual(item.repo, "IAMichan/Nook")
+        XCTAssertEqual(item.number, 558)
+        XCTAssertEqual(item.url?.absoluteString, "https://github.com/IAMichan/Nook/pull/558")
+        XCTAssertNotNil(PullRequestRef.gitHubItem(try XCTUnwrap(URL(string: "https://github.com/acme/app/pull/12/files"))))
+    }
+
+    func testOtherLinksStayInTheBrowser() throws {
+        for text in ["https://gitlab.com/acme/app/-/merge_requests/3", "https://github.com/acme/app/issues/4",
+                     "https://github.com/acme/app", "https://git.example.com/acme/app/pull/5"] {
+            XCTAssertNil(PullRequestRef.gitHubItem(try XCTUnwrap(URL(string: text))), text)
+        }
+    }
+
     // MARK: PullRequestRef
 
     func testParsesUrlsOfEveryHost() throws {

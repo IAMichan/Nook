@@ -219,7 +219,7 @@ struct PullRequestSheet: View {
     @State private var title = ""
     @State private var bodyText = ""
     @State private var base = ""
-    @State private var draft = true
+    @State private var draft = false
     @State private var repo: RemoteRepository?
     @State private var branch: String?
     @State private var loading = true
