@@ -277,8 +277,8 @@ final class WorkspaceBridge: ObservableObject {
         lines.append("")
         lines.append("## Browser")
         // Describing the browser must not start it: never opened means nothing open.
-        if let browser = BrowserStore.existing, let url = browser.webView.url {
-            lines.append("- \(browser.webView.title ?? "") · \(url.absoluteString)" + (browser.openedBy.map { " (opened by \($0))" } ?? ""))
+        if let browser = BrowserStore.existing, let url = browser.pageURL {
+            lines.append("- \(browser.pageTitle) · \(url.absoluteString)" + (browser.openedBy.map { " (opened by \($0))" } ?? ""))
         } else {
             lines.append("- nothing open")
         }
@@ -473,6 +473,7 @@ final class WorkspaceBridge: ObservableObject {
     private func device(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller) async throws -> BridgeRPC.ToolResult {
         if case .refuse(let reason) = verdict(tool, caller) { return .error(Self.refusal(reason)) }
         let hub = DeviceHubService.shared
+        defer { hub.stopWhenIdle() }
         await hub.prepare()
         guard hub.state == .ready else { return .error(Self.hubProblem(hub.state)) }
         await hub.refreshDevices()

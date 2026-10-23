@@ -45,7 +45,8 @@ final class ConnectorHub: ObservableObject {
             unregister(config.sourceID)
             let connector = MCPConnector(config: config)
             sources.append(connector)
-            refresh(connector)
+            // At launch (before `start`) the timer's ticks start it, a few sources at a time; a server added later at once.
+            if timer != nil { refresh(connector) }
         }
     }
 
@@ -66,7 +67,11 @@ final class ConnectorHub: ObservableObject {
         timer = Timer.scheduledCoalesced(withTimeInterval: 15) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
-        Task { _ = await ContactDirectory.entries() }
+        // Every contact, read once for names in chats and mail: after the launch, not during it.
+        Task {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            _ = await ContactDirectory.entries()
+        }
         tick()
     }
 
@@ -74,6 +79,8 @@ final class ConnectorHub: ObservableObject {
     /// change in ways anyone sees, and each read wakes that app too, so they pause until you are back; a question still
     /// reads them fresh when they are stale (`MailConnector.inbox`).
     private static let followsYou: Set<String> = ["mail", "browser", "notes"]
+    /// How many sources one tick starts at most.
+    private static let perTick = 4
 
     private func tick() {
         let now = Date()
@@ -81,12 +88,18 @@ final class ConnectorHub: ObservableObject {
         // One scripted source per tick: started together they wait on the one AppleScript queue, and the ones behind it
         // fall back to starting an `osascript` process each. The others follow on the next ticks.
         var scripting = running.contains { Self.followsYou.contains($0) }
+        // A few sources per tick: at launch every source is due at once, and reading them all together (processes, databases,
+        // network) is a burst the rest of the Mac feels. Away or saving power, every source comes less often.
+        var started = 0
+        let slowdown = EnergyMonitor.shared.plan.slowdown
         for source in active where !running.contains(source.id) {
+            guard started < Self.perTick else { break }
             let scripted = Self.followsYou.contains(source.id)
             if scripted && (away || scripting) { continue }
             let last = lastRefresh[source.id] ?? .distantPast
-            if now.timeIntervalSince(last) >= source.refreshInterval {
+            if now.timeIntervalSince(last) >= source.refreshInterval * slowdown {
                 refresh(source)
+                started += 1
                 if scripted { scripting = true }
             }
         }
@@ -103,10 +116,10 @@ final class ConnectorHub: ObservableObject {
             guard let self else { return }
             self.running.remove(source.id)
             // Every view of the app redraws on a new revision. A refresh that found nothing new (same status, same data)
-            // only moved its "updated" time, which is shown per minute: redraw for that at most once a minute.
+            // only moved its "updated" time: redraw for that at most every five minutes (the whole app redraws for it).
             let unchanged = Self.fingerprint(source) == before
             let now = Date()
-            if !unchanged || now.timeIntervalSince(self.lastQuietRevision) >= 60 {
+            if !unchanged || now.timeIntervalSince(self.lastQuietRevision) >= 300 {
                 if unchanged { self.lastQuietRevision = now }
                 self.revision += 1
             }

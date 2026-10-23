@@ -47,14 +47,28 @@ enum AutocompleteField {
     ]
 
     /// Asks the app to build its accessibility tree: Electron apps listen to AXManualAccessibility, Chromium browsers to
-    /// AXEnhancedUserInterface.
+    /// AXEnhancedUserInterface. Once per process: the app keeps the setting until it quits, and asking again on every key
+    /// makes Chromium and Electron rebuild their tree, which slows them down for everyone. AXEnhancedUserInterface is never
+    /// set on other apps: there it only slows down window animations and window managers.
     static func wake(_ app: NSRunningApplication) {
-        let element = AXUIElementCreateApplication(app.processIdentifier)
+        wake(pid: app.processIdentifier, bundleID: app.bundleIdentifier)
+    }
+
+    static func wake(pid: pid_t, bundleID: String?) {
+        wokenLock.lock()
+        let first = woken.insert(pid).inserted
+        wokenLock.unlock()
+        guard first else { return }
+        let element = AXUIElementCreateApplication(pid)
         AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        if chromium.contains(app.bundleIdentifier ?? "") {
+        if chromium.contains(bundleID ?? "") {
             AXUIElementSetAttributeValue(element, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
         }
     }
+
+    /// The processes already asked to build their tree (see `wake`).
+    private static let wokenLock = NSLock()
+    private nonisolated(unsafe) static var woken: Set<pid_t> = []
 
     /// - Parameters:
     ///   - screenHeight: the main screen's height (`NSScreen.screens[0].frame.height`), taken on the main thread.
@@ -65,7 +79,11 @@ enum AutocompleteField {
         // Nook's own fields are read through AppKit (`readOwn`): asking itself through accessibility would wait on its own
         // main thread.
         var pid: pid_t = 0
-        guard AXUIElementGetPid(element, &pid) == .success, pid != getpid(), isEditable(element) else { return nil }
+        guard AXUIElementGetPid(element, &pid) == .success, pid != getpid() else { return nil }
+        // The whole text of the field, asked once per read: in a long document it is a large copy out of the app, which
+        // waits while it answers.
+        let value: String? = attribute(element, kAXValueAttribute)
+        guard isEditable(element, hasValue: value != nil) else { return nil }
         let role: String? = attribute(element, kAXRoleAttribute)
         let subrole: String? = attribute(element, kAXSubroleAttribute)
         guard role != "AXSecureTextField", subrole != (kAXSecureTextFieldSubrole as String) else { return nil }
@@ -73,7 +91,7 @@ enum AutocompleteField {
 
         var snapshot: AutocompleteFieldSnapshot
         var fontLocation: Int?
-        if let value: String = attribute(element, kAXValueAttribute), let range = selectedRange(of: element),
+        if let value, let range = selectedRange(of: element),
            range.location >= 0, range.location + range.length <= (value as NSString).length {
             let text = value as NSString
             let cursor = range.location + range.length
@@ -198,17 +216,16 @@ enum AutocompleteField {
 
     /// A field you write in (see `CompletionFieldKind.isWritable`): a text field or area, or (in browsers) an editable web
     /// element. Not a slider or stepper whose value can be set, a search box, an address bar or a page you only read.
-    private static func isEditable(_ element: AXUIElement) -> Bool {
+    private static func isEditable(_ element: AXUIElement, hasValue: Bool) -> Bool {
         var settable: DarwinBoolean = false
         let canSet = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
         let ancestor: AXUIElement? = attribute(element, "AXEditableAncestor")
         let editable: Bool? = attribute(element, "AXEditable")
-        let value: String? = attribute(element, kAXValueAttribute)
         return CompletionFieldKind.isWritable(CompletionFieldKind.Element(
             role: attribute(element, kAXRoleAttribute), subrole: attribute(element, kAXSubroleAttribute),
             roleDescription: attribute(element, kAXRoleDescriptionAttribute), identifier: attribute(element, kAXIdentifierAttribute),
             label: attribute(element, kAXDescriptionAttribute), settable: canSet, editable: ancestor != nil || editable == true,
-            textValue: value != nil
+            textValue: hasValue
         ))
     }
 

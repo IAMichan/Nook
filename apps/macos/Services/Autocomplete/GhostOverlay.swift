@@ -167,12 +167,13 @@ final class GhostOverlay {
 
     func hide() {
         ghostState = nil
-        panel.orderOut(nil)
+        // Called on nearly every key and click: a window already away needs no trip to the WindowServer.
+        if panel.isVisible { panel.orderOut(nil) }
     }
 
     private func present(_ frame: CGRect) {
         panel.setFrame(frame, display: true)
-        panel.orderFrontRegardless()
+        if !panel.isVisible { panel.orderFrontRegardless() }
     }
 }
 

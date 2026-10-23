@@ -38,7 +38,7 @@ final class Parakeet: ObservableObject {
     /// two, and dictation starts it while you speak (`FlowDictation.begin`).
     private var idleTask: Task<Void, Never>?
     private var pressureSource: DispatchSourceMemoryPressure?
-    private static let idleSeconds: UInt64 = 10 * 60
+    private static let idleSeconds: UInt64 = 5 * 60
 
     private init() {
         refresh()

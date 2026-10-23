@@ -6,6 +6,10 @@ import AppKit
 final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
+    /// The window the notch is drawn in: room for the largest state, but never more than its screen
+    /// (`NotchController.canvas(for:)`); a copy on another screen only rests, so its window is smaller
+    /// (`NotchController.mirrorSize`).
+    @Published var canvas: CGSize = NotchController.panelSize
     @Published private(set) var pointerInside = false
     /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
     @Published private(set) var panelNotice: PanelNotice?
@@ -787,18 +791,18 @@ final class NotchViewModel: ObservableObject {
         let big = AppSettings.shared.panelLarge
         if sheet != nil {
             // A task in the notch gets room to breathe, whatever the size setting.
-            return CGSize(width: 1040, height: min(chrome + 640, NotchController.panelSize.height))
+            return CGSize(width: 1040, height: min(chrome + 640, canvas.height))
         }
         switch tab {
         case .nook where chatSideOpen, .chat where chatSideOpen:
-            return CGSize(width: 1240, height: min(chrome + 680, NotchController.panelSize.height))
-        case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
-        case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
+            return CGSize(width: 1240, height: min(chrome + 680, canvas.height))
+        case .nook: return CGSize(width: 780, height: min(chrome + 440, canvas.height))
+        case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), canvas.height))
         case .agents where workbenchOpen:
-            return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
-        case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
-        case .inbox: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 460), NotchController.panelSize.height))
-        case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), NotchController.panelSize.height))
+            return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), canvas.height))
+        case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), canvas.height))
+        case .inbox: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 460), canvas.height))
+        case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), canvas.height))
         case .shelf: return CGSize(width: 640, height: chrome + 180)
         case .connect: return CGSize(width: 820, height: chrome + 330)
         }
@@ -828,7 +832,7 @@ final class NotchViewModel: ObservableObject {
     private var panelMaximum: CGSize {
         let screen = geometry.screenFrame.size
         let width = NotchController.panelSize.width - 40
-        let height = NotchController.panelSize.height
+        let height = canvas.height
         return CGSize(width: screen.width > 0 ? min(width, screen.width - 40) : width,
                       height: screen.height > 0 ? min(height, screen.height - 40) : height)
     }

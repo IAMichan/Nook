@@ -248,6 +248,15 @@ final class MailConnector: ContextSource {
     private var inboxes: [String: (unread: Int, rows: [MailStats.InboxRow])] = [:]
     /// Refreshes in a row in which Mail did not answer at all.
     private var failures = 0
+    /// The inbox's message and unread counts when it was last asked (see `refresh`).
+    private var changeMark: String?
+    /// Two numbers from Mail, one quick Apple Event: when both are what they were, the inbox is read again (every account,
+    /// forty messages each) only once the last full read is a quarter of an hour old.
+    private static let changeScript = """
+    tell application "Mail"
+        return ((count of messages of inbox) as text) & "|" & ((unread count of inbox) as text)
+    end tell
+    """
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
@@ -270,7 +279,8 @@ final class MailConnector: ContextSource {
         // Brief pause for Mail's scripting bridge to initialize.
         try? await Task.sleep(nanoseconds: 300_000_000)
     }
-    var refreshInterval: TimeInterval { 60 }
+    /// Every read scripts Mail (a count and a batch of messages), which keeps Mail busy too; a question reads it fresh anyway.
+    var refreshInterval: TimeInterval { 180 }
     private static let loadTimeout: TimeInterval = 30
 
     /// Fresh enough to answer from memory.
@@ -283,6 +293,9 @@ final class MailConnector: ContextSource {
         }
         // One load at a time: a question that arrives during a background refresh waits for that one.
         if let loading { await loading.value; return }
+        let mark = await ScriptText.run(Self.changeScript, timeout: 5).text
+        if let mark, mark == changeMark, let loadedAt, Date().timeIntervalSince(loadedAt) < 15 * 60 { return }
+        changeMark = mark
         let task = Task { await self.load() }
         loading = task
         await task.value
@@ -755,7 +768,8 @@ final class BrowserConnector: ContextSource {
     ]
 
     var isActive: Bool { ConnectorToggle.isOn(id) && Self.browsers.contains { ScriptText.isRunning($0.bundle) } }
-    var refreshInterval: TimeInterval { 45 }
+    /// Every read scripts each open browser tab by tab, which holds up the browser while it answers.
+    var refreshInterval: TimeInterval { 180 }
 
     func refresh() async {
         let runningBrowsers = Self.browsers.filter { ScriptText.isRunning($0.bundle) }
@@ -779,14 +793,21 @@ final class BrowserConnector: ContextSource {
                         try
                             set act to URL of \(activeKey) of w
                         end try
+                        -- Two requests per window for all its tabs, instead of two per tab: each request holds up the browser.
+                        set us to {}
+                        set ns to {}
+                        try
+                            set us to URL of tabs of w
+                            set ns to \(titleKey) of tabs of w
+                        end try
                         set ti to 0
-                        repeat with t in tabs of w
+                        repeat with u in us
                             set ti to ti + 1
-                            if ti > 15 then exit repeat
-                            set u to URL of t
+                            if ti > 15 or ti > (count of ns) then exit repeat
+                            set u to contents of u
                             set mark to "0"
                             if u is act then set mark to "1"
-                            set out to out & mark & "|||" & (\(titleKey) of t) & "|||" & u & linefeed
+                            set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
                         end repeat
                     end repeat
                     return out

@@ -100,14 +100,14 @@ final class NowPlayingService: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 // Nothing playing: the players' notifications announce a start, so the safety net can be slow. Right after
-                // launch it keeps checking every tick until a player answers: a player that was still starting (or a cold
+                // launch it keeps checking every other tick until a player answers: a player that was still starting (or a cold
                 // first AppleScript run) should not keep the Music tab away for ten seconds.
                 let settling = self.current == nil && Date().timeIntervalSince(self.startedAt) < 20
                 // Playing and on screen: every tick, for the position and volume. Playing but out of sight: the players'
                 // notifications announce every track and play/pause change, and the position is estimated, so a check
                 // every fifteen seconds is enough (each one is an Apple Event round trip to the player).
-                let interval: TimeInterval = self.current?.isPlaying == true ? (self.viewers > 0 ? 0 : 15) : 10
-                if !settling, Date().timeIntervalSince(self.lastPoll) < interval { return }
+                let interval: TimeInterval = settling ? 4 : (self.current?.isPlaying == true ? (self.viewers > 0 ? 0 : 15) : 10)
+                if Date().timeIntervalSince(self.lastPoll) < interval - 0.5 { return }
                 self.poll()
             }
         }

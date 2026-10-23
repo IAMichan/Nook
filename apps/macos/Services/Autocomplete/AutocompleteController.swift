@@ -182,8 +182,14 @@ final class AutocompleteController: ObservableObject {
     private static let contextSeconds: TimeInterval = 180
     /// The clipboard goes into the prompt only this long after it was copied.
     private static let clipboardSeconds: TimeInterval = 5 * 60
-    /// The model leaves memory after this long without a suggestion.
-    private static let idleSeconds: UInt64 = 15 * 60
+    /// The model leaves memory after this long without a suggestion: a model of several GB held for a quarter of an hour
+    /// after the last key slowed down the rest of the Mac.
+    private static let idleSeconds: UInt64 = 5 * 60
+    /// At launch the model loads only after this long, not in the middle of everything else that starts then. A key
+    /// before that still loads it at once.
+    private static let launchDelay: UInt64 = 45
+    /// Set on the first `refresh`, which is at launch.
+    private static let launched = Date()
 
     private var prefs: CompletionPreferences { store.prefs }
 
@@ -229,7 +235,10 @@ final class AutocompleteController: ObservableObject {
             }
             guard let model else { state = .noModel; return }
             state = .ready
-            // Load it now, so the first suggestion does not wait.
+            // Load it now, so the first suggestion does not wait; at launch after `launchDelay`.
+            let wait = Double(Self.launchDelay) - Date().timeIntervalSince(Self.launched)
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard prefs.enabled, activeModel?.identity == model.identity else { return }
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
             if case .brain(let id, _) = model { EmbeddedModel.shared.preloadForAutocomplete(id) }
         }
@@ -960,6 +969,9 @@ final class AutocompleteController: ObservableObject {
     /// Reads the prompt for the focused field into the model ahead of the next key. The context before the typed text
     /// (memory, screen, samples) is most of the prompt; when it is new (another app or field, a message sent, the window's
     /// text just read) the model would otherwise read all of it on that key, which on a larger model takes seconds.
+    private var lastWarm: (pid: pid_t, date: Date)?
+    private static let warmGap: TimeInterval = 3
+
     private func scheduleWarm(after seconds: TimeInterval) {
         warmWork?.cancel()
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.warmFocusedField() } }
@@ -969,6 +981,10 @@ final class AutocompleteController: ObservableObject {
 
     private func warmFocusedField() {
         guard completer != nil, let app = frontApp, isActive(in: app) else { return }
+        // Every click warms: a few clicks in a row in the same app read the field (and run the model) once.
+        let now = Date()
+        if let last = lastWarm, last.pid == app.processIdentifier, now.timeIntervalSince(last.date) < Self.warmGap { return }
+        lastWarm = (app.processIdentifier, now)
         read(in: app) { [weak self] snapshot in
             guard let self, let snapshot, !snapshot.hasSelection, self.prefs.isEnabled(onSite: snapshot.site), !self.skipsCode(snapshot, in: app),
                   let completer = self.completer else { return }
