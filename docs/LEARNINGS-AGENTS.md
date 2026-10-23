@@ -114,7 +114,7 @@ context (`terminalFocus`, `terminalOpen`, …), resolves the pressed chord again
   from the first responder; `paletteOpen` from the agents' tab), matches over `Keybindings.effective(user:)` and runs
   the handler a view offers with `.keyCommand` / `.keyCommands`, scoped to the window the key was pressed in.
 - The hard-coded shortcuts it covers are gone: ⌘Return, ⌘S and the history keys in `SessionComposer`, ⌘Return in
-  `ChatReplyField`, the hidden ⌘F buttons in `AgentRunPanel` and `PullRequestsPanel`, ⌘K in `AgentsTab`, ⌘N in
+  `ChatReplyField`, the hidden ⌘F buttons in `AgentRunPanel` and `PullRequestsPanel`, ⇧⌘K in `AgentsTab`, ⌘N in
   `WorkspaceView` and `NookConversationList`, ⌘Z in `AgentInboxList`. ⇧⌘Return sends the first queued message.
 - Settings › Shortcuts › **Panel keys** lists every command with its keys, marks the commands nothing runs yet, and
   shows the file's state, the rules it skipped (with their position), unknown commands and conflicts.

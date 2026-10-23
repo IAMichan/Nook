@@ -32,7 +32,8 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⌥↑ / ⌥↓ | `composer.historyPrevious` / `composer.historyNext` | `composerFocus` | Walk through earlier messages from anywhere in the text (plain ↑ ↓ still do it from the edge) |
 | ⇧⌘↩ | `queue.steerFirst` | `composerFocus && turnRunning` | Send the first queued message now |
 | ⌘F | `chat.find` | `!terminalFocus` | Find in the session, or jump to the pull requests' search |
-| ⌘K | `commandPalette.toggle` | `!terminalFocus` | The agents' command palette |
+| ⌘K | `search.toggle` | `!terminalFocus` | Search everything, from every tab (also ⇧⌘F) |
+| ⇧⌘K | `commandPalette.toggle` | `!terminalFocus` | The agents' command palette |
 | ⌘N | `session.new` | `!terminalFocus` | A new Nook chat in the Nook list, a new agent session elsewhere in the main window |
 | ⌘Z | `session.undo` | `!terminalFocus && !editableFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | Not available yet |
@@ -46,7 +47,7 @@ shows what your file could not use, and the keys that claim the same chord.
 on to the focused view. Settings marks them the same way (`KeyCommandCenter.wiredCommands`).
 
 Keys that are not commands stay with their view: Return, Tab, Escape and the plain arrows inside a field or a list,
-⌘1–⌘3 for the main window's tabs, ⇧⌘F for search everything, and a sheet's `.cancelAction` / `.defaultAction`.
+⌘1–⌘3 for the main window's tabs, ⇧⌘F for search everything (besides ⌘K), and a sheet's `.cancelAction` / `.defaultAction`.
 
 ## Your own rules
 
@@ -54,7 +55,7 @@ Keys that are not commands stay with their view: Return, Tab, Escape and the pla
 
 ```json
 [
-  { "key": "mod+shift+k", "command": "commandPalette.toggle" },
+  { "key": "mod+shift+o", "command": "commandPalette.toggle" },
   { "key": "ctrl+enter", "command": "composer.send", "when": "composerFocus && !turnRunning" },
   { "key": "mod+z", "command": "session.undo", "when": "!editableFocus" }
 ]

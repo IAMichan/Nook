@@ -82,7 +82,8 @@ final class KeybindingsTests: XCTestCase {
         let user = [rule("mod+k", "my.command")]
         let all = Keybindings.effective(user: user)
         XCTAssertEqual(Keybindings.match(chord("mod+k"), context: [:], rules: all), "my.command")
-        XCTAssertEqual(Keybindings.match(chord("mod+k"), context: [:], rules: Keybindings.defaults), "commandPalette.toggle")
+        XCTAssertEqual(Keybindings.match(chord("mod+k"), context: [:], rules: Keybindings.defaults), "search.toggle")
+        XCTAssertEqual(Keybindings.match(chord("mod+shift+k"), context: [:], rules: Keybindings.defaults), "commandPalette.toggle")
     }
 
     // MARK: Conflicts
@@ -212,13 +213,13 @@ final class KeybindingsTests: XCTestCase {
         let url = dir.appendingPathComponent("keybindings.json")
         XCTAssertEqual(Keybindings.read(url).state, .missing)
         XCTAssertEqual(Keybindings.read(url).rules, [])
-        try Data(#"[{"key":"mod+shift+k","command":"commandPalette.toggle"},{"key":"mod+j","command":"no.such"}]"#.utf8).write(to: url)
+        try Data(#"[{"key":"mod+shift+o","command":"commandPalette.toggle"},{"key":"mod+j","command":"no.such"}]"#.utf8).write(to: url)
         let result = Keybindings.read(url)
         XCTAssertEqual(result.state, .ok)
         XCTAssertEqual(result.rules.count, 2)
         XCTAssertEqual(Keybindings.unknownCommands(result.rules).map(\.command), ["no.such"])
         let all = Keybindings.effective(user: result.rules)
-        XCTAssertEqual(Keybindings.chords(for: "commandPalette.toggle", rules: all), [chord("cmd+k"), chord("cmd+shift+k")])
+        XCTAssertEqual(Keybindings.chords(for: "commandPalette.toggle", rules: all), [chord("cmd+shift+k"), chord("cmd+shift+o")])
         XCTAssertEqual(Keybindings.chords(for: "session.interrupt", rules: all), [])
         XCTAssertTrue(Keybindings.userFileURL.path.hasSuffix(".nook/keybindings.json"))
     }

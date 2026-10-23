@@ -1,11 +1,11 @@
 import Foundation
 
-// Texts for Search everything (⇧⌘F): the field, the kinds it filters on, the tips for the query language, and the
+// Texts for Search everything (⌘K or ⇧⌘F): the field, the kinds it filters on, the tips for the query language, and the
 // actions it can run.
 
 let searchTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "search.button": "Alles doorzoeken (⇧⌘F)",
+        "search.button": "Alles doorzoeken (⌘K)",
         "search.placeholder": "Zoek in gesprekken, sessies, chats, notities, instellingen…",
         "search.none": "Niets gevonden",
         "search.noneDetail": "Probeer minder woorden, een ander woord of haal een filter weg.",
@@ -40,7 +40,7 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "Jij",
     ],
     .en: [
-        "search.button": "Search everything (⇧⌘F)",
+        "search.button": "Search everything (⌘K)",
         "search.placeholder": "Search conversations, sessions, chats, notes, settings…",
         "search.none": "Nothing found",
         "search.noneDetail": "Try fewer words, another word, or remove a filter.",
@@ -75,7 +75,7 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "You",
     ],
     .de: [
-        "search.button": "Alles durchsuchen (⇧⌘F)",
+        "search.button": "Alles durchsuchen (⌘K)",
         "search.placeholder": "Gespräche, Sitzungen, Chats, Notizen, Einstellungen durchsuchen…",
         "search.none": "Nichts gefunden",
         "search.noneDetail": "Versuche weniger Wörter, ein anderes Wort oder entferne einen Filter.",
@@ -110,7 +110,7 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "Du",
     ],
     .fr: [
-        "search.button": "Tout rechercher (⇧⌘F)",
+        "search.button": "Tout rechercher (⌘K)",
         "search.placeholder": "Rechercher conversations, sessions, chats, notes, réglages…",
         "search.none": "Rien trouvé",
         "search.noneDetail": "Essaie moins de mots, un autre mot, ou retire un filtre.",
@@ -145,7 +145,7 @@ let searchTranslations: [AppLanguage: [String: String]] = [
         "search.author.me": "Toi",
     ],
     .es: [
-        "search.button": "Buscar en todo (⇧⌘F)",
+        "search.button": "Buscar en todo (⌘K)",
         "search.placeholder": "Busca en conversaciones, sesiones, chats, notas, ajustes…",
         "search.none": "No se encontró nada",
         "search.noneDetail": "Prueba con menos palabras, otra palabra o quita un filtro.",

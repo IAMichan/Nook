@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Search everything (⇧⌘F, or the magnifying glass in the panel header): one field over conversations with Nook, agent
+/// Search everything (⌘K or ⇧⌘F, or the magnifying glass in the panel header): one field over conversations with Nook, agent
 /// sessions and their transcripts, chats, call notes, memories, notices, settings and actions. Typing ranks as you go;
 /// a chip (or Tab) keeps one kind; ↑/↓ move, Return opens the hit right where it matched, Esc closes. With nothing
 /// typed it shows your recent searches and how to search more precisely (see `SearchQuery` for the query language).
@@ -11,6 +11,8 @@ struct SearchPanel: View {
     let close: () -> Void
 
     @StateObject private var center = SearchCenter()
+    /// Contact photos for chat results, as the Chats tab shows them.
+    @ObservedObject private var photos = ContactPhotos.shared
     @State private var text = ""
     @State private var kind: SearchKind?
     @State private var index = 0
@@ -75,6 +77,7 @@ struct SearchPanel: View {
         .onAppear {
             focused = true
             center.load(app)
+            photos.refresh()
         }
         .onDisappear { center.cancel() }
         .onChange(of: text) { _, value in
@@ -182,10 +185,7 @@ struct SearchPanel: View {
 
     private func hitRow(_ hit: SearchHit, selected: Bool) -> some View {
         HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            Image(systemName: Self.symbol(hit.document))
-                .font(NookTheme.font(12, .medium))
-                .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
-                .frame(width: 18, height: 18)
+            face(hit.document, selected: selected)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     Text(Self.marked(hit.document.title, hit.titleRanges, font: NookTheme.TextStyle.body, bold: NookTheme.TextStyle.strong))
@@ -217,6 +217,34 @@ struct SearchPanel: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// A chat's photo (or initials) with its app's badge, an agent's logo, else the kind's symbol; all in the same slot so
+    /// the titles line up.
+    @ViewBuilder
+    private func face(_ document: SearchDocument, selected: Bool) -> some View {
+        switch document.icon {
+        case .chat(let app, let name, let avatar, let handle):
+            ChatsAvatar(name: name, app: app, photo: photo(avatar: avatar, handle: handle, name: name), size: Self.faceSize)
+        case .agent(let agent):
+            AgentLogo(agent: agent, size: Self.faceSize - 4).frame(width: Self.faceSize, height: Self.faceSize)
+        case nil:
+            Image(systemName: Self.symbol(document))
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
+                .frame(width: Self.faceSize, height: 18)
+        }
+    }
+
+    private static let faceSize: CGFloat = 26
+
+    /// The chat's own picture from its app, else its photo in Contacts.
+    private func photo(avatar: String?, handle: String?, name: String) -> NSImage? {
+        if let avatar, FileManager.default.fileExists(atPath: avatar),
+           let image = ChatMediaImages.image(URL(fileURLWithPath: avatar), side: 96) {
+            return image
+        }
+        return photos.photo(handle: handle, name: name)
     }
 
     /// The line under a hit: who said what matched, else where it lives.

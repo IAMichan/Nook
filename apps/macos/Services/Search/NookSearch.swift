@@ -73,6 +73,18 @@ struct SearchDocument: Identifiable, Equatable, Sendable {
     var passages: [SearchPassage] = []
     /// Added to the score: a pinned conversation, an unread chat.
     var boost: Double = 0
+    /// The face of the result row, so you know it at a glance: whose chat it is, or which agent runs the session. Nil
+    /// shows the kind's symbol.
+    var icon: SearchIcon? = nil
+}
+
+/// Who or what a search result is, as its row draws it.
+enum SearchIcon: Equatable, Sendable {
+    /// A coding agent, by its display name ("Claude Code", "Codex"): its logo.
+    case agent(String)
+    /// A chat: its own picture from its app (a file path) or the contact's photo, else initials, with the app's badge.
+    /// `app` is the messaging app's source id ("whatsapp", "telegram"); `handle` a private WhatsApp chat's number.
+    case chat(app: String, name: String, avatar: String?, handle: String?)
 }
 
 // MARK: - The query
