@@ -272,6 +272,12 @@ struct GitService: Sendable {
         return Self.parseStatus(text).files.count
     }
 
+    /// The subjects of the latest commits on the current branch, newest first (for `CommitStyle.repository`).
+    func recentSubjects(_ directory: String, count: Int = 20) -> [String] {
+        guard let text = try? run(["log", "-n", String(count), "--no-merges", "--format=%s"], in: directory, timeout: 10) else { return [] }
+        return text.split(separator: "\n").map(String.init)
+    }
+
     func status(_ directory: String) throws -> GitStatus {
         let text = try run(["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"], in: directory)
         var status = Self.parseStatus(text)

@@ -817,6 +817,15 @@ struct AgentRunPanel: View {
             }
             Spacer(minLength: 6)
             NookGhostButton(title: tr("button.cancel")) { confirmDelete = false }
+            // The session's own worktree, which no other session uses, can go with it.
+            if let worktree = workspace.orphanedWorktree(runID) {
+                NookGhostButton(title: tr("agents.run.deleteWithWorktree")) {
+                    confirmDelete = false
+                    workspace.deleteWithWorktree(runID)
+                    app.viewModel.selectedAgentID = ""
+                }
+                .help(AgentPathFormat.tilde(worktree.path))
+            }
             NookPrimaryButton(title: tr("agents.run.delete")) {
                 confirmDelete = false
                 workspace.delete(runID)

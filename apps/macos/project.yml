@@ -302,6 +302,9 @@ targets:
       - path: Services/Workspace/TerminalTitle.swift
       - path: Services/Workspace/FileLinks.swift
       - path: Services/Workspace/TerminalLinks.swift
+      - path: Services/Workspace/WorktreeCleanup.swift
+      - path: Services/Workspace/ComposerLists.swift
+      - path: Services/Workspace/CommitStyle.swift
       - path: Services/Workspace/CodexAppServer.swift
       - path: Services/Workspace/AcpAgent.swift
       - path: Services/Workspace/AgentModelCatalog.swift

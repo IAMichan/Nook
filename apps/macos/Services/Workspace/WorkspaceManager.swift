@@ -1804,6 +1804,31 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    /// The worktree deleting this session would leave unused (`WorktreeCleanup`), offered to remove along with it.
+    func orphanedWorktree(_ id: UUID) -> (repo: String, path: String)? {
+        guard let run = run(id), !run.isRemote, let repo = run.repoRoot else { return nil }
+        let others = runs.filter { $0.id != id }.flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) }
+        guard let path = WorktreeCleanup.orphaned(worktree: run.worktreePath, otherFolders: others),
+              WorkspacePathPolicy.normalize(path) != WorkspacePathPolicy.normalize(repo) else { return nil }
+        return (repo, path)
+    }
+
+    /// Deletes a session and then its worktree. Git refuses a worktree with changes that were never committed; that is
+    /// reported and the worktree stays, so nothing you did not commit is lost.
+    func deleteWithWorktree(_ id: UUID) {
+        guard let worktree = orphanedWorktree(id) else { delete(id); return }
+        guard run(id)?.status.isActive == false else { return }
+        delete(id)
+        Task {
+            do {
+                try await removeWorktree(repo: worktree.repo, path: worktree.path, force: false)
+                ToastCenter.shared.success(tr("ws.worktree.removed"))
+            } catch {
+                ToastCenter.shared.error(error, title: tr("ws.worktree.removeFailed"))
+            }
+        }
+    }
+
     /// Removes a worktree that is not linked to any active session (from the overview).
     func removeWorktree(repo: String, path: String, force: Bool) async throws {
         guard let git = gitService else { throw StartError.noGit }

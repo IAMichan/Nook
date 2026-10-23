@@ -322,6 +322,9 @@ final class AppUpdater: ObservableObject {
     /// Sessions Nook runs itself stop when Nook restarts (and can be resumed after); terminal sessions are not affected.
     var runningSessions: Int { AppModel.shared.workspace.activeRuns.count }
 
+    /// Set while Nook quits to restart into a new build: you already chose to, so quitting does not ask again.
+    private(set) var restarting = false
+
     /// Quits and opens the app again from where it runs, which now holds the new build.
     func restart() {
         phase = .installing(.restart)
@@ -337,6 +340,7 @@ final class AppUpdater: ObservableObject {
             phase = .failed(UpdateFailure(step: .restart, reason: .other(error.localizedDescription), errors: [], logPath: nil))
             return
         }
+        restarting = true
         NSApp.terminate(nil)
     }
 
