@@ -34,6 +34,8 @@ struct ChatTranscript: View {
     @State private var loadingOlder = false
     /// The pointer or fingers moved the chat: only then does reaching the top load older messages, not the first layout.
     @State private var scrolledByUser = false
+    /// The last fetch brought nothing: the chat's start is shown, so reaching the top again does not ask once more.
+    @State private var reachedStart = false
 
     var body: some View {
         if fills {
@@ -57,11 +59,18 @@ struct ChatTranscript: View {
                 }
             }
             .defaultScrollAnchor(.bottom)
-            // Scrolling up to the top loads the older messages by itself; the button stays for a click.
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y <= 80
-            } action: { _, nearTop in
-                if nearTop, scrolledByUser { loadOlder(proxy) }
+            // Scrolling up to the top loads the older messages by itself; the button stays for a click. Moving up while
+            // the sizes stay the same can only be you (loading and new messages change the size), so a mouse wheel,
+            // which reports no scroll phase, counts as well as the trackpad.
+            .onScrollGeometryChange(for: TranscriptScrollGeometry.self) { geometry in
+                TranscriptScrollGeometry(offset: geometry.contentOffset.y,
+                                         container: geometry.containerSize.height,
+                                         content: geometry.contentSize.height)
+            } action: { old, new in
+                if new.offset < old.offset - 0.5, new.content == old.content, new.container == old.container {
+                    scrolledByUser = true
+                }
+                if new.nearTop, scrolledByUser { loadOlder(proxy, automatic: true) }
             }
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting || phase == .decelerating { scrolledByUser = true }
@@ -80,18 +89,23 @@ struct ChatTranscript: View {
                 }
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
-            .onChange(of: contact) { scrolledByUser = false }
+            .onChange(of: contact) {
+                scrolledByUser = false
+                reachedStart = false
+            }
         }
     }
 
     /// Loads the older messages once at a time; the message that was on top stays where it was, with the older ones
     /// above it.
-    private func loadOlder(_ proxy: ScrollViewProxy) {
-        guard let onLoadOlder, !loadingOlder else { return }
+    private func loadOlder(_ proxy: ScrollViewProxy, automatic: Bool = false) {
+        guard let onLoadOlder, !loadingOlder, !(automatic && reachedStart) else { return }
         loadingOlder = true
         let anchor = bubbles.first?.id
         Task { @MainActor in
-            if await onLoadOlder(), let anchor { proxy.scrollTo(anchor, anchor: .top) }
+            let loaded = await onLoadOlder()
+            if loaded, let anchor { proxy.scrollTo(anchor, anchor: .top) }
+            reachedStart = !loaded
             loadingOlder = false
         }
     }
@@ -887,4 +901,14 @@ private struct AttachmentButton: View {
         .help(tr("card.attachment.view"))
         .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
     }
+}
+
+/// Where the chat is scrolled to, and how big it and its messages are: enough to tell your own scrolling apart from
+/// the chat growing.
+private struct TranscriptScrollGeometry: Equatable {
+    var offset: Double
+    var container: Double
+    var content: Double
+
+    var nearTop: Bool { offset <= 80 }
 }

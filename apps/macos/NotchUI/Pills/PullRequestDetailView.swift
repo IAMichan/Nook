@@ -1,13 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook. On top what it is (title, state,
-/// author, branches, size), then four tabs: Summary (reviewers and labels, then the description, the checks and
+/// One pull request, read in full inside Nook, laid out. A fixed top with the crumbs
+/// (repository and the number in its state's color), the main action (merge, ready for review, or the state) and the ⋯
+/// menu, then the title, author, checkout command, branches and size, then the tabs; it folds to one line once you
+/// scroll past the title. Under it four tabs: Summary (reviewers and labels, then the description, the checks and
 /// the comments in sections that fold, the comments as threads them; see
 /// PullRequestConversationList), Guide, Timeline (everything that happened, commits included) and Code (every
 /// changed file with its diff). The bar under the tabs says what the open tab holds: the checks on Summary, the
-/// comments, commits and approvals with the order on Timeline, the files viewed on Code. The bar at the bottom merges
-/// it, after you confirm, with the account it was listed under.
+/// comments, commits and approvals with the order on Timeline, the files viewed on Code. Merge asks for a second click and
+/// uses the account it was listed under; the round button at the bottom right opens the composer.
 ///
 /// The page opens at once: the top shows what the list already knew while GitHub is asked, the overview follows with
 /// the first answer and the timeline, commits and files after it (see PullRequestDetailModel, which also keeps it
@@ -33,9 +35,12 @@ struct PullRequestDetailView: View {
     @State private var writingGuide = false
     @State private var guideFailed = false
     @AppStorage("agents.pr.mergeMethod") private var methodRaw = PullRequestMergeMethod.merge.rawValue
-    @State private var confirmMerge = false
+    /// The merge button's first click arms it ("Confirm merge?"), the second merges; it disarms by itself after a while.
+    @State private var armedMerge = false
+    @State private var armToken = UUID()
     @State private var merging = false
-    @State private var mergeError: String?
+    /// Scrolled past the title: the top folds to one line (number and title).
+    @State private var condensed = false
     /// The composer, the ⋯ menu's actions and their confirmation.
     @StateObject private var actions = PullRequestActionState()
     /// The timeline newest first, when chosen.
@@ -77,21 +82,23 @@ struct PullRequestDetailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            topBar
-            if confirmStackMerge || mergingStack { stackMergeBar }
-            header
+        VStack(alignment: .leading, spacing: 0) {
+            headerBlock
+            if confirmStackMerge || mergingStack { stackMergeBar.padding(.top, NookTheme.Spacing.sm) }
             if let detail {
-                tabs(detail)
-                // The relative times in the timeline and the commits tick along, once a minute.
-                TimelineView(.periodic(from: .now, by: 60)) { context in
-                    content(detail, now: context.date)
+                ZStack(alignment: .bottomTrailing) {
+                    // The relative times in the timeline and the commits tick along, once a minute.
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        content(detail, now: context.date)
+                    }
+                    if actions.panel != .write { writeButton(detail) }
                 }
+                .frame(maxHeight: .infinity)
                 if actions.panel != .none || actions.pending != nil || actions.error != nil {
                     PullRequestActionPanel(state: actions, model: model, accountID: accountID, detail: detail)
+                        .padding(.top, NookTheme.Spacing.sm)
                         .transition(.opacity)
                 }
-                mergeBar(detail)
             } else if let error = model.error {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     Text(tr("agents.pr.loadFailed")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
@@ -102,10 +109,10 @@ struct PullRequestDetailView: View {
                     NookPrimaryButton(title: tr("agents.pr.retry")) { Task { await model.refresh(activity: true) } }
                         .padding(.top, NookTheme.Spacing.xs)
                 }
-                .padding(.top, NookTheme.Spacing.md)
+                .padding(.top, NookTheme.Spacing.lg)
                 Spacer(minLength: 0)
             } else {
-                PullRequestDetailGhost()
+                PullRequestDetailGhost().padding(.top, NookTheme.Spacing.lg)
                 Spacer(minLength: 0)
             }
         }
@@ -122,48 +129,264 @@ struct PullRequestDetailView: View {
 
     // MARK: Header
 
+    /// The top of the page, laid out: the crumbs with the page's actions, the title, who and when, the
+    /// branches and the size, then the tabs, ruled off from the content that scrolls under it. Once the title is
+    /// scrolled away the middle folds to one line and the crumbs show the number and title instead.
+    private var headerBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            if condensed {
+                condensedLine
+                    .padding(.bottom, NookTheme.Spacing.sm)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                header
+                    .padding(.top, NookTheme.Spacing.xs)
+                    .padding(.bottom, NookTheme.Spacing.lg)
+                    .transition(.opacity)
+            }
+            if let detail {
+                NookDivider()
+                tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
+            }
+            NookDivider()
+        }
+        .animation(NookTheme.reveal, value: condensed)
+    }
+
     private var topBar: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             if let onBack, !inline {
-                NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
-                    .help(tr("agents.pr.back"))
+                ToolbarIconButton("arrow.left", tr("agents.pr.back"), action: onBack)
             }
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Text(item.repo).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.right").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
-                Text("#\(item.number)").foregroundStyle(NookTheme.textSecondary).monospacedDigit()
-            }
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(NookTheme.textTertiary)
+            crumbs
             Spacer(minLength: NookTheme.Spacing.sm)
             if model.loading {
                 ProgressView().controlSize(.small)
             } else if let read = model.fetchedAt {
                 PullRequestFreshness(date: read)
             }
-            NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) {
+            ToolbarIconButton("arrow.clockwise", tr("agents.pulls.refresh")) {
                 Task { await model.refresh(activity: true) }
             }
-            .help(tr("agents.pulls.refresh"))
             if stack.count > 1 { stackMenu }
             if let detail {
+                primaryAction(detail)
                 PullRequestMoreMenu(state: actions, detail: detail)
             }
-            if let url = detail?.url ?? item.url {
-                NookIconButton(systemName: "link", label: tr("agents.pr.copyLink"), size: 28) {
-                    Pasteboard.copy(url.absoluteString)
-                    ToastCenter.shared.success(tr("agents.pr.copiedLink"))
-                }
-                    .help(tr("agents.pr.copyLink"))
-                NookIconButton(systemName: "arrow.up.right.square", label: tr("agents.pulls.open"), size: 28) { NSWorkspace.shared.open(url) }
-                    .help(tr("agents.pulls.open"))
-            }
             if let onBack, inline {
-                NookIconButton(systemName: "sidebar.right", label: tr("agents.pr.closePanel"), size: 28, action: onBack)
-                    .help(tr("agents.pr.closePanel"))
+                ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), action: onBack)
             }
         }
-        .frame(height: 30)
+        .frame(height: 32)
+    }
+
+    /// "acme/app  #12↗", or "#12↗ Title" once folded. The number wears the state's color and opens it on GitHub.
+    private var crumbs: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if condensed {
+                numberLink
+                Text(detail?.title ?? item.title)
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(detail?.title ?? item.title)
+            } else {
+                Text(item.repo).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
+                numberLink
+            }
+        }
+        .font(NookTheme.TextStyle.label)
+    }
+
+    private var numberLink: some View {
+        Button {
+            if let url = detail?.url ?? item.url { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
+                    .frame(width: 12, height: 12)
+                Text("#\(item.number)").monospacedDigit()
+                Image(systemName: "arrow.up.right").font(NookTheme.font(8, .bold))
+            }
+            .foregroundStyle(PullRequestStateBadge.tint(glyph))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(tr("agents.pulls.open"))
+        .accessibilityLabel(tr("agents.pulls.open"))
+    }
+
+    /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            Text(detail?.title ?? item.title)
+                .font(NookTheme.TextStyle.title)
+                .foregroundStyle(NookTheme.paper)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                let author = detail?.author ?? item.author
+                if !author.isEmpty {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        GitHubAvatar(login: author, size: 16)
+                        Text("@" + author).foregroundStyle(NookTheme.textSecondary)
+                    }
+                }
+                if let created = detail?.created {
+                    Text("· " + tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince(created))))
+                }
+                if let updated = detail?.updated ?? item.updated {
+                    Text("· " + tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if let detail { checkoutCommand(detail) }
+            }
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+            if let detail {
+                branchLine(detail).padding(.top, NookTheme.Spacing.sm)
+            } else {
+                GhostBar(width: 260).padding(.top, NookTheme.Spacing.sm)
+            }
+        }
+    }
+
+    /// The folded middle: the author and when, the branches, and the size, in one quiet line.
+    private var condensedLine: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            let author = detail?.author ?? item.author
+            if !author.isEmpty { GitHubAvatar(login: author, size: 16).help("@" + author) }
+            if let updated = detail?.updated ?? item.updated {
+                Text(AgentFormat.short(Date().timeIntervalSince(updated))).monospacedDigit()
+            }
+            if let detail {
+                NookDivider(vertical: true).frame(height: 12)
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(detail.baseBranch).lineLimit(1)
+                    Image(systemName: "arrow.left").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
+                    Text(detail.headBranch).lineLimit(1).truncationMode(.middle)
+                }
+                .font(NookTheme.mono(10.5))
+                Spacer(minLength: NookTheme.Spacing.sm)
+                diffStat(detail)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textTertiary)
+        .frame(height: 20)
+    }
+
+    /// `gh pr checkout 12 --repo acme/app` in mono; a click copies it.
+    private func checkoutCommand(_ detail: PullRequestDetail) -> some View {
+        Button {
+            Pasteboard.copy(PullRequestMoreMenu.checkout(detail))
+            ToastCenter.shared.success(tr("agents.pr.action.copied"))
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(systemName: "terminal").font(NookTheme.font(9.5))
+                Text("gh pr checkout \(detail.number)").font(NookTheme.mono(11))
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(tr("agents.pr.action.copyCheckout"))
+    }
+
+    private var glyph: PullRequestBadge.Glyph {
+        guard let detail else {
+            switch item.state {
+            case .merged: return .merged
+            case .closed: return .closed
+            case .open: return item.draft ? .draft : .open
+            }
+        }
+        if detail.state == .open && detail.conflicted { return .conflict }
+        return PullRequestBadge.Glyph(rawValue: detail.state.rawValue) ?? .open
+    }
+
+    /// "main ← feature" in mono (a click on the head copies it), the update button when the branch is behind, and on
+    /// the right how many files and lines changed.
+    private func branchLine(_ detail: PullRequestDetail) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5, .medium))
+                Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
+                Image(systemName: "arrow.left").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textMuted)
+                Button {
+                    Pasteboard.copy(detail.headBranch)
+                    ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
+                } label: {
+                    Text(detail.headBranch).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
+                }
+                .buttonStyle(.plain)
+                .help(tr("agents.pr.copyBranch"))
+            }
+            .font(NookTheme.mono(11.5))
+            .foregroundStyle(NookTheme.textTertiary)
+            if detail.isOpen && detail.mergeState == "behind" {
+                Button {
+                    actions.close()
+                    actions.pending = .updateBranch(headSHA: detail.headSHA)
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text(tr("agents.pr.behind"))
+                    }
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.amber)
+                }
+                .buttonStyle(.plain)
+                .help(tr("agents.pr.action.updateBranch"))
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            diffStat(detail)
+        }
+    }
+
+    /// How many files, the lines added and removed, and the small bar.
+    private func diffStat(_ detail: PullRequestDetail) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                Image(systemName: "doc").font(NookTheme.font(10))
+                Text(tr("agents.pr.filesCount", max(detail.changedFiles, detail.files.count)))
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            Text("+\(detail.additions)").foregroundStyle(NookTheme.mint)
+            Text("−\(detail.deletions)").foregroundStyle(NookTheme.coral)
+            DiffStatBar(additions: detail.additions, deletions: detail.deletions)
+        }
+        .font(NookTheme.TextStyle.detail.monospacedDigit())
+        .lineLimit(1)
+        .fixedSize()
+    }
+
+    /// The round button at the bottom right that opens the composer (a comment or a review).
+    private func writeButton(_ detail: PullRequestDetail) -> some View {
+        Button {
+            withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
+        } label: {
+            Image(systemName: "bubble.left")
+                .font(NookTheme.font(14, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(NookTheme.smoke))
+                .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1))
+                .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(actions.sending)
+        .help(tr("agents.pr.write.open"))
+        .accessibilityLabel(tr("agents.pr.write.open"))
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     // MARK: Stack
@@ -249,110 +472,6 @@ struct PullRequestDetailView: View {
             mergingStack = false
             await model.refresh(activity: true)
             await PullRequestStore.shared.refresh(force: true)
-        }
-    }
-
-    /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers.
-    private var header: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(detail?.title ?? item.title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                PullRequestStateBadge(glyph: glyph)
-                let author = detail?.author ?? item.author
-                if !author.isEmpty {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        GitHubAvatar(login: author, size: 16)
-                        Text("@" + author).foregroundStyle(NookTheme.textSecondary)
-                    }
-                }
-                if let created = detail?.created {
-                    Text("· " + tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince(created))))
-                }
-                if let updated = detail?.updated ?? item.updated {
-                    Text("· " + tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
-                }
-                Spacer(minLength: 0)
-            }
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .lineLimit(1)
-            if let detail {
-                branchLine(detail)
-            } else {
-                GhostBar(width: 260)
-            }
-        }
-    }
-
-    private var glyph: PullRequestBadge.Glyph {
-        guard let detail else {
-            switch item.state {
-            case .merged: return .merged
-            case .closed: return .closed
-            case .open: return item.draft ? .draft : .open
-            }
-        }
-        if detail.state == .open && detail.conflicted { return .conflict }
-        return PullRequestBadge.Glyph(rawValue: detail.state.rawValue) ?? .open
-    }
-
-    /// "main ← feature" with the size of the change: how many files, the lines added and removed, and a small bar.
-    private func branchLine(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5, .medium))
-                Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "arrow.left").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textMuted)
-                Text(detail.headBranch).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
-            }
-            .font(NookTheme.mono(11.5))
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(NookTheme.rowHover))
-            .help(tr("agents.pr.copyBranch"))
-            .onTapGesture {
-                Pasteboard.copy(detail.headBranch)
-                ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
-            }
-            .accessibilityAddTraits(.isButton)
-            ToolbarIconButton("terminal", tr("agents.pr.action.copyCheckout")) {
-                Pasteboard.copy(PullRequestMoreMenu.checkout(detail))
-                ToastCenter.shared.success(tr("agents.pr.action.copied"))
-            }
-            if detail.isOpen && detail.mergeState == "behind" {
-                Button {
-                    actions.close()
-                    actions.pending = .updateBranch(headSHA: detail.headSHA)
-                } label: {
-                    HStack(spacing: NookTheme.Spacing.xxs) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text(tr("agents.pr.behind"))
-                    }
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.amber)
-                }
-                .buttonStyle(.plain)
-                .help(tr("agents.pr.action.updateBranch"))
-            }
-            Spacer(minLength: NookTheme.Spacing.sm)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                HStack(spacing: NookTheme.Spacing.xxs) {
-                    Image(systemName: "doc").font(NookTheme.font(10))
-                    Text(tr("agents.pr.filesCount", max(detail.changedFiles, detail.files.count)))
-                }
-                .foregroundStyle(NookTheme.textTertiary)
-                Text("+\(detail.additions)").foregroundStyle(NookTheme.mint)
-                Text("−\(detail.deletions)").foregroundStyle(NookTheme.coral)
-                DiffStatBar(additions: detail.additions, deletions: detail.deletions)
-            }
-            .font(NookTheme.TextStyle.detail.monospacedDigit())
-            .lineLimit(1)
-            .fixedSize()
         }
     }
 
@@ -453,7 +572,7 @@ struct PullRequestDetailView: View {
             if !detail.activityLoaded {
                 activityLoading
             } else if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
-                fileDiff(file, detail: detail)
+                fileDiff(file, detail: detail).padding(.top, NookTheme.Spacing.md)
             } else {
                 page { files(detail) }
             }
@@ -582,13 +701,27 @@ struct PullRequestDetailView: View {
         }
     }
 
+    /// A tab's content, scrolling under the top. Scrolled well past the title (and with enough below to keep it
+    /// scrolled), the top folds; back at the start it unfolds.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         ScrollView(showsIndicators: false) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, NookTheme.Spacing.md)
+                .padding(.top, NookTheme.Spacing.md)
+                // Room for the round write button over the end of the page.
+                .padding(.bottom, NookTheme.Spacing.xxxl + NookTheme.Spacing.xxl)
         }
         .frame(maxHeight: .infinity)
+        .onScrollGeometryChange(for: PageScroll.self) { geometry in
+            PageScroll(offset: geometry.contentOffset.y + geometry.contentInsets.top,
+                       overflow: geometry.contentSize.height - geometry.containerSize.height)
+        } action: { _, scroll in
+            if condensed {
+                if scroll.offset < 4 { condensed = false }
+            } else if scroll.offset > 72 && scroll.overflow > 200 {
+                condensed = true
+            }
+        }
     }
 
     /// The summary is in, the timeline, commits and files are still on their way.
@@ -601,6 +734,7 @@ struct PullRequestDetailView: View {
             ForEach(0..<4, id: \.self) { _ in GhostRow() }
             Spacer(minLength: 0)
         }
+        .padding(.top, NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -636,9 +770,8 @@ struct PullRequestDetailView: View {
                         MarkdownView(text: detail.body, size: 13.5)
                     }
                 }
-                .padding(NookTheme.Spacing.lg)
+                .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .panelCard()
             }
 
             SummarySection(title: tr("agents.pr.status.checks"), open: $checksOpen) {
@@ -713,6 +846,7 @@ struct PullRequestDetailView: View {
     private func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
         openFile = nil
+        condensed = false
     }
 
     @ViewBuilder
@@ -870,31 +1004,13 @@ struct PullRequestDetailView: View {
 
     // MARK: Checks
 
-    /// The checks by outcome: what fails first, then what runs, then what passed or was skipped.
+    /// The checks as one plain list them: failing first, then running, then passed or skipped.
     private func checks(_ detail: PullRequestDetail) -> some View {
-        let groups: [(PullRequestCheck.Outcome, String)] = [
-            (.failing, "agents.pr.checks.group.failing"), (.pending, "agents.pr.checks.group.running"),
-            (.passing, "agents.pr.checks.group.passed"), (.skipped, "agents.pr.checks.group.skipped"),
-        ]
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: 0) {
             if detail.checks.isEmpty {
                 ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
-                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                    let rows = detail.checks.filter { $0.outcome == group.0 }
-                    if !rows.isEmpty {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                            NookSectionLabel(tr(group.1) + " · \(rows.count)", inset: NookTheme.Spacing.xs)
-                            VStack(spacing: 0) {
-                                ForEach(Array(rows.enumerated()), id: \.offset) { index, check in
-                                    if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 16 + NookTheme.Spacing.md) }
-                                    checkRow(check)
-                                }
-                            }
-                            .panelCard()
-                        }
-                    }
-                }
+                ForEach(Array(detail.checks.enumerated()), id: \.offset) { _, check in checkRow(check) }
             }
         }
     }
@@ -1048,89 +1164,81 @@ struct PullRequestDetailView: View {
 
     // MARK: Merging
 
-    private func mergeBar(_ detail: PullRequestDetail) -> some View {
-        let note = detail.mergeNote
-        let ready = detail.canMerge && note == nil
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if confirmMerge {
-                confirmation(detail)
-            } else {
-                mergeRow(detail, note: note, ready: ready)
-            }
-            if let mergeError {
-                Text(mergeError)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.rowHover))
-    }
-
-    /// The confirmation, inside the bar: a system dialog is a window of its own, and on the notch panel its buttons do not
-    /// reliably get the click (the merge never ran).
-    private func confirmation(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.triangle.merge")
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.amber)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(tr("agents.pr.confirmTitle", "#\(detail.number)", detail.baseBranch))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                Text(confirmMessage)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 6)
-            NookGhostButton(title: tr("button.cancel")) { confirmMerge = false }
-            NookPrimaryButton(title: tr("agents.pr.confirmButton")) {
-                confirmMerge = false
-                merge()
-            }
-        }
-    }
-
-    private func mergeRow(_ detail: PullRequestDetail, note: String?, ready: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: ready ? "checkmark.circle.fill" : detail.canMerge ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
-            Text(tr(note ?? "agents.pr.note.ready"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 6)
-            if actions.panel != .write {
-                NookGhostButton(title: tr("agents.pr.write.open"), symbol: "square.and.pencil", compact: true, height: 30) {
-                    withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
+    /// The page's main action at the top right, as on: merge an open pull request, mark a draft ready, or say
+    /// what it is (merged, closed, in conflict) when there is nothing to do.
+    @ViewBuilder
+    private func primaryAction(_ detail: PullRequestDetail) -> some View {
+        switch detail.state {
+        case .merged, .closed:
+            PullRequestStateBadge(glyph: glyph)
+        case .draft:
+            if !detail.nodeID.isEmpty, detail.canPush != false {
+                SmallPrimaryButton(title: tr("agents.pr.action.ready"), systemName: "checkmark.circle") {
+                    actions.close()
+                    actions.pending = .markReady(nodeID: detail.nodeID)
                 }
                 .disabled(actions.sending)
+            } else {
+                PullRequestStateBadge(glyph: .draft)
             }
-            if detail.isOpen && detail.canPush != false && !detail.methods.isEmpty {
-                Menu {
-                    ForEach(detail.methods) { option in
-                        Button(tr(option.titleKey)) { methodRaw = option.rawValue }
+        case .open:
+            if detail.conflicted {
+                PullRequestStateBadge(glyph: .conflict).help(tr("agents.pr.note.conflict"))
+            } else if detail.canPush != false && !detail.methods.isEmpty {
+                mergeButton(detail)
+            }
+        }
+    }
+
+    /// Merge with its method beside it. The first click arms it, the second merges; a warning mark says why GitHub
+    /// may still hold it back (branch protection, a branch that is behind, failing checks).
+    private func mergeButton(_ detail: PullRequestDetail) -> some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            if let note = detail.mergeNote, detail.canMerge {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.amber)
+                    .help(tr(note))
+                    .accessibilityLabel(tr(note))
+            }
+            if merging { ProgressView().controlSize(.small) }
+            SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge") : tr("agents.pr.merge"),
+                               systemName: armedMerge ? "checkmark" : "arrow.triangle.merge") {
+                if armedMerge {
+                    armedMerge = false
+                    merge()
+                } else {
+                    armMerge()
+                }
+            }
+            .disabled(!detail.canMerge || merging)
+            .help(armedMerge ? confirmMessage : tr(method.titleKey))
+            ComposerDropdown(width: 240) {
+                Image(systemName: "chevron.down")
+                    .font(NookTheme.font(9, .bold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: 18, height: 28)
+                    .contentShape(Rectangle())
+            } content: {
+                DropdownHeader(title: tr("agents.pr.mergeMethod.title"))
+                ForEach(detail.methods) { option in
+                    DropdownRow(title: tr(option.titleKey), chosen: option == method) {
+                        methodRaw = option.rawValue
                     }
-                } label: {
-                    Text(tr(method.titleKey)).font(NookTheme.TextStyle.detail)
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .disabled(merging)
-                if merging {
-                    ProgressView().controlSize(.small)
-                }
-                NookPrimaryButton(title: merging ? tr("agents.pr.merging") : tr("agents.pr.merge")) {
-                    mergeError = nil
-                    confirmMerge = true
-                }
-                .disabled(!detail.canMerge || merging)
-                .opacity(!detail.canMerge || merging ? 0.4 : 1)
             }
+            .disabled(merging)
+            .help(tr("agents.pr.mergeMethod.title"))
+        }
+    }
+
+    private func armMerge() {
+        let token = UUID()
+        armToken = token
+        withAnimation(NookTheme.hover) { armedMerge = true }
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if armToken == token { withAnimation(NookTheme.hover) { armedMerge = false } }
         }
     }
 
@@ -1144,14 +1252,13 @@ struct PullRequestDetailView: View {
     private func merge() {
         guard let detail, detail.canMerge, !merging else { return }
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else {
-            mergeError = tr("agents.pr.noToken")
+            ToastCenter.shared.error(tr("agents.pr.noToken"))
             return
         }
         let method = self.method
         let args = "\(detail.id) · \(method.rawValue) · \(detail.headBranch) → \(detail.baseBranch)"
         merging = true
         model.paused = true
-        mergeError = nil
         Task {
             defer { model.paused = false }
             do {
@@ -1170,7 +1277,7 @@ struct PullRequestDetailView: View {
                     settle()
                     await PullRequestStore.shared.refresh(force: true)
                 } else {
-                    mergeError = error.localizedDescription
+                    ToastCenter.shared.error(error, title: tr("agents.pr.mergeFailed"))
                 }
             }
         }
@@ -1179,8 +1286,8 @@ struct PullRequestDetailView: View {
     /// Shows the merge at once, here, in the list and on the agent rows, without waiting for GitHub's next answers.
     private func settle() {
         merging = false
-        mergeError = nil
         model.markMerged()
+        ToastCenter.shared.success(tr("agents.pr.state.merged"))
     }
 }
 
@@ -1224,6 +1331,12 @@ private struct SummarySection<Content: View, Accessory: View>: View {
             if open { content() }
         }
     }
+}
+
+/// Where a tab's page is scrolled, and how much taller its content is than the room it has.
+private struct PageScroll: Equatable {
+    let offset: CGFloat
+    let overflow: CGFloat
 }
 
 /// One entry on the timeline: its marker on a thin rail that runs down to the next entry, the entry beside it.

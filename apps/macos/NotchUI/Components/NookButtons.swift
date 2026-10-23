@@ -272,6 +272,11 @@ struct ToolbarIconButton: View {
         self.action = action
     }
 
+    init(_ symbol: String, _ label: String, height: CGFloat = 24, width: CGFloat = 24, enabled: Bool = true,
+         action: @escaping () -> Void) {
+        self.init(symbol, label, height: height, width: width, enabled: enabled, action)
+    }
+
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
