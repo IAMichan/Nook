@@ -204,7 +204,11 @@ final class WhatsAppLink: ObservableObject {
     /// When each group's members were last asked of the gateway.
     private var membersLoaded: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
-    private var previews: [String: WAPreview] = [:]
+    private var previews: [String: WAPreview] = [:] {
+        didSet { previewRevision &+= 1 }
+    }
+    /// Counts changes to the fetched files, so a chat's bubbles made earlier know when a photo came in since.
+    private(set) var previewRevision = 0
     private var previewOrder: [String] = []
     private var previewsLoading: Set<String> = []
     /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
@@ -332,16 +336,19 @@ final class WhatsAppLink: ObservableObject {
                 let status = try await provider.status()
                 guard gen == generation else { return }
                 failures = 0
-                me = status.me
+                // Written only when changed: every write redraws whatever watches the link.
+                if me != status.me { me = status.me }
                 switch status.link {
                 case .connected:
-                    if link != .connected { qrPNG = nil }
-                    link = .connected
+                    if link != .connected {
+                        qrPNG = nil
+                        link = .connected
+                    }
                     if webhook == .listening { await register(provider, gen: gen) }
                     if !backfilled, gen == generation { await backfill(provider, gen: gen) }
                     if Date().timeIntervalSince(lastChatList) > 300 { await loadChats(provider, gen: gen) }
                 case .needsQR:
-                    link = .needsQR
+                    if link != .needsQR { link = .needsQR }
                     if qrPNG == nil || Date() > qrExpiry {
                         // Not asked again for 15 s even when nothing came: each GOWA login call restarts the pairing.
                         qrExpiry = Date().addingTimeInterval(15)
@@ -351,7 +358,7 @@ final class WhatsAppLink: ObservableObject {
                         }
                     }
                 case .connecting:
-                    link = .connecting
+                    if link != .connecting { link = .connecting }
                 }
             } catch let error as WAError {
                 if gen == generation { apply(error) }
@@ -362,12 +369,15 @@ final class WhatsAppLink: ObservableObject {
     }
 
     private func apply(_ error: WAError) {
+        let failed: Link
         switch error {
-        case .unreachable: link = .unreachable
-        case .unauthorized: link = .unauthorized
-        case .notLoggedIn: link = .needsQR
-        case .refused(let why): link = .failed(why)
+        case .unreachable: failed = .unreachable
+        case .unauthorized: failed = .unauthorized
+        case .notLoggedIn: failed = .needsQR
+        case .refused(let why): failed = .failed(why)
         }
+        // A gateway that stays down is asked every few seconds: the same answer redraws nothing.
+        if link != failed { link = failed }
         guard error != .notLoggedIn else { return }
         failures += 1
         // GOWA started by Nook and gone (crash, killed): started again, once a minute at most.
@@ -546,12 +556,15 @@ final class WhatsAppLink: ObservableObject {
     private func ingest(_ messages: [WAMessage], announce: Bool) {
         var fresh: String?
         let quietBefore = Date().addingTimeInterval(-Self.freshness)
+        // Added to a copy and published once, only when something changed: a poll overlaps the one before, so most of
+        // what it brings is already here, and each `add` on `inbox` itself would redraw every chat view.
+        var next = inbox
         for message in messages {
-            let key = WAJID.normalized(message.chat)
-            let outcome = inbox.add(message, filters: filters, quietBefore: quietBefore)
-            nameGroupIfNeeded(key)
-            if outcome == .notify, !message.fromMe { fresh = key }
+            let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
+            if outcome == .notify, !message.fromMe { fresh = WAJID.normalized(message.chat) }
         }
+        if next != inbox { inbox = next }
+        for key in Set(messages.map { WAJID.normalized($0.chat) }) { nameGroupIfNeeded(key) }
         if announce, let fresh { onMessage?(fresh) }
     }
 

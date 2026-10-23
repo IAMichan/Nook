@@ -60,7 +60,19 @@ struct ChatIntent: Equatable {
 
     // MARK: Recognition
 
+    /// The last few texts read, with what they asked for. Reading a text runs some forty patterns over it, and one request
+    /// is read several times on its way (the sources, the brain, the memory); thinking along reads a long instruction each
+    /// look. The answer depends on the text alone, so a text read before is not read again.
+    private static let recent = RecentIntents()
+
     static func detect(_ raw: String) -> ChatIntent {
+        if let known = recent.intent(for: raw) { return known }
+        let intent = recognize(raw)
+        recent.remember(intent, for: raw)
+        return intent
+    }
+
+    private static func recognize(_ raw: String) -> ChatIntent {
         let text = fixingSendTypo(raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
         var intent = ChatIntent()
         guard !text.isEmpty else { return intent }
@@ -360,5 +372,27 @@ struct ChatIntent: Equatable {
         day.timeZone = calendar.timeZone
         day.dateFormat = "yyyy-MM-dd"
         return "\(day.string(from: friday))T15:00:00\(offset.string(from: friday))"
+    }
+}
+
+/// `ChatIntent.detect(_:)`'s memory: the last few texts and their intent, safe to use from any thread.
+private final class RecentIntents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var intents: [String: ChatIntent] = [:]
+    private var order: [String] = []
+    private let limit = 16
+
+    func intent(for text: String) -> ChatIntent? {
+        lock.lock()
+        defer { lock.unlock() }
+        return intents[text]
+    }
+
+    func remember(_ intent: ChatIntent, for text: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard intents.updateValue(intent, forKey: text) == nil else { return }
+        order.append(text)
+        if order.count > limit { intents[order.removeFirst()] = nil }
     }
 }

@@ -497,6 +497,46 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(conversation.memberNames, ["Anna", "Jan"])
     }
 
+    /// The member index gives the same names as matching every id one by one, which it replaced for speed.
+    func testMemberIndexNamesLikeMatchingEveryId() {
+        func written(_ sender: String, _ name: String, fromMe: Bool = false) -> WAMessage {
+            WAMessage(id: UUID().uuidString, chat: "1@g.us", sender: sender, senderName: name, text: "hi",
+                      media: .none, date: Date(), fromMe: fromMe)
+        }
+        var conversation = WAConversation(id: "1@g.us", name: "Groep", isGroup: true, lastActivity: Date())
+        conversation.members = [
+            WAMember(ids: ["31600000001@s.whatsapp.net", "123@lid"], name: "Anna"),
+            WAMember(ids: ["31600000002@s.whatsapp.net"], name: ""),
+            // Matches Jan's number too, but comes second: Jan's own (empty) entry wins and his written name is used.
+            WAMember(ids: ["31600000002@c.us"], name: "Not Jan"),
+            WAMember(ids: ["@beeper-user:beeper.com"], name: ""),
+            WAMember(ids: ["31600000004:12@s.whatsapp.net"], name: ""),
+        ]
+        conversation.messages = [
+            written("31600000002@s.whatsapp.net", "Jan old"),
+            written("31600000002@c.us", "Jan"),
+            written("@beeper-user:beeper.com", "Bee"),
+            written("31600000004@s.whatsapp.net", ""),
+            written("31600000005@s.whatsapp.net", "Mine", fromMe: true),
+        ]
+        // The rules as they were: the first member that matches, else the newest name written under the id, else the number.
+        func expected(_ id: String) -> String {
+            if let member = conversation.members?.first(where: { $0.matches(id) }), !member.name.isEmpty { return member.name }
+            if let message = conversation.messages.last(where: {
+                !$0.fromMe && WAJID.sameReactor($0.sender, id) && !$0.senderName.isEmpty
+            }) { return message.senderName }
+            return WAJID.displayNumber(id)
+        }
+        let ids = ["123@lid", "31600000001@c.us", "31600000002@s.whatsapp.net", "31600000002", "@beeper-user:beeper.com",
+                   "31600000004@s.whatsapp.net", "31600000005@s.whatsapp.net", "999@lid", ""]
+        var index = WAMemberIndex(conversation)
+        for id in ids {
+            XCTAssertEqual(index.name(id), expected(id), id)
+        }
+        XCTAssertEqual(conversation.memberNames, conversation.members!.map { $0.name.isEmpty ? expected($0.ids[0]) : $0.name })
+        XCTAssertEqual(conversation.memberName("31600000002@s.whatsapp.net"), "Jan", "the newest name they wrote under")
+    }
+
     func testGatewaysListAGroupsMembers() {
         let gowa = Data(#"{"code":"SUCCESS","results":{"JID":"1203630@g.us","Name":"Club","Participants":[{"JID":"123@lid","PhoneNumber":"31600000001@s.whatsapp.net","DisplayName":"Anna"},{"JID":"31699999999@s.whatsapp.net","DisplayName":""}]}}"#.utf8)
         let members = WAGOWA.members(gowa)

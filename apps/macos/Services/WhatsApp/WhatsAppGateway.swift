@@ -224,16 +224,80 @@ struct WAConversation: Identifiable, Equatable, Sendable {
 
     /// A member's name in this group: the one the gateway gives, else the name they wrote under here, else their number.
     func memberName(_ id: String) -> String {
-        if let member = members?.first(where: { $0.matches(id) }), !member.name.isEmpty { return member.name }
-        if let written = messages.last(where: { !$0.fromMe && WAJID.sameReactor($0.sender, id) && !$0.senderName.isEmpty }) {
-            return written.senderName
+        var index = WAMemberIndex(self)
+        return index.name(id)
+    }
+
+    /// The other members by name, as the group's info lists them.
+    var memberNames: [String] {
+        var index = WAMemberIndex(self)
+        return index.all
+    }
+}
+
+/// Who is who in a group, made once from its members and messages. Matching an id compares it with every id of every
+/// member and every sender, digit by digit; naming each member of a big group that way, for each of your messages and
+/// on every redraw, took most of the main thread. Here each id is looked up by its keys instead: the same answers as
+/// `WAMember.matches(_:)` and `WAJID.sameReactor(_:_:)`, in one pass over the group.
+struct WAMemberIndex {
+    private let members: [WAMember]
+    /// The first member each key belongs to: "d" + the digits of an id, "e" + the id itself, "n" + it normalized.
+    private var memberByKey: [String: Int] = [:]
+    /// The newest message someone else wrote under a name, per key ("d" + digits, "e" + the id): its place and the name.
+    private var writtenByKey: [String: (place: Int, name: String)] = [:]
+    private var named: [String: String] = [:]
+    private var listed: [String]?
+
+    init(_ conversation: WAConversation) {
+        members = conversation.members ?? []
+        for (index, member) in members.enumerated() {
+            for id in member.ids {
+                for key in Self.memberKeys(id) where memberByKey[key] == nil { memberByKey[key] = index }
+            }
+        }
+        for (place, message) in conversation.messages.enumerated() where !message.fromMe && !message.senderName.isEmpty {
+            for key in Self.writerKeys(message.sender) { writtenByKey[key] = (place, message.senderName) }
+        }
+    }
+
+    /// `WAMember.matches(_:)` holds when the digits agree (and are not empty), the ids are equal, or their normalized forms are.
+    private static func memberKeys(_ id: String) -> [String] {
+        let digits = WAJID.digits(id)
+        return (digits.isEmpty ? [] : ["d" + digits]) + ["e" + id, "n" + WAJID.normalized(id)]
+    }
+
+    /// `WAJID.sameReactor(_:_:)` holds when the digits agree (and are not empty) or the ids are equal.
+    private static func writerKeys(_ id: String) -> [String] {
+        let digits = WAJID.digits(id)
+        return (digits.isEmpty ? [] : ["d" + digits]) + ["e" + id]
+    }
+
+    /// A member's name: the one the gateway gives, else the name they wrote under here, else their number.
+    mutating func name(_ id: String) -> String {
+        if let known = named[id] { return known }
+        let found = lookUp(id)
+        named[id] = found
+        return found
+    }
+
+    private func lookUp(_ id: String) -> String {
+        if let first = Self.memberKeys(id).compactMap({ memberByKey[$0] }).min(), !members[first].name.isEmpty {
+            return members[first].name
+        }
+        if let written = Self.writerKeys(id).compactMap({ writtenByKey[$0] }).max(by: { $0.place < $1.place }) {
+            return written.name
         }
         return WAJID.displayNumber(id)
     }
 
     /// The other members by name, as the group's info lists them.
-    var memberNames: [String] {
-        (members ?? []).map { member in member.name.isEmpty ? memberName(member.ids.first ?? "") : member.name }
+    var all: [String] {
+        mutating get {
+            if let listed { return listed }
+            let made = members.map { member in member.name.isEmpty ? name(member.ids.first ?? "") : member.name }
+            listed = made
+            return made
+        }
     }
 }
 

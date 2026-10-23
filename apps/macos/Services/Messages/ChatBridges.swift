@@ -534,7 +534,7 @@ final class BeeperBridge: ObservableObject, ChatBridge {
             self.seen[chat] = nil
             self.onChange()
         }
-        live.onLive = { [weak self] live in self?.isLive = live }
+        live.onLive = { [weak self] live in if self?.isLive != live { self?.isLive = live } }
         // What changed while the line was down is not told: every chat is read again.
         live.onDrop = { [weak self] in
             self?.seen = [:]

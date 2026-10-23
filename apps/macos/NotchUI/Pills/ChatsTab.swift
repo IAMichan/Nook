@@ -167,6 +167,38 @@ final class ChatsEntryMemo {
     }
 }
 
+/// The open chat's bubbles, made again only when the chat, its fetched files or the language changed. Making them goes
+/// through every message (and in a group names everyone who read yours), and the chat view asks for them several times
+/// on each of its many redraws.
+@MainActor
+final class ChatBubblesMemo {
+    private enum Source: Equatable {
+        case whatsApp(WAConversation?, previews: Int)
+        case captured(InboxThread?)
+    }
+
+    private var source: Source?
+    private var language: AppLanguage?
+    private var bubbles: [ChatBubble] = []
+
+    func whatsApp(_ conversation: WAConversation?, previews: Int) -> [ChatBubble] {
+        remembered(.whatsApp(conversation, previews: previews)) { conversation.map { AppModel.whatsAppBubbles($0) } ?? [] }
+    }
+
+    func captured(_ thread: InboxThread?, make: (InboxThread?) -> [ChatBubble]) -> [ChatBubble] {
+        remembered(.captured(thread)) { make(thread) }
+    }
+
+    private func remembered(_ source: Source, make: () -> [ChatBubble]) -> [ChatBubble] {
+        let language = I18n.shared.currentLanguage
+        if source == self.source, language == self.language { return bubbles }
+        bubbles = make()
+        self.source = source
+        self.language = language
+        return bubbles
+    }
+}
+
 /// Every chat in one place: WhatsApp (with a linked phone) and every other chat app on this Mac whose notifications
 /// Nook collects or that Nook reads itself (Telegram, Instagram, Messenger, Signal, Messages…), all read the same way.
 /// Three columns: a sidebar with the views (All chats, New, Only in Nook, Read) and the apps, the list of chats in groups
@@ -895,6 +927,7 @@ private struct ChatsDetail: View {
     @State private var editing: ChatBubble?
     /// Your message waiting for "Delete for everyone" to be confirmed.
     @State private var deleting: ChatBubble?
+    @State private var bubblesMemo = ChatBubblesMemo()
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
     @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
@@ -939,10 +972,11 @@ private struct ChatsDetail: View {
     private var bubbles: [ChatBubble] {
         switch entry.origin {
         case .whatsApp(let jid):
-            return whatsApp.inbox.conversations[jid].map { AppModel.whatsAppBubbles($0) } ?? []
+            return bubblesMemo.whatsApp(whatsApp.inbox.conversations[jid], previews: whatsApp.previewRevision)
         case .captured(let id):
-            let thread = capture.inbox.threads[id]
-            return (thread?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date), members: thread?.members ?? []) }
+            return bubblesMemo.captured(capture.inbox.threads[id]) { thread in
+                (thread?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date), members: thread?.members ?? []) }
+            }
         }
     }
 

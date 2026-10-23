@@ -153,6 +153,7 @@ extension AppModel {
         let link = WhatsAppLink.shared
         let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var names = WAMemberIndex(conversation)
         return conversation.messages.suffix(WAInbox.keep).map { message in
             let file = Self.whatsAppFileLabel(message.media)
             var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
@@ -160,7 +161,7 @@ extension AppModel {
                                     sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
-            bubble.readers = Self.whatsAppReaders(message, in: conversation)
+            bubble.readers = Self.whatsAppReaders(message, in: conversation, names: &names)
             bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
             bubble.poll = message.poll?.chatPoll
             bubble.reactions = Self.bubbleReactions(message.reactions)
@@ -323,13 +324,14 @@ extension AppModel {
 
     /// Your own message in a group: every member with how far it got with them, by the names the group knows them by.
     /// Empty for theirs, in a private chat, and while no member answered and the members are not known either.
-    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation) -> [ChatReader] {
+    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation,
+                                names: inout WAMemberIndex) -> [ChatReader] {
         guard message.fromMe, message.receipt != nil, conversation.isGroup,
               !message.readers.isEmpty || conversation.members != nil else { return [] }
         let named = message.readers.map { id, reader in
-            ChatReader(name: conversation.memberName(id), receipt: reader.receipt, date: reader.date)
+            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date)
         }
-        return ChatReceipts.everyone(named, members: conversation.memberNames)
+        return ChatReceipts.everyone(named, members: names.all)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
