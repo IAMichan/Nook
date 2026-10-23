@@ -48,11 +48,10 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertNil(seconds)
     }
 
-    func testLastTurnStaysOpenOnceFinished() {
+    func testLastTurnFoldsOnceFinished() {
         let rows = TranscriptPresentation.rows(finishedTurn(), working: false)
-        XCTAssertEqual(rows.map(\.id), ["u1", "t1", "group:s1", "x1", "step:c", "x2"],
-                       "the turn you just watched reads as while it ran, without the working and live rows")
-        guard case .assistant(_, let isFinal) = rows[5] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:t1", "x2"], "the finished turn reads as 'Worked for 1m 3s' over its answer")
+        guard case .assistant(_, let isFinal) = rows[2] else { return XCTFail("\(rows)") }
         XCTAssertTrue(isFinal)
     }
 
