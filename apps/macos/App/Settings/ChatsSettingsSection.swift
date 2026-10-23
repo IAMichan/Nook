@@ -3,32 +3,34 @@ import AppKit
 import Security
 import UniformTypeIdentifiers
 
-/// Settings › Chats: everything the Chats tab shows, on its own page. WhatsApp through the linked phone, and every other
-/// chat app whose notifications Nook collects: switch each app on or off, or add your own (a website such as
-/// linkedin.com/messaging, or a Mac app) in one line.
+/// Settings › Chats: every chat app at a glance first (which are linked, as whom, and the others with a Link button that
+/// walks a link through its steps in `ChatAppSheet`), then the notifications Nook collects from any other app, how
+/// reading works, the chat service on this Mac, and the GIF key.
 struct ChatsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
+    @ObservedObject private var linker = ChatLinker.shared
     @State private var typed = ""
     @State private var notice: String?
     /// The last thing typed could not be added: its note reads as a warning.
     @State private var noticeIsProblem = false
-    @State private var slackToken = ""
-    @State private var slackSet = SlackBridge.token != nil
     @State private var giphyKey = ""
     @State private var giphySet = Giphy.ownKey != nil
     @AppStorage(ChatsTab.readOnOpenKey) private var readOnOpen = true
 
     var body: some View {
-        // WhatsApp first, the app most chats come from; then the other apps and the list of them; then the bridges
-        // that need a token or a login, each in its own short section.
         Group {
-            WhatsAppLinkSection()
+            ChatAppsSection(setCollecting: setCollecting)
 
             Section {
                 SettingToggle(tr("chats.settings.collect"), detail: tr("chats.settings.collectDetail"),
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
                 if capture.enabled { status }
+                // A chat app that is linked is switched on and off in the overview; the rest come in by their notifications.
+                ForEach(capture.sources.apps.filter { !(ChatAppStates.state($0.id)?.linked ?? false) }) { source in
+                    row(source)
+                }
+                addRow
             } header: {
                 Text(tr("chats.settings.otherApps"))
             } footer: {
@@ -42,14 +44,11 @@ struct ChatsSettingsSection: View {
             }
 
             Section {
-                ForEach(capture.sources.apps) { source in
-                    row(source)
-                }
-                addRow
+                BeeperSettingsRows(capture: capture)
             } header: {
-                Text(tr("chats.settings.sources"))
+                Text(tr("chats.beeper.title"))
             } footer: {
-                Text(tr("chats.settings.sourcesFooter"))
+                Text(tr("chats.beeper.footer"))
             }
 
             Section {
@@ -58,43 +57,6 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.giphy.title"))
             } footer: {
                 Text(tr("chats.giphy.footer"))
-            }
-
-            Section {
-                slackRow
-            } header: {
-                Text(tr("chats.slack.title"))
-            } footer: {
-                Text(tr("chats.slack.footer"))
-            }
-
-            Section {
-                TelegramSettingsRows(telegram: capture.telegramBridge) { capture.bridgeChanged(capture.telegramBridge.app) }
-            } header: {
-                Text(tr("chats.telegram.title"))
-            } footer: {
-                Text(tr("chats.telegram.footer"))
-            }
-
-            if showsTeamsLogin {
-                Section {
-                    TeamsSettingsRows(teams: capture.teamsBridge, problem: capture.bridgeProblems[capture.teamsBridge.app]) {
-                        // A new account switches Teams on and reads right away; one signed out reads again without it.
-                        if capture.teamsBridge.accounts.isEmpty { capture.bridgeChanged(capture.teamsBridge.app) } else { capture.loggedIn(capture.teamsBridge.app) }
-                    }
-                } header: {
-                    Text(tr("chats.teams.title"))
-                } footer: {
-                    Text(tr("chats.teams.footer"))
-                }
-            }
-
-            Section {
-                BeeperSettingsRows(capture: capture)
-            } header: {
-                Text(tr("chats.beeper.title"))
-            } footer: {
-                Text(tr("chats.beeper.footer"))
             }
         }
     }
@@ -121,37 +83,6 @@ struct ChatsSettingsSection: View {
                       detail: count == 0 ? tr("chats.status.waiting") : tr("chats.status.count", count),
                       state: count == 0 ? .todo : .done) {
                 EmptyView()
-            }
-        }
-    }
-
-    /// Slack with its history: a user token, kept in the Keychain, and whether reading with it works.
-    @ViewBuilder
-    private var slackRow: some View {
-        SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
-        HStack(spacing: NookTheme.Spacing.sm) {
-            SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…"))
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity)
-                .onSubmit { saveSlackToken() }
-            Button(tr("chats.slack.save")) { saveSlackToken() }
-                .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
-            if slackSet {
-                Button(tr("chats.slack.disconnect")) {
-                    Keychain.remove(SlackBridge.tokenAccount)
-                    slackSet = false
-                    capture.slackTokenChanged()
-                }
-            }
-        }
-        if slackSet {
-            if let problem = capture.bridgeProblems[capture.slackBridge.app] {
-                StatusRow(title: tr("chats.slack.problem"), detail: problem, state: .error) { EmptyView() }
-            } else if capture.bridged.contains(capture.slackBridge.app) {
-                StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.connectedDetail"), state: .done) { EmptyView() }
-            } else if !capture.enabled {
-                StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.collectOff"), state: .todo) { EmptyView() }
             }
         }
     }
@@ -193,20 +124,6 @@ struct ChatsSettingsSection: View {
         ToastCenter.shared.success(tr("chats.giphy.saved"))
     }
 
-    private func saveSlackToken() {
-        let token = slackToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard token.hasPrefix("xox") else { return }
-        guard Keychain.write(token, account: SlackBridge.tokenAccount) == errSecSuccess else {
-            ToastCenter.shared.error(tr("chats.slack.notSaved"))
-            return
-        }
-        slackToken = ""
-        slackSet = true
-        capture.setSource(capture.slackBridge.app, on: true)
-        if !capture.enabled { setCollecting(true) }
-        capture.slackTokenChanged()
-    }
-
     /// Adding a source: a website or an app's name typed in one field, or a Mac app picked from the Applications folder.
     private var addRow: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -229,10 +146,8 @@ struct ChatsSettingsSection: View {
         .padding(.vertical, NookTheme.Spacing.xxs)
     }
 
-    /// One app: its icon, name and where its messages come from, with its switch (and a remove button when you added it).
-    /// Instagram, and Teams once Nook can sign in to it, are read by logging in: their row has a Log in button until you
-    /// did.
-    @ViewBuilder
+    /// One app whose notifications Nook collects: its icon, name and where its messages come from, with its switch (and a
+    /// remove button when you added it). The chat apps Nook links are in the overview above instead.
     private func row(_ source: MessagingApp) -> some View {
         // An app is only on while collecting is: switching one on switches collecting on with it.
         let isOn = Binding(get: { capture.enabled && capture.sources.isOn(source.id) },
@@ -240,31 +155,7 @@ struct ChatsSettingsSection: View {
                                capture.setSource(source.id, on: on)
                                if on, !capture.enabled { setCollecting(true) }
                            })
-        switch source.id {
-        case capture.instagramBridge.app:
-            let instagram = capture.instagramBridge.app
-            InstagramSourceRow(bridge: capture.instagramBridge, isOn: isOn, problem: capture.bridgeProblems[instagram],
-                               loaded: capture.bridged.contains(instagram) ? capture.inbox.threads.values.filter { $0.app == instagram }.count : nil,
-                               logIn: logInToInstagram) { label(source) }
-        case capture.teamsBridge.app where showsTeamsLogin:
-            TeamsSourceRow(teams: capture.teamsBridge, isOn: isOn) { label(source) }
-        default:
-            Toggle(isOn: isOn) { label(source) }
-        }
-    }
-
-    /// Signing in to Teams needs an app id Nook does not have yet: until then Teams only comes in through its
-    /// notifications, unless you signed in with an id an earlier version asked for.
-    private var showsTeamsLogin: Bool {
-        TeamsBridge.clientID != nil || !capture.teamsBridge.accounts.isEmpty
-    }
-
-    /// Opens instagram.com beside the chat, signed in with Nook's own store, and waits until you logged in there.
-    private func logInToInstagram() {
-        guard let web = EmbeddedAppCatalog.all.first(where: { $0.id == capture.instagramBridge.app }) else { return }
-        capture.instagramBridge.watchSignIn()
-        app.openEmbeddedApp(web, mode: .web)
-        app.showChat()
+        return Toggle(isOn: isOn) { label(source) }
     }
 
     private func label(_ source: MessagingApp) -> some View {

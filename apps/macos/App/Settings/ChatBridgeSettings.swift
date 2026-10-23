@@ -270,127 +270,57 @@ struct BeeperSettingsRows: View {
     }
 }
 
-/// Where logging in to an app from its row stands.
-enum LoginStep { case signedOut, waiting, signedIn }
-
-/// An app in Settings › Chats that Nook reads after you log in to it from its own row: a Log in button until you did,
-/// then its switch, with Log out beside it. While the sign-in runs, the row says so (with Teams' code to type).
-struct LoginSourceRow<Label: View, Waiting: View>: View {
-    let step: LoginStep
-    @Binding var isOn: Bool
-    let logIn: () -> Void
-    let cancel: () -> Void
-    let logOut: () -> Void
-    @ViewBuilder let label: () -> Label
-    @ViewBuilder let waiting: () -> Waiting
-
-    var body: some View {
-        switch step {
-        case .signedIn:
-            Toggle(isOn: $isOn) {
-                HStack(spacing: NookTheme.Spacing.md) {
-                    label()
-                    Spacer(minLength: NookTheme.Spacing.sm)
-                    Button(tr("chats.login.logOut"), action: logOut)
-                        .buttonStyle(.link)
-                }
-            }
-        case .waiting:
-            HStack(spacing: NookTheme.Spacing.md) {
-                label()
-                Spacer(minLength: NookTheme.Spacing.sm)
-                waiting()
-                ProgressView().controlSize(.small)
-                Button(tr("chats.teams.cancel"), action: cancel)
-            }
-        case .signedOut:
-            HStack(spacing: NookTheme.Spacing.md) {
-                label()
-                Spacer(minLength: NookTheme.Spacing.sm)
-                Button(tr("chats.login.button"), action: logIn)
-            }
-        }
-    }
-}
-
-/// Instagram's row: Log in opens instagram.com beside the chat, and the row waits until you signed in there.
-/// Once signed in and switched on, the row says whether reading works: how many chats came in, or why none did.
-struct InstagramSourceRow<Label: View>: View {
-    @ObservedObject var bridge: InstagramBridge
-    @Binding var isOn: Bool
-    /// Why the last read failed, if it did.
-    let problem: String?
-    /// How many Instagram chats the Chats tab has, once a read worked; nil before.
-    let loaded: Int?
-    let logIn: () -> Void
-    @ViewBuilder let label: () -> Label
+/// Slack with its history: a user token, kept in the Keychain, and whether reading with it works. In Slack's sheet on
+/// Settings › Chats.
+struct SlackTokenRows: View {
+    let setCollecting: (Bool) -> Void
+    @ObservedObject private var capture = ChatCaptureService.shared
+    @State private var slackToken = ""
+    @State private var slackSet = SlackBridge.token != nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            LoginSourceRow(step: step, isOn: $isOn, logIn: logIn, cancel: { bridge.cancelSignIn() },
-                           logOut: { Task { await bridge.signOut() } }, label: label) {
-                Text(tr("chats.login.waiting"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
+            SettingLabel(tr("chats.slack.token"), detail: tr("chats.slack.tokenDetail"))
+            HStack(spacing: NookTheme.Spacing.sm) {
+                SecureField("", text: $slackToken, prompt: Text(slackSet ? "••••••••" : "xoxp-…"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
+                    .onSubmit { save() }
+                Button(tr("chats.slack.save")) { save() }
+                    .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
+                if slackSet {
+                    Button(tr("chats.slack.disconnect")) {
+                        Keychain.remove(SlackBridge.tokenAccount)
+                        slackSet = false
+                        capture.slackTokenChanged()
+                    }
+                }
             }
-            if step == .signedIn, isOn { status }
-        }
-        // A sign-in made meanwhile elsewhere in Nook (Instagram beside the chat) shows here too.
-        .task { await bridge.refresh() }
-    }
-
-    @ViewBuilder
-    private var status: some View {
-        if let problem {
-            StatusRow(title: tr("chats.instagram.problem"), detail: problem, state: .error) { EmptyView() }
-        } else if let loaded {
-            StatusRow(title: tr("chats.instagram.loaded", loaded), detail: tr("chats.instagram.loadedDetail"), state: .done) { EmptyView() }
-        } else {
-            StatusRow(title: tr("chats.instagram.loading"), detail: tr("chats.instagram.loadingDetail"), state: .todo) { EmptyView() }
-        }
-    }
-
-    private var step: LoginStep {
-        switch bridge.state {
-        case .signedOut: return .signedOut
-        case .waiting: return .waiting
-        case .signedIn: return .signedIn
-        }
-    }
-}
-
-/// Teams' row: Log in signs in with a code on Microsoft's own page; the code shows in the row while Nook waits.
-struct TeamsSourceRow<Label: View>: View {
-    @ObservedObject var teams: TeamsBridge
-    @Binding var isOn: Bool
-    @ViewBuilder let label: () -> Label
-
-    var body: some View {
-        LoginSourceRow(step: step, isOn: $isOn, logIn: logIn, cancel: { teams.cancelSignIn() }, logOut: logOut, label: label) {
-            if case .code(let code) = teams.state {
-                Text(code.userCode)
-                    .font(NookTheme.mono(13, .semibold))
-                    .textSelection(.enabled)
-                Button(tr("chats.teams.copyCode")) { Pasteboard.copy(code.userCode) }
+            if slackSet {
+                if let problem = capture.bridgeProblems[capture.slackBridge.app] {
+                    StatusRow(title: tr("chats.slack.problem"), detail: problem, state: .error) { EmptyView() }
+                } else if capture.bridged.contains(capture.slackBridge.app) {
+                    StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.connectedDetail"), state: .done) { EmptyView() }
+                } else if !capture.enabled {
+                    StatusRow(title: tr("chats.slack.connected"), detail: tr("chats.slack.collectOff"), state: .todo) { EmptyView() }
+                }
             }
+            SettingNote(tr("chats.slack.footer"))
         }
     }
 
-    private var step: LoginStep {
-        if teams.isReady { return .signedIn }
-        if case .code = teams.state { return .waiting }
-        return .signedOut
-    }
-
-    private func logIn() {
-        guard TeamsBridge.clientID != nil else {
-            ToastCenter.shared.error(tr("chats.teams.unavailable"), detail: tr("chats.teams.unavailableDetail"))
+    private func save() {
+        let token = slackToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.hasPrefix("xox") else { return }
+        guard Keychain.write(token, account: SlackBridge.tokenAccount) == errSecSuccess else {
+            ToastCenter.shared.error(tr("chats.slack.notSaved"))
             return
         }
-        teams.signIn()
-    }
-
-    private func logOut() {
-        for account in teams.accounts { teams.signOut(account.id) }
+        slackToken = ""
+        slackSet = true
+        capture.setSource(capture.slackBridge.app, on: true)
+        if !capture.enabled { setCollecting(true) }
+        capture.slackTokenChanged()
     }
 }

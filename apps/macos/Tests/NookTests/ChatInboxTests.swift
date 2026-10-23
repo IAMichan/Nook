@@ -715,6 +715,75 @@ final class ChatInboxTests: XCTestCase {
                        "a deletion already shown changes nothing")
     }
 
+    func testLinkingNetworksAndAccounts() {
+        let networks = ChatLinkData.networks(["items": [
+            ["id": "local-whatsapp", "type": "whatsapp", "provider": "local", "displayName": "WhatsApp", "status": "connected",
+             "accounts": [["accountID": "local-whatsapp_ba_1", "loginID": "ba_1", "status": "connected",
+                           "user": ["fullName": "Anna", "phoneNumber": "+316"]]]],
+            ["id": "whatsapp", "type": "whatsapp", "provider": "cloud", "displayName": "WhatsApp", "status": "available", "accounts": []],
+            ["id": "local-instagram", "type": "instagramgo", "provider": "local", "displayName": "Instagram", "status": "available",
+             "accounts": [["accountID": "ig", "status": "reconnect_required", "statusText": "Reconnect required",
+                           "user": ["username": "anna.ig"]]]],
+            ["id": "local-telegram", "type": "telegram", "provider": "local", "displayName": "Telegram", "status": "limit_reached", "accounts": []],
+            ["id": "hungryserv", "type": "matrix", "displayName": "Beeper", "status": "connected", "accounts": []],
+            ["id": "odd", "type": "unknownnet", "displayName": "Unknown", "status": "available", "accounts": []],
+        ]])
+        XCTAssertEqual(networks.map(\.app), ["instagram", "telegram", "whatsapp"], "known apps only, one per app, by name")
+        let whatsApp = try! XCTUnwrap(networks.first { $0.app == "whatsapp" })
+        XCTAssertEqual(whatsApp.id, "local-whatsapp", "a link starts where the local one runs")
+        XCTAssertEqual(whatsApp.accounts.map(\.name), ["Anna"])
+        XCTAssertEqual(whatsApp.accounts.first?.login, "ba_1")
+        let instagram = try! XCTUnwrap(networks.first { $0.app == "instagram" })
+        XCTAssertEqual(instagram.accounts.first?.name, "anna.ig")
+        XCTAssertFalse(instagram.accounts.first?.isConnected ?? true)
+        XCTAssertEqual(instagram.accounts.first?.status, "Reconnect required")
+        XCTAssertFalse(networks.first { $0.app == "telegram" }?.canLink ?? true, "a network at its limit links no more")
+    }
+
+    func testLinkingSteps() {
+        let input = ChatLinkData.session(["loginSessionID": "s1", "bridgeID": "local-telegram", "status": "waiting_for_input",
+                                          "currentStep": ["type": "user_input", "stepID": "phone", "instructions": "Your number",
+                                                          "fields": [["id": "phone", "type": "phone", "label": "Phone"],
+                                                                     ["id": "pw", "type": "password", "label": "Password", "optional": true]]]])
+        guard case .input(let id, let instructions, let fields) = input?.step else { return XCTFail("a step with fields") }
+        XCTAssertEqual(id, "phone")
+        XCTAssertEqual(instructions, "Your number")
+        XCTAssertEqual(fields.map(\.isSecret), [false, true])
+        XCTAssertEqual(fields.map(\.isOptional), [false, true])
+        let answer = ChatLinkData.answer(input!.step!, values: ["phone": "+316"])
+        XCTAssertEqual(answer["type"] as? String, "user_input")
+        XCTAssertEqual(answer["fields"] as? [String: String], ["phone": "+316"])
+
+        let qr = ChatLinkData.session(["loginSessionID": "s2", "bridgeID": "local-whatsapp", "status": "waiting_for_display",
+                                       "currentStep": ["type": "display_and_wait", "stepID": "qr", "display": ["type": "qr", "data": "2@abc"]]])
+        XCTAssertEqual(qr?.step, .display(id: "qr", instructions: "", show: .qr("2@abc")))
+        XCTAssertFalse(qr?.isOver ?? true)
+
+        let browser = ChatLinkData.step(["type": "cookies", "stepID": "c", "url": "https://www.instagram.com/accounts/login/",
+                                         "expectedFinalURLRegex": "^https://www\\.instagram\\.com/?$",
+                                         "fields": [["id": "sessionid", "type": "cookie", "name": "sessionid"],
+                                                    ["id": "csrf", "type": "cookie", "name": "csrftoken"],
+                                                    ["id": "app", "type": "local_storage", "name": "appID"]]])
+        guard case .browser(_, _, let url, _, let collect, let done) = browser else { return XCTFail("a sign-in step") }
+        XCTAssertEqual(url.host, "www.instagram.com")
+        XCTAssertTrue(ChatLinkData.isDone("https://www.instagram.com/", pattern: done))
+        XCTAssertFalse(ChatLinkData.isDone("https://www.instagram.com/accounts/login/", pattern: done))
+        let some = ChatLinkData.collected(collect, cookies: ["sessionid": "1"], storage: [:])
+        XCTAssertFalse(ChatLinkData.hasCookies(collect, values: some), "every cookie the step asks for")
+        let all = ChatLinkData.collected(collect, cookies: ["sessionid": "1", "csrftoken": "2", "other": "x"], storage: ["appID": "9"])
+        XCTAssertEqual(all, ["sessionid": "1", "csrf": "2", "app": "9"])
+        XCTAssertTrue(ChatLinkData.hasCookies(collect, values: all))
+        XCTAssertEqual(ChatLinkData.answer(browser!, values: all, lastURL: "https://www.instagram.com/")["source"] as? String, "webview")
+        XCTAssertNil(ChatLinkData.step(["type": "cookies", "stepID": "c", "url": "http://insecure.example/", "fields": []]),
+                     "a sign-in page is only opened over https")
+
+        let failed = ChatLinkData.session(["loginSessionID": "s3", "bridgeID": "x", "status": "failed",
+                                           "error": ["code": "bad", "message": "Wrong code"]])
+        XCTAssertEqual(failed?.problem, "Wrong code")
+        XCTAssertTrue(failed?.isOver ?? false)
+        XCTAssertNil(ChatLinkData.session(["loginSessionID": "s4", "bridgeID": "x", "status": "strange"]))
+    }
+
     func testLinkedChatLiveEvents() {
         XCTAssertEqual(BeeperData.event(["type": "ready", "version": 1, "chatIDs": []]), .ready)
         XCTAssertEqual(BeeperData.event(["type": "subscriptions.updated"]), .subscribed)
