@@ -7,6 +7,7 @@
 # The result is apps/macos/Vendor/TDLib/libtdjson.dylib (not tracked in git). Every Nook build then copies it into
 # Nook.app/Contents/Frameworks and signs it with Nook's own identity (Config/embed-tdlib.sh), so Nook loads it with the
 # hardened runtime and library validation left on. Without it Nook builds as before and Telegram stays on notifications.
+# Not needed when Nook's chat helper is built (scripts/build-chatd.sh): that links Telegram itself, and TDLib stays off.
 #
 # Needs Xcode's command line tools and Homebrew's cmake, gperf and openssl@3. OpenSSL is linked statically, so the
 # library depends on nothing outside macOS itself (checked at the end). Takes 15–30 minutes the first time.
