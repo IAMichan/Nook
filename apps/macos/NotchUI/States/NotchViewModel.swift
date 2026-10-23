@@ -161,16 +161,24 @@ final class NotchViewModel: ObservableObject {
     /// A task open in the main window (changes, commit…): the window's counterpart of `sheet`.
     @Published var windowSheet: NotchSheet?
 
-    /// While the main window is in front (and the panel is not open), the tabs and tasks you ask for open there instead
-    /// of in the notch.
+    /// While the main window is open (and the panel is not), the tabs and tasks you ask for open there instead of in the
+    /// notch, also when it is behind other windows or minimized: View on a notch card brings the window forward on it.
     var routesToWindow: Bool {
         if case .panel = state { return false }
-        return WorkspaceWindowController.shared.isKey
+        return WorkspaceWindowController.shared.isOpen
     }
 
     /// Whether `tab` is on screen: in the open panel, or in the main window while that is in front.
     func isShowing(_ tab: PanelTab) -> Bool {
-        state == .panel(tab) || (routesToWindow && windowTab == tab && windowSheet == nil)
+        if state == .panel(tab) { return true }
+        if case .panel = state { return false }
+        return WorkspaceWindowController.shared.isKey && windowTab == tab && windowSheet == nil
+    }
+
+    /// Brings the main window forward for a tab or task routed to it.
+    private func revealWindow() {
+        guard let app else { return }
+        WorkspaceWindowController.shared.show(app: app)
     }
 
     /// The tab you used last: the notch opens there again, unless an agent is waiting for you.
@@ -250,6 +258,9 @@ final class NotchViewModel: ObservableObject {
             // Tasks belong to Agents; another tab means you moved on.
             if tab != .agents { windowSheet = nil }
             windowTab = tab
+            // The strip's View opened it there: the strip has done its job, as it would have in the notch.
+            if case .done = state { show(.idle) }
+            revealWindow()
             return
         }
         if case .idle = new {
@@ -678,11 +689,12 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// Opens a task inside the notch (new session, changes, commit…), on the Agents tab; in the main window while that is
-    /// in front.
+    /// open.
     func open(_ sheet: NotchSheet) {
         if routesToWindow {
             windowTab = .agents
             windowSheet = sheet
+            revealWindow()
             return
         }
         if state != .panel(.agents) { show(.panel(.agents)) }
