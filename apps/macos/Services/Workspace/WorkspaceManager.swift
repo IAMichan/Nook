@@ -230,6 +230,8 @@ final class WorkspaceManager: ObservableObject {
     /// State tracked by Nook during a single turn.
     struct TurnState {
         var liveTextID: UUID?
+        /// Claude Code: the last finished answer, which a failed turn's result may repeat word for word.
+        var lastTextID: UUID?
         var toolEvents: [String: UUID] = [:]
         var toolNames: [String: String] = [:]
         var toolInputs: [String: JSONBox] = [:]
@@ -1131,8 +1133,11 @@ final class WorkspaceManager: ObservableObject {
             if let live = turns[id]?.liveTextID {
                 mutateEvent(id, live) { $0.text = text; $0.state = .done }
                 turns[id]?.liveTextID = nil
+                turns[id]?.lastTextID = live
             } else {
-                append(id, RunEvent(kind: .assistant, text: text, state: .done))
+                let event = RunEvent(kind: .assistant, text: text, state: .done)
+                turns[id]?.lastTextID = event.id
+                append(id, event)
             }
         case .thinkingDelta(let text, let starts):
             if starts {
@@ -1270,7 +1275,14 @@ final class WorkspaceManager: ObservableObject {
                 }
             }
             if result.isError && !stopping {
-                append(id, RunEvent(kind: .error, text: result.text.isEmpty ? tr("ws.event.failed", result.subtype) : result.text))
+                // Claude Code writes an API error as an answer first, then again as the result: show it once, as the error.
+                let failure = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !failure.isEmpty, let echoed = state?.lastTextID,
+                   events[id]?.last(where: { $0.id == echoed })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == failure {
+                    mutateEvent(id, echoed) { $0.kind = .error; $0.text = result.text; $0.state = nil }
+                } else {
+                    append(id, RunEvent(kind: .error, text: result.text.isEmpty ? tr("ws.event.failed", result.subtype) : result.text))
+                }
             }
             append(id, RunEvent(kind: .result, text: resultLine(usage, denials: result.permissionDenials),
                                 state: result.isError && !stopping ? .failed : .done))
