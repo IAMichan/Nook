@@ -180,6 +180,35 @@ enum DelegatedTask {
         return data.map { String(decoding: $0, as: UTF8.self) } ?? snapshot.state.rawValue
     }
 
+    /// How `task_wait` waits on several tasks: until one of them, or all of them, can go no further without the
+    /// parent (finished, or asking a question).
+    enum WaitMode: String, CaseIterable, Sendable { case any, all }
+
+    static func isSettled(_ snapshot: Snapshot) -> Bool { snapshot.state.isTerminal || snapshot.hasPendingQuestion }
+
+    static func waitIsOver(_ snapshots: [Snapshot], mode: WaitMode) -> Bool {
+        guard !snapshots.isEmpty else { return true }
+        switch mode {
+        case .any: return snapshots.contains(where: isSettled)
+        case .all: return snapshots.allSatisfy(isSettled)
+        }
+    }
+
+    /// The `task_wait` result: every task's state, and whether the wait ran out first.
+    static func renderWait(_ snapshots: [Snapshot], waitTimedOut: Bool) -> String {
+        let tasks: [Any] = snapshots.compactMap { snapshot in
+            (try? JSONSerialization.jsonObject(with: Data(render(snapshot).utf8))).map { object -> Any in
+                var task = object as? [String: Any] ?? [:]
+                task["waitTimedOut"] = nil
+                return task
+            }
+        }
+        let object: [String: Any] = ["tasks": tasks, "waitTimedOut": waitTimedOut,
+                                     "settled": snapshots.filter(isSettled).map(\.taskID)]
+        let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return data.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+
     /// The message that wakes the parent when a child it did not wait for has finished.
     static func wakeMessage(_ snapshot: Snapshot) -> String {
         var text = "Delegated task \"\(snapshot.title)\" (\(snapshot.taskID)) \(snapshot.state.rawValue)."

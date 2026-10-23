@@ -114,6 +114,13 @@ struct AgentRunPanel: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+            // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
+            .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
+            // Selected words of an answer can be quoted into the reply (right-click › Quote in reply).
+            .environment(\.quoteSelection, { text in
+                draft = ReviewComments.quote(text, into: draft)
+                focused = true
+            })
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }
@@ -227,6 +234,7 @@ struct AgentRunPanel: View {
                     .help(tr("ws.title.renameHelp"))
             }
             Spacer(minLength: 8)
+            ResourceUsageBadge(workspace: workspace, runID: runID)
             outputsButton(run, outputs)
             if let fraction = run.usage.contextFraction, fraction > 0.6 {
                 Text(tr("ws.header.context", Int((fraction * 100).rounded())))
@@ -815,6 +823,15 @@ struct AgentRunPanel: View {
             }
             Spacer(minLength: 6)
             NookGhostButton(title: tr("button.cancel")) { confirmDelete = false }
+            // The session's own worktree, which no other session uses, can go with it.
+            if let worktree = workspace.orphanedWorktree(runID) {
+                NookGhostButton(title: tr("agents.run.deleteWithWorktree")) {
+                    confirmDelete = false
+                    workspace.deleteWithWorktree(runID)
+                    app.viewModel.selectedAgentID = ""
+                }
+                .help(AgentPathFormat.tilde(worktree.path))
+            }
             NookPrimaryButton(title: tr("agents.run.delete")) {
                 confirmDelete = false
                 workspace.delete(runID)

@@ -8,7 +8,7 @@ enum ChatAppsCatalog {
                        "messages"]
 
     /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database).
-    static let ownWay: Set<String> = ["whatsapp", "instagram", "telegram", "teams", "slack", "messages"]
+    static let ownWay: Set<String> = ["whatsapp", "telegram", "teams", "slack", "messages"]
 }
 
 /// One app on Settings › Chats: whether it is linked, how and as whom, and whether its chats are on.
@@ -33,7 +33,6 @@ struct ChatAppsSection: View {
     @ObservedObject private var linked = ChatCaptureService.shared.beeperBridge
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
-    @ObservedObject private var instagram = ChatCaptureService.shared.instagramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
     @State private var open: ChatAppSheetItem?
     let setCollecting: (Bool) -> Void
@@ -106,13 +105,18 @@ enum ChatAppStates {
     static func all() -> [ChatAppState] {
         let linker = ChatLinker.shared
         let offered = linker.networks.map(\.app).filter { !ChatAppsCatalog.apps.contains($0) }
-        return (ChatAppsCatalog.apps + offered).compactMap(state).filter { app in
-            app.linked || ChatAppsCatalog.ownWay.contains(app.id) || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
+        // The chats per app, counted once for every row instead of once per row.
+        var chats: [String: Int] = [:]
+        for thread in ChatCaptureService.shared.inbox.threads.values { chats[thread.app, default: 0] += 1 }
+        return (ChatAppsCatalog.apps + offered).compactMap { state($0, chats: chats[$0] ?? 0) }.filter { app in
+            // Nook's own helper links these: they show even in a build without it, whose sheet says how to add it.
+            app.linked || ChatAppsCatalog.ownWay.contains(app.id) || ChatHelper.apps.contains(app.id)
+                || (linker.serviceRuns && linker.networks.contains { $0.app == app.id })
                 || (linker.serviceRuns && BeeperBridge.token == nil)
         }
     }
 
-    static func state(_ id: String) -> ChatAppState? {
+    static func state(_ id: String, chats: Int? = nil) -> ChatAppState? {
         let capture = ChatCaptureService.shared
         let linker = ChatLinker.shared
         let linked = capture.beeperBridge
@@ -121,7 +125,7 @@ enum ChatAppStates {
         let accounts = network?.accounts ?? []
         let own = ownLink(id)
         let linkedHere = !accounts.isEmpty || own != nil
-        let chats = capture.inbox.threads.values.filter { $0.app == id }.count
+        let chats = chats ?? capture.inbox.threads.values.filter { $0.app == id }.count
         let isOn = capture.enabled && capture.sources.isOn(id)
         guard linkedHere else {
             return ChatAppState(id: id, name: app.name, site: app.site, linked: false, status: .notLinked,
@@ -158,7 +162,6 @@ enum ChatAppStates {
     static func ownLink(_ id: String) -> String? {
         let capture = ChatCaptureService.shared
         let telegram = capture.telegramBridge
-        let instagram = capture.instagramBridge
         let teams = capture.teamsBridge
         let whatsApp = WhatsAppLink.shared
         switch id {
@@ -167,8 +170,6 @@ enum ChatAppStates {
             return tr(WhatsAppSettings.gateway == .beeper ? "chats.apps.own.service" : "chats.apps.own.whatsapp")
         case telegram.app:
             return telegram.isReady ? tr("chats.apps.as", telegram.account ?? "Telegram") : nil
-        case instagram.app:
-            return instagram.isReady ? tr("chats.apps.own.instagram") : nil
         case teams.app:
             guard let account = teams.accounts.first else { return nil }
             return teams.accounts.count == 1 ? tr("chats.apps.as", account.name.isEmpty ? account.email : account.name)

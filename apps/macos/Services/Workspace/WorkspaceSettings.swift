@@ -76,6 +76,14 @@ final class WorkspaceSettings: ObservableObject {
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
     }
+    /// How commit messages and pull requests are written (`CommitStyle`).
+    @Published var commitStyle: CommitStyle {
+        didSet { defaults.set(commitStyle.rawValue, forKey: CommitStyle.defaultsKey) }
+    }
+    /// Your own instructions for commit messages and pull requests, used with `CommitStyle.custom`.
+    @Published var commitInstructions: String {
+        didSet { defaults.set(commitInstructions, forKey: CommitStyle.instructionsKey) }
+    }
     /// A new session gets a short title written by a small model in place of the first line of its task.
     @Published var autoTitles: Bool {
         didSet { defaults.set(autoTitles, forKey: "ws.autoTitles") }
@@ -131,6 +139,8 @@ final class WorkspaceSettings: ObservableObject {
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
+        commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
+        commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
         autoResumeLimited = defaults.object(forKey: "ws.autoResumeLimited") as? Bool ?? false
         continueAfterRelaunch = defaults.object(forKey: "ws.continueAfterRelaunch") as? Bool ?? false
         steerByDefault = defaults.object(forKey: "ws.steerByDefault") as? Bool ?? true

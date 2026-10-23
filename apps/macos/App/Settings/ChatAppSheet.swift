@@ -3,10 +3,10 @@ import AppKit
 import WebKit
 
 /// Linking one chat app, or managing it once it is linked, in numbered steps. Nook links the apps it reads itself in its
-/// own way, with nothing else needed: WhatsApp with a QR code from your phone, Instagram by logging in on its website,
-/// Telegram with your phone number and a code, Teams with a code from Microsoft, Slack with a token, Messages from this
-/// Mac. Only when a chat service runs on this Mac is linking through it offered too: as the way for an app Nook cannot
-/// link itself (Messenger, Signal…), and as another way for the rest.
+/// own way, with nothing else needed: WhatsApp with a QR code from your phone, Telegram with your phone number and a code,
+/// Teams with a code from Microsoft, Slack with a token, Messages from this Mac. Instagram, Messenger, Signal, X and
+/// LinkedIn link through the chat service on this Mac (Nook's own helper, as Beeper does it: logging in on the app's own
+/// website or with a QR code), which is also offered as another way for the rest while it runs.
 struct ChatAppSheet: View {
     let app: String
     let setCollecting: (Bool) -> Void
@@ -141,7 +141,6 @@ struct ChatLinkSteps: View {
     let network: ChatLinkData.Network
     @ObservedObject private var linker = ChatLinker.shared
     @State private var values: [String: String] = [:]
-    @State private var window: ChatSignInWindow?
 
     private var session: ChatLinkData.Session? { linker.linking?.id == network.id ? linker.session : nil }
 
@@ -171,7 +170,12 @@ struct ChatLinkSteps: View {
                 SettingNote(problem, tone: .error)
             }
         }
-        .onDisappear { window?.close() }
+        .onDisappear { ChatSignInWindow.closeAll() }
+        // The sign-in window belongs to its step: once the login moved on, or ended, it goes.
+        .onChange(of: session?.step) { _, step in
+            if case .browser = step { return }
+            ChatSignInWindow.closeAll()
+        }
     }
 
     @ViewBuilder
@@ -202,11 +206,9 @@ struct ChatLinkSteps: View {
         case .browser(_, let instructions, let url, _, _, _):
             instructionsText(instructions.isEmpty ? tr("chats.link.browser.detail", network.name) : instructions)
             Button {
-                window?.close()
-                window = ChatSignInWindow(step: step, title: tr("chats.link.browser.title", network.name)) { collected, last in
+                ChatSignInWindow.open(step: step, title: tr("chats.link.browser.title", network.name)) { collected, last in
                     Task { await linker.submitBrowser(collected, lastURL: last) }
                 }
-                window?.show()
             } label: {
                 Label(tr("chats.link.browser.open", url.host ?? network.name), systemImage: "person.badge.key")
             }
@@ -229,15 +231,7 @@ struct ChatLinkSteps: View {
     private func display(_ show: ChatLinkData.Display) -> some View {
         switch show {
         case .qr(let data):
-            if let image = QRCode.image(data) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 200, height: 200)
-                    .padding(NookTheme.Spacing.md)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper))
-                    .accessibilityLabel(tr("chats.link.qr"))
-            }
+            QRCodeView(text: data, label: tr("chats.link.qr"))
         case .code(let code):
             HStack(spacing: NookTheme.Spacing.sm) {
                 Text(code)
@@ -284,18 +278,15 @@ struct ChatOwnLinkSteps: View {
     let app: String
     let setCollecting: (Bool) -> Void
     @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var instagram = ChatCaptureService.shared.instagramBridge
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @ObservedObject private var installer = WhatsAppGOWAInstaller.shared
-    @State private var signIn: WebLoginWindow?
     @State private var whatsAppOptions = false
 
     var body: some View {
         switch app {
         case "whatsapp": whatsAppSteps
-        case instagram.app: instagramSteps
         case telegram.app:
             SetupStep(number: 1, title: tr("chats.own.telegram.step"), done: telegram.isReady) {
                 TelegramSettingsRows(telegram: telegram) { linked(telegram.app) }
@@ -361,13 +352,7 @@ struct ChatOwnLinkSteps: View {
                 .disabled(!installed || installer.busy)
             } else if whatsApp.link == .needsQR, let data = whatsApp.qrPNG, let image = NSImage(data: data) {
                 detail(tr("whatsapp.settings.scan"))
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .frame(width: 200, height: 200)
-                    .padding(NookTheme.Spacing.md)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper))
-                    .accessibilityLabel(tr("chats.link.qr"))
+                QRCodeView(image: image, label: tr("chats.link.qr"))
             } else {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     ProgressView().controlSize(.small)
@@ -396,54 +381,6 @@ struct ChatOwnLinkSteps: View {
         case .installing: return tr("whatsapp.install.installing")
         default: return tr("whatsapp.install.checking")
         }
-    }
-
-    // MARK: Instagram
-
-    @ViewBuilder
-    private var instagramSteps: some View {
-        SetupStep(number: 1, title: tr("chats.own.instagram.step"), done: instagram.isReady) {
-            if instagram.isReady {
-                detail(tr("chats.link.ownWay.instagramDone"))
-                Button(tr("chats.link.unlink"), role: .destructive) { Task { await instagram.signOut() } }
-            } else if instagram.state == .waiting {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("chats.own.instagram.waiting")).foregroundStyle(NookTheme.textSecondary)
-                    Spacer()
-                    Button(tr("button.cancel")) { stopInstagram() }
-                }
-            } else {
-                detail(tr("chats.own.instagram.detail"))
-                Button(tr("chats.own.instagram.open")) { openInstagram() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-            }
-        }
-        .onChange(of: instagram.isReady) { _, ready in
-            guard ready else { return }
-            signIn?.close()
-            signIn = nil
-            linked(instagram.app)
-        }
-        .onDisappear { signIn?.close() }
-    }
-
-    /// instagram.com in a window on Nook's own store for it, while Nook waits for the sign-in there.
-    private func openInstagram() {
-        guard let web = EmbeddedAppCatalog.all.first(where: { $0.id == instagram.app }) else { return }
-        signIn?.close()
-        let window = WebLoginWindow(url: web.url, store: EmbeddedAppStore.dataStore(for: web), title: tr("chats.link.browser.title", "Instagram"))
-        window.onClose = { if !instagram.isReady { instagram.cancelSignIn() } }
-        signIn = window
-        instagram.watchSignIn()
-        window.show()
-    }
-
-    private func stopInstagram() {
-        signIn?.close()
-        signIn = nil
-        instagram.cancelSignIn()
     }
 
     // MARK: Messages

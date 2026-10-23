@@ -99,3 +99,19 @@ struct PromptLink: Equatable, Sendable {
         return URL(string: "nook://prompt?" + query)
     }
 }
+
+extension PromptLink {
+    /// The project the link names among the ones a Mac offers: by its name, or by the end of its path
+    /// (`app`, `code/app`). Nil when it names none, so the default stays.
+    func project(in projects: [LaunchOptions.Project]) -> LaunchOptions.Project? {
+        guard let hint = project?.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased(), !hint.isEmpty else { return nil }
+        return projects.first { $0.name.lowercased() == hint }
+            ?? projects.first { $0.path.lowercased().hasSuffix("/" + hint) || $0.path.lowercased() == hint }
+    }
+
+    /// The agent the link names: its exact id, else the agent whose id starts with it (`claude` → `claude-code`).
+    func agent(in agents: [LaunchOptions.Agent]) -> LaunchOptions.Agent? {
+        guard let hint = agent, !hint.isEmpty else { return nil }
+        return agents.first { $0.id == hint } ?? agents.first { $0.id.hasPrefix(hint) }
+    }
+}

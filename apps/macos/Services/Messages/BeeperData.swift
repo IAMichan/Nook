@@ -43,17 +43,6 @@ enum BeeperData {
         return networks.first { words.contains($0.word) }?.app
     }
 
-    static func object(_ data: Data) -> [String: Any]? {
-        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-    }
-
-    static func date(_ value: Any?) -> Date? {
-        guard let text = value as? String, !text.isEmpty else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
-    }
-
     /// The chats of /v1/chats, without archived ones, merged ones and those of networks Nook does not know.
     static func chats(_ json: [String: Any]) -> [Chat] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { chat in
@@ -67,7 +56,7 @@ enum BeeperData {
             let people = (chat["participants"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
             let abilities = chat["capabilities"] as? [String: Any]
             return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
-                        last: date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
+                        last: ChatJSON.date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
                         me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String,
                         isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
@@ -179,7 +168,7 @@ enum BeeperData {
         let messages: [InboxMessage] = (json["items"] as? [[String: Any]] ?? []).compactMap { message in
             guard let id = message["id"] as? String, message["type"] as? String != "REACTION",
                   message["isHidden"] as? Bool != true, message["isDeleted"] as? Bool != true,
-                  let sent = date(message["timestamp"]) else { return nil }
+                  let sent = ChatJSON.date(message["timestamp"]) else { return nil }
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let media = (message["attachments"] as? [[String: Any]])?.first.flatMap(Self.file)
             if text.isEmpty, media == nil { text = label(message) }

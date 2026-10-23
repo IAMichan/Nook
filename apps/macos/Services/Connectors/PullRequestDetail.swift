@@ -226,6 +226,9 @@ struct PullRequestFile: Identifiable, Equatable, Sendable {
     /// The unified diff. Nil for binary files and for diffs GitHub leaves out because they are too large.
     let patch: String?
     let previousPath: String?
+    /// The file's blob at the pull request's head (GitHub's `sha`): "" once the file is removed, nil when the host did not
+    /// say. A "viewed" mark remembers it, so the mark lapses when a push changes the file (`PullRequestViewedFiles`).
+    var revision: String? = nil
 
     var id: String { path }
 }
@@ -403,7 +406,8 @@ enum PullRequestDetailParser {
             guard let path = item["filename"] as? String else { return nil }
             return PullRequestFile(path: path, status: (item["status"] as? String) ?? "modified", additions: int(item["additions"]) ?? 0,
                                    deletions: int(item["deletions"]) ?? 0, patch: item["patch"] as? String,
-                                   previousPath: item["previous_filename"] as? String)
+                                   previousPath: item["previous_filename"] as? String,
+                                   revision: (item["status"] as? String) == "removed" ? "" : item["sha"] as? String)
         }
     }
 

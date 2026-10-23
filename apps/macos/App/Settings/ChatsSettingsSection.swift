@@ -28,7 +28,8 @@ struct ChatsSettingsSection: View {
                               isOn: Binding(get: { capture.enabled }, set: { setCollecting($0) }))
                 if capture.enabled { status }
                 // A chat app that is linked is switched on and off in the overview; the rest come in by their notifications.
-                ForEach(capture.sources.apps.filter { !(ChatAppStates.state($0.id)?.linked ?? false) }) { source in
+                let linked = Set(ChatAppStates.all().filter(\.linked).map(\.id))
+                ForEach(capture.sources.apps.filter { !linked.contains($0.id) }) { source in
                     row(source)
                 }
                 addRow

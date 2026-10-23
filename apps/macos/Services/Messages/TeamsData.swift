@@ -57,10 +57,6 @@ enum TeamsData {
 
     static let scopes = "Chat.Read User.Read offline_access"
 
-    static func object(_ data: Data) -> [String: Any]? {
-        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-    }
-
     /// A form body for the token endpoints, with the values escaped.
     static func form(_ fields: [String: String]) -> Data {
         var allowed = CharacterSet.alphanumerics
@@ -96,15 +92,6 @@ enum TeamsData {
         }
     }
 
-    /// Graph's dates: "2026-10-22T09:14:56.123Z", with or without the fraction.
-    static func date(_ value: Any?) -> Date? {
-        guard let text = value as? String else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: text) { return date }
-        return ISO8601DateFormatter().date(from: text)
-    }
-
     /// Your own id, name and sign-in address, from /me.
     static func me(_ json: [String: Any]) -> (id: String, name: String, email: String)? {
         guard let id = json["id"] as? String else { return nil }
@@ -136,8 +123,8 @@ enum TeamsData {
             let preview = chat["lastMessagePreview"] as? [String: Any]
             let viewpoint = chat["viewpoint"] as? [String: Any]
             if viewpoint?["isHidden"] as? Bool == true { return nil }
-            var result = Chat(id: id, name: name, isGroup: kind != "oneOnOne", last: date(preview?["createdDateTime"]),
-                              readUntil: date(viewpoint?["lastMessageReadDateTime"]), members: kind == "oneOnOne" ? [] : people)
+            var result = Chat(id: id, name: name, isGroup: kind != "oneOnOne", last: ChatJSON.date(preview?["createdDateTime"]),
+                              readUntil: ChatJSON.date(viewpoint?["lastMessageReadDateTime"]), members: kind == "oneOnOne" ? [] : people)
             if let preview { result.preview = messages(["value": [preview]], chat: result, me: me).first }
             return result
         }
@@ -171,7 +158,7 @@ enum TeamsData {
     static func messages(_ json: [String: Any], chat: Chat, me: String?) -> [InboxMessage] {
         let messages: [InboxMessage] = (json["value"] as? [[String: Any]] ?? []).compactMap { message in
             guard let id = message["id"] as? String, (message["messageType"] as? String ?? "message") == "message",
-                  message["deletedDateTime"] as? String == nil, message["isDeleted"] as? Bool != true, let sent = Self.date(message["createdDateTime"]) else { return nil }
+                  message["deletedDateTime"] as? String == nil, message["isDeleted"] as? Bool != true, let sent = ChatJSON.date(message["createdDateTime"]) else { return nil }
             let body = message["body"] as? [String: Any] ?? [:]
             var text = (body["content"] as? String) ?? ""
             if (body["contentType"] as? String)?.lowercased() == "html" { text = plain(html: text) }
@@ -196,7 +183,7 @@ enum TeamsData {
     /// be read again. System notices count too, since the list announces those as well.
     static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
         guard let last else { return true }
-        let newest = (json["value"] as? [[String: Any]] ?? []).compactMap { date($0["createdDateTime"]) }.max()
+        let newest = (json["value"] as? [[String: Any]] ?? []).compactMap { ChatJSON.date($0["createdDateTime"]) }.max()
         // The list and the messages round the same moment differently (milliseconds or not).
         return newest.map { $0 >= last.addingTimeInterval(-1) } ?? false
     }

@@ -49,7 +49,8 @@ extension WorkspaceManager {
             progress(tr("ws.quick.generatingCommit"))
             let context = try await Task.detached(priority: .userInitiated) { try git.commitContext(directory) }.value
             let branch = await currentBranch(id)
-            let answer = await generateText(TextGeneration.commitPrompt(branch: branch, files: context.files, patch: context.patch),
+            let style = await commitStyleRules(git, directory: directory, pullRequest: false)
+            let answer = await generateText(TextGeneration.commitPrompt(branch: branch, files: context.files, patch: context.patch, style: style),
                                             schema: TextGeneration.commitSchema, prefer: run.provider, profileID: run.profileID, cwd: run.isRemote ? NSHomeDirectory() : directory)
             let subject = TextGeneration.commitSubject((answer?["subject"] as? String) ?? "")
             let body = (answer?["body"] as? String) ?? ""
@@ -64,6 +65,16 @@ extension WorkspaceManager {
         }
         guard action.proposes else { return nil }
         return try await proposePullRequest(id, progress: progress)
+    }
+
+    /// The extra rules of the commit style chosen in Settings › Workspace; the repository's own style reads its recent commits.
+    private func commitStyleRules(_ git: GitService, directory: String, pullRequest: Bool) async -> [String] {
+        let style = settings.commitStyle
+        let instructions = settings.commitInstructions
+        let subjects = style == .repository
+            ? await Task.detached(priority: .userInitiated) { git.recentSubjects(directory) }.value : []
+        return pullRequest ? style.pullRequestRules(recentSubjects: subjects, instructions: instructions)
+            : style.commitRules(recentSubjects: subjects, instructions: instructions)
     }
 
     private func proposePullRequest(_ id: UUID, progress: @escaping (String) -> Void) async throws -> URL {
@@ -84,8 +95,9 @@ extension WorkspaceManager {
             return (base, context.commits, context.stat, context.patch, GitService.pullRequestTemplate(root))
         }.value
         guard let base = facts.base, base != branch else { throw StartError.git(tr("ws.quick.onBase", branch)) }
+        let style = await commitStyleRules(git, directory: directory, pullRequest: true)
         let answer = await generateText(TextGeneration.pullRequestPrompt(base: base, head: branch, commits: facts.commits, stat: facts.stat,
-                                                                        patch: facts.patch, template: facts.template),
+                                                                        patch: facts.patch, template: facts.template, style: style),
                                         schema: TextGeneration.pullRequestSchema, prefer: run.provider, profileID: run.profileID, cwd: run.isRemote ? NSHomeDirectory() : directory)
         let title = TextGeneration.pullRequestTitle((answer?["title"] as? String) ?? (facts.commits.split(separator: "\n").first.map {
             String($0.drop { $0 != " " }.dropFirst())

@@ -150,7 +150,8 @@ enum APNsJWT {
     }
 
     static func endpoint(production: Bool, deviceToken: String) -> URL? {
-        guard validToken(deviceToken) else { return nil }
+        // A Live Activity token is longer than a device token, and hex too.
+        guard validToken(deviceToken) || LiveActivityRegistration.validToken(deviceToken) else { return nil }
         return URL(string: "https://\(production ? "api.push.apple.com" : "api.sandbox.push.apple.com")/3/device/\(deviceToken.lowercased())")
     }
 

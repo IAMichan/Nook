@@ -1813,6 +1813,33 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    /// The worktree deleting this session would leave unused (`WorktreeCleanup`), offered to remove along with it.
+    func orphanedWorktree(_ id: UUID) -> (repo: String, path: String)? {
+        guard let run = run(id), !run.isRemote, let repo = run.repoRoot else { return nil }
+        let others = runs.filter { $0.id != id }.flatMap { [$0.workingDirectory] + ($0.worktreePath.map { [$0] } ?? []) }
+        guard let path = WorktreeCleanup.orphaned(worktree: run.worktreePath, otherFolders: others),
+              WorkspacePathPolicy.normalize(path) != WorkspacePathPolicy.normalize(repo) else { return nil }
+        return (repo, path)
+    }
+
+    /// Deletes a session and then its worktree. Git refuses a worktree with changes that were never committed; that is
+    /// reported and the worktree stays, so nothing you did not commit is lost.
+    func deleteWithWorktree(_ id: UUID) {
+        guard let worktree = orphanedWorktree(id) else { delete(id); return }
+        guard run(id)?.status.isActive == false else { return }
+        delete(id)
+        // `delete` leaves a session whose process is still there; its worktree stays with it.
+        guard run(id) == nil else { return }
+        Task {
+            do {
+                try await removeWorktree(repo: worktree.repo, path: worktree.path, force: false)
+                ToastCenter.shared.success(tr("ws.worktree.removed"))
+            } catch {
+                ToastCenter.shared.error(error, title: tr("ws.worktree.removeFailed"))
+            }
+        }
+    }
+
     /// Removes a worktree that is not linked to any active session (from the overview).
     func removeWorktree(repo: String, path: String, force: Bool) async throws {
         guard let git = gitService else { throw StartError.noGit }
@@ -1838,6 +1865,41 @@ final class WorkspaceManager: ObservableObject {
         } else {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
+    }
+
+    /// Opens a file in your editor with the cursor on its line (`EditorLaunch`): the editor from Settings › Workspace, else
+    /// the first known editor on this Mac, else the file is shown in Finder. A file is never handed to its default app,
+    /// since an agent's link could point at something that runs.
+    func openFile(_ target: FileTarget) {
+        let url = URL(fileURLWithPath: target.path)
+        guard FileManager.default.fileExists(atPath: target.path) else {
+            ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+            return
+        }
+        let chosen = settings.editorBundleID.isEmpty ? nil : settings.editorBundleID
+        let bundleID = chosen ?? WorkspaceSettings.installed(WorkspaceSettings.editorCandidates).first?.bundleID
+        guard !target.path.hasSuffix(".app"), let bundleID, let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            revealInFinder(target.path)
+            return
+        }
+        let executable = Bundle(url: app)?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
+        if case .process(let tool, let arguments) = EditorLaunch.plan(bundleID: bundleID, appPath: app.path, executable: executable, target: target),
+           FileManager.default.isExecutableFile(atPath: tool) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: tool)
+            process.arguments = arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            if (try? process.run()) != nil { return }
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    /// A changed file of a session, by its path in the repository, at an absolute path (nil for a remote session).
+    func absolutePath(_ id: UUID, repositoryPath: String) -> String? {
+        guard let run = run(id), !run.isRemote else { return nil }
+        let root = run.worktreePath ?? run.repoRoot ?? run.workingDirectory
+        return ((root as NSString).appendingPathComponent(repositoryPath) as NSString).standardizingPath
     }
 
     /// Opens a terminal in Nook's own window (set by the app). Used when the built-in terminal is chosen.
