@@ -378,7 +378,7 @@ struct TranscriptAnswer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            MarkdownView(text: message.text, size: 13.5, onChoose: onChoose)
+            MarkdownView(text: message.text, size: 13, onChoose: onChoose)
             if isFinal {
                 HStack(spacing: NookTheme.Spacing.md) {
                     TranscriptCopyButton(text: message.text)

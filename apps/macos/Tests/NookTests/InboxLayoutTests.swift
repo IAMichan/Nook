@@ -254,4 +254,31 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertFalse(InboxSearch.searchesMessages(" a "))
         XCTAssertTrue(InboxSearch.searchesMessages("ab"))
     }
+
+    // MARK: Nesting
+
+    func testSpawnedSessionSitsUnderItsParent() {
+        var child = row("child", .working, age: 10)
+        child.parentID = "parent"
+        let s = sections([row("other", age: 5), row("parent", age: 50), child])
+        XCTAssertEqual(ids(s, .working), [])
+        XCTAssertEqual(ids(s, .active), ["other", "parent", "child"])
+        XCTAssertEqual(s.first { $0.kind == .active }?.rows.map(\.depth), [0, 0, 1])
+    }
+
+    func testSpawnedSessionThatNeedsYouStaysInItsOwnPlace() {
+        var child = row("child", .approval)
+        child.parentID = "parent"
+        let s = sections([row("parent", .working), child])
+        XCTAssertEqual(ids(s, .working), ["parent"])
+        XCTAssertEqual(ids(s, .active), ["child"])
+    }
+
+    func testNestingSurvivesALoopAndAMissingParent() {
+        var a = row("a"), b = row("b"), c = row("c")
+        a.parentID = "b"; b.parentID = "a"; c.parentID = "gone"
+        let nested = InboxLayout.nest([a, b, c].map { InboxEntry(row: $0, receded: false, woke: false) })
+        XCTAssertEqual(Set(nested.map(\.id)), ["a", "b", "c"])
+        XCTAssertEqual(nested.first { $0.id == "c" }?.depth, 0)
+    }
 }

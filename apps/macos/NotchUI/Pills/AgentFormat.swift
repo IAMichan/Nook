@@ -76,6 +76,15 @@ enum AgentFormat {
     }
 
     /// A session title stripped of tags Claude Code sometimes prefixes ("<pasted_content …>").
+    /// A live session's title: what it was asked (its transcript's title, else the prompt of this turn), never the
+    /// agent's last answer, which only stands in while nothing else is known.
+    static func sessionTitle(_ session: AgentSession, known: PastSession?) -> String {
+        if let known, !known.title.isEmpty { return title(known.title) }
+        if !session.lastPrompt.isEmpty { return title(session.lastPrompt) }
+        if !session.summary.isEmpty { return title(session.summary) }
+        return ""
+    }
+
     static func title(_ raw: String) -> String {
         var text = InjectedPrompt.title(raw)
         if text.contains("<"), let regex = tagStripperRegex {

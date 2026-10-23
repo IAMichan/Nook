@@ -37,6 +37,9 @@ extension MarkdownBlock {
             if run.inlinePresentationIntent?.contains(.code) == true {
                 piece.font = .system(size: size - 1.5, design: .monospaced)
                 piece.backgroundColor = NookTheme.field
+                piece.foregroundColor = NookTheme.textStrong
+            } else if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
+                // Running text is a step softer than `paper`; bold keeps the full white, so it stands out without weight.
                 piece.foregroundColor = NookTheme.paper
             }
             if open?.url != url { close() }
@@ -225,10 +228,12 @@ struct MarkdownView: View {
             TableBlock(header: header, rows: rows, size: size)
         case .rule:
             NookDivider().padding(.vertical, 4)
+        case .pullRequest(let url):
+            PullRequestLinkCard(url: url)
         }
     }
 
-    private func paragraph(_ text: String, color: Color = NookTheme.paper) -> some View {
+    private func paragraph(_ text: String, color: Color = NookTheme.textStrong) -> some View {
         Text(MarkdownBlock.inline(text, size: size))
             .font(NookTheme.font(size))
             .lineSpacing(4)
@@ -267,7 +272,7 @@ private struct CalloutBlock: View {
                     Text(MarkdownBlock.inline(callout.body, size: size))
                         .font(NookTheme.font(size))
                         .lineSpacing(4)
-                        .foregroundStyle(NookTheme.paper)
+                        .foregroundStyle(NookTheme.textStrong)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -276,6 +281,56 @@ private struct CalloutBlock: View {
         .padding(NookTheme.Spacing.lg)
         // Tinted, without an edge: the color says what kind of note it is, the fill keeps it apart from the text.
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(callout.kind.color.opacity(0.08)))
+    }
+}
+
+// MARK: Pull requests
+
+/// A pull request an agent made, as a card instead of its raw tag: GitHub's mark, "Pull request #12", the repository,
+/// and an arrow; a click opens it.
+private struct PullRequestLinkCard: View {
+    let url: URL
+    @Environment(\.openURL) private var openURL
+    @State private var hovering = false
+
+    var body: some View {
+        let reference = MarkdownBlock.pullRequestReference(url)
+        let gitLab = url.path.contains("/merge_requests/")
+        Button { openURL(url) } label: {
+            HStack(spacing: NookTheme.Spacing.md) {
+                PullRequestStateGlyph(glyph: .open, size: 16)
+                    .foregroundStyle(NookTheme.mint)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(tr(gitLab ? "markdown.mergeRequest" : "markdown.pullRequest", reference?.number ?? 0))
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                    if let repo = reference?.repo {
+                        Text(repo)
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .frame(maxWidth: 360, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
+                .fill(hovering ? NookTheme.graphite : NookTheme.field))
+            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(url.absoluteString)
+        .contextMenu {
+            Button(tr("button.copy")) { Pasteboard.copy(url.absoluteString) }
+        }
     }
 }
 
@@ -473,7 +528,7 @@ private struct TableBlock: View {
         return Text(MarkdownBlock.inline(cell, size: size))
             .font(NookTheme.font(size - 0.5, weight))
             .monospacedDigit()
-            .foregroundStyle(NookTheme.paper)
+            .foregroundStyle(NookTheme.textStrong)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, NookTheme.Spacing.md)
     }

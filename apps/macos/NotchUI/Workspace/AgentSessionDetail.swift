@@ -116,9 +116,8 @@ struct AgentSessionDetail: View {
     }
 
     private func title(for session: AgentSession) -> String {
-        if !session.summary.isEmpty { return AgentFormat.title(session.summary) }
-        if let known = known(session), !known.title.isEmpty { return AgentFormat.title(known.title) }
-        return session.name
+        let named = AgentFormat.sessionTitle(session, known: known(session))
+        return named.isEmpty ? session.name : named
     }
 
     /// The session as the conversation view needs it: with the transcript of a session that was already running.
