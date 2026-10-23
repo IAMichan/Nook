@@ -509,10 +509,11 @@ private final class HistoryScanner: @unchecked Sendable {
 
         // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
         let listed = parsedAll.compactMap { entry in entry.parsed.session.map { (session: $0, links: entry.parsed.links) } }
-            // The list keeps to the last 30 days; older transcripts are read for the Usage page only.
-            .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder && $0.session.ended >= listSince }
+            .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder }
             .sorted { $0.session.ended > $1.session.ended }
-        let sessions = Self.joinResumed(listed)
+        // One conversation per resumed chat, for the Usage page's session counts (90 days); the list keeps to 30 days.
+        let conversations = Self.joinResumed(listed)
+        let sessions = conversations.filter { $0.ended >= listSince }
 
         var usage: [String: AgentUsageSummary] = [:]
         for home in homes where fm.fileExists(atPath: home.url.path) {
@@ -520,11 +521,9 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         // Each reply once, also when a transcript was copied into a resumed conversation.
         var ledger = UsageLedger()
+        for conversation in conversations { ledger.addSession(agent: conversation.agent.rawValue, ended: conversation.ended) }
         var counted = Set<String>()
         for entry in parsedAll {
-            if let session = entry.parsed.session, session.prompts > 0, session.cwd != ownFolder {
-                ledger.addSession(agent: entry.agent.rawValue, ended: session.ended)
-            }
             for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
                 ledger.add(agent: entry.agent.rawValue, model: usage.model,
                            date: usage.date, tokens: UsageTokens(input: usage.tokens.input, output: usage.tokens.output,

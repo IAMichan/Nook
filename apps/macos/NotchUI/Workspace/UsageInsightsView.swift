@@ -46,6 +46,11 @@ struct UsageInsightsView: View {
             } footer: {
                 Text(tr("usage.footer"))
             }
+            // On the one section that is always there: a Group passes its modifiers to every child.
+            .sheet(item: $openModel) { model in
+                UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
+            }
+            .onAppear { history.refresh(minimumInterval: 60) }
             if insights.tokens.total > 0 {
                 Section {
                     if byDay { dayTable(insights) } else { modelTable(insights) }
@@ -64,10 +69,6 @@ struct UsageInsightsView: View {
                 }
             }
         }
-        .sheet(item: $openModel) { model in
-            UsageModelSheet(model: model, ledger: history.ledger, window: window, metric: metric, prices: $prices) { openModel = nil }
-        }
-        .onAppear { history.refresh(minimumInterval: 60) }
     }
 
     // MARK: Controls
@@ -207,7 +208,7 @@ struct UsageInsightsView: View {
                             .frame(width: 72, alignment: .trailing)
                         Text(UsageFormat.tokens(tokens))
                             .foregroundStyle(NookTheme.textSecondary)
-                            .frame(width: 64, alignment: .trailing)
+                            .frame(width: 72, alignment: .trailing)
                     }
                     .font(NookTheme.TextStyle.body.monospacedDigit())
                     .padding(.vertical, NookTheme.Spacing.sm)
@@ -431,7 +432,8 @@ struct UsageAgentChart: View {
             }
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: insights.window.hourly ? 6 : 7)) { _ in
-                    AxisValueLabel(format: insights.window.hourly ? .dateTime.hour() : .dateTime.day().month(.abbreviated))
+                    AxisValueLabel(format: insights.window.hourly ? Date.FormatStyle.dateTime.hour()
+                                                                  : Date.FormatStyle.dateTime.day().month(.abbreviated))
                 }
             }
             .frame(height: height)
@@ -560,6 +562,9 @@ struct UsageModelSheet: View {
                     Button(tr("usage.price.reset")) {
                         prices.resetPrice(provider: model.agent, model: model.model)
                         UsagePrices.save(prices)
+                        let list = ModelRates.price(agent: model.agent, model: model.model)
+                        input = list?.inputPerMillion.map { String($0) } ?? ""
+                        output = list?.outputPerMillion.map { String($0) } ?? ""
                     }
                 }
             }
