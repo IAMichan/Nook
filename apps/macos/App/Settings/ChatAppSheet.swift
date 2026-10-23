@@ -304,7 +304,11 @@ struct ChatOwnLinkSteps: View {
         case teams.app:
             SetupStep(number: 1, title: tr("chats.own.teams.step"), done: teams.isReady) {
                 TeamsSettingsRows(teams: teams, problem: capture.bridgeProblems[teams.app]) {
-                    if teams.accounts.isEmpty { capture.bridgeChanged(teams.app) } else { linked(teams.app) }
+                    if teams.accounts.isEmpty && !TeamsWebSession.shared.isSignedIn {
+                        capture.bridgeChanged(teams.app)
+                    } else {
+                        linked(teams.app)
+                    }
                 }
             }
         case capture.slackBridge.app:
