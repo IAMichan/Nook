@@ -262,7 +262,7 @@ private struct FileTextPreview: View {
         Group {
             switch loaded {
             case nil:
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                PatientSpinner()
             case .missing:
                 note(tr("ws.outputs.missing"))
             case .binary:
@@ -291,7 +291,7 @@ private struct FileTextPreview: View {
         }
         .task(id: path) {
             let path = self.path
-            loaded = await Task.detached(priority: .utility) { () -> Loaded in
+            loaded = await Task.detached(priority: .userInitiated) { () -> Loaded in
                 guard let data = FileManager.default.contents(atPath: path) else { return .missing }
                 let head = data.prefix(400_000)
                 if head.prefix(8_000).contains(0) { return .binary }
@@ -336,14 +336,14 @@ private struct DocumentPreview: View {
     var body: some View {
         ScrollView {
             Group {
-                if let text { MarkdownView(text: text, size: 13.5) } else { ProgressView().controlSize(.small) }
+                if let text { MarkdownView(text: text, size: 13.5) } else { PatientSpinner() }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task(id: path + "@" + String(version.timeIntervalSince1970)) {
             let path = self.path
-            let read = await Task.detached(priority: .utility) { () -> String? in
+            let read = await Task.detached(priority: .userInitiated) { () -> String? in
                 FileManager.default.contents(atPath: path).map { String(decoding: $0.prefix(400_000), as: UTF8.self) }
             }.value
             text = read ?? tr("ws.outputs.missing")

@@ -21,6 +21,8 @@ struct TranscriptConversation: View {
     var interval: UInt64 = 2_000_000_000
     @State private var messages: [AgentChatMessage] = []
     @State private var loaded = false
+    /// The transcript `messages` belong to.
+    @State private var readPath: String?
     /// The session's folder on this Mac, for the files the agent wrote; nil when they are not here (a cloud session).
     var directory: String? = nil
     /// Folds, groups and thoughts you opened.
@@ -57,9 +59,14 @@ struct TranscriptConversation: View {
                     // Lazy: a long conversation only lays out what is on screen.
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
-                            Text(loaded || (path.isEmpty && load == nil) ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
-                                .font(NookTheme.TextStyle.body)
-                                .foregroundStyle(NookTheme.textTertiary)
+                            if loaded || (path.isEmpty && load == nil) {
+                                Text(tr("agents.noMessagesInTranscript"))
+                                    .font(NookTheme.TextStyle.body)
+                                    .foregroundStyle(NookTheme.textTertiary)
+                            } else {
+                                // Most transcripts are read in a moment: nothing shows unless it takes longer.
+                                PatientSpinner().frame(height: 160)
+                            }
                         }
                         ForEach(rows) { row in
                             self.row(row, answerable: answerable, cards: cards).id(row.id)
@@ -143,15 +150,26 @@ struct TranscriptConversation: View {
             }
         }
         .task(id: path + (working ? "#working" : "")) {
+            // Another session in the same place: its conversation as read last time shows at once (never the previous
+            // session's), and the read below brings it up to date.
+            if readPath != path {
+                readPath = path
+                messages = TranscriptCache.messages(path) ?? []
+                loaded = !messages.isEmpty
+            }
             while !Task.isCancelled {
                 let path = self.path
+                // The first read is what you wait for; later ones follow a working agent in the background.
+                let priority: TaskPriority = loaded ? .utility : .userInitiated
                 if let load = self.load {
                     // Without an answer the conversation already shown stays.
-                    if let fresh = await Task.detached(priority: .utility, operation: { load() }).value, fresh != messages { messages = fresh }
+                    if let fresh = await Task.detached(priority: priority, operation: { load() }).value, fresh != messages { messages = fresh }
                 } else if !path.isEmpty {
-                    let fresh = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
+                    let fresh = await Task.detached(priority: priority) { AgentTranscript.recent(path: path) }.value
                     if fresh != messages { messages = fresh }
                 }
+                guard !Task.isCancelled, readPath == path else { break }
+                TranscriptCache.store(messages, path)
                 loaded = true
                 // An earlier session does not change any more: read once.
                 guard working else { break }
@@ -713,5 +731,24 @@ enum TranscriptSymbols {
         case .search: return "magnifyingglass"
         case .other: return "wrench"
         }
+    }
+}
+
+/// The conversations of the last transcripts read, by path, so opening a session again (or switching back to it) shows
+/// its conversation at once instead of an empty panel until the file is read.
+@MainActor
+enum TranscriptCache {
+    private static var byPath: [String: [AgentChatMessage]] = [:]
+    private static var order: [String] = []
+    private static let limit = 12
+
+    static func messages(_ path: String) -> [AgentChatMessage]? { byPath[path] }
+
+    static func store(_ messages: [AgentChatMessage], _ path: String) {
+        guard !path.isEmpty, !messages.isEmpty else { return }
+        byPath[path] = messages
+        order.removeAll { $0 == path }
+        order.append(path)
+        while order.count > limit { byPath[order.removeFirst()] = nil }
     }
 }

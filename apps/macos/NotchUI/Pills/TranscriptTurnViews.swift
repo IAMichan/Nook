@@ -276,7 +276,7 @@ private struct LoadedTurnDiff: View {
             if let text, !text.isEmpty {
                 DiffText(text: text)
             } else if text == nil && fallback.isEmpty {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                PatientSpinner()
             } else if fallback.isEmpty {
                 ListEmptyNote(tr("agents.diff.none"), padding: NookTheme.Spacing.xl)
             } else {

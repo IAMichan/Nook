@@ -113,7 +113,7 @@ private struct AcpRegistrySheet: View {
             TextField(tr("acp.registry.search"), text: $query).textFieldStyle(.roundedBorder)
             Group {
                 if loading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    PatientSpinner()
                 } else if let error {
                     Text(error).foregroundStyle(NookTheme.textSecondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {

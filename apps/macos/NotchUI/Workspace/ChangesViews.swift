@@ -87,7 +87,7 @@ struct ChangesSheet: View {
     @ViewBuilder
     private var diffView: some View {
         if loading {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            PatientSpinner()
         } else if let error {
             WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.changes.error"), message: error)
         } else if diff.isEmpty {
@@ -106,12 +106,21 @@ struct ChangesSheet: View {
         guard let path else { diff = ""; return }
         let file = files.first { $0.path == path } ?? initialFile.flatMap { $0.path == path ? $0 : nil }
         guard let file else { return }
-        loading = true
+        // A diff seen before shows at once and is read again behind it; only a new one waits for git.
+        let key = "\(runID)|\(path)"
+        let cached = DiffCache.diff(key)
+        if let cached { diff = cached }
+        loading = cached == nil
         error = nil
         Task {
             do {
-                diff = try await workspace.diff(runID, file: file)
+                let fresh = try await workspace.diff(runID, file: file)
+                DiffCache.store(fresh, key)
+                // Another file was picked meanwhile: its own read fills the view.
+                guard selected == path else { return }
+                diff = fresh
             } catch let failure {
+                guard selected == path else { return }
                 error = failure.localizedDescription
             }
             loading = false
@@ -301,5 +310,23 @@ struct PullRequestSheet: View {
             }
             working = false
         }
+    }
+}
+
+/// The diffs last shown, by session or folder and file, so going back to a file shows its diff at once while git reads
+/// it again behind it. Small: diffs can be long, and only the ones you flip between matter.
+@MainActor
+enum DiffCache {
+    private static let cache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 40
+        cache.totalCostLimit = 8_000_000
+        return cache
+    }()
+
+    static func diff(_ key: String) -> String? { cache.object(forKey: key as NSString) as String? }
+
+    static func store(_ diff: String, _ key: String) {
+        cache.setObject(diff as NSString, forKey: key as NSString, cost: diff.utf8.count)
     }
 }

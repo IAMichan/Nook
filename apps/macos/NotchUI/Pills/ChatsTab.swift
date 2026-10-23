@@ -806,6 +806,7 @@ private struct ChatsRow: View {
     var rowAction: ChatsRowAction? = nil
     let action: () -> Void
     @State private var hovering = false
+    @State private var prefetch: Task<Void, Never>?
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -835,7 +836,20 @@ private struct ChatsRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            // Fetch a WhatsApp chat's messages once the pointer rests on it, so the click opens it filled; passing over
+            // the list on the way elsewhere fetches nothing.
+            prefetch?.cancel()
+            prefetch = nil
+            if inside, case .whatsApp(let jid) = entry.origin {
+                prefetch = Task {
+                    try? await Task.sleep(for: .milliseconds(120))
+                    guard !Task.isCancelled else { return }
+                    _ = await WhatsAppLink.shared.loadHistory(jid)
+                }
+            }
+        }
         .animation(NookTheme.hover, value: hovering)
     }
 
