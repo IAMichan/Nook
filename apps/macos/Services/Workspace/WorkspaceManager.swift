@@ -259,6 +259,10 @@ final class WorkspaceManager: ObservableObject {
         var contextWindow: Int?
         /// ACP: the session's cost so far, as the agent reports it.
         var acpCost: Double?
+        /// ACP: whether the agent wrote any text this turn, its tool calls, and how often Nook asked it to carry on.
+        var acpReplied = false
+        var acpToolCalls = 0
+        var acpContinuations = 0
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
