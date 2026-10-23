@@ -606,6 +606,9 @@ final class WhatsAppLink: ObservableObject {
         guard let provider, isConnected else { return }
         let gen = generation
         for chat in chats.map(WAJID.normalized) where !WAJID.isBeeper(chat) && WAJID.kind(chat) != .status {
+            // The Chats tab starts this again (and cancels the run before) when the chat list comes in: a cancelled run
+            // stops here, before it marks the chats it did not get to as asked for six hours.
+            if Task.isCancelled { return }
             if avatars[chat] != nil { continue }
             let target = ChatMedia.destination(key: "wa-avatar-" + chat, name: "avatar.jpg")
             if FileManager.default.fileExists(atPath: target.path) {
@@ -619,11 +622,19 @@ final class WhatsAppLink: ObservableObject {
                 if address == nil { continue }
             } else {
                 if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
-                avatarAsked[chat] = Date()
                 address = await provider.avatar(chat)
+                // Asked only counts once answered: a request cut off by cancelling is asked again on the next run.
+                if Task.isCancelled { return }
+                avatarAsked[chat] = Date()
             }
-            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url),
-                  let answer = try? await Self.avatarSession.data(from: url), gen == generation,
+            // Only WhatsApp's own picture servers are asked.
+            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url) else { continue }
+            let answer = try? await Self.avatarSession.data(from: url)
+            if Task.isCancelled {
+                avatarAsked[chat] = nil
+                return
+            }
+            guard let answer, gen == generation,
                   (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000,
                   Self.thumbnail(answer.0, side: 8) != nil else { continue }
             try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
