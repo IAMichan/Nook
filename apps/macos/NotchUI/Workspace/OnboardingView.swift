@@ -67,14 +67,13 @@ struct OnboardingView: View {
                     if best.choice != .unavailable {
                         HStack {
                             Button(best.ready ? tr("brain.advice.use") : tr("brain.advice.install")) { use(best) }
-                                .buttonStyle(.borderedProminent)
                                 .disabled(installing)
                             if installing { ProgressView(value: fraction).frame(width: 120) }
                         }
                     }
                 }
                 .padding(NookTheme.Spacing.lg)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.graphite))
             } else {
                 ProgressView()
             }
@@ -128,7 +127,7 @@ struct OnboardingView: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.graphite))
     }
 
     // MARK: 3 · Connections

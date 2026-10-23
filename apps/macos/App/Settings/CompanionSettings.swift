@@ -140,7 +140,7 @@ struct CompanionSettingsRows: View {
             if let url = link.url, let code = QRCodeView(text: url.absoluteString, side: 140, label: tr("companion.qr")) {
                 code
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).fixedSize(horizontal: false, vertical: true)
                 Button(copied ? tr("companion.copied") : tr("companion.copyLink")) {
                     if let url = link.url {

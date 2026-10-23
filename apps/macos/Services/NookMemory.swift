@@ -32,7 +32,9 @@ final class NookMemory: ObservableObject {
         let after = Dictionary(next.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for (id, item) in after where before[id] != item { store.saveMemory(item) }
         for id in before.keys where after[id] == nil { store.deleteMemory(id: id) }
-        book = next
+        // Most changes (an outcome observed after every tool call, a recall) leave the book as it was; publishing then
+        // would redraw every view of the app for nothing.
+        if next != book { book = next }
         return result
     }
 

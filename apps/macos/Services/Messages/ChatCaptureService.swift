@@ -219,7 +219,7 @@ final class ChatCaptureService: ObservableObject {
             }
             lastChange = change
             retryAt = nil
-            status = .running
+            if status != .running { status = .running }
             if changed {
                 save()
                 if !wasReplaying { announce(since: before) }
@@ -277,8 +277,10 @@ final class ChatCaptureService: ObservableObject {
         let before = inbox
         for bridge in bridges {
             guard sources.isOn(bridge.app), bridge.isReady else {
-                bridgeProblems[bridge.app] = nil
-                bridged.remove(bridge.app)
+                // This runs every second for every bridge that is off: write only on a change, since each write to a
+                // published property redraws every view that watches the inbox.
+                if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+                if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
                 continue
             }
             if let due = bridgeDue[bridge.app], due > Date() { continue }
@@ -286,11 +288,20 @@ final class ChatCaptureService: ObservableObject {
             bridgeNudges[bridge.app] = nudges > 1 ? nudges - 1 : nil
             bridgeDue[bridge.app] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
             do {
-                for chat in try await bridge.read() where inbox.merge(chat) { changed = true }
-                bridgeProblems[bridge.app] = nil
-                bridged.insert(bridge.app)
+                let chats = try await bridge.read()
+                // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
+                var merged = inbox
+                var mergedAny = false
+                for chat in chats where merged.merge(chat) { mergedAny = true }
+                if mergedAny {
+                    inbox = merged
+                    changed = true
+                }
+                if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+                if !bridged.contains(bridge.app) { bridged.insert(bridge.app) }
             } catch {
-                bridgeProblems[bridge.app] = error.localizedDescription
+                let problem = error.localizedDescription
+                if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
                 // Try again in a minute, not every few seconds.
                 bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
             }

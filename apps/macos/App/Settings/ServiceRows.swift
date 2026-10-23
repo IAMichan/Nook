@@ -56,7 +56,7 @@ struct ConnectMethodBadge: View {
                 .font(NookTheme.TextStyle.label)
                 .foregroundStyle(method == .signIn ? NookTheme.onIris : NookTheme.iris)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .padding(.vertical, NookTheme.Spacing.xs)
                 .background(Capsule().fill(method == .signIn ? NookTheme.iris : NookTheme.iris.opacity(0.14)))
                 .lineLimit(1)
         }
@@ -69,13 +69,13 @@ struct ServiceCategoryChips: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 chip(nil, title: tr("connect.category.all"))
                 ForEach(ServiceCategory.allCases) { category in
                     chip(category, title: category.title)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, NookTheme.Spacing.xxs)
         }
     }
 
@@ -148,10 +148,10 @@ struct ServiceRowLayout<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             ServiceTile(domain: domain, fallback: symbol, tint: tint, size: 30, source: source)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Text(title)
                     ServiceStatusLabel(status: status)
                 }
@@ -162,7 +162,7 @@ struct ServiceRowLayout<Actions: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            HStack(spacing: 6) { actions() }
+            HStack(spacing: NookTheme.Spacing.sm) { actions() }
         }
         .padding(.vertical, 3)
     }

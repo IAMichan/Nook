@@ -26,10 +26,26 @@ struct CodeRenderView: NSViewRepresentable {
         return view
     }
 
-    /// A block that is still being written (the agent streams it) shows its latest version.
+    /// A block that is still being written (the agent streams it) shows its latest version, a moment after the last
+    /// change: reloading the page (and, for Mermaid, its script) on every streamed token made the chat stutter.
     func updateNSView(_ view: WKWebView, context: Context) {
-        guard context.coordinator.shown != code else { return }
-        load(view, context.coordinator)
+        let coordinator = context.coordinator
+        // A redraw for something else (text streaming in after the block) keeps the reload already waiting.
+        if coordinator.pending != nil, coordinator.waiting == code { return }
+        coordinator.pending?.cancel()
+        coordinator.pending = nil
+        guard coordinator.shown != code else { return }
+        coordinator.waiting = code
+        coordinator.pending = Task { @MainActor [weak view] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, let view else { return }
+            coordinator.pending = nil
+            load(view, coordinator)
+        }
+    }
+
+    static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
+        coordinator.pending?.cancel()
     }
 
     private func load(_ view: WKWebView, _ coordinator: Coordinator) {
@@ -55,6 +71,10 @@ struct CodeRenderView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate {
         /// The code on screen, so an update only reloads when it changed.
         var shown = ""
+        /// The reload waiting for the code to stop changing.
+        var pending: Task<Void, Never>?
+        /// The code that reload will show.
+        var waiting = ""
 
         /// Only the page itself (loaded as about:blank); links and redirects go nowhere.
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {

@@ -115,10 +115,10 @@ struct WSSectionTitle: View {
 
     var body: some View {
         HStack {
-            Text(title.uppercased())
-                .font(NookTheme.TextStyle.caption)
-                .tracking(0.6)
+            Text(title)
+                .font(NookTheme.TextStyle.label)
                 .foregroundStyle(WS.tertiary)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             if let trailing {
                 Text(trailing).font(NookTheme.TextStyle.detail).foregroundStyle(WS.tertiary)

@@ -139,7 +139,7 @@ final class CalendarFeedsConnector: CloudConnectorConfig, AgendaSource {
             detail: detail,
             items: list.prefix(5).map {
                 ConnectorItem(id: "\($0.calendar)-\($0.start.timeIntervalSince1970)-\($0.title)", title: $0.title,
-                              subtitle: NookDates.short($0.start) + " · " + $0.calendar, tone: .neutral)
+                              subtitle: NookDates.short($0.start, locale: NookDates.appLocale) + " · " + $0.calendar, tone: .neutral)
             },
             updated: now
         )

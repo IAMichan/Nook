@@ -1816,7 +1816,7 @@ final class CalcomConnector: CloudConnectorConfig {
 
         let headline: String
         if let next = list.first {
-            headline = tr("connect.calcom.next", NookDates.short(next.start))
+            headline = tr("connect.calcom.next", NookDates.short(next.start, locale: NookDates.appLocale))
         } else {
             headline = tr("connect.calcom.noBookings")
         }

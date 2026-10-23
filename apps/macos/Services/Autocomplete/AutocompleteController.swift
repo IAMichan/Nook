@@ -332,7 +332,7 @@ final class AutocompleteController: ObservableObject {
         if let app { readQueue.async { AutocompleteField.wake(app) } }
         fieldObserver.watch(app?.processIdentifier)
         store.offUntilSwitch = nil
-        lastSite = nil
+        if lastSite != nil { lastSite = nil }
         fieldContext = nil
         windowText = nil
         upcoming = nil
@@ -912,7 +912,8 @@ final class AutocompleteController: ObservableObject {
 
     /// - Parameter continuing: right after a whole suggestion was taken (see `CompletionOptions.continuing()`).
     private func propose(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, continuing: Bool = false) {
-        lastSite = snapshot.site
+        // Runs for every keystroke: publish only a new site, so Settings does not redraw while you type.
+        if lastSite != snapshot.site { lastSite = snapshot.site }
         guard prefs.isEnabled(onSite: snapshot.site), !skipsCode(snapshot, in: app) else { return }
         record(snapshot, app: app.bundleIdentifier)
         if snapshot.hasSelection { return }

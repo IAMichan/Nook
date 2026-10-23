@@ -187,9 +187,10 @@ struct TaskStepRow: View {
     }
 }
 
-/// A ring with a gap that turns: the step that runs now.
+/// A ring with a gap that turns: the step that runs now. Still with Reduce Motion.
 struct SpinningRing: View {
     let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var turning = false
 
     var body: some View {
@@ -202,6 +203,7 @@ struct SpinningRing: View {
         }
         .padding(1)
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { turning = true }
         }
     }

@@ -22,24 +22,31 @@ struct Bar: View {
 struct PulseDot: View {
     let color: Color
     let animated: Bool
-    @State private var pulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Published only when the plan changes: sets how often the ring redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
+
+    /// Seconds for one ring to grow and fade out.
+    private static let period: Double = 1.4
 
     var body: some View {
         ZStack {
             if animated && !reduceMotion {
-                Circle()
-                    .stroke(color.opacity(pulse ? 0 : 0.7), lineWidth: 1.5)
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(pulse ? 2.3 : 1)
+                // Drawn at the ambient rate instead of a repeating animation, which redraws on every display refresh
+                // for as long as the dot is on screen; it also starts and stops whenever `animated` changes.
+                TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate)) { context in
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
+                    // Ease out: fast at first, slowing down as the ring fades.
+                    let pulse = 1 - (1 - phase) * (1 - phase)
+                    Circle()
+                        .stroke(color.opacity(0.7 * (1 - pulse)), lineWidth: 1.5)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(CGFloat(1 + 1.3 * pulse))
+                }
             }
             Circle().fill(color).frame(width: 8, height: 8)
         }
         .frame(width: 16, height: 16)
-        .onAppear {
-            guard animated, !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
-        }
     }
 }
 
@@ -50,7 +57,8 @@ struct ShimmerText: View {
     @ObservedObject private var energy = EnergyMonitor.shared
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / energy.plan.interactiveFrameRate)) { context in
+        // A slow sweep that can run for as long as an agent works: the ambient rate keeps it fluid at half the redraws.
+        TimelineView(.animation(minimumInterval: 1.0 / energy.plan.ambientFrameRate)) { context in
             let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
             Text(text)
                 .foregroundStyle(

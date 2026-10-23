@@ -6,7 +6,7 @@ import SwiftUI
 struct RemoteMachinesSection: View {
     @State private var machines = RemoteMachines.load()
     @State private var adding = false
-    @State private var results: [String: String] = [:]
+    @State private var results: [String: (ok: Bool, text: String)] = [:]
     @State private var testing: Set<String> = []
 
     var body: some View {
@@ -17,14 +17,13 @@ struct RemoteMachinesSection: View {
             ForEach(machines) { machine in
                 HStack(spacing: 10) {
                     Image(systemName: "server.rack").foregroundStyle(NookTheme.textSecondary)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                         Text(machine.name).font(NookTheme.TextStyle.strong)
                         Text(machine.host + (machine.port.map { ":\($0)" } ?? ""))
                             .font(NookTheme.mono(11))
                             .foregroundStyle(NookTheme.textSecondary)
                         if let result = results[machine.id] {
-                            Text(result).font(NookTheme.TextStyle.detail).foregroundStyle(result == tr("remote.test.ok") ? NookTheme.mint : NookTheme.amber)
-                                .fixedSize(horizontal: false, vertical: true)
+                            SettingNote(result.text, tone: result.ok ? .success : .warning)
                         }
                     }
                     Spacer()
@@ -68,7 +67,7 @@ struct RemoteMachinesSection: View {
         }
     }
 
-    nonisolated private static func probe(_ machine: RemoteMachine) -> String {
+    nonisolated private static func probe(_ machine: RemoteMachine) -> (ok: Bool, text: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: RemoteLaunch.ssh)
         var arguments = ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8"]
@@ -78,15 +77,15 @@ struct RemoteMachinesSection: View {
         process.standardOutput = FileHandle.nullDevice
         let errors = Pipe()
         process.standardError = errors
-        do { try process.run() } catch { return error.localizedDescription }
+        do { try process.run() } catch { return (false, error.localizedDescription) }
         let stop = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: stop)
         let data = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         stop.cancel()
-        if process.terminationStatus == 0 { return tr("remote.test.ok") }
+        if process.terminationStatus == 0 { return (true, tr("remote.test.ok")) }
         let message = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? tr("remote.test.failed", Int(process.terminationStatus)) : String(message.prefix(300))
+        return (false, message.isEmpty ? tr("remote.test.failed", Int(process.terminationStatus)) : String(message.prefix(300)))
     }
 }
 
@@ -106,7 +105,7 @@ private struct AddMachineSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(tr("remote.addTitle")).font(NookTheme.TextStyle.heading)
             Text(tr("remote.addSubtitle")).foregroundStyle(NookTheme.textSecondary)
             if !suggestions.isEmpty {

@@ -161,7 +161,7 @@ struct ChatsSettingsSection: View {
         return HStack(spacing: NookTheme.Spacing.md) {
             SiteIcon(domain: source.site, fallback: "bubble.left.fill", tint: NookTheme.textSecondary, size: 20, source: source.id)
                 .frame(width: 22)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(source.name)
                 Text(origin(source))
                     .font(NookTheme.TextStyle.detail)
@@ -170,9 +170,10 @@ struct ChatsSettingsSection: View {
             }
             if custom {
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Button { capture.removeSource(source.id) } label: { Image(systemName: "trash") }
+                ConfirmedButton(symbol: "trash", title: tr("chats.settings.remove", source.name),
+                                question: tr("confirm.remove", source.name)) { capture.removeSource(source.id) }
+                    .labelled(tr("chats.settings.remove", source.name))
                     .buttonStyle(.borderless)
-                    .help(tr("chats.settings.remove", source.name))
             }
         }
     }

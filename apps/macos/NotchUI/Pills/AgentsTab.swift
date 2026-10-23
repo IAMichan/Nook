@@ -153,8 +153,10 @@ struct AgentsTab: View {
             return .run(uuid)
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
+        // A session that waits for you comes before a run that is only busy.
+        if let first = live.first(where: { $0.status == .waiting || $0.approvalID != nil }) { return .live(first) }
         if !app.demoMode, let run = app.workspace.activeRuns.first(where: { !$0.archived }) { return .run(run.id) }
-        if let first = live.first(where: { $0.status == .waiting || $0.approvalID != nil || $0.status == .running }) { return .live(first) }
+        if let first = live.first(where: { $0.status == .running }) { return .live(first) }
         if app.demoMode, let first = live.first { return .live(first) }
         return .new
     }
@@ -477,6 +479,21 @@ struct AgentListRow: View {
         .onHover { hovering = $0 }
         .hoverCard { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
+        // The hover buttons are merged away above, so VoiceOver gets them as the row's actions.
+        .accessibilityActions {
+            if let actions {
+                Button(actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), action: actions.onPin)
+                Button(actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), action: actions.onSettle)
+                if let onWake = actions.onWake {
+                    Button(tr("agents.snooze.cancel"), action: onWake)
+                }
+                if let onSnooze = actions.onSnooze {
+                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
+                        Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
+                    }
+                }
+            }
+        }
     }
 
     private var content: some View {

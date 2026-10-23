@@ -217,7 +217,16 @@ final class NotchViewModel: ObservableObject {
     private var pending: [NookCard] = []
 
     var geometry: NotchGeometry = .placeholder {
-        didSet { size = layoutSize(for: state) }
+        didSet {
+            // Set again whenever the screens are looked at: only a change redraws the notch. The views read the
+            // geometry itself too (floating, the notch's height), so a new one redraws even when the size stays.
+            let fitted = layoutSize(for: state)
+            if fitted != size {
+                size = fitted
+            } else if geometry != oldValue {
+                objectWillChange.send()
+            }
+        }
     }
 
     /// Opens the panel when hovering over the notch for 0.4 seconds.
@@ -837,8 +846,9 @@ final class NotchViewModel: ObservableObject {
         let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start, translation: translation),
                                         base: base, maximum: panelMaximum)
         if card { cardExtra = extra } else { panelExtra = extra }
-        // Follows the pointer: no animation.
-        size = layoutSize(for: state)
+        // Follows the pointer: no animation. Held against a limit, the size stays put and the notch need not redraw.
+        let fitted = layoutSize(for: state)
+        if fitted != size { size = fitted }
     }
 
     func endResize() {
