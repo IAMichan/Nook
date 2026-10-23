@@ -62,13 +62,19 @@ struct PullRequestDetailView: View {
     @State private var confirmStackMerge = false
     @State private var mergingStack = false
 
+    /// Hands the row back as the page last read it (merged, closed, ready for review, in conflict), so the tab that
+    /// holds it shows the same mark as the page.
+    let onUpdate: ((PullRequestItem) -> Void)?
+
     init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
-         onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onBack: (() -> Void)? = nil) {
+         onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onUpdate: ((PullRequestItem) -> Void)? = nil,
+         onBack: (() -> Void)? = nil) {
         self.accountID = accountID
         self.item = item
         self.inline = inline
         self.stack = stack
         self.onOpenPullRequest = onOpenPullRequest
+        self.onUpdate = onUpdate
         self.onBack = onBack
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
     }
@@ -121,6 +127,11 @@ struct PullRequestDetailView: View {
         // Back in Nook after a while elsewhere: look at once instead of at the next tick.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if !merging { Task { await model.refresh() } }
+        }
+        .onChange(of: detail.map { "\($0.state.rawValue)|\($0.conflicted)" }) { _, _ in
+            guard let detail, let onUpdate else { return }
+            let updated = item.updated(from: detail)
+            if updated != item { onUpdate(updated) }
         }
         .onChange(of: detail?.files.map(\.path) ?? []) { _, paths in
             if let path = openFile, detail?.activityLoaded == true, !paths.contains(path) { openFile = nil }

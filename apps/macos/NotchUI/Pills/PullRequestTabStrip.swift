@@ -95,19 +95,7 @@ private struct PullRequestTab: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
-    private var glyph: PullRequestBadge.Glyph {
-        switch tab.item.state {
-        case .merged: return .merged
-        case .closed: return .closed
-        case .open: return tab.item.draft ? .draft : .open
-        }
-    }
+    private var glyph: PullRequestBadge.Glyph { tab.item.stateGlyph }
 
-    private var tint: Color {
-        switch tab.item.state {
-        case .merged: return NookTheme.violet
-        case .closed: return NookTheme.coralSoft
-        case .open: return tab.item.draft ? NookTheme.textTertiary : NookTheme.mint
-        }
-    }
+    private var tint: Color { PullRequestStateBadge.tint(glyph) }
 }

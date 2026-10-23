@@ -451,7 +451,9 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item)
+                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                            openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                        })
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
@@ -577,12 +579,7 @@ private struct SidePanelPullRequestIcon: View {
     let item: PullRequestItem?
 
     var body: some View {
-        let glyph: PullRequestBadge.Glyph = switch item?.state {
-        case .merged: .merged
-        case .closed: .closed
-        case .open: item?.draft == true ? .draft : .open
-        case nil: .open
-        }
+        let glyph = item?.stateGlyph ?? .open
         PullRequestStateGlyph(glyph: glyph, size: 11, lineWidth: 1.5, nodeRadius: 1.7)
             .foregroundStyle(PullRequestStateBadge.tint(glyph))
             .frame(width: 11, height: 11)
