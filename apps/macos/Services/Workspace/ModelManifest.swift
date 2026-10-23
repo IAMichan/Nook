@@ -3,7 +3,7 @@ import Foundation
 /// Which models Nook offers each agent and which agent version each one needs. A copy ships with the app
 /// (`model-manifest.json` next to this file); a fresh copy is fetched from Nook's repository, so a new model shows up
 /// between releases. A copy that fails validation never replaces a valid one, and a newer bundle wins over an older
-/// fetched copy by `updatedAt`. Depends only on Foundation so tests can use it.
+/// fetched copy by `updatedAt`. See docs/MODEL-MANIFEST.md. Depends only on Foundation so tests can use it.
 struct ModelManifest: Codable, Equatable, Sendable {
     /// The schema this build reads; a manifest with another version is refused and the copy in use stays.
     static let schemaVersion = 1

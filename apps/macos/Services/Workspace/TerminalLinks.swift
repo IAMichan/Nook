@@ -1,8 +1,13 @@
 import Foundation
 
-/// Web addresses and file paths in a line of terminal output, so ⌘-click can open them:
-/// a local address in Nook's browser, any other in your browser, and a path (`src/app.swift:12:3`) in your editor at
-/// that line. The patterns are adapted from MIT-licensed code (see THIRD-PARTY-NOTICES.md).
+/// Web addresses and file paths in a line of terminal output, so ⌘-click can open them: a local address in Nook's
+/// browser, any other in your browser, and a path (`src/app.swift:12:3`) in your editor at that line.
+///
+/// The line is read in two passes over its characters. First quoted text that names a file (`"My Folder/read me.txt":4`),
+/// which may hold spaces; then every word: an address starting with `http://` or `https://`, or a path (starting at `/`,
+/// `./`, `../` or `~/`, or words joined by slashes such as `src/app.swift:12`). Sentence punctuation and closing brackets
+/// that were never opened are cut off the end; the path of an HTTP request line with a query (`GET /api?id=3`) is left
+/// alone, since it names a route, not a file.
 enum TerminalLinks {
     enum Kind: Equatable { case url, path }
 
@@ -14,59 +19,23 @@ enum TerminalLinks {
         var end: Int
     }
 
-    private static let url = try! NSRegularExpression(pattern: #"https?://[^\s"'`<>]+"#, options: [.caseInsensitive])
-    // A bare path starts only where a segment can start, so long output without separators is not scanned at every suffix.
-    private static let path = try! NSRegularExpression(
-        pattern: #"(?:~/|\.{1,2}/|/)[^\s"'`<>]+|(?<![\p{L}\p{M}\p{N}._-])[\p{L}\p{M}\p{N}._-]+(?:/[\p{L}\p{M}\p{N}._-]+)+(?::\d+){0,2}"#)
-    private static let quotedPath = try! NSRegularExpression(
-        pattern: #"(["'`])((?:~/|\.{1,2}/|/|[\p{L}\p{M}\p{N}._ -]+/)[^\r\n]*?|[\p{L}\p{M}\p{N}._ -]+\.[\p{L}\p{M}\p{N}_-]+(?::\d+){0,2})\1((?::\d+){0,2})"#)
-    // A question mark may be part of a file name; only request lines with a query are left alone (`GET /api?x=1`).
-    private static let requestRoute = try! NSRegularExpression(
-        pattern: #"(?:^|[\s"'`])(?:GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS|CONNECT|TRACE|proxying)\s+["'`]?(?:/|[A-Za-z0-9_-]+/)[^\s?]*\?\S*"#)
+    private static let quotes: Set<Character> = ["\"", "'", "`"]
+    /// Words before a route in a server's request log.
+    private static let requestWords: Set<String> = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT",
+                                                    "TRACE", "proxying"]
 
     static func extract(_ line: String) -> [Match] {
-        let ns = line as NSString
-        let full = NSRange(location: 0, length: ns.length)
-        let routes = requestRoute.matches(in: line, range: full).map { $0.range }
-        var found: [(Kind, NSRange, String)] = []
-
-        func collides(_ range: NSRange) -> Bool {
-            found.contains { NSIntersectionRange($0.1, range).length > 0 }
+        let characters = Array(line)
+        var found = quotedPaths(characters)
+        var previousWord = ""
+        for (start, end) in words(characters) {
+            let word = String(characters[start..<end])
+            defer { previousWord = word }
+            guard let match = link(inWord: characters, start: start, end: end, after: previousWord),
+                  !found.contains(where: { $0.start < match.end && match.start < $0.end }) else { continue }
+            found.append(match)
         }
-
-        for match in url.matches(in: line, range: full) {
-            let text = trimClosing(ns.substring(with: match.range), kind: .url)
-            guard !text.isEmpty else { continue }
-            let range = NSRange(location: match.range.location, length: (text as NSString).length)
-            if !collides(range) { found.append((.url, range, text)) }
-        }
-        for match in quotedPath.matches(in: line, range: full) {
-            let inner = match.range(at: 2)
-            let position = match.range(at: 3)
-            let positionText = position.location == NSNotFound ? "" : ns.substring(with: position)
-            let text = ns.substring(with: inner) + positionText
-            guard !text.isEmpty, !isURL(text) else { continue }
-            // A position after the quotes also spans the closing quote.
-            let length = inner.length + (positionText.isEmpty ? 0 : positionText.utf16.count + 1)
-            let range = NSRange(location: inner.location, length: length)
-            if !collides(range) { found.append((.path, range, text)) }
-        }
-        for match in path.matches(in: line, range: full) {
-            let text = trimClosing(ns.substring(with: match.range), kind: .path)
-            guard !text.isEmpty, !isURL(text) else { continue }
-            let range = NSRange(location: match.range.location, length: (text as NSString).length)
-            if !collides(range) { found.append((.path, range, text)) }
-        }
-
-        return found
-            .filter { kind, range, _ in kind == .url || !routes.contains { NSIntersectionRange($0, range).length > 0 } }
-            .sorted { $0.1.location < $1.1.location }
-            .compactMap { kind, range, text in
-                guard let lower = Range(range, in: line) else { return nil }
-                let start = line.distance(from: line.startIndex, to: lower.lowerBound)
-                let end = line.distance(from: line.startIndex, to: lower.upperBound)
-                return Match(kind: kind, text: text, start: start, end: end)
-            }
+        return found.sorted { $0.start < $1.start }
     }
 
     /// The link under a column, if any.
@@ -86,18 +55,124 @@ enum TerminalLinks {
             || host.hasSuffix(".localhost")
     }
 
+    // MARK: Quoted paths
+
+    /// Text between a pair of the same quotes that reads as a file, with a `:line:column` straight after the closing quote.
+    private static func quotedPaths(_ characters: [Character]) -> [Match] {
+        var matches: [Match] = []
+        var index = 0
+        while index < characters.count {
+            let quote = characters[index]
+            guard quotes.contains(quote),
+                  let close = characters[(index + 1)...].firstIndex(of: quote) else { index += 1; continue }
+            let inner = String(characters[(index + 1)..<close])
+            if looksLikeQuotedFile(inner) {
+                let position = positionLength(characters, from: close + 1)
+                let suffix = String(characters[(close + 1)..<(close + 1 + position)])
+                matches.append(Match(kind: .path, text: inner + suffix, start: index + 1,
+                                     end: position > 0 ? close + 1 + position : close))
+            }
+            index = close + 1
+        }
+        return matches
+    }
+
+    private static func looksLikeQuotedFile(_ text: String) -> Bool {
+        guard !text.isEmpty, !isURL(text), !text.contains(where: \.isNewline) else { return false }
+        if text.hasPrefix("/") || text.hasPrefix("~/") || text.hasPrefix("./") || text.hasPrefix("../") { return true }
+        let segments = text.split(separator: "/", omittingEmptySubsequences: false)
+        let named = segments.allSatisfy { !$0.isEmpty && $0.allSatisfy { isNameCharacter($0) || $0 == " " } }
+        if segments.count > 1 { return named }
+        // One name: only a file with an extension ("read me.txt").
+        guard named, let dot = text.lastIndex(of: "."), dot != text.startIndex else { return false }
+        return text[text.index(after: dot)...].allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+            && text.index(after: dot) != text.endIndex
+    }
+
+    // MARK: Words
+
+    /// Runs of characters between spaces, quotes and angle brackets, as (start, end) offsets.
+    private static func words(_ characters: [Character]) -> [(Int, Int)] {
+        var result: [(Int, Int)] = []
+        var start: Int?
+        for (index, character) in characters.enumerated() {
+            let breaks = character.isWhitespace || quotes.contains(character) || character == "<" || character == ">"
+            if breaks {
+                if let begin = start { result.append((begin, index)) }
+                start = nil
+            } else if start == nil {
+                start = index
+            }
+        }
+        if let begin = start { result.append((begin, characters.count)) }
+        return result
+    }
+
+    /// The address or path a word holds, trimmed, with its offsets in the line.
+    private static func link(inWord characters: [Character], start: Int, end: Int, after previous: String) -> Match? {
+        let word = String(characters[start..<end])
+        let lower = word.lowercased()
+        if let scheme = lower.range(of: "https://") ?? lower.range(of: "http://") {
+            let offset = lower.distance(from: lower.startIndex, to: scheme.lowerBound)
+            let text = trimmed(String(word.dropFirst(offset)), kind: .url)
+            guard text.count > "http://".count else { return nil }
+            return Match(kind: .url, text: text, start: start + offset, end: start + offset + text.count)
+        }
+        // Opening brackets before a path belong to the sentence: "(see src/a.swift)".
+        let leading = word.prefix { $0 == "(" || $0 == "[" || $0 == "{" }.count
+        let text = trimmed(String(word.dropFirst(leading)), kind: .path)
+        guard !text.isEmpty, isPath(text) else { return nil }
+        if requestWords.contains(previous), text.contains("?") { return nil }
+        return Match(kind: .path, text: text, start: start + leading, end: start + leading + text.count)
+    }
+
+    private static func isPath(_ text: String) -> Bool {
+        if text.hasPrefix("/") || text.hasPrefix("~/") || text.hasPrefix("./") || text.hasPrefix("../") {
+            return text.count > 1 && text != "~/"
+        }
+        // Words joined by slashes, maybe followed by a line and a column.
+        let characters = Array(text)
+        var end = characters.count
+        for _ in 0..<2 {
+            guard let colon = characters[..<end].lastIndex(of: ":"), colon + 1 < end,
+                  characters[(colon + 1)..<end].allSatisfy(\.isASCII), characters[(colon + 1)..<end].allSatisfy(\.isNumber) else { break }
+            end = colon
+        }
+        let segments = String(characters[..<end]).split(separator: "/", omittingEmptySubsequences: false)
+        return segments.count > 1 && segments.allSatisfy { !$0.isEmpty && $0.allSatisfy(isNameCharacter) }
+    }
+
+    private static func isNameCharacter(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || character == "." || character == "_" || character == "-"
+    }
+
+    /// The length of a `:line` or `:line:column` starting at `index`, or 0.
+    private static func positionLength(_ characters: [Character], from index: Int) -> Int {
+        var length = 0
+        for _ in 0..<2 {
+            let colon = index + length
+            guard colon < characters.count, characters[colon] == ":" else { break }
+            var digits = colon + 1
+            while digits < characters.count, characters[digits].isASCII, characters[digits].isNumber { digits += 1 }
+            guard digits > colon + 1 else { break }
+            length = digits - index
+        }
+        return length
+    }
+
     /// Sentence punctuation after a link is not part of it, nor a closing bracket that was never opened. A path also drops
     /// a trailing colon: compilers print `file:line:col:`.
-    private static func trimClosing(_ value: String, kind: Kind) -> String {
+    private static func trimmed(_ value: String, kind: Kind) -> String {
         var output = value
-        let trailing: Set<Character> = kind == .path ? [".", ",", ";", ":", "!", "?"] : [".", ",", ";", "!", "?"]
-        while let last = output.last, trailing.contains(last) { output.removeLast() }
-        for (open, close) in [("(", ")"), ("[", "]"), ("{", "}")] as [(Character, Character)] {
-            while output.last == close {
-                let opens = output.filter { $0 == open }.count
-                let closes = output.filter { $0 == close }.count
-                if opens >= closes { break }
+        let pairs: [Character: Character] = [")": "(", "]": "[", "}": "{"]
+        let sentence: Set<Character> = kind == .path ? [".", ",", ";", ":", "!", "?"] : [".", ",", ";", "!", "?"]
+        while let last = output.last {
+            if sentence.contains(last) {
                 output.removeLast()
+            } else if let open = pairs[last], output.filter({ $0 == open }).count < output.filter({ $0 == last }).count {
+                output.removeLast()
+            } else {
+                break
             }
         }
         return output

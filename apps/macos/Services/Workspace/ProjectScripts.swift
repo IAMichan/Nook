@@ -15,7 +15,7 @@ struct ProjectScript: Equatable, Identifiable, Sendable {
 }
 
 enum ProjectScripts {
-    static let fileNames = ["nook.json"]
+    static let fileName = "nook.json"
 
     /// The scripts of the project around `folder`: the nearest `nook.json`, up to the repository root.
     static func load(folder: String) -> [ProjectScript] {
@@ -23,11 +23,9 @@ enum ProjectScripts {
         let fm = FileManager.default
         var url = URL(fileURLWithPath: folder, isDirectory: true)
         for _ in 0..<12 {
-            for name in fileNames {
-                if let data = fm.contents(atPath: url.appendingPathComponent(name).path) {
-                    let scripts = parse(data)
-                    if !scripts.isEmpty { return scripts }
-                }
+            if let data = fm.contents(atPath: url.appendingPathComponent(fileName).path) {
+                let scripts = parse(data)
+                if !scripts.isEmpty { return scripts }
             }
             // The repository root ends the search (a worktree's ".git" is a file, a checkout's a folder).
             if fm.fileExists(atPath: url.appendingPathComponent(".git").path) { break }
@@ -45,15 +43,14 @@ enum ProjectScripts {
         let start = URL(fileURLWithPath: folder, isDirectory: true)
         var url = start
         for _ in 0..<12 {
-            for name in fileNames where fm.fileExists(atPath: url.appendingPathComponent(name).path) {
-                return url.appendingPathComponent(name)
-            }
-            if fm.fileExists(atPath: url.appendingPathComponent(".git").path) { return url.appendingPathComponent(fileNames[0]) }
+            let file = url.appendingPathComponent(fileName)
+            if fm.fileExists(atPath: file.path) { return file }
+            if fm.fileExists(atPath: url.appendingPathComponent(".git").path) { return file }
             let parent = url.deletingLastPathComponent()
             if parent.path == url.path { break }
             url = parent
         }
-        return start.appendingPathComponent(fileNames[0])
+        return start.appendingPathComponent(fileName)
     }
 
     /// `data` (a project file, or nothing yet) with one more script at the end; everything else in the file stays.

@@ -154,7 +154,7 @@ pub struct ProjectScript {
     pub auto_open_preview: bool,
 }
 
-pub const SCRIPT_FILES: [&str; 1] = ["nook.json"];
+pub const SCRIPT_FILE: &str = "nook.json";
 
 /// De scripts van het project rond `folder`: de dichtstbijzijnde `nook.json`, tot de root van de repository.
 pub fn load_scripts(folder: &str) -> Vec<ProjectScript> {
@@ -163,12 +163,10 @@ pub fn load_scripts(folder: &str) -> Vec<ProjectScript> {
     }
     let mut dir = Path::new(folder).to_path_buf();
     for _ in 0..12 {
-        for name in SCRIPT_FILES {
-            if let Ok(bytes) = std::fs::read(dir.join(name)) {
-                let scripts = parse_scripts(&bytes);
-                if !scripts.is_empty() {
-                    return scripts;
-                }
+        if let Ok(bytes) = std::fs::read(dir.join(SCRIPT_FILE)) {
+            let scripts = parse_scripts(&bytes);
+            if !scripts.is_empty() {
+                return scripts;
             }
         }
         if dir.join(".git").exists() {

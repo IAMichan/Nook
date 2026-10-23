@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook. On top what it is (title, state, author, branches, size), then the
-/// tabs: an overview (checks, reviews, labels and the description at a glance), the timeline, the commits, the checks
-/// and every changed file with its diff. The bar at the bottom merges it, after you confirm, with the account it was
-/// listed under.
+/// One pull request, read in full inside Nook. On top what it is (title, state,
+/// author, branches, size), then four tabs: Summary (reviewers and labels, then the description, the checks and
+/// the comments in sections that fold), Guide, Timeline (everything that happened, commits included) and Code (every
+/// changed file with its diff). The bar under the tabs says what the open tab holds: the checks on Summary, the
+/// comments, commits and approvals with the order on Timeline, the files viewed on Code. The bar at the bottom merges
+/// it, after you confirm, with the account it was listed under.
 ///
 /// The page opens at once: the top shows what the list already knew while GitHub is asked, the overview follows with
 /// the first answer and the timeline, commits and files after it (see PullRequestDetailModel, which also keeps it
@@ -13,13 +15,15 @@ struct PullRequestDetailView: View {
     @EnvironmentObject private var app: AppModel
     let accountID: String
     let item: PullRequestItem
+    /// Beside the pull request list (a side panel): the button that leaves it closes the panel, on the right.
+    let inline: Bool
     /// Nil beside a session, where the side panel's tab closes it instead.
     let onBack: (() -> Void)?
 
-    enum Tab: Hashable { case overview, guide, timeline, commits, checks, files }
+    enum Tab: Hashable { case summary, guide, timeline, code }
 
     @StateObject private var model: PullRequestDetailModel
-    @State private var tab: Tab = .overview
+    @State private var tab: Tab = .summary
     @State private var openFile: String?
     /// Files you marked as viewed; a mark lapses when a push changes the file.
     @State private var viewed = PullRequestViewedFiles.load()
@@ -33,12 +37,30 @@ struct PullRequestDetailView: View {
     @State private var mergeError: String?
     /// The composer, the ⋯ menu's actions and their confirmation.
     @StateObject private var actions = PullRequestActionState()
-    /// The timeline newest first, when you choose it.
+    /// The timeline newest first, when chosen.
     @AppStorage("agents.pr.timelineNewest") private var newestFirst = false
+    /// The Summary's sections that fold, open at first: the description and comments, the checks folded.
+    @State private var descriptionOpen = true
+    @State private var checksOpen = false
+    @State private var commentsOpen = true
+    @AppStorage("agents.pr.commentsNewest") private var commentsNewestFirst = false
+    /// Comments by bots (CI reports, coverage, previews) are left out of the Summary until you ask for them.
+    @AppStorage("agents.pr.showBotComments") private var showBotComments = false
 
-    init(accountID: String, item: PullRequestItem, onBack: (() -> Void)? = nil) {
+    /// The stack this pull request is part of, bottom first (empty when it stands alone), and how to open another one of it.
+    let stack: [PullRequestItem]
+    let onOpenPullRequest: ((PullRequestItem) -> Void)?
+    /// Merging the stack up to here waits for its second click, then runs.
+    @State private var confirmStackMerge = false
+    @State private var mergingStack = false
+
+    init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
+         onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onBack: (() -> Void)? = nil) {
         self.accountID = accountID
         self.item = item
+        self.inline = inline
+        self.stack = stack
+        self.onOpenPullRequest = onOpenPullRequest
         self.onBack = onBack
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
     }
@@ -54,6 +76,7 @@ struct PullRequestDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             topBar
+            if confirmStackMerge || mergingStack { stackMergeBar }
             header
             if let detail {
                 tabs(detail)
@@ -98,7 +121,7 @@ struct PullRequestDetailView: View {
 
     private var topBar: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            if let onBack {
+            if let onBack, !inline {
                 NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
                     .help(tr("agents.pr.back"))
             }
@@ -119,6 +142,7 @@ struct PullRequestDetailView: View {
                 Task { await model.refresh(activity: true) }
             }
             .help(tr("agents.pulls.refresh"))
+            if stack.count > 1 { stackMenu }
             if let detail {
                 PullRequestMoreMenu(state: actions, detail: detail)
             }
@@ -131,8 +155,98 @@ struct PullRequestDetailView: View {
                 NookIconButton(systemName: "arrow.up.right.square", label: tr("agents.pulls.open"), size: 28) { NSWorkspace.shared.open(url) }
                     .help(tr("agents.pulls.open"))
             }
+            if let onBack, inline {
+                NookIconButton(systemName: "sidebar.right", label: tr("agents.pr.closePanel"), size: 28, action: onBack)
+                    .help(tr("agents.pr.closePanel"))
+            }
         }
         .frame(height: 30)
+    }
+
+    // MARK: Stack
+
+    /// The pull requests to merge to land this one: from the bottom of the stack up to here.
+    private var stackToMerge: [PullRequestItem] {
+        guard let index = stack.firstIndex(where: { $0.id == item.id }) else { return [] }
+        return Array(stack[...index])
+    }
+
+    /// The stack this pull request stands in, bottom first: a click opens another one of it, and the last line merges
+    /// the stack up to here.
+    private var stackMenu: some View {
+        let index = (stack.firstIndex { $0.id == item.id } ?? 0) + 1
+        return Menu {
+            Section(tr("agents.pulls.stack.title", stack.count)) {
+                ForEach(Array(stack.enumerated()), id: \.element.id) { position, member in
+                    Button {
+                        if member.id != item.id { onOpenPullRequest?(member) }
+                    } label: {
+                        let mark = member.id == item.id ? "✓ " : ""
+                        Text(mark + "\(position + 1). #\(member.number) \(member.title)")
+                    }
+                    .disabled(onOpenPullRequest == nil && member.id != item.id)
+                }
+            }
+            if stackToMerge.count > 1 {
+                Divider()
+                Button(tr("agents.pulls.stack.merge", stackToMerge.count)) { confirmStackMerge = true }
+                    .disabled(mergingStack)
+            }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                PullRequestStateGlyph(glyph: .stack, size: 13, lineWidth: 1.5, nodeRadius: 1.8)
+                    .frame(width: 13, height: 13)
+                Text("\(index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
+            }
+            .foregroundStyle(NookTheme.textSecondary)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("agents.pulls.stack.position", index, stack.count))
+    }
+
+    /// "Merge #1, #2 and #3 from the bottom up?" with its second click, or the progress while it runs.
+    private var stackMergeBar: some View {
+        let numbers = stackToMerge.map { "#\($0.number)" }.joined(separator: ", ")
+        return HStack(spacing: NookTheme.Spacing.md) {
+            if mergingStack {
+                ProgressView().controlSize(.small)
+                Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
+            } else {
+                Image(systemName: "arrow.triangle.merge").foregroundStyle(NookTheme.violet)
+                Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                SmallGhostButton(title: tr("button.cancel")) { confirmStackMerge = false }
+                SmallPrimaryButton(title: tr("agents.pulls.stack.mergeConfirm")) { mergeStack() }
+            }
+        }
+        .font(NookTheme.TextStyle.body)
+        .padding(NookTheme.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelCard()
+    }
+
+    private func mergeStack() {
+        let targets = stackToMerge
+        confirmStackMerge = false
+        mergingStack = true
+        model.paused = true
+        Task {
+            defer { model.paused = false }
+            do {
+                let merged = try await PullRequestQuickRunner.mergeStack(targets, accountID: accountID, app: app)
+                ToastCenter.shared.success(tr("agents.pulls.stack.merged", merged))
+            } catch {
+                ToastCenter.shared.error(error, title: tr("agents.pulls.stack.failed"))
+            }
+            mergingStack = false
+            await model.refresh(activity: true)
+            await PullRequestStore.shared.refresh(force: true)
+        }
     }
 
     /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers.
@@ -148,14 +262,15 @@ struct PullRequestDetailView: View {
                 let author = detail?.author ?? item.author
                 if !author.isEmpty {
                     HStack(spacing: NookTheme.Spacing.xs) {
-                        ChatPersonBadge(name: author, size: 16)
+                        GitHubAvatar(login: author, size: 16)
                         Text("@" + author).foregroundStyle(NookTheme.textSecondary)
                     }
                 }
                 if let created = detail?.created {
                     Text("· " + tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince(created))))
-                } else if let updated = item.updated {
-                    Text("· " + AgentFormat.short(Date().timeIntervalSince(updated)))
+                }
+                if let updated = detail?.updated ?? item.updated {
+                    Text("· " + tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
                 }
                 Spacer(minLength: 0)
             }
@@ -238,31 +353,87 @@ struct PullRequestDetailView: View {
         }
     }
 
+    /// The tab bar: the four tabs, and on the right what the open tab holds.
     private func tabs(_ detail: PullRequestDetail) -> some View {
-        let failing = detail.checkCounts.failing
-        return HStack(spacing: 0) {
+        HStack(spacing: NookTheme.Spacing.md) {
             NookTabBar<Tab>(items: [
-                .init(value: Tab.overview, title: tr("agents.pr.tab.overview")),
+                .init(value: Tab.summary, title: tr("agents.pr.tab.summary")),
                 .init(value: Tab.guide, title: tr("agents.pr.tab.guide"), help: tr("agents.pr.guide.help")),
-                .init(value: Tab.timeline, title: detail.activityLoaded
-                      ? tr("agents.pr.tab.timeline", detail.events.count) : tr("agents.pr.tab.timelinePlain")),
-                .init(value: Tab.commits, title: tr("agents.pr.tab.commits", detail.activityLoaded ? detail.commits.count : (detail.commitCount ?? 0))),
-                .init(value: Tab.checks, title: tr("agents.pr.tab.checks", detail.checks.count),
-                      help: failing > 0 ? tr("agents.pr.checks.failing", failing) : nil),
-                .init(value: Tab.files, title: tr("agents.pr.tab.files", max(detail.changedFiles, detail.files.count))),
+                .init(value: Tab.timeline, title: tr("agents.pr.tab.timelinePlain")),
+                .init(value: Tab.code, title: tr("agents.pr.tab.code")),
             ], selected: tab) { value in
-                withAnimation(NookTheme.swap) { tab = value }
-                if value != .files { openFile = nil }
+                switchTo(value)
             }
-            Spacer()
+            .fixedSize()
+            Spacer(minLength: 0)
+            tabAccessory(detail)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
         }
+    }
+
+    @ViewBuilder
+    private func tabAccessory(_ detail: PullRequestDetail) -> some View {
+        switch tab {
+        case .summary:
+            // The checks in one line; a click unfolds them.
+            Button {
+                withAnimation(NookTheme.reveal) { checksOpen = true }
+            } label: {
+                checksSummary(detail)
+            }
+            .buttonStyle(.plain)
+            .help(tr("agents.pr.status.checks"))
+        case .timeline:
+            HStack(spacing: NookTheme.Spacing.md) {
+                if detail.activityLoaded {
+                    let approvals = detail.verdicts.filter(\.approved).count
+                    Label("\(comments(detail, includeBots: true).count)", systemImage: "bubble.left")
+                        .help(tr("agents.pr.count.comments"))
+                    Label("\(detail.commits.count)", systemImage: "circle.and.line.horizontal")
+                        .help(tr("agents.pr.count.commits"))
+                    if approvals > 0 {
+                        Label("\(approvals)", systemImage: "checkmark.circle").foregroundStyle(NookTheme.mint)
+                            .help(tr("agents.pr.count.approvals"))
+                    }
+                }
+                orderButton(newestFirst: $newestFirst)
+            }
+            .monospacedDigit()
+        case .code:
+            if detail.activityLoaded, !detail.files.isEmpty {
+                let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
+                let viewedCount = viewed.viewedCount(detail.files, in: key)
+                Text(tr("agents.pr.files.viewedCount", viewedCount, detail.files.count))
+                    .monospacedDigit()
+                    .foregroundStyle(viewedCount == detail.files.count ? NookTheme.mint : NookTheme.textTertiary)
+            }
+        case .guide:
+            EmptyView()
+        }
+    }
+
+    /// "Newest first" or "Oldest first", a click turns it round.
+    private func orderButton(newestFirst: Binding<Bool>) -> some View {
+        Button {
+            newestFirst.wrappedValue.toggle()
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                Image(systemName: "arrow.up.arrow.down")
+                Text(tr(newestFirst.wrappedValue ? "agents.pr.timeline.newest" : "agents.pr.timeline.oldest"))
+            }
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textTertiary)
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private func content(_ detail: PullRequestDetail, now: Date) -> some View {
         switch tab {
-        case .overview:
-            page { overview(detail, now: now) }
+        case .summary:
+            page { summary(detail, now: now) }
         case .guide:
             if detail.activityLoaded {
                 page { reviewGuide(detail) }
@@ -275,15 +446,7 @@ struct PullRequestDetailView: View {
             } else {
                 activityLoading
             }
-        case .commits:
-            if detail.activityLoaded {
-                page { commits(detail, now: now) }
-            } else {
-                activityLoading
-            }
-        case .checks:
-            page { checks(detail) }
-        case .files:
+        case .code:
             if !detail.activityLoaded {
                 activityLoading
             } else if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
@@ -296,7 +459,7 @@ struct PullRequestDetailView: View {
 
     // MARK: Review guide
 
-    /// A tour of the pull request in reading order (its review guide): what each part changes, the files with a
+    /// A tour of the pull request in reading order: what each part changes, the files with a
     /// note (a click opens the file's diff), what to look at closely, and the questions only a maintainer can answer.
     @ViewBuilder
     private func reviewGuide(_ detail: PullRequestDetail) -> some View {
@@ -374,7 +537,7 @@ struct PullRequestDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(stop.files, id: \.path) { file in
                     HoverRow(action: {
-                        withAnimation(NookTheme.swap) { tab = .files }
+                        withAnimation(NookTheme.swap) { tab = .code }
                         openFile = file.path
                     }) {
                         HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
@@ -438,30 +601,29 @@ struct PullRequestDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Overview
+    // MARK: Summary
 
-    /// Where the pull request stands, at a glance, and its description.
-    private func overview(_ detail: PullRequestDetail, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            VStack(spacing: 0) {
-                statusRow(symbol: "checkmark.seal", title: tr("agents.pr.status.checks"), action: { switchTo(.checks) }) {
-                    checksSummary(detail)
-                }
-                NookDivider(inset: NookTheme.Spacing.lg)
-                statusRow(symbol: "person.2", title: tr("agents.pr.status.reviews"), action: { switchTo(.timeline) }) {
-                    reviewsSummary(detail)
-                }
+    /// The Summary: who reviews and which labels, then the description, the checks and the comments, each a section
+    /// that folds under its heading.
+    private func summary(_ detail: PullRequestDetail, now: Date) -> some View {
+        let shownComments = comments(detail, includeBots: showBotComments)
+        let hiddenBots = comments(detail, includeBots: true).count - comments(detail, includeBots: false).count
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                metaRow(symbol: "person.2", title: tr("agents.pr.status.reviewers")) { reviewers(detail) }
                 if !detail.labels.isEmpty {
-                    NookDivider(inset: NookTheme.Spacing.lg)
-                    statusRow(symbol: "tag", title: tr("agents.pr.status.labels"), action: nil) {
-                        labelChips(detail.labels)
+                    metaRow(symbol: "tag", title: tr("agents.pr.status.labels")) {
+                        ChipFlow(spacing: NookTheme.Spacing.xs) {
+                            ForEach(detail.labels, id: \.self) { label in
+                                LabelChip(name: label, color: detail.labelColors[label])
+                            }
+                        }
                     }
                 }
             }
-            .panelCard()
+            .padding(.horizontal, NookTheme.Spacing.xs)
 
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                NookSectionLabel(tr("agents.pr.tab.description"), inset: NookTheme.Spacing.xs)
+            SummarySection(title: tr("agents.pr.tab.description"), open: $descriptionOpen) {
                 VStack(alignment: .leading, spacing: 0) {
                     if detail.body.isEmpty {
                         Text(tr("agents.pr.noDescription")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textTertiary)
@@ -473,18 +635,102 @@ struct PullRequestDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .panelCard()
             }
+
+            SummarySection(title: tr("agents.pr.status.checks"), open: $checksOpen) {
+                checks(detail)
+            } accessory: {
+                checksSummary(detail).font(NookTheme.TextStyle.detail)
+            }
+
+            SummarySection(title: tr("agents.pr.comments", detail.activityLoaded ? shownComments.count : (detail.commentCount ?? 0)),
+                           open: $commentsOpen) {
+                if !detail.activityLoaded {
+                    ForEach(0..<2, id: \.self) { _ in GhostRow() }
+                } else if shownComments.isEmpty {
+                    ListEmptyNote(tr("agents.pr.conversation.none"))
+                } else {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                        ForEach(commentsNewestFirst ? Array(shownComments.reversed()) : shownComments) { event in
+                            eventCard(event, now: now, avatar: true)
+                        }
+                    }
+                }
+            } accessory: {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    if hiddenBots > 0 || showBotComments {
+                        Button {
+                            showBotComments.toggle()
+                        } label: {
+                            Text(showBotComments ? tr("agents.pr.comments.hideBots") : tr("agents.pr.comments.botsHidden", hiddenBots))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    orderButton(newestFirst: $commentsNewestFirst)
+                }
+            }
         }
+    }
+
+    /// The conversation: comments, reviews with something to say or a verdict, and comments on lines, oldest first.
+    private func comments(_ detail: PullRequestDetail, includeBots: Bool) -> [PullRequestEvent] {
+        detail.events.filter { event in
+            if !includeBots && event.author.lowercased().hasSuffix("[bot]") { return false }
+            switch event.kind {
+            case .comment, .lineComment: return true
+            case .review: return !event.body.isEmpty || isVerdict(event.kind)
+            case .commit, .activity: return false
+            }
+        }
+    }
+
+    /// One line of the Summary's top: a name in a narrow column on the left, its value on the right.
+    private func metaRow<Value: View>(symbol: String, title: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            Label(title, systemImage: symbol)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 96, alignment: .leading)
+            value()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The reviewers' pictures, ringed by what they said (mint approved, coral changes requested, grey still asked).
+    @ViewBuilder
+    private func reviewers(_ detail: PullRequestDetail) -> some View {
+        let verdicts = detail.verdicts
+        let waiting = detail.requestedReviewers.filter { login in !verdicts.contains { $0.author == login } }
+        if verdicts.isEmpty && waiting.isEmpty {
+            if detail.activityLoaded {
+                Text(tr("agents.pr.reviews.none")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+            } else {
+                ProgressView().controlSize(.mini)
+            }
+        } else {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(verdicts, id: \.author) { verdict in
+                    reviewer(verdict.author, ring: verdict.approved ? NookTheme.mint : NookTheme.coral,
+                             help: tr(verdict.approved ? "agents.pr.reviews.approved" : "agents.pr.reviews.changes", "@" + verdict.author))
+                }
+                ForEach(waiting, id: \.self) { login in
+                    reviewer(login, ring: NookTheme.line2, help: tr("agents.pr.reviews.waiting", "@" + login))
+                }
+            }
+        }
+    }
+
+    private func reviewer(_ login: String, ring: Color, help: String) -> some View {
+        GitHubAvatar(login: login, size: 20)
+            .padding(2)
+            .overlay(Circle().strokeBorder(ring, lineWidth: 1.5))
+            .help(help)
     }
 
     private func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
         openFile = nil
-    }
-
-    /// One line of the overview card: a name on the left, its state on the right, a click to the tab with the rest.
-    private func statusRow<Value: View>(symbol: String, title: String, action: (() -> Void)?,
-                                        @ViewBuilder value: () -> Value) -> some View {
-        OverviewStatusRow(symbol: symbol, title: title, action: action, value: value())
     }
 
     @ViewBuilder
@@ -511,55 +757,6 @@ struct PullRequestDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func reviewsSummary(_ detail: PullRequestDetail) -> some View {
-        let verdicts = detail.verdicts
-        let approved = verdicts.filter(\.approved).map { "@" + $0.author }
-        let changes = verdicts.filter { !$0.approved }.map { "@" + $0.author }
-        let waiting = detail.requestedReviewers.map { "@" + $0 }
-        if !detail.activityLoaded && waiting.isEmpty {
-            ProgressView().controlSize(.mini)
-        } else if approved.isEmpty && changes.isEmpty && waiting.isEmpty {
-            Text(tr("agents.pr.reviews.none")).foregroundStyle(NookTheme.textTertiary)
-        } else {
-            VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
-                if !changes.isEmpty {
-                    reviewLine("xmark.circle.fill", NookTheme.coral, tr("agents.pr.reviews.changes", changes.joined(separator: ", ")))
-                }
-                if !approved.isEmpty {
-                    reviewLine("checkmark.circle.fill", NookTheme.mint, tr("agents.pr.reviews.approved", approved.joined(separator: ", ")))
-                }
-                if !waiting.isEmpty {
-                    reviewLine("clock", NookTheme.textSecondary, tr("agents.pr.reviews.waiting", waiting.joined(separator: ", ")))
-                }
-            }
-        }
-    }
-
-    private func reviewLine(_ symbol: String, _ color: Color, _ text: String) -> some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            Image(systemName: symbol).font(NookTheme.font(11)).foregroundStyle(color)
-            Text(text).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
-        }
-    }
-
-    private func labelChips(_ labels: [String]) -> some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            ForEach(labels.prefix(4), id: \.self) { label in
-                Text(label)
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    .padding(.vertical, NookTheme.Spacing.xxs)
-                    .background(Capsule().fill(NookTheme.rowHover))
-                    .lineLimit(1)
-            }
-            if labels.count > 4 {
-                Text("+\(labels.count - 4)").font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textTertiary)
-            }
-        }
-    }
-
     // MARK: Timeline
 
     /// The history as one rail, oldest first: who did what, with conversations as cards and commits in runs.
@@ -567,21 +764,6 @@ struct PullRequestDetailView: View {
         let oldestFirst = PullRequestTimelineEntry.entries(detail.events)
         let entries = newestFirst ? Array(oldestFirst.reversed()) : oldestFirst
         return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                Button {
-                    newestFirst.toggle()
-                } label: {
-                    HStack(spacing: NookTheme.Spacing.xxs) {
-                        Image(systemName: "arrow.up.arrow.down")
-                        Text(tr(newestFirst ? "agents.pr.timeline.newest" : "agents.pr.timeline.oldest"))
-                    }
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.bottom, NookTheme.Spacing.sm)
             if let created = detail.created, !newestFirst {
                 TimelineRail(last: entries.isEmpty) {
                     TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
@@ -629,7 +811,7 @@ struct PullRequestDetailView: View {
                 }
             default:
                 TimelineRail(last: last) {
-                    ChatPersonBadge(name: event.author, size: 22)
+                    GitHubAvatar(login: event.author, size: 22)
                 } content: {
                     eventCard(event, now: now)
                 }
@@ -705,11 +887,13 @@ struct PullRequestDetailView: View {
     }
 
     /// A comment or review as a card: who and what on top (a review's verdict in its color), the text under it.
-    private func eventCard(_ event: PullRequestEvent, now: Date) -> some View {
+    /// With `avatar` the author's picture leads the card (the Summary's comments, which have no rail beside them).
+    private func eventCard(_ event: PullRequestEvent, now: Date, avatar: Bool = false) -> some View {
         let (label, color) = eventLabel(event.kind)
         let verdict = isVerdict(event.kind)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
+                if avatar { GitHubAvatar(login: event.author, size: 18) }
                 Text("@" + event.author).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
                 if verdict {
                     Text(label)
@@ -810,55 +994,15 @@ struct PullRequestDetailView: View {
         .disabled(check.url == nil)
     }
 
-    // MARK: Commits
-
-    private func commits(_ detail: PullRequestDetail, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if detail.commits.isEmpty {
-                ListEmptyNote(tr("agents.pr.commits.none"))
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(detail.commits.enumerated()), id: \.element.id) { index, commit in
-                        if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 20 + NookTheme.Spacing.md) }
-                        HoverRow(action: { openCommit(commit.sha, detail: detail) }) {
-                            HStack(spacing: NookTheme.Spacing.md) {
-                                ChatPersonBadge(name: commit.author, size: 20)
-                                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                                    Text(commit.subject).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
-                                    HStack(spacing: NookTheme.Spacing.xs) {
-                                        Text(commit.shortSHA).font(NookTheme.mono(11))
-                                        Text("· @" + commit.author)
-                                        if let date = commit.date { Text("· " + AgentFormat.short(now.timeIntervalSince(date))) }
-                                    }
-                                    .font(NookTheme.TextStyle.detail)
-                                    .foregroundStyle(NookTheme.textTertiary)
-                                    .lineLimit(1)
-                                }
-                                Spacer(minLength: 4)
-                            }
-                        }
-                    }
-                }
-                .panelCard()
-            }
-        }
-    }
-
     // MARK: Files
 
     private func files(_ detail: PullRequestDetail) -> some View {
         let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
-        let viewedCount = viewed.viewedCount(detail.files, in: key)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
             if detail.files.isEmpty {
                 ListEmptyNote(tr("agents.pr.files.none"))
             } else {
-                if viewedCount > 0 {
-                    Text(tr("agents.pr.files.viewedCount", viewedCount, detail.files.count))
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(viewedCount == detail.files.count ? NookTheme.mint : NookTheme.textTertiary)
-                        .padding(.horizontal, NookTheme.Spacing.xs)
-                }
+                // How many are viewed shows in the tab bar.
                 VStack(spacing: 0) {
                     ForEach(Array(orderedFiles(detail).enumerated()), id: \.element.id) { index, file in
                         if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 14 + NookTheme.Spacing.md) }
@@ -1117,38 +1261,44 @@ struct PullRequestDetailView: View {
     }
 }
 
-/// One line of the overview card: a symbol and a name on the left, the state on the right; with `action` the whole
-/// line is a button to the tab with the details.
-private struct OverviewStatusRow<Value: View>: View {
-    let symbol: String
+/// A part of the Summary under a heading that folds it: the name and a chevron on the left,
+/// what the part offers (a count, a filter, the order) on the right.
+private struct SummarySection<Content: View, Accessory: View>: View {
     let title: String
-    let action: (() -> Void)?
-    let value: Value
-    @State private var hovering = false
+    @Binding var open: Bool
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder var accessory: () -> Accessory
+
+    init(title: String, open: Binding<Bool>, @ViewBuilder content: @escaping () -> Content,
+         @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() }) {
+        self.title = title
+        _open = open
+        self.content = content
+        self.accessory = accessory
+    }
 
     var body: some View {
-        let row = HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.md) {
-            Image(systemName: symbol).font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textTertiary).frame(width: 16)
-            Text(title).foregroundStyle(NookTheme.textSecondary)
-            Spacer(minLength: NookTheme.Spacing.md)
-            value
-            if action != nil {
-                Image(systemName: "chevron.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            }
-        }
-        .font(NookTheme.TextStyle.detail)
-        .padding(.horizontal, NookTheme.Spacing.lg)
-        .padding(.vertical, NookTheme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering && action != nil ? NookTheme.rowHover : Color.clear)
-        .contentShape(Rectangle())
-
-        if let action {
-            Button(action: action) { row }
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Button {
+                    withAnimation(NookTheme.reveal) { open.toggle() }
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xs) {
+                        Text(title).font(NookTheme.TextStyle.label)
+                        Image(systemName: "chevron.right")
+                            .font(NookTheme.font(8.5, .bold))
+                            .rotationEffect(.degrees(open ? 90 : 0))
+                    }
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .contentShape(Rectangle())
+                }
                 .buttonStyle(.plain)
-                .onHover { hovering = $0 }
-        } else {
-            row
+                .accessibilityValue(open ? tr("compose.queue.expanded") : "")
+                Spacer(minLength: NookTheme.Spacing.sm)
+                accessory().foregroundStyle(NookTheme.textTertiary).lineLimit(1)
+            }
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            if open { content() }
         }
     }
 }

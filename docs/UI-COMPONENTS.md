@@ -35,8 +35,7 @@ informs without shouting; motion settles without overshoot. When you add a view:
   action is filled.
 - Words before chrome: a title, one line under it, and nothing in uppercase or tracked.
 
-These rules give a dark theme that reads calm because it uses so
-little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 3 % lighter, no blue cast), separation by tonal steps
+The dark theme reads calm because it uses so little: a pure grey ramp (canvas `#0A0A0A`, raised surfaces about 3 % lighter, no blue cast), separation by tonal steps
 and faint white fills instead of grey panels or lines, and color only where it carries meaning. In practice:
 
 - **Color means state, nothing else.** A status mark and its word, an error, a diff's `+`/`−` in the diff itself, and
@@ -169,6 +168,9 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
 | `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
 | `CheckOutcomeGlyph` | `AgentIndicators.swift` | The outcome of a CI check or step (passing, failing, running, skipped); the pull request page and the CI popover of a watched pull request |
+| `LabelChip`, `LabelDot` | `PullRequestMarks.swift` | A pull request label: a dot in the label's own GitHub color (`Color(hexString:)`) and its name in an outlined capsule, with an optional "+2". List rows, the pull request Summary, and the Labels filter |
+| `GitHubAvatar` | `PullRequestMarks.swift` | A GitHub account's picture by login, its initials (`ChatPersonBadge`) until it loads or for a bot. Pull request rows, reviewers, comments, the Author filter |
+| `ChipFlow` | `PullRequestMarks.swift` | A `Layout` that wraps chips onto as many rows as the width needs (a pull request's labels) |
 | `PullRequestFreshness` | `NotchUI/Pills/PullRequestsPanel.swift` | "Updated 20 s ago": how fresh a pull request list or page is, ticking along; next to its refresh button |
 | `AgentStatusBadge`, `RowBadgeBackground`, `SteppedPulseDot` | `StatusStyleView.swift` | Session state in rows |
 | `HoverCard`, `.hoverCard(_:)` | `HoverCard.swift` | Detail popover on hover |

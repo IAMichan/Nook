@@ -287,7 +287,7 @@ Want to explore Nook with sample data first? Enable **Demo data** in **Settings 
 - **No Notch / Multiple Displays:**
   - Prefer a floating widget? Go to **Settings › General › Notch › Placement** and choose **Floating on screen** to drag Nook anywhere on any display.
   - Using multiple monitors? Enable **Show notch on every display** so Nook opens on whichever screen your cursor is on.
-- **Search Everything:** Press **`⌘K`** (or **`⇧⌘F`**, or the magnifying glass in the panel header) to search your Nook conversations, agent sessions and their transcripts, chats, call notes, memories, notices, settings and actions at once, with typo tolerance and filters such as `in:agents`, `from:me`, `after:7d` and `"exact words"`. See [`docs/SEARCH.md`](docs/SEARCH.md).
+- **Search Everything:** Press **`⇧⌘F`** (or the magnifying glass in the panel header) to search your Nook conversations, agent sessions and their transcripts, chats, call notes, memories, notices, settings and actions at once, with typo tolerance and filters such as `in:agents`, `from:me`, `after:7d` and `"exact words"`. See [`docs/SEARCH.md`](docs/SEARCH.md).
 - **Your Own Keys:** The panel's keys (send, find, the command palette, new session, undo…) are rules you can extend in `~/.nook/keybindings.json`; Settings › Shortcuts lists them, the rules it skipped and any conflicts. See [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md).
 - **Full Window:** Press **`⌥⌘W`** (or choose **Open in Window** from the menu bar) for the full desktop workspace, and **`⌘,`** for **Settings**.
 
@@ -337,6 +337,8 @@ Found a security vulnerability? Please report it privately via [SECURITY.md](SEC
 | Shared macOS UI components | [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) |
 | Windows, Linux & Android (Tauri) | [`docs/TAURI.md`](docs/TAURI.md) |
 | Fine-tuning local models | [`scripts/finetune/README.md`](scripts/finetune/README.md) |
+| Model manifest (which models the agent pickers offer) | [`docs/MODEL-MANIFEST.md`](docs/MODEL-MANIFEST.md) |
+| Workspace roadmap | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | Third-party attributions | [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) |
 
 ---

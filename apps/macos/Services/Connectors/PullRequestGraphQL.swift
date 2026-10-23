@@ -5,7 +5,7 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     enum CI: String, Equatable, Codable, Sendable { case unknown, pending, passing, failing }
     /// Where the pull request stands: still open, closed without merging, or merged.
     enum State: String, Equatable, Codable, Sendable { case open, closed, merged }
-    /// What the reviews decided so far (GitHub's `reviewDecision`), shown in a row.
+    /// What the reviews decided so far (GitHub's `reviewDecision`), as a row shows it.
     enum Review: String, Equatable, Codable, Sendable { case none, required, approved, changesRequested }
 
     let repo: String
@@ -24,6 +24,14 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
     /// The branch conflicts with its base (GitHub's `mergeable` is CONFLICTING).
     var conflict = false
     var labels: [String] = []
+    /// Each label's color as GitHub's six hex digits ("d73a4a"), for the colored chips and the Labels filter.
+    var labelColors: [String: String] = [:]
+    /// The branch the changes come from, so the search finds a pull request by its branch name too.
+    var headBranch = ""
+    /// The branch it merges into; a pull request whose base is another one's head stands on it (a stack).
+    var baseBranch = ""
+    /// GitHub's node id, which marking a draft ready for review needs.
+    var nodeID = ""
 
     var id: String { "\(repo)#\(number)" }
     /// Lines changed in all, for the size sorts.
@@ -31,7 +39,8 @@ struct PullRequestItem: Identifiable, Equatable, Codable, Sendable {
 }
 
 extension PullRequestItem {
-    private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions, review, conflict, labels }
+    private enum CodingKeys: String, CodingKey { case repo, number, title, url, draft, updated, author, ci, state, additions, deletions, review, conflict, labels,
+                                            labelColors, headBranch, baseBranch, nodeID }
 
     /// A list saved before states existed only held open pull requests.
     init(from decoder: Decoder) throws {
@@ -45,7 +54,11 @@ extension PullRequestItem {
                   deletions: try c.decodeIfPresent(Int.self, forKey: .deletions),
                   review: try c.decodeIfPresent(Review.self, forKey: .review) ?? .none,
                   conflict: try c.decodeIfPresent(Bool.self, forKey: .conflict) ?? false,
-                  labels: try c.decodeIfPresent([String].self, forKey: .labels) ?? [])
+                  labels: try c.decodeIfPresent([String].self, forKey: .labels) ?? [],
+                  labelColors: try c.decodeIfPresent([String: String].self, forKey: .labelColors) ?? [:],
+                  headBranch: try c.decodeIfPresent(String.self, forKey: .headBranch) ?? "",
+                  baseBranch: try c.decodeIfPresent(String.self, forKey: .baseBranch) ?? "",
+                  nodeID: try c.decodeIfPresent(String.self, forKey: .nodeID) ?? "")
     }
 }
 
@@ -166,8 +179,8 @@ enum PullRequestGraphQL {
       reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) { nodes { ...row } }
     }
     fragment row on PullRequest {
-      number title url isDraft updatedAt state additions deletions reviewDecision mergeable
-      labels(first: 6) { nodes { name } }
+      id number title url isDraft updatedAt state additions deletions reviewDecision mergeable headRefName baseRefName
+      labels(first: 6) { nodes { name color } }
       author { login }
       repository { nameWithOwner }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -276,6 +289,7 @@ enum PullRequestGraphQL {
             let commits = ((node["commits"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
             let commit = commits.last?["commit"] as? [String: Any]
             let rollup = (commit?["statusCheckRollup"] as? [String: Any])?["state"] as? String
+            let labels = ((node["labels"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
             return PullRequestItem(repo: repo, number: number, title: (node["title"] as? String) ?? "Untitled",
                                    url: (node["url"] as? String).flatMap(URL.init(string:)), draft: (node["isDraft"] as? Bool) ?? false,
                                    updated: (node["updatedAt"] as? String).flatMap(date),
@@ -285,8 +299,21 @@ enum PullRequestGraphQL {
                                    deletions: (node["deletions"] as? NSNumber)?.intValue,
                                    review: review(node["reviewDecision"] as? String),
                                    conflict: (node["mergeable"] as? String) == "CONFLICTING",
-                                   labels: (((node["labels"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String })
+                                   labels: labels.compactMap { $0["name"] as? String },
+                                   labelColors: labelColors(labels),
+                                   headBranch: (node["headRefName"] as? String) ?? "",
+                                   baseBranch: (node["baseRefName"] as? String) ?? "",
+                                   nodeID: (node["id"] as? String) ?? "")
         }
+    }
+
+    /// Name to color for GitHub's label nodes (GraphQL and REST both answer `name` and `color`).
+    static func labelColors(_ labels: [[String: Any]]) -> [String: String] {
+        var colors: [String: String] = [:]
+        for label in labels {
+            if let name = label["name"] as? String, let color = label["color"] as? String, !color.isEmpty { colors[name] = color }
+        }
+        return colors
     }
 
     static func review(_ decision: String?) -> PullRequestItem.Review {

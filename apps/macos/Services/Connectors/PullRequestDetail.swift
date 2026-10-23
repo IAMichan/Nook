@@ -38,6 +38,10 @@ struct PullRequestDetail: Equatable, Sendable {
     /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
     var requestedReviewers: [String] = []
     var labels: [String] = []
+    /// Each label's color as six hex digits, as the list's rows have them.
+    var labelColors: [String: String] = [:]
+    /// GitHub's node id, for the actions only GraphQL offers (marking a draft ready for review).
+    var nodeID = ""
     /// GitHub's own counts, so the lists can be read page by page at once and a tab can say how many before they load.
     var commitCount: Int? = nil
     var commentCount: Int? = nil
@@ -263,6 +267,8 @@ enum PullRequestDetailParser {
         detail.requestedReviewers = ((pull["requested_reviewers"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
             + ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+        detail.labelColors = PullRequestGraphQL.labelColors((pull["labels"] as? [[String: Any]]) ?? [])
+        detail.nodeID = (pull["node_id"] as? String) ?? ""
         detail.commitCount = int(pull["commits"])
         detail.commentCount = int(pull["comments"])
         detail.lineCommentCount = int(pull["review_comments"])

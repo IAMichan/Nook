@@ -1,26 +1,34 @@
 import Foundation
 
-/// What the Pull requests list under Agents shows: a search over title, repository, number and author, and the choices
-/// in the Filters dropdown: the state (open by default, closed, merged or all), which group (for your review, yours, or
-/// from the watched organizations and repositories),
-/// the author, drafts, and CI. Foundation only, so tests can use it.
-struct PullRequestFilter: Equatable, Sendable {
-    enum State: String, CaseIterable, Identifiable, Sendable {
+/// What the Pull requests list under Agents shows: a search over title, repository,
+/// number, author and branch that also takes qualifiers (`label:bug`, `author:ada`, `review:approved`, see
+/// `PullRequestQuery`), and the choices in the Filters dropdown: the state (open by default, closed, merged or all),
+/// which group (for your review, yours, or from the watched organizations and repositories), the author, the labels,
+/// drafts, the review decision, CI, and the repository. Kept across launches (`load` / `save`). Foundation only, so
+/// tests can use it.
+struct PullRequestFilter: Equatable, Codable, Sendable {
+    enum State: String, CaseIterable, Identifiable, Codable, Sendable {
         case all, open, closed, merged
         var id: String { rawValue }
     }
 
-    enum Scope: String, CaseIterable, Identifiable, Sendable {
+    enum Scope: String, CaseIterable, Identifiable, Codable, Sendable {
         case all, reviews, mine, watched
         var id: String { rawValue }
     }
 
-    enum Draft: String, CaseIterable, Identifiable, Sendable {
+    enum Draft: String, CaseIterable, Identifiable, Codable, Sendable {
         case all, drafts, ready
         var id: String { rawValue }
     }
 
-    enum Status: String, CaseIterable, Identifiable, Sendable {
+    /// The review decision, as the Review filter offers it.
+    enum Review: String, CaseIterable, Identifiable, Codable, Sendable {
+        case all, approved, changesRequested, required, noReviews
+        var id: String { rawValue }
+    }
+
+    enum Status: String, CaseIterable, Identifiable, Codable, Sendable {
         case any, failing, pending, passing
         var id: String { rawValue }
     }
@@ -30,43 +38,86 @@ struct PullRequestFilter: Equatable, Sendable {
     var scope: Scope = .all
     /// A login, or nil for anyone.
     var author: String?
+    /// Labels a pull request must all carry.
+    var labels: [String] = []
     var draft: Draft = .all
+    var review: Review = .all
     var status: Status = .any
+    /// "owner/name", or nil for every repository.
+    var repo: String?
+    /// The id of the GitHub account to list, or nil for every connected account.
+    var account: String?
+
+    init(query: String = "", state: State = .open, scope: Scope = .all, author: String? = nil, labels: [String] = [],
+         draft: Draft = .all, review: Review = .all, status: Status = .any, repo: String? = nil, account: String? = nil) {
+        self.query = query
+        self.state = state
+        self.scope = scope
+        self.author = author
+        self.labels = labels
+        self.draft = draft
+        self.review = review
+        self.status = status
+        self.repo = repo
+        self.account = account
+    }
 
     /// How many dropdown choices differ from the default (the search not counted), for the badge on the Filters button.
     var activeCount: Int {
-        [state != .open, scope != .all, author != nil, draft != .all, status != .any].filter { $0 }.count
+        [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil, account != nil]
+            .filter { $0 }.count + labels.count
     }
 
-    var isActive: Bool { !words.isEmpty || activeCount > 0 }
+    var isActive: Bool { parsed != PullRequestQuery() || activeCount > 0 }
 
-    /// The search, in lowercase words. Every word must appear; "@ada" matches the author, "#12" the number.
-    private var words: [String] {
-        query.lowercased().split(whereSeparator: { $0.isWhitespace }).map(String.init)
-    }
+    /// The search, read into words and qualifiers.
+    var parsed: PullRequestQuery { PullRequestQuery.parse(query) }
+
+    /// The choices that count, a qualifier typed in the search winning over the dropdown.
+    var effectiveAuthor: String? { parsed.author ?? author }
+    var effectiveDraft: Draft { parsed.draft ?? draft }
+    var effectiveReview: Review { parsed.review ?? review }
+    var effectiveStatus: Status { parsed.checks ?? status }
+    var effectiveRepo: String? { parsed.repo ?? repo }
 
     func matches(_ item: PullRequestItem) -> Bool {
+        matches(item, parsed: parsed)
+    }
+
+    private func matches(_ item: PullRequestItem, parsed: PullRequestQuery) -> Bool {
         switch state {
         case .all: break
         case .open: if item.state != .open { return false }
         case .closed: if item.state != .closed { return false }
         case .merged: if item.state != .merged { return false }
         }
-        if let author, item.author.lowercased() != author.lowercased() { return false }
-        switch draft {
+        if let author = parsed.author ?? author, item.author.lowercased() != author.lowercased() { return false }
+        if let repo = parsed.repo ?? repo, item.repo.lowercased() != repo.lowercased() { return false }
+        switch parsed.draft ?? draft {
         case .all: break
         case .drafts: if !item.draft { return false }
         case .ready: if item.draft { return false }
         }
-        switch status {
+        switch parsed.review ?? review {
+        case .all: break
+        case .approved: if item.review != .approved { return false }
+        case .changesRequested: if item.review != .changesRequested { return false }
+        case .required: if item.review != .required { return false }
+        case .noReviews: if item.review != .none { return false }
+        }
+        switch parsed.checks ?? status {
         case .any: break
         case .failing: if item.ci != .failing { return false }
         case .pending: if item.ci != .pending { return false }
         case .passing: if item.ci != .passing { return false }
         }
-        let words = self.words
+        let held = Set(item.labels.map { $0.lowercased() })
+        let groups = labels.map { [$0] } + parsed.labels
+        if !groups.allSatisfy({ group in group.contains { held.contains($0.lowercased()) } }) { return false }
+        if parsed.excludedLabels.contains(where: { held.contains($0.lowercased()) }) { return false }
+        let words = parsed.words
         guard !words.isEmpty else { return true }
-        let text = "\(item.repo)#\(item.number) \(item.title) @\(item.author)".lowercased()
+        let text = "\(item.repo)#\(item.number) \(item.title) @\(item.author) \(item.headBranch)".lowercased()
         return words.allSatisfy { word in
             // A bare number or "#12" is the pull request's number, never part of another one ("#123").
             let digits = word.hasPrefix("#") ? String(word.dropFirst()) : word
@@ -77,22 +128,125 @@ struct PullRequestFilter: Equatable, Sendable {
         }
     }
 
+    /// The accounts the Account choice keeps, each with only the pull requests that match.
+    func apply(_ accounts: [AccountPullRequests]) -> [AccountPullRequests] {
+        accounts.filter { account == nil || $0.id == account }.map(apply)
+    }
+
     /// The account with only the pull requests that match. An error stays, so a failing account never disappears.
     func apply(_ account: AccountPullRequests) -> AccountPullRequests {
+        let parsed = self.parsed
+        let keep: (PullRequestItem) -> Bool = { matches($0, parsed: parsed) }
         var result = account
-        result.reviews = scope == .all || scope == .reviews ? account.reviews.filter(matches) : []
-        result.mine = scope == .all || scope == .mine ? account.mine.filter(matches) : []
-        result.watched = scope == .all || scope == .watched ? account.watched.filter(matches) : []
+        result.reviews = scope == .all || scope == .reviews ? account.reviews.filter(keep) : []
+        result.mine = scope == .all || scope == .mine ? account.mine.filter(keep) : []
+        result.watched = scope == .all || scope == .watched ? account.watched.filter(keep) : []
         return result
+    }
+
+    /// The same filter with the Draft choice changed; a `draft:` typed in the search leaves it, so the
+    /// choice just made is the one that counts.
+    func settingDraft(_ value: Draft) -> PullRequestFilter {
+        var next = clearingTyped(["draft"])
+        next.draft = value
+        return next
+    }
+
+    /// The same filter without the typed qualifiers named in `keys`, for a dropdown choice that replaces them.
+    func clearingTyped(_ keys: Set<String>) -> PullRequestFilter {
+        var next = self
+        let kept = PullRequestQuery.removing(keys, from: query)
+        if PullRequestQuery.parse(kept) != parsed { next.query = kept }
+        return next
     }
 
     /// Every author in the lists, for the Author choice: most pull requests first, then by name.
     static func authors(in accounts: [AccountPullRequests]) -> [String] {
-        var counts: [String: Int] = [:]
-        for account in accounts {
-            for item in account.mine + account.reviews + account.watched where !item.author.isEmpty { counts[item.author, default: 0] += 1 }
+        facets(in: accounts, state: .all).authors.map(\.name)
+    }
+
+    // MARK: Kept across launches
+
+    private static let defaultsKey = "nook.pulls.filter"
+
+    /// The filter you left the list with, or the default one.
+    static func load(from defaults: UserDefaults = .standard) -> PullRequestFilter {
+        guard let data = defaults.data(forKey: defaultsKey),
+              let filter = try? JSONDecoder().decode(PullRequestFilter.self, from: data) else { return PullRequestFilter() }
+        return filter
+    }
+
+    func save(to defaults: UserDefaults = .standard) {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        defaults.set(data, forKey: Self.defaultsKey)
+    }
+
+    /// A filter saved by an older Nook lacks the newer choices; each falls back to its default.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "",
+                  state: (try? c.decodeIfPresent(State.self, forKey: .state)) ?? .open,
+                  scope: (try? c.decodeIfPresent(Scope.self, forKey: .scope)) ?? .all,
+                  author: try? c.decodeIfPresent(String.self, forKey: .author),
+                  labels: (try? c.decodeIfPresent([String].self, forKey: .labels)) ?? [],
+                  draft: (try? c.decodeIfPresent(Draft.self, forKey: .draft)) ?? .all,
+                  review: (try? c.decodeIfPresent(Review.self, forKey: .review)) ?? .all,
+                  status: (try? c.decodeIfPresent(Status.self, forKey: .status)) ?? .any,
+                  repo: try? c.decodeIfPresent(String.self, forKey: .repo),
+                  account: try? c.decodeIfPresent(String.self, forKey: .account))
+    }
+}
+
+/// What the lists hold, counted for the Filters dropdown: the authors, the labels with their
+/// colors, and the repositories, each with how many pull requests in the chosen state carry it.
+struct PullRequestFacets: Equatable, Sendable {
+    struct Entry: Equatable, Sendable, Identifiable {
+        let name: String
+        var count: Int
+        /// A label's six hex digits; nil for authors, repositories and labels without a color.
+        var color: String?
+        var id: String { name.lowercased() }
+    }
+
+    var authors: [Entry] = []
+    var labels: [Entry] = []
+    var repos: [Entry] = []
+}
+
+extension PullRequestFilter {
+    /// The facets of every pull request in `accounts` in `state`, each pull request counted once; most first, then by
+    /// name.
+    static func facets(in accounts: [AccountPullRequests], state: State) -> PullRequestFacets {
+        var seen = Set<String>()
+        var authors: [String: PullRequestFacets.Entry] = [:]
+        var labels: [String: PullRequestFacets.Entry] = [:]
+        var repos: [String: PullRequestFacets.Entry] = [:]
+        func add(_ name: String, color: String? = nil, to table: inout [String: PullRequestFacets.Entry]) {
+            guard !name.isEmpty else { return }
+            let key = name.lowercased()
+            var entry = table[key] ?? PullRequestFacets.Entry(name: name, count: 0, color: color)
+            entry.count += 1
+            if entry.color == nil { entry.color = color }
+            table[key] = entry
         }
-        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.lowercased() < $1.key.lowercased() }.map(\.key)
+        for account in accounts {
+            for item in account.reviews + account.mine + account.watched where seen.insert(item.id).inserted {
+                switch state {
+                case .all: break
+                case .open: if item.state != .open { continue }
+                case .closed: if item.state != .closed { continue }
+                case .merged: if item.state != .merged { continue }
+                }
+                add(item.author, to: &authors)
+                add(item.repo, to: &repos)
+                for label in item.labels { add(label, color: item.labelColors[label], to: &labels) }
+            }
+        }
+        let order: (PullRequestFacets.Entry, PullRequestFacets.Entry) -> Bool = {
+            $0.count != $1.count ? $0.count > $1.count : $0.name.lowercased() < $1.name.lowercased()
+        }
+        return PullRequestFacets(authors: authors.values.sorted(by: order), labels: labels.values.sorted(by: order),
+                                 repos: repos.values.sorted(by: order))
     }
 }
 
@@ -105,7 +259,7 @@ enum PullRequestGrouping: String, CaseIterable, Identifiable, Sendable {
 /// In what order the list shows its rows and repositories: what waits on you first (reviews asked of you, then your
 /// own pull requests with failing checks), or by when they last changed. Open ones always come before closed ones.
 enum PullRequestSort: String, CaseIterable, Identifiable, Sendable {
-    /// More orders besides the default: merge readiness (approved with passing checks first, conflicts last, the
+    /// Besides what waits on you: merge readiness (approved with passing checks first, conflicts last, the
     /// smaller change first among equals), what is blocked on you, and by size.
     case attention, readiness, blockedOnMe, recent, oldest, largest, smallest
     var id: String { rawValue }

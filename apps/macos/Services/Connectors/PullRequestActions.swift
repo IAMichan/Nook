@@ -2,8 +2,9 @@ import Foundation
 
 /// What you can do to a pull request from its page, besides merging it: review
 /// it (approve, request changes, comment), write in its conversation, close or reopen it, edit its title and
-/// description, ask people for a review, bring its branch up to date with the base, and add or remove a label. Each is
-/// one GitHub REST call, asked from the page after your own click, and written to the action log. Foundation only, so
+/// description, ask people for a review, bring its branch up to date with the base, add or remove a label, mark a draft
+/// ready for review, and point it at another base branch (when the pull request under it in a stack was merged). Each is
+/// one GitHub call (REST, or GraphQL for marking ready), asked after your own click, and written to the action log. Foundation only, so
 /// the requests are tested on their own.
 enum PullRequestAction: Equatable, Sendable {
     enum Verdict: String, CaseIterable, Sendable {
@@ -32,6 +33,13 @@ enum PullRequestAction: Equatable, Sendable {
     case updateBranch(headSHA: String)
     case addLabels([String])
     case removeLabel(String)
+    /// A draft becomes ready for review. Only GitHub's GraphQL API can do this, by the pull request's node id.
+    case markReady(nodeID: String)
+    /// Merges into another branch from now on.
+    case changeBase(String)
+
+    static let markReadyMutation =
+        "mutation NookMarkReady($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }"
 
     struct Request: Equatable {
         var method: String
@@ -77,6 +85,13 @@ enum PullRequestAction: Equatable, Sendable {
             guard !name.isEmpty,
                   let escaped = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) else { return nil }
             return Request(method: "DELETE", path: issue + "/labels/" + escaped, body: nil)
+        case .markReady(let nodeID):
+            guard !nodeID.isEmpty else { return nil }
+            return Request(method: "POST", path: "/graphql", body: ["query": Self.markReadyMutation, "variables": ["id": nodeID] as [String: String]])
+        case .changeBase(let branch):
+            let name = branch.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return nil }
+            return Request(method: "PATCH", path: pull, body: ["base": name])
         }
     }
 
@@ -91,6 +106,8 @@ enum PullRequestAction: Equatable, Sendable {
         case .requestReviewers: return "github_request_reviewers"
         case .updateBranch: return "github_update_branch"
         case .addLabels, .removeLabel: return "github_labels"
+        case .markReady: return "github_ready_pr"
+        case .changeBase: return "github_change_base"
         }
     }
 
@@ -107,6 +124,8 @@ enum PullRequestAction: Equatable, Sendable {
         case .updateBranch: return "\(target) update branch"
         case .addLabels(let labels): return "\(target) + \(labels.joined(separator: ", "))"
         case .removeLabel(let label): return "\(target) − \(label)"
+        case .markReady: return "\(target) ready for review"
+        case .changeBase(let branch): return "\(target) base: \(branch)"
         }
     }
 
@@ -120,6 +139,13 @@ enum PullRequestAction: Equatable, Sendable {
                 !login.isEmpty && login.count <= 39 && login.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
                     && seen.insert(login.lowercased()).inserted
             }
+    }
+
+    /// The first error in a GraphQL answer, which GitHub sends with status 200; nil when there is none.
+    static func graphQLError(_ object: [String: Any]) -> String? {
+        guard let errors = object["errors"] as? [[String: Any]], !errors.isEmpty else { return nil }
+        let message = errors.compactMap { $0["message"] as? String }.first ?? "unknown error"
+        return "GitHub: " + message
     }
 
     /// GitHub's answer to a refused action, in words.
