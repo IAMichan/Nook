@@ -35,7 +35,9 @@ struct PanelFooter: View {
     var body: some View {
         if selected == AgentsPage.pullRequests, let onBack {
             HStack(spacing: NookTheme.Spacing.xs) {
-                FooterIcon(label: tr("agents.pr.back"), active: false, action: onBack) { ToolGlyph(symbol: "chevron.left") }
+                FooterIcon(label: tr("agents.pr.back"), active: false, showsLabel: true, action: onBack) {
+                    ToolGlyph(symbol: "chevron.left")
+                }
                 Spacer(minLength: 0)
                 UpdateFooterButton { EmptyView() }
             }
@@ -78,17 +80,27 @@ struct PanelFooter: View {
 private struct FooterIcon<Glyph: View>: View {
     let label: String
     let active: Bool
+    /// Writes the label after the glyph (the back button), instead of only in the tooltip.
+    var showsLabel = false
     let action: () -> Void
     @ViewBuilder var glyph: () -> Glyph
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            glyph()
-                .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
-                .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
-                .contentShape(Rectangle())
+            HStack(spacing: NookTheme.Spacing.xs) {
+                glyph()
+                if showsLabel {
+                    Text(label)
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
+            .padding(.horizontal, showsLabel ? NookTheme.Spacing.sm : 0)
+            .frame(minWidth: 32, minHeight: 30, maxHeight: 30)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
