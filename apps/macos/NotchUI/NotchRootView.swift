@@ -95,7 +95,10 @@ struct NotchRootView: View {
                 regularContent(nh: nh, nw: nw)
             }
         }
-        .frame(width: size.width, height: size.height, alignment: .top)
+        // Not animated: the content takes its final size on the first frame and only the shape around it springs open
+        // or closed. An animated frame laid the whole panel out again on every frame of the spring (and set off every
+        // `onGeometryChange` in it), which is where opening and closing stuttered.
+        .animation(nil) { $0.frame(width: size.width, height: size.height, alignment: .top) }
         .id("\(contentKey)-\(app.settings.accentHex)")
         .transition(.notchContent)
     }
