@@ -35,7 +35,9 @@ final class ChatLinker: ObservableObject {
 
     /// The apps that can be linked, and their linked accounts.
     func refresh() async {
-        serviceRuns = await Self.answers()
+        // Nook's own helper, when this build has it: it links the apps Nook cannot link in the app itself.
+        if ChatHelper.isBuilt { await ChatHelper.shared.start() }
+        serviceRuns = ChatHelper.shared.isRunning ? true : await Self.answers()
         guard serviceRuns, let token = BeeperBridge.token else {
             networks = []
             problem = nil
@@ -49,12 +51,12 @@ final class ChatLinker: ObservableObject {
         } catch {
             problem = error.localizedDescription
         }
+        if let failed = ChatHelper.shared.problem, !ChatHelper.shared.isRunning { problem = tr("chats.link.helperFailed", failed) }
     }
 
     /// Whether the chat service's local API is there (its info needs no token).
     private static func answers() async -> Bool {
-        guard let url = URL(string: "http://localhost:23373/v1/info") else { return false }
-        var request = URLRequest(url: url, timeoutInterval: 2)
+        var request = URLRequest(url: BeeperBridge.base.appendingPathComponent("v1/info"), timeoutInterval: 2)
         request.httpMethod = "GET"
         guard let (_, response) = try? await ConnectorHTTP.session.data(for: request) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200

@@ -7,10 +7,21 @@ import WebKit
 /// API with that sign-in, every half minute. The requests run in Instagram's inbox page, which Nook keeps out of sight on
 /// the same cookies as Instagram beside the chat, so the sign-in stays in Nook's own store on this Mac and only ever
 /// goes to instagram.com. Signing out (here, or "Forget" on Instagram beside the chat) removes it.
+///
+/// Instagram's inbox page keeps its own live line open (a WebSocket). Nook does not read what comes over it; it only
+/// notices that something came (`liveScript`) and reads the inbox right away, so a new message shows within a second or
+/// two. While that line is open the half-minute read becomes a slow check for what it may have missed.
 @MainActor
 final class InstagramBridge: ObservableObject, ChatBridge {
     let app = "instagram"
-    let interval: TimeInterval = 30
+    var interval: TimeInterval { isLive ? 300 : 30 }
+
+    /// Instagram's own live line in its page is open: a change makes Nook read at once (`onChange`).
+    private(set) var isLive = false
+    /// Something came in on the live line: read now, not at the next turn.
+    var onChange: () -> Void = {}
+    private var lastLiveRead = Date.distantPast
+    private var laterRead: Task<Void, Never>?
 
     enum State: Equatable {
         case signedOut
@@ -99,7 +110,11 @@ final class InstagramBridge: ObservableObject, ChatBridge {
     /// The sign-in went (Instagram beside the chat was forgotten): Nook lets go of its page and stops reading.
     func forgotten() {
         page?.stopLoading()
+        page?.configuration.userContentController.removeScriptMessageHandler(forName: Self.liveHandler)
         page = nil
+        isLive = false
+        laterRead?.cancel()
+        laterRead = nil
         seen = [:]
         threadIDs = [:]
         isWorking = false
@@ -206,6 +221,9 @@ final class InstagramBridge: ObservableObject, ChatBridge {
             // The same browser as Instagram beside the chat, and not put to sleep while out of sight.
             configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
             configuration.preferences.inactiveSchedulingPolicy = .none
+            configuration.userContentController.addUserScript(WKUserScript(source: Self.liveScript, injectionTime: .atDocumentStart,
+                                                                           forMainFrameOnly: true))
+            configuration.userContentController.add(LiveListener { [weak self] signal in self?.heard(signal) }, name: Self.liveHandler)
             view = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 300), configuration: configuration)
             page = view
         }
@@ -220,5 +238,78 @@ final class InstagramBridge: ObservableObject, ChatBridge {
             throw NookError(tr("chats.instagram.unreachable"))
         }
         return view
+    }
+
+    // MARK: Live line
+
+    private static let liveHandler = "nookInstagramLive"
+
+    /// Runs in Instagram's page before its own scripts: every WebSocket the page opens to its chat servers tells Nook when
+    /// it opens, closes, and when something comes in (once per short burst; keep-alive pings of a few bytes left out).
+    /// Nothing that came in is passed on: only that something did.
+    static let liveScript = """
+    (() => {
+      const Native = window.WebSocket;
+      if (!Native || Native.nookWatched) return;
+      const tell = (signal) => { try { window.webkit.messageHandlers.\(liveHandler).postMessage(signal); } catch (error) {} };
+      let pending = null;
+      const changed = () => { if (pending === null) pending = setTimeout(() => { pending = null; tell('changed'); }, 600); };
+      const size = (data) => typeof data === 'string' ? data.length : (data && (data.byteLength ?? data.size)) || 0;
+      function Watched(url, protocols) {
+        const socket = protocols === undefined ? new Native(url) : new Native(url, protocols);
+        if (/edge-chat|lightspeed|realtime|mqtt/i.test(String(url))) {
+          socket.addEventListener('open', () => tell('open'));
+          socket.addEventListener('close', () => tell('close'));
+          socket.addEventListener('message', (message) => { if (size(message.data) > 8) changed(); });
+        }
+        return socket;
+      }
+      Watched.prototype = Native.prototype;
+      Object.assign(Watched, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3, nookWatched: true });
+      window.WebSocket = Watched;
+    })();
+    """
+
+    private func heard(_ signal: String) {
+        switch signal {
+        case "open":
+            isLive = true
+        case "close":
+            isLive = false
+            onChange()
+        case "changed":
+            // A busy chat sends bursts: one read every few seconds keeps up, and the last of a burst is never dropped.
+            let wait = 3 - Date().timeIntervalSince(lastLiveRead)
+            guard wait > 0 else {
+                lastLiveRead = Date()
+                onChange()
+                return
+            }
+            guard laterRead == nil else { return }
+            laterRead = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self, !Task.isCancelled else { return }
+                self.laterRead = nil
+                self.lastLiveRead = Date()
+                self.onChange()
+            }
+        default:
+            break
+        }
+    }
+}
+
+/// Hands the live line's signals from Instagram's page to the bridge. The page's content controller keeps it, so it
+/// holds the bridge only weakly through its closure.
+private final class LiveListener: NSObject, WKScriptMessageHandler {
+    private let heard: @MainActor (String) -> Void
+
+    init(_ heard: @escaping @MainActor (String) -> Void) {
+        self.heard = heard
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let signal = message.body as? String else { return }
+        MainActor.assumeIsolated { heard(signal) }
     }
 }

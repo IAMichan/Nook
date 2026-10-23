@@ -10,6 +10,7 @@ struct ChatsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var linker = ChatLinker.shared
+    @ObservedObject private var helper = ChatHelper.shared
     @State private var typed = ""
     @State private var notice: String?
     /// The last thing typed could not be added: its note reads as a warning.
@@ -43,8 +44,8 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.settings.reading"))
             }
 
-            // Nook links its apps itself; a chat service only shows while one runs on this Mac or is set up.
-            if linker.serviceRuns || BeeperBridge.token != nil {
+            // Nook links its apps itself (with its own helper for some); Beeper only shows while it runs or is set up.
+            if BeeperBridge.beeperToken != nil || (linker.serviceRuns && !helper.isRunning) {
                 Section {
                     BeeperSettingsRows(capture: capture)
                 } header: {

@@ -139,6 +139,11 @@ targets:
         # (see Config/embed-tdlib.sh). Without it, nothing happens.
         script: sh "$SRCROOT/Config/embed-tdlib.sh"
         basedOnDependencyAnalysis: false
+      - name: Embed chat helper
+        # Copies nook-chatd, which scripts/build-chatd.sh built, into Contents/Helpers and signs it like Nook, for Signal,
+        # Messenger, Instagram, X and LinkedIn (see Config/embed-chatd.sh). Without it, nothing happens.
+        script: sh "$SRCROOT/Config/embed-chatd.sh"
+        basedOnDependencyAnalysis: false
   # Core chat tests (source scoping, retrieval and citations, action validation and execution).
   # This code relies solely on Foundation, so files are included directly in the test bundle: no app host required for testing.
   # Also tests core workspace logic (models, stream parsers, Git, storage, process handling).
