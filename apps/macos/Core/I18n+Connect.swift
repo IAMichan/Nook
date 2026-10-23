@@ -504,7 +504,13 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "connect.mail.notRunning": "Mail sloot of reageerde niet meer terwijl Nook het las. Open Mail en probeer het opnieuw.",
         "connect.mail.scriptError": "Mail gaf een fout: %@. Stop Mail, open het opnieuw en probeer het nog eens.",
         "connect.mail.noAnswer": "Mail gaf geen antwoord. Stop Mail, open het opnieuw en probeer het nog eens.",
-        "connect.mail.code": "foutcode %ld"
+        "connect.mail.code": "foutcode %ld",
+        "connect.mail.loading": "Mail is nog aan het laden. Nook leest je inbox zodra Mail antwoordt.",
+        "connect.notes.loading": "Notities is nog aan het laden. Nook leest je notities zodra Notities antwoordt.",
+        "connect.notes.permission": "Geef Nook toestemming voor Notities: Systeeminstellingen › Privacy en beveiliging › Automatisering.",
+        "connect.notes.timeout": "Notities antwoordde niet op tijd. Waarschijnlijk is Notities nog bezig met synchroniseren via iCloud. Wacht even; blijft het gebeuren, stop Notities dan en open het opnieuw.",
+        "connect.notes.notRunning": "Notities sloot of reageerde niet meer terwijl Nook het las. Open Notities en probeer het opnieuw.",
+        "connect.notes.noAnswer": "Notities gaf geen antwoord. Stop Notities, open het opnieuw en probeer het nog eens."
     ],
     .en: [
         "connect.intro": "Connect a service and Nook can work with it right away. You sign in on the service's own site; keys and tokens stay in your Mac's Keychain.",
@@ -1006,7 +1012,13 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "connect.mail.notRunning": "Mail closed or stopped responding while Nook was reading it. Open Mail and try again.",
         "connect.mail.scriptError": "Mail returned an error: %@. Quit Mail, open it again and try once more.",
         "connect.mail.noAnswer": "Mail gave no answer. Quit Mail, open it again and try once more.",
-        "connect.mail.code": "error code %ld"
+        "connect.mail.code": "error code %ld",
+        "connect.mail.loading": "Mail is still loading. Nook reads your inbox as soon as Mail answers.",
+        "connect.notes.loading": "Notes is still loading. Nook reads your notes as soon as Notes answers.",
+        "connect.notes.permission": "Grant Nook permission for Notes: System Settings › Privacy & Security › Automation.",
+        "connect.notes.timeout": "Notes did not answer in time. It is probably still syncing with iCloud. Wait a moment; if it keeps happening, quit Notes and open it again.",
+        "connect.notes.notRunning": "Notes closed or stopped responding while Nook was reading it. Open Notes and try again.",
+        "connect.notes.noAnswer": "Notes gave no answer. Quit Notes, open it again and try once more."
     ],
     .de: [
         "connect.intro": "Verbinde einen Dienst und Nook kann sofort damit arbeiten. Du meldest dich auf der Seite des Dienstes an; Schlüssel und Tokens bleiben im Schlüsselbund deines Macs.",
@@ -1508,6 +1520,12 @@ let connectTranslations: [AppLanguage: [String: String]] = [
         "connect.mail.notRunning": "Mail wurde geschlossen oder reagierte nicht mehr, während Nook es las. Öffne Mail und versuche es erneut.",
         "connect.mail.scriptError": "Mail meldete einen Fehler: %@. Beende Mail, öffne es neu und versuche es noch einmal.",
         "connect.mail.noAnswer": "Mail gab keine Antwort. Beende Mail, öffne es neu und versuche es noch einmal.",
-        "connect.mail.code": "Fehlercode %ld"
+        "connect.mail.code": "Fehlercode %ld",
+        "connect.mail.loading": "Mail lädt noch. Nook liest deinen Posteingang, sobald Mail antwortet.",
+        "connect.notes.loading": "Notizen lädt noch. Nook liest deine Notizen, sobald Notizen antwortet.",
+        "connect.notes.permission": "Erlaube Nook den Zugriff auf Notizen: Systemeinstellungen › Datenschutz & Sicherheit › Automation.",
+        "connect.notes.timeout": "Notizen hat nicht rechtzeitig geantwortet. Wahrscheinlich synchronisiert es noch mit iCloud. Warte kurz; passiert es weiter, beende Notizen und öffne es neu.",
+        "connect.notes.notRunning": "Notizen wurde geschlossen oder reagierte nicht mehr, während Nook es las. Öffne Notizen und versuche es erneut.",
+        "connect.notes.noAnswer": "Notizen gab keine Antwort. Beende Notizen, öffne es neu und versuche es noch einmal."
     ]
 ]
