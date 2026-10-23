@@ -38,6 +38,17 @@ enum WhatsAppSettings {
         get { let value = defaults.integer(forKey: "whatsappPort"); return (1024...65535).contains(value) ? value : defaultPort }
         set { defaults.set(newValue, forKey: "whatsappPort") }
     }
+    /// When each chat was last read, by its JID: in Nook ("whatsappReadInNook") or in WhatsApp itself
+    /// ("whatsappReadInWhatsApp"). Kept so a restart does not bring back what you already read; marks older than
+    /// `ChatReadMarks.maxAge` are forgotten.
+    static func readMarks(_ key: String) -> [String: Date] {
+        ChatReadMarks.pruned((defaults.dictionary(forKey: key) as? [String: Date]) ?? [:])
+    }
+
+    static func setReadMarks(_ marks: [String: Date], _ key: String) {
+        defaults.set(ChatReadMarks.pruned(marks), forKey: key)
+    }
+
     /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
     static var markReadOnReply: Bool {
         get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }
@@ -138,9 +149,16 @@ final class WhatsAppLink: ObservableObject {
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
     @Published private(set) var knownChats: [WAChatInfo] = []
     /// When a chat was last read in WhatsApp itself: marked read from Nook (by hand), or read on the phone.
-    @Published private(set) var readInWhatsApp: [String: Date] = [:]
-    /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows.
-    @Published private(set) var readInNook: [String: Date] = [:]
+    @Published private(set) var readInWhatsApp = WhatsAppSettings.readMarks(WhatsAppLink.readInWhatsAppKey) {
+        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey) }
+    }
+    /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows. Kept across
+    /// launches, so a chat you read in Nook stays read after a restart.
+    @Published private(set) var readInNook = WhatsAppSettings.readMarks(WhatsAppLink.readInNookKey) {
+        didSet { WhatsAppSettings.setReadMarks(readInNook, Self.readInNookKey) }
+    }
+    private static let readInNookKey = "whatsappReadInNook"
+    private static let readInWhatsAppKey = "whatsappReadInWhatsApp"
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
     @Published private(set) var avatars: [String: String] = [:]
     /// When a chat's picture was last asked for: a chat without one is asked again after a while, not at every look.
@@ -788,7 +806,6 @@ final class WhatsAppLink: ObservableObject {
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
-    /// Marks the chat read here and on WhatsApp (up to its newest received message).
     /// Marks the chat read in Nook only: WhatsApp (and your phone) keep it unread, and the sender sees no blue ticks.
     func markReadInNook(_ chat: String) {
         let key = WAJID.normalized(chat)
@@ -808,6 +825,13 @@ final class WhatsAppLink: ObservableObject {
         }
         guard let known = knownChats.first(where: { $0.jid == key }) else { return false }
         return known.unread > 0 && known.last > readThere
+    }
+
+    /// Where the chat stands, as every chat in the Chats tab says it: new, read in Nook only, or read in WhatsApp too.
+    func readState(_ chat: String) -> ChatReadState {
+        let count = unread(chat)
+        if count > 0 { return .unread(count) }
+        return waitsInWhatsApp(chat) ? .readInNook : .read
     }
 
     /// "Mark as read", by hand: read in Nook and in WhatsApp, so the people who wrote see that you read it (blue ticks

@@ -352,9 +352,17 @@ final class ChatCaptureService: ObservableObject {
         sources = next
     }
 
+    /// Read in Nook: kept in `chat-inbox.json`, so a restart does not bring the badge back. The app itself is not told.
     func markRead(_ id: String) {
         guard inbox.threads[id]?.unread ?? 0 > 0 else { return }
         inbox.markRead(id)
+        save()
+    }
+
+    /// Read in the app too: after Nook told the app, or opened the chat there.
+    func markReadInApp(_ id: String) {
+        guard inbox.threads[id] != nil else { return }
+        inbox.markReadInApp(id)
         save()
     }
 
@@ -365,6 +373,7 @@ final class ChatCaptureService: ObservableObject {
     }
 
     func markAllRead() {
+        guard inbox.totalUnread > 0 else { return }
         inbox.markAllRead()
         save()
     }
