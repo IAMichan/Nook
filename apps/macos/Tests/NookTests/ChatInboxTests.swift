@@ -194,6 +194,16 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(notice?.sender, "Jan")
     }
 
+    func testWhatsAppGroupWithTheGroupAsSubtitle() {
+        let notice = ChatCapture.notice(notification("net.whatsapp.WhatsApp", title: "Daan van Oosterom",
+                                                     subtitle: "Regelzaken VVB9", body: "Anders morgen?"))
+        XCTAssertEqual(notice?.chat, "Regelzaken VVB9", "the group's message goes to the group, not a private chat")
+        XCTAssertEqual(notice?.sender, "Daan van Oosterom")
+        let direct = ChatCapture.notice(notification("net.whatsapp.WhatsApp", title: "Daan van Oosterom", body: "Hoi"))
+        XCTAssertEqual(direct?.chat, "Daan van Oosterom")
+        XCTAssertEqual(direct?.sender, "")
+    }
+
     func testWebNotificationTitledWithTheApp() {
         let notice = ChatCapture.notice(notification("com.google.Chrome", title: "Instagram", subtitle: "www.instagram.com",
                                                      body: "anna.b: did you see this?"))
