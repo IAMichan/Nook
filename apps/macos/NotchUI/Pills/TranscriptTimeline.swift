@@ -264,6 +264,8 @@ struct TranscriptConversation: View {
                         }
                     }
                 }
+                // A step that joins the group during a live turn stays in view at the end of the short scroll.
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .frame(maxHeight: 288)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -294,7 +296,7 @@ struct TranscriptConversation: View {
                     .truncationMode(.tail)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 30)
+                    .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
                     .padding(.bottom, NookTheme.Spacing.xxs)
                     .help(error)
             }
