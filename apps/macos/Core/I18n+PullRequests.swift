@@ -5,6 +5,10 @@ import Foundation
 
 let pullRequestTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "agents.pr.blocker.blocked": "Branchbeveiliging",
+        "agents.pr.blocker.behind": "Achter op %@",
+        "agents.pr.blocker.unstable": "Checks falen",
+        "agents.pr.blocker.checking": "Wordt gecontroleerd",
         "agents.diff.expandAll": "Alle bestanden uitklappen",
         "agents.diff.collapseAll": "Alle bestanden inklappen",
         "agents.diff.copyPath": "Pad kopiëren",
@@ -134,6 +138,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "voegde %ld commits toe",
     ],
     .en: [
+        "agents.pr.blocker.blocked": "Branch protection",
+        "agents.pr.blocker.behind": "Behind %@",
+        "agents.pr.blocker.unstable": "Checks failing",
+        "agents.pr.blocker.checking": "Checking",
         "agents.diff.expandAll": "Expand all files",
         "agents.diff.collapseAll": "Collapse all files",
         "agents.diff.copyPath": "Copy path",
@@ -263,6 +271,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "added %ld commits",
     ],
     .de: [
+        "agents.pr.blocker.blocked": "Branch-Schutz",
+        "agents.pr.blocker.behind": "Hinter %@",
+        "agents.pr.blocker.unstable": "Checks schlagen fehl",
+        "agents.pr.blocker.checking": "Wird geprüft",
         "agents.diff.expandAll": "Alle Dateien aufklappen",
         "agents.diff.collapseAll": "Alle Dateien zuklappen",
         "agents.diff.copyPath": "Pfad kopieren",
@@ -392,6 +404,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "hat %ld Commits hinzugefügt",
     ],
     .fr: [
+        "agents.pr.blocker.blocked": "Protection de branche",
+        "agents.pr.blocker.behind": "En retard sur %@",
+        "agents.pr.blocker.unstable": "Checks en échec",
+        "agents.pr.blocker.checking": "Vérification",
         "agents.diff.expandAll": "Déplier tous les fichiers",
         "agents.diff.collapseAll": "Replier tous les fichiers",
         "agents.diff.copyPath": "Copier le chemin",
@@ -521,6 +537,10 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.timeline.pushed": "a ajouté %ld commits",
     ],
     .es: [
+        "agents.pr.blocker.blocked": "Protección de rama",
+        "agents.pr.blocker.behind": "Por detrás de %@",
+        "agents.pr.blocker.unstable": "Checks fallan",
+        "agents.pr.blocker.checking": "Comprobando",
         "agents.diff.expandAll": "Expandir todos los archivos",
         "agents.diff.collapseAll": "Contraer todos los archivos",
         "agents.diff.copyPath": "Copiar ruta",
