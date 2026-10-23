@@ -101,6 +101,14 @@ final class InstagramDataTests: XCTestCase {
         }
     }
 
+    func testAnAnswerWithoutAnInboxIsSaidWhatItHolds() {
+        XCTAssertTrue(InstagramData.hasInbox(json(inbox)))
+        XCTAssertTrue(InstagramData.hasInbox(json(#"{"inbox": {"threads": []}}"#)))
+        XCTAssertFalse(InstagramData.hasInbox(json(#"{"status": "ok", "data": {}}"#)))
+        XCTAssertEqual(InstagramData.summary(json(#"{"message": "useragent mismatch", "status": "fail"}"#)), "useragent mismatch")
+        XCTAssertEqual(InstagramData.summary(json(#"{"status": "ok", "data": {}}"#)), "data, status")
+    }
+
     func testTheSendForm() {
         let form = InstagramData.sendForm(thread: "340282", text: "Hi & bye", context: "6123")
         XCTAssertEqual(form["thread_ids"], #"["340282"]"#)

@@ -76,15 +76,17 @@ struct ChatsSettingsSection: View {
                 Text(tr("chats.telegram.footer"))
             }
 
-            Section {
-                TeamsSettingsRows(teams: capture.teamsBridge, problem: capture.bridgeProblems[capture.teamsBridge.app]) {
-                    // A new account switches Teams on and reads right away; one signed out reads again without it.
-                    if capture.teamsBridge.accounts.isEmpty { capture.bridgeChanged(capture.teamsBridge.app) } else { capture.loggedIn(capture.teamsBridge.app) }
+            if showsTeamsLogin {
+                Section {
+                    TeamsSettingsRows(teams: capture.teamsBridge, problem: capture.bridgeProblems[capture.teamsBridge.app]) {
+                        // A new account switches Teams on and reads right away; one signed out reads again without it.
+                        if capture.teamsBridge.accounts.isEmpty { capture.bridgeChanged(capture.teamsBridge.app) } else { capture.loggedIn(capture.teamsBridge.app) }
+                    }
+                } header: {
+                    Text(tr("chats.teams.title"))
+                } footer: {
+                    Text(tr("chats.teams.footer"))
                 }
-            } header: {
-                Text(tr("chats.teams.title"))
-            } footer: {
-                Text(tr("chats.teams.footer"))
             }
 
             Section {
@@ -228,7 +230,8 @@ struct ChatsSettingsSection: View {
     }
 
     /// One app: its icon, name and where its messages come from, with its switch (and a remove button when you added it).
-    /// Instagram and Teams are read by logging in to them: their row has a Log in button until you did.
+    /// Instagram, and Teams once Nook can sign in to it, are read by logging in: their row has a Log in button until you
+    /// did.
     @ViewBuilder
     private func row(_ source: MessagingApp) -> some View {
         // An app is only on while collecting is: switching one on switches collecting on with it.
@@ -239,12 +242,21 @@ struct ChatsSettingsSection: View {
                            })
         switch source.id {
         case capture.instagramBridge.app:
-            InstagramSourceRow(bridge: capture.instagramBridge, isOn: isOn, logIn: logInToInstagram) { label(source) }
-        case capture.teamsBridge.app:
+            let instagram = capture.instagramBridge.app
+            InstagramSourceRow(bridge: capture.instagramBridge, isOn: isOn, problem: capture.bridgeProblems[instagram],
+                               loaded: capture.bridged.contains(instagram) ? capture.inbox.threads.values.filter { $0.app == instagram }.count : nil,
+                               logIn: logInToInstagram) { label(source) }
+        case capture.teamsBridge.app where showsTeamsLogin:
             TeamsSourceRow(teams: capture.teamsBridge, isOn: isOn) { label(source) }
         default:
             Toggle(isOn: isOn) { label(source) }
         }
+    }
+
+    /// Signing in to Teams needs an app id Nook does not have yet: until then Teams only comes in through its
+    /// notifications, unless you signed in with an id an earlier version asked for.
+    private var showsTeamsLogin: Bool {
+        TeamsBridge.clientID != nil || !capture.teamsBridge.accounts.isEmpty
     }
 
     /// Opens instagram.com beside the chat, signed in with Nook's own store, and waits until you logged in there.

@@ -92,6 +92,17 @@ enum InstagramData {
         id((json["viewer"] as? [String: Any])?["pk"]) ?? id(json["viewer_id"])
     }
 
+    /// Whether an answer of the inbox holds one (with or without threads).
+    static func hasInbox(_ json: [String: Any]) -> Bool {
+        (json["inbox"] as? [String: Any])?["threads"] is [Any]
+    }
+
+    /// A short line about an answer Nook did not understand: its message, else the names of its fields.
+    static func summary(_ json: [String: Any]) -> String {
+        if let message = json["message"] as? String, !message.isEmpty { return message }
+        return json.keys.sorted().prefix(6).joined(separator: ", ")
+    }
+
     /// The threads of the inbox, the most recently active first.
     static func threads(_ json: [String: Any]) -> [Thread] {
         let me = viewer(json)
