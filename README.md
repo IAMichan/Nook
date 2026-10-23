@@ -190,6 +190,10 @@ Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calenda
 
 ### macOS
 
+**Download:** grab the latest `.dmg` from [Releases](https://github.com/IAMichan/nook/releases) (Apple Silicon, macOS 15+). The build is not notarized yet; the release notes explain how to open it the first time. Pushing a `v*` tag builds and publishes a new release ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+
+**Build from source:**
+
 ```sh
 brew install xcodegen
 git clone https://github.com/IAMichan/nook.git
