@@ -310,7 +310,9 @@ final class MailConnector: ContextSource {
                     failure = (result.errorNumber, result.errorMessage)
                 }
             }
+            // A removed or disabled account goes at once, also when no other account answers this time.
             inboxes = inboxes.filter { names.contains($0.key) }
+            recent = recent.filter { names.contains($0.account) }
         } else {
             failure = (list.errorNumber, list.errorMessage)
         }
