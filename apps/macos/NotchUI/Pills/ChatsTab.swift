@@ -1047,14 +1047,6 @@ private struct ChatsDetail: View {
                            onDelete: linkedChat?.canDelete == true ? { deleting = $0 } : nil,
                            onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Where the chat stands and the one step left, right above where you answer.
-            if entry.read.isUnread || (!entry.lastIsMine && !bubbles.isEmpty) {
-                ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
-                             markReadInNook: { app.markChatReadInNook(entry) },
-                             markReadInApp: { app.markChatReadInApp(entry) })
-                    .padding(.top, NookTheme.Spacing.sm)
-                    .padding(.horizontal, NookTheme.Spacing.xs)
-            }
             footer
                 .padding(.top, NookTheme.Spacing.sm)
         }
@@ -1297,6 +1289,7 @@ private struct ChatsDetail: View {
     private var footer: some View {
         let route = self.route
         let sends = app.chatSends(route)
+        // Where the chat stands and the one step left sit in the tray above the box, as an agent's queued messages do.
         let field = ChatReplyField(
             text: $reply, notice: $notice, focus: $replyFocused,
             placeholder: route == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
@@ -1329,6 +1322,11 @@ private struct ChatsDetail: View {
                     copyForApp()
                 }
             })
+            .tray(entry.read.isUnread || (!entry.lastIsMine && !bubbles.isEmpty)
+                ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                               markReadInNook: { app.markChatReadInNook(entry) },
+                               markReadInApp: { app.markChatReadInApp(entry) })
+                : nil)
         if sends.isEmpty {
             field
         } else {
