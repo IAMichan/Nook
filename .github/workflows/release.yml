@@ -39,7 +39,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-15
-    timeout-minutes: 75
+    timeout-minutes: 120
     env:
       DERIVED_DATA: ${{ github.workspace }}/.derived-data
     defaults:
@@ -76,10 +76,24 @@ jobs:
           esac
           echo "Releasing $TAG"
       - name: Select newest Xcode (the MLX packages need Xcode 26)
+        id: xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
           if [ -n "$XCODE" ]; then sudo xcode-select -s "$XCODE"; fi
           xcodebuild -version
+          echo "build=$(xcodebuild -version | tail -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+      # The Swift packages (MLX, FluidAudio, llama.cpp, …) take about 20 minutes cold. Their Release build products are
+      # cached per Xcode build and project.yml, apart from the Debug cache of build.yml; Nook's own sources always rebuild.
+      - name: Restore Swift package build cache
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &cache-paths |
+            .derived-data
+            !.derived-data/Logs
+            !.derived-data/Build/Intermediates.noindex/Nook.build
+          key: macos-release-dd-${{ steps.xcode.outputs.build }}-${{ hashFiles('apps/macos/project.yml') }}
+          restore-keys: macos-release-dd-${{ steps.xcode.outputs.build }}-
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -95,14 +109,22 @@ jobs:
           exit 1
       # Unsigned build; the app is signed ad hoc below, after the source stamp is removed.
       - name: Build (Release)
-        timeout-minutes: 50
+        timeout-minutes: 90
+        # Release builds Swift in whole-module mode by default: Nook's one large module then compiles in a single process
+        # and took over 30 minutes. Single-file mode compiles its files in parallel, still optimized (-O).
         run: |
           set -o pipefail
           xcodebuild build -project Nook.xcodeproj -scheme Nook -configuration Release -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO SWIFT_COMPILATION_MODE=singlefile \
             MARKETING_VERSION="${{ steps.version.outputs.marketing }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             2>&1 | tee build.log
+      - name: Save Swift package build cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *cache-paths
+          key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: Errors and warnings
         if: failure()
         run: grep -E "error:" build.log | sort -u | head -100 || true
