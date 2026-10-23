@@ -12,7 +12,7 @@ extension LiveActivityPhase {
     /// Colors keep their meaning: iris = working, amber = waiting on you, mint = done, coral = failed.
     var color: Color {
         switch self {
-        case .working: return Theme.iris
+        case .working: return Theme.blue
         case .waiting: return Theme.amber
         case .done: return Theme.mint
         case .failed: return Theme.coral

@@ -59,6 +59,8 @@ final class CompanionClient: ObservableObject {
     /// empty set is known too, so a screen does not keep asking.
     private var featuresKnown = false
     private var poll: Task<Void, Never>?
+    /// When the Mac was last looked for on the network, so a Mac that is off is not searched on every poll.
+    private var lastSearch: Date?
 
     init() {
         link = PairingStore.load()
@@ -195,6 +197,12 @@ final class CompanionClient: ObservableObject {
 
     func stop(_ session: SessionDigest) async {
         await perform(CompanionRequest(op: .stop, session: session.id))
+    }
+
+    /// Manages a session from afar (rename, archive, snooze, end), as the Mac's Agents list does.
+    func manage(_ session: SessionDigest, _ action: SessionAction, text: String? = nil) async {
+        guard can(CompanionFeature.manage) else { return }
+        await perform(CompanionRequest(op: .manage, session: session.id, item: action.rawValue, text: text))
     }
 
     // MARK: Starting a session
@@ -370,7 +378,25 @@ final class CompanionClient: ObservableObject {
 
     // MARK: Transport
 
+    /// Sends a request. When the Mac does not take the connection, it may have restarted on another port (or got another
+    /// address): it is looked for by its Bonjour name, and the request goes there once. A paired Mac that moved keeps
+    /// its new place, so the phone keeps working without pairing again; the key never changes.
     private func request(_ req: CompanionRequest, using link: PairingLink) async throws -> CompanionResponse {
+        do {
+            return try await exchange(req, using: link)
+        } catch where MacFinder.unreachable(error) {
+            guard lastSearch.map({ Date().timeIntervalSince($0) > 20 }) ?? true else { throw error }
+            lastSearch = Date()
+            guard let place = await MacFinder.find(name: link.macName),
+                  place.host != link.host || place.port != link.port else { throw error }
+            let moved = PairingLink(host: place.host, port: place.port, key: link.key, macName: link.macName)
+            let response = try await exchange(req, using: moved)
+            if self.link == link, PairingStore.save(moved) { self.link = moved }
+            return response
+        }
+    }
+
+    private func exchange(_ req: CompanionRequest, using link: PairingLink) async throws -> CompanionResponse {
         let deviceID = PairedDevice.identifier(forKey: link.key)
         let plain = try JSONEncoder().encode(req)
         let sealed = try CompanionSeal.seal(plain, pairingKey: link.key, deviceID: deviceID, direction: .request)
@@ -396,6 +422,111 @@ enum CompanionClientError: LocalizedError {
         case .badRequest: return String(localized: "Unreadable reply from your Mac.")
         case .timeout: return String(localized: "Your Mac does not answer. Is the companion on, and are you on the same Wi‑Fi?")
         case .closed: return String(localized: "The connection was lost.")
+        }
+    }
+}
+
+/// Finds the Mac on the local network by the Bonjour service its companion server announces
+/// (`CompanionConstants.bonjourType`, named after the Mac), and where it listens now.
+private enum MacFinder {
+    struct Place {
+        let host: String
+        let port: UInt16
+    }
+
+    /// Errors that mean nothing listens at the saved place: refused, unreachable, or no answer at all.
+    static func unreachable(_ error: Error) -> Bool {
+        if case CompanionClientError.timeout = error { return true }
+        guard let error = error as? NWError else { return false }
+        switch error {
+        case .posix(let code): return [.ECONNREFUSED, .EHOSTUNREACH, .EHOSTDOWN, .ENETUNREACH, .ETIMEDOUT].contains(code)
+        case .dns: return true
+        default: return false
+        }
+    }
+
+    /// The service named `name`, or the only one there is (the Mac was renamed); nil when none answers in a few seconds.
+    static func find(name: String) async -> Place? {
+        guard let endpoint = await browse(name: name) else { return nil }
+        return await resolve(endpoint)
+    }
+
+    private static func browse(name: String) async -> NWEndpoint? {
+        await withCheckedContinuation { continuation in
+            let browser = NWBrowser(for: .bonjour(type: CompanionConstants.bonjourType, domain: nil), using: .tcp)
+            let queue = DispatchQueue(label: "nook.companion.browse")
+            let once = OnceValue<NWEndpoint?>(continuation)
+            func finish(_ endpoint: NWEndpoint?) {
+                browser.cancel()
+                once.resume(endpoint)
+            }
+            browser.browseResultsChangedHandler = { results, _ in
+                let services = results.map(\.endpoint)
+                if let named = services.first(where: { if case .service(name, _, _, _) = $0 { return true } else { return false } }) {
+                    finish(named)
+                }
+            }
+            browser.stateUpdateHandler = { state in
+                if case .failed = state { finish(nil) }
+            }
+            browser.start(queue: queue)
+            // Without the exact name, settle for the only Mac that answered.
+            queue.asyncAfter(deadline: .now() + 3) {
+                let services = browser.browseResults.map(\.endpoint)
+                finish(services.count == 1 ? services[0] : nil)
+            }
+        }
+    }
+
+    /// Where a service listens, as an IPv4 address and port: connect to it and read the other end.
+    private static func resolve(_ endpoint: NWEndpoint) async -> Place? {
+        await withCheckedContinuation { continuation in
+            let parameters = NWParameters.tcp
+            if let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options { ip.version = .v4 }
+            let connection = NWConnection(to: endpoint, using: parameters)
+            let queue = DispatchQueue(label: "nook.companion.resolve")
+            let once = OnceValue<Place?>(continuation)
+            func finish(_ place: Place?) {
+                connection.cancel()
+                once.resume(place)
+            }
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    if case .hostPort(let host, let port)? = connection.currentPath?.remoteEndpoint {
+                        let text: String
+                        switch host {
+                        case .ipv4(let address): text = "\(address)"
+                        case .ipv6(let address): text = "\(address)"
+                        case .name(let name, _): text = name
+                        @unknown default: text = "\(host)"
+                        }
+                        finish(Place(host: text, port: port.rawValue))
+                    } else {
+                        finish(nil)
+                    }
+                case .failed, .waiting: finish(nil)
+                default: break
+                }
+            }
+            connection.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + 4) { finish(nil) }
+        }
+    }
+
+    /// Resumes a continuation once, however many callbacks race.
+    private final class OnceValue<Value>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Value, Never>?
+
+        init(_ continuation: CheckedContinuation<Value, Never>) { self.continuation = continuation }
+
+        func resume(_ value: Value) {
+            lock.lock()
+            let c = continuation
+            continuation = nil
+            lock.unlock()
+            c?.resume(returning: value)
         }
     }
 }

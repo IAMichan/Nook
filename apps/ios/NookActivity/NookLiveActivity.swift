@@ -116,7 +116,7 @@ private struct LockScreenActivity: View {
     let look: ActivityLook
 
     var body: some View {
-        HStack(alignment: .center, spacing: Theme.Spacing.md) {
+        HStack(alignment: .center, spacing: Theme.Spacing.lg) {
             Image(systemName: look.symbol)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(look.color)
@@ -127,9 +127,9 @@ private struct LockScreenActivity: View {
                 Text([look.agent, look.detail].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
-            Spacer(minLength: Theme.Spacing.sm)
+            Spacer(minLength: Theme.Spacing.md)
             PhaseLine(look: look)
         }
-        .padding(Theme.Spacing.lg)
+        .padding(Theme.Spacing.xl)
     }
 }
