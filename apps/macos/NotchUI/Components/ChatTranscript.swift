@@ -29,6 +29,8 @@ struct ChatTranscript: View {
     /// no button at its top.
     var onLoadOlder: (() async -> Bool)? = nil
     @State private var loadingOlder = false
+    /// The pointer or fingers moved the chat: only then does reaching the top load older messages, not the first layout.
+    @State private var scrolledByUser = false
 
     var body: some View {
         if fills {
@@ -45,34 +47,48 @@ struct ChatTranscript: View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: true) {
                 VStack(spacing: 0) {
-                    if let onLoadOlder {
-                        loadOlderButton { anchor in
-                            // The message that was on top stays where it was, with the older ones above it.
-                            if await onLoadOlder(), let anchor { proxy.scrollTo(anchor, anchor: .top) }
-                        }
+                    if onLoadOlder != nil {
+                        loadOlderButton { loadOlder(proxy) }
                     }
                     stack
                 }
             }
-                .defaultScrollAnchor(.bottom)
-                .onChange(of: bubbles.last?.id) { _, last in
-                    // A new message (or one you just sent) scrolls into view.
-                    guard let last else { return }
-                    withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
-                }
+            .defaultScrollAnchor(.bottom)
+            // Scrolling up to the top loads the older messages by itself; the button stays for a click.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y <= 80
+            } action: { _, nearTop in
+                if nearTop, scrolledByUser { loadOlder(proxy) }
+            }
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting || phase == .decelerating { scrolledByUser = true }
+            }
+            .onChange(of: bubbles.last?.id) { _, last in
+                // A new message (or one you just sent) scrolls into view.
+                guard let last else { return }
+                withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+            }
+            // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
+            .onChange(of: contact) { scrolledByUser = false }
         }
     }
 
-    /// "Load older messages" at the top of the chat; `load` gets the id of the message that is on top now.
-    private func loadOlderButton(_ load: @escaping (String?) async -> Void) -> some View {
+    /// Loads the older messages once at a time; the message that was on top stays where it was, with the older ones
+    /// above it.
+    private func loadOlder(_ proxy: ScrollViewProxy) {
+        guard let onLoadOlder, !loadingOlder else { return }
+        loadingOlder = true
+        let anchor = bubbles.first?.id
+        Task { @MainActor in
+            if await onLoadOlder(), let anchor { proxy.scrollTo(anchor, anchor: .top) }
+            loadingOlder = false
+        }
+    }
+
+    /// "Load older messages" at the top of the chat.
+    private func loadOlderButton(_ load: @escaping () -> Void) -> some View {
         Button {
-            guard !loadingOlder else { return }
-            loadingOlder = true
-            let anchor = bubbles.first?.id
-            Task { @MainActor in
-                await load(anchor)
-                loadingOlder = false
-            }
+            load()
         } label: {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if loadingOlder { ProgressView().controlSize(.small) }
