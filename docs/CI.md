@@ -11,6 +11,8 @@ can tell us something new.
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
+| `labeler.yml` | ubuntu, seconds | adds area labels to every pull request from the paths it changes (`.github/labeler.yml`) |
+| `labels.yml` | ubuntu, when `.github/labels.yml` changes on `main`, or by hand | creates and updates the repository's labels from that file |
 
 A workflow also runs when its own file changes (and `.github/actions/**` for the ones that use it).
 
@@ -56,6 +58,13 @@ A workflow also runs when its own file changes (and `.github/actions/**` for the
 Copy the `on:` block (with `closed` in the pull request types), the `concurrency` block, and the `if:` on the first job
 from `build.yml`. For a job on a macOS runner, put `verified-check` in a cheap ubuntu job before it (with the same paths
 as the filter) and `verified-mark` as the last step of the macOS job.
+
+## Release notes
+
+A release page lists GitHub's generated notes, grouped by label as set in `.github/release.yml`: security, features,
+bug fixes, translations, documentation, CI, then the rest. Dependabot pull requests and those labeled `skip changelog`
+are left out. Area labels come from `labeler.yml` automatically; the kind (`enhancement`, `bug`, `security`) is set by
+hand, or comes from the issue template. The short summary for people lives in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Release signing (`release.yml`)
 

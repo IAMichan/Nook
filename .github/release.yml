@@ -1,0 +1,22 @@
+# Groups GitHub's generated release notes ("What's Changed") by label. The release workflow asks for those notes through
+# the generate-notes API (see the "Publish the release" step in workflows/release.yml), which reads this file.
+# A pull request lands in the first category whose labels it carries; the labels are defined in labels.yml.
+changelog:
+  exclude:
+    labels: ["dependencies", "skip changelog"]
+    authors: ["dependabot[bot]"]
+  categories:
+    - title: Security
+      labels: ["security"]
+    - title: New features
+      labels: ["enhancement"]
+    - title: Bug fixes
+      labels: ["bug"]
+    - title: Translations
+      labels: ["area: i18n"]
+    - title: Documentation
+      labels: ["documentation", "area: docs"]
+    - title: CI and maintenance
+      labels: ["area: ci"]
+    - title: Other changes
+      labels: ["*"]

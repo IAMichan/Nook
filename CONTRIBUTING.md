@@ -122,6 +122,9 @@ Core logic (source scoping, action validation, tool loop, session registry, work
 ## Pull Request Guidelines
 
 - Keep PRs focused on a single topic or fix.
+- Add a line to the **Unreleased** section of [CHANGELOG.md](CHANGELOG.md) when the change is something a user or contributor notices.
+- Area labels are added automatically from the paths you change; a maintainer adds the kind (`bug`, `enhancement`, …), which decides where the change appears in the release notes.
+- Your editor picks up indentation and line endings from [`.editorconfig`](.editorconfig).
 - Link every issue the PR resolves with `Closes #123` (or `Part of #123` for partial work).
 - Ensure the GitHub Actions CI build and test suite pass.
 - Match the surrounding style and conventions (Swift, Rust, or Svelte).
