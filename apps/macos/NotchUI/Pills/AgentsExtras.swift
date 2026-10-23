@@ -49,7 +49,7 @@ struct PanelFooter: View {
     private var icons: some View {
         let layout = vertical ? AnyLayout(VStackLayout(spacing: NookTheme.Spacing.xs))
             : AnyLayout(HStackLayout(spacing: NookTheme.Spacing.xs))
-        layout {
+        return layout {
             FooterIcon(label: tr("agents.footer.settings"), active: false,
                        action: openSettings) { ToolGlyph(symbol: "gearshape") }
             FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
