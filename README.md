@@ -190,7 +190,9 @@ Apple-only features (built-in MLX models, Apple Foundation Models, Apple Calenda
 
 ### macOS
 
-**Download:** grab the latest `.dmg` from [Releases](https://github.com/IAMichan/nook/releases) (Apple Silicon, macOS 15+). The build is not notarized yet; the release notes explain how to open it the first time. Pushing a `v*` tag builds and publishes a new release ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+**Download (beta):** grab the latest `.dmg` from [Releases](https://github.com/IAMichan/nook/releases) (Apple Silicon, macOS 15+). The build is not notarized yet; the release notes explain how to open it the first time.
+
+**New release:** in GitHub, open **Actions › Release (macOS) › Run workflow**, choose `beta` (next beta of the current version) or `patch`/`minor`/`major`, and run it. It picks the next tag (for example `v0.1.0-beta.2`), builds Nook, and publishes the release ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
 **Build from source:**
 

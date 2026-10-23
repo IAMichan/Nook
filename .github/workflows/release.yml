@@ -1,9 +1,13 @@
 name: Release (macOS)
 
-# Builds Nook.app in Release configuration and publishes it as a GitHub Release with a .dmg, a .zip and checksums.
+# Builds Nook.app in Release configuration and publishes it as a beta GitHub Release with a .dmg, a .zip and checksums.
 #
-# Start it by pushing a version tag (`git tag v0.1.0 && git push origin v0.1.0`) or from the Actions tab
-# (Run workflow, with the tag to create). The version in the tag becomes the app's CFBundleShortVersionString.
+# New release: Actions › Release (macOS) › Run workflow, pick what to bump (on the GitHub app too), and run it.
+#   beta   next beta of the current version: v0.1.0-beta.1 → v0.1.0-beta.2 (the default)
+#   patch / minor / major   first beta of the next version: v0.1.1-beta.1, v0.2.0-beta.1, v1.0.0-beta.1
+# The tag is computed by scripts/next-release-tag.sh. Pushing a tag yourself (`git push origin v0.3.0-beta.1`) works
+# too. A tag with a suffix (-beta.N) becomes a pre-release; one without (v1.0.0) a regular release.
+# The version without the suffix becomes the app's CFBundleShortVersionString.
 #
 # The app is signed ad hoc, not with a Developer ID, and is not notarized: on first launch macOS says it cannot verify
 # the developer. The release notes explain how to open it anyway (Privacy & Security › Open Anyway, or `xattr`).
@@ -14,15 +18,22 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to create and release, e.g. v0.1.0'
-        required: true
+      bump:
+        description: 'Which version to release'
+        type: choice
+        default: beta
+        options:
+          - beta
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write # creates the tag and the release
 
+# One release at a time, so two runs never pick the same tag.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
@@ -30,25 +41,40 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 75
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
       DERIVED_DATA: ${{ github.workspace }}/.derived-data
     defaults:
       run:
         working-directory: apps/macos
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check the tag
+        with:
+          fetch-tags: true # scripts/next-release-tag.sh reads the earlier release tags
+      - name: Choose the version
         id: version
+        env:
+          BUMP: ${{ github.event.inputs.bump }}
         run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$(../../scripts/next-release-tag.sh "$BUMP")"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
-            echo "::error::'$TAG' is not a version tag like v0.1.0 or v0.2.0-beta.1."
+            echo "::error::'$TAG' is not a version tag like v0.1.0-beta.1 or v1.0.0."
             exit 1
           fi
           VERSION="${TAG#v}"
+          MARKETING="${VERSION%%-*}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          # The marketing version takes only digits and dots; a pre-release suffix stays in the tag and release name.
-          echo "marketing=${VERSION%%-*}" >> "$GITHUB_OUTPUT"
-          case "$VERSION" in *-*|0.*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+          # The marketing version takes only digits and dots; the beta suffix stays in the tag and the release title.
+          echo "marketing=$MARKETING" >> "$GITHUB_OUTPUT"
+          case "$VERSION" in
+            *-beta.*) echo "title=Nook $MARKETING Beta ${VERSION##*-beta.}" >> "$GITHUB_OUTPUT"; echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *-*) echo "title=Nook $VERSION" >> "$GITHUB_OUTPUT"; echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "title=Nook $VERSION" >> "$GITHUB_OUTPUT"; echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "Releasing $TAG"
       - name: Select newest Xcode (the MLX packages need Xcode 26)
         run: |
           XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
@@ -115,6 +141,9 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           cat > notes.md <<'EOF'
+          > [!NOTE]
+          > This is a beta: expect rough edges, and please report problems in Issues.
+
           ## Install on macOS
 
           Requires macOS 15 (Sequoia) or newer on an Apple Silicon Mac (M1 or newer).
@@ -137,7 +166,7 @@ jobs:
           FLAGS=""
           [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Nook $VERSION" \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.title }}" \
             --notes-file notes.md --generate-notes $FLAGS \
             "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" SHA256SUMS.txt
       - name: Keep the build log
