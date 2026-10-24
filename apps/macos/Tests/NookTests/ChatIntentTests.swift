@@ -40,6 +40,8 @@ final class ChatIntentTests: XCTestCase {
         XCTAssertEqual(action("Erstelle einen Beitrag auf Reddit über Nook"), "take_over")
         XCTAssertFalse(ChatIntent.postsOnline("wat staat er vandaag op reddit"), "reading a site is not posting")
         XCTAssertFalse(ChatIntent.postsOnline("schrijf een tweet voor mijn launch"), "text for a site is only text")
+        XCTAssertNil(action("I saw a post on Reddit about Nook"), "talking about a post asks for nothing")
+        XCTAssertNil(action("Er staat een post op Reddit over Nook"), "talking about a post asks for nothing")
     }
 
     func testFollowUpCarriesTheMessageOfTheConversation() {
