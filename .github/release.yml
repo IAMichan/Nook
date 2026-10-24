@@ -14,6 +14,8 @@ changelog:
       labels: ["bug"]
     - title: Translations
       labels: ["area: i18n"]
+    - title: Platforms
+      labels: ["area: macos", "area: ios", "area: tauri", "area: windows", "area: linux", "area: android", "area: chatd", "area: protocol"]
     - title: Documentation
       labels: ["documentation", "area: docs"]
     - title: CI and maintenance

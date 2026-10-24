@@ -119,6 +119,14 @@ xcodebuild -project Nook.xcodeproj -scheme Nook -destination 'platform=macOS' CO
 
 Core logic (source scoping, action validation, tool loop, session registry, workspace models, and localization coverage) relies only on `Foundation` and can also be tested on Linux via `./scripts/core-tests.sh`.
 
+## Releases
+
+A maintainer publishes a release from **Actions › Release (macOS) › Run workflow**, choosing what to bump: the next beta
+(`v0.1.0-beta.1` → `v0.1.0-beta.2`, the default), or the first beta of the next patch, minor, or major version
+(`scripts/next-release-tag.sh` picks the tag). A tag with a `-beta.N` suffix becomes a pre-release. The release page lists
+the merged pull requests grouped by label (`.github/release.yml`); before releasing, move the **Unreleased** section of
+[CHANGELOG.md](CHANGELOG.md) under the new version. Signing is described in [docs/CI.md](docs/CI.md#release-signing-releaseyml).
+
 ## Pull Request Guidelines
 
 - Keep PRs focused on a single topic or fix.

@@ -36,6 +36,7 @@ final class ChatIntentTests: XCTestCase {
         // From the bug report: Double Tap answered "nothing was sent" instead of posting on Reddit through the browser.
         XCTAssertEqual(action("Maak posts op reddit om Nook repo te promoten of om contributors te werven"), "take_over")
         XCTAssertEqual(action("Post this on LinkedIn"), "take_over")
+        XCTAssertEqual(action("Please, post this on LinkedIn"), "take_over")
         XCTAssertEqual(action("Schrijf een post op r/macapps over Nook"), "take_over")
         XCTAssertEqual(action("Erstelle einen Beitrag auf Reddit über Nook"), "take_over")
         XCTAssertFalse(ChatIntent.postsOnline("wat staat er vandaag op reddit"), "reading a site is not posting")
