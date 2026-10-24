@@ -63,8 +63,9 @@ as the filter) and `verified-mark` as the last step of the macOS job.
 
 A release page lists GitHub's generated notes, grouped by label as set in `.github/release.yml`: security, features,
 bug fixes, translations, documentation, CI, then the rest. Dependabot pull requests and those labeled `skip changelog`
-are left out. Area labels come from `labeler.yml` automatically; the kind (`enhancement`, `bug`, `security`) is set by
-hand, or comes from the issue template. The short summary for people lives in [`CHANGELOG.md`](../CHANGELOG.md).
+are left out. Area labels come from `labeler.yml` automatically; the kind (`enhancement`, `bug`, `security`) is set on
+the pull request by a maintainer (issue templates only label the issue). The short summary for people lives in
+[`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Release signing (`release.yml`)
 

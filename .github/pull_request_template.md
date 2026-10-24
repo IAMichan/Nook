@@ -2,8 +2,8 @@
 
 ## Related issues
 
-<!-- List every issue this pull request resolves, one per line, as `Closes #123` (`Fixes #123` for a bug) so GitHub
-closes it on merge. Use `Part of #123` for an issue that stays open. Write "None" if no issue matches. -->
+<!-- List every issue this pull request resolves, one per line, as `Closes #123` so GitHub closes it on
+merge. Use `Part of #123` for an issue that stays open. Write "None" if no issue matches. -->
 
 ## Why
 
