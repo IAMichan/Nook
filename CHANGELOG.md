@@ -18,6 +18,11 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - `CODEOWNERS`, `.editorconfig`, and `.gitattributes`.
 - A *Related issues* section in the pull request template.
 
+### Fixed
+
+- "Post this on LinkedIn" and other requests to post on a site that don't start with a known verb are taken over
+  again instead of being answered with text.
+
 ### Changed
 
 - `docs/WERKRUIMTE-AGENTS.md` is now `docs/WORKSPACE-AGENTS.md`.
