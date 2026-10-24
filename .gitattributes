@@ -1,0 +1,14 @@
+# Text files are stored with LF line endings, also when checked out on Windows.
+* text=auto eol=lf
+
+# Binary files, never converted.
+*.png binary
+*.jpg binary
+*.icns binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.webp binary
+*.gif binary
+*.pdf binary
+*.jar binary

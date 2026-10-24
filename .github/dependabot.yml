@@ -1,11 +1,48 @@
 version: 2
+# Every ecosystem checks monthly and groups its version updates into one pull request (and one CI run) per month.
+# Security updates are not grouped, so they still arrive one by one as soon as an advisory is published.
+# The Swift packages of the macOS app live in apps/macos/project.yml (XcodeGen), which Dependabot cannot read, and
+# packages/core and packages/protocol have no dependencies; Swift updates stay manual for now.
 updates:
   - package-ecosystem: github-actions
     # The root workflows and the composite actions in .github/actions.
     directories: ["/", "/.github/actions/*"]
     schedule:
       interval: monthly
-    # One pull request (and one CI run) per month instead of one per action.
+    labels: ["dependencies", "area: ci"]
     groups:
       actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    # The Tauri workspace: core and src-tauri share apps/tauri/Cargo.lock.
+    directory: "/apps/tauri"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "area: tauri"]
+    groups:
+      cargo:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    # The Svelte interface of the Tauri app.
+    directory: "/apps/tauri"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "area: tauri"]
+    groups:
+      npm:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    # nook-chatd, the chat bridge helper.
+    directory: "/apps/chatd"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "area: chatd"]
+    groups:
+      gomod:
+        applies-to: version-updates
         patterns: ["*"]

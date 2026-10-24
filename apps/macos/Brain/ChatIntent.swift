@@ -115,7 +115,8 @@ struct ChatIntent: Equatable {
         if has(#"\b(bestel|bestellen|koop|kopen|kaufe|kaufen|bestelle|commande|commander|achète|acheter|compra|comprar|pide)\b|\b(order|buy) (a|an|the|some|me|more|new)\b|place an order|\b(boek|book|buche|buchen|réserve|reserva|reserveer)\b[^.?!]{0,40}\b(vlucht|vluchten|flight|flights|ticket|tickets|kaartje|kaartjes|hotel|kamer|room|trein|train|tafel|table|flug|vol|vuelo)\b|\b(afmelden|uitschrijven|unsubscribe|abmelden|désabonne|darme de baja)\b|\b(finish|do) (this|it) for me\b|\bmaak (dit|het) (voor me )?af\b|\bdoe (dit|het) voor me\b|\bneem (dit|het) over\b|\btake (this )?over\b|\bmach (das|es) für mich\b|\b(vul|fill) (dit|het|this|the|out)\b[^.?!]{0,30}\b(formulier|form)\b"#) { kinds.append(.takeover) }
         // Posting on a website ("maak posts op Reddit om Nook te promoten"): Nook writes the post and places it there
         // through the browser, with mouse and keyboard; the Post button waits for the user's yes.
-        if !kinds.contains(.takeover), postsOnline(text) { kinds.append(.takeover) }
+        let posts = postsOnline(text)
+        if !kinds.contains(.takeover), posts { kinds.append(.takeover) }
         // Changing a setting the Mac keeps somewhere in System Settings ("laat het batterijpercentage zien", "zet mijn
         // standaardbrowser op Firefox"): done by hand, with mouse and keyboard.
         let changesSomething = has(#"\b(zet|verander|wijzig|pas\b[^.?!]{0,40}\baan|aanpassen|schakel|laat|maak|stel|set|change|turn|switch|enable|disable|show|hide|make|adjust|ändere|stelle|schalte|aktiviere|deaktiviere|zeige|active|désactive|affiche|règle|cambia|activa|desactiva|muestra|ajusta)\b"#)
@@ -143,11 +144,14 @@ struct ChatIntent: Equatable {
 
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)\s+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)[,:]?\s+"#, with: "", options: .regularExpression)
         let imperative = polite.range(of: #"^(maak|zet|plan|boek|bestel|koop|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|buy|order|unsubscribe|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
         let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
         let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b|\bvoortaan\b|\bfrom now on\b|\bab jetzt\b"#)
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded)
+        // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
+        // "I saw a post on Reddit" names a site too, but asks for nothing.
+        let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting

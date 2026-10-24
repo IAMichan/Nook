@@ -1,0 +1,83 @@
+# Every label this repository uses. workflows/labels.yml creates or updates them on GitHub when this file changes on
+# main; labels that are not listed here are left alone. Area labels are added to pull requests by workflows/labeler.yml
+# (paths in labeler.yml), and release.yml sorts the release notes by these labels.
+
+# Kind
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or improvement
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+- name: security
+  color: "b60205"
+  description: Security hardening or a fix for a vulnerability
+- name: testing
+  color: "fbca04"
+  description: A report from testing Nook on a platform or device
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+
+# Contributors
+- name: good first issue
+  color: "7057ff"
+  description: Small and self-contained, good for a first contribution
+- name: help wanted
+  color: "008672"
+  description: Open for contributors
+
+# Triage
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+- name: invalid
+  color: "e4e669"
+  description: This doesn't seem right
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+- name: dependencies
+  color: "0366d6"
+  description: Pull requests that update a dependency file
+- name: skip changelog
+  color: "ededed"
+  description: Leave this pull request out of the release notes
+
+# Area: which part of the monorepo
+- name: "area: macos"
+  color: "1d76db"
+  description: The macOS app (apps/macos)
+- name: "area: ios"
+  color: "1d76db"
+  description: Nook Companion for iPhone (apps/ios)
+- name: "area: tauri"
+  color: "1d76db"
+  description: The Tauri app for Windows, Linux, and Android (apps/tauri)
+- name: "area: windows"
+  color: "c5def5"
+  description: Windows-specific behavior of the Tauri app
+- name: "area: linux"
+  color: "c5def5"
+  description: Linux-specific behavior of the Tauri app
+- name: "area: android"
+  color: "c5def5"
+  description: Android-specific behavior of the Tauri app
+- name: "area: chatd"
+  color: "1d76db"
+  description: The chat bridge helper (apps/chatd)
+- name: "area: protocol"
+  color: "1d76db"
+  description: Shared packages (packages/protocol, packages/core)
+- name: "area: i18n"
+  color: "bfdadc"
+  description: Translations and localization
+- name: "area: ci"
+  color: "bfdadc"
+  description: GitHub Actions, scripts, and repository tooling
+- name: "area: docs"
+  color: "bfdadc"
+  description: README, CONTRIBUTING, and docs/
