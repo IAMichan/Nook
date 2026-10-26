@@ -287,6 +287,7 @@ targets:
       - path: Services/Workspace/ChangedFilesTree.swift
       - path: Services/Workspace/TimelineSearch.swift
       - path: Services/Workspace/ScrollModel.swift
+      - path: Services/Workspace/TimelineVisits.swift
       - path: Services/Workspace/HistoryWindow.swift
       - path: Services/Workspace/TimelineHandles.swift
       - path: Services/Workspace/SkillIndex.swift

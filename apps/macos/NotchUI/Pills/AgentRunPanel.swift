@@ -31,6 +31,10 @@ struct AgentRunPanel: View {
     @State private var editingQueued: UUID?
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    /// The blocks on screen, for where you left the session; not state, so scrolling does not redraw it.
+    @State private var onScreen = VisibleTimelineRows()
+    /// Where you left this session's conversation last time (TimelineVisitStore), read as it opens.
+    @State private var visit: TimelineVisit?
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -158,6 +162,8 @@ struct AgentRunPanel: View {
             }
             .onAppear {
                 workspace.loadTimeline(runID)
+                visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
+                if let visit { openBlocks = visit.open }
                 if run.repoRoot != nil { workspace.refreshGit(runID) }
                 // The agent's connection opens now, so your first message goes straight in.
                 workspace.prewarm(runID)
@@ -168,7 +174,9 @@ struct AgentRunPanel: View {
                 loadComposerState(run)
             }
             .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
-            .onChange(of: runID) { _, _ in
+            .onDisappear { rememberVisit(runID) }
+            .onChange(of: runID) { previous, _ in
+                rememberVisit(previous)
                 workspace.loadTimeline(runID)
                 if workspace.run(runID)?.repoRoot != nil { workspace.refreshGit(runID) }
                 workspace.prewarm(runID)
@@ -189,6 +197,9 @@ struct AgentRunPanel: View {
                 countedLines = [:]
                 seenOutputs = nil
                 consoleEventID = nil
+                // Folds you had open in this session last time come back (the timeline lands on its own, below).
+                visit = TimelineVisitStore.shared.visit(for: Self.visitKey(runID))
+                openBlocks = visit?.open ?? []
             }
         } else {
             Text(tr("agents.run.gone"))
@@ -602,10 +613,12 @@ struct AgentRunPanel: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
+                .scrollTargetLayout()
                 .chatColumn()
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.1) { ids in onScreen.ids = Set(ids.map(\.uuidString)) }
             // Scrolling away from the end stops the following until you come back.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
@@ -652,7 +665,13 @@ struct AgentRunPanel: View {
                 let fresh = TimelineSearch.search(events, query: findQuery)
                 if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            // Back where you left it: the end, or the block you were reading (TimelineLanding); after the handlers that
+            // follow the end on a new session, hence on the next turn of the run loop.
+            .onAppear {
+                proxy.scrollTo("bottom", anchor: .bottom)
+                DispatchQueue.main.async { land(proxy) }
+            }
+            .onChange(of: runID) { _, _ in DispatchQueue.main.async { land(proxy) } }
             // Opened from a search hit: find what it matched.
             .onReceive(app.viewModel.$sessionFind) { wanted in
                 guard let wanted, !wanted.isEmpty else { return }
@@ -672,6 +691,39 @@ struct AgentRunPanel: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    // MARK: Where you left it
+
+    private static func visitKey(_ id: UUID) -> String { "run:" + id.uuidString }
+
+    /// The timeline's blocks in order with their times, as `timeline(_:)` shows them.
+    private func visitRows(_ id: UUID) -> [TimelineLanding.Row] {
+        let events = workspace.timeline(id).filter { !($0.kind == .system && $0.tool == "launch") }
+        return TimelinePresentation.blocks(events, active: workspace.run(id)?.status.isActive ?? false)
+            .map { ($0.id.uuidString, $0.visitDate) }
+    }
+
+    /// The end, or the block you were reading when you left; following stops there, so what comes in does not pull
+    /// you away from it.
+    private func land(_ proxy: ScrollViewProxy) {
+        switch TimelineLanding.decide(visitRows(runID), visit: visit) {
+        case .end, .newSince:
+            scroll.jumpedToEnd()
+            proxy.scrollTo("bottom", anchor: .bottom)
+        case .row(let id):
+            guard let block = UUID(uuidString: id) else { return }
+            scroll.userScrolled()
+            proxy.scrollTo(block, anchor: .top)
+        }
+    }
+
+    /// Where you leave a session: the block at the top, what you opened, and whether you were at the end.
+    private func rememberVisit(_ id: UUID) {
+        guard workspace.run(id) != nil else { return }
+        TimelineVisitStore.shared.remember(sessionID: Self.visitKey(id), visit: TimelineVisit(
+            anchorID: TimelineLanding.top(visitRows(id), visible: onScreen.ids), open: openBlocks, atEnd: atEnd,
+            lastViewedAt: Date()))
     }
 
     /// Sends the first queued message now; false (the key goes on) when nothing waits or it cannot go in yet.

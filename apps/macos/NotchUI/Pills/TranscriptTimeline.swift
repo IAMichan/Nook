@@ -40,8 +40,19 @@ struct TranscriptConversation: View {
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
     @State private var scrollPhase: ScrollPhase = .idle
+    /// The rows on screen, for where you left the conversation; not state, so scrolling does not redraw it.
+    @State private var onScreen = VisibleTimelineRows()
+    /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
+    @State private var visit: TimelineVisit?
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
+
+    /// The session's key in TimelineVisitStore: its transcript; nil for a conversation read from elsewhere.
+    private var visitKey: String? { path.isEmpty ? nil : "transcript:" + path }
+
+    private var visitRows: [TimelineLanding.Row] {
+        TranscriptPresentation.rows(shown, working: working).map { ($0.id, $0.visitDate) }
+    }
 
     var body: some View {
         let rows = TranscriptPresentation.rows(shown, working: working)
@@ -74,12 +85,14 @@ struct TranscriptConversation: View {
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
+                    .scrollTargetLayout()
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom)
+                .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.1) { ids in onScreen.ids = Set(ids) }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
                 } action: { _, nowAtEnd in
@@ -105,11 +118,15 @@ struct TranscriptConversation: View {
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in if scroll.shouldFollowEnd { scrollToEnd(proxy) } }
-                .onChange(of: loaded) { _, _ in scrollToEnd(proxy) }
+                // Back where you left it: the end, or the row you were reading (TimelineLanding).
+                .onChange(of: loaded) { _, _ in land(proxy) }
                 .onAppear {
+                    visit = visitKey.flatMap { TimelineVisitStore.shared.visit(for: $0) }
+                    if let visit { open = visit.open }
                     scrollToEnd(proxy)
                     DispatchQueue.main.async { scrollToEnd(proxy) }
                 }
+                .onDisappear { rememberVisit() }
             }
             if let selection = diff, !turns.isEmpty {
                 TurnDiffPanel(turns: turns, selection: Binding(get: { diff ?? selection }, set: { diff = $0 }),
@@ -356,6 +373,33 @@ struct TranscriptConversation: View {
         guard !shown.isEmpty || footer != nil else { return }
         proxy.scrollTo("bottom", anchor: .bottom)
     }
+
+    /// Once the conversation has loaded: the row you were reading when you left, else the end. Following stops at a
+    /// row, so what comes in does not pull you away from it.
+    private func land(_ proxy: ScrollViewProxy) {
+        switch TimelineLanding.decide(visitRows, visit: visit) {
+        case .end, .newSince:
+            scrollToEnd(proxy)
+        case .row(let id):
+            scroll.userScrolled()
+            proxy.scrollTo(id, anchor: .top)
+            // After the other handlers of this change (following the end) and once the lazy rows are laid out.
+            DispatchQueue.main.async { proxy.scrollTo(id, anchor: .top) }
+        }
+    }
+
+    /// Where you leave the conversation: the row at the top, what you opened, and whether you were at the end.
+    private func rememberVisit() {
+        guard let visitKey, loaded else { return }
+        TimelineVisitStore.shared.remember(sessionID: visitKey, visit: TimelineVisit(
+            anchorID: TimelineLanding.top(visitRows, visible: onScreen.ids), open: open, atEnd: atEnd, lastViewedAt: Date()))
+    }
+}
+
+/// The ids of a timeline's rows on screen, kept out of SwiftUI's state: they change on every scroll, and only matter
+/// when the conversation closes.
+final class VisibleTimelineRows {
+    var ids: Set<String> = []
 }
 
 /// How many outputs the conversation found, for the button in the header above it.
