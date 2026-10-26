@@ -63,9 +63,16 @@ struct PanelView: View {
         .animation(NookTheme.swap, value: sheet)
         .overlay(alignment: .top) {
             if searching, sheet == nil {
-                SearchPanel(select: select) { searching = false }
-                    .padding(.top, Self.headerHeight + NookTheme.Spacing.md)
-                    .transition(.opacity.combined(with: .offset(y: -4)))
+                ZStack(alignment: .top) {
+                    // A click beside the search closes it, as Escape does.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { searching = false }
+                        .accessibilityHidden(true)
+                    SearchPanel(select: select) { searching = false }
+                        .padding(.top, Self.headerHeight + NookTheme.Spacing.md)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                }
             }
         }
         .animation(NookTheme.reveal, value: searching)
