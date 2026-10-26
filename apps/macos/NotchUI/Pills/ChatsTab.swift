@@ -569,13 +569,16 @@ struct ChatsTab: View {
         let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
         switch entry.read {
         case .unread:
-            return ChatsRowAction(symbol: "checkmark", label: tr("chats.markReadInNook")) { app.markChatReadInNook(entry) }
-        case .readInNook:
-            return ChatsRowAction(symbol: "checkmark.message", label: tr("chats.markReadInApp", appName)) {
-                app.markChatReadInApp(entry)
+            return ChatsRowAction(to: .readInNook, title: tr("chats.row.markRead"), label: tr("chats.markReadInNook")) {
+                app.markChatReadInNook(entry)
             }
+        case .readInNook:
+            return ChatsRowAction(to: .read, title: tr("chats.row.markReadInApp", appName),
+                                  label: tr("chats.markReadInApp", appName)) { app.markChatReadInApp(entry) }
         case .read:
-            return ChatsRowAction(symbol: "envelope.badge", label: tr("chats.markUnread")) { markUnread(entry) }
+            return ChatsRowAction(to: .unread(1), title: tr("chats.row.markUnread"), label: tr("chats.markUnread")) {
+                markUnread(entry)
+            }
         }
     }
 
@@ -797,7 +800,11 @@ private struct ChatsGroupHeader: View {
 
 /// The one step a chat's row offers while the pointer is on it (see `ChatsTab.rowAction`).
 struct ChatsRowAction {
-    let symbol: String
+    /// Where the chat stands after the click: the button shows that mark.
+    let to: ChatReadState
+    /// The short word on the button ("Read", "Read in WhatsApp", "Unread").
+    let title: String
+    /// The whole step, as the tooltip and VoiceOver say it.
     let label: String
     let perform: () -> Void
 }
@@ -833,8 +840,10 @@ private struct ChatsRow: View {
             row.accessibilityAction(named: Text(rowAction?.label ?? "")) { rowAction?.perform() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let rowAction {
-                ToolbarIconButton(rowAction.symbol, rowAction.label, height: 22, width: 22, rowAction.perform)
+                ChatMarkButton(to: rowAction.to, title: rowAction.title, help: rowAction.label, compact: true,
+                               action: rowAction.perform)
                     .pointerStyle(.link)
+                    .rowActionsBackdrop(NookTheme.rowFill(selected: selected, hovering: true, rest: .clear))
                     .padding(.top, NookTheme.Spacing.sm)
                     .padding(.trailing, NookTheme.Spacing.sm)
                     .opacity(hovering ? 1 : 0)
