@@ -64,18 +64,20 @@ struct AgentsTab: View {
             Group {
                 switch selection {
                 case .live(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
+                                     agentWorking: session.status == .running || session.status == .waiting) { tools in
                         AgentSessionDetail(selection: .live(session), headerAccessory: tools)
                     }
                     .id(session.id)
                 case .past(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
                         AgentSessionDetail(selection: .past(session), headerAccessory: tools)
                     }
                     .id("past:" + session.id)
                 case .run(let id):
                     let run = app.workspace.run(id)
-                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
+                                 dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
                         AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
                     }
                     // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
