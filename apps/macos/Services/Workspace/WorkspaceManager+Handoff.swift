@@ -55,6 +55,9 @@ extension WorkspaceManager {
             $0.providerSessions = sessions
             $0.handoffCursors = cursors
             $0.pendingHandoff = handoff?.text
+            // Another agent's conversation: what Nook followed of the old one does not apply to it.
+            $0.conversation = nil
+            $0.pendingRollback = nil
             if !provider.capabilities.policies.contains($0.permission) { $0.permission = settings.permission(for: provider) }
         }
         forkNext.remove(id)
@@ -99,6 +102,8 @@ extension WorkspaceManager {
         copy.turnStartedAt = nil
         copy.reviewedAt = nil
         copy.checkpoints = nil
+        copy.conversation = nil
+        copy.pendingRollback = nil
         copy.limitedAt = nil
         copy.limitResetAt = nil
         copy.autoResume = nil

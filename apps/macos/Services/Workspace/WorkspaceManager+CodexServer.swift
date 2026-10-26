@@ -84,6 +84,7 @@ extension WorkspaceManager {
                                 if let threadID { $0.providerSessionID = threadID }
                                 if let model = response.dictionary["model"] as? String, !model.isEmpty { $0.resolvedModel = model }
                             }
+                            if let threadID { self.noteConversationSession(id, threadID, keepsHistory: false) }
                             if let next = prompt ?? self.warmPrompts.removeValue(forKey: id) {
                                 self.startCodexTurn(id, client, prompt: next)
                             } else {
@@ -111,14 +112,26 @@ extension WorkspaceManager {
         if !appContexts.isEmpty {
             params["additionalContext"] = Dictionary(uniqueKeysWithValues: appContexts.map { ($0.key, ["kind": "untrusted", "value": $0.text]) })
         }
-        client.request("turn/start", params) { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
-                switch result {
-                case .failure(let error):
-                    self.failCodexTurn(id, error.localizedDescription)
-                case .success(let response):
-                    if let turn = (response.dictionary["turn"] as? [String: Any])?["id"] as? String { client.turnID = turn }
+        // Going back to before a message dropped later turns: Codex forgets them before this turn starts.
+        let startParams = params
+        applyCodexRollback(id, client, thread: thread) { [weak self] failure in
+            guard let self else { return }
+            if let failure {
+                self.failCodexTurn(id, tr("ws.revert.conversationFailed", failure))
+                return
+            }
+            client.request("turn/start", startParams) { [weak self] result in
+                Task { @MainActor in
+                    guard let self else { return }
+                    switch result {
+                    case .failure(let error):
+                        self.failCodexTurn(id, error.localizedDescription)
+                    case .success(let response):
+                        if let turn = (response.dictionary["turn"] as? [String: Any])?["id"] as? String {
+                            client.turnID = turn
+                            self.noteConversationTurn(id, turnID: turn)
+                        }
+                    }
                 }
             }
         }
@@ -231,6 +244,7 @@ extension WorkspaceManager {
             switch event {
             case .turnStarted(let turn):
                 client.turnID = turn
+                noteConversationTurn(id, turnID: turn)
                 // Codex started a turn on its own (background work it waited for finished): the session works again.
                 if let run = run(id), !run.status.isActive, turns[id] == nil { wakeCodexServer(id) }
             case .approval(let request):

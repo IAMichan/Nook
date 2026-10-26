@@ -60,6 +60,9 @@ enum ClaudeStreamEvent: Equatable, Sendable {
     case rateLimits(UsageLimits.ClaudeEvent?)
     /// How full a subscription window is, as Claude Code reports it in the same `rate_limit_event`.
     case planWindow(UsageLimits.PlanReading)
+    /// An entry of the main conversation chain (an assistant or user message's `uuid`): where `--resume-session-at` can
+    /// pick the conversation up again.
+    case chainEntry(String)
 }
 
 extension ClaudeStreamEvent {
@@ -153,15 +156,17 @@ enum ClaudeStreamParser {
             if !nested, let id = message["id"] as? String, let usage = message["usage"] as? [String: Any] {
                 events.append(.usage(messageID: id, tokens: tokens(usage), model: message["model"] as? String))
             }
+            if !nested, let uuid = object["uuid"] as? String, !uuid.isEmpty { events.append(.chainEntry(uuid)) }
             return events
 
         case "user":
+            let entry: [ClaudeStreamEvent] = !nested ? ((object["uuid"] as? String).flatMap { $0.isEmpty ? nil : [.chainEntry($0)] } ?? []) : []
             guard let message = object["message"] as? [String: Any],
-                  let content = message["content"] as? [[String: Any]] else { return [] }
+                  let content = message["content"] as? [[String: Any]] else { return entry }
             return content.compactMap { block in
                 guard (block["type"] as? String) == "tool_result", let id = block["tool_use_id"] as? String else { return nil }
                 return .toolResult(id: id, output: resultText(block["content"]), isError: (block["is_error"] as? Bool) ?? false)
-            }
+            } + entry
 
         case "control_request":
             guard let requestID = object["request_id"] as? String,

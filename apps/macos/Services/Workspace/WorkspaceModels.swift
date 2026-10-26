@@ -37,12 +37,13 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude:
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true,
+                                        canRollbackConversation: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, canRollbackConversation: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -82,6 +83,9 @@ struct ProviderCapabilities: Equatable, Sendable {
     var steering = false
     /// The agent can fork its own conversation (Claude Code's `--fork-session`); otherwise a fork starts from a summary.
     var nativeFork = false
+    /// Going back to before a message also rolls back the agent's own conversation (Codex `thread/rollback` over
+    /// app-server, Claude Code `--resume-session-at`); otherwise only the files go back and the agent keeps remembering.
+    var canRollbackConversation = false
 }
 
 /// Agent: permitted to execute. Plan: read-only analysis and plan creation, no modifications.
@@ -255,6 +259,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var changedFiles: Int?
     /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
+    /// The agent's own conversation as Nook follows it (turns, Claude Code's last message), and a rollback of it that
+    /// goes out with the next turn (see `ConversationRollback`).
+    var conversation: ConversationLog? = nil
+    var pendingRollback: PendingRollback? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
     /// on by itself.
     var limitedAt: Date? = nil
@@ -481,6 +489,8 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// Tool output, clipped.
     var output: String?
     var state: State?
+    /// Undone by going back to before an earlier message: shown dimmed, the agent no longer remembers it.
+    var rolledBack: Bool? = nil
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
          output: String? = nil, state: State? = nil, date: Date = Date(), id: UUID = UUID()) {

@@ -187,6 +187,16 @@ enum CodexRPC {
         ["threadId": threadID, "turnId": turnID]
     }
 
+    /// `thread/rollback`: drops the thread's last `numTurns` turns from its history (not the files; Nook restores those).
+    static func rollbackParams(threadID: String, numTurns: Int) -> [String: Any] {
+        ["threadId": threadID, "numTurns": numTurns]
+    }
+
+    /// `thread/revert`, newer Codex with paginated history: keeps the history before `beforeTurnID`, that turn and later go.
+    static func revertParams(threadID: String, beforeTurnID: String) -> [String: Any] {
+        ["threadId": threadID, "beforeTurnId": beforeTurnID]
+    }
+
     /// The answer to an approval request.
     static func decision(_ request: CodexApprovalRequest, allow: Bool, always: Bool) -> [String: Any] {
         switch request.kind {
