@@ -658,6 +658,14 @@ struct ChatInbox: Codable, Equatable, Sendable {
         (thread.members?.count ?? 0) > 1 || Set(thread.messages.map(\.sender).filter { !$0.isEmpty }).count > 1
     }
 
+    /// A chat only notifications made, whose every sender is a group Nook knows: no group is written by groups, so it is a
+    /// person's chat the groups' notifications landed in, and is no group itself.
+    private static func holdsOnlyGroups(_ thread: InboxThread, _ groups: Set<String>) -> Bool {
+        guard thread.bridged != true else { return false }
+        let senders = Set(thread.messages.filter { !$0.isMine && !$0.sender.isEmpty }.map { Self.key(app: thread.app, chat: $0.sender) })
+        return !senders.isEmpty && senders.isSubset(of: groups.subtracting([thread.id]))
+    }
+
     /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people.
     private static func isPrivate(_ thread: InboxThread) -> Bool { thread.isPrivate }
 
@@ -667,7 +675,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
     mutating func regroup() {
         let groups = Set(threads.values.filter(Self.isClearlyGroup).map(\.id))
         guard !groups.isEmpty else { return }
-        for (key, thread) in threads where thread.members == nil && !groups.contains(key) {
+        for (key, thread) in threads where thread.members == nil && (!groups.contains(key) || Self.holdsOnlyGroups(thread, groups)) {
             var moved: [String: [InboxMessage]] = [:]
             for message in thread.messages where !message.isMine && !message.sender.isEmpty {
                 let groupKey = Self.key(app: thread.app, chat: message.sender)
