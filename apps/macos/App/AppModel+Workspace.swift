@@ -49,7 +49,11 @@ final class WorkspaceWindowController {
     /// Whether the window was open when Nook last quit.
     static var wasOpen: Bool { UserDefaults.standard.bool(forKey: openKey) }
 
-    func show(app: AppModel, activate: Bool = true) {
+    /// The screen the window is on while it has the keyboard: where a click in it came from.
+    var keyScreen: NSScreen? { window?.isKeyWindow == true ? window?.screen : nil }
+
+    /// `screen`: the window moves there first when it is on another one (the screen an update was started from).
+    func show(app: AppModel, activate: Bool = true, on screen: NSScreen? = nil) {
         if window == nil {
             let root = WorkspaceView()
                 .nookAttention()
@@ -90,6 +94,7 @@ final class WorkspaceWindowController {
             self.window = window
         }
         if let window { DockPresence.shared.track(window) }
+        if let screen { move(to: screen) }
         UserDefaults.standard.set(true, forKey: Self.openKey)
         guard activate else {
             window?.orderFront(nil)
@@ -97,6 +102,15 @@ final class WorkspaceWindowController {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Centers the window on `screen`, keeping its size where it fits. Nothing when it is already there.
+    private func move(to screen: NSScreen) {
+        guard let window, window.screen != screen else { return }
+        let visible = screen.visibleFrame
+        let width = min(window.frame.width, visible.width)
+        let height = min(window.frame.height, visible.height)
+        window.setFrame(NSRect(x: visible.midX - width / 2, y: visible.midY - height / 2, width: width, height: height), display: true)
     }
 }
 
@@ -211,8 +225,9 @@ extension AppModel {
 
     /// The main window: the notch's tabs with more room, opened only on request. `continuing`: the tab you were on in the
     /// notch, which the window opens on. `activate`: false when Nook starts with the window it had open when it quit, which
-    /// comes back without taking the keyboard from the app you are in.
-    func openWindow(continuing tab: PanelTab? = nil, activate: Bool = true) {
+    /// comes back without taking the keyboard from the app you are in. `screen`: the screen it opens on, when not the one
+    /// it was last on.
+    func openWindow(continuing tab: PanelTab? = nil, activate: Bool = true, on screen: NSScreen? = nil) {
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if let tab {
             viewModel.windowSheet = nil
@@ -221,7 +236,7 @@ extension AppModel {
             // Already open, it stays where you are.
             viewModel.prepareWindow()
         }
-        WorkspaceWindowController.shared.show(app: self, activate: activate)
+        WorkspaceWindowController.shared.show(app: self, activate: activate, on: screen)
     }
 
     /// Profile associated with a workspace run.

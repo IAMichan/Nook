@@ -111,6 +111,7 @@ final class MacAppMirror: ObservableObject {
     }
 
     func requestScreenAccess() {
+        ScreenAccess.clearStaleGrant()
         if ScreenAccess.refused || !CGRequestScreenCaptureAccess() { SystemPermission.screen.openSettings() }
     }
 

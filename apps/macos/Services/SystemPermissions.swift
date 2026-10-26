@@ -24,6 +24,19 @@ enum ScreenAccess {
         let error = error as NSError
         if error.domain == SCStreamErrorDomain, error.code == SCStreamError.Code.userDeclined.rawValue { refused = true }
     }
+
+    /// Set once Nook cleared its own Screen Recording entry this launch.
+    private static var clearedStaleGrant = false
+
+    /// The switch can be on for a signature this build no longer has: one granted to an earlier build signed ad hoc,
+    /// before Nook kept one signing identity. macOS then refuses every capture and asks again after every update, however
+    /// often the switch is flipped. Clearing Nook's own entry (`tccutil reset`) once lets the next grant be recorded for
+    /// the current signature, which later builds keep. Once per launch: a grant made after it only needs a restart.
+    static func clearStaleGrant() {
+        guard !clearedStaleGrant, let bundle = Bundle.main.bundleIdentifier else { return }
+        clearedStaleGrant = true
+        _ = try? ProcessRunner.run("/usr/bin/tccutil", ["reset", "ScreenCapture", bundle], timeout: 10)
+    }
 }
 
 /// Every macOS privacy permission Nook asks for, in one place: whether it is granted, how to ask for it, and where it lives in
@@ -118,7 +131,9 @@ enum SystemPermission: String, CaseIterable, Identifiable {
         if wasDenied { openSettings(); return }
         switch self {
         case .screen:
-            // Refused while the switch is on: asking again shows nothing useful, the switch needs turning off and on.
+            // Not granted although the switch may be on: clear a stale entry first, so asking puts Nook back in the list
+            // for this signature and one flip of the switch holds across updates.
+            ScreenAccess.clearStaleGrant()
             if ScreenAccess.refused || !CGRequestScreenCaptureAccess() { openSettings() }
         case .accessibility:
             if !AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) { openSettings() }
