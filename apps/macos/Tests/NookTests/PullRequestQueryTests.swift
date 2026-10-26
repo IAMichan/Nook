@@ -64,6 +64,23 @@ final class PullRequestQueryTests: XCTestCase {
         XCTAssertEqual(filter.activeCount, 1)
     }
 
+    func testHiddenRepositoriesAreLeftOut() {
+        var filter = PullRequestFilter(hiddenRepos: ["ACME/Site"])
+        XCTAssertTrue(filter.matches(item(1)))
+        XCTAssertFalse(filter.matches(item(2, repo: "acme/site")))
+        XCTAssertEqual(filter.activeCount, 1)
+        filter = filter.togglingHidden("acme/site")
+        XCTAssertTrue(filter.hiddenRepos.isEmpty)
+        XCTAssertTrue(filter.matches(item(2, repo: "acme/site")))
+
+        filter = PullRequestFilter(repo: "acme/site").togglingHidden("acme/site")
+        XCTAssertNil(filter.repo, "hiding the chosen repository stops choosing it")
+        XCTAssertEqual(filter.hiddenRepos, ["acme/site"])
+
+        XCTAssertFalse(PullRequestFilter(query: "-repo:acme/site").matches(item(2, repo: "acme/site")))
+        XCTAssertTrue(PullRequestFilter(query: "-repo:acme/site").matches(item(1)))
+    }
+
     func testSearchFindsTheBranch() {
         XCTAssertTrue(PullRequestFilter(query: "feature/login").matches(item(1, branch: "feature/login-form")))
         XCTAssertFalse(PullRequestFilter(query: "feature/login").matches(item(1, branch: "main")))
@@ -95,7 +112,8 @@ final class PullRequestQueryTests: XCTestCase {
     func testFilterSurvivesARelaunch() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "PullRequestQueryTests"))
         defer { defaults.removePersistentDomain(forName: "PullRequestQueryTests") }
-        let filter = PullRequestFilter(query: "label:bug", state: .merged, author: "bob", labels: ["ui"], review: .approved)
+        let filter = PullRequestFilter(query: "label:bug", state: .merged, author: "bob", labels: ["ui"], review: .approved,
+                                       hiddenRepos: ["acme/site"])
         filter.save(to: defaults)
         XCTAssertEqual(PullRequestFilter.load(from: defaults), filter)
         defaults.set(Data(#"{"state":"closed","draft":"drafts"}"#.utf8), forKey: "nook.pulls.filter")

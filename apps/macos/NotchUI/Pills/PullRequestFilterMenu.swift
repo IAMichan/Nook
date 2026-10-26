@@ -3,7 +3,8 @@ import SwiftUI
 /// The Filters button next to the pull request search: a dark dropdown with the filter kinds on the left
 /// (each with its current choice) and the choices of the kind you point at on the right, like a submenu. State and
 /// involvement first; then author (searchable, with how many pull requests each wrote), labels (several at once, each
-/// with its color and count), drafts, the review decision and checks; then the repository. A badge on the button counts
+/// with its color and count), drafts, the review decision and checks; then the repository, where the eye on a row hides
+/// that repository from the list until you show it again. A badge on the button counts
 /// the choices that differ from the default; the panel stays open so several filters can be set in a row. A qualifier
 /// typed in the search (`label:bug`) shows here as the choice it makes.
 struct PullRequestFilterMenu: View {
@@ -54,7 +55,7 @@ struct PullRequestFilterMenu: View {
     /// The badge counts what the dropdown and the typed qualifiers narrow.
     private var count: Int {
         let typed = filter.parsed
-        return filter.activeCount + typed.labels.count + typed.excludedLabels.count
+        return filter.activeCount + typed.labels.count + typed.excludedLabels.count + typed.excludedRepos.count
             + [typed.author != nil && filter.author == nil, typed.draft != nil && filter.draft == .all,
                typed.review != nil && filter.review == .all, typed.checks != nil && filter.status == .any,
                typed.repo != nil && filter.repo == nil].filter { $0 }.count
@@ -70,7 +71,7 @@ struct PullRequestFilterMenu: View {
                     ForEach([Kind.state, .involvement]) { kindRow($0) }
                     DropdownDivider()
                     ForEach([Kind.author, .labels, .draft, .review, .checks]) { kindRow($0) }
-                    let showsRepos = facets.repos.count > 1 || filter.repo != nil
+                    let showsRepos = facets.repos.count > 1 || filter.repo != nil || !filter.hiddenRepos.isEmpty
                     let showsAccounts = accounts.count > 1 || filter.account != nil
                     if showsRepos || showsAccounts {
                         DropdownDivider()
@@ -132,7 +133,7 @@ struct PullRequestFilterMenu: View {
         case .draft: return filter.effectiveDraft == .all
         case .review: return filter.effectiveReview == .all
         case .checks: return filter.effectiveStatus == .any
-        case .repository: return filter.effectiveRepo == nil
+        case .repository: return filter.effectiveRepo == nil && filter.hiddenRepos.isEmpty && filter.parsed.excludedRepos.isEmpty
         case .account: return filter.account == nil
         }
     }
@@ -150,7 +151,10 @@ struct PullRequestFilterMenu: View {
         case .draft: return tr("agents.pulls.draft." + filter.effectiveDraft.rawValue)
         case .review: return tr("agents.pulls.review." + filter.effectiveReview.rawValue)
         case .checks: return tr("agents.pulls.status." + filter.effectiveStatus.rawValue)
-        case .repository: return filter.effectiveRepo ?? tr("agents.pulls.repo.all")
+        case .repository:
+            if let repo = filter.effectiveRepo { return repo }
+            let hidden = filter.hiddenRepos.count + filter.parsed.excludedRepos.count
+            return hidden > 0 ? tr("agents.pulls.repo.hiddenCount", hidden) : tr("agents.pulls.repo.all")
         case .account: return accounts.first { $0.id == filter.account }?.name ?? filter.account ?? tr("agents.pulls.account.all")
         }
     }
@@ -197,12 +201,30 @@ struct PullRequestFilterMenu: View {
                 }
             }
         case .repository:
-            DropdownList(maxHeight: 240) {
-                FilterChoiceRow(symbol: "square.stack", title: tr("agents.pulls.repo.all"), chosen: filter.effectiveRepo == nil) { set(["repo"]) { $0.repo = nil } }
-                ForEach(facets.repos) { repo in
-                    FilterChoiceRow(symbol: "folder", title: repo.name, trailing: "\(repo.count)",
-                                    chosen: filter.effectiveRepo?.lowercased() == repo.id) { set(["repo"]) { $0.repo = repo.name } }
+            repoChoices
+        }
+    }
+
+    /// Every repository, then the hidden ones that have nothing in the lists right now. Pointing at a row shows an eye
+    /// that hides it; a hidden row is struck through and its eye (or the row itself) shows it again.
+    private var repoChoices: some View {
+        let known = Set(facets.repos.map(\.id))
+        let missing = filter.hiddenRepos.filter { !known.contains($0.lowercased()) }
+            .map { PullRequestFacets.Entry(name: $0, count: 0, color: nil) }
+        let rows = facets.repos + missing
+        return DropdownList(maxHeight: 240) {
+            FilterChoiceRow(symbol: "square.stack", title: tr("agents.pulls.repo.all"), chosen: filter.effectiveRepo == nil) { set(["repo"]) { $0.repo = nil } }
+            ForEach(rows) { repo in
+                let hidden = filter.hides(repo.name)
+                FilterChoiceRow(symbol: hidden ? "eye.slash" : "folder", title: repo.name, trailing: repo.count > 0 ? "\(repo.count)" : nil,
+                                chosen: !hidden && filter.effectiveRepo?.lowercased() == repo.id,
+                                hidden: hidden, toggleHidden: { filter = filter.togglingHidden(repo.name) }) {
+                    if hidden { filter = filter.togglingHidden(repo.name) } else { set(["repo"]) { $0.repo = repo.name } }
                 }
+            }
+            if !filter.hiddenRepos.isEmpty {
+                DropdownDivider()
+                FilterChoiceRow(symbol: "eye", title: tr("agents.pulls.repo.showHidden"), chosen: false) { filter.hiddenRepos = [] }
             }
         }
     }
@@ -392,7 +414,8 @@ struct PullRequestToolbarButton: View {
 }
 
 /// One choice in the right half of the Filters dropdown: a (tinted) symbol, an author's picture or a label's dot, its
-/// name, a count, and a check mark on the chosen one.
+/// name, a count, and a check mark on the chosen one. With `toggleHidden`, an eye at the end (shown on hover, or always
+/// while `hidden`) hides or shows what the row stands for.
 private struct FilterChoiceRow: View {
     var symbol: String? = nil
     var tint: Color? = nil
@@ -404,41 +427,62 @@ private struct FilterChoiceRow: View {
     let title: String
     var trailing: String? = nil
     let chosen: Bool
+    /// Struck through and dimmed: left out of the list.
+    var hidden = false
+    var toggleHidden: (() -> Void)? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Group {
-                    if let avatar {
-                        GitHubAvatar(login: avatar, size: 15)
-                    } else if labelDot {
-                        LabelDot(color: labelColor, size: 8)
-                    } else if let symbol {
-                        NookSymbol(symbol, size: 13)
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(tint ?? NookTheme.textSecondary)
-                    }
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Button(action: action) { label }
+                .buttonStyle(.plain)
+            if let toggleHidden, hovering || hidden {
+                Button(action: toggleHidden) {
+                    Image(systemName: hidden ? "eye" : "eye.slash")
+                        .font(NookTheme.font(10.5, .semibold))
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
                 }
-                .frame(width: 15)
-                Text(title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 6)
-                if let trailing {
-                    Text(trailing).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textTertiary)
-                }
-                if chosen {
-                    Image(systemName: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
-                }
+                .buttonStyle(.plain)
+                .help(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
+                .accessibilityLabel(hidden ? tr("agents.pulls.repo.show") : tr("agents.pulls.repo.hide"))
             }
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear)))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .frame(height: 28)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .fill(chosen ? DropdownStyle.chosen : (hovering ? DropdownStyle.hover : .clear)))
         .onHover { hovering = $0 }
         .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+
+    private var label: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Group {
+                if let avatar {
+                    GitHubAvatar(login: avatar, size: 15)
+                } else if labelDot {
+                    LabelDot(color: labelColor, size: 8)
+                } else if let symbol {
+                    NookSymbol(symbol, size: 13)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(tint ?? NookTheme.textSecondary)
+                }
+            }
+            .frame(width: 15)
+            Text(title).font(NookTheme.TextStyle.body).strikethrough(hidden)
+                .foregroundStyle(hidden ? NookTheme.textTertiary : NookTheme.paper).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 6)
+            if let trailing {
+                Text(trailing).font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textTertiary)
+            }
+            if chosen {
+                Image(systemName: "checkmark").font(NookTheme.font(10.5, .semibold)).foregroundStyle(NookTheme.paper)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
     }
 }
