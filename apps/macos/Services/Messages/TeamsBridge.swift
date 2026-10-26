@@ -75,6 +75,9 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     private var sources: [String: Source] = [:]
     /// The website's link to the page before the oldest messages read of a chat, by the chat's id.
     private var backward: [String: String] = [:]
+    /// Chats (by their id) Nook just changed something in (sent, reacted, edited, deleted): their history is read
+    /// again at the next read, even when their newest message stayed the same.
+    private var refresh: Set<String> = []
     /// Who wrote each message read through the website ("8:orgid:…"), by its id in Nook: what an answer to it names.
     private var authors: [String: String] = [:]
     /// Pages followed at most in one scroll back, to reach messages older than those Nook shows.
@@ -410,6 +413,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         defer { web[account.id] = state }
         let moved = chats.filter { chat in
             (chat.last.map { state.seen[chat.id] != $0 } ?? false) || (chat.name.isEmpty && state.seen[chat.id] == nil)
+                || refresh.contains(chat.id)
         }.prefix(Self.perRead)
         var fetched: Set<String> = []
         var result: [BridgedChat] = []
@@ -438,6 +442,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             } else {
                 state.retries[chat.id] = early + 1
             }
+            refresh.remove(chat.id)
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
@@ -534,7 +539,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         try await webAct("POST", account: account, path: "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id) + "/messages",
                          json: json)
         // The chat moved: its history is read again, with the message just sent.
-        web[account.id]?.seen[chat.id] = nil
+        refresh.insert(chat.id)
         ChatCaptureService.shared.readSoon(app)
     }
 
@@ -552,7 +557,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             let now = Int64(Date().timeIntervalSince1970 * 1000)
             try await webAct("PUT", account: account, path: path, json: ["emotions": ["key": key, "value": now]])
         }
-        web[account.id]?.seen[chat.id] = nil
+        refresh.insert(chat.id)
         ChatCaptureService.shared.readSoon(app)
     }
 
@@ -575,7 +580,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         let clientID = String(UInt64.random(in: 1_000_000_000_000_000...9_999_999_999_999_999))
         let json = TeamsWebData.edited(html: html, name: account.session.name, clientMessageID: clientID)
         try await webAct("PUT", account: account, path: TeamsWebData.messagePath(chat: chat.id, message: id), json: json)
-        web[account.id]?.seen[chat.id] = nil
+        refresh.insert(chat.id)
         ChatCaptureService.shared.readSoon(app)
     }
 
@@ -585,7 +590,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         guard let id = TeamsWebData.serviceID(message) else { throw NookError(tr("chat.compose.unsupported")) }
         let (account, chat) = try await webChat(name)
         try await webAct("DELETE", account: account, path: TeamsWebData.messagePath(chat: chat.id, message: id), json: [:])
-        web[account.id]?.seen[chat.id] = nil
+        refresh.insert(chat.id)
         ChatCaptureService.shared.readSoon(app)
     }
 
@@ -598,7 +603,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         guard let newest = TeamsWebData.newest(known) else { return }
         try await webAct("PUT", account: account, path: TeamsWebData.horizonPath(chat: chat.id),
                          json: TeamsWebData.horizon(newest: newest.id, arrived: newest.arrived))
-        web[account.id]?.seen[chat.id] = nil
+        refresh.insert(chat.id)
         ChatCaptureService.shared.readSoon(app)
     }
 

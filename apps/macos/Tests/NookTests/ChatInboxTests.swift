@@ -1444,13 +1444,6 @@ final class ChatInboxTests: XCTestCase {
 
         XCTAssertEqual(SlackData.members(["members": ["U1", "U2", "U3"]], users: ["U2": "Anna"], me: "U1"), ["Anna", "U3"])
     }
-}
-
-private extension ChatSources.Added {
-    var isKnown: Bool {
-        if case .known = self { return true }
-        return false
-    }
 
     func testTelegramAnswersAndReactionsShowAsEveryAppsDo() {
         let chat = TelegramData.Chat(id: -5, title: "Family", isGroup: true, unread: 0, order: 0)
@@ -1481,5 +1474,12 @@ private extension ChatSources.Added {
         XCTAssertEqual(inbox.threads[id]?.messages.last?.reactions?.last, InboxReaction(emoji: "❤️", count: 2, mine: true))
         inbox.toggleReaction("👍", on: message!.id, in: id)
         XCTAssertEqual(inbox.threads[id]?.messages.last?.reactions?.first, InboxReaction(emoji: "👍", count: 2, mine: false))
+    }
+}
+
+private extension ChatSources.Added {
+    var isKnown: Bool {
+        if case .known = self { return true }
+        return false
     }
 }

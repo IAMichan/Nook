@@ -42,7 +42,7 @@ EXCLUDE_SOURCES=(
 EXCLUDE_TESTS=(
   "MCPOAuthTests" "MCPClientTests" "NetworkGuardTests" "ModelDownloadTests" "BrainSelectionTests" "AntigravityTests"
   "TextGenerationTests" "MarkdownBlockTests" "I18nCoverageTests" "ChatRecoveryTests" "AgentProcessTests" "FinishedSessionsTests"
-  "ExtrasTests" "WhatsAppTests" "LocalAgentScannerTests"
+  "ExtrasTests" "WhatsAppTests" "WhatsAppActionsTests" "LocalAgentScannerTests"
 )
 
 python3 - "$ROOT" "$WORK" "${EXCLUDE_SOURCES[@]}" <<'PY'

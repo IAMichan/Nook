@@ -1155,8 +1155,8 @@ private struct ChatsDetail: View {
     /// Your emoji on a message, after your own click (the same one again takes it back); the chat shows it at once.
     private func react(_ bubble: ChatBubble, _ emoji: String) {
         guard let route else { return }
-        var thread: String?
-        if case .captured(let id) = entry.origin { thread = id }
+        let thread: String?
+        if case .captured(let id) = entry.origin { thread = id } else { thread = nil }
         Task { @MainActor in
             do {
                 try await app.reactInChat(emoji, to: bubble, route: route, thread: thread, name: entry.name)
@@ -1287,8 +1287,8 @@ private struct ChatsDetail: View {
                 if abilities.archive {
                     Button(tr("chats.archiveInApp", appName)) {
                         change {
-                            var thread: String?
-                            if case .captured(let id) = entry.origin { thread = id }
+                            let thread: String?
+                            if case .captured(let id) = entry.origin { thread = id } else { thread = nil }
                             try await app.archiveChat(route: route, thread: thread, name: entry.name)
                             onClose()
                         }

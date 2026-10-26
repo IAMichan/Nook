@@ -10,9 +10,6 @@ import ImageIO
 // `ChatTranscript` itself. A bridge only has to fill `InboxMessage.media`; `ChatBubble.init(_:time:)` does the rest.
 
 extension ChatBubble {
-    /// A message of any chat app as a bubble: its text, and its file as the chat shows it. While the file is not on this
-    /// Mac the bubble names it (a button that opens the chat's app); once it is, it shows as itself.
-    /// `members`: the group's other people, so your message's info also lists who does not have it yet.
     /// A chat's newest `last` messages (all when nil) as bubbles, each answer quoting the message it answers the same
     /// way in every app, as WhatsApp's do: who wrote it ("You" for your own, the chat's name in a private chat) and its
     /// text, found among all of the chat's messages.
@@ -38,6 +35,9 @@ extension ChatBubble {
         return BubbleQuote(sender: quote.mine ? tr("chat.you") : quote.sender, text: text, mine: quote.mine)
     }
 
+    /// A message of any chat app as a bubble: its text, and its file as the chat shows it. While the file is not on this
+    /// Mac the bubble names it (a button that opens the chat's app); once it is, it shows as itself.
+    /// `members`: the group's other people, so your message's info also lists who does not have it yet.
     init(_ message: InboxMessage, time: String, members: [String] = []) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)

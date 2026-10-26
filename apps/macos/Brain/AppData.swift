@@ -454,10 +454,10 @@ extension AppData {
             for item in items {
                 switch item {
                 case .text(let text):
-                    sends.append("send \(MusicLibrary.quoted(text)) to theChat")
+                    sends.append("send \(MusicScriptOutput.quoted(text)) to theChat")
                 case .file(let path):
                     files += 1
-                    lines.append("set theFile\(files) to POSIX file \(MusicLibrary.quoted(path))")
+                    lines.append("set theFile\(files) to POSIX file \(MusicScriptOutput.quoted(path))")
                     sends.append("send theFile\(files) to theChat")
                 }
             }
@@ -470,7 +470,7 @@ extension AppData {
             lines.append("\tif theChat is missing value then error number -1728")
             lines += sends.map { "\t" + $0 }
             lines.append("end tell")
-            lines.append("return \(MusicLibrary.quoted(done))")
+            lines.append("return \(MusicScriptOutput.quoted(done))")
             return lines.joined(separator: "\n")
         }
 
@@ -485,10 +485,10 @@ extension AppData {
             var people: [String] = []
             for chat in chats {
                 guard let person = person(chat) else { continue }
-                let target = "participant \(MusicLibrary.quoted(person.handle)) of (1st account whose service type = \(person.service))"
+                let target = "participant \(MusicScriptOutput.quoted(person.handle)) of (1st account whose service type = \(person.service))"
                 if !people.contains(target) { people.append(target) }
             }
-            return ids.map { "chat id " + MusicLibrary.quoted($0) } + people
+            return ids.map { "chat id " + MusicScriptOutput.quoted($0) } + people
         }
 
         /// A chat's id and the other ways Messages may name it. iMessage and sms never stand in for each other, so a
