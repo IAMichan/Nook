@@ -181,25 +181,36 @@ final class AudioLevelMonitor: @unchecked Sendable {
 
     // MARK: Analysis
 
-    /// Runs on the audio queue for each buffer (about every 10 ms).
+    /// Runs on the audio queue for each buffer (about every 10 ms). Optimized even in a Debug build: per sample it runs
+    /// every band's filter, and unoptimized that was a fifth of a core on its own.
+    @_optimize(speed)
     private func process(_ input: UnsafePointer<AudioBufferList>, sampleRate: Double) {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         guard let first = buffers.first, first.mDataByteSize > 0 else { return }
         var energy = [Float](repeating: 0, count: Self.bandCount)
         var frames = 0
+        let filters = self.filters
 
-        for buffer in buffers {
-            guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
-            let channels = max(1, Int(buffer.mNumberChannels))
-            let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size / channels
-            frames = max(frames, count)
-            for n in 0..<count {
-                var mono: Float = 0
-                for c in 0..<channels { mono += data[n * channels + c] }
-                mono /= Float(channels)
-                for b in 0..<Self.bandCount {
-                    let y = filters[b].run(mono)
-                    energy[b] += y * y
+        energy.withUnsafeMutableBufferPointer { energy in
+            for buffer in buffers {
+                guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
+                let channels = max(1, Int(buffer.mNumberChannels))
+                let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size / channels
+                frames = max(frames, count)
+                let scale = 1 / Float(channels)
+                var index = 0
+                while index < count {
+                    var mono: Float = 0
+                    var c = 0
+                    while c < channels { mono += data[index * channels + c]; c += 1 }
+                    mono *= scale
+                    var b = 0
+                    while b < energy.count {
+                        let y = filters[b].run(mono)
+                        energy[b] += y * y
+                        b += 1
+                    }
+                    index += 1
                 }
             }
         }
@@ -280,6 +291,7 @@ private final class Biquad {
         a2 = Float((1 - alpha) / a0)
     }
 
+    @inline(__always) @_optimize(speed)
     func run(_ x: Float) -> Float {
         let y = b0 * x + b2 * x2 - a1 * y1 - a2 * y2
         x2 = x1; x1 = x
