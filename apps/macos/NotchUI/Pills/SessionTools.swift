@@ -295,8 +295,11 @@ struct SessionWorkbench<Conversation: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
             if docked {
-                VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) {
+                // The switch takes the height of the conversation's header, so the card starts where the conversation does.
+                VStack(alignment: .trailing, spacing: 0) {
                     SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
+                        .frame(height: 30)
+                        .padding(.trailing, NookTheme.Spacing.xs)
                     DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
                         if let runID { workspace.markReviewed(runID) }
                         viewModel.sessionTool = .changes
