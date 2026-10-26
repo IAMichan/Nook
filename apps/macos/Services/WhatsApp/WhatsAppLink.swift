@@ -889,19 +889,30 @@ final class WhatsAppLink: ObservableObject {
         readInNook[key] = Date()
     }
 
-    /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's, it came in unread (or
-    /// was read in Nook only since), and it was not read in WhatsApp after it arrived. Then "Mark as read" can still
-    /// tell WhatsApp, also when Nook shows no badge any more.
+    /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's and WhatsApp did not say
+    /// it was read there after it arrived (a read on the phone or in WhatsApp on the Mac comes in as it happens). History
+    /// loaded at launch counts too: GOWA says nothing of what was read before, and claiming "read in WhatsApp" for a chat
+    /// that is not was worse than offering "Mark as read" once too often. Then "Mark as read" can still tell WhatsApp,
+    /// also when Nook shows no badge any more.
     func waitsInWhatsApp(_ chat: String) -> Bool {
         let key = WAJID.normalized(chat)
         if carried(key) > 0 { return true }
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
-            guard !last.fromMe, last.date > readThere else { return false }
-            return conversation.unread > 0 || (readInNook[key].map { $0 >= last.date } ?? false)
+            return !last.fromMe && last.date > readThere
         }
         guard let known = known(key) else { return false }
         return known.unread > 0 && known.last > readThere
+    }
+
+    /// Whether Nook knows where a chat stands in WhatsApp: something new here, read or answered in it, or a gateway
+    /// that counts unread messages itself (OpenWA). GOWA counts nothing, so a chat known only from the phone's list or
+    /// from history loaded at launch shows no mark in the list rather than a wrong one.
+    func readIsKnown(_ chat: String) -> Bool {
+        let key = WAJID.normalized(chat)
+        if WhatsAppSettings.gateway == .openwa || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
+        if inbox.conversations[key]?.messages.last?.fromMe == true { return true }
+        return unread(key) > 0
     }
 
     /// The phone's entry for a chat (`jid` normalized), without going through the whole list.

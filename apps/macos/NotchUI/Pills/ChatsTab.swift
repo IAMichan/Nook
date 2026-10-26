@@ -24,6 +24,9 @@ struct ChatsEntry: Identifiable, Equatable {
     let read: ChatReadState
     /// The newest message is your own: nothing in it waits to be read, its ticks say how far it got.
     var lastIsMine = false
+    /// Nook knows where the chat stands in its app; when not (a WhatsApp gateway that counts nothing), the row shows no
+    /// mark rather than a wrong one.
+    var readKnown = true
     /// The newest message is yours: how far it got (sent, delivered, read), as far as its app says. Nil for theirs, and
     /// for every chat collected from notifications, which only ever show what came in.
     var ticks: BubbleTicks? = nil
@@ -40,7 +43,7 @@ struct ChatsEntry: Identifiable, Equatable {
     /// Read in Nook but still unread in the app itself: "Mark as read in <app>" can still pass it on.
     var waitsInApp: Bool { read == .readInNook }
     /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
-    var showsReadMark: Bool { read.isUnread || !lastIsMine }
+    var showsReadMark: Bool { read.isUnread || (readKnown && !lastIsMine) }
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -69,6 +72,7 @@ extension ChatsEntry {
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
+                                          readKnown: whatsApp.readIsKnown(conversation.id),
                                           ticks: ticks, members: conversation.members == nil ? nil : conversation.memberNames,
                                           handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id]))
             }
@@ -81,7 +85,8 @@ extension ChatsEntry {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, read: whatsApp.readState(chat.jid), handle: handle(chat.jid),
+                                          preview: "", last: chat.last, read: whatsApp.readState(chat.jid),
+                                          readKnown: whatsApp.readIsKnown(chat.jid), handle: handle(chat.jid),
                                           avatar: whatsApp.avatars[chat.jid]))
             }
         }
