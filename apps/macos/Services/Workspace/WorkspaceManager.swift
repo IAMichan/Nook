@@ -269,6 +269,8 @@ final class WorkspaceManager: ObservableObject {
         var acpReplied = false
         var acpToolCalls = 0
         var acpContinuations = 0
+        /// ACP: what the agent thought this turn, kept for a turn whose only words went into its thinking.
+        var acpThought = ""
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
