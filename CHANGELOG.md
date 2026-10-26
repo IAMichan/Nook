@@ -11,6 +11,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- A short demo video at the top of the README (`docs/assets/nook-demo.mp4`, with a GIF preview), made with the
+  `nook-video` skill, which can now render landscape clips (`--size`).
 - Area labels (`area: macos`, `area: tauri`, …) that are added to pull requests automatically, defined in
   `.github/labels.yml`.
 - Release notes grouped by label, and this changelog.
