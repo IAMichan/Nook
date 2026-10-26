@@ -15,7 +15,8 @@ license, because it is built on the [mautrix](https://github.com/mautrix) bridge
 - `api.go` serves the part of Beeper's Client API that Nook already reads (`/v1/bridges`, login sessions, `/v1/chats`,
   messages, send, edit, delete, reactions, read/unread, pin, mute, archive, assets) and `live.go` the `/v1/ws` live line.
   `POST /v1/chats/{chat}/paginate` brings in a chat's next batch of older messages when you scroll back, as Beeper does
-  (the bridges' manual backfill).
+  (the bridges' manual backfill), and `GET /v1/chats/{chat}/messages?before=<ms>` reads the batch before the oldest
+  message Nook shows, so scrolling back has no end but the chat's start.
   It listens on `127.0.0.1` only, behind a token Nook makes at each start (`NOOK_CHATD_TOKEN`).
 - Logins (`login.go`) use a QR code (WhatsApp, Signal), the app's own website in Nook's sign-in window (Instagram, Messenger,
   X, LinkedIn, Slack: there the step's own script finds the token in the page, served as a `special` field with

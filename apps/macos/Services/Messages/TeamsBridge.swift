@@ -8,7 +8,7 @@ import Combine
 /// with a code on Microsoft's own page; Nook keeps each refresh token in the Keychain and talks only to
 /// login.microsoftonline.com and graph.microsoft.com. Work or school accounts only.
 @MainActor
-final class TeamsBridge: ObservableObject, ChatBridge {
+final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     let app = "teams"
     let interval: TimeInterval = 60
 
@@ -66,6 +66,17 @@ final class TeamsBridge: ObservableObject, ChatBridge {
     }
     private var web: [String: WebState] = [:]
     private(set) var isWorking = false
+
+    /// Where each chat Nook shows was read, by its key in the inbox: where scrolling back asks.
+    private enum Source {
+        case graph(account: String, chat: TeamsData.Chat)
+        case web(account: String, chat: TeamsData.Chat)
+    }
+    private var sources: [String: Source] = [:]
+    /// The website's link to the page before the oldest messages read of a chat, by the chat's id.
+    private var backward: [String: String] = [:]
+    /// Pages followed at most in one scroll back, to reach messages older than those Nook shows.
+    private static let olderPages = 20
 
     /// The app Nook signs in as: its own, or the one an earlier version of Nook asked you to register.
     static var clientID: String? { CloudHelp.secret(clientAccount) ?? builtInClientID }
@@ -257,6 +268,7 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         }
         let named = TeamsData.distinguish(listed.map { $0.chats }, labels: listed.map { $0.account.label })
         for (index, entry) in listed.enumerated() {
+            for chat in named[index] { sources[ChatInbox.key(app: app, chat: chat.name)] = .graph(account: entry.account.id, chat: chat) }
             result += await read(named[index], account: entry.account, bearer: entry.bearer)
         }
         isWorking = true
@@ -408,6 +420,7 @@ final class TeamsBridge: ObservableObject, ChatBridge {
                 if !chat.name.isEmpty { state.names[chat.id] = chat.name }
             }
             if let mine = TeamsWebData.myName(answer, me: session.me) { TeamsWebSession.shared.named(mine, in: account.id) }
+            if backward[chat.id] == nil, let link = TeamsWebData.backwardLink(answer, base: session.base) { backward[chat.id] = link }
             let early = state.retries[chat.id] ?? 0
             if TeamsWebData.caughtUp(answer, last: chat.last) || early >= Self.maxRetries {
                 state.seen[chat.id] = chat.last ?? Date.distantPast
@@ -417,16 +430,66 @@ final class TeamsBridge: ObservableObject, ChatBridge {
             }
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
+            sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let messages = TeamsWebData.messages(answer, chat: chat, me: session.me)
             result.append(BridgedChat(app: app, name: chat.name, messages: messages,
                                       unread: TeamsData.unread(messages, readUntil: chat.readUntil), listed: true))
         }
         for chat in chats where !fetched.contains(chat.id) && !chat.name.isEmpty {
+            sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let preview = chat.preview.map { [$0] } ?? []
             let unread = state.seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
             result.append(BridgedChat(app: app, name: chat.name, messages: preview, unread: unread, listed: true))
         }
         return result
+    }
+
+    // MARK: Scrolling back
+
+    func canLoadOlder(name: String) -> Bool { sources[ChatInbox.key(app: app, chat: name)] != nil }
+
+    /// The batch before the oldest message Nook shows, as far back as Teams keeps the chat.
+    func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        switch sources[ChatInbox.key(app: app, chat: name)] {
+        case .graph(let id, let chat):
+            guard let client = Self.clientID, let account = accounts.first(where: { $0.id == id }) else { return (nil, false) }
+            let bearer = try await token(account, client: client)
+            let me = sessions[id]?.me
+            var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/chats/" + chat.id + "/messages")!
+            components.queryItems = [
+                URLQueryItem(name: "$top", value: String(ChatHistory.step)),
+                URLQueryItem(name: "$orderby", value: "createdDateTime desc"),
+                URLQueryItem(name: "$filter", value: "createdDateTime lt " + ISO8601DateFormatter().string(from: before)),
+            ]
+            var next = components.url
+            // Graph pages backwards from there; a page of only system notes goes on to the next.
+            for _ in 0..<Self.olderPages {
+                guard let url = next else { break }
+                let page = try await get(url, token: bearer)
+                next = TeamsData.nextLink(page)
+                let messages = TeamsData.messages(page, chat: chat, me: me).filter { $0.date < before }
+                if !messages.isEmpty {
+                    return (BridgedChat(app: app, name: name, messages: messages, unread: nil,
+                                        members: chat.members.isEmpty ? nil : chat.members), next != nil)
+                }
+            }
+            return (nil, next != nil)
+        case .web(let id, let chat):
+            guard let account = TeamsWebSession.shared.accounts.first(where: { $0.id == id }) else { return (nil, false) }
+            // The website pages back through links; pages Nook already shows are passed over.
+            for _ in 0..<Self.olderPages {
+                guard let link = backward[chat.id] else { return (nil, false) }
+                let page = try await webGet(link, token: account.session.token, account: id)
+                backward[chat.id] = TeamsWebData.backwardLink(page, base: account.session.base)
+                let messages = TeamsWebData.messages(page, chat: chat, me: account.session.me).filter { $0.date < before }
+                if !messages.isEmpty {
+                    return (BridgedChat(app: app, name: name, messages: messages, unread: nil, listed: true), backward[chat.id] != nil)
+                }
+            }
+            return (nil, backward[chat.id] != nil)
+        case nil:
+            return (nil, false)
+        }
     }
 
     /// Asks Teams' chat service with the website's token; a refused token is dropped, so the next read renews it.

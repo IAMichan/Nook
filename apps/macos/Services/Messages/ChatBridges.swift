@@ -18,13 +18,29 @@ protocol ChatBridge: AnyObject {
     func read() async throws -> [BridgedChat]
 }
 
+/// A bridge that scrolls back in a chat, as far as its app keeps the history: the batch of messages older than the
+/// oldest one Nook shows, each time you reach the top. No cap: every batch goes further back, until the chat's start.
+@MainActor
+protocol ChatHistoryBridge: ChatBridge {
+    /// Whether the chat Nook shows as `name` is one this bridge read, so it can ask for older messages.
+    func canLoadOlder(name: String) -> Bool
+    /// The batch of messages of the chat `name` sent before `before` (the oldest one Nook shows, with its id in Nook
+    /// when it came from this bridge), as a chat to merge, and whether the app has more before those.
+    func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool)
+}
+
+/// How many older messages one scroll back brings, for every bridge.
+enum ChatHistory {
+    static let step = 50
+}
+
 // MARK: Messages
 
 /// iMessage and sms from Messages' own database (`~/Library/Messages/chat.db`), read-only and only on this Mac. Needs
 /// Full Disk Access, as collecting notifications does. The first read brings the newest chats with their history;
 /// after that only the messages that came in since, and every chat's unread count as Messages keeps it.
 @MainActor
-final class MessagesBridge: ChatBridge {
+final class MessagesBridge: ChatHistoryBridge {
     let app = "messages"
     let interval: TimeInterval = 5
     private(set) var isWorking = false
@@ -48,6 +64,53 @@ final class MessagesBridge: ChatBridge {
     private static let tracked = 200
 
     var isReady: Bool { FileManager.default.fileExists(atPath: path) }
+
+    func canLoadOlder(name: String) -> Bool { isReady && !chatIDs(name).isEmpty }
+
+    /// The chats of `name` in the database: an iMessage and an sms conversation with one person are one chat in Nook.
+    private func chatIDs(_ name: String) -> [Int] {
+        let key = ChatInbox.key(app: app, chat: name)
+        return names.filter { ChatInbox.key(app: app, chat: $0.value) == key }.keys.compactMap(Int.init)
+    }
+
+    /// Scrolling back: the database keeps the whole history, so every batch goes further back, past the window the
+    /// live reads look at.
+    func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        let ids = chatIDs(name)
+        guard !ids.isEmpty else { return (nil, false) }
+        let contacts = await ContactDirectory.names()
+        // Messages counts in nanoseconds since 2001, an older database in seconds (as `AppData.appleDate` reads it).
+        let limit = Int64(before.timeIntervalSinceReferenceDate * 1_000_000_000)
+        let rows = try await query(Self.select + """
+         WHERE cmj.chat_id IN (\(ids.sorted().map(String.init).joined(separator: ",")))
+            AND COALESCE(m.associated_message_type, 0) = 0
+            AND (CASE WHEN m.date > 100000000000 THEN m.date ELSE m.date * 1000000000 END) < \(limit)
+         ORDER BY m.date DESC LIMIT \(ChatHistory.step + 1)
+        """)
+        let batch = Array(rows.prefix(ChatHistory.step))
+        let files = try await attachments(batch)
+        var messages: [InboxMessage] = []
+        for row in batch {
+            let id = NotificationRecord.integer(row["id"]) ?? 0
+            let media = files[id]
+            var readable = row
+            if media != nil, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
+            guard let message = AppData.messages([readable], names: contacts).first else { continue }
+            let group = (AppData.number(row["grp"]) ?? 0) != 0
+            var inbox = InboxMessage(
+                id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
+                text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
+            if message.fromMe { inbox.receipt = Self.receipt(row) }
+            messages.append(inbox)
+        }
+        let more = rows.count > ChatHistory.step
+        // A batch of nothing to show (only empty rows) is not the start: the next one goes on from its oldest row.
+        if messages.isEmpty, more, let oldest = batch.last.map({ AppData.appleDate(AppData.number($0["date"]) ?? 0) }), oldest < before {
+            return try await older(name: name, before: oldest, oldestID: nil)
+        }
+        let chat = messages.isEmpty ? nil : BridgedChat(app: app, name: name, messages: messages.sorted { $0.date < $1.date }, unread: nil)
+        return (chat, more)
+    }
 
     func read() async throws -> [BridgedChat] {
         let change = [path, path + "-wal"]
@@ -256,7 +319,7 @@ final class MessagesBridge: ChatBridge {
 /// Full Disk Access. The first read brings the newest chats with their history, after that only what is new, with
 /// WhatsApp's own unread counts.
 @MainActor
-final class WhatsAppDesktopBridge: ChatBridge {
+final class WhatsAppDesktopBridge: ChatHistoryBridge {
     let app = "whatsapp"
     let interval: TimeInterval = 5
     private(set) var isWorking = false
@@ -318,32 +381,9 @@ final class WhatsAppDesktopBridge: ChatBridge {
             var name = AppData.string(row["chatname"])
             if name.isEmpty { name = contacts[AppData.key(AppData.string(row["jid"]))] ?? WAJID.displayNumber(AppData.string(row["jid"])) }
             names[chat] = name
-            let mine = (AppData.number(row["me"]) ?? 0) != 0
-            var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if ChatFormat.isBlank(text) { text = "" }
-            let media = Self.media(row)
-            let type = Int(AppData.number(row["type"]) ?? 0)
-            // A poll shows as one, its question its text; its options and votes stay in the app.
-            let poll = type == Self.pollType
-                ? ChatPoll(question: text.isEmpty ? tr("chat.poll.title") : text, options: [], unknownCounts: true) : nil
-            if poll != nil { text = "" }
-            if text.isEmpty, media == nil, poll == nil { text = Self.label(type) }
-            guard !text.isEmpty || media != nil || poll != nil else { continue }
-            var sender = ""
-            if group {
-                groups.insert(chat)
-                if !mine {
-                    sender = AppData.string(row["sender"])
-                    if sender.isEmpty { sender = contacts[AppData.key(AppData.string(row["member"]))] ?? "" }
-                }
-            }
-            var message = InboxMessage(
-                id: "wadesktop-\(id)", sender: sender, text: text,
-                date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media, poll: poll)
-            if mine {
-                message.receipt = ChatReceipts.whatsAppDesktop(status: Int(AppData.number(row["status"]) ?? 0))
-                self.mine[id] = (chat, message)
-            }
+            if group { groups.insert(chat) }
+            guard let message = Self.message(row, contacts: contacts) else { continue }
+            if message.fromMe { self.mine[id] = (chat, message) }
             messages[chat, default: []].append(message)
         }
         if self.mine.count > Self.tracked {
@@ -381,6 +421,64 @@ final class WhatsAppDesktopBridge: ChatBridge {
             return BridgedChat(app: app, name: name, messages: (messages[chat] ?? []).sorted { $0.date < $1.date },
                                unread: unread[chat] ?? 0, members: people.isEmpty ? nil : people)
         }
+    }
+
+    /// A row as the chat shows it; nil for one with nothing to show.
+    private static func message(_ row: [String: Any], contacts: [String: String]) -> InboxMessage? {
+        let id = NotificationRecord.integer(row["id"]) ?? 0
+        let group = (AppData.number(row["kind"]) ?? 0) == 1
+        let mine = (AppData.number(row["me"]) ?? 0) != 0
+        var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if ChatFormat.isBlank(text) { text = "" }
+        let media = Self.media(row)
+        let type = Int(AppData.number(row["type"]) ?? 0)
+        // A poll shows as one, its question its text; its options and votes stay in the app.
+        let poll = type == Self.pollType
+            ? ChatPoll(question: text.isEmpty ? tr("chat.poll.title") : text, options: [], unknownCounts: true) : nil
+        if poll != nil { text = "" }
+        if text.isEmpty, media == nil, poll == nil { text = Self.label(type) }
+        guard !text.isEmpty || media != nil || poll != nil else { return nil }
+        var sender = ""
+        if group, !mine {
+            sender = AppData.string(row["sender"])
+            if sender.isEmpty { sender = contacts[AppData.key(AppData.string(row["member"]))] ?? "" }
+        }
+        var message = InboxMessage(
+            id: "wadesktop-\(id)", sender: sender, text: text,
+            date: AppData.appleDate(AppData.number(row["date"]) ?? 0), fromMe: mine, media: media, poll: poll)
+        if mine { message.receipt = ChatReceipts.whatsAppDesktop(status: Int(AppData.number(row["status"]) ?? 0)) }
+        return message
+    }
+
+    func canLoadOlder(name: String) -> Bool { isReady && !sessions(name).isEmpty }
+
+    /// The app's chats Nook shows as `name`.
+    private func sessions(_ name: String) -> [Int] {
+        let key = ChatInbox.key(app: app, chat: name)
+        return names.filter { ChatInbox.key(app: app, chat: $0.value) == key }.keys.compactMap(Int.init)
+    }
+
+    /// Scrolling back: the app keeps what the phone synced to it, and every batch goes further back in that.
+    func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        let ids = sessions(name)
+        guard isReady, !ids.isEmpty else { return (nil, false) }
+        let contacts = await ContactDirectory.names()
+        let rows = try await select("""
+        WHERE m.ZCHATSESSION IN (\(ids.sorted().map(String.init).joined(separator: ",")))
+            AND m.ZMESSAGEDATE < \(before.timeIntervalSinceReferenceDate)
+        ORDER BY m.ZMESSAGEDATE DESC LIMIT \(ChatHistory.step + 1)
+        """)
+        let more = rows.count > ChatHistory.step
+        let batch = Array(rows.prefix(ChatHistory.step))
+        let messages = batch.compactMap { Self.message($0, contacts: contacts) }
+        // A batch of nothing to show is not the start: the next one goes on from its oldest row.
+        if messages.isEmpty, more, let oldest = batch.last.map({ AppData.appleDate(AppData.number($0["date"]) ?? 0) }), oldest < before {
+            return try await older(name: name, before: oldest, oldestID: nil)
+        }
+        let people = ids.flatMap { groupPeople[String($0)] ?? [] }
+        let chat = messages.isEmpty ? nil : BridgedChat(app: app, name: name, messages: messages.sorted { $0.date < $1.date },
+                                                        unread: nil, members: people.isEmpty ? nil : people)
+        return (chat, more)
     }
 
     /// The people of the group chats not asked yet (`ZWAGROUPMEMBER`, the ones still in it), by their name in WhatsApp,
@@ -609,24 +707,25 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     }
 
     /// How many older messages one scroll back asks for: the helper's batch (`paginateBatch` in apps/chatd).
-    static let olderStep = 50
-    /// The most messages the helper hands out for one chat in one answer.
-    private static let mostMessages = 500
+    static let olderStep = ChatHistory.step
 
     /// Scrolling back in the chat Nook shows as `name` in `app`, as Beeper does it: the helper first brings in the next
-    /// batch of older messages from the app (WhatsApp asks the phone), then Nook reads the chat with `have` plus that
-    /// batch. The chat as read, and whether there is still more before it.
-    func older(app: String, name: String, have: Int) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+    /// batch of older messages from the app (WhatsApp asks the phone), then Nook reads the batch before `before` from
+    /// it. No cap: each scroll back goes on from the oldest message Nook shows. The batch as a chat, and whether there
+    /// is still more before it.
+    func older(app: String, name: String, before: Date) async throws -> (chat: BridgedChat?, hasMore: Bool) {
         guard let token = Self.token, let id = chatID(app: app, name: name), let chat = chats[id] else { return (nil, false) }
         let answer = try await call("POST", Self.path(id) + "/paginate", [:], token: token, timeout: 75,
                                     failure: tr("chat.action.failed"))
         let more = (ChatJSON.object(answer)?["hasMore"] as? Bool) ?? false
-        let limit = min(have + Self.olderStep, Self.mostMessages)
-        let read = try await get(Self.path(id) + "/messages", ["limit": String(limit)], token: token)
-        let messages = await withFiles(ChatServiceData.messages(read, chat: chat), token: token)
+        let millis = Int64((before.timeIntervalSince1970 * 1000).rounded(.down))
+        let read = try await get(Self.path(id) + "/messages", ["limit": String(Self.olderStep), "before": String(millis)], token: token)
+        let messages = await withFiles(ChatServiceData.messages(read, chat: chat).filter { $0.date < before }, token: token)
         let bridged = BridgedChat(app: app, name: name, messages: messages, unread: nil,
                                   members: chat.members.isEmpty ? nil : chat.members)
-        return (bridged, more && limit < Self.mostMessages)
+        // The helper may still hold older ones it brought in earlier, even when the app has nothing more to send.
+        let stored = (read["items"] as? [Any])?.count ?? 0
+        return (messages.isEmpty ? nil : bridged, more || stored >= Self.olderStep)
     }
 
     /// The messages with their files on this Mac (see `local`).
@@ -830,7 +929,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 /// Chats (kept in the Keychain; read-only scopes are enough: im:history, mpim:history, im:read, mpim:read, users:read
 /// and files:read). Only Slack is asked, and only for your own conversations.
 @MainActor
-final class SlackBridge: ChatBridge {
+final class SlackBridge: ChatHistoryBridge {
     let app = "slack"
     let interval: TimeInterval = 60
     private(set) var isWorking = false
@@ -939,6 +1038,35 @@ final class SlackBridge: ChatBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// The conversation Nook shows as `name`.
+    private func conversation(_ name: String) -> SlackData.Conversation? {
+        let key = ChatInbox.key(app: app, chat: name)
+        return conversations.first { ChatInbox.key(app: app, chat: SlackData.chatName($0, users: users, me: me)) == key }
+    }
+
+    func canLoadOlder(name: String) -> Bool { isReady && conversation(name) != nil }
+
+    /// Scrolling back: Slack's history before `before`, a page at a time, as far back as the workspace keeps it.
+    func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        guard let auth = Self.auth, let conversation = conversation(name) else { return (nil, false) }
+        let json = try await call("conversations.history", [
+            "channel": conversation.id, "limit": String(ChatHistory.step), "inclusive": "false",
+            "latest": String(format: "%.6f", before.timeIntervalSince1970),
+        ], auth: auth)
+        let read = SlackData.messages(json, conversation: conversation, users: users, me: me).filter { $0.date < before }
+        let messages = await withFiles(read, auth: auth)
+        let more = (json["has_more"] as? Bool) ?? false
+        // A page of nothing to show (people joining, bot notes) is not the start: the next one goes on from its oldest.
+        if messages.isEmpty, more, let oldest = (json["messages"] as? [[String: Any]])?.compactMap({ ($0["ts"] as? String).flatMap(Double.init) }).min(),
+           oldest < before.timeIntervalSince1970 {
+            return try await older(name: name, before: Date(timeIntervalSince1970: oldest), oldestID: nil)
+        }
+        let members = people[conversation.id] ?? []
+        let chat = messages.isEmpty ? nil : BridgedChat(app: app, name: name, messages: messages, unread: nil,
+                                                        members: members.isEmpty ? nil : members)
+        return (chat, more)
     }
 
     /// A direct message's picture: the other person's profile photo, fetched once (a public address, no token sent).

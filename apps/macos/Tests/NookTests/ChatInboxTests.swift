@@ -370,12 +370,26 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads.first?.value.messages.map(\.text), ["first", "second"])
     }
 
-    func testKeepsTheNewestMessages() {
+    func testANotificationChatKeepsItsWholeHistory() {
+        // Notifications are all there is of such a chat: nothing is dropped, so it scrolls back to its first one.
         var inbox = ChatInbox()
         for index in 0..<(ChatInbox.keep + 5) { inbox.add(notice("Anna", "m\(index)", at: Double(index)), id: "\(index)") }
         let messages = inbox.threads.first!.value.messages
-        XCTAssertEqual(messages.count, ChatInbox.keep)
-        XCTAssertEqual(messages.last?.text, "m\(ChatInbox.keep + 4)")
+        XCTAssertEqual(messages.count, ChatInbox.keep + 5)
+        XCTAssertEqual(messages.first?.text, "m0")
+    }
+
+    func testABridgedChatKeepsTheNewestAndGrowsWhenScrolledBack() {
+        // Its app keeps the rest: the newest stay, and what you scrolled back to stays too.
+        var inbox = ChatInbox()
+        let all = (0..<(ChatInbox.keep + 5)).map { message("\($0)", "m\($0)", at: Double($0)) }
+        inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: Array(all.suffix(ChatInbox.keep)), unread: nil))
+        let key = ChatInbox.key(app: "slack", chat: "Anna")
+        XCTAssertEqual(inbox.threads[key]?.messages.count, ChatInbox.keep)
+        inbox.grow(key, by: 5)
+        inbox.merge(BridgedChat(app: "slack", name: "Anna", messages: Array(all.prefix(5)), unread: nil))
+        XCTAssertEqual(inbox.threads[key]?.messages.count, ChatInbox.keep + 5)
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.text, "m0")
     }
 
     func testReadAndRemove() {

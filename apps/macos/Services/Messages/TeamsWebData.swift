@@ -247,6 +247,15 @@ enum TeamsWebData {
             .flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// Where the page before these messages is (`_metadata.backwardLink`): nil at the chat's start. Only a link on the
+    /// session's own chat service (`base`) is followed, never another host, since the token goes with it.
+    static func backwardLink(_ json: [String: Any], base: String) -> String? {
+        guard let link = (json["_metadata"] as? [String: Any])?["backwardLink"] as? String, !link.isEmpty,
+              let url = URL(string: link), url.scheme == "https", let host = url.host?.lowercased(),
+              host == URL(string: base)?.host?.lowercased() else { return nil }
+        return link
+    }
+
     /// Whether the messages already list the newest one the chat list announced (see `TeamsData.caughtUp`).
     static func caughtUp(_ json: [String: Any], last: Date?) -> Bool {
         guard let last else { return true }

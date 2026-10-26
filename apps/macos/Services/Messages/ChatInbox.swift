@@ -384,7 +384,7 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// The app's id (`MessagingApp.id`).
     var app: String
     var name: String
-    /// Oldest first, the newest `ChatInbox.keep` only.
+    /// Oldest first: every one for a chat only notifications bring, the newest `keeps` for one a bridge reads.
     var messages: [InboxMessage] = []
     var unread: Int = 0
     /// The unread count the app itself gave last time (a bridge that knows it): only a change in it overrides what you
@@ -404,9 +404,12 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var readInApp: Date? = nil
     /// How many messages it keeps once you scrolled back to older ones; nil keeps `ChatInbox.keep`.
     var capacity: Int? = nil
+    /// A bridge reads this chat from its app (`ChatInbox.merge`), which keeps its whole history: Nook keeps the newest
+    /// and scrolls back there. A chat only notifications bring has nowhere else to come from, so it keeps every message.
+    var bridged: Bool? = nil
 
     /// How many messages it keeps.
-    var keeps: Int { max(capacity ?? 0, ChatInbox.keep) }
+    var keeps: Int { bridged == true ? max(capacity ?? 0, ChatInbox.keep) : ChatInbox.notificationKeep }
 
     var last: Date { messages.last?.date ?? .distantPast }
     /// The newest message from someone else: what "read" is about.
@@ -552,8 +555,10 @@ enum ChatCapture {
 
 /// Every collected chat, kept across launches.
 struct ChatInbox: Codable, Equatable, Sendable {
-    /// Messages kept per chat.
+    /// Messages kept per chat a bridge reads, until you scroll back (the app keeps the rest).
     static let keep = 50
+    /// Messages kept per chat only notifications bring: all of them, bounded only so a runaway app cannot fill the disk.
+    static let notificationKeep = 100_000
     /// Chats kept; the quietest go first.
     static let maxThreads = 200
     /// Two copies of one message: a bridge and a notification can both bring it in, each under an id of its own.
@@ -700,6 +705,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         else { return false }
         var thread = known ?? InboxThread(id: key, app: chat.app, name: chat.name)
         let before = thread
+        thread.bridged = true
         let newestBefore = known?.last
         // A file a bridge fetched since it last brought this message, new votes on a poll, or your message's new ticks
         // (delivered, read, by whom): the chat shows them now. Ticks only move forward.
