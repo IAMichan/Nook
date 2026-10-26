@@ -6,14 +6,15 @@ import Foundation
 /// Whatever the level, an action only runs without a click when the user's own words ask for it
 /// (`AppModel.request(_:asksFor:)`): text from the screen, a mail or a web page is never enough. Mail and messages, links,
 /// commands, shortcuts, webhooks, settings and deleting always wait for a click, and every action that runs is in the audit log.
+/// A change to an event others are invited to waits too, also on `more`: they would receive it.
 enum NookAccess: String, CaseIterable, Identifiable, Codable {
     /// Every action waits for a click.
     case ask
     /// Small, easily reversed things right away: music, volume, an app, a reminder, a to-do.
     case small
-    /// Also what stays with you and nobody else receives (a calendar event without invitations, a note), and a whole
-    /// task Nook takes over with mouse and keyboard (`TakeoverPolicy`): a step that pays, orders, sends, deletes, books
-    /// or signs still waits for the user's yes in the notch.
+    /// Also what stays with you and nobody else receives (adding or changing a calendar event without invitations,
+    /// ticking off a reminder, a note), and a whole task Nook takes over with mouse and keyboard (`TakeoverPolicy`): a
+    /// step that pays, orders, sends, deletes, books or signs still waits for the user's yes in the notch.
     case more
 
     var id: String { rawValue }
@@ -22,7 +23,8 @@ enum NookAccess: String, CaseIterable, Identifiable, Codable {
     static let smallTools: Set<String> = ["media_control", "set_volume", "open_app", "add_open_loop", "create_reminder",
                                           "complete_open_loop", "open_settings"]
     /// What `more` runs without a click besides the small things.
-    static let moreTools: Set<String> = smallTools.union(["create_event", "create_note", TakeoverPolicy.toolName])
+    static let moreTools: Set<String> = smallTools.union(["create_event", "update_event", "complete_reminder", "create_note",
+                                                          TakeoverPolicy.toolName])
 
     /// The tools this level runs without asking.
     var tools: Set<String> {

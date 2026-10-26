@@ -483,7 +483,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "nookAccess.small.detail": "Muziek, volume, een app, een herinnering of een open punt gebeuren meteen als je erom vraagt.",
         "nookAccess.more": "Meer zelf doen",
         "nookAccess.more.short": "Meer",
-        "nookAccess.more.detail": "Ook een afspraak of een notitie, en hele taken met muis en toetsenbord. Een stap die betaalt, bestelt, verstuurt, verwijdert of boekt vraagt nog steeds eerst.",
+        "nookAccess.more.detail": "Ook een afspraak maken of aanpassen, een herinnering afvinken, een notitie, en hele taken met muis en toetsenbord. Een stap die betaalt, bestelt, verstuurt, verwijdert of boekt, of een afspraak met genodigden, vraagt nog steeds eerst.",
         "nookAccess.switch": "⇧Tab voor het volgende niveau",
         "nookAccess.always": "Mail, berichten, links, opdrachten, instellingen en verwijderen vragen altijd eerst.",
 
@@ -1262,7 +1262,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "nookAccess.small.detail": "Music, volume, an app, a reminder, or a to-do happen at once when you ask for them.",
         "nookAccess.more": "More by itself",
         "nookAccess.more.short": "More",
-        "nookAccess.more.detail": "Also a calendar event or a note, and whole tasks with mouse and keyboard. A step that pays, orders, sends, deletes, or books still asks first.",
+        "nookAccess.more.detail": "Also adding or changing a calendar event, ticking off a reminder, a note, and whole tasks with mouse and keyboard. A step that pays, orders, sends, deletes, or books, or an event others are invited to, still asks first.",
         "nookAccess.switch": "⇧Tab for the next level",
         "nookAccess.always": "Mail, messages, links, commands, settings, and deleting always ask first.",
 
@@ -2041,7 +2041,7 @@ private let translations: [AppLanguage: [String: String]] = [
         "nookAccess.small.detail": "Musik, Lautstärke, eine App, eine Erinnerung oder ein offener Punkt passieren sofort, wenn du darum bittest.",
         "nookAccess.more": "Mehr selbst tun",
         "nookAccess.more.short": "Mehr",
-        "nookAccess.more.detail": "Auch ein Termin oder eine Notiz und ganze Aufgaben mit Maus und Tastatur. Ein Schritt, der bezahlt, bestellt, sendet, löscht oder bucht, fragt weiterhin zuerst.",
+        "nookAccess.more.detail": "Auch einen Termin anlegen oder ändern, eine Erinnerung abhaken, eine Notiz und ganze Aufgaben mit Maus und Tastatur. Ein Schritt, der bezahlt, bestellt, sendet, löscht oder bucht, oder ein Termin mit Eingeladenen, fragt weiterhin zuerst.",
         "nookAccess.switch": "⇧Tab für die nächste Stufe",
         "nookAccess.always": "Mails, Nachrichten, Links, Befehle, Einstellungen und Löschen fragen immer zuerst.",
 
