@@ -199,7 +199,11 @@ extension AppModel {
         let steps = planSteps(plan.actions)
 
         var detail: CardDetail = .steps(steps)
-        var detailHeight = CGFloat(steps.count * 30)
+        // Every step is shown in full, so a long one ("open de app → druk op cmd+a → typ …") takes the lines it needs.
+        var detailHeight = steps.reduce(CGFloat(0)) { height, step in
+            let perLine = step.tag.isEmpty ? 40.0 : 30.0
+            return height + 10 + CGFloat(max(1, Int(ceil(Double(step.text.count) / perLine)))) * 20
+        }
         var contextLine = context ?? tr(steps.count == 1 ? "app.plan.steps.one" : "app.plan.steps.many", steps.count)
         var primaryLabel = tr("app.plan.run")
 

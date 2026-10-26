@@ -536,7 +536,8 @@ private struct StepsDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             ForEach(steps) { step in
-                HStack(spacing: NookTheme.Spacing.lg) {
+                // A step is read in full before it is approved: it wraps instead of trailing off.
+                HStack(alignment: .top, spacing: NookTheme.Spacing.lg) {
                     Text("\(step.number)")
                         .font(NookTheme.rounded(11, .semibold))
                         .foregroundStyle(color(step.tone))
@@ -545,11 +546,15 @@ private struct StepsDetail: View {
                     Text(step.text)
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 1)
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if !step.tag.isEmpty {
                         Text(step.tag)
                             .font(NookTheme.TextStyle.label)
                             .foregroundStyle(color(step.tone))
+                            .fixedSize()
+                            .padding(.top, 2)
                     }
                 }
             }

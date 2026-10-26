@@ -245,4 +245,23 @@ final class ChatIntentTests: XCTestCase {
             XCTAssertFalse(ChatIntent.detect(text).tools.contains("github_merge_prs"), text)
         }
     }
+
+    func testChangingWhatIsOnScreenIsDoneWithMouseAndKeyboard() {
+        XCTAssertEqual(action("Pas deze tekst aan zodat hij korter is"), "take_over")
+        XCTAssertEqual(action("Verbeter dit"), "take_over")
+        let history = [ChatTurn(fromUser: true, text: "Is deze pitch goed?"),
+                       ChatTurn(fromUser: false, text: "Hij is sterk, maar de opening kan scherper.")]
+        XCTAssertEqual(ChatIntent.detect("Pas het aan", history: history).primaryAction, "take_over")
+        XCTAssertEqual(ChatIntent.detect("Fix it", history: history).primaryAction, "take_over")
+    }
+
+    func testAskingHowToChangeSomethingIsNotARequestToDoIt() {
+        XCTAssertFalse(ChatIntent.editsIt("Hoe pas ik dit aan?"))
+        XCTAssertFalse(ChatIntent.editsIt("Is deze pitch goed?"))
+        XCTAssertTrue(ChatIntent.editsIt("Kun je het aanpassen?"))
+        let history = [ChatTurn(fromUser: true, text: "Wat staat er morgen in mijn agenda?")]
+        XCTAssertNil(ChatIntent.detect("Pas het aan", history: history).primaryAction, "nothing on screen was talked about")
+        let pr = [ChatTurn(fromUser: true, text: "Why is CI failing on this PR?")]
+        XCTAssertNotEqual(ChatIntent.detect("Fix it", history: pr).primaryAction, "take_over", "the PR is fixed on GitHub, not by hand")
+    }
 }
