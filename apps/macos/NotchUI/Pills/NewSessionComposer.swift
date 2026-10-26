@@ -572,7 +572,7 @@ struct NewSessionComposer: View {
     private func choose(_ provider: RunProvider, account: String) {
         if config.provider != provider {
             config.provider = provider
-            config.model = settings.model(for: provider)
+            config.model = settings.sessionDefaults(for: config.projectPath).model(for: provider)
             config.effort = settings.effort(for: provider)
             if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
         }
@@ -587,14 +587,29 @@ struct NewSessionComposer: View {
     }
 
     /// Keeps what you just chose for the next new session, so it does not fall back to the defaults.
+    /// What the project sets for itself (Settings › Workspace, per project) stays out of the global defaults.
     private func remember() {
-        settings.defaultProvider = config.provider
+        let path = config.projectPath
+        if !settings.isOverridden(.provider, for: path) { settings.defaultProvider = config.provider }
         settings.setProfile(config.profileID, for: config.provider)
-        settings.setModel(config.model, for: config.provider)
+        if !settings.isOverridden(.model(config.provider), for: path) { settings.setModel(config.model, for: config.provider) }
         settings.defaultMode = config.mode
-        settings.defaultPermission = config.permission
+        if !settings.isOverridden(.permission, for: path) { settings.defaultPermission = config.permission }
         settings.setEffort(config.effort, for: config.provider)
-        settings.defaultIsolation = config.isolation
+        if !settings.isOverridden(.isolation, for: path) { settings.defaultIsolation = config.isolation }
+    }
+
+    /// A folder with its own defaults starts with them; what it does not set keeps your current choice.
+    private func applyProjectDefaults(_ path: String) {
+        let resolved = settings.sessionDefaults(for: path)
+        if settings.isOverridden(.provider, for: path), resolved.provider != config.provider,
+           app.connectedProviders.contains(resolved.provider) {
+            choose(resolved.provider, account: rememberedProfile(for: resolved.provider)
+                   ?? app.profiles.preferredProfile(resolved.provider.kind).id)
+        }
+        if settings.isOverridden(.model(config.provider), for: path) { config.model = resolved.model(for: config.provider) }
+        if settings.isOverridden(.permission, for: path) { config.permission = resolved.permission(for: config.provider) }
+        if settings.isOverridden(.isolation, for: path) { config.isolation = resolved.isolation }
     }
 
     private func chooseMachine(_ machine: RemoteMachine) {
@@ -611,6 +626,7 @@ struct NewSessionComposer: View {
         config.projectPath = path
         // The next new session opens on the project you chose last, also when this one never started.
         settings.lastProject = path
+        applyProjectDefaults(path)
         inspecting = true
         error = nil
         Task {
@@ -620,7 +636,7 @@ struct NewSessionComposer: View {
             let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
             if !canWorktree {
                 config.isolation = .folder
-            } else if config.isolation == .folder && settings.defaultIsolation == .worktree {
+            } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
                 config.isolation = .worktree
             }
             if let base = info.defaultBase, info.branches.contains(base) {

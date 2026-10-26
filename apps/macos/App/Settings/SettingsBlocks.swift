@@ -339,6 +339,8 @@ struct WorkspaceSettingsSection: View {
     @ObservedObject private var webhook = WebhookListener.shared
     @AppStorage(AppDelegate.confirmQuitKey) private var confirmQuit = true
     @State private var showScheduled = false
+    /// Which defaults the "New session" section edits: "" for all projects, else a project folder (see `ProjectSettings`).
+    @State private var scope = ""
 
     var body: some View {
         Group {
@@ -378,63 +380,155 @@ struct WorkspaceSettingsSection: View {
 
     private var defaults: some View {
         Section {
-            Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
-                ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
-                    Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
-                }
-            }
-            // One model per agent: folded away, so the page opens on the choices you make most.
-            DisclosureGroup(tr("settings.ws.modelsPerAgent")) {
-                ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
-                    Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
-                        get: { ws.model(for: provider) },
-                        set: { ws.setModel($0, for: provider) }
-                    )) {
-                        ForEach(defaultModelChoices(provider), id: \.self) { model in
-                            Text(app.modelName(model, for: provider)).tag(model)
-                        }
-                    }
-                }
-                // Off: the model list that came with the app is used, and nothing goes online for it.
-                SettingToggle(tr("settings.ws.onlineModels"), detail: onlineModelsDetail, isOn: $ws.onlineModelList)
-            }
-            Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
-                ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
-            }
-            Picker(tr("settings.ws.permission"), selection: $ws.defaultPermission) {
-                ForEach(PermissionPolicy.allCases) { Text($0.label).tag($0) }
-            }
-            Picker(tr("settings.ws.isolation"), selection: $ws.defaultIsolation) {
-                ForEach(IsolationMode.allCases) { Text($0.label).tag($0) }
-            }
-            LabeledContent(tr("settings.ws.worktreeRoot")) {
-                HStack {
-                    Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
-                    Button(tr("ws.new.change")) {
-                        let panel = NSOpenPanel()
-                        panel.canChooseDirectories = true
-                        panel.canChooseFiles = false
-                        panel.canCreateDirectories = true
-                        if panel.runModal() == .OK, let url = panel.url { ws.worktreeRoot = url.path }
-                    }
-                    .controlSize(.small)
-                }
-            }
-            LabeledContent(tr("settings.ws.branchPrefix")) {
-                HStack {
-                    TextField(WorktreeNaming.defaultBranchPrefix, text: $ws.branchPrefix)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 160)
-                        .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
-                    Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
-                        .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
-                }
+            scopePicker
+            if scope.isEmpty {
+                globalDefaults
+            } else {
+                projectDefaults(scope)
             }
         } header: {
             Text(tr("settings.ws.newSession"))
         } footer: {
-            Text(tr("settings.ws.footer"))
+            Text(tr(scope.isEmpty ? "settings.ws.footer" : "settings.scope.footer"))
         }
+    }
+
+    /// All projects, or one of the recent project folders: a folder sets only what it overrides and inherits the rest.
+    private var scopePicker: some View {
+        Picker(tr("settings.scope.title"), selection: $scope) {
+            Text(tr("settings.scope.global")).tag("")
+            ForEach(ProjectSettings.scopeChoices(recent: ws.recentProjects, overrides: ws.projectOverrides), id: \.self) { path in
+                Text(URL(fileURLWithPath: path).lastPathComponent).tag(path).help(AgentPathFormat.tilde(path))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var globalDefaults: some View {
+        Picker(tr("settings.ws.provider"), selection: $ws.defaultProvider) {
+            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
+                Label { Text(provider.displayName) } icon: { LogoImage.agent(provider.kind) }.tag(provider)
+            }
+        }
+        // One model per agent: folded away, so the page opens on the choices you make most.
+        DisclosureGroup(tr("settings.ws.modelsPerAgent")) {
+            ForEach(RunProvider.allCases.filter { $0 != .acp }) { provider in
+                Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
+                    get: { ws.model(for: provider) },
+                    set: { ws.setModel($0, for: provider) }
+                )) {
+                    ForEach(defaultModelChoices(provider, saved: ws.model(for: provider)), id: \.self) { model in
+                        Text(app.modelName(model, for: provider)).tag(model)
+                    }
+                }
+            }
+            // Off: the model list that came with the app is used, and nothing goes online for it.
+            SettingToggle(tr("settings.ws.onlineModels"), detail: onlineModelsDetail, isOn: $ws.onlineModelList)
+        }
+        Picker(tr("settings.ws.mode"), selection: $ws.defaultMode) {
+            ForEach(ExecutionMode.allCases) { Text($0.label).tag($0) }
+        }
+        Picker(tr("settings.ws.permission"), selection: $ws.defaultPermission) {
+            ForEach(PermissionPolicy.allCases) { Text($0.label).tag($0) }
+        }
+        Picker(tr("settings.ws.isolation"), selection: $ws.defaultIsolation) {
+            ForEach(IsolationMode.allCases) { Text($0.label).tag($0) }
+        }
+        LabeledContent(tr("settings.ws.worktreeRoot")) {
+            HStack {
+                Text(AgentPathFormat.tilde(ws.worktreeRoot)).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
+                Button(tr("ws.new.change")) {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.canCreateDirectories = true
+                    if panel.runModal() == .OK, let url = panel.url { ws.worktreeRoot = url.path }
+                }
+                .controlSize(.small)
+            }
+        }
+        LabeledContent(tr("settings.ws.branchPrefix")) {
+            HStack {
+                TextField(WorktreeNaming.defaultBranchPrefix, text: $ws.branchPrefix)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 160)
+                    .onSubmit { ws.branchPrefix = WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix) }
+                Text(tr("settings.ws.branchPrefix.example", WorktreeNaming.normalizedBranchPrefix(ws.branchPrefix)))
+                    .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
+            }
+        }
+    }
+
+    /// One project's defaults: each row shows the value that project starts with, "Inherited" while it follows the value
+    /// for all projects, and a reset button once the project sets its own.
+    @ViewBuilder
+    private func projectDefaults(_ path: String) -> some View {
+        let resolved = ws.sessionDefaults(for: path)
+        let provider = resolved.provider
+        inheritable(.provider, path) {
+            Picker(tr("settings.ws.provider"), selection: Binding(
+                get: { provider }, set: { ws.setOverride(.provider, $0.rawValue, for: path) })) {
+                ForEach(RunProvider.allCases.filter { $0 != .acp }) { choice in
+                    Label { Text(choice.displayName) } icon: { LogoImage.agent(choice.kind) }.tag(choice)
+                }
+            }
+        }
+        inheritable(.model(provider), path) {
+            Picker(tr("settings.ws.model", provider.displayName), selection: Binding(
+                get: { resolved.model(for: provider) }, set: { ws.setOverride(.model(provider), $0, for: path) })) {
+                ForEach(defaultModelChoices(provider, saved: resolved.model(for: provider)), id: \.self) { model in
+                    Text(app.modelName(model, for: provider)).tag(model)
+                }
+            }
+        }
+        inheritable(.permission, path) {
+            Picker(tr("settings.ws.permission"), selection: Binding(
+                get: { resolved.permission }, set: { ws.setOverride(.permission, $0.rawValue, for: path) })) {
+                ForEach(PermissionPolicy.allCases) { Text($0.label).tag($0) }
+            }
+        }
+        inheritable(.isolation, path) {
+            Picker(tr("settings.ws.isolation"), selection: Binding(
+                get: { resolved.isolation }, set: { ws.setOverride(.isolation, $0.rawValue, for: path) })) {
+                ForEach(IsolationMode.allCases) { Text($0.label).tag($0) }
+            }
+        }
+        inheritable(.branchPrefix, path) {
+            LabeledContent(tr("settings.ws.branchPrefix")) {
+                HStack {
+                    TextField(resolved.branchPrefix, text: Binding(
+                        get: { overrideText(.branchPrefix, path) ?? resolved.branchPrefix },
+                        set: { ws.setOverride(.branchPrefix, $0, for: path) }))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 160)
+                    Text(tr("settings.ws.branchPrefix.example", resolved.branchPrefix))
+                        .foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+    }
+
+    /// A per-project row: its control, then "Inherited" or the button that goes back to the value for all projects.
+    private func inheritable<Control: View>(_ key: ProjectSettingKey, _ path: String,
+                                            @ViewBuilder _ control: () -> Control) -> some View {
+        let own = ws.projectOverrides.isOverridden(key, for: path)
+        return HStack(spacing: NookTheme.Spacing.md) {
+            control()
+            if own {
+                ToolbarIconButton("arrow.uturn.backward", tr("settings.scope.reset")) { ws.resetOverride(key, for: path) }
+            } else {
+                Text(tr("settings.scope.inherited"))
+                    .font(NookTheme.TextStyle.label)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .help(tr("settings.scope.inheritedHelp"))
+            }
+        }
+    }
+
+    /// The text a project stored for a key, when it stores one.
+    private func overrideText(_ key: ProjectSettingKey, _ path: String) -> String? {
+        if case .string(let value)? = ws.projectOverrides.values(for: path)[key.raw] { return value }
+        return nil
     }
 
     /// Where a session's files, terminal and searches open.
@@ -453,9 +547,8 @@ struct WorkspaceSettingsSection: View {
 
     /// The models to pick a default from: the composer's menu without older models, with the saved one under its own
     /// name ("opus" stays "opus", so the picker shows it chosen).
-    private func defaultModelChoices(_ provider: RunProvider) -> [String] {
-        let saved = ws.model(for: provider)
-        return app.workspace.menuModelIDs(for: provider, extra: [saved])
+    private func defaultModelChoices(_ provider: RunProvider, saved: String) -> [String] {
+        app.workspace.menuModelIDs(for: provider, extra: [saved])
             .filter { !app.workspace.hidesLegacyModel($0, for: provider, chosen: saved) }
             .map { app.workspace.sameModel($0, saved, for: provider) ? saved : $0 }
     }

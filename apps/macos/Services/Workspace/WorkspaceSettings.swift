@@ -114,6 +114,10 @@ final class WorkspaceSettings: ObservableObject {
     }
     /// Previously selected projects, newest first.
     @Published private(set) var recentProjects: [String]
+    /// What project folders set for themselves on top of the defaults above (see `ProjectSettings`).
+    @Published var projectOverrides: ProjectOverrides {
+        didSet { defaults.set(try? JSONEncoder().encode(projectOverrides), forKey: "ws.projectOverrides") }
+    }
 
     static var standardWorktreeRoot: String {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/worktrees", isDirectory: true).path
@@ -148,6 +152,8 @@ final class WorkspaceSettings: ObservableObject {
         scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
+        projectOverrides = defaults.data(forKey: "ws.projectOverrides")
+            .flatMap { try? JSONDecoder().decode(ProjectOverrides.self, from: $0) } ?? ProjectOverrides()
     }
 
     func rememberProject(_ path: String) {
@@ -195,6 +201,31 @@ final class WorkspaceSettings: ObservableObject {
     func permission(for provider: RunProvider) -> PermissionPolicy {
         provider.capabilities.policies.contains(defaultPermission) ? defaultPermission : .acceptEdits
     }
+
+    // MARK: Per project
+
+    /// The global defaults, as `ProjectSettings` reads them.
+    var globalDefaults: SessionDefaults {
+        SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
+                        isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix))
+    }
+
+    /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.
+    func sessionDefaults(for folder: String?) -> SessionDefaults {
+        ProjectSettings.resolve(global: globalDefaults, overrides: projectOverrides, folder: folder)
+    }
+
+    /// Does this folder (or the project it belongs to) set the value itself?
+    func isOverridden(_ key: ProjectSettingKey, for folder: String) -> Bool {
+        guard let project = projectOverrides.project(containing: folder) else { return false }
+        return projectOverrides.isOverridden(key, for: project)
+    }
+
+    func setOverride(_ key: ProjectSettingKey, _ value: String, for project: String) {
+        projectOverrides.set(key, .string(value), for: project)
+    }
+
+    func resetOverride(_ key: ProjectSettingKey, for project: String) { projectOverrides.reset(key, for: project) }
 
     // MARK: Apps
 

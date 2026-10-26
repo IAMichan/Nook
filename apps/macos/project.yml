@@ -188,6 +188,7 @@ targets:
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
+      - path: Core/I18n+WorkspaceFeatures.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -304,6 +305,7 @@ targets:
       - path: ../../packages/protocol/Sources/WebhookSecurity.swift
       - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
+      - path: Services/Workspace/ProjectSettings.swift
       - path: Services/Workspace/Keybindings.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
