@@ -82,6 +82,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
             let configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = Self.dataStore(for: owner)
             configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+            BrowserExtensions.shared.attach(to: configuration)
             // Without Apple's browser entitlement Google's sign-in would wait for a passkey on a phone nearby and stop
             // there; hidden, it offers a password or a code. The sign-in window it opens shares this script.
             if !BrowserStore.hasPasskeyEntitlement {
