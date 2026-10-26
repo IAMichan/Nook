@@ -201,7 +201,12 @@ enum AgentTranscript {
             // Bounded like a full read: the newest messages are all anyone sees.
             progress = (Array(parsed.suffix(fullLimit)), base.to + UInt64(cut - data.startIndex), lines)
         }
-        let result = Array(messages.suffix(limit))
+        var result = Array(messages.suffix(limit))
+        // A long conversation is read from its tail (and capped): the prompt that started it is still part of it.
+        if !isGemini, size > tailBytes || messages.count > limit, result.first?.kind != .user || messages.count > limit,
+           let first = firstPrompt(path: path), !result.contains(where: { $0.id == first.id }) {
+            result.insert(first, at: 0)
+        }
         if let attrMod {
             var entry = CacheEntry(size: attrSize ?? size, modified: attrMod, limit: limit, messages: result)
             if let progress {
@@ -215,6 +220,15 @@ enum AgentTranscript {
             cacheLock.unlock()
         }
         return result
+    }
+
+    /// The first thing you typed in a JSONL transcript, read from its head (the tail read of a long file starts after it).
+    private static func firstPrompt(path: String) -> AgentChatMessage? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard var data = try? handle.read(upToCount: 1_000_000), !data.isEmpty else { return nil }
+        if let cut = data.lastIndex(of: 0x0A) { data = data[data.startIndex...cut] }
+        return jsonl(data).first { $0.kind == .user }
     }
 
     /// Claude Code, Antigravity and Codex: one JSON object per line.
