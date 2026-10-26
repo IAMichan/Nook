@@ -66,6 +66,23 @@ struct NookSearchField: View {
     }
 }
 
+extension View {
+    /// Puts the keyboard in a field the moment it opens (a palette, ⌘K search), so you can type straight away. A field
+    /// that appears with a transition is not in the window yet during `onAppear`, and the panel may take the keyboard
+    /// only after it opened, so the focus is asked again on the next turn of the run loop, a moment later, and whenever
+    /// the window becomes key.
+    func focusOnAppear(_ focus: FocusState<Bool>.Binding) -> some View {
+        onAppear {
+            focus.wrappedValue = true
+            DispatchQueue.main.async { focus.wrappedValue = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focus.wrappedValue = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            focus.wrappedValue = true
+        }
+    }
+}
+
 /// How many things wait for you: a small amber count (a tab, a list's title). Zero shows nothing.
 struct NookCountBadge: View {
     let count: Int

@@ -79,7 +79,7 @@ struct AgentCommandPalette: View {
         .frame(width: 480)
         .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
-        .onAppear { focused = true }
+        .focusOnAppear($focused)
         .onChange(of: query) { _, _ in index = 0 }
         .onKeyPress(.downArrow) { index = min(index + 1, max(0, list.count - 1)); return .handled }
         .onKeyPress(.upArrow) { index = max(index - 1, 0); return .handled }

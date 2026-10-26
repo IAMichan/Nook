@@ -79,8 +79,8 @@ struct SearchPanel: View {
         .frame(width: 640)
         .cardBackground(NookTheme.graphite, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .shadow(color: .black.opacity(0.5), radius: 24, y: 8)
+        .focusOnAppear($focused)
         .onAppear {
-            focused = true
             center.load(app)
             photos.refresh()
         }
