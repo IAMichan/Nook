@@ -178,7 +178,7 @@ struct AgentSessionDetail: View {
             } else {
                 errorLine
                 VStack(spacing: 0) {
-                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: shown.lastReply))
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
                     liveComposer(shown).zIndex(1)
                 }
             }
@@ -262,6 +262,12 @@ struct AgentSessionDetail: View {
             .first(where: { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }),
            let url = URL(string: link.url) { return url }
         return MarkdownBlock.lastGitHubPullRequest(in: reply)
+    }
+
+    /// What a live session said, for a pull request link: its last reply, and for an agent whose conversation Nook cannot
+    /// read (Antigravity, for one) what it reported while it worked.
+    private func pullRequestText(_ session: AgentSession) -> String {
+        ([session.lastReply, session.summary] + session.steps.suffix(10).map(\.text)).joined(separator: "\n")
     }
 
     /// The tray above a composer with the session's pull request in it (its state, checks and a way to open it).
