@@ -208,6 +208,38 @@ final class ChatsEntryMemo {
     }
 }
 
+/// Whether any chat has something new, for the dot on the Chats tab. The panel watches this instead of the chats
+/// themselves: those change with nearly every bridge read (a tick, a reaction, a chat listed again), and each change
+/// redrew the whole panel, which with many chats kept the CPU busy. This changes only when the dot does.
+@MainActor
+final class ChatsUnreadDot: ObservableObject {
+    static let shared = ChatsUnreadDot()
+
+    @Published private(set) var lit = false
+    private var watching: [AnyCancellable] = []
+    private var pending = false
+
+    private init() {
+        lit = ChatsTab.unread > 0
+        watching = [
+            WhatsAppLink.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
+            ChatCaptureService.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
+        ]
+    }
+
+    /// Counts again once the change is made (`objectWillChange` comes before it), once for a burst of changes.
+    private func recount() {
+        guard !pending else { return }
+        pending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            pending = false
+            let now = ChatsTab.unread > 0
+            if now != lit { lit = now }
+        }
+    }
+}
+
 /// The open chat's bubbles, made again only when the chat, its fetched files or the language changed. Making them goes
 /// through every message (and in a group names everyone who read yours), and the chat view asks for them several times
 /// on each of its many redraws.

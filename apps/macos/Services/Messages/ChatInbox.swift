@@ -731,8 +731,11 @@ struct ChatInbox: Codable, Equatable, Sendable {
         let newestBefore = known?.last
         // A file a bridge fetched since it last brought this message, new votes on a poll, or your message's new ticks
         // (delivered, read, by whom): the chat shows them now. Ticks only move forward.
+        // Looked up by id once: a bridge brings each chat's latest messages on every read, nearly all of them known, and a
+        // search through the chat per message cost a lot with many chats.
+        let indexByID = Dictionary(thread.messages.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         for message in messages {
-            guard let index = thread.messages.firstIndex(where: { $0.id == message.id }) else { continue }
+            guard let index = indexByID[message.id] else { continue }
             // An edited message, or one first known from a chat list's preview, now read in full.
             if !message.text.isEmpty, thread.messages[index].text != message.text { thread.messages[index].text = message.text }
             if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
@@ -749,14 +752,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
             }
         }
         if !chat.deleted.isEmpty { thread.messages.removeAll { chat.deleted.contains($0.id) } }
-        for message in messages where !thread.messages.contains(where: {
-            $0.id == message.id
-                // Two photos sent in a row are two messages, even without a caption.
-                || (message.media == nil && $0.media == nil && message.poll == nil && $0.isMine == message.isMine && $0.text == message.text
-                    && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
+        var ids = Set(thread.messages.map(\.id))
+        for message in messages where !ids.contains(message.id) && !thread.messages.contains(where: {
+            // Two photos sent in a row are two messages, even without a caption.
+            message.media == nil && $0.media == nil && message.poll == nil && $0.isMine == message.isMine && $0.text == message.text
+                && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow
         }) {
             let index = thread.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
             thread.messages.insert(message, at: index)
+            ids.insert(message.id)
             if chat.unread == nil, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
         }
         if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
@@ -865,7 +869,12 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     private mutating func dropQuietest(now: Date = Date()) {
         guard threads.count > Self.maxThreads else { return }
-        for thread in sorted.filter({ !Self.isListed($0, now: now) }).dropFirst(Self.maxThreads) { threads[thread.id] = nil }
+        // Only the chats that may go are sorted, and only when there are too many of them: with more than `maxThreads`
+        // chats their apps list, sorting all of them after every merge kept the CPU busy for nothing.
+        let droppable = threads.values.filter { !Self.isListed($0, now: now) }
+        guard droppable.count > Self.maxThreads else { return }
+        let quietest = droppable.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }.dropFirst(Self.maxThreads)
+        for thread in quietest { threads[thread.id] = nil }
     }
 
     /// Newest first.
