@@ -8,12 +8,15 @@ final class NookAccessTests: XCTestCase {
         XCTAssertTrue(NookAccess.small.allows("set_volume"))
         XCTAssertFalse(NookAccess.small.allows("create_event"))
         XCTAssertTrue(NookAccess.more.allows("create_event"))
+        XCTAssertFalse(NookAccess.small.allows("update_event"))
+        XCTAssertTrue(NookAccess.more.allows("update_event"), "moving your own event is easily put back")
+        XCTAssertTrue(NookAccess.more.allows("complete_reminder"))
         XCTAssertTrue(NookAccess.more.allows(TakeoverPolicy.toolName))
     }
 
     func testWhatAlwaysAsksFirst() {
         for tool in ["send_mail", "whatsapp_send", "open_url", "run_shortcut", "delete_event", "delete_reminder", "change_setting",
-                     "update_event", "app_menu_command"] {
+                     "app_menu_command", "compose_mail", "send_message"] {
             for level in NookAccess.allCases { XCTAssertFalse(level.allows(tool), "\(level) \(tool)") }
         }
     }

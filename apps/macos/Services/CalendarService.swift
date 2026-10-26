@@ -175,6 +175,13 @@ final class CalendarService {
         return event.eventIdentifier ?? ""
     }
 
+    /// Whether others are invited to the event: a change to it reaches them, so it never runs without a click. An event
+    /// that cannot be found counts as invited (the update fails anyway, but only after asking).
+    func hasInvitees(eventID id: String) -> Bool {
+        guard hasEventAccess, let event = store.event(withIdentifier: id) else { return true }
+        return event.hasAttendees
+    }
+
     /// Updates an existing event. Only specified fields are changed; returns description of what changed.
     func updateEvent(id: String, title: String?, start: Date?, end: Date?, location: String?, notes: String?) async throws -> String {
         guard await requestEvents() else {

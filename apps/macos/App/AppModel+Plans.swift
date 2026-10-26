@@ -251,8 +251,15 @@ extension AppModel {
         // Remembering or forgetting what the user's own words ask for: it stays on this Mac and is undone in
         // Settings › Memory, so it needs no click (and no "small things" setting).
         if plan.actions.allSatisfy({ Self.memoryTools.contains($0.tool) && Self.request(request, asksFor: $0) }) { return true }
-        let access = settings.nookAccess
-        return plan.actions.allSatisfy { access.allows($0.tool) && Self.request(request, asksFor: $0) }
+        return plan.actions.allSatisfy { allowedByAccess($0.tool, $0.input) && Self.request(request, asksFor: $0) }
+    }
+
+    /// Whether the chosen level (`NookAccess`) lets this call run without a click. A change to an event others are
+    /// invited to always asks: they would receive it.
+    func allowedByAccess(_ tool: String, _ input: [String: Any]) -> Bool {
+        guard settings.nookAccess.allows(tool) else { return false }
+        if tool == "update_event" { return !calendar.hasInvitees(eventID: (input["id"] as? String) ?? "") }
+        return true
     }
 
     nonisolated static func request(_ request: String, asksFor action: PlannedAction) -> Bool {
@@ -282,6 +289,10 @@ extension AppModel {
             return NookAccess.grounded(task: (action.input["task"] as? String) ?? "", in: request)
         case "create_event":
             return mentions(#"afspraak|agenda|kalender|calendar|event|meeting|vergadering|termin|kalendar|rendez-vous|réunion|reunion|cita|evento|reunión|inplannen|plan .+ in|schedule|book"#)
+        case "update_event":
+            return mentions(#"afspraak|agenda|kalender|calendar|event|meeting|vergadering|termin|kalendar|rendez-vous|réunion|reunion|cita|evento|reunión|verzet|verplaats|verschuif|schuif|wijzig|aanpassen|pas .+ aan|verander|hernoem|move|reschedule|change|rename|push .+ back|verschieb|änder|déplace|décale|modifie|mueve|cambia|aplaza"#)
+        case "complete_reminder":
+            return mentions(#"herinnering|reminder|erinnerung|rappel|recordatorio|afvinken|vink .+ af|afgerond|klaar|gedaan|done|complete|finished|erledigt|terminé|hecho|completad"#)
         case "create_note":
             return mentions(#"notitie|notities|note|notes|notiz|nota|notas|schrijf .+ op|write .+ down"#)
         case "add_open_loop", "complete_open_loop":

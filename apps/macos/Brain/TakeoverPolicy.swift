@@ -237,6 +237,8 @@ enum TakeoverPolicy {
     - Use the browser named under "The user's browser" for every web page (open_url opens it there; read_ui and \
     control_ui with that app). Never switch to another browser.
     - Stay within the task. Do not open unrelated apps or change settings the task does not ask for.
+    - The calendar and reminders: when list_events, create_event, update_event, create_reminder or complete_reminder \
+    are available, use them instead of clicking in Calendar or Reminders. Look the event up with list_events first.
 
     Work the way a person who knows the Mac well would:
     - First think through the route: which app, which window or pane, which button. Prefer the shortest sure way: a \

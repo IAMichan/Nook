@@ -60,7 +60,10 @@ extension AppModel {
     static let nookReplyCardPrefix = "nookdone-reply-"
 
     /// Tools the brain uses during a task, as far as they are available.
-    static let takeoverToolNames = ["read_ui", "look_ui", "control_ui", "open_url", "open_app", "search_web", "read_webpage", "recall_memory"]
+    /// The calendar and reminders go through their own tools rather than clicks in their apps: what "More by itself"
+    /// allows there then runs without a question (`allowedByAccess`).
+    static let takeoverToolNames = ["read_ui", "look_ui", "control_ui", "open_url", "open_app", "search_web", "read_webpage", "recall_memory",
+                                    "list_events", "create_event", "update_event", "create_reminder", "complete_reminder"]
 
     // MARK: Tools
 
@@ -362,7 +365,9 @@ extension AppModel {
         let summary = spec.summarize(input)
         // A click on a point is judged by what is there: the button under it, read from the app in front.
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        if let line = TakeoverPolicy.checkpoint(tool: tool, input: input, summary: summary,
+        // What the level chosen in the composer allows (an event of your own on "More by itself") needs no question.
+        if !allowedByAccess(tool, input),
+           let line = TakeoverPolicy.checkpoint(tool: tool, input: input, summary: summary,
                                                 cookieBanner: TakeoverState.shared.cookieBanner,
                                                 labelAt: { x, y in front.flatMap { UIDriver.label(at: CGPoint(x: x, y: y), pid: $0) } }) {
             updateTakeover(tr("takeover.waiting"))
