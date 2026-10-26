@@ -196,6 +196,8 @@ struct PullRequestWatchStrip: View {
     let toggle: () -> Void
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
+    /// How the pull request looks while it is not watched (a watch brings its own), so state and checks show either way.
+    @State private var seen: PullRequestSnapshot?
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
@@ -207,7 +209,7 @@ struct PullRequestWatchStrip: View {
             .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
             // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
             Button(action: open) {
-                PullRequestStateBadge(glyph: watch.flatMap { PullRequestBadge.Glyph(rawValue: $0.state) } ?? .open, number: number)
+                PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch?.state ?? seen?.state ?? "open") ?? .open, number: number)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -220,7 +222,7 @@ struct PullRequestWatchStrip: View {
                         Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
                     }
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(watch?.checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
+                    .foregroundStyle((watch?.checks ?? seen?.checks) == "failure" ? NookTheme.coral : NookTheme.textTertiary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -241,6 +243,12 @@ struct PullRequestWatchStrip: View {
             if watch != nil { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
         }
         .foregroundStyle(NookTheme.textSecondary)
+        .task(id: url) {
+            while !Task.isCancelled {
+                if watch == nil { seen = await GitHubPullRequests.snapshot(url: url) }
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
     }
 
     private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
@@ -251,7 +259,7 @@ struct PullRequestWatchStrip: View {
     private var number: Int? { Int(url.lastPathComponent) }
 
     private var ci: String? {
-        switch watch?.checks ?? "" {
+        switch watch?.checks ?? seen?.checks ?? "" {
         case "success": return tr("ws.prwatch.ciPassed")
         case "failure": return tr("ws.prwatch.ciFailed")
         case "pending": return tr("ws.prwatch.ciPending")
