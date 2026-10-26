@@ -497,6 +497,15 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
+                        // Back to the list to pick another, as the + of the tab does.
+                        subheader {
+                            HStack(spacing: NookTheme.Spacing.xs) {
+                                ToolbarIconButton("chevron.left", tr("agents.pr.back")) { openPullRequest(nil) }
+                                Text(tr("agents.pr.back")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, NookTheme.Spacing.sm)
+                        }
                         PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
                             openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
                         })
