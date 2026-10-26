@@ -69,6 +69,11 @@ From a café, a train or mobile data the phone reaches the Mac in one of two way
   - **Keep-alive:** the Mac sends `ping` every 30 seconds, answered by the relay without waking the room (an idle connection costs nothing), and replaces a socket that heard nothing for 75 seconds; it reconnects with the same backoff as the phone.
 - The phone shows how it is connected (local network, Tailscale, relay) in the Agents menu, and, when it cannot reach the Mac, what to set up for away from home.
 
+## When It Does Not Connect
+
+- **On the phone:** *Why can't I connect?* (under the banner while the Mac cannot be reached, and *Check the connection* in the Agents menu) checks every route once more, in detail (`RouteDiagnostics` in `apps/ios/NookCompanion/CompanionConnection.swift`): nothing reachable, something that answers without this pairing's key, a connection the Mac closes without a word (it no longer knows this phone), the relay's close code (4404: the Mac is not connected to the relay; 4429: the room is full), a refusal (a clock too far off), or an answer and how long it took. `CompanionDiagnosis` (`packages/protocol/Sources/CompanionDiagnosis.swift`, tested in `CompanionDiagnosisTests`) turns that, with the last refusal of the live connection and the version check, into one headline, each hop on the way (this iPhone, the local network, Tailscale, the relay, Nook on the Mac) as works / failed / not checked, and the steps to fix it.
+- **On the Mac:** Settings › Devices › *Away from home* › **Test relay** sends a `ping` into a paired phone's room on the relay, sealed with that phone's key, and waits for this Mac's own answer to come back the same way: the whole path the phone takes from away. It shows the round-trip time, or what failed (the relay cannot be reached, the Mac is not in the room, no answer in time), with the same model.
+
 ## Keeping the Mac Awake
 
 A Mac that sleeps drops its connection to the relay and to Tailscale, so the phone cannot reach it any more than one that is off. Settings › Devices › *Away from home* › **Keep this Mac awake** (`KeepAwake`, rules in `KeepAwakePolicy`, tested in `KeepAwakePolicyTests`):

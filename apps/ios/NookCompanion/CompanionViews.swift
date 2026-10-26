@@ -207,6 +207,7 @@ struct SessionListView: View {
     @ObservedObject private var live = LiveActivities.shared
     @Binding var path: [String]
     @State private var composing = false
+    @State private var diagnosing = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
 
@@ -234,6 +235,7 @@ struct SessionListView: View {
                         if client.phase == .connected, let route = client.activeRoute {
                             Section { Label(RouteText.connected(route), systemImage: RouteText.symbol(route)) }
                         }
+                        Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
                         // Opens the update panel on the Mac; installing stays a click there.
                         if client.can(CompanionFeature.requestUpdate) {
                             Button { Task { await client.requestMacUpdate() } } label: {
@@ -280,6 +282,7 @@ struct SessionListView: View {
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
+        .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
         // An opened nook://prompt link: the New session sheet with its text, never started by itself.
         .onChange(of: client.pendingPrompt, initial: true) { _, prompt in
             guard let prompt else { return }
@@ -403,11 +406,15 @@ struct SessionQuickActions: View {
 /// Only while the Mac does not answer: why, in one quiet line (the Mac's name is in the title row).
 struct ConnectionLine: View {
     @EnvironmentObject private var client: CompanionClient
+    @State private var diagnosing = false
 
     var body: some View {
         if case .offline(let reason) = client.phase {
             Banner(text: reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, symbol: "wifi.slash")
             if let hint = client.awayHint { Banner(text: hint, symbol: "globe") }
+            Button { diagnosing = true } label: { Label("Why can't I connect?", systemImage: "stethoscope") }
+                .buttonStyle(ActionButtonStyle())
+                .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
         }
         // The Mac and this app are too far apart in version for some of what the phone does (`CompanionCompatibility`).
         switch client.compatibility {

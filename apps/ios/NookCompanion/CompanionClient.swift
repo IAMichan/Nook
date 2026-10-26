@@ -90,6 +90,10 @@ final class CompanionClient: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     private var pathSignature: String?
     private var draining = false
+    /// Whether the phone has a network at all, and the last refusal the Mac gave a connection attempt, for
+    /// "Why can't I connect?" (`CompanionDiagnosis`).
+    private var isOnline = true
+    private var lastRefusal: CompanionError?
 
     private static let featuresKey = "companion.features"
 
@@ -237,6 +241,7 @@ final class CompanionClient: ObservableObject {
     /// Wi-Fi to cellular, another Wi-Fi network, or back online: look again at once, check the connection, and whether a
     /// better route works now (home again: LAN instead of Tailscale).
     private func networkChanged(signature: String, online: Bool) {
+        isOnline = online
         let previous = pathSignature
         pathSignature = online ? signature : nil
         guard online, previous != signature, previous != nil || phase != .connected else { return }
@@ -274,6 +279,7 @@ final class CompanionClient: ObservableObject {
             if Task.isCancelled { return }
             if let preferred = preferredRoute, preferred.hostKey != picked.route.hostKey { cooldowns.hold(preferred, now: Date()) }
             preferredRoute = nil
+            lastRefusal = picked.answer.ok ? nil : picked.answer.error
             guard picked.answer.ok else {
                 failures += 1
                 phase = .offline(refusalText(picked.answer.error))
@@ -311,6 +317,7 @@ final class CompanionClient: ObservableObject {
             guard response.ok else {
                 channel.close()
                 failures += 1
+                lastRefusal = response.error
                 phase = .offline(refusalText(response.error))
                 return
             }
@@ -681,6 +688,25 @@ final class CompanionClient: ObservableObject {
 
     func stopChat(_ conversationID: String) async {
         await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
+    }
+
+    // MARK: Why it does not connect
+
+    /// Checks every route once more, in detail, and says what stands in the way (`CompanionDiagnosis`).
+    func diagnose() async -> CompanionDiagnosis.Result {
+        guard let link else { return CompanionDiagnosis.diagnose(.init(online: isOnline, probes: [])) }
+        let key = link.key
+        let checked = routes
+        let outcomes = await withTaskGroup(of: (Int, CompanionDiagnosis.RouteOutcome).self) { group -> [CompanionDiagnosis.RouteOutcome] in
+            for (index, route) in checked.enumerated() {
+                group.addTask { (index, await RouteDiagnostics.probe(route, key: key)) }
+            }
+            var results = [CompanionDiagnosis.RouteOutcome](repeating: .unchecked, count: checked.count)
+            for await (index, outcome) in group { results[index] = outcome }
+            return results
+        }
+        let probes = zip(checked, outcomes).map { CompanionDiagnosis.Probe(route: $0.0, outcome: $0.1) }
+        return CompanionDiagnosis.diagnose(.init(online: isOnline, probes: probes, compatibility: compatibility, lastError: lastRefusal))
     }
 
     // MARK: Versions

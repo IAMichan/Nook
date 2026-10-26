@@ -159,6 +159,7 @@ struct CompanionSettingsRows: View {
             }
             if relay.mode == .own { ownRelay }
             relayStatus
+            relayTest
         }
         keepAwake
         if case .listening = server.state {
@@ -242,6 +243,40 @@ struct CompanionSettingsRows: View {
             if relay.mode == .own, !relay.address.isEmpty { SettingNote(tr("companion.relay.invalid"), tone: .error) }
         case .failed(let message): SettingNote(tr("companion.relay.failed", message), tone: .error)
         case .off: EmptyView()
+        }
+    }
+
+    /// *Test relay*: a message through the relay to this Mac and back, as the phone sends it from away.
+    @ViewBuilder
+    private var relayTest: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Button(relay.testing ? tr("companion.relay.testing") : tr("companion.relay.test")) { relay.testRelay() }
+                .disabled(!relay.canTest || relay.testing)
+            if relay.enabled, store.devices.isEmpty { SettingNote(tr("companion.relay.test.needsPhone")) }
+        }
+        if let result = relay.testResult, !relay.testing {
+            SettingNote(Self.testHeadline(result), tone: result.cause == .connected ? .success : .error)
+            SettingNote(result.hops.filter { $0.hop != .device }.map(Self.hopLine).joined(separator: " · "))
+        }
+    }
+
+    private static func testHeadline(_ result: CompanionDiagnosis.Result) -> String {
+        switch result.cause {
+        case .connected: return tr("companion.relay.test.ok", result.fastestMilliseconds ?? 0)
+        case .macNotOnRelay: return tr("companion.relay.test.macOffline")
+        case .relayUnreachable: return tr("companion.relay.test.unreachable")
+        case .relayFull: return tr("companion.relay.test.full")
+        case .macSilent: return tr("companion.relay.test.silent")
+        default: return tr("companion.relay.test.failed")
+        }
+    }
+
+    private static func hopLine(_ state: CompanionDiagnosis.HopState) -> String {
+        let name = state.hop == .relay ? tr("companion.diag.hop.relay") : tr("companion.diag.hop.mac")
+        switch state.result {
+        case .ok: return tr("companion.diag.ok", name)
+        case .failed: return tr("companion.diag.failed", name)
+        case .unchecked: return tr("companion.diag.unchecked", name)
         }
     }
 
