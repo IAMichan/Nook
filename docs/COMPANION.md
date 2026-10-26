@@ -13,6 +13,15 @@ The phone sees two kinds of sessions:
 2. **On your iPhone:** Open **Nook Companion** and scan the QR code (or paste the pairing link). The app registers the `nook://` scheme, so scanning the code with the Camera app opens it too.
 3. The first authenticated request proves the phone holds the shared key; your Mac stores the paired device key in the macOS Keychain. Unpairing deletes the key on either side.
 
+## Several Macs
+
+One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protocol/Sources/CompanionPairings.swift`, tested in `CompanionPairingsTests`). *Pair another Mac* is in the Agents menu (`…`), next to the list of paired Macs.
+
+- **One active Mac:** the live connection, the tabs and the Live Activities follow the active Mac; picking another Mac in the menu moves the connection there. *Unpair from this Mac* removes only the active one.
+- **The others in the Agents list:** every other Mac is asked for its sessions when the phone connects and every 30 seconds (one short `list` over its own routes), and its sessions show under *On <Mac>*, what waits on you first. A tap makes that Mac active and opens the session.
+- **Kept per Mac:** each Mac has its own key, routes, features and outbox (`companion-outbox-<id>.json`), keyed by the id of its pairing key, so a message written to one Mac never goes to another. The Mac a phone was paired with before this keeps its old storage names; the single stored pairing is turned into the list on the first launch (`PairingStore`).
+- Push notifications and Live Activities still come from the Mac they belong to, but actions from a notification go to the active Mac.
+
 ## What the App Does
 
 - **Today tab:** Nook's home, as the empty notch on the Mac: a greeting, what needs you (approve right there), the *For you* rows, your agenda, what plays on the Mac (play/pause, next, previous), your plan limits at a glance, and conversation starters that open a chat.

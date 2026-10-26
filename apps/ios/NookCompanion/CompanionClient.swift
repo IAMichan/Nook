@@ -66,8 +66,16 @@ final class CompanionClient: ObservableObject {
     /// What the Mac lets this phone do (`CompanionScope` names), from the last answer that listed features; nil from a
     /// Mac without scopes, which allows everything.
     @Published private(set) var scopes: Set<String>?
+    /// Every Mac this phone is paired with (`CompanionPairings`), the active one (the live connection goes there), and
+    /// what waits on each of the others, checked now and then.
+    @Published private(set) var macs: [PairedMac] = []
+    @Published private(set) var activeMacID: String?
+    @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
+    /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
+    @Published var addingMac = false
     private(set) var pushToken: String?
 
+    private var pairings = CompanionPairings()
     private var link: PairingLink?
     /// The ways to reach the Mac, the best first (`CompanionRoutes`); what the Mac reports is learned into it.
     private(set) var routes: [CompanionRoute] = []
@@ -98,16 +106,20 @@ final class CompanionClient: ObservableObject {
     private var isOnline = true
     private var lastRefusal: CompanionError?
 
-    private static let featuresKey = "companion.features"
+    /// What the active Mac could do last time, and its outbox, each kept per Mac (`CompanionPairings.storageName`).
+    private var featuresKey: String { storageName("companion.features") }
+    private var outboxName: String { storageName("companion-outbox.json") }
+
+    private func storageName(_ base: String) -> String {
+        guard let id = pairings.active?.id else { return base }
+        return CompanionPairings.storageName(base, mac: id, legacyID: pairings.legacyID)
+    }
 
     init() {
-        link = PairingStore.load()
-        macName = link?.macName ?? ""
+        pairings = PairingStore.load()
+        phase = .unpaired
+        loadActive()
         phase = link == nil ? .unpaired : .offline("")
-        if let link { routes = PairingStore.loadRoutes() ?? CompanionRoutes.initial(from: link) }
-        // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
-        features = Set(UserDefaults.standard.stringArray(forKey: Self.featuresKey) ?? [])
-        outbox = OutboxStore.load()
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let kind = [NWInterface.InterfaceType.wifi, .wiredEthernet, .cellular].first { path.usesInterfaceType($0) }
             let signature = "\(kind.map { "\($0)" } ?? "other") \(path.gateways.map { "\($0)" }.joined(separator: ","))"
@@ -135,11 +147,14 @@ final class CompanionClient: ObservableObject {
                 }
                 let response = picked.answer
                 guard response.ok else { throw CompanionClientError.refused(response.error) }
-                guard PairingStore.save(parsed) else { throw CompanionClientError.storage }
+                var next = pairings
+                guard next.add(parsed, routes: candidates) else { throw CompanionClientError.tooManyMacs }
+                guard PairingStore.save(next) else { throw CompanionClientError.storage }
                 stopConnection()
-                link = parsed
-                routes = candidates
-                PairingStore.saveRoutes(routes)
+                cacheActiveSessions()
+                pairings = next
+                loadActive()
+                addingMac = false
                 activeRoute = picked.route
                 macName = response.macName ?? parsed.macName
                 apply(response, to: CompanionRequest(op: .hello))
@@ -155,18 +170,56 @@ final class CompanionClient: ObservableObject {
         }
     }
 
+    /// Unpairs from the active Mac; another paired Mac becomes the active one.
     func unpair() {
         stopConnection()
         Task { await LiveActivities.shared.endAll() }
-        PairingStore.clear()
-        link = nil
-        routes = []
-        activeRoute = nil
+        guard let id = pairings.active?.id else { phase = .unpaired; return }
         outbox = CompanionOutbox()
-        OutboxStore.save(outbox)
-        UserDefaults.standard.removeObject(forKey: Self.featuresKey)
+        OutboxStore.save(outbox, name: outboxName)
+        UserDefaults.standard.removeObject(forKey: featuresKey)
+        pairings.remove(id)
+        PairingStore.save(pairings)
+        otherSessions[id] = nil
+        loadActive()
+        guard link != nil else { phase = .unpaired; return }
+        phase = .offline("")
+        superviseIfNeeded()
+    }
+
+    /// Makes another paired Mac the active one: the live connection moves there.
+    func switchMac(to id: String) {
+        guard id != pairings.active?.id, pairings.contains(id) else { return }
+        stopConnection()
+        Task { await LiveActivities.shared.endAll() }
+        cacheActiveSessions()
+        pairings.select(id)
+        PairingStore.save(pairings)
+        loadActive()
+        phase = .offline("")
+        superviseIfNeeded()
+        Task { await sendPushRegistration() }
+    }
+
+    /// The active Mac's sessions stay in the list under its name once another Mac is active.
+    private func cacheActiveSessions() {
+        guard let id = pairings.active?.id else { return }
+        otherSessions[id] = sessions
+    }
+
+    /// Takes in the active Mac: its pairing, routes, features and outbox; what was shown for the previous one goes.
+    private func loadActive() {
+        let mac = pairings.active
+        link = mac?.link
+        routes = mac?.routes ?? []
+        macName = mac?.name ?? ""
+        macs = pairings.macs
+        activeMacID = mac?.id
+        if let id = mac?.id { otherSessions[id] = nil }
+        // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
+        features = Set(UserDefaults.standard.stringArray(forKey: featuresKey) ?? [])
+        outbox = OutboxStore.load(name: outboxName)
         sessions = []
-        features = []
         featuresKnown = false
         launchOptions = nil
         timelines = [:]
@@ -177,7 +230,36 @@ final class CompanionClient: ObservableObject {
         inbox = []
         inboxLines = [:]
         inboxStatus = nil
-        phase = .unpaired
+        compatibility = .ok
+        macAppVersion = nil
+        scopes = nil
+        macPushReady = nil
+        activeRoute = nil
+        preferredRoute = nil
+        cooldowns = RouteCooldowns()
+        lastRefusal = nil
+        lastSearch = nil
+        failures = 0
+    }
+
+    /// Keeps the active Mac's routes with its pairing.
+    private func saveRoutes(_ next: [CompanionRoute]) {
+        guard let id = pairings.active?.id else { return }
+        pairings.setRoutes(next, for: id)
+        PairingStore.save(pairings)
+    }
+
+    /// Asks every other paired Mac what waits there, for the Agents list; one that does not answer keeps what it said last.
+    func refreshOthers() async {
+        for mac in pairings.others {
+            guard let key = mac.link?.key,
+                  let picked = await RouteProbe.pick(mac.routes, key: key, makeRequest: { CompanionRequest.versioned(.list) }),
+                  picked.answer.ok, let list = picked.answer.sessions else { continue }
+            // Only what that Mac lets this phone see comes back; an empty list is fine.
+            otherSessions[mac.id] = list
+        }
+        let paired = Set(pairings.macs.map(\.id))
+        for id in otherSessions.keys where !paired.contains(id) { otherSessions[id] = nil }
     }
 
     // MARK: Staying connected
@@ -363,6 +445,7 @@ final class CompanionClient: ObservableObject {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     if Task.isCancelled { return }
                     await self?.refreshInbox()
+                    await self?.refreshOthers()
                 }
             }
             await group.next()
@@ -392,6 +475,7 @@ final class CompanionClient: ObservableObject {
         await LiveActivities.shared.reconcile(sessions)
         await drainOutbox()
         await refreshInbox()
+        await refreshOthers()
     }
 
     private func refreshInbox() async {
@@ -458,7 +542,7 @@ final class CompanionClient: ObservableObject {
             next = CompanionRoutes.insert(next, CompanionRoute(host: place.host, port: place.port, learned: true))
         }
         routes = next
-        PairingStore.saveRoutes(routes)
+        saveRoutes(routes)
         return true
     }
 
@@ -466,7 +550,7 @@ final class CompanionClient: ObservableObject {
     private func learn(_ reported: [CompanionEndpoint]) {
         guard let merged = CompanionRoutes.merge(routes, reported: reported) else { return }
         routes = merged
-        PairingStore.saveRoutes(merged)
+        saveRoutes(merged)
         if let channel, let index = merged.firstIndex(where: { $0.hostKey == channel.route.hostKey }), index > 0 {
             Task { await checkBetterRoutes(channel) }
         }
@@ -498,7 +582,7 @@ final class CompanionClient: ObservableObject {
         draining = true
         defer { draining = false }
         if !outbox.expire(now: Date()).isEmpty {
-            OutboxStore.save(outbox)
+            OutboxStore.save(outbox, name: outboxName)
             notice = String(localized: "A message that waited more than a day for your Mac was not sent.")
         }
         while let entry = outbox.entries.first {
@@ -507,7 +591,7 @@ final class CompanionClient: ObservableObject {
             // Refused for now (still being handled, a burst, the clocks): it waits for the next try.
             if !response.ok, let error = response.error, [CompanionError.replay, .stale, .rateLimited, .busy, .failed].contains(error) { return }
             outbox.remove(entry.id)
-            OutboxStore.save(outbox)
+            OutboxStore.save(outbox, name: outboxName)
             if response.ok {
                 apply(response, to: request)
                 if response.message == "queued" { notice = String(localized: "Queued: the session is still busy.") }
@@ -585,7 +669,7 @@ final class CompanionClient: ObservableObject {
             await perform(request)
             return
         }
-        OutboxStore.save(outbox)
+        OutboxStore.save(outbox, name: outboxName)
         await drainOutbox()
     }
 
@@ -790,7 +874,14 @@ final class CompanionClient: ObservableObject {
             if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
             if list != sessions { sessions = list }
         }
-        if let name = response.macName, name != macName { macName = name }
+        if let name = response.macName, name != macName {
+            macName = name
+            if let id = pairings.active?.id {
+                pairings.rename(id, to: name)
+                PairingStore.save(pairings)
+                macs = pairings.macs
+            }
+        }
         // Only an answer to hello, list or subscribe says what the Mac speaks (it carries the features too).
         if response.features != nil {
             let compatible = CompanionCompatibility.check(response)
@@ -801,13 +892,13 @@ final class CompanionClient: ObservableObject {
         }
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)
-            UserDefaults.standard.set(features, forKey: Self.featuresKey)
+            UserDefaults.standard.set(features, forKey: featuresKey)
         }
         if let endpoints = response.endpoints { learn(endpoints) }
         // The relay the Mac uses now ("" when none): the route through it follows.
         if let relay = CompanionRoutes.withRelay(routes, relay: response.relay) {
             routes = relay
-            PairingStore.saveRoutes(relay)
+            saveRoutes(relay)
         }
         if req.op == .list || req.op == .hello { featuresKnown = true }
         if let options = response.launch, options != launchOptions { launchOptions = options }
@@ -873,21 +964,21 @@ final class CompanionClient: ObservableObject {
     }
 }
 
-/// Messages that wait for the Mac, in a file of the app that only opens while the phone is unlocked.
+/// Messages that wait for a Mac, one file per Mac (`name`), of the app, that only opens while the phone is unlocked.
 enum OutboxStore {
-    private static var url: URL? {
+    private static func url(_ name: String) -> URL? {
         try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("companion-outbox.json")
+            .appendingPathComponent(name)
     }
 
-    static func load() -> CompanionOutbox {
-        guard let url, let data = try? Data(contentsOf: url),
+    static func load(name: String) -> CompanionOutbox {
+        guard let url = url(name), let data = try? Data(contentsOf: url),
               let outbox = try? JSONDecoder().decode(CompanionOutbox.self, from: data) else { return CompanionOutbox() }
         return outbox
     }
 
-    static func save(_ outbox: CompanionOutbox) {
-        guard let url else { return }
+    static func save(_ outbox: CompanionOutbox, name: String) {
+        guard let url = url(name) else { return }
         if outbox.entries.isEmpty {
             try? FileManager.default.removeItem(at: url)
         } else if let data = try? JSONEncoder().encode(outbox) {
@@ -899,7 +990,7 @@ enum OutboxStore {
 
 enum CompanionClientError: LocalizedError {
     case refused(CompanionError?)
-    case storage, badRequest, timeout, closed
+    case storage, badRequest, timeout, closed, tooManyMacs
 
     var errorDescription: String? {
         switch self {
@@ -908,6 +999,7 @@ enum CompanionClientError: LocalizedError {
         case .badRequest: return String(localized: "Unreadable reply from your Mac.")
         case .timeout: return String(localized: "Your Mac does not answer. Is the companion on, and are you on the same Wi‑Fi?")
         case .closed: return String(localized: "The connection was lost.")
+        case .tooManyMacs: return String(localized: "This iPhone is paired with as many Macs as it can keep. Unpair one first.")
         }
     }
 }

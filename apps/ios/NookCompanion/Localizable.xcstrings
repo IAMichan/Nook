@@ -3958,6 +3958,34 @@
         }
       }
     },
+    "On %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sur %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Op %@"
+          }
+        }
+      }
+    },
     "On %@, check Settings › Devices › Away from home: ‘Test relay’ shows whether the relay works." : {
       "localizations" : {
         "de" : {
@@ -4212,6 +4240,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Koppel"
+          }
+        }
+      }
+    },
+    "Pair another Mac" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiteren Mac koppeln"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emparejar otro Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jumeler un autre Mac"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koppel nog een Mac"
           }
         }
       }
@@ -6300,6 +6356,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Deze iPhone is offline."
+          }
+        }
+      }
+    },
+    "This iPhone is paired with as many Macs as it can keep. Unpair one first." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses iPhone ist schon mit so vielen Macs gekoppelt, wie es sich merken kann. Entkopple zuerst einen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone ya está emparejado con tantos Mac como puede guardar. Desempareja uno primero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet iPhone est jumelé avec autant de Mac qu’il peut en garder. Dissociez-en un d’abord."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze iPhone is al met zoveel Macs gekoppeld als hij kan bewaren. Ontkoppel er eerst een."
           }
         }
       }

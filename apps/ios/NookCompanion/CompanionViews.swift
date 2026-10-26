@@ -14,7 +14,8 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            switch client.phase {
+            // Pairing another Mac shows the pairing screen too; the paired Macs stay.
+            switch client.addingMac ? CompanionClient.Phase.unpaired : client.phase {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
@@ -139,6 +140,10 @@ struct PairingView: View {
                         Button("Paste the link instead") { withAnimation { pasting = true } }
                             .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
                     }
+                    if client.addingMac {
+                        Button("Cancel") { client.addingMac = false }
+                            .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+                    }
                 }
             }
             .padding(.horizontal, Theme.Spacing.xxl)
@@ -240,6 +245,19 @@ struct SessionListView: View {
                         if client.phase == .connected, let route = client.activeRoute {
                             Section { Label(RouteText.connected(route), systemImage: RouteText.symbol(route)) }
                         }
+                        // Every paired Mac: the live connection goes to the one that is checked.
+                        Section {
+                            ForEach(client.macs) { mac in
+                                Button { client.switchMac(to: mac.id) } label: {
+                                    if mac.id == client.activeMacID {
+                                        Label(mac.name, systemImage: "checkmark")
+                                    } else {
+                                        Label(mac.name, systemImage: "laptopcomputer")
+                                    }
+                                }
+                            }
+                            Button { client.addingMac = true } label: { Label("Pair another Mac", systemImage: "plus") }
+                        }
                         Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
                         // Opens the update panel on the Mac; installing stays a click there.
                         if client.can(CompanionFeature.requestUpdate) {
@@ -266,6 +284,7 @@ struct SessionListView: View {
                 .padding(.horizontal, Theme.Spacing.xl)
                 group("Working", working)
                 group("Recent", rest)
+                otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     EmptyState(symbol: "square.stack.3d.up", title: "No sessions",
                                message: "Sessions of your coding agents on your Mac show up here.") {
@@ -301,6 +320,31 @@ struct SessionListView: View {
             client.pendingPrompt = nil
         }
         .screen()
+    }
+
+    /// The sessions of every other paired Mac, under its name: what waits there first. A tap makes that Mac the active
+    /// one and opens the session once its list is in.
+    @ViewBuilder
+    private var otherMacs: some View {
+        ForEach(client.macs.filter { $0.id != client.activeMacID }) { mac in
+            let sessions = (client.otherSessions[mac.id] ?? []).sorted {
+                (Self.needsYou($0) ? 1 : 0, $0.updated) > (Self.needsYou($1) ? 1 : 0, $1.updated)
+            }
+            if !sessions.isEmpty {
+                SectionHeader(title: "On \(mac.name)", count: sessions.filter(Self.needsYou).count, urgent: sessions.contains(where: Self.needsYou))
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.xs)
+                ForEach(sessions.prefix(10)) { session in
+                    Button {
+                        client.switchMac(to: mac.id)
+                        path.append(session.id)
+                    } label: { AgentRow(session: session) }
+                        .buttonStyle(RowPress())
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xxs / 2)
+                }
+            }
+        }
     }
 
     @ViewBuilder

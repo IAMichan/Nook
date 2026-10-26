@@ -314,6 +314,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionCompatibility.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosis.swift
       - path: ../../packages/protocol/Sources/CompanionScopes.swift
+      - path: ../../packages/protocol/Sources/CompanionPairings.swift
       # CryptoKit: on the Mac only (scripts/core-tests.sh leaves it out); CompanionFixturesTests checks the sealed vectors.
       - path: ../../packages/protocol/Sources/CompanionSeal.swift
       - path: Services/Companion/CloudflareRelaySetup.swift
