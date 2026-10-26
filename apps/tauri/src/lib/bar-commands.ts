@@ -128,6 +128,12 @@ export const barCommands: BarCommand[] = [
     description: ["Al je gesprekken met zoeken, vastgezet en recent. Ga met de muis over een gesprek om het vast te zetten, te kopiëren, te archiveren of te verwijderen.", "All your chats with search, pinned and recent. Hover a chat to pin, copy, archive or delete it."],
   },
   {
+    id: "chats",
+    title: ["Chats met je gekoppelde apps", "Chats with your linked apps"],
+    how: ["De Chats-tab", "The Chats tab"],
+    description: ["WhatsApp-gesprekken en wat Nook ziet in je andere gekoppelde apps (agenda, mail, GitHub) bij elkaar. Een chip per app filtert de lijst; een WhatsApp-chat opent als kaart om in te antwoorden.", "WhatsApp chats and what Nook sees in your other linked apps (calendar, mail, GitHub) in one place. A chip per app filters the list; a WhatsApp chat opens as a card you can answer in."],
+  },
+  {
     id: "language",
     title: ["Taal wisselen", "Switch language"],
     how: ["De NL/EN-knop in de kop", "The NL / EN button in the header"],

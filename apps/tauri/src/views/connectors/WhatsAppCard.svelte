@@ -6,11 +6,11 @@
   import { tick } from "svelte";
   import { whatsapp } from "../../lib/whatsapp.svelte";
   import { bubbleText, context, fileLabel, ticks, time } from "../../lib/whatsapp";
-  import type { WhatsAppMessage } from "../../lib/connectors";
+  import { connectorsApi, type WhatsAppMessage } from "../../lib/connectors";
   import ServiceIcon from "./ServiceIcon.svelte";
 
   // `onnook`: Nook antwoordt in deze Nook (de balk toont hem).
-  let { onnook }: { onnook: (nookId: string) => void } = $props();
+  let { onnook, inline = false }: { onnook: (nookId: string) => void; inline?: boolean } = $props();
 
   let scroller = $state<HTMLDivElement | null>(null);
 
@@ -30,6 +30,26 @@
     tick().then(() => scroller && (scroller.scrollTop = scroller.scrollHeight));
   });
 
+  // Sound plays in the card itself: fetched on the first click, then handed to a player. (Windows often has no app for
+  // WhatsApp's Opus voice notes, so opening the file with the system's app does nothing.)
+  let sounds = $state<Record<string, string>>({});
+  let loadingSound = $state<string | null>(null);
+  async function listen(m: WhatsAppMessage) {
+    if (!whatsapp.chat || sounds[m.id] || loadingSound) return;
+    loadingSound = m.id;
+    whatsapp.notice = "";
+    try {
+      const { mime, base64 } = await connectorsApi.whatsappAudio(whatsapp.chat, m.id);
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      sounds[m.id] = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch (e) {
+      whatsapp.notice = String(e);
+    } finally {
+      loadingSound = null;
+    }
+  }
+  const isSound = (m: WhatsAppMessage) => m.media.kind === "voice" || m.media.kind === "audio";
+
   function photo(m: WhatsAppMessage): string | null {
     return m.media.kind === "image" ? card?.previews[m.id]?.image ?? null : null;
   }
@@ -48,7 +68,7 @@
 </script>
 
 {#if card && conversation}
-  <div class="alert">
+  <div class="alert" class:inline>
     <div class="card">
       <div class="context faint"><ServiceIcon domain="whatsapp.com" title="WhatsApp" size={16} /><span>{context(conversation.unread)}</span></div>
       <div class="title">{conversation.name}</div>
@@ -68,7 +88,16 @@
                 <div class="file">
                   <span class="icon">{m.media.kind === "video" ? "▶" : m.media.kind === "image" ? "▣" : m.media.kind === "document" ? "▤" : "♪"}</span>
                   <span class="name">{file}</span>
+                  {#if isSound(m)}
+                    {#if sounds[m.id]}
+                      <!-- svelte-ignore a11y_media_has_caption -->
+                      <audio controls autoplay src={sounds[m.id]}></audio>
+                    {:else}
+                      <button class="small" onclick={() => listen(m)} disabled={loadingSound === m.id}>{loadingSound === m.id ? tr("Laden…", "Loading…") : tr("▶ Afspelen", "▶ Play")}</button>
+                    {/if}
+                  {:else}
                   <button class="small" onclick={() => whatsapp.open(m.id, file)}>{m.media.kind === "video" ? tr("Video afspelen", "Play video") : tr("Openen", "Open")}</button>
+                  {/if}
                 </div>
               {/if}
               {#if text}<div class="text">{text}</div>{/if}
@@ -106,6 +135,12 @@
 
 <style>
   .alert { padding: 4px 12px 8px; }
+  /* In the Chats tab the card is the open chat beside the list: it fills its pane and the bubbles take the height. */
+  .alert.inline { padding: 0; height: 100%; }
+  .inline .card { height: 100%; box-sizing: border-box; border-radius: 0; border: 0; min-height: 0; }
+  .inline .chat { flex: 1; min-height: 0; max-height: none; }
+  .inline .buttons { flex-wrap: wrap; }
+  .inline .large { border-radius: 0; }
   .card { position: relative; background: var(--graphite); border: 1px solid var(--line2); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
   .context { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .title { font-weight: 600; font-size: 14px; line-height: 1.35; }
@@ -122,6 +157,7 @@
   .ticks.failed { color: var(--coral); font-weight: 700; }
   .photo { padding: 0; border: none; background: none; cursor: zoom-in; display: block; }
   .photo img { display: block; max-width: 240px; max-height: 180px; border-radius: 8px; object-fit: contain; }
+  .file audio { height: 32px; max-width: 100%; min-width: 0; flex: 1; }
   .file { display: flex; align-items: center; gap: 8px; font-size: 12px; }
   .file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file .icon { color: var(--text2); }

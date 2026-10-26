@@ -14,6 +14,8 @@ class WhatsAppCardState {
   sending = $state(false);
   /** The photo shown large over the chat (a message id). */
   enlarged = $state<string | null>(null);
+  /** Counts what changes a chat's standing (read, muted, hidden, answered), so lists redraw at once. */
+  version = $state(0);
   private started = false;
 
   start() {
@@ -59,6 +61,7 @@ class WhatsAppCardState {
   }
 
   dismiss() {
+    this.version++;
     this.chat = null;
     this.card = null;
     this.enlarged = null;
