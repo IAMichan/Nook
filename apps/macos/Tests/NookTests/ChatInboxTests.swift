@@ -1406,6 +1406,16 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
     }
 
+    func testAMemberWhoWroteLaterHasReadYourMessage() {
+        let anna = ChatReader(name: "Anna", receipt: .sent)
+        let bo = ChatReader(name: "Bo", receipt: .delivered)
+        let filled = ChatReceipts.filledReaders([[anna, bo], [], []], speakers: [nil, ("anna", now), nil])
+        XCTAssertEqual(filled[0].map(\.receipt), [.read, .delivered])
+        XCTAssertEqual(filled[0].first?.date, now, "read no later than when they wrote")
+        let before = ChatReceipts.filledReaders([[], [anna]], speakers: [("Anna", now), nil])
+        XCTAssertEqual(before[1].map(\.receipt), [.sent], "a message before yours says nothing")
+    }
+
     func testAnOlderMessageIsReadByWhoReadALaterOne() {
         let anna = { (receipt: ChatReceipt, date: Date?) in ChatReader(name: "Anna", receipt: receipt, date: date) }
         let bo = { (receipt: ChatReceipt) in ChatReader(name: "Bo", receipt: receipt) }
