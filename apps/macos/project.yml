@@ -310,6 +310,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionRoutes.swift
       - path: ../../packages/protocol/Sources/CompanionRelay.swift
       - path: Services/Companion/CloudflareRelaySetup.swift
+      - path: Services/Companion/KeepAwakePolicy.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift

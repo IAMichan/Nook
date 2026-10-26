@@ -42,12 +42,17 @@ final class CompanionServer: ObservableObject {
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in DispatchQueue.main.async { self?.pushChanges() } }
         apply()
+        KeepAwake.shared.attach(app: app)
     }
+
+    /// A phone is connected live right now (the Mac stays awake for it, `KeepAwake`).
+    var hasLivePhone: Bool { !streams.isEmpty }
 
     /// Starts or stops the listener (and the relay connection) to match the settings.
     func apply() {
         if CompanionStore.shared.enabled { start() } else { stop() }
         CompanionRelayClient.shared.apply()
+        KeepAwake.shared.update()
     }
 
     var port: UInt16 {
@@ -149,8 +154,10 @@ final class CompanionServer: ObservableObject {
         guard !peer.closed else { return }
         peer.closed = true
         if peer.counted { open = max(0, open - 1) }
+        let wasLive = streams.contains { $0 === peer }
         streams.removeAll { $0 === peer }
         if streams.isEmpty { streamTimer?.invalidate(); streamTimer = nil }
+        if wasLive { KeepAwake.shared.update() }
     }
 
     private func read(_ peer: CompanionPeer, connection: NWConnection, reader: CompanionFrameReader) {
@@ -269,6 +276,7 @@ final class CompanionServer: ObservableObject {
         let sessions = digests(app)
         peer.sent = sessions
         if !streams.contains(where: { $0 === peer }) { streams.append(peer) }
+        KeepAwake.shared.update()
         send(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
                                features: CompanionFeature.all, endpoints: endpoints(), relay: CompanionRelayClient.shared.advertised),
              key: key, deviceID: deviceID, on: peer.transport)

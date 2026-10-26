@@ -1,5 +1,7 @@
+import AppKit
 import Combine
 import Foundation
+import Network
 
 /// Keeps this Mac reachable through a relay (`CompanionRelay`, apps/relay), so the iPhone reaches it from anywhere
 /// without Tailscale and without a port opened on the router (docs/COMPANION.md, "Away from home"). The relay is Nook's
@@ -71,6 +73,37 @@ final class CompanionRelayClient: ObservableObject {
         watch = CompanionStore.shared.$devices.map { _ in () }
             .merge(with: CompanionStore.shared.$pending.map { _ in () })
             .sink { [weak self] _ in DispatchQueue.main.async { self?.apply() } }
+        // After sleep the relay sockets are dead without knowing it: connect again at once instead of waiting for the
+        // keep-alive to notice. The same after the Mac changed networks.
+        wake = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.reconnect()
+                    KeepAwake.shared.update()
+                }
+            }
+        path.pathUpdateHandler = { [weak self] update in
+            let signature = "\(update.status) \(update.availableInterfaces.map(\.name)) \(update.gateways.map { "\($0)" })"
+            Task { @MainActor in self?.pathChanged(signature) }
+        }
+        path.start(queue: DispatchQueue(label: "nook.companion.relay.path"))
+    }
+
+    private var wake: AnyCancellable?
+    private let path = NWPathMonitor()
+    private var pathSignature: String?
+
+    private func pathChanged(_ signature: String) {
+        defer { pathSignature = signature }
+        guard let previous = pathSignature, previous != signature else { return }
+        reconnect()
+    }
+
+    /// Opens every room again now (after sleep, on another network).
+    func reconnect() {
+        guard !rooms.isEmpty else { return }
+        closeAll()
+        apply()
     }
 
     /// The relay in use: Nook's, or the user's own; nil when that is not set (up) yet.

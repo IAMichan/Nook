@@ -8,6 +8,7 @@ struct CompanionSettingsRows: View {
     @ObservedObject private var server = CompanionServer.shared
     @ObservedObject private var notifier = CompanionNotifier.shared
     @ObservedObject private var relay = CompanionRelayClient.shared
+    @ObservedObject private var awake = KeepAwake.shared
     @State private var keyProblem = false
     @State private var link: PairingLink?
     @State private var copied = false
@@ -150,6 +151,7 @@ struct CompanionSettingsRows: View {
             if relay.mode == .own { ownRelay }
             relayStatus
         }
+        keepAwake
         if case .listening = server.state {
             let tailnet = server.endpoints().filter { $0.tailnet == true }.map(\.host)
             if tailnet.isEmpty {
@@ -157,6 +159,23 @@ struct CompanionSettingsRows: View {
             } else {
                 SettingNote(tr("companion.tailscale.on", tailnet.joined(separator: ", ")), tone: .success)
             }
+        }
+    }
+
+    /// A Mac that sleeps cannot be reached: Nook keeps it awake while it may be needed (`KeepAwake`).
+    @ViewBuilder
+    private var keepAwake: some View {
+        Picker(tr("companion.awake.title"), selection: $awake.mode) {
+            Text(tr("companion.awake.off")).tag(KeepAwakePolicy.Mode.off)
+            Text(tr("companion.awake.working")).tag(KeepAwakePolicy.Mode.whileWorking)
+            Text(tr("companion.awake.always")).tag(KeepAwakePolicy.Mode.always)
+        }
+        SettingNote(tr("companion.awake.hint"))
+        switch awake.decision.reason {
+        case .working?: SettingNote(tr("companion.awake.now.working"), tone: .success)
+        case .phone?: SettingNote(tr("companion.awake.now.phone"), tone: .success)
+        case .always?: SettingNote(tr("companion.awake.now.always"), tone: .success)
+        case nil: EmptyView()
         }
     }
 

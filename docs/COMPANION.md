@@ -61,6 +61,16 @@ From a café, a train or mobile data the phone reaches the Mac in one of two way
   - **Keep-alive:** the Mac sends `ping` every 30 seconds, answered by the relay without waking the room (an idle connection costs nothing), and replaces a socket that heard nothing for 75 seconds; it reconnects with the same backoff as the phone.
 - The phone shows how it is connected (local network, Tailscale, relay) in the Agents menu, and, when it cannot reach the Mac, what to set up for away from home.
 
+## Keeping the Mac Awake
+
+A Mac that sleeps drops its connection to the relay and to Tailscale, so the phone cannot reach it any more than one that is off. Settings › Devices › *Away from home* › **Keep this Mac awake** (`KeepAwake`, rules in `KeepAwakePolicy`, tested in `KeepAwakePolicyTests`):
+
+- **While agents work** (the default): while a session works or waits on you (an approval, a question), for five minutes after the last one, and while an iPhone is connected live, so a follow-up from the phone still finds the Mac.
+- **Always:** whenever the companion is on.
+- **Off.**
+
+On the power adapter Nook holds off all sleep (`PreventSystemSleep`), which keeps a MacBook awake with its lid closed too; on battery only idle sleep (`PreventUserIdleSystemSleep`), only for work or a connected phone (never for *Always* alone), and never below 20% charge. The screen still turns off. The assertions are named "Nook: keeps this Mac reachable for your iPhone" (`pmset -g assertions`), and Settings shows why the Mac is kept awake right now. When the Mac wakes or changes networks it connects to the relay again at once instead of waiting for the keep-alive to notice. A Mac that is shut down cannot be reached at all: messages to a session wait in the phone's outbox (up to a day) until it is back.
+
 ## Scope & Intentional Boundaries
 
 - Works on the same local network, over Tailscale or another VPN, and through a relay: Nook's own, or one on your own Cloudflare account (see *Away from Home*). Either way the relay only passes sealed bytes; without Tailscale or a relay, the Mac is reachable only at home. Using a relay is opt-in.
@@ -73,7 +83,7 @@ From a café, a train or mobile data the phone reaches the Mac in one of two way
 - **Shared protocol:** `packages/protocol/Sources/CompanionModels.swift` (protocol, framing, policy rules; tested in `CompanionModelsTests`), `CompanionRoutes.swift` (routes, backoff, wakeups, outbox, receipts; tested in `CompanionRoutesTests`), `PromptLink.swift` (`nook://prompt` links, tested in `PromptLinkTests`), `CompanionSeal.swift` (CryptoKit ChaCha20-Poly1305), `WebhookSecurity.swift` (SHA-256 / HMAC).
 - **macOS app:** `apps/macos/Services/Companion/CompanionServer.swift` (`NWListener` + Bonjour `_nookcompanion._tcp`), `CompanionServer+Remote.swift` (starting sessions, timelines, Nook chats), `CompanionServer+Home.swift` (home, usage, player), `CompanionServer+Chats.swift` (the Chats tab, from the same `ChatsEntry.all` list as on the Mac), `CompanionStore.swift` (paired devices & pairing window), `apps/macos/App/Settings/CompanionSettings.swift`.
 - **Live Activities:** `packages/protocol/Sources/CompanionLiveActivity.swift` (phases, attributes, content, `LiveActivityPlanner`, `LiveActivityPayload`; tested in `CompanionModelsTests`), `apps/macos/Services/Companion/CompanionNotifier.swift` and `APNsClient.swift` (the pushes), `apps/ios/NookActivity/` (the widget extension), `apps/ios/NookCompanion/LiveActivities.swift` (tokens, the switch, updates while the app is open).
-- **Away from home:** `packages/protocol/Sources/CompanionRelay.swift` (rooms, relay addresses, `RelayMux`; tested in `CompanionRelayTests`), `apps/macos/Services/Companion/CompanionRelayClient.swift` (the Mac's rooms, Nook's or your own relay), `CloudflareRelaySetup.swift` and `CloudflareRelayDeployer.swift` (setting up your own relay from Settings; tested in `CloudflareRelaySetupTests`), `RouteLink` in `apps/ios/NookCompanion/CompanionConnection.swift` (the phone's WebSocket), and the relay itself in `apps/relay` (tested with `npm test`).
+- **Away from home:** `packages/protocol/Sources/CompanionRelay.swift` (rooms, relay addresses, `RelayMux`; tested in `CompanionRelayTests`), `apps/macos/Services/Companion/CompanionRelayClient.swift` (the Mac's rooms, Nook's or your own relay), `CloudflareRelaySetup.swift` and `CloudflareRelayDeployer.swift` (setting up your own relay from Settings; tested in `CloudflareRelaySetupTests`), `KeepAwake.swift` and `KeepAwakePolicy.swift` (keeping the Mac awake), `RouteLink` in `apps/ios/NookCompanion/CompanionConnection.swift` (the phone's WebSocket), and the relay itself in `apps/relay` (tested with `npm test`).
 - **Staying connected:** `apps/macos/Services/Companion/CompanionEndpoints.swift` (the Mac's addresses), the live connections in `CompanionServer.swift`; on the phone `apps/ios/NookCompanion/CompanionConnection.swift` (`CompanionChannel`, `RouteProbe`) and the supervisor in `CompanionClient.swift`.
 - **iOS app:** `apps/ios/NookCompanion/` (XcodeGen project in `apps/ios/project.yml`; see [`apps/ios/README.md`](../apps/ios/README.md)).
 
