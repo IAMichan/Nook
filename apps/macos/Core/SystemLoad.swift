@@ -34,24 +34,23 @@ enum SystemLoad {
     }
 
     /// Running on the battery (false on a desktop Mac and on a MacBook on the charger).
-    static var isOnBattery: Bool {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() else { return false }
-        return (type as String) == kIOPMBatteryPowerKey
-    }
+    static var isOnBattery: Bool { battery().onBattery }
 
-    /// The internal battery's charge in percent; nil on a Mac without one.
-    static var batteryLevel: Int? {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+    /// Where the power comes from and the internal battery's charge in percent (nil on a Mac without one), from one read
+    /// of the power sources.
+    static func battery() -> (onBattery: Bool, level: Int?) {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return (false, nil) }
+        let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue()
+        let onBattery = type.map { ($0 as String) == kIOPMBatteryPowerKey } ?? false
+        let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] ?? []
         for source in list {
             guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
                   description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
                   let current = description[kIOPSCurrentCapacityKey] as? Int,
                   let capacity = description[kIOPSMaxCapacityKey] as? Int, capacity > 0 else { continue }
-            return Int((Double(current) / Double(capacity) * 100).rounded())
+            return (onBattery, Int((Double(current) / Double(capacity) * 100).rounded()))
         }
-        return nil
+        return (onBattery, nil)
     }
 
     /// Seconds since the last keyboard or pointer input anywhere on the Mac.
@@ -67,10 +66,10 @@ enum SystemLoad {
     /// Every reading at once, for `EnergyPolicy`. `wasLowBattery` is the last reading's, so a low battery has to charge a
     /// little before it counts as fine again (`EnergySignals.isLowBattery`).
     static func signals(wasLowBattery: Bool = false) -> EnergySignals {
-        let onBattery = isOnBattery
-        let level = batteryLevel
-        return EnergySignals(lowPowerMode: isLowPowerMode, hot: isHot, busy: isBusy, onBattery: onBattery,
-                             lowBattery: EnergySignals.isLowBattery(level: level, onBattery: onBattery, wasLow: wasLowBattery),
-                             batteryLevel: level, away: idleSeconds >= EnergySignals.awayAfter, displayAsleep: isDisplayAsleep)
+        let power = battery()
+        return EnergySignals(lowPowerMode: isLowPowerMode, hot: isHot, busy: isBusy, onBattery: power.onBattery,
+                             lowBattery: EnergySignals.isLowBattery(level: power.level, onBattery: power.onBattery,
+                                                                    wasLow: wasLowBattery),
+                             away: idleSeconds >= EnergySignals.awayAfter, displayAsleep: isDisplayAsleep)
     }
 }

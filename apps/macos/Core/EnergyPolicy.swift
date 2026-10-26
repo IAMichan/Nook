@@ -27,10 +27,9 @@ struct EnergySignals: Equatable {
     var busy = false
     /// Running on the battery.
     var onBattery = false
-    /// Running on the battery and it is nearly empty (see `isLowBattery`).
+    /// Running on the battery and it is nearly empty (see `isLowBattery`). Only this, not the charge itself: the charge
+    /// changes every few minutes, and every view that follows the plan would redraw for it.
     var lowBattery = false
-    /// The battery's charge in percent; nil on a Mac without one.
-    var batteryLevel: Int?
     /// No keyboard or pointer input for a while.
     var away = false
     /// The displays are asleep.
