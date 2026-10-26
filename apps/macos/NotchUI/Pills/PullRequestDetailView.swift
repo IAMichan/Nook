@@ -384,44 +384,43 @@ struct PullRequestDetailView: View {
         .fixedSize()
     }
 
-    /// The round button at the bottom right that opens the composer (a comment or a review), with a
-    /// dropdown beside it to start straight as a comment, an approval or a request for changes.
+    /// The split button at the bottom right that opens the composer (a comment or a review): the bubble
+    /// writes a comment, the chevron beside it starts straight as a comment, an approval or a request for changes.
     private func writeButton(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            ComposerDropdown(width: 220) {
-                Image(systemName: "chevron.up")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .frame(width: 24, height: 38)
-                    .background(Capsule().fill(NookTheme.smoke))
-                    .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
-                    .contentShape(Capsule())
-            } content: {
-                ForEach(PullRequestAction.Verdict.allCases, id: \.self) { verdict in
-                    DropdownRow(symbol: PullRequestActionPanel.verdictSymbol(verdict),
-                                title: tr(PullRequestActionPanel.verdictKey(verdict))) { openWriter(detail, review: verdict) }
-                }
-            }
-            .disabled(actions.sending)
-            .help(tr("agents.pr.write.choose"))
-            .accessibilityLabel(tr("agents.pr.write.choose"))
+        HStack(spacing: 0) {
             Button {
                 openWriter(detail, review: nil)
             } label: {
                 Image(systemName: "bubble.left")
                     .font(NookTheme.font(14, .medium))
                     .foregroundStyle(NookTheme.paper)
-                    .frame(width: 38, height: 38)
-                    .background(Circle().fill(NookTheme.smoke))
-                    .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1))
-                    .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
-                    .contentShape(Circle())
+                    .frame(width: 40, height: 38)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(actions.sending)
             .help(tr("agents.pr.write.open"))
             .accessibilityLabel(tr("agents.pr.write.open"))
+            Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
+            ComposerDropdown(width: 220) {
+                Image(systemName: "chevron.up")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: 30, height: 38)
+                    .contentShape(Rectangle())
+            } content: {
+                ForEach(PullRequestAction.Verdict.allCases, id: \.self) { verdict in
+                    DropdownRow(symbol: PullRequestActionPanel.verdictSymbol(verdict),
+                                title: tr(PullRequestActionPanel.verdictKey(verdict))) { openWriter(detail, review: verdict) }
+                }
+            }
+            .help(tr("agents.pr.write.choose"))
+            .accessibilityLabel(tr("agents.pr.write.choose"))
         }
+        .background(Capsule().fill(NookTheme.smoke))
+        .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+        .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
+        .clipShape(Capsule())
+        .disabled(actions.sending)
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.bottom, NookTheme.Spacing.md)
     }
