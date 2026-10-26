@@ -45,6 +45,28 @@ enum OpenWork {
     }
 }
 
+// MARK: - Steering
+
+/// How a message you send during a turn changes that turn.
+enum SteerRoute: Equatable, Sendable {
+    /// The agent takes it into the running turn (Codex `turn/steer`, Claude Code's priority message).
+    case native
+    /// The agent cannot be steered: Nook interrupts the turn and sends the message as the next prompt.
+    case interruptRestart
+    /// Not now: the message waits in the queue.
+    case unavailable
+
+    /// An agent with native steering is never interrupted for a message (it waits until it can take it in). An
+    /// interrupt never throws away a question or approval that waits for you.
+    static func choose(_ capabilities: ProviderCapabilities, nativeReady: Bool, active: Bool, ending: Bool,
+                       waitingOnYou: Bool) -> SteerRoute {
+        guard active, !ending else { return .unavailable }
+        if capabilities.steering { return nativeReady ? .native : .unavailable }
+        guard capabilities.supportsSteeringByInterruptRestart, capabilities.interrupt, !waitingOnYou else { return .unavailable }
+        return .interruptRestart
+    }
+}
+
 // MARK: - Stop
 
 enum StopAction: Equatable, Sendable {

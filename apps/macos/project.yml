@@ -197,6 +197,7 @@ targets:
       - path: Core/I18n+ChatMedia.swift
       - path: Core/I18n+ChatRead.swift
       - path: Core/I18n+BeeperImport.swift
+      - path: Core/I18n+AgentLifecycle.swift
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
@@ -365,6 +366,7 @@ targets:
       - path: Services/Workspace/ModelManifest.swift
       - path: Services/Workspace/TextGeneration.swift
       - path: Services/Workspace/GitCheckpoints.swift
+      - path: Services/Workspace/ConversationRollback.swift
       - path: Services/Workspace/GitQuickActions.swift
       - path: Services/Workspace/UsageLimits.swift
       - path: Services/Workspace/Antigravity.swift

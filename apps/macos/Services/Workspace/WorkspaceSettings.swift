@@ -64,6 +64,17 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoArchiveDays: Int {
         didSet { defaults.set(autoArchiveDays, forKey: "ws.autoArchiveDays") }
     }
+    /// Nook removes a session's worktree by itself once its pull request is merged, or this many days after the session
+    /// settled (0 = never). Off by default; a worktree in use or with uncommitted changes always stays (`WorktreeCleanup`).
+    @Published var worktreeCleanupOnMerge: Bool {
+        didSet { defaults.set(worktreeCleanupOnMerge, forKey: "ws.worktreeCleanupOnMerge") }
+    }
+    @Published var worktreeCleanupDays: Int {
+        didSet { defaults.set(worktreeCleanupDays, forKey: "ws.worktreeCleanupDays") }
+    }
+    var worktreeCleanupRules: WorktreeCleanup.Rules {
+        WorktreeCleanup.Rules(onMergedPullRequest: worktreeCleanupOnMerge, daysAfterSettled: worktreeCleanupDays)
+    }
     /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
@@ -135,6 +146,8 @@ final class WorkspaceSettings: ObservableObject {
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
+        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? false
+        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 0
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true

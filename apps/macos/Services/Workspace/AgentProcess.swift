@@ -40,6 +40,8 @@ enum AgentCommand {
         var resumeSessionID: String?
         /// Claude Code: resume as a copy of the conversation (`--fork-session`), leaving the original untouched.
         var forkSession = false
+        /// Claude Code: resume only up to this conversation entry (`--resume-session-at`), for a rolled-back conversation.
+        var resumeAt: String? = nil
         /// CLAUDE_CONFIG_DIR or CODEX_HOME for the chosen account; empty for the primary account.
         var accountEnvironment: [String: String]
         var runID: UUID
@@ -76,6 +78,7 @@ enum AgentCommand {
             if let resume = input.resumeSessionID, !resume.isEmpty {
                 arguments += ["--resume", resume]
                 if input.forkSession { arguments.append("--fork-session") }
+                if let at = input.resumeAt, !at.isEmpty { arguments += ["--resume-session-at", at] }
             }
             var instructions = input.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
             if let bridge = input.bridge {

@@ -789,7 +789,8 @@ struct AgentRunPanel: View {
                 Text(tr("ws.revert.confirm"))
                     .font(NookTheme.TextStyle.strong)
                     .foregroundStyle(NookTheme.paper)
-                Text(revertError ?? tr("ws.revert.detail", ToolSummary.oneLine(target.text, 60)))
+                Text(revertError ?? tr(workspace.canRollbackConversation(runID) ? "ws.revert.detailConversation" : "ws.revert.detail",
+                                       ToolSummary.oneLine(target.text, 60)))
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(revertError == nil ? NookTheme.textSecondary : NookTheme.coralSoft)
                     .fixedSize(horizontal: false, vertical: true)
@@ -828,6 +829,8 @@ struct AgentRunPanel: View {
             directory: workspace.run(runID).flatMap { $0.isRemote ? nil : $0.workingDirectory },
             shownFile: filePreview
         )
+        // Undone by going back to before an earlier message: the agent no longer remembers it.
+        .opacity(event.rolledBack == true ? 0.45 : 1)
     }
 
     /// Opens a file in the side panel; the file that is open already closes again.

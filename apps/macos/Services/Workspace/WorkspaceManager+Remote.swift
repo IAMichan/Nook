@@ -97,7 +97,7 @@ extension WorkspaceManager {
                     return false
                 }
             }.value
-            if made { update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date())] } }
+            if made { update(id) { $0.checkpoints = [RunCheckpoint(ref: ref, date: Date(), conversation: .empty)] } }
             refreshGit(id)
         }
         let visibleTask = ContextRefs.visible(config.task)

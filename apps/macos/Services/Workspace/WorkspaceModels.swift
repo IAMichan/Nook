@@ -35,14 +35,16 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     var capabilities: ProviderCapabilities {
         switch self {
         case .claude:
+            // `--resume-session-at` with `--fork-session` also forks from an earlier turn.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, nativeFork: true,
+                                        canRollbackConversation: true, canForkFromTurn: true)
         case .codex:
             // Over app-server Codex asks for approval, streams its answer and reports its context window.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
-                                        policies: [.ask, .acceptEdits, .bypass], steering: true)
+                                        policies: [.ask, .acceptEdits, .bypass], steering: true, canRollbackConversation: true)
         case .gemini:
             // Over ACP Gemini asks Nook for permission; its headless fallback cannot (auto_edit or yolo there).
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
@@ -82,6 +84,26 @@ struct ProviderCapabilities: Equatable, Sendable {
     var steering = false
     /// The agent can fork its own conversation (Claude Code's `--fork-session`); otherwise a fork starts from a summary.
     var nativeFork = false
+    /// Going back to before a message also rolls back the agent's own conversation (Codex `thread/rollback` over
+    /// app-server, Claude Code `--resume-session-at`); otherwise only the files go back and the agent keeps remembering.
+    var canRollbackConversation = false
+    /// The agent can fork its conversation at an earlier turn, not only at its end.
+    var canForkFromTurn = false
+    /// An approval or question the agent asked survives a restart of Nook (or of the agent). No agent Nook runs keeps
+    /// them: the process that asked is gone, so a session cut off while waiting on you stays yours to pick up.
+    var pendingRequestsSurviveRestart = false
+    /// How reliably the agent says a turn is over (see `TurnEndSignal`).
+    var turnEndSignal: TurnEndSignal = .strong
+    /// Without native steering, a message sent during a turn can still change it: Nook interrupts the turn and sends the
+    /// message as the next prompt. Needs `interrupt` and ordinary follow-up turns.
+    var supportsSteeringByInterruptRestart = true
+}
+
+/// How a turn's end reaches Nook. Strong: the agent sends an explicit terminal message (Claude Code's `result`, Codex's
+/// `turn/completed`, the reply to ACP's `session/prompt`). Weak: Nook has to infer it (the process went quiet or exited).
+/// None: the agent never says.
+enum TurnEndSignal: String, Codable, Sendable {
+    case strong, weak, none
 }
 
 /// Agent: permitted to execute. Plan: read-only analysis and plan creation, no modifications.
@@ -255,6 +277,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var changedFiles: Int?
     /// Snapshots of the worktree, before the first turn and after every turn: "back to here".
     var checkpoints: [RunCheckpoint]? = nil
+    /// The agent's own conversation as Nook follows it (turns, Claude Code's last message), and a rollback of it that
+    /// goes out with the next turn (see `ConversationRollback`).
+    var conversation: ConversationLog? = nil
+    var pendingRollback: PendingRollback? = nil
     /// Stopped on a usage limit: since when, when the limit resets (nil: unknown), and whether the session then goes
     /// on by itself.
     var limitedAt: Date? = nil
@@ -262,6 +288,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var autoResume: Bool? = nil
     /// Times in a row Nook went on after a restart cut this session off; back to nil after a turn that ends normally.
     var continuations: Int? = nil
+    /// When Nook last went on with it after a restart (see `RestartContinuation.loopWindow`).
+    var lastContinuedAt: Date? = nil
+    /// The restart cut it off while it waited for your approval: that approval is gone, so Nook does not go on by itself.
+    var interruptedWhileWaiting: Bool? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
@@ -506,6 +536,8 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// Tool output, clipped.
     var output: String?
     var state: State?
+    /// Undone by going back to before an earlier message: shown dimmed, the agent no longer remembers it.
+    var rolledBack: Bool? = nil
 
     init(kind: Kind, text: String, tool: String? = nil, callID: String? = nil, detail: String? = nil,
          output: String? = nil, state: State? = nil, date: Date = Date(), id: UUID = UUID()) {
