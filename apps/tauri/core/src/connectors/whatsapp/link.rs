@@ -504,6 +504,39 @@ impl WhatsAppLink {
         self.with(|i| i.inbox.visible(&filters).into_iter().cloned().collect())
     }
 
+    /// Every chat for the Chats tab, as on the Mac: the ones with messages here and then the rest of the phone's chats
+    /// from the gateway, newest first. Quiet groups are in; hidden chats and status updates are not.
+    pub fn chat_list(&self) -> Vec<super::Conversation> {
+        let ignored = self.settings().ignored;
+        self.with(|i| {
+            let mut out: Vec<super::Conversation> = i
+                .inbox
+                .sorted()
+                .into_iter()
+                .filter(|c| !ignored.contains(&c.id) && c.kind != super::ChatKind::Status)
+                .cloned()
+                .collect();
+            let have: HashSet<String> = out.iter().map(|c| c.id.clone()).collect();
+            for k in &i.known {
+                let kind = jid::kind(&k.jid);
+                if have.contains(&k.jid) || ignored.contains(&k.jid) || kind == super::ChatKind::Status {
+                    continue;
+                }
+                out.push(super::Conversation {
+                    id: k.jid.clone(),
+                    name: if jid::is_placeholder_name(&k.jid, &k.name) { jid::fallback_name(&k.jid) } else { k.name.clone() },
+                    is_group: kind == super::ChatKind::Group,
+                    kind,
+                    messages: vec![],
+                    unread: 0,
+                    last_activity: k.last,
+                });
+            }
+            out.sort_by_key(|c| std::cmp::Reverse(c.last_activity));
+            out
+        })
+    }
+
     pub fn gowa_running(&self) -> bool {
         let mut g = self.gowa.lock().unwrap_or_else(|e| e.into_inner());
         match g.child.as_mut() {
