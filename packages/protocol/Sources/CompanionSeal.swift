@@ -27,6 +27,14 @@ enum CompanionSeal {
         return try JSONEncoder().encode(Envelope(d: deviceID, s: box.combined.base64EncodedString()))
     }
 
+    /// With a fixed nonce: only for the shared test vectors (`packages/protocol/Fixtures/sealed.json`). A nonce must never
+    /// be used twice with the same key.
+    static func seal(_ plaintext: Data, pairingKey: Data, deviceID: String, direction: Direction, nonce: Data) throws -> Data {
+        let box = try ChaChaPoly.seal(plaintext, using: symmetricKey(pairingKey), nonce: ChaChaPoly.Nonce(data: nonce),
+                                      authenticating: aad(deviceID, direction))
+        return try JSONEncoder().encode(Envelope(d: deviceID, s: box.combined.base64EncodedString()))
+    }
+
     /// The device id an envelope claims, to pick the key to try. Not trusted until `open` succeeds.
     static func claimedDevice(_ envelope: Data) -> String? {
         (try? JSONDecoder().decode(Envelope.self, from: envelope))?.d

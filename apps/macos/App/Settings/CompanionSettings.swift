@@ -13,6 +13,7 @@ struct CompanionSettingsRows: View {
     @State private var keyProblem = false
     @State private var link: PairingLink?
     @State private var copied = false
+    @State private var diagnosticsCopied = false
     /// The Cloudflare token being pasted, and the address of a relay set up some other way.
     @State private var token = ""
     @State private var manualAddress = ""
@@ -28,12 +29,18 @@ struct CompanionSettingsRows: View {
                 ForEach(store.devices) { device in
                     HStack(spacing: NookTheme.Spacing.md) {
                         Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
-                        SettingLabel(device.name, detail: device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) }
-                                     ?? tr("companion.neverSeen"))
+                        SettingLabel(device.name, detail: deviceDetail(device))
                         Spacer()
                         ConfirmedButton(tr("companion.remove"), question: tr("confirm.remove", device.name),
                                         detail: tr("confirm.removeDevice.detail")) { store.remove(device.id) }
                     }
+                    if device.protocolVersion != nil, !CompanionCompatibility.phoneSupported(device.protocolVersion) {
+                        SettingNote(tr("companion.device.outdated"), tone: .error)
+                    }
+                    DisclosureGroup(tr("companion.scopes.title")) {
+                        scopeToggles(Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))
+                    }
+                    .padding(.leading, NookTheme.Spacing.xxl)
                 }
                 if store.devices.isEmpty { SettingNote(tr("companion.none")) }
                 if let link {
@@ -41,6 +48,14 @@ struct CompanionSettingsRows: View {
                 } else {
                     Button(tr("companion.pair")) { link = server.pairingLink() }
                         .disabled(!isListening)
+                }
+                // The local connection log, redacted (no addresses, names or keys), for the user to paste where they choose.
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Button(diagnosticsCopied ? tr("companion.diagnostics.copied") : tr("companion.diagnostics.copy")) {
+                        Pasteboard.copy(CompanionDiagnosticsLog.mac.bundle(about: diagnosticsAbout))
+                        diagnosticsCopied = true
+                    }
+                    SettingNote(tr("companion.diagnostics.hint"))
                 }
             }
         } header: {
@@ -155,6 +170,50 @@ struct CompanionSettingsRows: View {
         APNsClient.shared.forgetToken()
     }
 
+    /// One switch per `CompanionScope`: what a phone may do from afar.
+    @ViewBuilder
+    private func scopeToggles(_ scopes: Binding<Set<CompanionScope>>) -> some View {
+        ForEach(CompanionScope.allCases, id: \.self) { scope in
+            Toggle(Self.scopeLabel(scope), isOn: Binding(
+                get: { scopes.wrappedValue.contains(scope) },
+                set: { on in
+                    var next = scopes.wrappedValue
+                    if on { next.insert(scope) } else { next.remove(scope) }
+                    scopes.wrappedValue = next
+                }))
+        }
+    }
+
+    private static func scopeLabel(_ scope: CompanionScope) -> String {
+        switch scope {
+        case .read: return tr("companion.scope.read")
+        case .approve: return tr("companion.scope.approve")
+        case .operate: return tr("companion.scope.operate")
+        case .chats: return tr("companion.scope.chats")
+        case .music: return tr("companion.scope.music")
+        case .nookChat: return tr("companion.scope.nookChat")
+        }
+    }
+
+    /// The header of *Copy diagnostics*: versions and what is set up, nothing that names the user or a device.
+    private var diagnosticsAbout: [String: String] {
+        var about = ["app": CompanionProtocol.appVersion ?? "?", "protocol": String(CompanionProtocol.version),
+                     "phones": String(store.devices.count), "relay": relay.enabled ? relay.mode.rawValue : "off",
+                     "relayStatus": String(describing: relay.status), "server": String(describing: server.state)]
+        for (index, device) in store.devices.enumerated() {
+            about["phone\(index + 1)"] = "app \(device.appVersion ?? "?") · protocol \(device.protocolVersion.map { String($0) } ?? "1") · "
+                + CompanionScopes.names(device.grantedScopes).joined(separator: ",")
+        }
+        return about
+    }
+
+    /// When the phone was last seen, and which version of the app it runs once it said so.
+    private func deviceDetail(_ device: PairedDevice) -> String {
+        let seen = device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) } ?? tr("companion.neverSeen")
+        guard let version = device.appVersion else { return seen }
+        return seen + " · " + tr("companion.device.version", version)
+    }
+
     private var isListening: Bool { if case .listening = server.state { return true }; return false }
 
     /// Reaching this Mac outside the home network: one switch for a relay (Nook's, or one Settings sets up on the user's
@@ -174,6 +233,7 @@ struct CompanionSettingsRows: View {
             }
             if relay.mode == .own { ownRelay }
             relayStatus
+            relayTest
         }
         keepAwake
         if case .listening = server.state {
@@ -260,6 +320,40 @@ struct CompanionSettingsRows: View {
         }
     }
 
+    /// *Test relay*: a message through the relay to this Mac and back, as the phone sends it from away.
+    @ViewBuilder
+    private var relayTest: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Button(relay.testing ? tr("companion.relay.testing") : tr("companion.relay.test")) { relay.testRelay() }
+                .disabled(!relay.canTest || relay.testing)
+            if relay.enabled, store.devices.isEmpty { SettingNote(tr("companion.relay.test.needsPhone")) }
+        }
+        if let result = relay.testResult, !relay.testing {
+            SettingNote(Self.testHeadline(result), tone: result.cause == .connected ? .success : .error)
+            SettingNote(result.hops.filter { $0.hop != .device }.map(Self.hopLine).joined(separator: " · "))
+        }
+    }
+
+    private static func testHeadline(_ result: CompanionDiagnosis.Result) -> String {
+        switch result.cause {
+        case .connected: return tr("companion.relay.test.ok", result.fastestMilliseconds ?? 0)
+        case .macNotOnRelay: return tr("companion.relay.test.macOffline")
+        case .relayUnreachable: return tr("companion.relay.test.unreachable")
+        case .relayFull: return tr("companion.relay.test.full")
+        case .macSilent: return tr("companion.relay.test.silent")
+        default: return tr("companion.relay.test.failed")
+        }
+    }
+
+    private static func hopLine(_ state: CompanionDiagnosis.HopState) -> String {
+        let name = state.hop == .relay ? tr("companion.diag.hop.relay") : tr("companion.diag.hop.mac")
+        switch state.result {
+        case .ok: return tr("companion.diag.ok", name)
+        case .failed: return tr("companion.diag.failed", name)
+        case .unchecked: return tr("companion.diag.unchecked", name)
+        }
+    }
+
     @ViewBuilder
     private var status: some View {
         switch server.state {
@@ -286,6 +380,9 @@ struct CompanionSettingsRows: View {
                     }
                 }
                 Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil; copied = false }
+                // What the phone that pairs now may do; changed later per phone above.
+                Text(tr("companion.scopes.pairing")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+                scopeToggles($store.pendingScopes)
             }
         }
     }

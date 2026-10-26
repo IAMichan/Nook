@@ -1,0 +1,13 @@
+{
+  "comment": "CompanionResponse as it travels (before sealing). core: every implementation, including the Tauri app, reads it; fields an implementation does not know are ignored.",
+  "responses": [
+    { "name": "failure", "core": true, "json": { "id": "A", "ok": false, "error": "stale" } },
+    { "name": "list", "core": true, "json": { "id": "B", "ok": true, "macName": "Studio", "sessions": [
+      { "id": "S1", "title": "Fix the build", "agent": "Claude Code", "attention": "approval", "folder": "app", "branch": "main",
+        "updated": 1700000000, "excerpt": "Running tests", "items": [
+          { "id": "I1", "kind": "approval", "title": "Run npm test", "detail": "Bash", "canAllow": true, "options": [] } ] } ] } },
+    { "name": "helloVersioned", "core": true, "json": { "id": "C", "ok": true, "macName": "Studio", "sessions": [],
+      "features": ["start", "stream", "retry"], "protocolVersion": 2, "oldestPhone": 1, "appVersion": "1.4.0",
+      "scopes": ["read", "approve"], "relay": "" } }
+  ]
+}
