@@ -58,21 +58,23 @@ enum GitHubPullRequestList {
         }
     }
 
-    /// The pull requests in the watched organizations and repositories, and (unless turned off) the organizations each
-    /// account belongs to, for the accounts given by id. An account whose search could not get through is left out, so
-    /// its last watched rows can stay (see `AccountPullRequests.attaching`).
+    /// The pull requests in the watched organizations and repositories, the repositories each account owns itself, and
+    /// (unless turned off) the organizations each account belongs to, for the accounts given by id with their login. An
+    /// account whose search could not get through is left out, so its last watched rows can stay (see
+    /// `AccountPullRequests.attaching`).
     @MainActor
-    static func loadWatched(accounts ids: [String]) async -> [String: WatchedPullRequests] {
+    static func loadWatched(accounts logins: [String: String]) async -> [String: WatchedPullRequests] {
         guard ConnectorToggle.isOn("github") else { return [:] }
         let watching = PullRequestWatchSettings.shared.entries
         let ownOrganizations = PullRequestWatchSettings.shared.includeOrganizations
-        let targets = self.targets.filter { ids.contains($0.id) }
+        let targets = self.targets.filter { logins[$0.id] != nil }
         return await withTaskGroup(of: (String, WatchedPullRequests?).self) { group in
             for target in targets {
                 group.addTask {
                     var organizations: [String] = []
                     if ownOrganizations { organizations = await memberOrganizations(account: target.id, token: target.token) }
-                    let entries = PullRequestWatchList.including(organizations, in: watching)
+                    let login = logins[target.id].flatMap { $0.isEmpty ? nil : $0 } ?? target.login
+                    let entries = PullRequestWatchList.including(organizations, in: watching, owner: login)
                     guard let found = await fetchWatchedInParts(token: target.token, entries: entries) else { return (target.id, nil) }
                     // Only a typed entry is worth a note; an organization found on its own that cannot be searched stays quiet.
                     return (target.id, WatchedPullRequests(items: found.items, unreadable: found.unreadable.filter { watching.contains($0) }))
@@ -304,7 +306,7 @@ final class PullRequestStore: ObservableObject {
         // Yours and your reviews show as soon as they are in; the watched rows from last time stay until their own
         // search, which can take a lot longer, has answered.
         accounts = AccountPullRequests.attaching([:], to: fresh.map(merge)).map(settled)
-        let readable = fresh.filter { $0.error == nil }.map(\.id)
+        let readable = Dictionary(fresh.filter { $0.error == nil }.map { ($0.id, $0.login) }, uniquingKeysWith: { first, _ in first })
         let watched = await Task { await GitHubPullRequestList.loadWatched(accounts: readable) }.value
         accounts = AccountPullRequests.attaching(watched, to: accounts).map(settled)
         loading = false

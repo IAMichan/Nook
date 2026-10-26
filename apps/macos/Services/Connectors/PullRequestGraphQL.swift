@@ -178,20 +178,31 @@ enum PullRequestWatchList {
     }
 
     /// The typed entries, then the organizations you belong to that none of them names yet (GitHub names ignore case),
-    /// up to `limit` in all: what one account searches when your organizations are watched as well.
-    static func including(_ organizations: [String], in list: [String]) -> [String] {
+    /// up to `limit` in all: what one account searches when your organizations are watched as well. The account's own
+    /// repositories (see `ownRepositories`) come on top of that, whatever is typed.
+    static func including(_ organizations: [String], in list: [String], owner: String? = nil) -> [String] {
         var result = list
         for organization in organizations where result.count < limit {
             guard normalize(organization) == organization, !isRepository(organization),
                   !result.contains(where: { $0.lowercased() == organization.lowercased() }) else { continue }
             result.append(organization)
         }
+        if let owner = owner.flatMap(ownRepositories) { result.append(owner) }
         return result
     }
 
+    /// The entry for the repositories an account owns itself ("user:ada"): `org:` finds nothing for a personal account,
+    /// so without it someone else's pull request on one of your own repositories never showed. Nil without a valid login.
+    static func ownRepositories(_ login: String) -> String? {
+        guard let owner = normalize(login), !isRepository(owner) else { return nil }
+        return userPrefix + owner
+    }
+
+    private static let userPrefix = "user:"
+
     /// The search for one entry's open or closed pull requests.
     static func search(_ entry: String, closed: Bool) -> String {
-        let scope = isRepository(entry) ? "repo:" + entry : "org:" + entry
+        let scope = entry.hasPrefix(userPrefix) ? entry : isRepository(entry) ? "repo:" + entry : "org:" + entry
         return "is:pr \(closed ? "is:closed" : "is:open") archived:false \(scope) sort:updated-desc"
     }
 
