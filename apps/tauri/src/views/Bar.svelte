@@ -17,6 +17,8 @@
   import { play } from "../lib/sounds";
   import { agents } from "../lib/agents.svelte";
   import { quiet } from "../lib/quiet.svelte";
+  import { barDraft } from "../lib/draft.svelte";
+  import { heard } from "../components/Orb.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
   import NoticeOk from "../components/NoticeOk.svelte";
@@ -135,6 +137,46 @@
   async function openByClick() {
     pinnedOpen = true;
     await open();
+  }
+
+  // A file dragged onto the closed round Nook: he looks up while it hovers, swallows it on the drop, and then the panel
+  // opens with the file in the field. (The bar's webview has the native drag-drop handler off, so these are web events.)
+  let dropping = $state(false);
+  let swallowed = $state(false);
+  let dragDepth = 0;
+  const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
+
+  function dragEnter(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    dropping = true;
+  }
+
+  function dragOver(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function dragLeave() {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) dropping = false;
+  }
+
+  async function drop(e: DragEvent) {
+    e.preventDefault();
+    dragDepth = 0;
+    dropping = false;
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    swallowed = true;
+    heard();
+    const reading = barDraft.addFiles(files);
+    await new Promise((r) => setTimeout(r, 520));
+    swallowed = false;
+    await openByClick();
+    await reading;
   }
 
   function select(t: Tab) {
@@ -285,7 +327,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !resizing && Date.now() - openedAt > 600 && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !barDraft.picking && !resizing && Date.now() - openedAt > 600 && close()} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
 <div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
@@ -302,8 +344,23 @@
     </div>
   {:else if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="pill round" role="button" tabindex="0" title="Open Nook" onmousedown={drag} onclick={openByClick} onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openByClick()}>
-      <span class="orbwrap"><Orb size={26} {mood} /></span>
+    <div
+      class="pill round"
+      class:dropping
+      class:swallowed
+      role="button"
+      tabindex="0"
+      title={barDraft.files ? "Open Nook (files waiting)" : "Open Nook, or drop a file on me"}
+      onmousedown={drag}
+      onclick={openByClick}
+      onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openByClick()}
+      ondragenter={dragEnter}
+      ondragover={dragOver}
+      ondragleave={dragLeave}
+      ondrop={drop}
+    >
+      <span class="orbwrap"><Orb size={26} mood={dropping ? "seen" : mood} /></span>
+      {#if barDraft.files}<span class="badge">{barDraft.files}</span>{/if}
       {#if nook.working}<span class="dot working corner"></span>{/if}
       {#if nook.waiting}<span class="dot waiting corner"></span>{/if}
     </div>
@@ -393,6 +450,48 @@
     100% { transform: translateY(0) scale(1.06); }
   }
   @media (prefers-reduced-motion: reduce) { .pill.round:hover .orbwrap { animation: none; } }
+  /* A file over Nook: the rim lights up, a dashed ring turns around him and he leans in. */
+  .pill.round.dropping { box-shadow: 0 0 0 3px var(--iris), 0 0 18px color-mix(in srgb, var(--iris) 60%, transparent); }
+  .pill.round.dropping::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    border: 2px dashed var(--iris);
+    animation: spin 2.4s linear infinite;
+    pointer-events: none;
+  }
+  .pill.round.dropping .orbwrap { transform: scale(1.22) translateY(-1px); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* The drop: a gulp (squash, then a happy bounce). */
+  .pill.round.swallowed .orbwrap { animation: gulp 0.52s cubic-bezier(0.3, 1.4, 0.5, 1); }
+  @keyframes gulp {
+    0% { transform: scale(1.22); }
+    35% { transform: scale(0.7, 1.15); }
+    65% { transform: scale(1.18, 0.86); }
+    100% { transform: scale(1); }
+  }
+  /* How many files are waiting in the field of the closed bar. */
+  .badge {
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--iris);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pill.round.dropping::after, .pill.round.swallowed .orbwrap { animation: none; }
+  }
   .dot.corner { position: absolute; top: 3px; right: 3px; }
   /* A compact notice in the bar's own row: mark and message on the left, View and the countdown OK on the right. */
   .pill.strip { justify-content: flex-start; gap: 8px; padding: 0 4px 0 14px; }

@@ -31,6 +31,8 @@ fn create_bar(app: &AppHandle) -> tauri::Result<()> {
         .decorations(false)
         .transparent(true)
         .shadow(false)
+        // Files dragged onto the closed bar arrive as web drop events; the native handler would swallow them on Windows.
+        .disable_drag_drop_handler()
         // Op Linux negeert GTK `set_size` bij een vast formaat; zonder rand kan de gebruiker hem toch niet slepen.
         .resizable(true)
         .min_inner_size(COLLAPSED.0, COLLAPSED.1)
