@@ -113,6 +113,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
             configuration.userContentController.addUserScript(
                 WKUserScript(source: Self.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
+        BrowserExtensions.shared.attach(to: configuration)
         // Present as Safari, so sign-in pages treat it like the browser it is built on instead of refusing an unknown one.
         configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
         // Until the browser is shown it has no size of its own; give it a laptop-sized page so agents can load and read it.
