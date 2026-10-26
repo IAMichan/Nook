@@ -27,6 +27,8 @@ pub fn run() {
                 platform::desktop::show_main(app, platform::desktop::route_from_args(&args).unwrap_or("chat"))
             }))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            // Starten bij het inloggen: de aan/uit-knop staat in Instellingen > Algemeen.
+            .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
             .plugin(tauri_plugin_dialog::init());
     }
 
