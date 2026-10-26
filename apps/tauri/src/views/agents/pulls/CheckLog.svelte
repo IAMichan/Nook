@@ -2,7 +2,7 @@
   // One CI check read inside Nook (`CICheckLogView` on the Mac): the steps of its GitHub Actions job and the end of its
   // log. A job that still runs is read again every few seconds until GitHub has its log.
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { jobId, pullsApi, type CheckOutcome, type CiLog, type PullRequestCheck } from "../../../lib/pulls";
+  import { ciLines, ciProblems, jobId, pullsApi, type CheckOutcome, type CiLog, type PullRequestCheck } from "../../../lib/pulls";
 
   let { accountId, repo, check, onback }: { accountId: string; repo: string; check: PullRequestCheck; onback: () => void } = $props();
 
@@ -10,6 +10,13 @@
   let error = $state<string | null>(null);
   let copied = $state(false);
   let pre = $state<HTMLPreElement | null>(null);
+  // Null until the reader picks: a log with errors opens on them, one without opens whole.
+  let fullLog = $state<boolean | null>(null);
+  const lines = $derived(log?.text ? ciLines(log.text) : []);
+  const problems = $derived(ciProblems(lines));
+  const problemCount = $derived(problems.filter((l) => l.kind !== "group").length);
+  const onlyProblems = $derived(problemCount > 0 && !fullLog);
+  const shown = $derived(onlyProblems ? problems : lines);
   // A refresh of the pull request hands over a new copy of the same check: only another job reads again.
   const job = $derived(jobId(check.url));
 
@@ -19,6 +26,7 @@
     let timer: ReturnType<typeof setTimeout> | undefined;
     log = null;
     error = null;
+    fullLog = null;
     if (id === null) return;
     const read = async () => {
       try {
@@ -42,7 +50,7 @@
 
   // A failure is at the end of a log.
   $effect(() => {
-    if (pre && log?.text) pre.scrollTop = pre.scrollHeight;
+    if (pre && shown.length) pre.scrollTop = pre.scrollHeight;
   });
 
   async function copy() {
@@ -78,13 +86,19 @@
     {#if log.steps.length}
       <div class="steps">
         {#each log.steps as step (step.number)}
-          <div class="step">{@render mark(step.outcome)}<span class="muted small name">{step.name}</span></div>
+          <div class="step" class:skipped={step.outcome === "skipped"} class:failed={step.outcome === "failing"}>{@render mark(step.outcome)}<span class="small name">{step.name}</span></div>
         {/each}
       </div>
     {/if}
     {#if log.text !== null}
-      {#if log.omittedLines > 0}<span class="faint small">{log.omittedLines} eerdere regels weggelaten</span>{/if}
-      <pre class="log" bind:this={pre}>{log.text}</pre>
+      {#if problemCount > 0}
+        <div class="chips">
+          <button class="chip" class:on={onlyProblems} onclick={() => (fullLog = false)}>Fouten en waarschuwingen <span class="faint">{problemCount}</span></button>
+          <button class="chip" class:on={!onlyProblems} onclick={() => (fullLog = true)}>Volledig log</button>
+        </div>
+      {/if}
+      {#if log.omittedLines > 0 && !onlyProblems}<span class="faint small">{log.omittedLines} eerdere regels weggelaten</span>{/if}
+      <pre class="log" bind:this={pre}>{#each shown as line, i (i)}<span class={line.kind}>{line.kind === "group" ? "▸ " : ""}{line.text}</span>{"\n"}{/each}</pre>
     {:else}
       <span class="faint small">De job loopt nog; het log verschijnt zodra hij klaar is. De stappen verversen vanzelf.</span>
     {/if}
@@ -106,11 +120,22 @@
   .spacer { flex: 1; min-width: 0; }
   .small { font-size: 11.5px; }
   .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .steps { display: flex; flex-direction: column; gap: 3px; }
+  .steps { display: flex; flex-direction: column; gap: 3px; max-height: 112px; overflow-y: auto; flex: none; }
+  .step { color: var(--text2); }
+  .step.skipped { color: var(--text3); }
+  .step.failed { color: var(--coral); font-weight: 600; }
+  .chips { display: flex; gap: 6px; }
+  .chip { border-radius: 999px; padding: 3px 10px; font-size: 11.5px; background: var(--smoke); }
+  .chip.on { background: var(--iris); color: var(--on-iris); }
+  .log .group { font-weight: 600; color: var(--text2); }
+  .log .command { color: var(--text3); }
+  .log .error { color: var(--coral); }
+  .log .warning { color: var(--amber); }
+  .log .notice { color: var(--violet); }
   .step { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .mark { width: 16px; display: grid; place-items: center; flex: none; }
   .good { color: var(--mint); }
   .bad { color: var(--coral); }
-  .log { margin: 0; flex: 1; min-height: 160px; font-family: var(--mono); font-size: 11px; line-height: 1.45; background: var(--field); border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; overflow: auto; white-space: pre; user-select: text; }
+  .log { margin: 0; flex: 1; min-height: 160px; font-family: var(--mono); font-size: 11px; line-height: 1.45; background: var(--field); border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; overflow-x: hidden; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
   .err { color: var(--coral); font-size: 12px; user-select: text; }
 </style>

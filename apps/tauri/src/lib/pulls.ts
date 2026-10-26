@@ -29,6 +29,61 @@ export interface CiLog {
   omittedLines: number;
 }
 
+export type CiLineKind = "plain" | "group" | "command" | "error" | "warning" | "notice";
+export interface CiLine {
+  kind: CiLineKind;
+  text: string;
+}
+
+const MARKERS: [string, CiLineKind][] = [
+  ["##[group]", "group"],
+  ["##[command]", "command"],
+  ["##[error]", "error"],
+  ["##[warning]", "warning"],
+  ["##[notice]", "notice"],
+];
+
+/// The cleaned log as lines with a kind (`CILogParser.lines` on the Mac): GitHub's `##[…]` markers become the kind and
+/// leave the text, `##[endgroup]` and `##[debug]` are dropped, and a plain line saying "error:", "warning:" or that the
+/// build failed counts too.
+export function ciLines(text: string): CiLine[] {
+  const lines: CiLine[] = [];
+  for (const line of text.split("\n")) {
+    const marker = MARKERS.find(([prefix]) => line.startsWith(prefix));
+    if (marker) {
+      lines.push({ kind: marker[1], text: line.slice(marker[0].length) });
+      continue;
+    }
+    if (line.startsWith("##[endgroup]") || line.startsWith("##[debug]")) continue;
+    const lower = line.toLowerCase();
+    const kind: CiLineKind =
+      lower.includes("error:") || lower.includes("build failed") || lower.includes("test failed") || lower.startsWith("fatal:")
+        ? "error"
+        : lower.includes("warning:")
+          ? "warning"
+          : "plain";
+    lines.push({ kind, text: line });
+  }
+  return lines;
+}
+
+/// Only what went wrong: the error and warning lines, each group's name before its first one.
+export function ciProblems(lines: CiLine[]): CiLine[] {
+  const result: CiLine[] = [];
+  let group: CiLine | null = null;
+  for (const line of lines) {
+    if (line.kind === "group") group = line;
+    else if (line.kind === "error" || line.kind === "warning") {
+      if (group) {
+        result.push(group);
+        group = null;
+      }
+      result.push(line);
+    }
+  }
+  return result;
+}
+
 /// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); null for a check from another app, which
 /// has no log for Nook to read. The same rule as `job_id` in the core.
 export function jobId(url: string | null): number | null {
