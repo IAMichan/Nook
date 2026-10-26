@@ -191,3 +191,61 @@ enum WAMultipart {
         String(text.map { "\"\\\r\n".contains($0) ? "_" : $0 })
     }
 }
+
+/// What Nook asks the gateways to do with a message or chat that is already there: change your message's text, delete it
+/// for everyone, pin or unpin the chat, archive it. Foundation only, like `WASend`, so every request can be tested;
+/// the providers in WhatsAppProvider.swift send them. Field names follow each gateway's docs:
+///   GOWA   — docs/openapi.yaml (/message/{message_id}/update, /message/{message_id}/revoke, /chat/{chat_jid}/pin,
+///            /chat/{chat_jid}/archive; an older GOWA without the chat routes answers 404)
+///   OpenWA — docs/06-api-specification.md (/messages/edit, /messages/delete, /chats/pin, /chats/archive)
+enum WAAction {
+    // MARK: GOWA
+
+    /// The new text of your message; GOWA (and WhatsApp) take it within 15 minutes of sending. `phone` is the chat's JID.
+    static func gowaEdit(_ message: String, chat: String, text: String) -> WASendRequest {
+        WASendRequest(path: "/message/\(pathComponent(message))/update", json: ["phone": chat, "message": text])
+    }
+
+    /// Deletes a message for everyone ("revoke").
+    static func gowaDelete(_ message: String, chat: String) -> WASendRequest {
+        WASendRequest(path: "/message/\(pathComponent(message))/revoke", json: ["phone": chat])
+    }
+
+    static func gowaPin(_ pinned: Bool, chat: String) -> WASendRequest {
+        WASendRequest(path: "/chat/\(pathComponent(chat))/pin", json: ["pinned": pinned])
+    }
+
+    static func gowaArchive(_ chat: String) -> WASendRequest {
+        WASendRequest(path: "/chat/\(pathComponent(chat))/archive", json: ["archived": true])
+    }
+
+    // MARK: OpenWA
+
+    /// `chatId` is OpenWA's own form of the JID; the path is under the session's own routes.
+    static func openwaEdit(_ message: String, chatId: String, text: String) -> WASendRequest {
+        WASendRequest(path: "/messages/edit", json: ["chatId": chatId, "messageId": message, "body": text])
+    }
+
+    static func openwaDelete(_ message: String, chatId: String) -> WASendRequest {
+        WASendRequest(path: "/messages/delete", json: ["chatId": chatId, "messageId": message, "forEveryone": true])
+    }
+
+    static func openwaPin(_ pinned: Bool, chatId: String) -> WASendRequest {
+        WASendRequest(path: "/chats/pin", json: ["chatId": chatId, "pin": pinned])
+    }
+
+    static func openwaArchive(_ chatId: String) -> WASendRequest {
+        WASendRequest(path: "/chats/archive", json: ["chatId": chatId, "archive": true])
+    }
+
+    /// OpenWA answers a pin or archive WhatsApp turned down with `200 {"success": false}` (a fourth pinned chat, a chat
+    /// with no known history): that is no success. An answer without the field counts as one.
+    static func openwaSucceeded(_ data: Data) -> Bool {
+        ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["success"] as? Bool ?? true
+    }
+
+    /// A message id or JID as one path segment: the same characters `WAHTTP.pathComponent` keeps.
+    static func pathComponent(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~@"))) ?? s
+    }
+}

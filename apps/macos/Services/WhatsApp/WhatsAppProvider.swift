@@ -64,6 +64,20 @@ protocol WhatsAppProvider: Sendable {
     /// Sends a file, a poll, a place or a contact card to a chat, as an answer to `replyTo` where the gateway can;
     /// returns the new message's id when the gateway gives it.
     func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String?
+    /// Whether this gateway can change the text of your own messages, delete a message for everyone, pin a chat, and
+    /// archive one.
+    var canEdit: Bool { get }
+    var canDelete: Bool { get }
+    var canPin: Bool { get }
+    var canArchive: Bool { get }
+    /// Changes the text of your message `message` in `chat` to `text`.
+    func edit(_ message: String, chat: String, to text: String) async throws
+    /// Deletes the message `message` in `chat` for everyone.
+    func delete(_ message: String, chat: String) async throws
+    /// Pins the chat at the top of the phone's chat list, or unpins it.
+    func setPinned(_ pinned: Bool, chat: String) async throws
+    /// Archives the chat on the phone.
+    func archive(_ chat: String) async throws
 }
 
 extension WhatsAppProvider {
@@ -75,6 +89,14 @@ extension WhatsAppProvider {
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
     var sends: Set<ChatOutgoing.Kind> { [] }
     func send(_ outgoing: ChatOutgoing, to chat: String, replyTo: String?) async throws -> String? { throw WAError.refused("send") }
+    var canEdit: Bool { false }
+    var canDelete: Bool { false }
+    var canPin: Bool { false }
+    var canArchive: Bool { false }
+    func edit(_ message: String, chat: String, to text: String) async throws { throw WAError.refused("edit") }
+    func delete(_ message: String, chat: String) async throws { throw WAError.refused("delete") }
+    func setPinned(_ pinned: Bool, chat: String) async throws { throw WAError.refused("pin") }
+    func archive(_ chat: String) async throws { throw WAError.refused("archive") }
 }
 
 extension ChatAttachment {
@@ -342,6 +364,32 @@ actor GOWAProvider: WhatsAppProvider {
         return (WAGOWA.results(data) as? [String: Any])?["message_id"] as? String
     }
 
+    // Editing, revoking, pinning and archiving: GOWA's /message/{id}/update and /revoke, /chat/{jid}/pin and /archive.
+    nonisolated var canEdit: Bool { true }
+    nonisolated var canDelete: Bool { true }
+    nonisolated var canPin: Bool { true }
+    nonisolated var canArchive: Bool { true }
+
+    func edit(_ message: String, chat: String, to text: String) async throws {
+        try await perform(WAAction.gowaEdit(message, chat: chat, text: text))
+    }
+
+    func delete(_ message: String, chat: String) async throws {
+        try await perform(WAAction.gowaDelete(message, chat: chat))
+    }
+
+    func setPinned(_ pinned: Bool, chat: String) async throws {
+        try await perform(WAAction.gowaPin(pinned, chat: chat))
+    }
+
+    func archive(_ chat: String) async throws {
+        try await perform(WAAction.gowaArchive(chat))
+    }
+
+    private func perform(_ request: WASendRequest) async throws {
+        _ = try await scoped("POST", request.path, json: request.json, timeout: 30)
+    }
+
     func markRead(chat: String, lastIncoming: String?) async throws {
         guard let id = lastIncoming else { return }
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(id))/read", json: ["phone": chat])
@@ -590,6 +638,35 @@ actor OpenWAProvider: WhatsAppProvider {
         _ = try await scoped("POST", "/messages/vote-poll", json: ["chatId": Self.openwaId(chat), "pollMessageId": poll, "options": choice])
     }
 
+    // Editing, deleting, pinning and archiving: OpenWA's /messages/edit and /delete, /chats/pin and /archive.
+    nonisolated var canEdit: Bool { true }
+    nonisolated var canDelete: Bool { true }
+    nonisolated var canPin: Bool { true }
+    nonisolated var canArchive: Bool { true }
+
+    func edit(_ message: String, chat: String, to text: String) async throws {
+        try await perform(WAAction.openwaEdit(message, chatId: Self.openwaId(chat), text: text))
+    }
+
+    func delete(_ message: String, chat: String) async throws {
+        try await perform(WAAction.openwaDelete(message, chatId: Self.openwaId(chat)))
+    }
+
+    func setPinned(_ pinned: Bool, chat: String) async throws {
+        try await perform(WAAction.openwaPin(pinned, chatId: Self.openwaId(chat)))
+    }
+
+    func archive(_ chat: String) async throws {
+        try await perform(WAAction.openwaArchive(Self.openwaId(chat)))
+    }
+
+    /// A `200` with `success: false` is WhatsApp saying no (see `WAAction.openwaSucceeded`): refused without a reason
+    /// of the gateway's own, so the user sees Nook's sentence for it.
+    private func perform(_ request: WASendRequest) async throws {
+        let data = try await scoped("POST", request.path, json: request.json, timeout: 30)
+        guard WAAction.openwaSucceeded(data) else { throw WAError.refused("") }
+    }
+
     func avatar(_ chat: String) async -> URL? {
         let path = WAJID.isGroup(chat) ? "/groups/\(WAHTTP.pathComponent(chat))/picture"
             : "/contacts/\(WAHTTP.pathComponent(Self.openwaId(chat)))/profile-picture"
@@ -598,8 +675,10 @@ actor OpenWAProvider: WhatsAppProvider {
     }
 
     func chats(limit: Int) async throws -> [WAChatInfo] {
-        WAOpenWA.chats(try await scoped("GET", "/chats")).prefix(limit)
-            .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread) }
+        let data = try await scoped("GET", "/chats")
+        let pinned = WAOpenWA.pinned(data)
+        return WAOpenWA.chats(data).prefix(limit)
+            .map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: pinned[$0.jid]) }
     }
 
     func media(chat: String, message: String) async throws -> WAFile {
