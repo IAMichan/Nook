@@ -10,7 +10,8 @@ extension AppModel {
 
     /// `reveal: false` leaves the notch as it is while Nook answers (the Double Tap quick field); the answer then
     /// arrives as a small card (`nookFinished`), and the chat opens only when you open it yourself.
-    func handleUserText(_ raw: String, images: [ImageAttachment] = [], reveal: Bool = true) {
+    /// `note`: what Nook adds to the question for the brain, not shown in the chat (see `ReplyContext.note`).
+    func handleUserText(_ raw: String, images: [ImageAttachment] = [], reveal: Bool = true, note: String = "") {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty else { return }
         // A picture without a question: ask what is on it.
@@ -47,7 +48,7 @@ extension AppModel {
             chat.enqueue(text, images: images, conversation: busy)
             return
         }
-        ask(text, images: images, reveal: reveal)
+        ask(text, images: images, reveal: reveal, note: note)
     }
 
     /// The next question that waited in line, once the answer before it is done. `message`: that question right away
@@ -121,9 +122,9 @@ extension AppModel {
 
     /// Submits a query in chat: response streams in real-time. `focus` and `reflects` are for prompts a card writes
     /// (see `ReplyContext`). `target` asks in that conversation instead of the active one, and `reveal: false` leaves the
-    /// notch as it is (a question from the iPhone companion).
+    /// notch as it is (a question from the iPhone companion). `note`: see `ReplyContext.note`.
     func ask(_ text: String, images: [ImageAttachment] = [], focus: [Prefetch.Call] = [], reflects: Bool = true,
-             in target: UUID? = nil, reveal: Bool = true) {
+             in target: UUID? = nil, reveal: Bool = true, note: String = "") {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
         var question = ChatMessage(role: .user, text: text)
@@ -154,7 +155,9 @@ extension AppModel {
                 await ReplyContext.$focus.withValue(focus) {
                     await ReplyContext.$reflects.withValue(reflects) {
                         await ReplyContext.$messageID.withValue(replyID) {
-                            await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                            await ReplyContext.$note.withValue(note) {
+                                await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                            }
                         }
                     }
                 }

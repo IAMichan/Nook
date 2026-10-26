@@ -846,4 +846,7 @@ enum ReplyContext {
     @TaskLocal static var focus: [Prefetch.Call] = []
     /// False for a prompt Nook wrote itself (a card's button): there is nothing the user said to reflect on.
     @TaskLocal static var reflects = true
+    /// What Nook itself adds to this one question, never shown in the chat: how a Double Tap without a cursor in a text
+    /// asked about the window in front (`DoubleTapLogic.windowNote`).
+    @TaskLocal static var note = ""
 }
