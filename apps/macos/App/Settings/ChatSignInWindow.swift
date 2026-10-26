@@ -136,6 +136,7 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
               let list = String(data: data, encoding: .utf8) else { return nil }
         return """
         (() => {
+          \(WebSignInAgent.skipOnGoogle)
           const wanted = new Set(\(list));
           const tell = (name, value) => {
             const key = String(name).toLowerCase();

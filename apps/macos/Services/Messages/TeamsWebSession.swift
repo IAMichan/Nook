@@ -354,12 +354,14 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     """
 
     /// Runs in the website before its own scripts: when it asks Teams' chat service for something (by fetch or
-    /// XMLHttpRequest), the address and its session token go to Nook. The new Teams keeps its tokens encrypted and may
+    /// XMLHttpRequest), the address and its session token go to Nook. Not on Google's sign-in pages, which turn away a
+    /// browser whose functions were changed. The new Teams keeps its tokens encrypted and may
     /// ask the chat service from a worker of its own, so the tokens it gets when you sign in, and those it takes out of
     /// or puts into its encrypted cache, go to Nook as well, but only when they are Teams' (Skype's) own. Nothing else
     /// is looked at.
     private static let script = """
     (() => {
+      \(WebSignInAgent.skipOnGoogle)
       const tell = (url, value) => {
         try {
           if (!/\\/api\\/chatsvc\\/|\\.msg\\.teams\\.microsoft\\.com\\/v1\\//.test(String(url)) || !/skypetoken|^bearer /i.test(String(value))) return;
