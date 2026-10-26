@@ -5,6 +5,7 @@
   import { services, serviceEvents, type TodayItem, type RecapView, type NoteLive } from "../lib/services";
   import { nook, relativeTime } from "../lib/state.svelte";
   import { renderMarkdown } from "../lib/markdown";
+  import { tr, english } from "../lib/i18n.svelte";
   import type { OpenLoop } from "../lib/types";
 
   let loops = $state<OpenLoop[]>([]);
@@ -62,14 +63,14 @@
   const facts = $derived(
     recap
       ? [
-          ["tijd met agents", recap.duration],
-          ["sessies", String(recap.summary.sessions)],
-          ["opdrachten", String(recap.summary.prompts)],
-          ["regels erbij / eraf", `+${recap.summary.linesAdded} −${recap.summary.linesRemoved}`],
-          ["commando's", String(recap.summary.commands)],
-          ["toegestaan / geweigerd", `${recap.summary.allowed} / ${recap.summary.denied}`],
-          ...(recap.busiest ? [["drukste dag", recap.busiest]] : []),
-          ...(recap.summary.topProject ? [["meeste tijd in", recap.summary.topProject]] : []),
+          [tr("tijd met agents", "time with agents"), recap.duration],
+          [tr("sessies", "sessions"), String(recap.summary.sessions)],
+          [tr("opdrachten", "prompts"), String(recap.summary.prompts)],
+          [tr("regels erbij / eraf", "lines added / removed"), `+${recap.summary.linesAdded} −${recap.summary.linesRemoved}`],
+          [tr("commando's", "commands"), String(recap.summary.commands)],
+          [tr("toegestaan / geweigerd", "allowed / denied"), `${recap.summary.allowed} / ${recap.summary.denied}`],
+          ...(recap.busiest ? [[tr("drukste dag", "busiest day"), recap.busiest]] : []),
+          ...(recap.summary.topProject ? [[tr("meeste tijd in", "most time in"), recap.summary.topProject]] : []),
         ]
       : [],
   );
@@ -80,9 +81,9 @@
     <div class="panel">
       <div class="head"><span class="faint">{recap.label}</span><button class="ghost x" onclick={() => (recap = null)}>✕</button></div>
       {#if recap.summary.prompts === 0 && recap.summary.sessions === 0}
-        <p class="muted">Ik heb nog niets bijgehouden. Koppel je agents bij Instellingen › Agents, dan zie je hier wat ze voor je deden.</p>
+        <p class="muted">{tr("Ik heb nog niets bijgehouden. Koppel je agents bij Instellingen › Agents, dan zie je hier wat ze voor je deden.", "I haven't tracked anything yet. Connect your agents under Settings › Agents and you'll see what they did for you here.")}</p>
       {:else}
-        <p><strong>{recap.summary.topAgent ? `${recap.summary.topAgent} en co` : "Je agents"} werkten {recap.duration} voor je.</strong></p>
+        <p><strong>{recap.summary.topAgent ? `${recap.summary.topAgent} ${tr("en co", "and co")}` : tr("Je agents", "Your agents")} {tr("werkten", "worked")} {recap.duration} {tr("voor je.", "for you.")}</strong></p>
         <dl>
           {#each facts as [label, value] (label)}<dt>{label}</dt><dd>{value}</dd>{/each}
         </dl>
@@ -90,13 +91,13 @@
     </div>
   {:else if note}
     <div class="panel">
-      <div class="head"><span class="faint">Gespreksnotitie</span><button class="ghost x" onclick={() => (note = null)}>✕</button></div>
+      <div class="head"><span class="faint">{tr("Gespreksnotitie", "Conversation note")}</span><button class="ghost x" onclick={() => (note = null)}>✕</button></div>
       <div class="markdown note">{@html renderMarkdown(note)}</div>
     </div>
   {/if}
 
   {#if items.length}
-    <h4>Vandaag</h4>
+    <h4>{tr("Vandaag", "Today")}</h4>
     {#each items as item (item.id)}
       <div class="item {item.kind}">
         <span class="dot" class:waiting={item.kind === "nudge"} class:error={item.kind === "recording"} class:unread={item.kind === "recap" || item.kind === "note"}></span>
@@ -109,24 +110,24 @@
     {/each}
   {/if}
 
-  <h4>Open punten</h4>
+  <h4>{tr("Open punten", "Open items")}</h4>
   {#each loops as loop (loop.id)}
     <div class="loop">
-      <button class="check" title="Afvinken" onclick={() => done(loop.id)}>○</button>
+      <button class="check" title={tr("Afvinken", "Check off")} onclick={() => done(loop.id)}>○</button>
       <span>{loop.title}</span>
-      {#if loop.due}<span class="faint">{new Date(loop.due).toLocaleString("nl-NL", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>
+      {#if loop.due}<span class="faint">{new Date(loop.due).toLocaleString(english() ? "en-GB" : "nl-NL", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>
       {:else}<span class="faint">{relativeTime(loop.created)}</span>{/if}
     </div>
   {:else}
-    <p class="faint">Niets open. Zeg bijvoorbeeld "onthoud dat ik Lisa terugbel".</p>
+    <p class="faint">{tr("Niets open. Zeg bijvoorbeeld \"onthoud dat ik Lisa terugbel\".", "Nothing open. Try saying \"remind me to call Lisa back\".")}</p>
   {/each}
 
   {#if nook.info?.capabilities.desktop}
     <div class="more">
       {#if nook.info.capabilities.microphone}
-        <button class="ghost small" onclick={() => services.toggleNote()}>{live?.recording ? "■ Opname stoppen" : "● Gesprek noteren"}</button>
+        <button class="ghost small" onclick={() => services.toggleNote()}>{live?.recording ? tr("■ Opname stoppen", "■ Stop recording") : tr("● Gesprek noteren", "● Note a conversation")}</button>
       {/if}
-      <button class="ghost small" onclick={showRecap}>Weekoverzicht</button>
+      <button class="ghost small" onclick={showRecap}>{tr("Weekoverzicht", "Week overview")}</button>
     </div>
     {#if live?.problem}<p class="err">{live.problem}</p>{/if}
   {/if}

@@ -6,6 +6,7 @@
   import { brainApi, type ServerModel } from "../lib/brain";
   import { barDraft, Draft } from "../lib/draft.svelte";
   import { nook } from "../lib/state.svelte";
+  import { tr, english } from "../lib/i18n.svelte";
   import { attachments } from "../lib/attachments.svelte";
   import { listening } from "../lib/listening.svelte";
   import { heard } from "./Orb.svelte";
@@ -48,7 +49,7 @@
     const file = draft.attachment;
     draft.clear();
     heard();
-    await nook.ask(value || (file ? `What is in ${file.name}?` : "What is in this image?"), attached.length ? attached : undefined, file ?? undefined);
+    await nook.ask(value || (file ? tr(`Wat staat er in ${file.name}?`, `What is in ${file.name}?`) : tr("Wat staat er op deze afbeelding?", "What is in this image?")), attached.length ? attached : undefined, file ?? undefined);
   }
 
   function key(e: KeyboardEvent) {
@@ -111,36 +112,36 @@
   {#if draft.images.length || draft.attachment || draft.reading}
     <div class="thumbs">
       {#each draft.images as img, i (img.url)}
-        <button class="thumb" title="Remove image" aria-label="Remove image" onclick={() => (draft.images = draft.images.filter((_, j) => j !== i))}>
+        <button class="thumb" title={tr("Afbeelding weghalen", "Remove image")} aria-label={tr("Afbeelding weghalen", "Remove image")} onclick={() => (draft.images = draft.images.filter((_, j) => j !== i))}>
           <img src={img.url} alt="" />
         </button>
       {/each}
-      {#if draft.reading}<span class="file faint">Document lezen…</span>{/if}
+      {#if draft.reading}<span class="file faint">{tr("Document lezen…", "Reading document…")}</span>{/if}
       {#if draft.attachment}
-        <button class="file" title="Weghalen" onclick={() => (draft.attachment = null)}>
-          📄 {draft.attachment.name} <span class="faint">· {draft.attachment.text.length.toLocaleString("nl-NL")} tekens ×</span>
+        <button class="file" title={tr("Weghalen", "Remove")} onclick={() => (draft.attachment = null)}>
+          📄 {draft.attachment.name} <span class="faint">· {draft.attachment.text.length.toLocaleString(english() ? "en-GB" : "nl-NL")} {tr("tekens", "characters")} ×</span>
         </button>
       {/if}
     </div>
   {/if}
   {#if draft.fileError}<p class="err">{draft.fileError}</p>{/if}
-  <input class="file-input" type="file" multiple accept="image/*,.txt,.md,.csv,.json,.pdf,.docx" bind:this={fileInput} onchange={picked} oncancel={() => (draft.picking = false)} aria-label="Attach files" />
+  <input class="file-input" type="file" multiple accept="image/*,.txt,.md,.csv,.json,.pdf,.docx" bind:this={fileInput} onchange={picked} oncancel={() => (draft.picking = false)} aria-label={tr("Bestanden bijvoegen", "Attach files")} />
   <div class="row">
-    <button class="ghost attach" onclick={pickFile} title="Attach images or documents" aria-label="Attach images or documents" disabled={draft.reading}><Icon name="attach" size={18} /></button>
+    <button class="ghost attach" onclick={pickFile} title={tr("Afbeeldingen of documenten bijvoegen", "Attach images or documents")} aria-label={tr("Afbeeldingen of documenten bijvoegen", "Attach images or documents")} disabled={draft.reading}><Icon name="attach" size={18} /></button>
     <textarea
       bind:this={field}
       bind:value={draft.text}
       onkeydown={key}
       onpaste={paste}
       rows="1"
-      aria-label="Message Nook"
-      placeholder={draft.attachment ? `Ask about ${draft.attachment.name}…` : "Ask Nook anything…"}
+      aria-label={tr("Bericht aan Nook", "Message Nook")}
+      placeholder={draft.attachment ? tr(`Vraag iets over ${draft.attachment.name}…`, `Ask about ${draft.attachment.name}…`) : tr("Vraag Nook iets…", "Ask Nook anything…")}
     ></textarea>
     <MicButton />
     {#if nook.busy}
-      <button class="ghost" onclick={() => nook.stop()} title="Stop response" aria-label="Stop response">■</button>
+      <button class="ghost" onclick={() => nook.stop()} title={tr("Antwoord stoppen", "Stop response")} aria-label={tr("Antwoord stoppen", "Stop response")}>■</button>
     {:else}
-      <button class="primary" onclick={send} disabled={draft.empty || draft.reading} title="Send message (Enter)" aria-label="Send message"><Icon name="arrow" size={18} /></button>
+      <button class="primary" onclick={send} disabled={draft.empty || draft.reading} title={tr("Versturen (Enter)", "Send message (Enter)")} aria-label={tr("Versturen", "Send message")}><Icon name="arrow" size={18} /></button>
     {/if}
   </div>
   {#if nook.info && !compact}
@@ -149,18 +150,18 @@
       <ChatAccounts nookId={nook.active?.id ?? null} ensure={() => nook.ensureActive()} />
       <div class="brain" bind:this={brainRoot}>
         <button class="chip" class:local={nook.info.brainLocal} class:off={!nook.info.brainReady} onclick={openBrainMenu}
-          title={nook.info.brainLocal ? "Denkt op deze computer" : "Externe AI"}>
-          {nook.info.brainLocal ? "● lokaal" : "○ extern"} · {nook.info.brainLabel}{nook.info.brainReady ? "" : " · niet klaar"}
+          title={nook.info.brainLocal ? tr("Denkt op deze computer", "Thinks on this computer") : tr("Externe AI", "External AI")}>
+          {nook.info.brainLocal ? tr("● lokaal", "● local") : tr("○ extern", "○ external")} · {nook.info.brainLabel}{nook.info.brainReady ? "" : tr(" · niet klaar", " · not ready")}
         </button>
         {#if brainMenu}
           <div class="menu">
             {#each servers as m (m.server + m.name)}
               <button class="ghost item" onclick={() => chooseModel(m)}>{m.name} <span class="faint">{m.server === "ollama" ? "Ollama" : "LM Studio"}</span></button>
             {:else}
-              <p class="faint item">Geen lokale modellen gevonden.</p>
+              <p class="faint item">{tr("Geen lokale modellen gevonden.", "No local models found.")}</p>
             {/each}
             <div class="sep"></div>
-            <button class="ghost item" onclick={openBrainSettings}>Brein-instellingen…</button>
+            <button class="ghost item" onclick={openBrainSettings}>{tr("Brein-instellingen…", "Brain settings…")}</button>
           </div>
         {/if}
       </div>

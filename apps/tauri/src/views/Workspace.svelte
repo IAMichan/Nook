@@ -2,6 +2,7 @@
   // De werkruimte (`WorkspaceView` op de Mac): terminals, de browser van Nook, worktrees en gebruik. Sessies zelf
   // staan in de tab Agents; hier staat het gereedschap eromheen.
   import { nook } from "../lib/state.svelte";
+  import { tr } from "../lib/i18n.svelte";
   import Browser from "./workspace/Browser.svelte";
   import Terminals from "./workspace/Terminals.svelte";
   import UsagePage from "./workspace/UsagePage.svelte";
@@ -36,7 +37,7 @@
 {:else}
   <div class="workspace" class:compact>
     <nav>
-      {#each pages as [id, label] (id)}<button class:on={page === id} onclick={() => (page = id)}>{label}</button>{/each}
+      {#each pages as [id, label] (id)}<button class:on={page === id} onclick={() => (page = id)}>{id === "usage" ? tr("Gebruik", "Usage") : label}</button>{/each}
     </nav>
     <div class="page">
       {#if page === "terminals"}<Terminals />

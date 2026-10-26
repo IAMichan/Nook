@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from "../lib/i18n.svelte";
   // Eén bericht: boven het antwoord wat er opgezocht is, dan het antwoord zelf (Markdown), grafieken, mailconcepten,
   // het plan, de genummerde bronnen, meldingen en vervolgknoppen. Bij een fout de knop die hem oplost.
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -28,11 +29,11 @@
 
   function recoveryTitle(r: Recovery): string {
     switch (r.kind) {
-      case "chooseModel": return "Kies een model";
-      case "openLocalServer": return `Hoe start ik ${r.name}?`;
+      case "chooseModel": return tr("Kies een model", "Choose a model");
+      case "openLocalServer": return tr(`Hoe start ik ${r.name}?`, `How do I start ${r.name}?`);
       case "reconnectBrain":
-      case "reconnectConnection": return "Opnieuw koppelen";
-      default: return "Instellingen";
+      case "reconnectConnection": return tr("Opnieuw koppelen", "Reconnect");
+      default: return tr("Instellingen", "Settings");
     }
   }
 
@@ -55,7 +56,7 @@
   {:else}
     <SourcesView {message} live={message.streaming} onRetry={last ? () => brainApi.retryLast(nookId) : undefined} />
     {#if message.streaming && !text}
-      <div class="status"><span class="dot working"></span> {message.status || "Even nadenken…"}</div>
+      <div class="status"><span class="dot working"></span> {message.status || tr("Even nadenken…", "Thinking…")}</div>
     {:else if text}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="markdown" onclick={click}>{@html html}</div>
@@ -83,7 +84,7 @@
     {#if message.recovery || (message.isError && last)}
       <div class="offers">
         {#if message.recovery}<button onclick={() => recover(message.recovery!)}>{recoveryTitle(message.recovery)}</button>{/if}
-        {#if last}<button class="ghost" onclick={() => brainApi.retryLast(nookId)}>Probeer opnieuw</button>{/if}
+        {#if last}<button class="ghost" onclick={() => brainApi.retryLast(nookId)}>{tr("Probeer opnieuw", "Try again")}</button>{/if}
       </div>
     {/if}
     {#if message.offers.length && !message.streaming}
