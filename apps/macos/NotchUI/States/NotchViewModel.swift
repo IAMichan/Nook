@@ -2,6 +2,12 @@ import SwiftUI
 import Combine
 import AppKit
 
+/// One Pull request tab of a session's side panel: the pull request it shows, or nil for the list to pick one.
+struct SidePullRequestTab: Identifiable, Equatable {
+    let id = UUID()
+    var request: PullRequestOpenRequest?
+}
+
 @MainActor
 final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
@@ -30,6 +36,7 @@ final class NotchViewModel: ObservableObject {
         didSet {
             if SessionTool.sideTabs.contains(sessionTool) {
                 if !sessionTabs.contains(sessionTool) { sessionTabs.append(sessionTool) }
+                if sessionTool == .pullRequest { ensureSidePullRequestTab() }
                 take(sessionTool, from: \.bottomTool, tabs: \.bottomTabs)
             }
             if sessionTool != oldValue { resizeForWorkbench() }
@@ -94,8 +101,71 @@ final class NotchViewModel: ObservableObject {
     /// What the Chats tab shows next ("@chat Anna"): it takes this once and clears it.
     @Published var chatsFocus: ChatsFocus?
 
-    /// The pull request in the side panel's Pull request tab, opened from a link in the session's conversation.
-    @Published var sidePullRequest: PullRequestOpenRequest?
+    /// The Pull request tabs of the side panel: each shows one pull request, or (no request) the list to pick one. A pull
+    /// request opened from a link or from the list takes the list tab in view, else a tab of its own, so the ones you
+    /// have open stay. Not kept across launches.
+    @Published var sidePullRequestTabs: [SidePullRequestTab] = []
+    /// The Pull request tab in view while the side panel shows one.
+    @Published var activeSidePullRequest: UUID?
+
+    /// The pull request in the active Pull request tab, if it shows one.
+    var sidePullRequest: PullRequestOpenRequest? { sidePullRequestTabs.first { $0.id == activeSidePullRequest }?.request }
+
+    /// Shows `request` in the side panel's Pull request tabs: in the tab that already has it, else in the list tab in
+    /// view, else in a new tab. With nil, shows the list to pick one: the list tab that is open, else a new one.
+    func openSidePullRequest(_ request: PullRequestOpenRequest?) {
+        if let request {
+            let key = request.item.id.lowercased()
+            if let open = sidePullRequestTabs.first(where: { $0.request?.item.id.lowercased() == key }) {
+                activeSidePullRequest = open.id
+            } else if let index = sidePullRequestTabs.firstIndex(where: { $0.id == activeSidePullRequest && $0.request == nil }) {
+                sidePullRequestTabs[index].request = request
+            } else {
+                let tab = SidePullRequestTab(request: request)
+                sidePullRequestTabs.append(tab)
+                activeSidePullRequest = tab.id
+            }
+        } else if let list = sidePullRequestTabs.first(where: { $0.request == nil }) {
+            activeSidePullRequest = list.id
+        } else {
+            let tab = SidePullRequestTab(request: nil)
+            sidePullRequestTabs.append(tab)
+            activeSidePullRequest = tab.id
+        }
+        sessionTool = .pullRequest
+    }
+
+    /// A pull request read again (merged, a new title): its tab shows the new state.
+    func updateSidePullRequest(_ request: PullRequestOpenRequest) {
+        guard let index = sidePullRequestTabs.firstIndex(where: { $0.id == activeSidePullRequest }) else { return }
+        sidePullRequestTabs[index].request = request
+    }
+
+    /// The active tab goes back to the list to pick a pull request.
+    func showSidePullRequestList() {
+        guard let index = sidePullRequestTabs.firstIndex(where: { $0.id == activeSidePullRequest }) else { return }
+        sidePullRequestTabs[index].request = nil
+    }
+
+    /// Closes one Pull request tab; the one next to it comes into view. False when it was the last one.
+    @discardableResult
+    func closeSidePullRequest(_ id: UUID) -> Bool {
+        guard let index = sidePullRequestTabs.firstIndex(where: { $0.id == id }) else { return !sidePullRequestTabs.isEmpty }
+        sidePullRequestTabs.remove(at: index)
+        if activeSidePullRequest == id { activeSidePullRequest = sidePullRequestTabs.isEmpty ? nil : sidePullRequestTabs[min(index, sidePullRequestTabs.count - 1)].id }
+        return !sidePullRequestTabs.isEmpty
+    }
+
+    /// The Pull request tool always has a tab in view: with none open yet it is the list to pick from.
+    private func ensureSidePullRequestTab() {
+        if sidePullRequestTabs.isEmpty {
+            let tab = SidePullRequestTab(request: nil)
+            sidePullRequestTabs = [tab]
+            activeSidePullRequest = tab.id
+        } else if !sidePullRequestTabs.contains(where: { $0.id == activeSidePullRequest }) {
+            activeSidePullRequest = sidePullRequestTabs[0].id
+        }
+    }
 
     /// Tabs closed in a session's side or bottom panel, for ⇧⌘T (`panel.reopenClosed`); not published, nothing shows it.
     var closedSessionTabs = ClosedTabs<ClosedSessionTab>()

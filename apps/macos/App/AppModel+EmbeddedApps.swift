@@ -91,8 +91,7 @@ extension AppModel {
         let account = listed?.0 ?? AccountRegistry.shared.accounts(for: "github").first?.id ?? "github"
         let request = PullRequestOpenRequest(account: account, item: listed?.1 ?? link)
         if beside {
-            viewModel.sidePullRequest = request
-            viewModel.sessionTool = .pullRequest
+            viewModel.openSidePullRequest(request)
             return true
         }
         viewModel.pullRequestToOpen = request
