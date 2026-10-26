@@ -60,7 +60,19 @@ struct ChatIntent: Equatable {
 
     // MARK: Recognition
 
+    /// The last few texts read, with what they asked for. Reading a text runs some forty patterns over it, and one request
+    /// is read several times on its way (the sources, the brain, the memory); thinking along reads a long instruction each
+    /// look. The answer depends on the text alone, so a text read before is not read again.
+    private static let recent = RecentIntents()
+
     static func detect(_ raw: String) -> ChatIntent {
+        if let known = recent.intent(for: raw) { return known }
+        let intent = recognize(raw)
+        recent.remember(intent, for: raw)
+        return intent
+    }
+
+    private static func recognize(_ raw: String) -> ChatIntent {
         let text = fixingSendTypo(raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
         var intent = ChatIntent()
         guard !text.isEmpty else { return intent }
@@ -101,6 +113,10 @@ struct ChatIntent: Equatable {
         if has(#"systeeminstelling|system ?settings|systemeinstellung|réglages système|ajustes del sistema|\bklik|\bclick|\bklick|\bcliqu|\bmuis|\bmouse|\bmaus\b|toetsenbord|keyboard|tastatur|\bdruk op\b|\btyp (in|het|dit|dat)\b|\btype (in|this|it)\b|(instelling|setting|einstellung)\w* (aan|uit|wijzig|verander|aanpass|on|off|change|ändern)|(zet|schakel|turn|switch|schalte?)\b[^.?!]{0,40}\b(aan|uit|on|off|ein|aus)\b[^.?!]{0,30}\b(instelling|setting|einstellung)|\b(night ?shift|dark mode|donkere modus|bluetooth|wi-?fi|niet storen|do not disturb|true tone|screen saver|schermbeveiliging)\b"#) { kinds.append(.control) }
         // A task of many steps Nook carries out itself: ordering, booking, unsubscribing, finishing what is on screen.
         if has(#"\b(bestel|bestellen|koop|kopen|kaufe|kaufen|bestelle|commande|commander|achète|acheter|compra|comprar|pide)\b|\b(order|buy) (a|an|the|some|me|more|new)\b|place an order|\b(boek|book|buche|buchen|réserve|reserva|reserveer)\b[^.?!]{0,40}\b(vlucht|vluchten|flight|flights|ticket|tickets|kaartje|kaartjes|hotel|kamer|room|trein|train|tafel|table|flug|vol|vuelo)\b|\b(afmelden|uitschrijven|unsubscribe|abmelden|désabonne|darme de baja)\b|\b(finish|do) (this|it) for me\b|\bmaak (dit|het) (voor me )?af\b|\bdoe (dit|het) voor me\b|\bneem (dit|het) over\b|\btake (this )?over\b|\bmach (das|es) für mich\b|\b(vul|fill) (dit|het|this|the|out)\b[^.?!]{0,30}\b(formulier|form)\b"#) { kinds.append(.takeover) }
+        // Posting on a website ("maak posts op Reddit om Nook te promoten"): Nook writes the post and places it there
+        // through the browser, with mouse and keyboard; the Post button waits for the user's yes.
+        let posts = postsOnline(text)
+        if !kinds.contains(.takeover), posts { kinds.append(.takeover) }
         // Changing a setting the Mac keeps somewhere in System Settings ("laat het batterijpercentage zien", "zet mijn
         // standaardbrowser op Firefox"): done by hand, with mouse and keyboard.
         let changesSomething = has(#"\b(zet|verander|wijzig|pas\b[^.?!]{0,40}\baan|aanpassen|schakel|laat|maak|stel|set|change|turn|switch|enable|disable|show|hide|make|adjust|ändere|stelle|schalte|aktiviere|deaktiviere|zeige|active|désactive|affiche|règle|cambia|activa|desactiva|muestra|ajusta)\b"#)
@@ -128,11 +144,14 @@ struct ChatIntent: Equatable {
 
         let polite = text
             .replacingOccurrences(of: #"^(nook|hé nook|hey nook|hoi nook|hi nook)[ ,]+"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)\s+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^(wil je|kun je|kan je|zou je|could you|can you|would you|will you|please|graag|kannst du|könntest du|bitte)[,:]?\s+"#, with: "", options: .regularExpression)
         let imperative = polite.range(of: #"^(maak|zet|plan|boek|bestel|koop|stuur|verstuur|schrijf|noteer|voeg|herinner|onthoud|vergeet|open|start|speel|pauzeer|verplaats|annuleer|mail|app|whatsapp|beantwoord|teken|create|make|add|schedule|book|buy|order|unsubscribe|send|write|remind|remember|forget|note|put|set|move|cancel|draft|reply|play|pause|draw|merge|merk|vergiss|erstelle|schreib|erinnere|plane|trag|sende|öffne|spiele)\b"#, options: .regularExpression) != nil
         let asksPolitely = text.range(of: #"^(nook,? )?(wil je|kun je|kan je|zou je|could you|can you|would you|will you|kannst du|könntest du)\b"#, options: .regularExpression) != nil
         let embedded = has(#"herinner me|remind me|erinnere mich|zet (het|dit|dat|een|'?n)?[^.?!]{0,40} in (mijn|de) (agenda|herinneringen|notities)|vergeet (ik )?niet|\bmaak (een|er een)\b|\bplan (een|het|dat)\b|\bstuur (een|het|dat)\b|\bschrijf (een|het|dat)\b|\bvoeg [^.?!]{0,30} toe\b|\bvoortaan\b|\bfrom now on\b|\bab jetzt\b"#)
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded)
+        // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
+        // "I saw a post on Reddit" names a site too, but asks for nothing.
+        let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting
@@ -224,6 +243,16 @@ struct ChatIntent: Equatable {
     static func sends(_ raw: String) -> Bool {
         let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         return text.range(of: #"^(stuur|verstuur|verzend|send|schick|sende)\b|\b(stuur|stuurt|sturen|verstuur|versturen|verzend|verzenden|send|sending|schicken|senden|sende)\b[^.?!]{0,60}\b(bericht|berichtje|message|nachricht|tekst|text)\b|\b(bericht|berichtje|message|nachricht|tekst|text)\b[^.?!]{0,60}\b(sturen|versturen|verzenden|send|schicken|senden)\b"#, options: .regularExpression) != nil
+    }
+
+    /// Placing something on a website: "maak posts op Reddit", "post this on LinkedIn", "deel het op Hacker News".
+    /// A post written *for* a site ("schrijf een tweet voor mijn launch") is only text; one *on* a site is a task.
+    static func postsOnline(_ raw: String) -> Bool {
+        let text = raw.lowercased()
+        let site = #"(op|on|in|auf|sur|en|naar|to) (de |het |the |een |a )?(r/[a-z0-9_]+|subreddits?|reddit|twitter|x|x\.com|linkedin|facebook|instagram|mastodon|bluesky|hacker ?news|product ?hunt|dev\.to|discord|forum)\b"#
+        let places = #"\b(post|posten|plaats|plaatsen|publiceer|publiceren|deel|delen|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b[^.?!]{0,60}\b"# + site
+        let makes = #"\b(maak|schrijf|zet|make|write|create|put|erstelle|schreib|crée|écris|crea|escribe)\b[^.?!]{0,40}\b(posts?|berichten|bericht|topic|thread|draadje|tweets?|beitrag|beiträge|publications?|publicaci[oó]n(es)?)\b[^.?!]{0,30}\b"# + site
+        return text.range(of: places, options: .regularExpression) != nil || text.range(of: makes, options: .regularExpression) != nil
     }
 
     /// "Schrijf een nieuw bericht over…": a message to write, with the channel left to the conversation. A mistyped
@@ -360,5 +389,27 @@ struct ChatIntent: Equatable {
         day.timeZone = calendar.timeZone
         day.dateFormat = "yyyy-MM-dd"
         return "\(day.string(from: friday))T15:00:00\(offset.string(from: friday))"
+    }
+}
+
+/// `ChatIntent.detect(_:)`'s memory: the last few texts and their intent, safe to use from any thread.
+private final class RecentIntents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var intents: [String: ChatIntent] = [:]
+    private var order: [String] = []
+    private let limit = 16
+
+    func intent(for text: String) -> ChatIntent? {
+        lock.lock()
+        defer { lock.unlock() }
+        return intents[text]
+    }
+
+    func remember(_ intent: ChatIntent, for text: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard intents.updateValue(intent, forKey: text) == nil else { return }
+        order.append(text)
+        if order.count > limit { intents[order.removeFirst()] = nil }
     }
 }

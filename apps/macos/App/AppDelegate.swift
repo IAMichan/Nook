@@ -95,10 +95,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func watchCount() {
         let store = AutocompleteStore.shared
         let dayChanged = NotificationCenter.default.publisher(for: .NSCalendarDayChanged).map { _ in () }.prepend(())
+        // Statistics change with every suggestion shown; the menu bar item is only laid out again when its number changes.
         countWatch = store.$stats.combineLatest(store.$prefs, dayChanged)
+            .map { stats, prefs, _ -> Int? in prefs.enabled && prefs.menuBarCount ? stats.day().words : nil }
+            .removeDuplicates()
             .receive(on: RunLoop.main)
-            .sink { [weak self] stats, prefs, _ in
-                MainActor.assumeIsolated { self?.showCount(prefs.enabled && prefs.menuBarCount ? stats.day().words : nil) }
+            .sink { [weak self] words in
+                MainActor.assumeIsolated { self?.showCount(words) }
             }
     }
 

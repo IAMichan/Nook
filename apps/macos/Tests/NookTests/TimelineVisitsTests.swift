@@ -64,7 +64,7 @@ final class TimelineVisitsTests: XCTestCase {
         let message = AgentChatMessage(id: "m", kind: .assistant, text: "hi", date: at(3))
         let fold = TranscriptRow.fold(id: "f", seconds: 2, rows: [.working(since: nil), .thinking(message)])
         XCTAssertEqual(fold.visitDate, at(3))
-        XCTAssertNil(TranscriptRow.live(nil).visitDate)
+        XCTAssertNil(TranscriptRow.live(nil, thought: nil).visitDate)
         XCTAssertEqual(TranscriptRow.user(message).visitDate, at(3))
     }
 }

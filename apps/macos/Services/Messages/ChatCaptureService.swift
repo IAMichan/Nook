@@ -77,6 +77,8 @@ final class ChatCaptureService: ObservableObject {
     @Published private(set) var bridgeProblems: [String: String] = [:]
     /// The apps whose bridge read at least once: their chats come in with history, not only from notifications.
     @Published private(set) var bridged: Set<String> = []
+    /// Chats the helper has nothing older of (scrolled back to their start).
+    private var noOlder: Set<String> = []
     private var bridgeDue: [String: Date] = [:]
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
     /// message a few seconds after it notified, so one read right away may still miss it.
@@ -140,17 +142,31 @@ final class ChatCaptureService: ObservableObject {
         bridgeNudges = [:]
         // A Telegram session from an earlier login starts by itself; a new login starts from Settings › Chats.
         if sources.isOn(telegramBridge.app) { telegramBridge.resume() }
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
             Task { @MainActor in
-                await self?.poll()
-                await self?.pollBridges()
+                await self?.pollTick()
             }
         }
-        timer?.tolerance = 0.5
         Task {
             await poll()
             await pollBridges()
         }
+    }
+
+    private var lastPollTime: Date = .distantPast
+
+    /// Evaluates energy policy and display sleep state before polling databases.
+    private func pollTick() async {
+        let plan = EnergyMonitor.shared.plan
+        if plan.reasons.contains(.displayAsleep) {
+            guard Date().timeIntervalSince(lastPollTime) >= 15 else { return }
+        } else {
+            let interval = Self.interval * plan.slowdown
+            guard Date().timeIntervalSince(lastPollTime) >= interval - 0.25 else { return }
+        }
+        lastPollTime = Date()
+        await poll()
+        await pollBridges()
     }
 
     func stop() {
@@ -219,7 +235,7 @@ final class ChatCaptureService: ObservableObject {
             }
             lastChange = change
             retryAt = nil
-            status = .running
+            if status != .running { status = .running }
             if changed {
                 save()
                 if !wasReplaying { announce(since: before) }
@@ -276,9 +292,14 @@ final class ChatCaptureService: ObservableObject {
         var changed = false
         let before = inbox
         for bridge in bridges {
+            // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
+            // quiet tick every second costs no redraw.
             guard sources.isOn(bridge.app), bridge.isReady else {
-                bridgeProblems[bridge.app] = nil
-                bridged.remove(bridge.app)
+                // This runs every second for every bridge that is off: write only on a change, since each write to a
+                // published property redraws every view that watches the inbox.
+                if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+                if bridged.contains(bridge.app) { bridged.remove(bridge.app) }
+                if bridge === serviceBridge, !bridged.isDisjoint(with: serviceBridge.covered) { bridged.subtract(serviceBridge.covered) }
                 continue
             }
             if let due = bridgeDue[bridge.app], due > Date() { continue }
@@ -286,11 +307,22 @@ final class ChatCaptureService: ObservableObject {
             bridgeNudges[bridge.app] = nudges > 1 ? nudges - 1 : nil
             bridgeDue[bridge.app] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
             do {
-                for chat in try await bridge.read() where inbox.merge(chat) { changed = true }
-                bridgeProblems[bridge.app] = nil
-                bridged.insert(bridge.app)
+                let chats = try await bridge.read()
+                // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
+                var merged = inbox
+                var mergedAny = false
+                for chat in chats where merged.merge(chat) { mergedAny = true }
+                if mergedAny {
+                    inbox = merged
+                    changed = true
+                }
+                if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+                // The chat helper reads several apps: each one it brought in is bridged.
+                let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
+                if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
             } catch {
-                bridgeProblems[bridge.app] = error.localizedDescription
+                let problem = error.localizedDescription
+                if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
                 // Try again in a minute, not every few seconds.
                 bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
             }
@@ -382,6 +414,34 @@ final class ChatCaptureService: ObservableObject {
     func remove(_ id: String) {
         inbox.remove(id)
         save()
+    }
+
+    /// A chat the chat helper brings in, with older messages there that Nook does not show yet.
+    func canLoadOlder(_ id: String) -> Bool {
+        guard let thread = inbox.threads[id], !noOlder.contains(id) else { return false }
+        return serviceBridge.chatID(app: thread.app, name: thread.name) != nil
+    }
+
+    /// Scrolls back in a chat the helper brings in: its next batch of older messages, kept from now on. False when no
+    /// older one came in.
+    func loadOlder(_ id: String) async -> Bool {
+        guard let thread = inbox.threads[id] else { return false }
+        let before = thread.messages.count
+        do {
+            let (chat, hasMore) = try await serviceBridge.older(app: thread.app, name: thread.name, have: before)
+            if !hasMore { noOlder.insert(id) }
+            guard let chat else { return false }
+            var merged = inbox
+            merged.grow(id, by: ChatServiceBridge.olderStep)
+            merged.merge(chat)
+            let after = merged.threads[id]?.messages.count ?? before
+            guard after > before else { return false }
+            inbox = merged
+            save()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Chats brought over from another app (`BeeperImporter`), merged like a bridge's; how many changed.

@@ -474,23 +474,30 @@ private struct WaveformDetail: View {
     private static let step: TimeInterval = 1.0 / 30.0
 
     @State private var history = VoiceHistory(count: 200)
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
 
     var body: some View {
         GeometryReader { proxy in
             // As many bars as fit: the wave runs the full width of the card.
             let count = max(1, Int((proxy.size.width + Self.gap) / (Self.barWidth + Self.gap)))
-            TimelineView(.animation(minimumInterval: Self.step)) { context in
-                let levels = history.sample(at: context.date, step: Self.step).suffix(count)
-                HStack(spacing: Self.gap) {
-                    ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
-                        Capsule()
-                            .fill(NookTheme.mint)
-                            .opacity(0.45 + 0.55 * level)
-                            .frame(width: Self.barWidth, height: 4 + 24 * CGFloat(level))
+            let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+            SeparateGraph {
+                TimelineView(.nookFrames(fps: rate, paused: energy.plan.pace == .paused)) { context in
+                    let levels = history.sample(at: context.date, step: 1.0 / max(1, rate)).suffix(count)
+                    HStack(spacing: Self.gap) {
+                        ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                            Capsule()
+                                .fill(NookTheme.mint)
+                                .opacity(0.45 + 0.55 * level)
+                                .frame(width: Self.barWidth, height: 4 + 24 * CGFloat(level))
+                        }
                     }
+                    .frame(width: proxy.size.width, height: 28, alignment: .trailing)
                 }
-                .frame(width: proxy.size.width, height: 28, alignment: .trailing)
+                .drawingGroup()
             }
+            .frame(width: proxy.size.width, height: 28, alignment: .trailing)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 28)

@@ -129,6 +129,15 @@ final class UIConsistencyTests: XCTestCase {
         XCTAssertEqual(found, [], "use NookDivider (NotchUI/Components/PanelBlocks.swift)")
     }
 
+    /// A pull request's state, checks and reviews look the same everywhere: their icon and color come from
+    /// `PullRequestIcon`, and the drawn marks only through `PullRequestStateIcon` or `NookSymbol`.
+    func testPullRequestIconsAreTheSharedComponent() {
+        let found = offenders(#""arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\("#) {
+            ["NotchUI/Components/PullRequestIcons.swift", "NotchUI/Components/NookSymbol.swift", "NotchUI/Pills/AgentsExtras.swift"].contains($0)
+        }
+        XCTAssertEqual(found, [], "use PullRequestIcon / PullRequestStateIcon (NotchUI/Components/PullRequestIcons.swift)")
+    }
+
     /// Every token the scale promises exists, so the names in the docs and in the lint script stay true.
     func testThemeDefinesTheScales() {
         guard let theme = Self.sources.first(where: { $0.path == "NotchUI/Theme/NookTheme.swift" })?.text else {

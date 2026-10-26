@@ -12,9 +12,9 @@ struct GitLabHostRow: View {
 
     var body: some View {
         Button { showManage = true } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: NookTheme.Spacing.lg) {
                 ServiceTile(domain: "gitlab.com", fallback: "key.fill", tint: NookTheme.iris, size: 30)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text("GitLab")
                     Text(GitLabStatus.detail(host: host, check: check))
                         .font(NookTheme.TextStyle.detail)
@@ -157,13 +157,13 @@ struct GitLabSetupSheet: View {
                 .foregroundStyle(NookTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             DisclosureGroup(isExpanded: $showSelfHosted) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     TextField(tr("gitlab.host"), text: $host)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 260)
                     SettingNote(tr("gitlab.selfHostedDetail"))
                 }
-                .padding(.top, 6)
+                .padding(.top, NookTheme.Spacing.sm)
             } label: {
                 Text(tr("gitlab.selfHosted")).font(NookTheme.TextStyle.body)
             }
@@ -214,7 +214,7 @@ struct GitLabSetupSheet: View {
     // MARK: Token and result
 
     private var tokenField: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             SecureField(tr("gitlab.token"), text: $token, prompt: Text("glpat-…"))
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
@@ -236,7 +236,7 @@ struct GitLabSetupSheet: View {
     @ViewBuilder
     private var result: some View {
         if checking {
-            HStack(spacing: 8) {
+            HStack(spacing: NookTheme.Spacing.md) {
                 ProgressView().controlSize(.small)
                 Text(tr("settings2.step.checkBusy")).font(NookTheme.TextStyle.body)
             }

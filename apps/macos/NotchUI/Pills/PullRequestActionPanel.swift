@@ -50,46 +50,73 @@ final class PullRequestActionState: ObservableObject {
     }
 }
 
-/// The ⋯ menu of a pull request: copy its link, number or checkout command, ask for reviews, edit it, bring
-/// its branch up to date, close or reopen it. What changes GitHub goes through the confirmation in the action panel.
+/// The ⋯ menu of a pull request, in Nook's own dropdown panel: refresh it, copy its link, number or checkout command,
+/// ask for reviews, edit it, bring its branch up to date, close or reopen it. While GitHub is asked the ⋯ spins, as on
+/// page. What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail
+    var loading = false
+    /// When the page last heard from GitHub, said in the menu's tooltip.
+    var fetchedAt: Date? = nil
+    var onRefresh: (() -> Void)? = nil
 
     var body: some View {
-        Menu {
-            if let url = detail.url {
-                Button(tr("agents.pr.copyLink")) { copy(url.absoluteString, tr("agents.pr.copiedLink")) }
+        ComposerDropdown(width: 248) {
+            Group {
+                if loading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "ellipsis")
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
             }
-            Button(tr("agents.pr.action.copyNumber")) { copy("#\(detail.number)", tr("agents.pr.action.copied")) }
-            Button(tr("agents.pr.action.copyCheckout")) { copy(Self.checkout(detail), tr("agents.pr.action.copied")) }
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+        } content: {
+            if let onRefresh {
+                DropdownRow(symbol: "arrow.clockwise", title: tr("agents.pulls.refresh"), action: onRefresh)
+                DropdownDivider()
+            }
+            if let url = detail.url {
+                DropdownRow(symbol: "link", title: tr("agents.pr.copyLink")) {
+                    copy(url.absoluteString, tr("agents.pr.copiedLink"))
+                }
+            }
+            DropdownRow(symbol: "number", title: tr("agents.pr.action.copyNumber")) {
+                copy("#\(detail.number)", tr("agents.pr.action.copied"))
+            }
+            DropdownRow(symbol: "terminal", title: tr("agents.pr.action.copyCheckout")) {
+                copy(Self.checkout(detail), tr("agents.pr.action.copied"))
+            }
             if detail.isOpen {
-                Divider()
-                Button(tr("agents.pr.action.requestReviewers")) { state.open(.reviewers, detail: detail) }
-                Button(tr("agents.pr.action.edit")) { state.open(.edit, detail: detail) }
+                DropdownDivider()
+                DropdownRow(symbol: "person.badge.plus", title: tr("agents.pr.action.requestReviewers")) {
+                    state.open(.reviewers, detail: detail)
+                }
+                DropdownRow(symbol: "pencil", title: tr("agents.pr.action.edit")) { state.open(.edit, detail: detail) }
                 if detail.state == .draft, !detail.nodeID.isEmpty {
-                    Button(tr("agents.pr.action.ready")) { ask(.markReady(nodeID: detail.nodeID)) }
+                    DropdownRow(symbol: PullRequestIcon.symbol(.open), title: tr("agents.pr.action.ready")) {
+                        ask(.markReady(nodeID: detail.nodeID))
+                    }
                 }
                 if detail.mergeState == "behind" {
-                    Button(tr("agents.pr.action.updateBranch")) { ask(.updateBranch(headSHA: detail.headSHA)) }
+                    DropdownRow(symbol: PullRequestIcon.behind, title: tr("agents.pr.action.updateBranch")) {
+                        ask(.updateBranch(headSHA: detail.headSHA))
+                    }
                 }
-                Divider()
-                Button(tr("agents.pr.action.close"), role: .destructive) { ask(.close) }
+                DropdownDivider()
+                DropdownRow(symbol: PullRequestIcon.symbol(.closed), title: tr("agents.pr.action.close"), tint: PullRequestIcon.tint(.closed)) {
+                    ask(.close)
+                }
             } else if detail.state == .closed {
-                Divider()
-                Button(tr("agents.pr.action.reopen")) { ask(.reopen) }
+                DropdownDivider()
+                DropdownRow(symbol: PullRequestIcon.symbol(.open), title: tr("agents.pr.action.reopen")) { ask(.reopen) }
             }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(tr("agents.pr.action.more"))
+        .help(fetchedAt.map { tr("agents.pr.action.more") + " · " + tr("agents.pulls.updatedAgo", AgentFormat.short(Date().timeIntervalSince($0))) }
+              ?? tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
         .disabled(state.sending)
     }
@@ -265,7 +292,7 @@ struct PullRequestActionPanel: View {
 
     private func confirmation(_ action: PullRequestAction) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: Self.symbol(action))
+            NookSymbol(Self.symbol(action), size: 13)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(Self.destructive(action) ? NookTheme.coral : NookTheme.amber)
             Text(Self.question(action, detail: detail))
@@ -332,14 +359,15 @@ struct PullRequestActionPanel: View {
     static func symbol(_ action: PullRequestAction) -> String {
         switch action {
         case .review(let verdict, _): return verdictSymbol(verdict)
-        case .comment: return "text.bubble"
-        case .close: return "xmark.circle"
-        case .reopen: return "arrow.uturn.backward.circle"
+        case .comment: return PullRequestIcon.symbol(PullRequestIcon.Review.commented)
+        // An action shows the mark of the state it leads to.
+        case .close: return PullRequestIcon.symbol(.closed)
+        case .reopen: return PullRequestIcon.symbol(.open)
         case .edit: return "pencil"
         case .requestReviewers: return "person.badge.plus"
-        case .updateBranch: return "arrow.triangle.2.circlepath"
+        case .updateBranch: return PullRequestIcon.behind
         case .addLabels, .removeLabel: return "tag"
-        case .markReady: return "eye"
+        case .markReady: return PullRequestIcon.symbol(.open)
         case .changeBase: return "arrow.triangle.branch"
         }
     }
@@ -358,19 +386,15 @@ struct PullRequestActionPanel: View {
         }
     }
 
-    static func verdictSymbol(_ verdict: PullRequestAction.Verdict) -> String {
-        switch verdict {
-        case .comment: return "text.bubble"
-        case .approve: return "checkmark.circle.fill"
-        case .requestChanges: return "exclamationmark.circle.fill"
-        }
-    }
+    static func verdictSymbol(_ verdict: PullRequestAction.Verdict) -> String { PullRequestIcon.symbol(verdictIcon(verdict)) }
 
-    static func verdictColor(_ verdict: PullRequestAction.Verdict) -> Color {
+    static func verdictColor(_ verdict: PullRequestAction.Verdict) -> Color { PullRequestIcon.tint(verdictIcon(verdict)) }
+
+    private static func verdictIcon(_ verdict: PullRequestAction.Verdict) -> PullRequestIcon.Review {
         switch verdict {
-        case .comment: return NookTheme.textSecondary
-        case .approve: return NookTheme.mint
-        case .requestChanges: return NookTheme.amber
+        case .comment: return .commented
+        case .approve: return .approved
+        case .requestChanges: return .changesRequested
         }
     }
 }

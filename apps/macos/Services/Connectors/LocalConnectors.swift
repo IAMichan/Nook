@@ -63,7 +63,7 @@ final class CalendarConnector: ContextSource {
                 ConnectorItem(
                     id: $0.id,
                     title: $0.title,
-                    subtitle: NookDates.short($0.start) + ($0.location.isEmpty ? "" : " · \($0.location)"),
+                    subtitle: NookDates.short($0.start, locale: NookDates.appLocale) + ($0.location.isEmpty ? "" : " · \($0.location)"),
                     tone: $0.start <= now ? .good : .neutral
                 )
             },
@@ -128,7 +128,7 @@ final class RemindersConnector: ContextSource {
                 ConnectorItem(
                     id: $0.id,
                     title: $0.title,
-                    subtitle: $0.due.map { tr("connect.local.remindersDue", NookDates.short($0)) } ?? $0.list,
+                    subtitle: $0.due.map { tr("connect.local.remindersDue", NookDates.short($0, locale: NookDates.appLocale)) } ?? $0.list,
                     tone: ($0.due ?? .distantFuture) < now ? .attention : .neutral
                 )
             },
@@ -244,6 +244,19 @@ final class MailConnector: ContextSource {
     }
     private var loadedAt: Date?
     private var loading: Task<Void, Never>?
+    /// The latest answer per account, so an account that is slow this time keeps its inbox of the last refresh.
+    private var inboxes: [String: (unread: Int, rows: [MailStats.InboxRow])] = [:]
+    /// Refreshes in a row in which Mail did not answer at all.
+    private var failures = 0
+    /// The inbox's message and unread counts when it was last asked (see `refresh`).
+    private var changeMark: String?
+    /// Two numbers from Mail, one quick Apple Event: when both are what they were, the inbox is read again (every account,
+    /// forty messages each) only once the last full read is a quarter of an hour old.
+    private static let changeScript = """
+    tell application "Mail"
+        return ((count of messages of inbox) as text) & "|" & ((unread count of inbox) as text)
+    end tell
+    """
 
     var isActive: Bool { ConnectorToggle.isOn(id) && ScriptText.isRunning("com.apple.mail") }
     /// In the background Nook only looks when Mail is already open; when asked about mail, the tool opens Mail itself (hidden).
@@ -266,8 +279,9 @@ final class MailConnector: ContextSource {
         // Brief pause for Mail's scripting bridge to initialize.
         try? await Task.sleep(nanoseconds: 300_000_000)
     }
-    var refreshInterval: TimeInterval { 60 }
-    private static let loadTimeout: TimeInterval = 15
+    /// Every read scripts Mail (a count and a batch of messages), which keeps Mail busy too; a question reads it fresh anyway.
+    var refreshInterval: TimeInterval { 180 }
+    private static let loadTimeout: TimeInterval = 30
 
     /// Fresh enough to answer from memory.
     var isFresh: Bool { loadedAt.map { Date().timeIntervalSince($0) < 90 } ?? false }
@@ -279,6 +293,9 @@ final class MailConnector: ContextSource {
         }
         // One load at a time: a question that arrives during a background refresh waits for that one.
         if let loading { await loading.value; return }
+        let mark = await ScriptText.run(Self.changeScript, timeout: 5).text
+        if let mark, mark == changeMark, let loadedAt, Date().timeIntervalSince(loadedAt) < 15 * 60 { return }
+        changeMark = mark
         let task = Task { await self.load() }
         loading = task
         await task.value
@@ -286,21 +303,51 @@ final class MailConnector: ContextSource {
     }
 
     private func load() async {
-        // Every enabled account's inbox in one go: with several accounts, or while Mail syncs, that easily takes more
-        // than a few seconds.
-        let result = await ScriptText.run(MailStats.recentScript(), timeout: Self.loadTimeout)
-        if result.errorNumber == -1743 {
+        let list = await ScriptText.run(MailStats.accountsScript, timeout: Self.loadTimeout)
+        if list.errorNumber == -1743 {
             status = ConnectorStatus(state: .error("Grant Nook permission to read Mail: System Settings › Privacy & Security › Automation."))
             return
         }
-        guard let text = result.text else {
-            status = ConnectorStatus(state: .error(MailStats.failure(errorNumber: result.errorNumber, message: result.errorMessage,
+        // Each account on its own: while one account syncs a big mailbox, the others still show, and the slow one keeps
+        // the inbox it had until it answers again.
+        var failure: (number: Int?, message: String?)?
+        var answered = 0
+        if let names = list.text.map(MailStats.accounts) {
+            for name in names {
+                let result = await ScriptText.run(MailStats.recentScript(account: name), timeout: Self.loadTimeout)
+                if let text = result.text {
+                    let parsed = MailStats.recent(text)
+                    inboxes[name] = (parsed.unread, parsed.rows)
+                    answered += 1
+                } else {
+                    failure = (result.errorNumber, result.errorMessage)
+                }
+            }
+            // A removed or disabled account goes at once, also when no other account answers this time.
+            inboxes = inboxes.filter { names.contains($0.key) }
+            if recent.contains(where: { !names.contains($0.account) }) {
+                recent = recent.filter { names.contains($0.account) }
+                unreadCount = inboxes.values.reduce(0) { $0 + $1.unread }
+                if status.state == .ok { publish() }
+            }
+        } else {
+            failure = (list.errorNumber, list.errorMessage)
+        }
+        if answered == 0, let failure {
+            failures += 1
+            // A slow Mail (starting up, syncing) is no broken link: keep what was there, and only say something is wrong
+            // once it keeps failing with nothing to show.
+            if loadedAt != nil || !inboxes.isEmpty || failures < 3 {
+                if status.updated == nil { status = ConnectorStatus(state: .loading, detail: tr("connect.mail.loading")) }
+                return
+            }
+            status = ConnectorStatus(state: .error(MailStats.failure(errorNumber: failure.number, message: failure.message,
                                                                      timeout: Self.loadTimeout)))
             return
         }
-        let parsed = MailStats.recent(text)
-        unreadCount = parsed.unread
-        var rows = parsed.rows
+        failures = 0
+        unreadCount = inboxes.values.reduce(0) { $0 + $1.unread }
+        var rows = inboxes.values.flatMap { $0.rows }.sorted { $0.date > $1.date }
         // Read the start of the text of mail that still waits for a reply, newest first, only what is not read yet.
         let waiting = MailStats.select(rows, now: Date(), days: 14, unansweredOnly: true, limit: 10)
         let missing = waiting.filter { bodies[$0.key] == nil }
@@ -313,8 +360,12 @@ final class MailConnector: ContextSource {
         for index in rows.indices { rows[index].body = bodies[rows[index].key] ?? "" }
         recent = rows
         loadedAt = Date()
+        publish()
+    }
 
-        let unread = rows.filter { !$0.read }
+    /// The status for the inbox in memory.
+    private func publish() {
+        let unread = recent.filter { !$0.read }
         status = ConnectorStatus(
             state: .ok,
             headline: unreadCount == 0 ? tr("connect.local.mailAllRead") : tr("connect.local.mailUnread", unreadCount),
@@ -334,6 +385,9 @@ final class MailConnector: ContextSource {
         if case .error(let message) = status.state, recent.isEmpty || loadedAt.map({ Date().timeIntervalSince($0) > 900 }) ?? true {
             throw NookError(message)
         }
+        // Mail has not answered even once yet (it is still starting or syncing): say so instead of "no mail".
+        // A mail change clears `loadedAt` only to mark the inbox stale; the inbox of before still counts.
+        guard loadedAt != nil || !inboxes.isEmpty else { throw NookError(tr("connect.mail.loading")) }
         let rows = MailStats.select(recent, now: Date(), days: days, unansweredOnly: unansweredOnly)
         guard !rows.isEmpty else {
             return "Geen mail in de inbox van de laatste \(days) dagen" + (unansweredOnly ? " waarop je nog niet antwoordde." : ".")
@@ -714,7 +768,8 @@ final class BrowserConnector: ContextSource {
     ]
 
     var isActive: Bool { ConnectorToggle.isOn(id) && Self.browsers.contains { ScriptText.isRunning($0.bundle) } }
-    var refreshInterval: TimeInterval { 45 }
+    /// Every read scripts each open browser tab by tab, which holds up the browser while it answers.
+    var refreshInterval: TimeInterval { 180 }
 
     func refresh() async {
         let runningBrowsers = Self.browsers.filter { ScriptText.isRunning($0.bundle) }
@@ -738,14 +793,21 @@ final class BrowserConnector: ContextSource {
                         try
                             set act to URL of \(activeKey) of w
                         end try
+                        -- Two requests per window for all its tabs, instead of two per tab: each request holds up the browser.
+                        set us to {}
+                        set ns to {}
+                        try
+                            set us to URL of tabs of w
+                            set ns to \(titleKey) of tabs of w
+                        end try
                         set ti to 0
-                        repeat with t in tabs of w
+                        repeat with u in us
                             set ti to ti + 1
-                            if ti > 15 then exit repeat
-                            set u to URL of t
+                            if ti > 15 or ti > (count of ns) then exit repeat
+                            set u to contents of u
                             set mark to "0"
                             if u is act then set mark to "1"
-                            set out to out & mark & "|||" & (\(titleKey) of t) & "|||" & u & linefeed
+                            set out to out & mark & "|||" & (item ti of ns) & "|||" & u & linefeed
                         end repeat
                     end repeat
                     return out

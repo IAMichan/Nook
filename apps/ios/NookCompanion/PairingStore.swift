@@ -35,5 +35,35 @@ enum PairingStore {
     static func clear() {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(query as CFDictionary)
+        clearRoutes()
+    }
+
+    // MARK: Routes
+
+    /// The ways to reach the paired Mac (`CompanionRoutes`), next to the pairing; nil when none were saved yet (a phone
+    /// paired before routes existed starts from the pairing's own address).
+    private static let routesAccount = "routes"
+
+    static func loadRoutes() -> [CompanionRoute]? {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                    kSecAttrAccount as String: routesAccount, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data,
+              let routes = try? JSONDecoder().decode([CompanionRoute].self, from: data), !routes.isEmpty else { return nil }
+        return routes
+    }
+
+    static func saveRoutes(_ routes: [CompanionRoute]) {
+        clearRoutes()
+        guard let data = try? JSONEncoder().encode(routes) else { return }
+        let attributes: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                         kSecAttrAccount as String: routesAccount, kSecValueData as String: data,
+                                         kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+        SecItemAdd(attributes as CFDictionary, nil)
+    }
+
+    private static func clearRoutes() {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: routesAccount]
+        SecItemDelete(query as CFDictionary)
     }
 }

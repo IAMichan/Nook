@@ -47,7 +47,23 @@ final class DeviceHubService: ObservableObject {
     // MARK: Lifecycle
 
     /// Gets the hub running if it can without asking: installed tools start, missing ones wait for `install()`.
+    /// How many Simulator pages show the hub now. With none open and no device tool called for `idleSeconds`, the hub (a
+    /// Node process) stops; the next page or tool starts it again.
+    var viewers = 0
+    private var idleStop: Task<Void, Never>?
+    private static let idleSeconds: UInt64 = 10 * 60
+
+    func stopWhenIdle() {
+        idleStop?.cancel()
+        idleStop = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            guard !Task.isCancelled, let self, self.viewers == 0, self.process != nil else { return }
+            self.stop()
+        }
+    }
+
     func prepare() async {
+        idleStop?.cancel()
         guard state == .idle || isFailed else { return }
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/xcrun") else {
             state = .unavailable(tr("sim.hub.noXcode"))

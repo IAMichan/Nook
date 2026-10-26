@@ -12,7 +12,8 @@ struct PullRequestOpenRequest: Equatable {
 /// search that takes qualifiers (`label:bug`), Sort and Filters beside it (see PullRequestFilterMenu), and flat rows
 /// under a heading per group. Open ones by default; the filters also show closed and merged ones. A click opens the pull
 /// request in Nook (see PullRequestDetailView), where it can be read in full and merged: beside the list when the page
-/// is wide enough, as a side panel, else in its place.
+/// is wide enough, as a side panel opens one (half the page, its edge dragged wider or narrower, and a
+/// button that makes it fill the page), else in its place.
 struct PullRequestsPanel: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var store = PullRequestStore.shared
@@ -49,22 +50,31 @@ struct PullRequestsPanel: View {
 
     /// From this width the pull request opens beside the list instead of in its place.
     private static let splitWidth: CGFloat = 860
+    /// The side panel: half the page at first, as wide as you drag it after (remembered; 0 is "half"),
+    /// never narrower than `minimumPanel`, and leaving the list at least `minimumList` and 30% of the page.
+    @AppStorage("nook.pulls.panelWidth") private var panelWidth: Double = 0
+    private static let minimumPanel: Double = 360
+    private static let minimumList: Double = 360
+    /// The side panel fills the page, the list out of sight until you restore it or close the panel.
+    @State private var maximized = false
 
     var body: some View {
         GeometryReader { geometry in
+            let total = Double(geometry.size.width)
             let split = geometry.size.width >= Self.splitWidth
             Group {
-                if let opened = active, split {
+                if let opened = active, split, !maximized {
                     HStack(alignment: .top, spacing: 0) {
                         list(selected: opened.item.id)
-                            .frame(width: min(max(geometry.size.width * 0.4, 360), 520))
-                            .padding(.trailing, NookTheme.Spacing.lg)
-                        NookDivider(vertical: true)
-                        detail(opened, inline: true)
-                            .padding(.leading, NookTheme.Spacing.lg)
+                            .frame(maxWidth: .infinity)
+                        detail(opened, split: true)
+                            .resizablePanel(width: panelWidthBinding(total), defaultWidth: (total / 2).rounded(),
+                                            minimum: Self.minimumPanel, available: total,
+                                            rest: max(Self.minimumList, total * 0.3) + PanelSplit.handle,
+                                            edge: .leading, divider: true)
                     }
                 } else if let opened = active {
-                    detail(opened, inline: false)
+                    detail(opened, split: split)
                 } else {
                     list(selected: nil)
                 }
@@ -79,14 +89,34 @@ struct PullRequestsPanel: View {
             return true
         }])
         .onChange(of: filter) { _, filter in filter.save() }
+        .onChange(of: activeTab) { _, tab in if tab == nil { maximized = false } }
     }
 
-    private func detail(_ opened: OpenPullRequest, inline: Bool) -> some View {
+    private func panelWidthBinding(_ total: Double) -> Binding<Double> {
+        Binding(get: { panelWidth > 0 ? panelWidth : (total / 2).rounded() }, set: { panelWidth = $0 })
+    }
+
+    /// The open pull requests as tabs with, beside the list, the buttons that make the panel fill the page and close
+    /// it on the same line; under them the one you read. In its place (a narrow page) it has a back arrow instead.
+    private func detail(_ opened: OpenPullRequest, split: Bool) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            PullRequestTabStrip(tabs: tabs, active: activeTab, select: { activeTab = $0 }, close: closeTabs)
-            PullRequestDetailView(accountID: opened.account, item: opened.item, inline: inline,
+            HStack(spacing: NookTheme.Spacing.xs) {
+                PullRequestTabStrip(tabs: tabs, active: activeTab, select: { activeTab = $0 }, close: closeTabs)
+                if split {
+                    ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                      tr(maximized ? "agents.pulls.panel.restore" : "agents.pulls.panel.maximize")) {
+                        withAnimation(NookTheme.reveal) { maximized.toggle() }
+                    }
+                    ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel")) { activeTab = nil }
+                }
+            }
+            PullRequestDetailView(accountID: opened.account, item: opened.item, inline: split,
                                   stack: PullRequestStack.stack(of: opened.item, in: items(of: opened.account)) ?? [],
-                                  onOpenPullRequest: { open(opened.account, $0) }) { activeTab = nil }
+                                  onOpenPullRequest: { open(opened.account, $0) },
+                                  onUpdate: { updated in
+                                      if let index = tabs.firstIndex(where: { $0.id == opened.id }) { tabs[index].item = updated }
+                                  },
+                                  onBack: split ? nil : { activeTab = nil })
                 .id(opened.id)
         }
     }
@@ -129,7 +159,8 @@ struct PullRequestsPanel: View {
     private func list(selected: String?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             PanelListHeader(tr("agents.footer.pullRequests"), count: waitingCount) {
-                if store.loading {
+                // Only a refresh you asked for (or a first load) spins; the quiet ones every half minute do not.
+                if store.showsProgress {
                     ProgressView().controlSize(.small)
                 } else if let read = store.lastRead {
                     PullRequestFreshness(date: read)
@@ -173,12 +204,12 @@ struct PullRequestsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The last list shows at once; a stale one refreshes in the background, again every 20 seconds while open,
-        // and as soon as you come back to Nook.
+        // The last list shows at once; a stale one refreshes in the background, again every 30 seconds while open,
+        // and as soon as you come back to Nook. The slow searches follow at most every three minutes (see PullRequestStore).
         .task {
             while !Task.isCancelled {
                 await store.refresh()
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -466,8 +497,7 @@ private struct PullRequestRow: View {
                     Spacer(minLength: NookTheme.Spacing.sm)
                     if let stack {
                         HStack(spacing: NookTheme.Spacing.xxs) {
-                            PullRequestStateGlyph(glyph: .stack, size: 12, lineWidth: 1.5, nodeRadius: 1.8)
-                                .frame(width: 12, height: 12)
+                            PullRequestStateIcon(glyph: .stack, tinted: false)
                             Text("\(stack.index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
                         }
                         .foregroundStyle(NookTheme.textTertiary)
@@ -520,23 +550,9 @@ private struct PullRequestRow: View {
         .contentShape(Rectangle())
     }
 
-    /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears a small amber
-    /// warning on its corner.
+    /// GitHub's mark in the state's color; an open pull request that conflicts with its base wears the conflict mark.
     private var stateMark: some View {
-        PullRequestStateGlyph(glyph: glyph, size: 16, lineWidth: 1.4, nodeRadius: 1.7)
-            .foregroundStyle(tint)
-            .frame(width: 16, height: 16)
-            .overlay(alignment: .bottomTrailing) {
-                if item.state == .open && item.conflict {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(NookTheme.font(7.5, .bold))
-                        .foregroundStyle(NookTheme.amber)
-                        .padding(1)
-                        .background(Circle().fill(NookTheme.canvas))
-                        .offset(x: 4, y: 4)
-                        .help(tr("agents.pulls.state.conflict"))
-                }
-            }
+        PullRequestStateIcon(glyph: item.stateGlyph, size: .header)
             .help(tr(stateKey))
     }
 
@@ -561,46 +577,20 @@ private struct PullRequestRow: View {
         }
     }
 
-    private var glyph: PullRequestBadge.Glyph {
-        switch item.state {
-        case .merged: return .merged
-        case .closed: return .closed
-        case .open: return item.draft ? .draft : .open
-        }
-    }
-
-    private var tint: Color {
-        switch item.state {
-        case .merged: return NookTheme.violet
-        case .closed: return NookTheme.coralSoft
-        case .open: return item.draft ? NookTheme.textTertiary : NookTheme.mint
-        }
-    }
-
     private var stateKey: String {
         switch item.state {
         case .merged: return "agents.pulls.state.merged"
         case .closed: return "agents.pulls.state.closed"
-        case .open: return item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
+        case .open: return item.conflict ? "agents.pulls.state.conflict" : item.draft ? "agents.pulls.draft" : "agents.pulls.state.open"
         }
     }
 
-    /// The checks as GitHub's outlined circles, right behind the title, so you see at a glance whether CI passed.
+    /// The checks as their filled circle, right behind the title, so you see at a glance whether CI passed.
     @ViewBuilder
     private var ciMark: some View {
-        switch item.ci {
-        case .passing:
-            Image(systemName: "checkmark.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.mint)
-                .help(tr("agents.pulls.status.passing"))
-        case .failing:
-            Image(systemName: "xmark.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.coral)
-                .help(tr("agents.pulls.status.failing"))
-        // Running checks wait on CI, not on you: no amber.
-        case .pending:
-            Image(systemName: "smallcircle.filled.circle").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary)
-                .help(tr("agents.pulls.status.pending"))
-        case .unknown:
-            EmptyView()
+        if let outcome = item.checkOutcome {
+            CheckOutcomeGlyph(outcome: outcome)
+                .help(tr("agents.pulls.status." + outcome.rawValue))
         }
     }
 }
@@ -609,20 +599,17 @@ extension PullRequestRow {
     /// The review decision next to the checks: approved, changes requested, or waiting for a required review.
     @ViewBuilder
     var reviewMark: some View {
-        if item.state == .open {
-            switch item.review {
-            case .approved:
-                Image(systemName: "checkmark.seal.fill").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.mint)
-                    .help(tr("agents.pulls.review.approved"))
-            case .changesRequested:
-                Image(systemName: "exclamationmark.bubble.fill").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.amber)
-                    .help(tr("agents.pulls.review.changes"))
-            case .required:
-                Image(systemName: "eye").font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textTertiary)
-                    .help(tr("agents.pulls.review.required"))
-            case .none:
-                EmptyView()
-            }
+        if item.state == .open, let review = item.reviewIcon {
+            PullRequestReviewIcon(review: review)
+                .help(tr(Self.reviewKey(review)))
+        }
+    }
+
+    private static func reviewKey(_ review: PullRequestIcon.Review) -> String {
+        switch review {
+        case .approved: return "agents.pulls.review.approved"
+        case .changesRequested: return "agents.pulls.review.changes"
+        default: return "agents.pulls.review.required"
         }
     }
 }

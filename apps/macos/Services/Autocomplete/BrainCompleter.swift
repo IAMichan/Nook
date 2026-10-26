@@ -50,7 +50,28 @@ final class BrainCompleter: CompletionEngine, @unchecked Sendable {
     /// and what was read is kept as a checkpoint for that request.
     private static let readChunk = 256
 
-    init(modelID: String) { self.modelID = modelID }
+    private var unloadObserver: NSObjectProtocol?
+
+    init(modelID: String) {
+        self.modelID = modelID
+        // The model left memory: its prompt cache (hundreds of MB of MLX arrays) goes too. Off the main thread, since a
+        // generation that is still finishing holds `work`.
+        unloadObserver = NotificationCenter.default.addObserver(forName: EmbeddedModel.didUnload, object: nil, queue: nil) { [weak self] _ in
+            DispatchQueue.global(qos: .utility).async { self?.releaseCaches() }
+        }
+    }
+
+    deinit {
+        if let unloadObserver { NotificationCenter.default.removeObserver(unloadObserver) }
+    }
+
+    private func releaseCaches() {
+        work.withLock {
+            checkpoint = nil
+            biasCache = nil
+            request = nil
+        }
+    }
 
     func cancel() { lock.withLock { latest += 1 } }
     private func begin() -> Int { lock.withLock { latest += 1; return latest } }

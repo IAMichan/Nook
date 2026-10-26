@@ -100,8 +100,8 @@ extension TranscriptRow {
     /// When the row happened, for "new since your last visit": a message's time, a fold's first message's.
     var visitDate: Date? {
         switch self {
-        case .user(let message), .thinking(let message), .assistant(let message, _): return message.date
-        case .fold(_, _, let rows): return rows.lazy.compactMap(\.visitDate).first
+        case .user(let message), .thinking(let message), .notice(let message), .assistant(let message, _): return message.date
+        case .fold(_, _, let rows), .continued(_, _, let rows): return rows.lazy.compactMap(\.visitDate).first
         case .step, .group, .working, .live, .interrupted: return nil
         }
     }

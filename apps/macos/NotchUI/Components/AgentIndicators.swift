@@ -22,24 +22,29 @@ struct Bar: View {
 struct PulseDot: View {
     let color: Color
     let animated: Bool
-    @State private var pulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Published only when the plan changes: sets how often the ring redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
 
     var body: some View {
         ZStack {
             if animated && !reduceMotion {
-                Circle()
-                    .stroke(color.opacity(pulse ? 0 : 0.7), lineWidth: 1.5)
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(pulse ? 2.3 : 1)
+                // A timeline at the ambient rate, not a `repeatForever` animation: that runs at the display's own rate (up to
+                // 120 times a second) for as long as the dot is there, and every frame redraws the whole window it is in.
+                TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                    // An ease-out over 1.4 s, starting over: the ring grows and fades.
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+                    let eased = 1 - (1 - phase) * (1 - phase)
+                    Circle()
+                        .stroke(color.opacity(0.7 * (1 - eased)), lineWidth: 1.5)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(1 + 1.3 * eased)
+                }
             }
             Circle().fill(color).frame(width: 8, height: 8)
         }
         .frame(width: 16, height: 16)
-        .onAppear {
-            guard animated, !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
-        }
     }
 }
 
@@ -48,9 +53,10 @@ struct ShimmerText: View {
     let text: String
     /// Published only when the plan changes: sets how often the shimmer redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / energy.plan.interactiveFrameRate)) { context in
+        TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
             let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
             Text(text)
                 .foregroundStyle(
@@ -70,28 +76,17 @@ struct ShimmerText: View {
     }
 }
 
-/// "#12" with the state of the pull request as its icon (GitHub's marks, drawn) and colour: open (ready to merge) mint,
-/// merge conflict coral, merged violet, draft and closed grey. `compact` shows the icon alone, for a slim row.
+/// "#12" with the state of the pull request as its icon and color (`PullRequestStateIcon`). `compact` shows the icon
+/// alone, for a slim row.
 struct PullRequestPill: View {
     let badge: PullRequestBadge
     var compact = false
-
-    private var tint: Color {
-        switch badge.glyph {
-        case .open: return NookTheme.mint
-        case .conflict: return NookTheme.coral
-        case .merged: return NookTheme.violet
-        case .draft, .closed: return NookTheme.textTertiary
-        case .stack: return NookTheme.amber
-        }
-    }
 
     private var status: String { tr("inbox.pr.state." + badge.glyph.rawValue) }
 
     var body: some View {
         HStack(spacing: 3) {
-            PullRequestStateGlyph(glyph: badge.glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
-                .foregroundStyle(tint)
+            PullRequestStateIcon(glyph: badge.glyph)
             if !compact {
                 Text(label).font(NookTheme.font(11, .medium).monospacedDigit())
                     .foregroundStyle(NookTheme.textSecondary)
@@ -115,15 +110,7 @@ struct PullRequestStateBadge: View {
     let glyph: PullRequestBadge.Glyph
     var number: Int? = nil
 
-    private var tint: Color {
-        switch glyph {
-        case .open: return NookTheme.mint
-        case .draft: return NookTheme.textSecondary
-        case .conflict, .closed: return NookTheme.coral
-        case .merged: return NookTheme.violet
-        case .stack: return NookTheme.amber
-        }
-    }
+    private var tint: Color { PullRequestIcon.tint(glyph) }
 
     private var state: String {
         switch glyph {
@@ -136,7 +123,7 @@ struct PullRequestStateBadge: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.6, nodeRadius: 1.8)
+            PullRequestStateIcon(glyph: glyph, tinted: false)
             Text(label).lineLimit(1)
         }
         .font(NookTheme.TextStyle.label.monospacedDigit())
@@ -150,17 +137,3 @@ struct PullRequestStateBadge: View {
     }
 }
 
-/// The outcome of a CI check or one of its steps: a mint tick, a coral cross, an amber dot while it runs, a grey dash
-/// when skipped. The pull request page and the CI of a watched pull request both use it.
-struct CheckOutcomeGlyph: View {
-    let outcome: PullRequestCheck.Outcome
-
-    var body: some View {
-        switch outcome {
-        case .passing: Image(systemName: "checkmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.mint)
-        case .failing: Image(systemName: "xmark.circle.fill").font(NookTheme.font(12)).foregroundStyle(NookTheme.coral)
-        case .pending: Circle().fill(NookTheme.amber).frame(width: 7, height: 7)
-        case .skipped: Image(systemName: "minus.circle").font(NookTheme.font(12)).foregroundStyle(NookTheme.textTertiary)
-        }
-    }
-}

@@ -24,7 +24,7 @@ struct AutocompletePlaygroundSection: View {
                             Text(tr("autocomplete.playground.placeholder"))
                                 .foregroundStyle(NookTheme.textTertiary)
                                 .padding(.leading, 9)
-                                .padding(.top, 8)
+                                .padding(.top, NookTheme.Spacing.md)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -67,7 +67,7 @@ struct AutocompletePlaygroundSection: View {
                             .font(NookTheme.mono(11))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
+                            .padding(.top, NookTheme.Spacing.xs)
                     }
                 }
             }
@@ -220,6 +220,8 @@ private struct PlaygroundEditor: NSViewRepresentable {
         scroll.borderType = .noBorder
         // TextKit 1: the ghost is placed with the layout manager.
         let textView = PlaygroundTextView(usingTextLayoutManager: false)
+        // It shows its own suggestions: autocomplete in Nook's own fields leaves it alone.
+        textView.identifier = NSUserInterfaceItemIdentifier(AutocompleteField.ownOptOut + ".playground")
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true

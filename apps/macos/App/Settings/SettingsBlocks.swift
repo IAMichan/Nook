@@ -8,7 +8,7 @@ struct ConfigPreview: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             Text(change.install ? "\(change.target.title) \(tr("button.link"))" : "\(change.target.title) \(tr("button.unlink"))")
                 .font(NookTheme.TextStyle.strong)
             Text(tr("settings.agents.changeNotice", change.target.displayPath))
@@ -27,7 +27,7 @@ struct ConfigPreview: View {
                 }
                 .font(NookTheme.mono(11))
                 .textSelection(.enabled)
-                .padding(8)
+                .padding(NookTheme.Spacing.md)
             }
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip).fill(NookTheme.well))
             HStack {
@@ -108,7 +108,7 @@ struct StatusRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: NookTheme.Spacing.lg) {
             if let agent {
                 AgentLogo(agent: agent, size: 22)
                     .overlay(alignment: .bottomTrailing) {
@@ -125,7 +125,7 @@ struct StatusRow<Trailing: View>: View {
                     .foregroundStyle(state.color)
                     .frame(width: 22)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(title)
                 Text(detail)
                     .font(NookTheme.TextStyle.detail)
@@ -135,7 +135,7 @@ struct StatusRow<Trailing: View>: View {
             Spacer(minLength: 8)
             trailing()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, NookTheme.Spacing.xxs)
     }
 }
 
@@ -168,7 +168,7 @@ struct SettingLabel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             Text(title)
             Text(detail)
                 .font(NookTheme.TextStyle.detail)
@@ -518,7 +518,7 @@ struct WorkspaceSettingsSection: View {
         Section {
             Toggle(tr("settings.bridge.enabled"), isOn: $ws.agentTools)
             LabeledContent(tr("settings.bridge.outside")) {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     ForEach(RunProvider.allCases.filter { WorkspaceBridgeScript.linkCommand(for: $0) != nil }) { provider in
                         Button(provider.displayName) { link(provider) }
                             .controlSize(.small)
@@ -560,7 +560,7 @@ struct WatchedPullRequestsSection: View {
             SettingToggle(tr("settings.pulls.myOrganizations"), detail: tr("settings.pulls.myOrganizationsDetail"),
                           isOn: $watching.includeOrganizations)
             ForEach(watching.entries, id: \.self) { entry in
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: PullRequestWatchList.isRepository(entry) ? "book.closed" : "building.2")
                         .foregroundStyle(NookTheme.textSecondary)
                         .frame(width: 18)

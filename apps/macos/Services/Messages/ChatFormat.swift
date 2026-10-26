@@ -72,6 +72,15 @@ enum ChatFormat {
         return blocks
     }
 
+    /// Nothing that shows: only spaces, line breaks and invisible marks (a zero-width space, a direction mark, a lone
+    /// variation selector). A message with only that and no file is no bubble of its own.
+    static func isBlank(_ text: String) -> Bool {
+        text.unicodeScalars.allSatisfy { scalar in
+            scalar.properties.isWhitespace || scalar.properties.isVariationSelector
+                || [.format, .control].contains(scalar.properties.generalCategory)
+        }
+    }
+
     /// The message as plain text, without its markup: for a chat's line in a list and for what is copied.
     static func plain(_ text: String) -> String {
         blocks(text).map { block in

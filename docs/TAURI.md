@@ -1,118 +1,121 @@
-# De Tauri-app: wat er van de Mac al geport is
+# The Tauri app: what has been ported from the Mac
 
-`apps/tauri` brengt Nook naar Windows, Linux en Android. De macOS-app is de specificatie; deze lijst houdt bij wat er
-al is.
+`apps/tauri` brings Nook to Windows, Linux, and Android. The macOS app is the specification; this list tracks what is
+already there.
 
-✓ = geport en in de app getest · ◐ = deels, of alleen gecompileerd en niet echt uitgevoerd · ○ = nog niet · — = kan niet op dit platform
+✓ = ported and tested in the app · ◐ = partial, or only compiled and not actually run · ○ = not yet · — = not possible on this platform
 
-> Windows-code compileert in de CI en lokaal met `cargo check -p nook --target x86_64-pc-windows-gnu`, maar is (nog)
-> niet op een echte Windows-pc uitgevoerd. Android bouwt alleen in de CI (job **Android**); de Android SDK was lokaal
-> niet te downloaden.
+> Windows code compiles in CI and locally with `cargo check -p nook --target x86_64-pc-windows-gnu`, but has not (yet)
+> been run on a real Windows PC. Android builds only in CI (job **Android**); the Android SDK could not be downloaded
+> locally.
 
-## Kern en chat
+**Want to help?** Every ○ and ◐ row below is open for contributors, and so is the [To do](#to-do) list. You don't need
+a Mac for any of it. See [CONTRIBUTING.md](../CONTRIBUTING.md#windows-linux--android-tauri).
 
-| Onderdeel (Mac) | Tauri | Waar |
+## Core and chat
+
+| Part (Mac) | Tauri | Where |
 |---|---|---|
 | `AIProvider`, `BrainSelection`, `AppSettings` | ✓ | `core/src/provider.rs`, `core/src/settings.rs` |
-| `ToolRunner` (tool-loop, herstel, cache, JSON in tekst) | ✓ | `core/src/brain/tool_loop.rs` |
-| Anthropic, OpenAI-compatibel, Ollama (streamen, tools, plaatjes; Ollama geeft het geheugen na 90 s terug, meedenken ontlaadt een model dat het zelf laadde) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
-| `BrainService` (prompts, prioriteren, `use_source`, contextbudget) | ✓ | `core/src/brain/service.rs` |
-| `ModelProfile`, `ModelAdvisor`, `ModelDownload` (Ollama installeren met één klik) | ✓ | `core/src/brain/profile.rs`, `model_download.rs` |
+| `ToolRunner` (tool loop, recovery, cache, JSON in text) | ✓ | `core/src/brain/tool_loop.rs` |
+| Anthropic, OpenAI-compatible, Ollama (streaming, tools, images; Ollama frees memory after 90 s, Think Along unloads a model it loaded itself) | ✓ | `core/src/brain/conversations.rs`, `services/think.rs` |
+| `BrainService` (prompts, prioritizing, `use_source`, context budget) | ✓ | `core/src/brain/service.rs` |
+| `ModelProfile`, `ModelAdvisor`, `ModelDownload` (one-click Ollama install) | ✓ | `core/src/brain/profile.rs`, `model_download.rs` |
 | `ChatIntent`, `LocalIntent`, `QueryPlan`, `SourceScope`, `Fuzzy`, `NookDates`, `FollowUps` | ✓ | `core/src/brain/` |
-| `Research`, `Retrieval` (zelf zoeken, genummerde bronnen) | ✓ | `core/src/brain/research.rs`, `retrieval.rs` |
-| Bronnenkaart onder een antwoord (status per bron, niet-gelezen bronnen bovenaan met reden en Probeer opnieuw, fouten in gewone taal) | ✓ | `components/SourcesView.svelte`, `lib/sources.ts` |
-| Chattabellen: tekstkolommen met cijfers in een naam worden geen grafiek (`ChartRescue.tableNumber`) | ✓ | `core/src/brain/chart.rs` |
+| `Research`, `Retrieval` (searching on its own, numbered sources) | ✓ | `core/src/brain/research.rs`, `retrieval.rs` |
+| Sources card under an answer (status per source, unread sources on top with a reason and Try again, errors in plain language) | ✓ | `components/SourcesView.svelte`, `lib/sources.ts` |
+| Chat tables: text columns with digits in a name don't become a chart (`ChartRescue.tableNumber`) | ✓ | `core/src/brain/chart.rs` |
 | `ActionGate`, `CommandRisk`, `Undo`, `NetworkGuard`, `LocalQuality` | ✓ | `core/src/brain/` |
-| Geheugen (`Memory`, `NookMemory`, Instellingen › Geheugen) | ✓ (MCP-geheugen importeren ◐) | `core/src/brain/memory.rs`, `tools/memory.rs` |
-| Web, weer, grafieken, mailconcepten | ✓ (mail via `mailto:`) | `tools/{web,charts,mail}.rs` |
-| `ClaudeCodeBrain` | ◐ (geen echte `claude` getest) | `core/src/brain/claude_code.rs` |
-| `NookStore`, `NookChat` (Nooks, `nooks.json`, archief, zoeken) | ✓ | `core/src/store.rs`, `core/src/nooks.rs` |
-| `SecretStore` | ✓ | Referentiebeheer, Secret Service, afgeschermde app-map op Android |
-| Plannen met Uitvoeren, nooit dubbel uitvoeren, Maak ongedaan | ✓ | `src-tauri/src/commands/plans.rs` |
-| Onboarding (welkomstkaart, drie stappen) | ✓ | `src/views/` |
-| `AppleIntelligence`, `EmbeddedModel` (MLX), `MacReport` | — | Alleen Apple; lokaal denken gaat via Ollama of LM Studio |
+| Memory (`Memory`, `NookMemory`, Settings › Memory) | ✓ (importing MCP memory ◐) | `core/src/brain/memory.rs`, `tools/memory.rs` |
+| Web, weather, charts, mail drafts | ✓ (mail via `mailto:`) | `tools/{web,charts,mail}.rs` |
+| `ClaudeCodeBrain` | ◐ (not tested with a real `claude`) | `core/src/brain/claude_code.rs` |
+| `NookStore`, `NookChat` (Nooks, `nooks.json`, archive, search) | ✓ | `core/src/store.rs`, `core/src/nooks.rs` |
+| `SecretStore` | ✓ | Credential Manager, Secret Service, private app folder on Android |
+| Plans with Run, never run twice, Undo | ✓ | `src-tauri/src/commands/plans.rs` |
+| Onboarding (welcome card, three steps) | ✓ | `src/views/` |
+| `AppleIntelligence`, `EmbeddedModel` (MLX), `MacReport` | — | Apple only; local thinking goes through Ollama or LM Studio |
 
-## Koppelingen
+## Connectors
 
-| Onderdeel (Mac) | Tauri | Waar |
+| Part (Mac) | Tauri | Where |
 |---|---|---|
-| Raamwerk (Connector, Hub, catalogus, merken) | ✓ | `core/src/connectors/` |
-| Agenda's: ICS ("Andere agenda's"), Cal.com, `check_availability` | ✓ | `ics.rs`, `agenda.rs`, `feeds.rs` |
-| Systeemagenda's (Apple Agenda) | — | Geen API in deze port |
-| GitHub (lezen; beoordelen, samenvoegen, sluiten als actie) | ✓ | `github.rs` |
-| Pull requests bij Agents: van jou, voor jouw review, gevolgde organisaties en repositories (Instellingen › Accounts & koppelingen), Filters (status, betrokkenheid, auteur, concept, checks), lezen met reviews en reacties (GitHub-HTML als Markdown), mergen na bevestiging in de balk, met actielogboek | ◐ (tegen een nep-API getest, niet tegen GitHub zelf) | `pulls.rs`, `github_markdown.rs`, `views/agents/pulls/` |
-| Inloggen met GitHub | ◐ | Inloggen en Herstel nemen de `gh auth token`-login over (een token blijft onder "Met een token"); device flow wacht op een client-ID; `gh auth login --web` zelf openen ○ |
-| Tweede account per dienst, account per chat | ✓ | `accounts.rs`, `ChatAccounts.svelte` |
-| GitLab, Vercel, Stripe, Notion, Cal.com, n8n, Resend | ✓ (GitLab-token eerst gecontroleerd via `/api/v4/user`) | `gitlab.rs`, `cloud.rs` |
-| Instellingen › Accounts & koppelingen als één catalogus: zoeken, categorieën, rijen voor je koppelingen (ook GitLab en eigen MCP-servers), kaarten met Inloggen / Met sleutel / MCP | ✓ | `views/settings/Accounts.svelte`, `views/connectors/` |
-| Eigen bronnen (web-API's, webhooks) | ✓ | `custom.rs` |
-| Verbinden met OAuth (Notion, Linear, Stripe, Vercel, Sentry); Herstel van een verlopen sleutel door in te loggen | ◐ (niet tegen de echte diensten getest) · — Android | `oauth.rs`, `commands/connectors.rs` |
-| MCP-client (stdio, HTTP) | ✓ (stdio alleen desktop) | `core/src/connectors/mcp/` |
-| WhatsApp live (GOWA) | ◐ (gateway zelf starten; installer ○) | `core/src/connectors/whatsapp/` |
-| WhatsApp-kaart in de balk: chat als bubbels met vinkjes, foto's in de kaart (groot met een klik), bestanden en video's openen met de app van het systeem, antwoorden, Dempen, Laat Nook antwoorden (leest alleen die chat, stelt alleen een antwoord aan die chat voor, leert niets) | ◐ (met nep-gateway getest, niet met een echte telefoon; alleen in de balk, niet op Android; video speelt niet in de kaart en documenten tonen geen eerste pagina) | `views/connectors/WhatsAppCard.svelte`, `lib/whatsapp.svelte.ts`, `src-tauri/src/commands/whatsapp.rs` |
-| WhatsApp per chat: personen, groepen, statusupdates en kanalen elk een regel; per chat Automatisch, Altijd of Nooit; verborgen chats één voor één terug | ✓ | `core/src/connectors/whatsapp/mod.rs`, `views/connectors/WhatsApp.svelte` |
-| `@chat` (WhatsApp-chat naast de chat), versturen via WhatsApp Web | — | Geen `@open`-mechanisme en geen ingebedde WhatsApp Web in deze port |
+| Framework (Connector, Hub, catalog, brands) | ✓ | `core/src/connectors/` |
+| Calendars: ICS ("Other calendars"), Cal.com, `check_availability` | ✓ | `ics.rs`, `agenda.rs`, `feeds.rs` |
+| System calendars (Apple Calendar) | — | No API in this port |
+| GitHub (read; review, merge, close as an action) | ✓ | `github.rs` |
+| Pull requests under Agents: yours, awaiting your review, followed organizations and repositories (Settings › Accounts & connections), filters (status, involvement, author, draft, checks), reading with reviews and comments (GitHub HTML as Markdown), merging after confirmation in the bar, with an action log | ◐ (tested against a fake API, not against GitHub itself) | `pulls.rs`, `github_markdown.rs`, `views/agents/pulls/` |
+| Sign in with GitHub | ◐ | Sign in and Repair take over the `gh auth token` login (a token stays under "With a token"); device flow is waiting on a client ID; opening `gh auth login --web` itself ○ |
+| Second account per service, account per chat | ✓ | `accounts.rs`, `ChatAccounts.svelte` |
+| GitLab, Vercel, Stripe, Notion, Cal.com, n8n, Resend | ✓ (GitLab token checked first via `/api/v4/user`) | `gitlab.rs`, `cloud.rs` |
+| Settings › Accounts & connections as one catalog: search, categories, rows for your connections (including GitLab and custom MCP servers), cards with Sign in / With a key / MCP | ✓ | `views/settings/Accounts.svelte`, `views/connectors/` |
+| Custom sources (web APIs, webhooks) | ✓ | `custom.rs` |
+| Connecting with OAuth (Notion, Linear, Stripe, Vercel, Sentry); repairing an expired key by signing in | ◐ (not tested against the real services) · — Android | `oauth.rs`, `commands/connectors.rs` |
+| MCP client (stdio, HTTP) | ✓ (stdio desktop only) | `core/src/connectors/mcp/` |
+| WhatsApp live (GOWA) | ◐ (start the gateway yourself; installer ○) | `core/src/connectors/whatsapp/` |
+| WhatsApp card in the bar: chat as bubbles with ticks, photos in the card (large with a click), files and videos open with the system app, reply, Mute, Let Nook reply (reads only that chat, only suggests a reply to that chat, learns nothing) | ◐ (tested with a fake gateway, not with a real phone; only in the bar, not on Android; video doesn't play in the card and documents show no first page) | `views/connectors/WhatsAppCard.svelte`, `lib/whatsapp.svelte.ts`, `src-tauri/src/commands/whatsapp.rs` |
+| WhatsApp per chat: people, groups, status updates, and channels each a row; per chat Automatic, Always, or Never; hidden chats back one by one | ✓ | `core/src/connectors/whatsapp/mod.rs`, `views/connectors/WhatsApp.svelte` |
+| `@chat` (WhatsApp chat next to the chat), sending via WhatsApp Web | — | No `@open` mechanism and no embedded WhatsApp Web in this port |
 | Portfolio | ○ | |
-| Apple Notes, Herinneringen, Mail.app, Berichten, Bear, Things | — | Mac-apps |
+| Apple Notes, Reminders, Mail.app, Messages, Bear, Things | — | Mac apps |
 
-## Platformdiensten
+## Platform services
 
-| Onderdeel (Mac) | Tauri | Waar |
+| Part (Mac) | Tauri | Where |
 |---|---|---|
-| Scherm lezen (`ScreenReader`, `ScreenContext`, `AppTextReader`) | ✓ Linux (AT-SPI, X11, tesseract) · ◐ Windows (UI Automation, OCR) · — Android | `core/src/services/screen.rs`, `platform/` |
-| Schermdeel | ✓ (zonder annoteren) | `services/part.rs` |
-| Meekijken, Meedenken (antwoord in de taal van de app, niet van Nooks eigen vraag) | ✓ | `core/src/services/think_along.rs` |
-| Muziek (`NowPlayingService`, Muziek-tab) | ✓ MPRIS · ◐ Windows-mediabediening | `platform/linux/mpris.rs`, `platform/windows/media.rs` |
-| Systeem: apps, volume, klembord, bestanden, meldingen | ✓ Linux · ◐ Windows | `platform/*`, `tools/{system,files,clipboard}.rs` |
-| Stem: voorlezen, spraak naar tekst (whisper.cpp of een gekozen dienst) | ◐ (voorlezen getest; opnemen niet, geen microfoon) | `core/src/services/`, `services/voice.rs` |
-| "Hé Nook" | ◐ Windows · — Linux en Android | `platform/windows/speech.rs` |
-| Overal aanvullen (`AutocompleteController`, `CompletionSuggestion`, `CompletionPrivacy`, `CompletionEmoji`, Instellingen › Aanvullen) | ◐ Windows (gecompileerd, niet op een echte pc uitgevoerd; Testen-tab ook op Linux) · — Linux en Android | `core/src/services/autocomplete/`, `src-tauri/src/services/autocomplete.rs`, `platform/windows/autocomplete.rs` |
-| Flow-dicteren | ◐ (logica met tests; niet met een microfoon getest) | `core/src/services/flow.rs` |
-| Notetaker | ◐ (geen sprekerherkenning) | `core/src/services/notes.rs` |
-| Vandaag, weekoverzicht (met agentcijfers per project) | ✓ | `core/src/services/recap.rs`, `views/Today.svelte` |
-| Nook zelf (bol, ring, geluiden) | ✓ | `components/Orb.svelte`, `lib/sounds.ts` |
-| Meetings en scherm delen (`QuietPolicy`, `QuietWatch`): stil, verbergen voor kijkers, helemaal verbergen, Nook in schermafbeeldingen | ◐ Windows (vensterlijst, microfoon via het privacyregister, `WDA_EXCLUDEFROMCAPTURE`; alleen gecompileerd) · ◐ Linux (X11 en `pactl`; buiten een share houden kan niet, dan alleen stil; niet in de app getest) · — Android | `core/src/services/quiet.rs`, `services/quiet.rs`, `platform/{windows,linux}/quiet.rs`, Instellingen › Stem en geluid |
-| Energieplan (`EnergyPolicy`, `EnergyMonitor`): Automatisch, Zuinig, Volle kracht; scherm lezen en meedenken volgen het, de bol rust | ◐ (Windows: accu, energiebesparing, processorlast; Linux: `/sys`, load average, screensaver; niet in de app getest) · — Android | `core/src/services/energy.rs`, `services/energy.rs`, Instellingen › Algemeen |
+| Reading the screen (`ScreenReader`, `ScreenContext`, `AppTextReader`) | ✓ Linux (AT-SPI, X11, tesseract) · ◐ Windows (UI Automation, OCR) · — Android | `core/src/services/screen.rs`, `platform/` |
+| Screen region | ✓ (without annotating) | `services/part.rs` |
+| Look Along, Think Along (answers in the app's language, not that of Nook's own question) | ✓ | `core/src/services/think_along.rs` |
+| Music (`NowPlayingService`, Music tab) | ✓ MPRIS · ◐ Windows media controls | `platform/linux/mpris.rs`, `platform/windows/media.rs` |
+| System: apps, volume, clipboard, files, notifications | ✓ Linux · ◐ Windows | `platform/*`, `tools/{system,files,clipboard}.rs` |
+| Voice: read aloud, speech to text (whisper.cpp or a chosen service) | ◐ (reading aloud tested; recording not, no microphone) | `core/src/services/`, `services/voice.rs` |
+| "Hey Nook" | ◐ Windows · — Linux and Android | `platform/windows/speech.rs` |
+| Autocomplete everywhere (`AutocompleteController`, `CompletionSuggestion`, `CompletionPrivacy`, `CompletionEmoji`, Settings › Autocomplete) | ◐ Windows (compiled, not run on a real PC; Testing tab on Linux too) · — Linux and Android | `core/src/services/autocomplete/`, `src-tauri/src/services/autocomplete.rs`, `platform/windows/autocomplete.rs` |
+| Flow dictation | ◐ (logic with tests; not tested with a microphone) | `core/src/services/flow.rs` |
+| Notetaker | ◐ (no speaker recognition) | `core/src/services/notes.rs` |
+| Today, weekly recap (with agent figures per project) | ✓ | `core/src/services/recap.rs`, `views/Today.svelte` |
+| Nook itself (orb, ring, sounds) | ✓ | `components/Orb.svelte`, `lib/sounds.ts` |
+| Meetings and screen sharing (`QuietPolicy`, `QuietWatch`): quiet, hide from viewers, hide completely, Nook in screenshots | ◐ Windows (window list, microphone via the privacy registry, `WDA_EXCLUDEFROMCAPTURE`; only compiled) · ◐ Linux (X11 and `pactl`; keeping out of a share isn't possible, then only quiet; not tested in the app) · — Android | `core/src/services/quiet.rs`, `services/quiet.rs`, `platform/{windows,linux}/quiet.rs`, Settings › Voice & sound |
+| Energy plan (`EnergyPolicy`, `EnergyMonitor`): Automatic, Saver, Full power; screen reading and Think Along follow it, the orb rests | ◐ (Windows: battery, power saving, CPU load; Linux: `/sys`, load average, screensaver; not tested in the app) · — Android | `core/src/services/energy.rs`, `services/energy.rs`, Settings › General |
 
-## Agents en werkruimte
+## Agents and workspace
 
-| Onderdeel (Mac) | Tauri | Waar |
+| Part (Mac) | Tauri | Where |
 |---|---|---|
 | Hub via hooks (Claude Code, Codex, Gemini CLI, Cursor, …) | ✓ | `core/src/agents/`, `nook --hook` / `~/.nook/nook-hook` |
-| Vastgelopen sessies afronden (`SessionLiveness`: transcript, het eigen proces van de sessie via de hook) | ◐ (met tests; niet met een echte `claude`) | `core/src/agents/liveness.rs` |
-| Meldingen van agents: uitgebreid of compact (Instellingen › Stem en geluid › Meldingen), Oké met aftelring | ◐ (gecompileerd; niet in de app getest) | `views/Bar.svelte`, `views/agents/AgentAlerts.svelte` |
-| Leesbare MCP-toolnamen (`McpToolName`) in goedkeuringen, tijdlijn en MCP-koppelingen | ✓ | `core/src/agents/mcp_name.rs` |
-| Koppelen met diff en backup (`AgentConfigInstaller`) | ✓ | `core/src/agents/` |
-| Goedkeuren in de balk, meerkeuzevragen (een open paneel blijft staan en vraagt in een smalle balk) | ✓ | `views/agents/` |
-| Agents-tab, nieuwe sessie (met denkniveau; keuzes onthouden zodra je ze maakt), tijdlijn | ✓ | `views/agents/` |
-| Diff met regelnummers en gemarkeerde woorden (`UnifiedDiff`) | ✓ | `lib/workspace/unifiedDiff.ts`, `views/agents/UnifiedDiffView.svelte` |
-| Werkruimte-sessies: Claude Code, Codex `exec`, Gemini CLI, wachtrij, hervatten | ✓ (met een nep-`claude` getest) | `core/src/workspace/manager.rs` |
-| Codex app-server, ACP-agents, Antigravity | ○ | |
-| Delegeren, overdragen, geplande taken, webhooks, automatische titels | ○ | |
-| Git: wijzigingen, commit, push, pull request (alle GitHub-accounts, eigenaar eerst), worktrees | ✓ | `core/src/workspace/` |
-| Terminals (portable-pty + xterm.js), browser (opent http(s)://-adressen zoals http://localhost:3000 direct; alleen http en https), dev-servers | ✓ (geen schermafbeelding van de browser) | `src-tauri/src/workspace/` |
-| Werkruimte voor agents (MCP-brug `nook --mcp`) | ✓ | `src-tauri/src/workspace/` |
-| Gebruik en limieten | ◐ | `views/workspace/` |
+| Finishing stuck sessions (`SessionLiveness`: transcript, the session's own process via the hook) | ◐ (with tests; not with a real `claude`) | `core/src/agents/liveness.rs` |
+| Agent notifications: expanded or compact (Settings › Voice & sound › Notifications), OK with a countdown ring | ◐ (compiled; not tested in the app) | `views/Bar.svelte`, `views/agents/AgentAlerts.svelte` |
+| Readable MCP tool names (`McpToolName`) in approvals, timeline, and MCP connectors | ✓ | `core/src/agents/mcp_name.rs` |
+| Linking with diff and backup (`AgentConfigInstaller`) | ✓ | `core/src/agents/` |
+| Approving in the bar, multiple-choice questions (an open panel stays put and asks in a narrow bar) | ✓ | `views/agents/` |
+| Agents tab, new session (with thinking level; choices remembered as soon as you make them), timeline | ✓ | `views/agents/` |
+| Diff with line numbers and highlighted words (`UnifiedDiff`) | ✓ | `lib/workspace/unifiedDiff.ts`, `views/agents/UnifiedDiffView.svelte` |
+| Workspace sessions: Claude Code, Codex `exec`, Gemini CLI, queue, resume | ✓ (tested with a fake `claude`) | `core/src/workspace/manager.rs` |
+| Codex app-server, ACP agents, Antigravity | ○ | |
+| Delegating, handing off, scheduled tasks, webhooks, automatic titles | ○ | |
+| Git: changes, commit, push, pull request (all GitHub accounts, owner first), worktrees | ✓ | `core/src/workspace/` |
+| Terminals (portable-pty + xterm.js), browser (opens http(s):// addresses such as http://localhost:3000 directly; http and https only), dev servers | ✓ (no browser screenshot) | `src-tauri/src/workspace/` |
+| Workspace for agents (MCP bridge `nook --mcp`) | ✓ | `src-tauri/src/workspace/` |
+| Usage and limits | ◐ | `views/workspace/` |
 
-## Companion en Android
+## Companion and Android
 
-| Onderdeel (Mac) | Tauri | Waar |
+| Part (Mac) | Tauri | Where |
 |---|---|---|
-| Companion-protocol (`CompanionModels`, `CompanionSeal`, `CompanionPush`) | ✓ (testvectoren) | `core/src/companion/` |
-| Companion-server op Windows en Linux (iPhone-app koppelen): alle werkruimte- en hook-sessies; goedkeuren, antwoorden, sturen, stoppen | ✓ (sessies uit een terminal: alleen goedkeuren en antwoorden) | `core/src/companion/`, `src-tauri/src/companion/backend.rs` |
-| Pushmeldingen via APNs | ◐ (niet tegen Apple getest) | `core/src/companion/apns.rs` |
-| Android als companion (zoals de iPhone-app) | ✓ (meldingen alleen terwijl de app draait; geen FCM) | `src/views/companion/` |
-| Android-project, telefoonindeling, Delen met Nook, terugknop | ◐ (APK alleen via de CI) | `src-tauri/gen/android` |
-| Geheimen in de Android Keystore | ○ (afgeschermde app-map zonder back-up) | `platform/secrets.rs` |
+| Companion protocol (`CompanionModels`, `CompanionSeal`, `CompanionPush`) | ✓ (test vectors) | `core/src/companion/` |
+| Companion server on Windows and Linux (pairing the iPhone app): all workspace and hook sessions; approve, answer, steer, stop | ✓ (sessions from a terminal: approve and answer only) | `core/src/companion/`, `src-tauri/src/companion/backend.rs` |
+| Push notifications via APNs | ◐ (not tested against Apple) | `core/src/companion/apns.rs` |
+| Android as a companion (like the iPhone app) | ✓ (notifications only while the app runs; no FCM) | `src/views/companion/` |
+| Android project, phone layout, Share with Nook, back button | ◐ (APK only via CI) | `src-tauri/gen/android` |
+| Secrets in the Android Keystore | ○ (private app folder without backup) | `platform/secrets.rs` |
 
-## Nog te doen
+## To do
 
-- De interface is alleen Nederlands; de Mac heeft ook Engels en Duits.
-- Echt testen op Windows en op een Android-toestel.
-- Wat hierboven ○ staat.
+- The interface is Dutch-only; the Mac also has English, German, French, and Spanish.
+- Real testing on Windows and on an Android device.
+- Everything marked ○ above.
 
-## Testen tegen nep-diensten
+## Testing against fake services
 
-- Nep-brein: start een eigen server en zet `OLLAMA_HOST=http://127.0.0.1:<poort>`.
-- Nep-API's, alleen in debug-builds: `NOOK_GITHUB_API_URL` en `NOOK_<DIENST>_API_URL`. ICS-feeds accepteren `http://` alleen voor 127.0.0.1 en localhost.
-- Nep-agent: een script `claude` in `PATH` dat stream-json uitspuugt.
+- Fake brain: start your own server and set `OLLAMA_HOST=http://127.0.0.1:<port>`.
+- Fake APIs, debug builds only: `NOOK_GITHUB_API_URL` and `NOOK_<SERVICE>_API_URL`. ICS feeds accept `http://` only for 127.0.0.1 and localhost.
+- Fake agent: a `claude` script in `PATH` that prints stream-json.

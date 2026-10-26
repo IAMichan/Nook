@@ -33,6 +33,7 @@ struct NookChatView: View {
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var renaming = false
     @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
     /// The conversation whose delete waits for a yes.
     @State private var deleting: Conversation?
     @ObservedObject private var embedded = EmbeddedAppStore.shared
@@ -228,9 +229,12 @@ struct NookChatView: View {
                         .textFieldStyle(.plain)
                         .font(NookTheme.TextStyle.title)
                         .foregroundStyle(NookTheme.paper)
-                        .onSubmit {
-                            chat.rename(conversation.id, to: titleDraft)
-                            renaming = false
+                        .focused($titleFocused)
+                        .onAppear { titleFocused = true }
+                        .onSubmit { commitRename(conversation) }
+                        // Clicking away keeps the new name; Escape (which closes first) drops it.
+                        .onChange(of: titleFocused) { _, focused in
+                            if !focused { commitRename(conversation) }
                         }
                         .onExitCommand { renaming = false }
                 } else {
@@ -264,6 +268,13 @@ struct NookChatView: View {
     private func startRenaming(_ conversation: Conversation) {
         titleDraft = conversation.title
         renaming = true
+    }
+
+    /// Saves the new name once: Return and the focus that leaves right after both end here.
+    private func commitRename(_ conversation: Conversation) {
+        guard renaming else { return }
+        renaming = false
+        chat.rename(conversation.id, to: titleDraft)
     }
 
     /// Everything else you can do with this conversation, as in a session's menu.

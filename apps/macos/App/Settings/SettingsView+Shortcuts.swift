@@ -48,7 +48,7 @@ extension SettingsView {
                         Text(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
                     }
                     if doubleTap.enabled && doubleTap.conflictsWithFlow {
-                        Text(tr("doubletap.settings.conflict")).foregroundStyle(NookTheme.amber)
+                        SettingNote(tr("doubletap.settings.conflict"), tone: .warning)
                     }
                 }
             }

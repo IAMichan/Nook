@@ -15,6 +15,7 @@ apps/macos/App/Nook.entitlements
 
 # Other platforms (build output)
 node_modules/
+.wrangler/
 .gradle/
 **/build/
 *.xcuserstate

@@ -65,6 +65,7 @@ struct NookTaskRing: View {
     @State private var appeared = Date()
     @StateObject private var spring = RingSpring()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nookAttended) private var attended
     /// Published only when the plan changes: sets how often the ring redraws.
     @ObservedObject private var energy = EnergyMonitor.shared
 
@@ -82,12 +83,25 @@ struct NookTaskRing: View {
         // Keeps drawing while the ring still catches up with Nook; once it rests, the spring asks for one more redraw
         // so the timeline can pause again.
         let following = !reduceMotion && !spring.settled(at: motion.offset)
-        // Possibly for hours in the closed notch: the ambient rate keeps the light fluid there at a fraction of the
-        // redraws; in the open panel, where you look at it and point at it, it runs at the interactive rate.
-        let rate = compact ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate
-        TimelineView(.animation(minimumInterval: 1.0 / rate, paused: !moving && !following)) { context in
-            ring(at: context.date)
+        // Possibly for hours, closed or open: the ambient rate keeps the light fluid at a fraction of the redraws, and every
+        // frame redraws the whole window the ring is in. Only while you point at a piece in the panel does it run at the
+        // interactive rate.
+        // On a screen or in a window the pointer is not on, at most the unattended rate.
+        let rate = energy.plan.frameRate(compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate,
+                                         attended: attended)
+        // In a graph of its own (`SeparateGraph`), so its frames do not update the window it is in; hover and clicks stay
+        // on the band below.
+        SeparateGraph {
+            TimelineView(.nookFrames(fps: rate, paused: !moving && !following)) { context in
+                ring(at: context.date)
+            }
+            // One picture per frame instead of a layer per piece, its light and its glow; twice its size, so the ring
+            // trailing behind Nook and stretching is not cut off.
+            .frame(width: side * 2, height: side * 2)
+            .drawingGroup()
         }
+        .frame(width: side * 2, height: side * 2)
+        .allowsHitTesting(false)
         .frame(width: side, height: side)
         .contentShape(RingBand(radius: radius, width: 16), eoFill: true)
         .onContinuousHover { phase in

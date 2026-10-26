@@ -249,7 +249,7 @@ private struct ChatsSidebarRow<Glyph: View>: View {
     }
 }
 
-/// Under an open chat, above its answer field: where it stands and the one step that is left. Something new can be read
+/// Under an open chat, in the tray above its answer field: where it stands and the one step that is left. Something new can be read
 /// in Nook; read in Nook, it can be passed on to the app ("Mark as read in Telegram"), which Nook tells itself where it
 /// can, and otherwise opens the app so you read it there. Read everywhere, it says so and asks nothing.
 struct ChatReadLine: View {
@@ -264,20 +264,23 @@ struct ChatReadLine: View {
             ChatReadMark(state: state)
                 .frame(minWidth: 16)
             Text(line)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(explanation)
             Spacer(minLength: NookTheme.Spacing.sm)
             if state.isUnread {
-                SmallGhostButton(title: tr("chats.markReadInNook"), action: markReadInNook)
-                    .fixedSize()
+                ChatMarkButton(to: .readInNook, title: tr("chats.markReadInNook"), help: tr("chats.legend.readInNook"),
+                               action: markReadInNook)
             }
             if state != .read {
-                ChatPassOnButton(title: tr("chats.markReadInApp", appName), help: explanation, action: markReadInApp)
+                ChatMarkButton(to: .read, title: tr("chats.markReadInApp", appName), help: explanation, action: markReadInApp)
             }
         }
+        // The same row as the queued messages' header in an agent's tray (see `QueuedMessagesStrip`).
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, 3)
         .animation(NookTheme.reveal, value: state)
     }
 
@@ -298,25 +301,31 @@ struct ChatReadLine: View {
     }
 }
 
-/// "Mark as read in <app>": a quiet outlined capsule with the two ticks it gives the chat.
-private struct ChatPassOnButton: View {
+/// A step that moves a chat to another read state ("Read in Nook", "Mark as read in <app>", "Mark as unread"): an
+/// outlined capsule with the mark the chat gets (one tick, two mint ticks, the amber dot of something new) and its word,
+/// so what a click does is plain before it is made. `compact` is the size a chat's row shows under the pointer.
+struct ChatMarkButton: View {
+    /// Where the chat stands after the click.
+    let to: ChatReadState
     let title: String
     let help: String
+    var compact = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                ChatTicks(count: 2, tint: NookTheme.mint)
+            HStack(spacing: compact ? NookTheme.Spacing.xs : NookTheme.Spacing.sm) {
+                mark
                 Text(title)
-                    .font(NookTheme.TextStyle.label)
+                    .font(compact ? NookTheme.TextStyle.caption : NookTheme.TextStyle.label)
+                    .fontWeight(.semibold)
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
                     .lineLimit(1)
             }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .frame(height: 26)
-            .background(Capsule().fill(hovering ? NookTheme.smoke : Color.clear))
+            .padding(.horizontal, compact ? NookTheme.Spacing.md : NookTheme.Spacing.lg)
+            .frame(height: compact ? 22 : 26)
+            .background(Capsule().fill(hovering ? NookTheme.smoke : (compact ? NookTheme.surface : Color.clear)))
             .overlay(Capsule().strokeBorder(NookTheme.separator, lineWidth: 1))
             .contentShape(Capsule())
         }
@@ -325,6 +334,20 @@ private struct ChatPassOnButton: View {
         .animation(NookTheme.hover, value: hovering)
         .fixedSize()
         .help(help)
-        .accessibilityHint(help)
+        .accessibilityLabel(help)
+    }
+
+    @ViewBuilder
+    private var mark: some View {
+        switch to {
+        case .unread:
+            Circle()
+                .fill(NookTheme.amber)
+                .frame(width: 7, height: 7)
+        case .readInNook:
+            ChatTicks(count: 1, tint: NookTheme.textSecondary)
+        case .read:
+            ChatTicks(count: 2, tint: NookTheme.mint)
+        }
     }
 }

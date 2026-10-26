@@ -23,7 +23,9 @@ extension WorkspaceManager {
                 // Asked a moment ago: keep that answer.
             } else {
                 pullRequestChecked[key] = Date()
-                openPullRequests[id] = await lookup(repo, branch)
+                // Usually the same answer as last time: publishing it again would redraw every view of the workspace.
+                let found = await lookup(repo, branch)
+                if openPullRequests[id] != found { openPullRequests[id] = found }
             }
         }
         return GitQuickState(hasChanges: !status.isClean, branch: branch, isDefaultBranch: branch != nil && branch == facts.base,

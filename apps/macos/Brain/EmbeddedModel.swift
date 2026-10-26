@@ -55,6 +55,9 @@ final class EmbeddedModel: ObservableObject {
         }
     }
 
+    /// Posted after the model left memory.
+    nonisolated static let didUnload = Notification.Name("nook.embeddedModel.didUnload")
+
     /// Unloads the model from memory.
     func unload() {
         idleTask?.cancel()
@@ -62,6 +65,8 @@ final class EmbeddedModel: ObservableObject {
         container = nil
         loadedID = nil
         Memory.clearCache()
+        // Autocomplete's prompt cache belongs to this model: it goes with it, not on the next key.
+        NotificationCenter.default.post(name: Self.didUnload, object: nil)
     }
 
     /// Unloads the model unless a query is running: for background work (thinking along) that loaded it only for itself.
@@ -73,8 +78,8 @@ final class EmbeddedModel: ObservableObject {
     private func scheduleUnload() {
         idleTask?.cancel()
         // While autocomplete is in use the model stays longer: loading it again costs seconds, at the moment you type.
-        let typing = lastAutocomplete.map { Date().timeIntervalSince($0) < 30 * 60 } ?? false
-        let seconds = typing ? max(Self.idleSeconds, 15 * 60) : Self.idleSeconds
+        let typing = lastAutocomplete.map { Date().timeIntervalSince($0) < 10 * 60 } ?? false
+        let seconds = typing ? max(Self.idleSeconds, 5 * 60) : Self.idleSeconds
         idleTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
             guard !Task.isCancelled else { return }

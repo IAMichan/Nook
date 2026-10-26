@@ -1,0 +1,205 @@
+import SwiftUI
+
+// The side panel's tabs and its list of tools, laid out: small tabs that each carry what
+// they show (the page's title, the pull request's number and title), whose icon turns into a cross under the pointer;
+// + right after the last tab; and with no tab open a short list to open one, each row with the key that opens it.
+
+/// One tab of the side panel: what it shows, as `SidePanelTabBar` draws it.
+struct SidePanelTabItem<Value: Hashable>: Identifiable {
+    let value: Value
+    let title: String
+    /// The mark before the title; it gives way to the cross under the pointer.
+    let icon: AnyView
+    /// Something in it you have not looked at yet: a small dot on the icon.
+    var fresh = false
+    var help: String? = nil
+    var id: Value { value }
+}
+
+/// The side panel's tab row: the tabs scroll sideways when they do not fit, + follows the last one, and `trailing`
+/// (the button that closes the panel) stays at the end.
+struct SidePanelTabBar<Value: Hashable, Add: View, Trailing: View>: View {
+    let items: [SidePanelTabItem<Value>]
+    let selected: Value
+    let onSelect: (Value) -> Void
+    let onClose: (Value) -> Void
+    @ViewBuilder var add: () -> Add
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        ForEach(items) { item in
+                            SidePanelTab(item: item, active: item.value == selected,
+                                         select: { onSelect(item.value) }, close: { onClose(item.value) })
+                                .id(item.value)
+                        }
+                        add()
+                    }
+                }
+                .onChange(of: selected) { _, value in
+                    withAnimation(NookTheme.scroll) { proxy.scrollTo(value) }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
+        }
+        .frame(height: 32)
+    }
+}
+
+/// A small tab: the icon (a cross under the pointer, which closes it) and the title, on a soft fill while selected.
+private struct SidePanelTab<Value: Hashable>: View {
+    let item: SidePanelTabItem<Value>
+    let active: Bool
+    let select: () -> Void
+    let close: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Button(action: close) {
+                ZStack {
+                    if hovering {
+                        Image(systemName: "xmark").font(NookTheme.font(8.5, .bold))
+                    } else {
+                        item.icon
+                            .overlay(alignment: .bottomTrailing) {
+                                if item.fresh {
+                                    Circle().fill(NookTheme.iris).frame(width: 5, height: 5).offset(x: 2, y: 2)
+                                }
+                            }
+                    }
+                }
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("tab.close"))
+            .accessibilityLabel(tr("tab.close") + " " + item.title)
+            Button(action: select) {
+                Text(item.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 132, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(item.help ?? item.title)
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
+        .padding(.leading, NookTheme.Spacing.xs)
+        .padding(.trailing, NookTheme.Spacing.sm)
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// One choice in `SidePanelLauncher`.
+struct SidePanelLaunch: Identifiable {
+    let id: String
+    let symbol: String
+    let title: String
+    /// The letter that opens it while the list is in view.
+    let key: Character
+    /// Nil when it can be opened; otherwise why not, shown when you hover the dimmed row.
+    var disabledReason: String? = nil
+    let open: () -> Void
+}
+
+/// The open side panel before any tab "Open a surface": a title and one row per tool with its icon,
+/// its name and the key that opens it. ↑ and ↓ move the highlight, Return opens it, and a row's letter opens it at once.
+struct SidePanelLauncher: View {
+    let title: String
+    let items: [SidePanelLaunch]
+    @State private var highlight: Int?
+    @FocusState private var focused: Bool
+
+    private var available: [SidePanelLaunch] { items.filter { $0.disabledReason == nil } }
+
+    var body: some View {
+        VStack(spacing: NookTheme.Spacing.md) {
+            Text(title)
+                .font(NookTheme.TextStyle.strong)
+                .foregroundStyle(NookTheme.paper)
+            VStack(spacing: NookTheme.Spacing.xxs) {
+                ForEach(items) { item in
+                    row(item)
+                }
+            }
+            .frame(maxWidth: 280)
+        }
+        .padding(.horizontal, NookTheme.Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        .onAppear { focused = true }
+        .onKeyPress(.downArrow) { move(1) }
+        .onKeyPress(.upArrow) { move(-1) }
+        .onKeyPress(.return) {
+            guard let highlight, available.indices.contains(highlight) else { return .ignored }
+            available[highlight].open()
+            return .handled
+        }
+        .onKeyPress(phases: .down) { press in
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option]),
+                  let letter = press.characters.lowercased().first,
+                  let item = available.first(where: { Character($0.key.lowercased()) == letter }) else { return .ignored }
+            item.open()
+            return .handled
+        }
+    }
+
+    private func move(_ step: Int) -> KeyPress.Result {
+        guard !available.isEmpty else { return .ignored }
+        let count = available.count
+        highlight = highlight.map { ($0 + step + count) % count } ?? (step > 0 ? 0 : count - 1)
+        return .handled
+    }
+
+    private func row(_ item: SidePanelLaunch) -> some View {
+        let enabled = item.disabledReason == nil
+        let lit = enabled && available.firstIndex(where: { $0.id == item.id }) == highlight
+        return Button(action: item.open) {
+            HStack(spacing: 10) {
+                NookSymbol(item.symbol, size: 13)
+                    .font(NookTheme.font(12, .medium))
+                    .frame(width: 16)
+                Text(item.title).lineLimit(1)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                Text(String(item.key).uppercased())
+                    .font(NookTheme.mono(10.5, .medium))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.line2))
+            }
+            .font(NookTheme.TextStyle.body)
+            .foregroundStyle(enabled ? NookTheme.paper : NookTheme.textTertiary)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                .fill(lit ? NookTheme.smoke : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.5)
+        .help(item.disabledReason ?? item.title)
+        .onHover { inside in
+            guard enabled, let index = available.firstIndex(where: { $0.id == item.id }) else { return }
+            if inside { highlight = index } else if highlight == index { highlight = nil }
+        }
+    }
+}

@@ -32,6 +32,14 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     /// already in sight and needs no popup.
     var shownInWorkbench = 0
     let webView: WKWebView
+    /// The page put away while the browser was out of sight (see `outOfSight`), and its title.
+    private var parked: (url: URL, title: String)?
+    private var parkTask: Task<Void, Never>?
+    private static let parkSeconds: UInt64 = 15 * 60
+
+    /// The open page, also while it is put away.
+    var pageURL: URL? { parked?.url ?? webView.url }
+    var pageTitle: String { parked?.title ?? webView.title ?? "" }
 
     /// Apple's browser entitlement. A build signed with it gets the system's passkeys in this web view: iCloud Keychain,
     /// a phone nearby (over Bluetooth or a QR code) and security keys, like Safari. Apple grants it on request; see
@@ -114,15 +122,47 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         webView.allowsBackForwardNavigationGestures = true
     }
 
+    /// No browser page and no popup shows the web view any more: after `parkSeconds` the page is put away, since a page can
+    /// hold hundreds of MB and keep running its scripts for no one. It comes back as soon as the browser is shown or read.
+    func outOfSight() {
+        parkTask?.cancel()
+        parkTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.parkSeconds * 1_000_000_000)
+            guard !Task.isCancelled, let self, self.parked == nil, self.shownInWorkbench == 0, !BrowserPopup.shared.isVisible,
+                  !self.loading, let url = self.webView.url, url.scheme != "about" else { return }
+            self.parked = (url, self.webView.title ?? "")
+            self.webView.loadHTMLString("", baseURL: nil)
+        }
+    }
+
+    /// The browser shows again: the page put away comes back.
+    func inSight() {
+        parkTask?.cancel()
+        guard let parked else { return }
+        self.parked = nil
+        webView.load(URLRequest(url: parked.url))
+    }
+
+    /// Before the page is read: back from where it was put away, loaded.
+    private func restoreParked() async {
+        guard let parked else { return }
+        self.parked = nil
+        let by = openedBy
+        _ = await load(parked.url, by: by ?? "")
+        openedBy = by
+    }
+
     /// Opens what the user typed: an address, or otherwise a search.
     func go(_ input: String) {
         guard let url = BrowserSearchEngine.address(input, engine: .current()) else { return }
+        parked = nil
         openedBy = nil
         webView.load(URLRequest(url: url))
     }
 
     /// Opens a page Nook's chat asked for, without waiting for it.
     func open(_ url: URL) {
+        parked = nil
         openedBy = nil
         lastError = nil
         webView.load(URLRequest(url: url))
@@ -137,6 +177,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// Opens a page for an agent and waits (up to `timeout`) until it has loaded. Returns the error when it failed.
     func load(_ url: URL, by agent: String, timeout: TimeInterval = 15) async -> String? {
+        parked = nil
         openedBy = agent
         lastError = nil
         webView.load(URLRequest(url: url))
@@ -153,6 +194,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// Console errors and warnings the open page logged since it loaded.
     func consoleMessages() async -> [String] {
+        await restoreParked()
         guard webView.url != nil,
               let result = try? await webView.evaluateJavaScript("JSON.stringify(window.__nookConsole || [])"),
               let text = result as? String, let data = text.data(using: .utf8),
@@ -162,6 +204,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// The visible part of the page as JPEG, at most `maxWidth` pixels wide.
     func screenshot(maxWidth: Int = 1280) async throws -> Data {
+        await restoreParked()
         guard webView.url != nil else { throw NookError(tr("workbench.browser.nothingOpen")) }
         let configuration = WKSnapshotConfiguration()
         let width = max(320, min(maxWidth, 2560))
@@ -182,6 +225,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// The visible text of the open page (for Nook to read), with its address.
     func pageText() async throws -> (title: String, url: String, text: String) {
+        await restoreParked()
         guard let url = webView.url else { throw NookError(tr("workbench.browser.nothingOpen")) }
         let result = try await webView.evaluateJavaScript("document.body ? document.body.innerText : ''")
         let text = ((result as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -315,48 +359,41 @@ struct BrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                Button { store.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                    .disabled(!store.canGoBack)
-                    .help(tr("a11y.back"))
-                    .accessibilityLabel(tr("a11y.back"))
-                Button { store.webView.goForward() } label: { Image(systemName: "chevron.right") }
-                    .disabled(!store.canGoForward)
-                    .help(tr("a11y.forward"))
-                    .accessibilityLabel(tr("a11y.forward"))
-                Button {
-                    if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
-                } label: {
-                    Image(systemName: store.loading ? "xmark" : "arrow.clockwise")
+            // The page's own bar: back, forward and reload together, the address, then
+            // what to do with the page.
+            HStack(spacing: NookTheme.Spacing.xs) {
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    ToolbarIconButton("chevron.left", tr("a11y.back"), enabled: store.canGoBack) { store.webView.goBack() }
+                    ToolbarIconButton("chevron.right", tr("a11y.forward"), enabled: store.canGoForward) { store.webView.goForward() }
+                    ToolbarIconButton(store.loading ? "xmark" : "arrow.clockwise", tr(store.loading ? "a11y.stopLoading" : "a11y.reload")) {
+                        if store.loading { store.webView.stopLoading() } else { _ = store.webView.reload() }
+                    }
                 }
-                .help(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
-                .accessibilityLabel(tr(store.loading ? "a11y.stopLoading" : "a11y.reload"))
-                TextField(tr("workbench.browser.address"), text: $store.address)
-                    .textFieldStyle(.plain)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.paper)
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(Color.white.opacity(0.04)))
-                    .onSubmit { store.go(store.address) }
-                Button { store.openInDefaultBrowser() } label: { Image(systemName: "arrow.up.forward.app") }
-                    .help(tr("browser.openExternal"))
-                    .disabled(store.webView.url == nil)
-                Button {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Image(systemName: store.webView.url?.scheme == "https" ? "lock.fill" : "globe")
+                        .font(NookTheme.font(9.5, .medium))
+                        .foregroundStyle(NookTheme.textTertiary)
+                    TextField(tr("workbench.browser.address"), text: $store.address)
+                        .textFieldStyle(.plain)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.paper)
+                        .onSubmit { store.go(store.address) }
+                }
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(WS.subtle))
+                ToolbarIconButton("arrow.up.forward.app", tr("browser.openExternal"), enabled: store.webView.url != nil) {
+                    store.openInDefaultBrowser()
+                }
+                ToolbarIconButton("plus.bubble", tr("workbench.browser.askHelp"), enabled: store.webView.url != nil && !asking) {
                     askAboutPage()
-                } label: {
-                    Label(tr("workbench.browser.ask"), systemImage: "sparkles")
                 }
-                .disabled(store.webView.url == nil || asking)
                 if let onClose {
-                    Button(action: onClose) { Image(systemName: "xmark") }
-                        .help(tr("embedded.close"))
+                    ToolbarIconButton("xmark", tr("embedded.close"), onClose)
                 }
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(NookTheme.textSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, NookTheme.Spacing.sm)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .frame(height: 36)
             if let agent = store.openedBy {
                 HStack(spacing: NookTheme.Spacing.sm) {
                     AgentMark(agent: agent, account: nil, size: 12, ring: .clear)
@@ -381,10 +418,14 @@ struct BrowserView: View {
         .onAppear {
             bridge.markBrowserSeen()
             store.shownInWorkbench += 1
+            store.inSight()
             // The web view can only be in one place: here now, so the popup goes.
             BrowserPopup.shared.close()
         }
-        .onDisappear { store.shownInWorkbench = max(0, store.shownInWorkbench - 1) }
+        .onDisappear {
+            store.shownInWorkbench = max(0, store.shownInWorkbench - 1)
+            if store.shownInWorkbench == 0 { store.outOfSight() }
+        }
         .onChange(of: bridge.unseen) { _, _ in bridge.markBrowserSeen() }
     }
 
@@ -395,6 +436,8 @@ struct BrowserView: View {
             defer { asking = false }
             do {
                 let page = try await store.pageText()
+                // Each page gets a chat of its own, never the end of an older conversation.
+                app.chat.startNew()
                 app.attachText(name: page.title, text: "URL: \(page.url)\n\n\(page.text)")
                 // The page stays in sight next to the chat, unless an app is open there already.
                 if EmbeddedAppStore.shared.current == nil { app.viewModel.browserBesideChat = true }
@@ -413,10 +456,13 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
     static let shared = BrowserPopup()
     private var panel: NSPanel?
 
+    var isVisible: Bool { panel?.isVisible == true }
+
     func show() {
         let store = BrowserStore.shared
         guard store.shownInWorkbench == 0 else { return }
         if let panel, panel.isVisible { return }
+        store.inSight()
         // A fresh window each time: the web view may have moved to a browser page since the last one.
         let root = BrowserPopupView(store: store, expand: { [weak self] in self?.expand() })
         let host = NSHostingController(rootView: root)
@@ -447,6 +493,7 @@ final class BrowserPopup: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         panel = nil
+        if let store = BrowserStore.existing, store.shownInWorkbench == 0 { store.outOfSight() }
     }
 
     /// The full browser: in the main window when that is in front, otherwise in the notch.

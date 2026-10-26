@@ -16,6 +16,8 @@ struct AgentsTab: View {
     @State private var totalWidth: Double = 0
     /// The folder picked for a new session: its terminal, browser and changes open beside the composer.
     @State private var newDirectory = ""
+    /// What was open before the pull requests page; empty picks what waits for you, as on a fresh start.
+    @State private var beforePullRequests = ""
 
     private enum Selection {
         case live(AgentSession)
@@ -47,7 +49,8 @@ struct AgentsTab: View {
                 sessionList(live: live, past: past, transcripts: transcripts, selection: selection)
                 if !app.demoMode {
                     PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
-                                openSettings: { app.openSettings() }, history: app.history)
+                                openSettings: { app.openSettings() }, history: app.history,
+                                onBack: { viewModel.selectedAgentID = beforePullRequests })
                 }
             }
             .padding(.trailing, NookTheme.Spacing.xs)
@@ -96,6 +99,10 @@ struct AgentsTab: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
+        // Where back on the pull requests page returns to.
+        .onChange(of: viewModel.selectedAgentID) { previous, id in
+            if id == AgentsPage.pullRequests, previous != AgentsPage.pullRequests { beforePullRequests = previous }
+        }
         .overlay(alignment: .top) {
             if palette {
                 AgentCommandPalette(viewModel: viewModel) { palette = false }
@@ -153,8 +160,10 @@ struct AgentsTab: View {
             return .run(uuid)
         }
         if let session = live.first(where: { $0.id == id }) { return .live(session) }
+        // A session that waits for you comes before a run that is only busy.
+        if let first = live.first(where: { $0.status == .waiting || $0.approvalID != nil }) { return .live(first) }
         if !app.demoMode, let run = app.workspace.activeRuns.first(where: { !$0.archived }) { return .run(run.id) }
-        if let first = live.first(where: { $0.status == .waiting || $0.approvalID != nil || $0.status == .running }) { return .live(first) }
+        if let first = live.first(where: { $0.status == .running }) { return .live(first) }
         if app.demoMode, let first = live.first { return .live(first) }
         return .new
     }
@@ -324,7 +333,7 @@ struct AgentsTab: View {
             started: status == .idle ? (session.updated ?? session.started ?? known?.started)
                 : (session.turnStarted ?? session.started ?? known?.started),
             path: session.cwd,
-            finishKey: FinishedSessions.key(agent: session.name, conversation: conversation, fallback: session.id),
+            finishKey: FinishedSessions.key(session: session),
             unseen: session.status == .done && unseen(session.id, session.updated),
             machine: MachineName.local,
             model: known?.model ?? "",
@@ -468,6 +477,7 @@ struct AgentListRow: View {
                 .buttonStyle(.plain)
             if let actions {
                 hoverActions(actions)
+                    .rowActionsBackdrop(background)
                     .padding(.top, slim ? NookTheme.Spacing.sm : NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
                     .padding(.trailing, NookTheme.Spacing.md)
                     .opacity(hovering ? 1 : 0)
@@ -477,6 +487,21 @@ struct AgentListRow: View {
         .onHover { hovering = $0 }
         .hoverCard { AgentHoverCard(item: item) }
         .accessibilityElement(children: .combine)
+        // The hover buttons are merged away above, so VoiceOver gets them as the row's actions.
+        .accessibilityActions {
+            if let actions {
+                Button(actions.pinned ? tr("inbox.unpin") : tr("inbox.pin"), action: actions.onPin)
+                Button(actions.settled ? tr("inbox.reopen") : tr("inbox.settle"), action: actions.onSettle)
+                if let onWake = actions.onWake {
+                    Button(tr("agents.snooze.cancel"), action: onWake)
+                }
+                if let onSnooze = actions.onSnooze {
+                    ForEach(SnoozePolicy.Choice.allCases, id: \.self) { choice in
+                        Button(tr("agents.snooze." + choice.rawValue)) { onSnooze(choice) }
+                    }
+                }
+            }
+        }
     }
 
     private var content: some View {
@@ -588,7 +613,8 @@ struct AgentListRow: View {
     }
 
     private func rowButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { rowIcon(symbol, label) }.buttonStyle(.plain)
+        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+            .pointerStyle(.link)
     }
 
     /// The status as a badge ("Bezig 3m", "Goedkeuring", "Klaar"), otherwise how long ago. One source: `AgentStatusStyle`.
@@ -653,8 +679,6 @@ struct AgentHoverCard: View {
 /// The conversation of a running session: what you asked and what the agent answered, newest at the bottom.
 struct AgentConversation: View {
     let session: AgentSession
-    /// The outputs panel next to the conversation; its button sits in the header above.
-    var outputsOpen: Binding<Bool> = .constant(false)
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
 
@@ -670,7 +694,7 @@ struct AgentConversation: View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, fallback: fallback, onReply: onReply,
-                               directory: session.cwd, outputsOpen: outputsOpen)
+                               directory: session.cwd)
             .id(session.id)
     }
 }

@@ -22,7 +22,7 @@ extension SettingsView {
                         lookPresetCard(preset.id, preset.look)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, NookTheme.Spacing.xxs)
             } header: {
                 Text(tr("settings.appearance.style"))
             } footer: {
@@ -33,7 +33,8 @@ extension SettingsView {
 
             Section {
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    ForEach([NookTheme.defaultAccentHex, 0x8B7BFF, 0x5AA9FF, 0x5ED6A6, 0xF2B866, 0xEF7B73, 0xFF7EB6] as [UInt32], id: \.self) { hex in
+                    ForEach(Self.accentSwatches, id: \.hex) { swatch in
+                        let hex = swatch.hex
                         Button { settings.accentHex = hex } label: {
                             // The chosen color gets a ring a little outside it, so it shows on the white swatch too.
                             Circle().fill(Color(hex: hex)).frame(width: 22, height: 22)
@@ -42,7 +43,8 @@ extension SettingsView {
                                 .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(tr("settings.display.accent"))
+                        .accessibilityLabel(tr(swatch.name))
+                        .accessibilityHint(tr("settings.display.accent"))
                         .accessibilityAddTraits(settings.accentHex == hex ? .isSelected : [])
                     }
                     Spacer(minLength: 8)
@@ -103,12 +105,19 @@ extension SettingsView {
         }
     }
 
+    /// The accent colors offered as swatches, each with the name VoiceOver reads.
+    static let accentSwatches: [(hex: UInt32, name: String)] = [
+        (NookTheme.defaultAccentHex, "settings.accent.white"), (0x8B7BFF, "settings.accent.violet"),
+        (0x5AA9FF, "settings.accent.blue"), (0x5ED6A6, "settings.accent.mint"), (0xF2B866, "settings.accent.amber"),
+        (0xEF7B73, "settings.accent.coral"), (0xFF7EB6, "settings.accent.pink"),
+    ]
+
     /// Nook large and alive, with the moods underneath to see how each one looks.
     private var lookPreview: some View {
         VStack(spacing: 14) {
             NookOrb(mood: lookPreviewMood, size: 88, glow: settings.nookLook.glow, look: settings.nookLook)
                 .frame(width: 150, height: 130)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 6)], spacing: 6) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: NookTheme.Spacing.sm)], spacing: NookTheme.Spacing.sm) {
                 ForEach(Self.previewMoods, id: \.key) { item in
                     let selected = lookPreviewMood == item.mood
                     Button { lookPreviewMood = item.mood } label: {
@@ -156,7 +165,7 @@ extension SettingsView {
     private func lookPresetCard(_ id: String, _ look: NookLook) -> some View {
         let selected = settings.nookLook == look
         return Button { withAnimation(NookTheme.reveal) { settings.nookLook = look } } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: NookTheme.Spacing.md) {
                 NookOrb(mood: .rest, size: 44, animated: false, glow: false, look: look)
                     .frame(width: 60, height: 56)
                 Text(Self.presetTitle(id)).font(NookTheme.TextStyle.strong)
@@ -167,8 +176,8 @@ extension SettingsView {
                     .lineLimit(2, reservesSpace: true)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 8)
+            .padding(.vertical, NookTheme.Spacing.lg)
+            .padding(.horizontal, NookTheme.Spacing.md)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(selected ? NookTheme.smoke : NookTheme.graphite))
             .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
                 .strokeBorder(selected ? NookTheme.iris : Color.clear, lineWidth: 2))

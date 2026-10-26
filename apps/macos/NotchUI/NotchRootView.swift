@@ -52,8 +52,8 @@ struct NotchRootView: View {
             .animation(NookTheme.hover, value: hoverGrow)
         }
         .frame(
-            width: NotchController.panelSize.width,
-            height: NotchController.panelSize.height,
+            width: viewModel.canvas.width,
+            height: viewModel.canvas.height,
             alignment: .top
         )
     }
@@ -95,7 +95,10 @@ struct NotchRootView: View {
                 regularContent(nh: nh, nw: nw)
             }
         }
-        .frame(width: size.width, height: size.height, alignment: .top)
+        // Not animated: the content takes its final size on the first frame and only the shape around it springs open
+        // or closed. An animated frame laid the whole panel out again on every frame of the spring (and set off every
+        // `onGeometryChange` in it), which is where opening and closing stuttered.
+        .animation(nil) { $0.frame(width: size.width, height: size.height, alignment: .top) }
         .id("\(contentKey)-\(app.settings.accentHex)")
         .transition(.notchContent)
     }
@@ -153,7 +156,13 @@ struct NotchRootView: View {
                 .floatingDrag(viewModel)
             }
         case .music:
-            wings(nh: nh, nw: nw, mood: viewModel.pointerInside ? .seen : .rest, animated: viewModel.pointerInside) {
+            // Music keeps the idle notch's task ring: Nook still thinks along (or waits) while an agent or a chat works.
+            let active = app.activeAgents
+            let busy = !active.isEmpty || app.chat.anyBusy
+            let waiting = active.contains { $0.status == .waiting || $0.approvalID != nil }
+            let mood: NookMood = busy ? (waiting ? .waiting : .think) : (viewModel.pointerInside ? .seen : .rest)
+            wings(nh: nh, nw: nw, mood: mood, animated: busy || viewModel.pointerInside, orbSize: 20,
+                  ring: TaskRingItem.all(app: app, selected: viewModel.selectedAgentID)) {
                 EqualizerBars(color: NookTheme.music, height: 14, isPlaying: app.nowPlaying.current?.isPlaying ?? true,
                               frameRate: energy.plan.ambientFrameRate)
             }
@@ -333,6 +342,9 @@ struct NotchRootView: View {
                 .id(viewModel.noticeStamp)
             }
         }
+        // The step of a Double Tap: a click opens the notch on all its steps.
+        .contentShape(Rectangle())
+        .onTapGesture { if viewModel.workOpensPanel { viewModel.openPanel() } }
     }
 
     /// The row under the notch that holds Nook in a strip (a result, a nudge, a moment), level with where he sits in
@@ -462,6 +474,13 @@ struct PanelOrb: View {
     static let panelSize: CGFloat = 40
     /// The room the header row leaves for Nook and his task ring.
     static var headerInset: CGFloat { panelSize + 30 }
+    /// The room between the header row and the content below it. Nook is centered on the header row, but he and his task
+    /// ring stand taller than it: the content starts below the ring, with a margin for when he moves, so the first line
+    /// under the tabs (a list's title) never runs under him.
+    static var belowHeader: CGFloat {
+        let ringBottom = PanelView.headerHeight / 2 + NookTaskRing.radius(orbSize: panelSize) + NookTheme.Spacing.xxs
+        return max(ringBottom - PanelView.headerHeight, 0) + NookTheme.Spacing.lg
+    }
 
     @ObservedObject var viewModel: NotchViewModel
     let mood: NookMood
@@ -477,6 +496,10 @@ struct PanelOrb: View {
     // Redraws the ring when you mark a chat as finished or read a session.
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
+    /// Published only when the plan changes: sets Nook's frame rate.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    /// The pointer is on Nook: he follows it at the full rate.
+    @State private var pointerOn = false
 
     var body: some View {
         // Built from every agent session and every conversation: once per redraw, shared by the ring and its label.
@@ -490,9 +513,14 @@ struct PanelOrb: View {
                 viewModel.show(.panel(.nook), inNotch: true)
             }
         } label: {
-            NookOrb(mood: mood, size: size, glow: glow, motion: motion)
+            // Every frame redraws the whole window he is in (the open panel, the main window with a long chat): the full rate
+            // only while you point at him or his ring, as in the closed notch; otherwise the calm rate he thinks along at.
+            NookOrb(mood: mood, size: size, glow: glow,
+                    frameRate: pointerOn || ringPointer.hovered != nil ? energy.plan.interactiveFrameRate : energy.plan.idleOrbFrameRate,
+                    motion: motion)
         }
         .buttonStyle(.plain)
+        .onHover { pointerOn = $0 }
         .accessibilityLabel(tr("notch.goToHome"))
         .background {
             if ring {

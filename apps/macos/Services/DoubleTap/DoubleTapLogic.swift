@@ -202,6 +202,8 @@ enum DoubleTapLogic {
         let lowered = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !lowered.isEmpty, !lowered.contains("http"), !lowered.contains("www.") else { return false }
         if lowered.range(of: #"[a-z0-9-]+\.[a-z]{2,}"#, options: .regularExpression) != nil { return false }
+        // "Schrijf een post op Reddit" places it on the site through the browser: a task to take over, not text at the cursor.
+        if ChatIntent.postsOnline(lowered) { return false }
         let words = lowered.split { !$0.isLetter && !$0.isNumber && $0 != "-" }.map(String.init)
         if words.contains(where: writeInfinitives.contains) { return true }
         for word in words.prefix(3) where writeVerbs.contains(word) {

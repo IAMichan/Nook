@@ -40,8 +40,25 @@ extension AppModel {
         // it wakes reads again.
         if EnergyMonitor.shared.plan.reasons.contains(.displayAsleep) { return }
         let interval = settings.quietWhileSharing == .normal ? 2 * EnergyMonitor.shared.plan.slowdown : 2
-        guard Date().timeIntervalSince(lastQuietTick) >= interval - 0.5 else { return }
-        quietTick()
+        guard Date().timeIntervalSince(lastQuietTick) >= interval - 0.5, !quietReading else { return }
+        guard !demoMode else { return quietTick() }
+        // The read (every window on screen, every audio process) runs off the main thread, so a slow WindowServer or
+        // coreaudiod never holds up the notch, or the keys and clicks autocomplete's event tap waits on.
+        lastQuietTick = Date()
+        quietReading = true
+        let events = upcoming, useCalendar = settings.quietUseCalendar, recording = NoteTaker.shared.isRecording
+        let countScreenshots = !settings.showInScreenshots
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let situation = QuietWatch.situation(events: events, useCalendar: useCalendar, recording: recording,
+                                                 countScreenshots: countScreenshots)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.quietReading = false
+                    self.applyQuiet(situation)
+                }
+            }
+        }
     }
 
     /// Reads what is going on and, when that or your choice changed, tells the notch and the sounds.
@@ -51,6 +68,11 @@ extension AppModel {
             ? QuietSituation()
             : QuietWatch.situation(events: upcoming, useCalendar: settings.quietUseCalendar, recording: NoteTaker.shared.isRecording,
                                    countScreenshots: !settings.showInScreenshots)
+        applyQuiet(situation)
+    }
+
+    /// Behaves the way you chose for what is going on: tells the notch and the sounds when that or your choice changed.
+    private func applyQuiet(_ situation: QuietSituation) {
         let state = QuietPolicy.state(for: situation, sharing: settings.quietWhileSharing, meeting: settings.quietInMeetings)
         let wasHidden = quiet.hidden
         if state != quiet { quiet = state }
