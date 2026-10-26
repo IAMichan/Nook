@@ -339,6 +339,9 @@ final class AppUpdater: ObservableObject {
             self.installation = nil
             switch result {
             case .success(let installed):
+                if installation.keptPrevious {
+                    UpdateTrialRunner.begin(from: source.commit, to: installed, appPath: job.runningApp)
+                }
                 finish(update: update, from: source, installed: installed)
             case .failure(let failure):
                 phase = .failed(failure)
@@ -382,6 +385,9 @@ final class AppUpdater: ObservableObject {
             }
             self.installation = nil
             releaseTask = nil
+            if failure == nil, installation.keptPrevious {
+                UpdateTrialRunner.begin(from: release.version.description, to: candidate.version.description, appPath: job.runningApp)
+            }
             if let failure {
                 phase = .failed(failure)
                 AppModel.shared.store.audit(tool: "app_update", args: args,
@@ -467,7 +473,9 @@ final class AppUpdater: ObservableObject {
         phase = .installing(.restart)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = Relaunch.arguments(pid: ProcessInfo.processInfo.processIdentifier, appPath: Bundle.main.bundlePath)
+        // With an update on trial, the relaunch also takes the database snapshot a rollback would put back.
+        process.arguments = UpdateTrialRunner.relaunchArguments(pid: ProcessInfo.processInfo.processIdentifier,
+                                                                appPath: Bundle.main.bundlePath)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -517,6 +525,15 @@ final class AppUpdater: ObservableObject {
     }
 
     /// `build`: this build's commit, or its release version.
+    /// The new build crashed before it proved healthy, and this (previous) build and its database were put back
+    /// (`UpdateTrialRunner`): shown as a failed update, with what happened.
+    func reportRollback(_ trial: UpdateTrial) {
+        let failed = BuildSource.isCommit(trial.to) ? String(trial.to.prefix(7)) : trial.to
+        let current = BuildSource.isCommit(trial.from) ? String(trial.from.prefix(7)) : trial.from
+        phase = .failed(UpdateFailure(step: .restart, reason: .rolledBack(failed), errors: [], logPath: nil))
+        AppModel.shared.store.audit(tool: "app_update", args: "\(failed) → \(current)", result: "rolled back")
+    }
+
     private func loadReceipt(for build: String) {
         guard let data = UserDefaults.standard.data(forKey: Self.receiptKey) else { return }
         UserDefaults.standard.removeObject(forKey: Self.receiptKey)
@@ -599,7 +616,9 @@ final class AppUpdater: ObservableObject {
         try installation.checkCancelled()
 
         enter(.install)
-        try await onOwnThread { try replace(job.runningApp, with: app.path) }
+        installation.keptPrevious = try await onOwnThread {
+            try replace(job.runningApp, with: app.path, keepPreviousAt: UpdateTrialRunner.keptAppURL)
+        }
     }
 
     /// Downloads a release file to `destination`.
@@ -693,18 +712,20 @@ final class AppUpdater: ObservableObject {
 
         enter(.install)
         try installation.checkCancelled()
-        try replace(job.runningApp, with: product)
+        installation.keptPrevious = try replace(job.runningApp, with: product, keepPreviousAt: UpdateTrialRunner.keptAppURL)
         return target
     }
 
     /// Puts the new build where this app runs. Built in place (Xcode's DerivedData, the usual case) there is nothing to
     /// do: the linker and codesign write new files, so the running app keeps its own. A copy elsewhere (/Applications)
     /// is swapped: copy next to it, move the old one aside, move the new one in, and put the old one back if that fails.
-    nonisolated static func replace(_ running: String, with built: String) throws {
+    /// The old one is then kept at `keep` for a rollback (`UpdateTrial`) when it can be moved there; true when it was.
+    @discardableResult
+    nonisolated static func replace(_ running: String, with built: String, keepPreviousAt keep: URL? = nil) throws -> Bool {
         let fileManager = FileManager.default
         let runningURL = URL(fileURLWithPath: running).standardizedFileURL.resolvingSymlinksInPath()
         let builtURL = URL(fileURLWithPath: built).standardizedFileURL.resolvingSymlinksInPath()
-        guard runningURL.path != builtURL.path else { return }
+        guard runningURL.path != builtURL.path else { return false }
         let folder = runningURL.deletingLastPathComponent()
         guard fileManager.isWritableFile(atPath: folder.path) else { throw InstallError.notWritable(folder.path) }
         let staging = folder.appendingPathComponent(".\(runningURL.lastPathComponent).update")
@@ -728,7 +749,13 @@ final class AppUpdater: ObservableObject {
             try? fileManager.moveItem(at: previous, to: runningURL)
             throw InstallError.copyFailed(error.localizedDescription)
         }
+        if let keep {
+            try? fileManager.removeItem(at: keep)
+            try? fileManager.createDirectory(at: keep.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if (try? fileManager.moveItem(at: previous, to: keep)) != nil { return true }
+        }
         try? fileManager.removeItem(at: previous)
+        return false
     }
 
     /// A tool in the usual places, or wherever your login shell finds it.
@@ -786,6 +813,8 @@ struct UpdateFailure: Error, Equatable, Sendable {
         case download(String)
         case badSignature
         case badBundle(String)
+        /// The new build crashed before it proved healthy; this one and its database were put back.
+        case rolledBack(String)
         case other(String)
     }
 
@@ -842,6 +871,13 @@ final class Installation: @unchecked Sendable {
     private var process: Process?
     private var cancelled = false
     private var current = UpdateStep.fetch
+    private var kept = false
+
+    /// The install kept the previous app for a rollback.
+    var keptPrevious: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return kept }
+        set { lock.lock(); kept = newValue; lock.unlock() }
+    }
 
     /// The step running now, for the failure message.
     var step: UpdateStep {

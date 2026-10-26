@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         model.start()
+        UpdateTrialRunner.startWatching()
+        if let rollback = UpdateTrialRunner.rollbackToReport { AppUpdater.shared.reportRollback(rollback) }
         installStatusItem()
         // The main window stays open until you close it: after a restart (an update, a new build) it is back.
         if WorkspaceWindowController.wasOpen { model.openWindow(activate: false) }
@@ -58,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
+        UpdateTrialRunner.cleanExit()
         AutocompleteController.shared.flush()
         ChatHelper.shared.stop()
         Self.skipStaticDestructorsAtExit()

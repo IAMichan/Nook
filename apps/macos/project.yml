@@ -407,6 +407,7 @@ targets:
       - path: Services/Updates/AppUpdateCore.swift
       - path: Services/Updates/ReleaseUpdateCore.swift
       - path: Services/Updates/Ed25519Verifier.swift
+      - path: Services/Updates/UpdateTrial.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.tests

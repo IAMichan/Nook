@@ -23,6 +23,7 @@ let releaseTranslations: [AppLanguage: [String: String]] = [
         "update.reason.download": "Downloaden lukte niet: %@",
         "update.reason.badSignature": "De download past niet bij zijn handtekening, dus Nook heeft hem niet geïnstalleerd. Probeer het later opnieuw of download de release zelf.",
         "update.reason.badBundle": "De gedownloade app is niet de verwachte build van Nook (gevonden: %@), dus Nook heeft hem niet geïnstalleerd.",
+        "update.reason.rolledBack": "De nieuwe build (%@) liep vast voordat hij goed draaide. Nook heeft deze build en je gegevens teruggezet zoals ze vóór de update waren.",
     ],
     .en: [
         "update.release.problem.status": "GitHub answered with code %ld.",
@@ -44,6 +45,7 @@ let releaseTranslations: [AppLanguage: [String: String]] = [
         "update.reason.download": "The download failed: %@",
         "update.reason.badSignature": "The download does not match its signature, so Nook did not install it. Try again later, or download the release yourself.",
         "update.reason.badBundle": "The downloaded app is not the expected Nook build (found: %@), so Nook did not install it.",
+        "update.reason.rolledBack": "The new build (%@) crashed before it ran properly. Nook put back this build and your data as they were before the update.",
     ],
     .de: [
         "update.release.problem.status": "GitHub antwortete mit Code %ld.",
@@ -65,6 +67,7 @@ let releaseTranslations: [AppLanguage: [String: String]] = [
         "update.reason.download": "Der Download ist fehlgeschlagen: %@",
         "update.reason.badSignature": "Der Download passt nicht zu seiner Signatur, daher hat Nook ihn nicht installiert. Versuche es später erneut oder lade das Release selbst.",
         "update.reason.badBundle": "Die geladene App ist nicht der erwartete Nook-Build (gefunden: %@), daher hat Nook sie nicht installiert.",
+        "update.reason.rolledBack": "Der neue Build (%@) ist abgestürzt, bevor er richtig lief. Nook hat diesen Build und deine Daten so zurückgesetzt, wie sie vor dem Update waren.",
     ],
     .fr: [
         "update.release.problem.status": "GitHub a répondu avec le code %ld.",
@@ -86,6 +89,7 @@ let releaseTranslations: [AppLanguage: [String: String]] = [
         "update.reason.download": "Le téléchargement a échoué : %@",
         "update.reason.badSignature": "Le téléchargement ne correspond pas à sa signature, Nook ne l’a donc pas installé. Réessayez plus tard ou téléchargez la version vous-même.",
         "update.reason.badBundle": "L’app téléchargée n’est pas la build de Nook attendue (trouvé : %@), Nook ne l’a donc pas installée.",
+        "update.reason.rolledBack": "La nouvelle build (%@) a planté avant de fonctionner correctement. Nook a remis cette build et vos données telles qu’elles étaient avant la mise à jour.",
     ],
     .es: [
         "update.release.problem.status": "GitHub respondió con el código %ld.",
@@ -107,5 +111,6 @@ let releaseTranslations: [AppLanguage: [String: String]] = [
         "update.reason.download": "La descarga falló: %@",
         "update.reason.badSignature": "La descarga no coincide con su firma, así que Nook no la instaló. Inténtalo más tarde o descarga la versión tú mismo.",
         "update.reason.badBundle": "La app descargada no es la compilación de Nook esperada (encontrada: %@), así que Nook no la instaló.",
+        "update.reason.rolledBack": "La nueva compilación (%@) falló antes de funcionar bien. Nook restauró esta compilación y tus datos tal como estaban antes de la actualización.",
     ],
 ]

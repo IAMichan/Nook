@@ -177,6 +177,7 @@ enum UpdateText {
         case .download(let message): return tr("update.reason.download", message)
         case .badSignature: return tr("update.reason.badSignature")
         case .badBundle(let found): return tr("update.reason.badBundle", found)
+        case .rolledBack(let build): return tr("update.reason.rolledBack", build)
         case .other(let message): return message
         }
     }

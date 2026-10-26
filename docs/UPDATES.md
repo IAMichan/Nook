@@ -50,13 +50,33 @@ The menu bar menu shows the same state as one line that opens the panel.
 5. **Install**: when Nook runs from that DerivedData folder, the build already replaced it (the linker and codesign write
    new files, so the running process is unaffected). A copy elsewhere, such as `/Applications`, is swapped: the new app
    is copied next to it with `ditto`, the old one moved aside, the new one moved in, and the old one put back if that
-   fails.
+   fails. The old one is kept for a rollback (below).
 6. **Restart**: a small `/bin/sh` loop waits for Nook to quit and opens the app again. If sessions that Nook runs are
    still working, Nook waits for you to press **Restart** (they stop on restart and can be resumed afterwards).
 
 Every step's output goes to `~/Library/Logs/Nook/Update-<date>.log`. The start and the outcome of every install are
 written to the action log (`audit` table, tool `app_update`). Cancelling stops the running command; what already
 happened stays (a fast-forwarded checkout simply means the next install only builds).
+
+## Rollback when the new build does not start
+
+An update that swapped the app (step 5, or a release install) keeps the previous app in
+`~/Library/Application Support/Nook/Rollback/Nook.app` instead of deleting it, and puts the new build **on trial**
+(`UpdateTrial.swift`, `UpdateTrialRunner.swift`; the record is `update-trial.json` next to it):
+
+1. The relaunch script waits until the old process is gone, then copies `nook.sqlite` with its `-wal` and `-shm` to
+   `Rollback/database`, so the snapshot is consistent and taken before the new build can migrate anything.
+2. The new build marks each launch as running before anything opens the database (`main.swift`). After a minute of
+   normal running it commits: the kept app and the snapshot are removed. A normal quit before that does not count.
+3. If a launch of the new build ended in a crash before it committed, the next launch restores: the database snapshot
+   goes back first, then the previous app replaces the new one, the previous app starts, and the new process exits. A
+   restore that was interrupted is finished by whichever build starts next.
+4. The previous build then shows **Update failed** in the footer with what happened, and writes `rolled back` to the
+   action log (`app_update`).
+
+A build that runs in place from Xcode's DerivedData keeps no previous app, so it has no trial. A build that crashes
+before `main.swift` runs (a missing library) cannot roll itself back; download the previous release by hand then.
+Sessions Nook runs are not resumed automatically after an update restart (they can be resumed by hand, as before).
 
 ## Release builds (the .dmg and .zip)
 

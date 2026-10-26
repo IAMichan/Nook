@@ -256,16 +256,26 @@ enum BuildProduct {
 }
 
 /// Starting Nook again once this process is gone: a small shell loop that outlives Nook, waits for its process to end
-/// (a minute at most), then opens the app. The pid and the path are arguments, never part of the script text.
+/// (a minute at most), then opens the app. The pid and the paths are arguments, never part of the script text.
+/// After an update on trial (`UpdateTrial`) it first copies the database and its -wal and -shm into the snapshot folder:
+/// only once the process is really gone, so the copy is consistent.
 enum Relaunch {
     static let script = """
-    pid="$1"; app="$2"; n=0
+    pid="$1"; app="$2"; db="$3"; snap="$4"; n=0
     while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 300 ]; do sleep 0.2; n=$((n + 1)); done
+    if [ -n "$snap" ] && [ -f "$db" ] && ! kill -0 "$pid" 2>/dev/null; then
+      rm -rf "$snap" && mkdir -p "$snap" && for f in "$db" "$db-wal" "$db-shm"; do [ -f "$f" ] && cp -p "$f" "$snap/"; done
+    fi
     /usr/bin/open "$app"
     """
 
     static func arguments(pid: Int32, appPath: String) -> [String] {
         ["-c", script, "nook-relaunch", String(pid), appPath]
+    }
+
+    /// The same, taking a snapshot of `database` into `snapshot` before the app opens again.
+    static func arguments(pid: Int32, appPath: String, database: String, snapshot: String) -> [String] {
+        arguments(pid: pid, appPath: appPath) + [database, snapshot]
     }
 }
 
