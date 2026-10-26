@@ -249,9 +249,9 @@ private struct ChatsSidebarRow<Glyph: View>: View {
     }
 }
 
-/// Under an open chat, in the tray above its answer field: where it stands and the one step that is left. Something new can be read
-/// in Nook; read in Nook, it can be passed on to the app ("Mark as read in Telegram"), which Nook tells itself where it
-/// can, and otherwise opens the app so you read it there. Read everywhere, it says so and asks nothing.
+/// Under an open chat with something new, in the tray above its answer field: how much is new and the steps left. It can be
+/// read in Nook, or passed on to the app at once ("Mark as read in Telegram"), which Nook tells itself where it can, and
+/// otherwise opens the app so you read it there. Once read, the tray goes and `ChatReadStatus` in the header says where it stands.
 struct ChatReadLine: View {
     let state: ChatReadState
     let appName: String
@@ -289,6 +289,52 @@ struct ChatReadLine: View {
         case .unread(let count): return tr("chats.status.unread", count)
         case .readInNook: return tr("chats.status.readInNook", appName)
         case .read: return tr("chats.status.read", appName)
+        }
+    }
+
+    /// What passing it on does for this app.
+    private var explanation: String {
+        switch handoff {
+        case .tells: return tr("chats.status.tells", appName)
+        case .opensApp: return tr("chats.status.opensApp", appName)
+        }
+    }
+}
+
+/// In an open chat's header, after the app's name: where a chat that is no longer new stands, kept as quiet as the
+/// rest of that line. Read in Nook it shows one tick and its word, and a click passes it on to the app (the "…" menu
+/// holds the same step); read everywhere it is just the two mint ticks.
+struct ChatReadStatus: View {
+    let state: ChatReadState
+    let appName: String
+    let handoff: ChatReadHandoff
+    let markReadInApp: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        switch state {
+        case .unread:
+            EmptyView()
+        case .readInNook:
+            Button(action: markReadInApp) {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    ChatTicks(count: 1, tint: hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+                    Text(tr("chats.legend.readInNook"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
+                        .underline(hovering)
+                        .lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .pointerStyle(.link)
+            .help("\(tr("chats.markReadInApp", appName)): \(explanation)")
+            .accessibilityLabel(tr("chats.markReadInApp", appName))
+        case .read:
+            ChatTicks(count: 2, tint: NookTheme.mint)
+                .help(tr("chats.status.read", appName))
+                .accessibilityLabel(tr("chats.status.read", appName))
         }
     }
 

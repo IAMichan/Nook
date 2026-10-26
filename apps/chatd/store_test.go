@@ -50,6 +50,14 @@ func TestStoreTimeline(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("%d messages, want 3", len(list))
 	}
+	// Scrolling back reads before the oldest message shown, with no cap on how far.
+	older, _ := store.MessagesBefore(room, start.Add(3*time.Second).UnixMilli(), 1)
+	if len(older) != 1 || older[0].TS != start.Add(2*time.Second).UnixMilli() {
+		t.Fatalf("before the third message: %+v", older)
+	}
+	if none, _ := store.MessagesBefore(room, start.Add(time.Second).UnixMilli(), 10); len(none) != 0 {
+		t.Fatalf("%d messages before the first", len(none))
+	}
 	stored, _ := store.Event(first)
 	if stored.Edited == nil || stored.Edited.Body != "hello!" {
 		t.Fatalf("edit not applied: %+v", stored.Edited)

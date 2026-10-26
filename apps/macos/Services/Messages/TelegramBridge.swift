@@ -9,7 +9,7 @@ import Combine
 /// The app id and hash are your own, from my.telegram.org. A build with Nook's own chat helper (`ChatHelper`) links
 /// Telegram through it instead, and this stays off.
 @MainActor
-final class TelegramBridge: ObservableObject, ChatBridge {
+final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     let app = "telegram"
     let interval: TimeInterval = 3
 
@@ -62,6 +62,8 @@ final class TelegramBridge: ObservableObject, ChatBridge {
     /// TDLib from before that shape refuses it, and the first refusal, which is the one that explains.
     private var sending: [String: (legacy: [String: Any]?, error: String?)] = [:]
     private var sendCount = 0
+    /// Scrolling back: TDLib's answer awaited per chat ("older:<id>").
+    private var olderWaiting: [Int64: CheckedContinuation<[[String: Any]], Never>] = [:]
 
     var isReady: Bool { state == .login(.ready) }
     var isWorking: Bool { isReady }
@@ -124,6 +126,9 @@ final class TelegramBridge: ObservableObject, ChatBridge {
     func stop() {
         client?.close()
         client = nil
+        // A scroll back still waiting gets no answer any more.
+        for waiting in olderWaiting.values { waiting.resume(returning: []) }
+        olderWaiting = [:]
         if case .login = state { state = .stopped }
         if state == .starting { state = .stopped }
     }
@@ -171,6 +176,48 @@ final class TelegramBridge: ObservableObject, ChatBridge {
             return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
                                members: people.isEmpty ? nil : people)
         }
+    }
+
+    // MARK: Scrolling back
+
+    /// The chat Nook shows as `name`.
+    private func chatID(_ name: String) -> Int64? {
+        let key = ChatInbox.key(app: app, chat: name)
+        return chats.first { !$0.value.title.isEmpty && ChatInbox.key(app: app, chat: $0.value.title) == key }?.key
+    }
+
+    func canLoadOlder(name: String) -> Bool { isReady && chatID(name) != nil }
+
+    /// The batch before the oldest message Nook shows, from Telegram's servers: as far back as the chat goes.
+    func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        guard isReady, client != nil, let id = chatID(name), let chat = chats[id], olderWaiting[id] == nil else { return (nil, false) }
+        // From the oldest message Nook shows; one a notification brought has no Telegram id, so from the oldest read here.
+        let shown = oldestID.flatMap { TelegramData.ids($0) }.flatMap { $0.chat == id ? $0.message : nil }
+        guard var from = shown ?? (messages[id] ?? []).compactMap({ TelegramData.ids($0.id)?.message }).min() else { return (nil, false) }
+        // A batch of only what a chat does not show (someone joined, a pinned message) goes on to the one before it.
+        for _ in 0..<5 {
+            let list = await withCheckedContinuation { continuation in
+                olderWaiting[id] = continuation
+                send(["@type": "getChatHistory", "chat_id": id, "from_message_id": from, "offset": 0,
+                      "limit": ChatHistory.step, "only_local": false, "@extra": "older:\(id)"])
+            }
+            // TDLib answers with nothing once the chat's start is reached.
+            guard let oldest = list.compactMap({ TelegramData.int64($0["id"]) }).min(), oldest < from else { return (nil, false) }
+            let found = list.compactMap { TelegramData.message($0, chat: chat, users: users) }
+                .filter { (TelegramData.ids($0.id)?.message ?? .max) < from }
+            from = oldest
+            guard !found.isEmpty else { continue }
+            let people = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
+            return (BridgedChat(app: app, name: name, messages: found.sorted { $0.date < $1.date }, unread: nil,
+                                members: people.isEmpty ? nil : people), true)
+        }
+        return (nil, true)
+    }
+
+    /// TDLib's answer to a scroll back (nothing, when it refused).
+    private func answerOlder(_ extra: String, _ list: [[String: Any]]) {
+        guard let id = Int64(extra.dropFirst("older:".count)), let waiting = olderWaiting.removeValue(forKey: id) else { return }
+        waiting.resume(returning: list)
     }
 
     // MARK: TDLib
@@ -269,6 +316,10 @@ final class TelegramBridge: ObservableObject, ChatBridge {
         case "messages":
             // A chat's history: "history:<id>" the first ask, "history2:<id>" the one before it.
             guard let extra = object["@extra"] as? String else { return }
+            if extra.hasPrefix("older:") {
+                answerOlder(extra, object["messages"] as? [[String: Any]] ?? [])
+                return
+            }
             let first = extra.hasPrefix("history:")
             guard first || extra.hasPrefix("history2:"),
                   let id = extra.split(separator: ":").last.flatMap({ Int64($0) }) else { return }
@@ -294,7 +345,9 @@ final class TelegramBridge: ObservableObject, ChatBridge {
             }
         case "error":
             let message = (object["message"] as? String) ?? "error"
-            if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
+            if let extra = object["@extra"] as? String, extra.hasPrefix("older:") {
+                answerOlder(extra, [])
+            } else if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
                 refused(extra, message)
             } else if object["@extra"] as? String == "login" {
                 loginError = Self.explain(message)

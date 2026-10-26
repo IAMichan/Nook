@@ -152,4 +152,12 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertTrue(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T10:02:00.000Z")))
         XCTAssertFalse(TeamsWebData.caughtUp(history, last: ChatJSON.date("2026-10-23T11:00:00.000Z")))
     }
+
+    func testScrollingBackFollowsOnlyTheSessionsOwnService() {
+        let base = "https://teams.microsoft.com/api/chatsvc/emea"
+        let back = base + "/v1/users/ME/conversations/19:abc/messages?syncState=xyz"
+        XCTAssertEqual(TeamsWebData.backwardLink(["_metadata": ["backwardLink": back]], base: base), back)
+        XCTAssertNil(TeamsWebData.backwardLink(["_metadata": ["backwardLink": "https://example.com/steal"]], base: base))
+        XCTAssertNil(TeamsWebData.backwardLink(["_metadata": [String: Any]()], base: base), "the chat's start")
+    }
 }

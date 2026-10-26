@@ -416,23 +416,35 @@ final class ChatCaptureService: ObservableObject {
         save()
     }
 
-    /// A chat the chat helper brings in, with older messages there that Nook does not show yet.
-    func canLoadOlder(_ id: String) -> Bool {
-        guard let thread = inbox.threads[id], !noOlder.contains(id) else { return false }
-        return serviceBridge.chatID(app: thread.app, name: thread.name) != nil
+    /// The bridge that scrolls back in a chat: Nook's chat helper for the apps it links, else the app's own bridge
+    /// (Messages and WhatsApp on this Mac, Slack, Telegram, Teams). Nil for a chat only notifications bring: what they
+    /// brought is all there is, and the chat keeps every message of it.
+    private func history(_ thread: InboxThread) -> ((Date, String?) async throws -> (chat: BridgedChat?, hasMore: Bool))? {
+        if serviceBridge.chatID(app: thread.app, name: thread.name) != nil {
+            return { [serviceBridge] before, _ in try await serviceBridge.older(app: thread.app, name: thread.name, before: before) }
+        }
+        guard let bridge = bridge(for: thread.app) as? ChatHistoryBridge, bridge.canLoadOlder(name: thread.name) else { return nil }
+        return { before, oldest in try await bridge.older(name: thread.name, before: before, oldestID: oldest) }
     }
 
-    /// Scrolls back in a chat the helper brings in: its next batch of older messages, kept from now on. False when no
-    /// older one came in.
+    /// A chat whose app keeps older messages than Nook shows, until its start was reached.
+    func canLoadOlder(_ id: String) -> Bool {
+        guard let thread = inbox.threads[id], !noOlder.contains(id) else { return false }
+        return history(thread) != nil
+    }
+
+    /// Scrolls back in a chat: the batch before the oldest message it shows, kept from now on. No cap: each scroll back
+    /// goes further, as far as the app keeps the chat. False when no older one came in.
     func loadOlder(_ id: String) async -> Bool {
-        guard let thread = inbox.threads[id] else { return false }
+        guard let thread = inbox.threads[id], let history = history(thread) else { return false }
         let before = thread.messages.count
+        let oldest = thread.messages.first
         do {
-            let (chat, hasMore) = try await serviceBridge.older(app: thread.app, name: thread.name, have: before)
+            let (chat, hasMore) = try await history(oldest?.date ?? Date(), oldest?.id)
             if !hasMore { noOlder.insert(id) }
             guard let chat else { return false }
             var merged = inbox
-            merged.grow(id, by: ChatServiceBridge.olderStep)
+            merged.grow(id, by: chat.messages.count)
             merged.merge(chat)
             let after = merged.threads[id]?.messages.count ?? before
             guard after > before else { return false }

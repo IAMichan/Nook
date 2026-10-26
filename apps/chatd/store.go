@@ -395,6 +395,13 @@ func (s *Store) Messages(room id.RoomID, limit int) ([]*Stored, error) {
 		ORDER BY ts DESC LIMIT ?`, room, limit)
 }
 
+// MessagesBefore are the newest `limit` messages of a room sent before `before` (Unix milliseconds): scrolling back
+// goes on from the oldest message the app shows, as far as the history goes.
+func (s *Store) MessagesBefore(room id.RoomID, before int64, limit int) ([]*Stored, error) {
+	return s.list(`SELECT `+storedColumns+` FROM timeline WHERE room=? AND type IN ('m.room.message','m.sticker') AND ts < ?
+		ORDER BY ts DESC LIMIT ?`, room, before, limit)
+}
+
 // Reactions are the emoji on these messages that were not taken back.
 func (s *Store) Reactions(targets []id.EventID) (map[id.EventID][]*Stored, error) {
 	result := make(map[id.EventID][]*Stored)

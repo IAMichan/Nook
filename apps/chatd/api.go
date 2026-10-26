@@ -309,7 +309,14 @@ func (a *API) messages(w http.ResponseWriter, r *http.Request) {
 	if room == nil {
 		return
 	}
-	list, err := a.store.Messages(room.ID, limitParam(r, 30, 500))
+	// `before` (Unix milliseconds) reads further back, from the oldest message the app shows: no end to the history.
+	var list []*Stored
+	var err error
+	if before, perr := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64); perr == nil && before > 0 {
+		list, err = a.store.MessagesBefore(room.ID, before, limitParam(r, 30, 500))
+	} else {
+		list, err = a.store.Messages(room.ID, limitParam(r, 30, 500))
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
