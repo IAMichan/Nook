@@ -178,11 +178,19 @@ enum UpdateBlocker: Equatable, Sendable {
     case diverged(Int)
 }
 
-/// The steps of an install, in order.
+/// The steps of an install. A build from a checkout goes fetch → merge → generate → build → install → restart; a
+/// downloaded build download → verify → install → restart (`sequence`).
 enum UpdateStep: Int, CaseIterable, Comparable, Sendable {
     case fetch, merge, generate, build, install, restart
+    case download, verify
 
     static func < (lhs: UpdateStep, rhs: UpdateStep) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    /// The steps one install shows, in order. Run from Xcode, a checkout's install ends once the project is generated.
+    static func sequence(release: Bool, fromXcode: Bool) -> [UpdateStep] {
+        if release { return [.download, .verify, .install, .restart] }
+        return fromXcode ? [.fetch, .merge, .generate] : [.fetch, .merge, .generate, .build, .install, .restart]
+    }
 }
 
 /// What xcodebuild is doing, read from one line of its output.
@@ -284,6 +292,9 @@ struct UpdateReceipt: Codable, Equatable, Sendable {
     let to: String
     let changes: [IncomingChange]
     let installedAt: Date
+
+    /// What the update brought, for the panel: a short commit, or a release version as it is.
+    var shortTarget: String { BuildSource.isCommit(to) ? String(to.prefix(7)) : to }
 }
 
 /// Text for an AppleScript (opening the project in Xcode): a path as a quoted string literal.

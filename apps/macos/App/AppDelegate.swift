@@ -202,7 +202,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static func updateItem() -> (title: String, icon: String)? {
         let updater = AppUpdater.shared
         switch updater.phase {
-        case .available: return updater.available.map { (title: tr("update.menu.available", $0.count), icon: "arrow.down.circle") }
+        case .available:
+            if let release = updater.releaseUpdate { return (tr("update.menu.release", release.version.description), "arrow.down.circle") }
+            return updater.available.map { (title: tr("update.menu.available", $0.count), icon: "arrow.down.circle") }
         case .installing: return (tr("update.menu.installing"), "arrow.triangle.2.circlepath")
         case .readyToRestart: return (tr("update.menu.restart"), "arrow.clockwise.circle")
         case .readyToBuildInXcode: return (tr("update.menu.xcode"), "hammer")

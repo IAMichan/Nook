@@ -11,6 +11,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Added
 
+- Downloaded builds (the release .dmg/.zip) update themselves from GitHub Releases through the footer's Update
+  button: Nook downloads the release's .zip, checks its Ed25519 signature against the key it carries, and installs it
+  (`docs/UPDATES.md`, "Release builds"). The release workflow signs the .zip when `NOOK_UPDATE_SIGNING_KEY` is set.
 - A short demo video at the top of the README (`docs/assets/nook-demo.mp4`, with a GIF preview), made with the
   `nook-video` skill, which can now render landscape clips (`--size`).
 - Area labels (`area: macos`, `area: tauri`, …) that are added to pull requests automatically, defined in

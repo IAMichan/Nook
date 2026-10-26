@@ -9,12 +9,15 @@ import Combine
 /// as this build) → put the new app where this one runs → restart. Run from Xcode, it stops after xcodegen and lets you
 /// start the new build in Xcode instead, so it runs under the debugger again. Each step is logged to
 /// ~/Library/Logs/Nook, and the install is written to the action log.
+/// A downloaded build (the release .dmg or .zip) has no checkout: it asks GitHub Releases for a newer version instead
+/// (`ReleaseBuild`), and an install downloads the release's .zip, checks its Ed25519 signature, unpacks it and puts the
+/// app in place, behind the same button.
 @MainActor
 final class AppUpdater: ObservableObject {
     static let shared = AppUpdater()
 
     enum Phase: Equatable {
-        /// Not built from a checkout (or git is missing): no update button anywhere.
+        /// Not built from a checkout nor by the release workflow (or git is missing): no update button anywhere.
         case unavailable
         case idle
         case checking
@@ -45,8 +48,18 @@ final class AppUpdater: ObservableObject {
         var shortTarget: String { String(target.prefix(7)) }
     }
 
+    /// A newer release a downloaded build cannot install by itself (no signature, or no key in this build to check
+    /// one): Settings links to it, nothing installs it.
+    struct ManualRelease: Equatable, Sendable {
+        let version: ReleaseVersion
+        let page: URL?
+    }
+
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var available: Available?
+    /// What a downloaded build can install (`release`), the counterpart of `available`.
+    @Published private(set) var releaseUpdate: ReleaseCandidate?
+    @Published private(set) var manualRelease: ManualRelease?
     @Published private(set) var lastChecked: Date?
     /// Why the last check did not get an answer (offline, no remote …); shown in Settings, never as a button.
     @Published private(set) var checkProblem: String?
@@ -67,12 +80,16 @@ final class AppUpdater: ObservableObject {
     }
 
     let source: BuildSource?
+    /// A downloaded build made by the release workflow; only used when there is no `source`.
+    let release: ReleaseBuild?
     /// Xcode launched this process: an update ends with a build in Xcode instead of one of its own and a restart.
     let fromXcode: Bool
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var checking = false
     private var installation: Installation?
+    /// A release install's own task, so cancelling stops a download too.
+    private var releaseTask: Task<Void, Never>?
 
     private static let autoCheckKey = "nook.updates.autoCheck"
     private static let receiptKey = "nook.updates.receipt"
@@ -81,21 +98,35 @@ final class AppUpdater: ObservableObject {
     private static let staleAfter: TimeInterval = 10 * 60
 
     init(source: BuildSource? = Bundle.main.infoDictionary.flatMap(BuildSource.init(info:)),
+         release: ReleaseBuild? = Bundle.main.infoDictionary.flatMap(ReleaseBuild.init(info:)),
          fromXcode: Bool = BuildSource.launchedByXcode(ProcessInfo.processInfo.environment)) {
         self.source = source
+        self.release = source == nil ? release : nil
         self.fromXcode = fromXcode
         self.autoCheck = UserDefaults.standard.object(forKey: Self.autoCheckKey) as? Bool ?? true
-        if source == nil { phase = .unavailable }
+        if source == nil, release == nil { phase = .unavailable }
     }
+
+    /// This is a downloaded build: updates come from GitHub Releases.
+    var isReleaseBuild: Bool { release != nil }
+
+    /// The steps the panel lists for an install.
+    var steps: [UpdateStep] { UpdateStep.sequence(release: isReleaseBuild, fromXcode: fromXcode) }
+
+    /// Something to install, from either kind of build.
+    var hasUpdate: Bool { available != nil || releaseUpdate != nil }
 
     // MARK: Checking
 
     func start() {
-        guard let source else {
+        if let source {
+            loadReceipt(for: source.commit)
+        } else if let release {
+            loadReceipt(for: release.version.description)
+        } else {
             phase = .unavailable
             return
         }
-        loadReceipt(for: source)
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             // The network needs a moment after waking.
@@ -116,7 +147,7 @@ final class AppUpdater: ObservableObject {
     private func schedule() {
         timer?.invalidate()
         timer = nil
-        guard autoCheck, source != nil else { return }
+        guard autoCheck, source != nil || release != nil else { return }
         timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
             Task { @MainActor in self?.check() }
         }
@@ -131,6 +162,10 @@ final class AppUpdater: ObservableObject {
 
     /// Fetches main and works out what is new. Never while installing; quiet when it fails (a later check tries again).
     func check() {
+        if source == nil, let release {
+            checkRelease(release)
+            return
+        }
         guard let source, !checking, !isBusy, phase != .unavailable else { return }
         checking = true
         if available == nil, !isFailed { phase = .checking }
@@ -170,6 +205,47 @@ final class AppUpdater: ObservableObject {
         switch phase {
         case .installing, .readyToRestart, .readyToBuildInXcode: return true
         default: return installation != nil
+        }
+    }
+
+    /// Asks GitHub for the releases and picks the newest this downloaded build can take. Quiet when it fails, like `check`.
+    private func checkRelease(_ release: ReleaseBuild) {
+        guard !checking, !isBusy, let url = release.releasesURL else { return }
+        checking = true
+        if releaseUpdate == nil, !isFailed { phase = .checking }
+        Task { @MainActor in
+            let result: Result<ReleaseCheck, Error>
+            do {
+                var request = URLRequest(url: url, timeoutInterval: 30)
+                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+                request.setValue("Nook/\(release.version)", forHTTPHeaderField: "User-Agent")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard status == 200 else { throw NookError(tr("update.release.problem.status", status)) }
+                result = .success(ReleaseSelection.check(GitHubRelease.list(from: data), for: release))
+            } catch {
+                result = .failure(error)
+            }
+            checking = false
+            lastChecked = Date()
+            switch result {
+            case .success(let found):
+                checkProblem = nil
+                var candidate: ReleaseCandidate?
+                manualRelease = nil
+                switch found {
+                case .upToDate: break
+                case .available(let next): candidate = next
+                case .unsigned(let version, let page): manualRelease = ManualRelease(version: version, page: page)
+                }
+                if candidate?.version != releaseUpdate?.version { seen = false }
+                releaseUpdate = candidate
+                if candidate != nil, receipt != nil { receipt = nil }
+                if !isFailed, !isBusy { phase = candidate == nil ? .upToDate : .available }
+            case .failure(let error):
+                checkProblem = error.localizedDescription
+                if !isFailed, !isBusy { phase = releaseUpdate == nil ? .idle : .available }
+            }
         }
     }
 
@@ -219,6 +295,10 @@ final class AppUpdater: ObservableObject {
 
     /// Starts the install you confirmed. `stash`: you agreed to set uncommitted changes aside and put them back after.
     func install(stash: Bool = false) {
+        if source == nil, let release, let candidate = releaseUpdate {
+            installRelease(candidate, over: release)
+            return
+        }
         guard let source, let git = GitService.shared, let update = available, installation == nil else { return }
         let installation: Installation
         do {
@@ -268,16 +348,73 @@ final class AppUpdater: ObservableObject {
         }
     }
 
+    /// Installs a release into a downloaded build: download the .zip and its signature, check the signature against the
+    /// key in this build, unpack, check the app is Nook at the promised version, put it in place, restart.
+    private func installRelease(_ candidate: ReleaseCandidate, over release: ReleaseBuild) {
+        guard installation == nil, releaseTask == nil, let publicKey = release.publicKey else { return }
+        let installation: Installation
+        do {
+            installation = try Installation()
+        } catch {
+            phase = .failed(UpdateFailure(step: .download, reason: .other(error.localizedDescription), errors: [], logPath: nil))
+            return
+        }
+        installation.step = .download
+        self.installation = installation
+        installStarted = Date()
+        compiledFiles = 0
+        activity = nil
+        phase = .installing(.download)
+        let args = "\(release.version) → \(candidate.version)"
+        AppModel.shared.store.audit(tool: "app_update", args: args, result: "started")
+        let job = ReleaseJob(candidate: candidate, publicKey: publicKey,
+                             bundleIdentifier: Bundle.main.bundleIdentifier ?? "nl.imdigital.nook",
+                             runningApp: Bundle.main.bundleURL.resolvingSymlinksInPath().path)
+        releaseTask = Task { @MainActor in
+            var failure: UpdateFailure?
+            do {
+                try await Self.performRelease(job, in: installation) { step in
+                    Task { @MainActor in AppUpdater.shared.apply(.step(step)) }
+                }
+            } catch {
+                let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+                failure = UpdateFailure(cancelled ? InstallError.cancelled : error, step: installation.step, log: installation.logURL)
+            }
+            self.installation = nil
+            releaseTask = nil
+            if let failure {
+                phase = .failed(failure)
+                AppModel.shared.store.audit(tool: "app_update", args: args,
+                                            result: failure.reason == .cancelled ? "cancelled" : "failed: \(failure.summary)")
+            } else {
+                finishRelease(candidate, from: release)
+            }
+        }
+    }
+
+    private func finishRelease(_ candidate: ReleaseCandidate, from release: ReleaseBuild) {
+        let receipt = UpdateReceipt(from: release.version.description, to: candidate.version.description, changes: [],
+                                    installedAt: Date())
+        if let data = try? JSONEncoder().encode(receipt) { UserDefaults.standard.set(data, forKey: Self.receiptKey) }
+        AppModel.shared.store.audit(tool: "app_update", args: "\(release.version) → \(candidate.version)", result: "installed")
+        if AppModel.shared.workspace.activeRuns.isEmpty {
+            restart()
+        } else {
+            phase = .readyToRestart
+        }
+    }
+
     /// Stops the step that is running. What already happened stays: a fast-forwarded checkout is simply newer than this
     /// build, so the button offers the rest again.
     func cancel() {
         installation?.cancel()
+        releaseTask?.cancel()
     }
 
     /// Closes a failure and goes back to what the last check found.
     func dismissFailure() {
         guard isFailed else { return }
-        phase = available == nil ? .upToDate : .available
+        phase = hasUpdate ? .available : .upToDate
         check()
     }
 
@@ -379,10 +516,11 @@ final class AppUpdater: ObservableObject {
         }
     }
 
-    private func loadReceipt(for source: BuildSource) {
+    /// `build`: this build's commit, or its release version.
+    private func loadReceipt(for build: String) {
         guard let data = UserDefaults.standard.data(forKey: Self.receiptKey) else { return }
         UserDefaults.standard.removeObject(forKey: Self.receiptKey)
-        guard let saved = try? JSONDecoder().decode(UpdateReceipt.self, from: data), saved.to == source.commit,
+        guard let saved = try? JSONDecoder().decode(UpdateReceipt.self, from: data), saved.to == build,
               Date().timeIntervalSince(saved.installedAt) < 24 * 3600 else { return }
         receipt = saved
     }
@@ -403,6 +541,89 @@ final class AppUpdater: ObservableObject {
         let buildInXcode: Bool
         let environment: [String: String]
         let runningApp: String
+    }
+
+    struct ReleaseJob: Sendable {
+        let candidate: ReleaseCandidate
+        let publicKey: Data
+        let bundleIdentifier: String
+        let runningApp: String
+    }
+
+    /// The release install's steps. Downloads are awaited (cancelling the task stops them); unpacking and copying block
+    /// a thread of their own, like the steps of a checkout's install.
+    nonisolated static func performRelease(_ job: ReleaseJob, in installation: Installation,
+                                           report: @escaping @Sendable (UpdateStep) -> Void) async throws {
+        func enter(_ step: UpdateStep) {
+            installation.step = step
+            report(step)
+        }
+        let fileManager = FileManager.default
+        let folder = fileManager.temporaryDirectory.appendingPathComponent("nook-update-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: folder) }
+
+        enter(.download)
+        installation.note("\n== download \(job.candidate.signature.url.absoluteString)\n")
+        let signatureFile = try await download(job.candidate.signature.url, to: folder.appendingPathComponent("archive.sig"))
+        installation.note("== download \(job.candidate.archive.url.absoluteString)\n")
+        let archive = try await download(job.candidate.archive.url, to: folder.appendingPathComponent("archive.zip"))
+        try installation.checkCancelled()
+
+        enter(.verify)
+        try await onOwnThread {
+            let data = try Data(contentsOf: archive, options: .mappedIfSafe)
+            guard let signature = try? Data(contentsOf: signatureFile),
+                  UpdateSignature.verify(archive: data, signatureFile: signature, publicKey: job.publicKey, using: Ed25519Verifier())
+            else { throw InstallError.badSignature }
+            installation.note("signature ok (\(data.count) bytes)\n")
+        }
+        let unpacked = folder.appendingPathComponent("unpacked", isDirectory: true)
+        let app: URL = try await onOwnThread {
+            try installation.run("/usr/bin/ditto", ["-x", "-k", archive.path, unpacked.path], in: folder.path,
+                                 environment: ProcessInfo.processInfo.environment, timeout: 600)
+            guard let bundle = try fileManager.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil)
+                .first(where: { $0.pathExtension == "app" }) else { throw InstallError.badBundle("no app") }
+            let info = NSDictionary(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")) as? [String: Any] ?? [:]
+            switch ReleaseBundleCheck.problem(info: info, bundleIdentifier: job.bundleIdentifier, expected: job.candidate.version) {
+            case .notNook?: throw InstallError.badBundle(info["CFBundleIdentifier"] as? String ?? "?")
+            case .wrongVersion(let version)?: throw InstallError.badBundle(version ?? "?")
+            case nil: break
+            }
+            // The code inside is intact (an ad-hoc or self-signed build verifies too; it is the .zip's signature that
+            // says who made it).
+            try installation.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle.path], in: folder.path,
+                                 environment: ProcessInfo.processInfo.environment, timeout: 300)
+            return bundle
+        }
+        try installation.checkCancelled()
+
+        enter(.install)
+        try await onOwnThread { try replace(job.runningApp, with: app.path) }
+    }
+
+    /// Downloads a release file to `destination`.
+    nonisolated private static func download(_ url: URL, to destination: URL) async throws -> URL {
+        var request = URLRequest(url: url, timeoutInterval: 60)
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        let (file, response) = try await URLSession.shared.download(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            try? FileManager.default.removeItem(at: file)
+            throw InstallError.download("HTTP \(status)")
+        }
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: file, to: destination)
+        return destination
+    }
+
+    /// Blocking work (reading a large file, a command) on a queue of its own instead of the task pool.
+    nonisolated private static func onOwnThread<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result { try work() })
+            }
+        }
     }
 
     /// Runs every step and returns the commit that was built.
@@ -541,6 +762,12 @@ enum InstallError: Error, Equatable {
     case notWritable(String)
     case copyFailed(String)
     case cancelled
+    /// A release download failed.
+    case download(String)
+    /// The release's .zip does not match its signature.
+    case badSignature
+    /// The unpacked release is not Nook, or not the version the release promised.
+    case badBundle(String)
 }
 
 /// A failed install, for the footer and its panel.
@@ -556,6 +783,9 @@ struct UpdateFailure: Error, Equatable, Sendable {
         case notWritable(String)
         case copyFailed(String)
         case cancelled
+        case download(String)
+        case badSignature
+        case badBundle(String)
         case other(String)
     }
 
@@ -585,6 +815,9 @@ struct UpdateFailure: Error, Equatable, Sendable {
         case .notWritable(let folder): reason = .notWritable(folder)
         case .copyFailed(let message): reason = .copyFailed(message)
         case .cancelled: reason = .cancelled
+        case .download(let message): reason = .download(message)
+        case .badSignature: reason = .badSignature
+        case .badBundle(let found): reason = .badBundle(found)
         case nil: reason = .other(error.localizedDescription)
         }
         let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
@@ -596,7 +829,7 @@ struct UpdateFailure: Error, Equatable, Sendable {
     var summary: String {
         if let first = errors.first { return first }
         switch reason {
-        case .other(let message), .copyFailed(let message): return message
+        case .other(let message), .copyFailed(let message), .download(let message): return message
         default: return "\(step)"
         }
     }
@@ -632,6 +865,11 @@ final class Installation: @unchecked Sendable {
         let running = process
         lock.unlock()
         running?.terminate()
+    }
+
+    /// A line in the log for a step that runs no command (a download, the signature check).
+    func note(_ text: String) {
+        append(text)
     }
 
     func checkCancelled() throws {

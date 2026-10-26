@@ -75,7 +75,7 @@ cat <<'EOF'
 
 - Nook lives in your notch and the menu bar; there is no Dock icon.
 - This build does not include the Telegram bridge or the chat helper (Signal, Messenger, Instagram, X, LinkedIn); those apps stay on notifications.
-- To update, download the next release. The Update button in the Agents tab is for builds from a git checkout.
+- Nook shows an **Update** button at the bottom of the panel when a newer signed release is out, and installs it with one click (Nook checks the signature first). Otherwise, download the next release.
 
 </details>
 
