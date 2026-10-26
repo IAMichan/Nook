@@ -285,6 +285,8 @@ final class WorkspaceManager: ObservableObject {
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
+        // Agents' process groups are written down; the ones a crashed Nook left behind are stopped.
+        ProcessGroupLedger.install()
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
@@ -373,8 +375,8 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Reads a timeline that is not in memory off the main thread, so opening its session right after (a row under the
-    /// pointer, the session the list is about to show) draws it at once instead of decoding up to `RunStore.eventLimit`
-    /// events on the main thread first. Opening before this is done still reads it the plain way.
+    /// pointer, the session the list is about to show) draws it at once instead of replaying its whole log
+    /// on the main thread first. Opening before this is done still reads it the plain way.
     func prefetchTimeline(_ id: UUID) {
         guard events[id] == nil, !prefetching.contains(id), runs.contains(where: { $0.id == id }) else { return }
         prefetching.insert(id)
@@ -2067,6 +2069,7 @@ final class WorkspaceManager: ObservableObject {
             events[id] = store.loadEvents(id)
         }
         events[id]?.append(event)
+        store.appendEventAsync(id, event)
         if event.kind != .system || event.tool != "launch" {
             // Every bump republishes `runs` (and redraws what observes it) outside the 50 ms events throttle. A streaming
             // agent appends many events a second, so in between turn boundaries the time moves on at most every 2 s.
@@ -2120,7 +2123,8 @@ final class WorkspaceManager: ObservableObject {
     func scheduleEventSave(_ id: UUID) {
         guard eventSaves[id] == nil else { return }
         eventSaves[id] = Task { [weak self] in
-            // Each save encodes and rewrites the whole timeline (up to RunStore.eventLimit events); while an answer streams,
+            // Each save compares the whole timeline with the log and appends what changed (new events are written at once
+            // by `append`); while an answer streams,
             // every two seconds is plenty: a crash loses at most the last two seconds of text.
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard let self else { return }

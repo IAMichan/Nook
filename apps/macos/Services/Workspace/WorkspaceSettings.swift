@@ -83,6 +83,10 @@ final class WorkspaceSettings: ObservableObject {
     @Published var codexAppServer: Bool {
         didSet { defaults.set(codexAppServer, forKey: "ws.codexAppServer") }
     }
+    /// Keeps what agents and Nook say to each other over stdio, per session (`ProviderTrafficLog`). Off by default.
+    @Published var providerTrafficLog: Bool {
+        didSet { defaults.set(providerTrafficLog, forKey: ProviderTrafficLog.enabledKey) }
+    }
     /// Coding agents may use Nook's terminal, browser and pull requests through the workspace bridge.
     @Published var agentTools: Bool {
         didSet { defaults.set(agentTools, forKey: "ws.agentTools") }
@@ -155,6 +159,7 @@ final class WorkspaceSettings: ObservableObject {
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
+        providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""

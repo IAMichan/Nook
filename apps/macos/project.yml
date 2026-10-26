@@ -206,6 +206,7 @@ targets:
       - path: Core/I18n+RelayPush.swift
       - path: Core/I18n+ChatTimeline.swift
       - path: Core/I18n+WorkspaceFeatures.swift
+      - path: Core/I18n+ProviderTraffic.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -382,7 +383,10 @@ targets:
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
+      - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
+      - path: Services/Workspace/ProcessGroups.swift
+      - path: Services/Workspace/ProviderTransport.swift
       - path: Services/AgentTranscript.swift
       - path: Services/TranscriptPresentation.swift
       - path: Services/TurnDiff.swift

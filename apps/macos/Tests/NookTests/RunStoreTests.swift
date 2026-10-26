@@ -61,14 +61,16 @@ final class RunStoreTests: XCTestCase {
         XCTAssertTrue(store.loadEvents(id).isEmpty)
     }
 
-    func testEventLimit() throws {
+    func testLongTimelinesAreKeptWhole() throws {
         let store = RunStore(directory: folder)
         let id = UUID()
-        let events = (0..<(RunStore.eventLimit + 10)).map { RunEvent(kind: .system, text: "\($0)") }
+        // More than the 4,000 events the JSON files used to keep.
+        let events = (0..<5_000).map { RunEvent(kind: .system, text: "\($0)") }
         try store.saveEvents(id, events)
-        let loaded = store.loadEvents(id)
-        XCTAssertEqual(loaded.count, RunStore.eventLimit)
-        XCTAssertEqual(loaded.last?.text, "\(RunStore.eventLimit + 9)", "the newest are retained")
+        let loaded = RunStore(directory: folder).loadEvents(id)
+        XCTAssertEqual(loaded.count, 5_000)
+        XCTAssertEqual(loaded.first?.text, "0", "the oldest are kept too")
+        XCTAssertEqual(loaded.last?.text, "4999")
     }
 
     func testFilesArePrivate() throws {

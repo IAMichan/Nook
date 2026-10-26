@@ -109,6 +109,8 @@ Nook uses the following open-source Swift packages:
 
 ---
 
+---
+
 ## Chat Helper (`apps/chatd`)
 
 `apps/chatd` is a separate program, **nook-chatd**, licensed under the **GNU Affero General Public License v3.0** (see
