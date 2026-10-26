@@ -1027,11 +1027,8 @@ private struct ChatsDetail: View {
     /// Where what you send goes: WhatsApp, Telegram or Nook's chat helper; nil copies the text for the chat's own app.
     private var route: ChatRoute? { app.chatRoute(for: entry) }
 
-    /// This chat as the linked chat service has it (pinned, muted, what it takes); nil when it is not one of those.
-    private var linkedChat: ChatServiceData.Chat? {
-        guard case .linked(let id) = route else { return nil }
-        return linked.chats[id]
-    }
+    /// What Nook can do in this chat, the same list for every app.
+    private var abilities: ChatAbilities { app.chatAbilities(route) }
 
     /// The stickers and GIFs in this chat, newest first, for the sticker panel.
     private var shelfItems: [ChatShelfItem] {
@@ -1062,10 +1059,10 @@ private struct ChatsDetail: View {
             NookDivider()
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { zoom($0) },
-                           onReply: route == nil ? nil : quote,
-                           onReact: app.chatReacts(route) ? react : nil,
-                           onEdit: linkedChat?.canEdit == true ? edit : nil,
-                           onDelete: linkedChat?.canDelete == true ? { deleting = $0 } : nil,
+                           onReply: abilities.reply ? quote : nil,
+                           onReact: abilities.react ? react : nil,
+                           onEdit: abilities.edit ? edit : nil,
+                           onDelete: abilities.delete ? { deleting = $0 } : nil,
                            onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
@@ -1180,7 +1177,7 @@ private struct ChatsDetail: View {
     }
 
     /// The changed text goes to your message; when it fails the text stays in the field to try again.
-    private func sendEdit(_ bubble: ChatBubble, chat: String) {
+    private func sendEdit(_ bubble: ChatBubble, route: ChatRoute) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         guard text != bubble.text else {
@@ -1193,7 +1190,7 @@ private struct ChatsDetail: View {
         withAnimation(NookTheme.reveal) { editing = nil }
         enqueue {
             do {
-                try await app.editInLinkedChat(bubble, text: text, chat: chat, name: entry.name)
+                try await app.editInChat(bubble, text: text, route: route, name: entry.name)
             } catch {
                 if reply.isEmpty { reply = text }
                 notice = error.localizedDescription
@@ -1203,10 +1200,10 @@ private struct ChatsDetail: View {
 
     /// Your message goes for everyone in the chat, once you confirmed it.
     private func delete(_ bubble: ChatBubble) {
-        guard let chat = linkedChat else { return }
+        guard let route else { return }
         Task { @MainActor in
             do {
-                try await app.deleteInLinkedChat(bubble, chat: chat.id, name: entry.name)
+                try await app.deleteInChat(bubble, route: route, name: entry.name)
             } catch {
                 notice = error.localizedDescription
             }
@@ -1230,7 +1227,7 @@ private struct ChatsDetail: View {
                     .lineLimit(1)
                 HStack(spacing: NookTheme.Spacing.xs) {
                     // A chat a bridge reads is the app's own; any other is what its notifications showed.
-                    Text(whatsAppChat == nil && linkedChat == nil && !capture.bridged.contains(entry.app)
+                    Text(route == nil && !capture.bridged.contains(entry.app)
                          ? tr("chats.fromNotifications", appName) : appName)
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textTertiary)
@@ -1274,18 +1271,27 @@ private struct ChatsDetail: View {
             if !entry.read.isUnread {
                 Button(tr("chats.markUnread"), action: onMarkUnread)
             }
-            if let chat = linkedChat, case .captured(let thread) = entry.origin {
+            let abilities = self.abilities
+            if let route, abilities.pin || abilities.mute || abilities.archive {
                 Divider()
-                Button(tr(chat.isPinned ? "chats.unpinInApp" : "chats.pinInApp", appName)) {
-                    change { try await app.setLinkedChatPinned(!chat.isPinned, chat: chat.id, name: entry.name) }
+                if abilities.pin {
+                    Button(tr(abilities.pinned ? "chats.unpinInApp" : "chats.pinInApp", appName)) {
+                        change { try await app.setChatPinned(!abilities.pinned, route: route, name: entry.name) }
+                    }
                 }
-                Button(tr(chat.isMuted ? "chats.unmuteInApp" : "chats.muteInApp", appName)) {
-                    change { try await app.setLinkedChatMuted(!chat.isMuted, chat: chat.id, name: entry.name) }
+                if abilities.mute {
+                    Button(tr(abilities.muted ? "chats.unmuteInApp" : "chats.muteInApp", appName)) {
+                        change { try await app.setChatMuted(!abilities.muted, route: route, name: entry.name) }
+                    }
                 }
-                Button(tr("chats.archiveInApp", appName)) {
-                    change {
-                        try await app.archiveLinkedChat(chat.id, thread: thread, name: entry.name)
-                        onClose()
+                if abilities.archive {
+                    Button(tr("chats.archiveInApp", appName)) {
+                        change {
+                            var thread: String?
+                            if case .captured(let id) = entry.origin { thread = id }
+                            try await app.archiveChat(route: route, thread: thread, name: entry.name)
+                            onClose()
+                        }
                     }
                 }
             }
@@ -1340,8 +1346,8 @@ private struct ChatsDetail: View {
                                                       instruction: instruction)
             },
             send: {
-                if let editing, let chat = linkedChat {
-                    sendEdit(editing, chat: chat.id)
+                if let editing, let route {
+                    sendEdit(editing, route: route)
                 } else if let route {
                     send(via: route)
                 } else {
