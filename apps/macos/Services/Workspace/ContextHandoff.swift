@@ -110,7 +110,9 @@ enum ContextHandoff {
 
 /// Where a session came from.
 struct RunLineage: Codable, Equatable, Sendable {
-    enum Kind: String, Codable, Sendable { case fork }
+    /// `fork`: a copy of the parent's conversation (/fork). `comparison`: started from the same prompt as the parent with
+    /// another model (`ModelComparison`); the parent is the group's first session.
+    enum Kind: String, Codable, Sendable { case fork, comparison }
     var kind: Kind
     var parentID: UUID
     /// How much of the parent's timeline the fork starts from.

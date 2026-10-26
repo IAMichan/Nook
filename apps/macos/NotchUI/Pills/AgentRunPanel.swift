@@ -322,7 +322,7 @@ struct AgentRunPanel: View {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             }
             .disabled(!workspace.canTransfer(runID))
-            if run.lineage != nil {
+            if run.lineage?.kind == .fork {
                 Button(tr("agents.mergeBack")) {
                     if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
                         app.viewModel.selectedAgentID = "run:" + parent.uuidString

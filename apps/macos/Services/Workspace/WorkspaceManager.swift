@@ -542,6 +542,7 @@ final class WorkspaceManager: ObservableObject {
             delegation: config.delegation
         )
         run.effort = config.effort
+        run.lineage = config.lineage
         runs.insert(run, at: 0)
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)

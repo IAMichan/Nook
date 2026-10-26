@@ -291,8 +291,9 @@ struct AgentsTab: View {
             machine: run.remote?.name ?? MachineName.local,
             model: run.resolvedModel ?? run.model,
             accountName: accountName(app.profile(for: run)),
-            // A session Nook delegated to or forked from another one.
-            parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString }
+            // A session Nook delegated to or forked from another one, or a later model of a comparison.
+            parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString },
+            comparison: app.workspace.runs.filter { $0.lineage?.kind == .comparison && $0.lineage?.parentID == run.id }.count
         )
     }
 
@@ -415,6 +416,8 @@ struct AgentListItem: Identifiable {
     /// (`SpawnedSessions`).
     var firstPrompt = ""
     var spawnedTasks: [String] = []
+    /// The first session of a model comparison: how many other models got the same prompt (they sit under it).
+    var comparison = 0
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
@@ -423,7 +426,7 @@ struct AgentListItem: Identifiable {
         AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
                       started: started, path: path, finishKey: finishKey,
                       machine: machine, model: model, accountName: accountName,
-                      parentID: parentID, firstPrompt: firstPrompt, spawnedTasks: spawnedTasks)
+                      parentID: parentID, firstPrompt: firstPrompt, spawnedTasks: spawnedTasks, comparison: comparison)
     }
 }
 
@@ -498,6 +501,13 @@ struct AgentListRow: View {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if pinned {
                     Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                if item.comparison > 0 {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .help(tr("compare.group", item.comparison + 1))
+                        .accessibilityLabel(tr("compare.group", item.comparison + 1))
                 }
                 Text(item.title)
                     .font(receded ? NookTheme.TextStyle.body : NookTheme.TextStyle.strong)

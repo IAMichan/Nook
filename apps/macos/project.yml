@@ -307,6 +307,7 @@ targets:
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/ProjectSettings.swift
       - path: Services/Workspace/AgentReadiness.swift
+      - path: Services/Workspace/ModelComparison.swift
       - path: Services/Workspace/Keybindings.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
