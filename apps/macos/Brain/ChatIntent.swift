@@ -125,6 +125,10 @@ struct ChatIntent: Equatable {
         // A part of the document in front ("punt 5 moet dit worden") that Double Tap could not change by itself.
         if !direct, !kinds.contains(.takeover), DoubleTapLogic.asksToEdit(text) { kinds.append(.takeover) }
         if has(#"scherm|\bhier\b|\bdit\b|\bdeze (mail|pagina|tekst|tabel|code)|\bthis\b|\bscreen|bildschirm|venster|\bwindow|\bdas hier"#) { kinds.append(.screen) }
+        // "Pas dit aan", "verbeter deze tekst": the text on screen changes. No tool edits a Word or Pages document
+        // directly, so Nook does it with mouse and keyboard instead of saying it cannot.
+        let editsScreen = !direct && !kinds.contains(.takeover) && kinds.contains(.screen) && editsIt(text)
+        if editsScreen { kinds.append(.takeover) }
         if has(#"browser|tabblad|\btabs?\b|webpagina|\bpagina\b|artikel|website|\bsite\b|article|webseite"#) { kinds.append(.browser) }
         if has(#"bestand|document|\bpdf|\bmap\b|\bfile|folder|\bdatei|\bordner"#) { kinds.append(.files) }
         if has(#"github|pull request|\bprs?\b|\bissues?\b|\brepo|\bmerge"#) { kinds.append(.github) }
@@ -151,7 +155,7 @@ struct ChatIntent: Equatable {
         // "Post this on LinkedIn", "deel dit op Reddit": a request to post on a site that opens with the posting verb itself.
         // "I saw a post on Reddit" names a site too, but asks for nothing.
         let postsNow = posts && polite.range(of: #"^(post|posten|plaats|publiceer|deel|tweet|publish|share|poste|veröffentliche|teile|publie|partage|publica|comparte)\b"#, options: .regularExpression) != nil
-        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow)
+        intent.wantsAction = !kinds.isEmpty && (imperative || asksPolitely || embedded || postsNow || editsScreen)
 
         let greeting = text.range(of: #"^(hoi|hallo|hey|hi|hello|yo|goedemorgen|goedemiddag|goedenavond|dank( je)?( wel)?|bedankt|thanks|thank you|thx|ok(é|e|ay)?|top|super|prima|cool|nice|haha|moin|guten (morgen|tag|abend)|danke)\b[\s\p{P}\p{So}]*(nook)?[\s\p{P}\p{So}]*$"#, options: .regularExpression) != nil
         intent.isSmallTalk = kinds.isEmpty && greeting
@@ -190,6 +194,9 @@ struct ChatIntent: Equatable {
         } else if retry {
             // A retry follows a complaint ("hij is niet verzonden") as often as the request itself: the newest request.
             carried = recent.lazy.filter(\.fromUser).compactMap { turn in detect(turn.text).kinds.first { actionByKind[$0] != nil } }.first
+        } else if editsIt(raw), recent.contains(where: { $0.fromUser && pointsAtSomething($0.text) }) {
+            // "Pas het aan" after "is deze pitch goed?": the document on screen changes, done with mouse and keyboard.
+            carried = .takeover
         } else {
             carried = nil
         }
@@ -261,6 +268,24 @@ struct ChatIntent: Equatable {
         let words = raw.lowercased().split { !$0.isLetter }.map(String.init)
         guard let verb = words.firstIndex(where: { ["schrijf", "maak", "stel", "write", "draft", "schreib"].contains($0) }) else { return false }
         return words[(verb + 1)...].contains { $0 == "bericht" || $0 == "berichtje" || $0 == "message" || $0 == "nachricht" || (!$0.hasPrefix("ge") && $0.count >= 6 && $0.count <= 8 && Fuzzy.distance($0, "bericht") <= 2) }
+    }
+
+    /// "Pas het aan", "verbeter het", "herschrijf dit", "fix it": a request to change the thing being talked about, not a
+    /// question about how to change it yourself ("hoe pas ik dit aan?").
+    static func editsIt(_ raw: String) -> Bool {
+        let text = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count <= 160, text.range(of: #"^(hoe|how|wie|comment|cómo)\b"#, options: .regularExpression) == nil else { return false }
+        let it = #"(het|dit|dat|hem|ze|die|deze|alles|de tekst|the text|it|this|that|es|das|le|ça|lo|esto)"#
+        return text.range(of: #"\bpas \#(it)\b[^.?!]{0,40}\baan\b|\b\#(it) (aan ?passen|verbeteren|herschrijven|bijwerken|veranderen)\b|\b(verbeter|herschrijf|verander|corrigeer|wijzig) \#(it)\b|\bwerk \#(it) bij\b|\bvoer (het|dit|dat|de \w+) door\b|\bmaak \#(it) (beter|korter|langer|sterker|zakelijker|formeler|duidelijker)\b|\b(change|fix|edit|improve|rewrite|update|adjust|correct) \#(it)\b|\bapply (it|this|that|the (changes|edits|suggestions))\b|\bmake \#(it) (better|shorter|longer|stronger|clearer)\b|\b(ändere?|verbessere?|überarbeite|korrigiere) \#(it)\b"#,
+                          options: .regularExpression) != nil
+    }
+
+    /// The turn was about something in front of the user: "is deze pitch goed?", "wat vind je van dit document?".
+    /// A turn about a PR, a mail or a chat is not: "fix it" there belongs to that source.
+    private static func pointsAtSomething(_ text: String) -> Bool {
+        let kinds = detect(text).kinds
+        guard kinds.allSatisfy({ [.screen, .files, .takeover, .browser].contains($0) }) else { return false }
+        return !kinds.isEmpty || text.lowercased().range(of: #"\b(deze|dit|this|these|diese[rsmn]?|cette|este|esta)\b(?! (week|weekend|maand|jaar|keer|month|year|time|woche|monat|jahr))"#, options: .regularExpression) != nil
     }
 
     /// Doing it again: "opnieuw", "stuur het nog een keer", "probeer het nog eens", "try again", "nochmal".

@@ -226,11 +226,13 @@ enum Research {
     /// `named` are the sources the question names itself ("in WhatsApp"): then the user said where to look, and Nook never
     /// falls back to searching everywhere, also not when that source cannot be read right now.
     static func sources(question: String, intent: ChatIntent, terms: Terms, relevant: Set<String>, previous: Set<String> = [],
-                        named: Set<String> = [], available: [Prefetch.Available], active: Set<String>) -> Set<String> {
+                        named: Set<String> = [], aboutScreen: Bool = false, available: [Prefetch.Available], active: Set<String>) -> Set<String> {
         var sources = relevant
         if terms.inherited { sources.formUnion(previous) }
         let own = sources.subtracting(Prefetch.inContext)
-        if own.isEmpty, named.isEmpty, intent.kinds.isEmpty, !terms.isEmpty, isLookup(question) {
+        // A question about what is on screen ("is deze pitch goed?") is answered from the screen: searching every source
+        // for its words only adds waiting, and shows Nook looking in GitHub while it reads the screen.
+        if own.isEmpty, named.isEmpty, !aboutScreen, intent.kinds.isEmpty, !terms.isEmpty, isLookup(question) {
             sources.formUnion(searchable(available, active: active))
         }
         if !terms.names.isEmpty, active.contains("contacts"), (isLookup(question) && named.isEmpty) || own.contains("contacts") || named.contains("contacts") {
