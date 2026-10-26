@@ -53,7 +53,16 @@ struct SidePanelPullRequestPicker: View {
         let groups = groups
         VStack(spacing: 0) {
             PullRequestSearchBar(filter: $filterStore.filter, accounts: store.accounts, prompt: tr("agents.pr.pick.search"),
-                                 watching: !watching.entries.isEmpty, style: .inline)
+                                 watching: !watching.entries.isEmpty, style: .inline) {
+                // As on the Pull requests page: only a refresh you asked for (or a first load) spins.
+                if store.showsProgress {
+                    ProgressView().controlSize(.small)
+                } else {
+                    NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) {
+                        Task { await store.refresh(force: true) }
+                    }
+                }
+            }
                 .padding(NookTheme.Spacing.sm)
             NookDivider()
             if !GitHubPullRequestList.isAvailable {
