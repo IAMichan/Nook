@@ -332,12 +332,13 @@ func (a *API) messages(w http.ResponseWriter, r *http.Request) {
 			names[member.User] = member.Name
 		}
 	}
+	reads := a.store.Reads(room.ID)
 	items := make([]map[string]any, 0, len(list))
 	for _, e := range list {
 		if e.Sender == net.Matrix.botMXID() {
 			continue
 		}
-		items = append(items, a.messageJSON(r.Context(), net, room, e, reactions[e.ID], names))
+		items = append(items, a.messageJSON(r.Context(), net, room, e, reactions[e.ID], names, reads))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -400,7 +401,8 @@ func (a *API) paginate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"hasMore": err == nil && next != nil && !next.IsDone})
 }
 
-func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stored, reactions []*Stored, names map[id.UserID]string) map[string]any {
+func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stored, reactions []*Stored, names map[id.UserID]string,
+	reads []Read) map[string]any {
 	mine := a.isSelf(ctx, net, e.Sender)
 	out := map[string]any{
 		"id": string(e.ID), "chatID": string(room.ID), "timestamp": time.UnixMilli(e.TS).UTC().Format(time.RFC3339Nano),
@@ -484,7 +486,30 @@ func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stor
 		if e.Status != "" && e.Status != string(event.MessageStatusSuccess) {
 			out["sendStatus"] = map[string]any{"status": e.Status, "message": e.StatusText}
 		}
-		if room.OthersReadTS >= e.TS {
+		// Who read it and when, as Beeper says it: a time in a private chat, a time per person in a group. A read
+		// from before the chat helper kept them per person only says that it was read.
+		readBy := ReadBy(reads, e.TS)
+		for user := range readBy {
+			if a.isSelf(ctx, net, user) {
+				delete(readBy, user)
+			}
+		}
+		switch {
+		case len(readBy) > 0 && room.IsDirect:
+			first := int64(0)
+			for _, at := range readBy {
+				if first == 0 || at < first {
+					first = at
+				}
+			}
+			out["seen"] = time.UnixMilli(first).UTC().Format(time.RFC3339Nano)
+		case len(readBy) > 0:
+			seen := map[string]any{}
+			for user, at := range readBy {
+				seen[string(user)] = time.UnixMilli(at).UTC().Format(time.RFC3339Nano)
+			}
+			out["seen"] = seen
+		case room.OthersReadTS >= e.TS:
 			out["seen"] = true
 		}
 	}

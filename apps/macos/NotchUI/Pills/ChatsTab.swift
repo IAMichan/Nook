@@ -71,14 +71,16 @@ extension ChatsEntry {
         let linkedWhatsApp = whatsApp.isConnected && !helperWhatsApp
         if linkedWhatsApp {
             for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
-                let preview = conversation.messages.last.map { line($0, group: conversation.isGroup) } ?? ""
+                // Who is who by your Contacts and the phone's: names instead of numbers.
+                var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
+                let preview = conversation.messages.last.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let newest = conversation.messages.last
                 let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
                                           readKnown: whatsApp.readIsKnown(conversation.id),
-                                          ticks: ticks, members: conversation.members == nil ? nil : conversation.memberNames,
+                                          ticks: ticks, members: conversation.members == nil ? nil : names?.all,
                                           handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id]))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
@@ -89,7 +91,7 @@ extension ChatsEntry {
                 let id = "wa|" + chat.jid
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
-                                          name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
+                                          name: whatsApp.chatName(chat.jid, fallback: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name),
                                           preview: "", last: chat.last, read: whatsApp.readState(chat.jid),
                                           readKnown: whatsApp.readIsKnown(chat.jid), handle: handle(chat.jid),
                                           avatar: whatsApp.avatars[chat.jid]))
@@ -110,14 +112,15 @@ extension ChatsEntry {
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
 
-    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"). A photo, video or
+    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"; `sender` is empty in a
+    /// private chat). A photo, video or
     /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
     @MainActor
-    static func line(_ message: WAMessage, group: Bool) -> String {
+    static func line(_ message: WAMessage, sender: String) -> String {
         let caption = ChatFormat.plain(message.text)
         let file = AppModel.whatsAppFileLabel(message.media)
         let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
-        let who = message.fromMe ? tr("chat.you") : (group ? message.senderName : "")
+        let who = message.fromMe ? tr("chat.you") : sender
         return who.isEmpty ? text : "\(who): \(text)"
     }
 
@@ -141,10 +144,13 @@ extension ChatsEntry {
         switch origin {
         case .whatsApp(let jid):
             guard let conversation = whatsApp.inbox.conversations[jid] else { return nil }
+            // Found by who wrote it as the chat shows them: a saved contact's name, also when they set another.
+            var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
             match = conversation.messages.last { message in
                 AppModel.whatsAppText(message).localizedCaseInsensitiveContains(needle)
                     || message.senderName.localizedCaseInsensitiveContains(needle)
-            }.map { Self.line($0, group: conversation.isGroup) }
+                    || (!message.fromMe && names?.name(message.sender).localizedCaseInsensitiveContains(needle) == true)
+            }.map { Self.line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") }
         case .captured(let id):
             guard let thread = capture.inbox.threads[id] else { return nil }
             match = thread.messages.last { message in

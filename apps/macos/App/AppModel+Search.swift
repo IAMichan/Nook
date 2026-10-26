@@ -155,13 +155,15 @@ extension AppModel {
                 let unread = link.unread(conversation.id)
                 var flags: Set<String> = conversation.isGroup ? ["group"] : []
                 if unread > 0 { flags.insert("unread") }
+                // Who is who by your Contacts and the phone's, as the Chats tab names them.
+                var names = link.memberIndex(conversation)
                 let passages = conversation.messages.map { message in
                     SearchPassage(text: Self.whatsAppText(message),
-                                  author: message.fromMe ? "me" : (message.senderName.isEmpty ? conversation.name : message.senderName),
+                                  author: message.fromMe ? "me" : (conversation.isGroup ? names.name(message.sender) : conversation.name),
                                   date: message.date, anchor: message.id)
                 }
                 var facets = ["app": "WhatsApp"]
-                if conversation.members != nil { facets["people"] = conversation.memberNames.joined(separator: " ") }
+                if conversation.members != nil { facets["people"] = names.all.joined(separator: " ") }
                 documents.append(SearchDocument(id: "chat:wa|" + conversation.id, kind: .chat, title: conversation.name, subtitle: "WhatsApp",
                                                 date: conversation.lastActivity, facets: facets, flags: flags,
                                                 passages: passages, boost: unread > 0 ? 0.3 : 0,
@@ -175,7 +177,7 @@ extension AppModel {
                 guard listed.insert(id).inserted else { continue }
                 var flags: Set<String> = WAJID.kind(chat.jid) == .group ? ["group"] : []
                 if link.unread(chat.jid) > 0 { flags.insert("unread") }
-                let name = chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name
+                let name = link.chatName(chat.jid, fallback: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name)
                 documents.append(SearchDocument(id: id, kind: .chat, title: name, subtitle: "WhatsApp", date: chat.last,
                                                 facets: ["app": "WhatsApp"], flags: flags,
                                                 icon: .chat(app: "whatsapp", name: name, avatar: link.avatars[chat.jid],

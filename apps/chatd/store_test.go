@@ -103,3 +103,42 @@ func TestGhostIDsRoundTrip(t *testing.T) {
 		t.Fatal("you are not a ghost")
 	}
 }
+
+func TestWhoReadWhichMessage(t *testing.T) {
+	store, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.changed = func(string, id.RoomID) {}
+	room := id.RoomID("!g:" + serverName)
+	anna := id.UserID("@signal_anna:" + serverName)
+	bo := id.UserID("@signal_bo:" + serverName)
+	store.MarkUserRead(room, anna, 1_000, 5_000)
+	store.MarkUserRead(room, anna, 2_000, 9_000)
+	store.MarkUserRead(room, anna, 2_000, 8_000)
+	store.MarkUserRead(room, bo, 1_500, 7_000)
+	reads := store.Reads(room)
+	// An older message keeps the time it was first read; a later read of the same point keeps the earlier time.
+	if got := ReadBy(reads, 900); got[anna] != 5_000 || got[bo] != 7_000 {
+		t.Fatalf("message of 900: %v", got)
+	}
+	if got := ReadBy(reads, 1_800); got[anna] != 8_000 || len(got) != 1 {
+		t.Fatalf("message of 1800: %v", got)
+	}
+	if got := ReadBy(reads, 2_500); len(got) != 0 {
+		t.Fatalf("message of 2500 is read by no one yet: %v", got)
+	}
+	// The newest 50 reads per person are kept.
+	for i := int64(0); i < 60; i++ {
+		store.MarkUserRead(room, bo, 10_000+i, 20_000+i)
+	}
+	count := 0
+	for _, read := range store.Reads(room) {
+		if read.User == bo {
+			count++
+		}
+	}
+	if count != 50 {
+		t.Fatalf("kept %d reads for one person", count)
+	}
+}

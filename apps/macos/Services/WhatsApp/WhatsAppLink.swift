@@ -157,15 +157,44 @@ final class WhatsAppLink: ObservableObject {
     }
 
     /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
-    @Published private(set) var inbox = WAInbox(polls: WAPollStore.load()) {
+    @Published private(set) var inbox = WAInbox(polls: WAPollStore.load(), receipts: WAReceiptStore.load()) {
         didSet {
             if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) }
+            if inbox.receiptLedger.revision != oldValue.receiptLedger.revision { saveReceipts() }
             keepUnread()
         }
     }
     @Published private(set) var link: Link = .off
     @Published private(set) var webhook: Webhook = .off
     @Published private(set) var qrPNG: Data?
+    /// Who the numbers are: your Contacts and the phone's, refreshed with the chat list (see `WANameBook`).
+    @Published private(set) var names = WANameBook()
+    /// The gateway's contact list as it last answered.
+    private var gatewayContacts: [WAContact] = []
+    private var receiptSave: Task<Void, Never>?
+
+    /// Writes the kept ticks a moment after the last change: a burst of receipts is one write.
+    private func saveReceipts() {
+        receiptSave?.cancel()
+        receiptSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let ledger = self?.inbox.receiptLedger else { return }
+            await Task.detached(priority: .utility) { WAReceiptStore.save(ledger) }.value
+        }
+    }
+
+    /// The name a chat on the phone shows: for a person a saved contact's, as WhatsApp shows it, else what the phone's
+    /// chat list calls it.
+    func chatName(_ jid: String, fallback: String) -> String {
+        guard WAJID.kind(jid) == .person, let saved = names.name(jid) else { return fallback }
+        return saved
+    }
+
+    /// Who is who in a chat, with your Contacts and the phone's.
+    func memberIndex(_ conversation: WAConversation) -> WAMemberIndex {
+        WAMemberIndex(conversation, book: names)
+    }
+
     /// This account (JID or number), once linked.
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
@@ -326,6 +355,7 @@ final class WhatsAppLink: ObservableObject {
         if online, let provider { Task { await provider.setOnline(false, chat: nil) } }
         online = false
         onlineChat = nil
+        if forget { gatewayContacts = [] }
         previews = [:]
         previewOrder = []
         previewsLoading = []
@@ -505,7 +535,7 @@ final class WhatsAppLink: ObservableObject {
             let key = WAJID.normalized(chat)
             // In a private chat the chat itself types (its name says who); in a group the member, by their name.
             let group = WAJID.isGroup(key)
-            var names = inbox.conversations[key].map(WAMemberIndex.init)
+            var names = inbox.conversations[key].map(memberIndex)
             for typing in people {
                 let person = group ? WAJID.normalized(typing.from) : key
                 guard person != me.map(WAJID.normalized) else { continue }
@@ -566,6 +596,15 @@ final class WhatsAppLink: ObservableObject {
         guard gen == generation else { return }
         knownChats = chats.map {
             WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
+        }
+        // Who the numbers are: your Contacts first (what you call someone), then the phone's address book.
+        // A failed request answers with an empty list: the last list stays, rather than every name going back to a number.
+        let listed = await provider.contacts()
+        if !listed.isEmpty { gatewayContacts = listed }
+        let book = WANameBook(contacts: await ContactDirectory.names(), gateway: gatewayContacts)
+        if gen == generation, book != names {
+            names = book
+            inbox.setNames(book)
         }
         // A gateway that says which chats are pinned (OpenWA) is the phone's word: it replaces what Nook remembered.
         let told = knownChats.filter { $0.pinned != nil }

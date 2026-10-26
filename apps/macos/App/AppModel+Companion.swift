@@ -53,7 +53,9 @@ extension AppModel {
         if !opened, let last = conversation.messages.last(where: { !$0.fromMe }) {
             let file = Self.whatsAppFileLabel(last.media)
             let text = file == nil ? Self.whatsAppText(last) : (last.text.isEmpty ? file ?? "" : last.text)
-            let sender = conversation.isGroup && !last.senderName.isEmpty ? last.senderName + ": " : ""
+            var names = link.memberIndex(conversation)
+            let who = conversation.isGroup ? names.name(last.sender) : ""
+            let sender = who.isEmpty ? "" : who + ": "
             if NoticeHistory.shared.entries.first(where: { $0.key == token })?.detail != NoticeLog.detail(sender + text) {
                 line = sender + text
                 logNotice(.info, title: conversation.name, detail: line, context: "WhatsApp", target: .whatsApp(chat), key: token,
@@ -155,21 +157,21 @@ extension AppModel {
         let link = WhatsAppLink.shared
         let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var names = WAMemberIndex(conversation)
+        var names = link.memberIndex(conversation)
         // Every message of yours has its ticks, also the older ones the gateway's history says nothing of.
         let shown = Array(conversation.messages.suffix(WAInbox.keep))
-        let receipts = ChatReceipts.filled(shown.map { ($0.fromMe, $0.receipt) })
-        return zip(shown, receipts).map { original, receipt in
+        let receipts = ChatReceipts.filled(shown.map { ($0.fromMe, $0.receipt) }, private: WAJID.kind(conversation.id) == .person)
+        var bubbles = zip(shown, receipts).map { original, receipt in
             var message = original
             message.receipt = receipt
             let file = Self.whatsAppFileLabel(message.media)
             var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
                                     time: time.string(from: message.date), date: message.date,
-                                    sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
+                                    sender: conversation.isGroup && !message.fromMe ? names.name(message.sender) : "",
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
             bubble.readers = Self.whatsAppReaders(message, in: conversation, names: &names)
-            bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
+            bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation, names: &names)
             bubble.poll = message.poll?.chatPoll { voter in
                 conversation.isGroup ? names.name(voter) : conversation.name
             }
@@ -187,15 +189,18 @@ extension AppModel {
             }
             return bubble
         }
+        ChatBubble.fillReaders(&bubbles)
+        return bubbles
     }
 
     /// What a message answers, as its bubble quotes it: the message itself when Nook keeps it, else the text the
     /// gateway quoted. Nil when it answers nothing, or nothing is known of what it answers.
-    static func whatsAppQuote(_ message: WAMessage, in byID: [String: WAMessage], conversation: WAConversation) -> BubbleQuote? {
+    static func whatsAppQuote(_ message: WAMessage, in byID: [String: WAMessage], conversation: WAConversation,
+                              names: inout WAMemberIndex) -> BubbleQuote? {
         guard let id = message.replyTo else { return nil }
         if let answered = byID[id] {
             let sender = answered.fromMe ? tr("chat.you")
-                : (conversation.isGroup ? answered.senderName : conversation.name)
+                : (conversation.isGroup ? names.name(answered.sender) : conversation.name)
             let file = Self.whatsAppFileLabel(answered.media)
             let text = answered.text.isEmpty ? (file ?? Self.whatsAppText(answered)) : answered.text
             return BubbleQuote(sender: sender, text: text, mine: answered.fromMe)
@@ -342,7 +347,7 @@ extension AppModel {
         }
         guard conversation.isGroup, !message.readers.isEmpty || conversation.members != nil else { return [] }
         let named = message.readers.map { id, reader in
-            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date)
+            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date, key: WAJID.normalized(id))
         }
         return ChatReceipts.everyone(named, members: names.all)
     }

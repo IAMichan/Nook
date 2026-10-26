@@ -519,7 +519,7 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         let id = String(extra.dropFirst("viewers:".count))
         guard let ids = TelegramData.ids(id), let index = messages[ids.chat]?.firstIndex(where: { $0.id == id }) else { return }
         let readers = viewers.filter { $0.user != meID }.map { viewer in
-            ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date)
+            ChatReader(name: users[viewer.user] ?? String(viewer.user), receipt: .read, date: viewer.date, key: String(viewer.user))
         }
         guard messages[ids.chat]?[index].readers != readers else { return }
         messages[ids.chat]?[index].readers = readers
