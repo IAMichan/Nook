@@ -242,6 +242,7 @@ struct PullRequestSheet: View {
             bodyText = run.map { tr("ws.pr.bodyDefault", $0.task) } ?? ""
             repo = await workspace.remoteRepository(runID)
             branch = await workspace.currentBranch(runID)
+            if base.isEmpty { base = await workspace.pullRequestBaseBranch(runID) ?? "" }
             loading = false
         }
     }

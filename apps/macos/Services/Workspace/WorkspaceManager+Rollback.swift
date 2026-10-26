@@ -19,6 +19,19 @@ extension WorkspaceManager {
         }
     }
 
+    /// The agent continues the conversation under a new session id (a resumed Claude Code chat gets one): keep the old
+    /// id, so the transcript under it is recognised as this session and does not show up as a second chat.
+    func rememberEarlierSession(_ id: UUID, replacedBy session: String) {
+        guard let previous = run(id)?.providerSessionID, !previous.isEmpty, previous != session else { return }
+        update(id) { run in
+            var log = run.conversation ?? ConversationLog(session: previous, provider: run.provider)
+            var earlier = log.earlierSessions ?? []
+            if !earlier.contains(previous) { earlier.append(previous) }
+            log.earlierSessions = earlier
+            run.conversation = log
+        }
+    }
+
     func noteConversationTurn(_ id: UUID, turnID: String? = nil) {
         update(id) { run in
             var log = run.conversation ?? ConversationLog(session: run.providerSessionID, provider: run.provider)

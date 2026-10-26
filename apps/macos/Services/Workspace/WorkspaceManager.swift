@@ -626,7 +626,7 @@ final class WorkspaceManager: ObservableObject {
     @discardableResult
     func adopt(provider: RunProvider, sessionID: String, profileID: String, directory: String, title: String,
                history: [(kind: RunEvent.Kind, text: String)] = [], fork: Bool = false) async throws -> UUID {
-        if !fork, let existing = runs.first(where: { $0.provider == provider && $0.providerSessionID == sessionID }) {
+        if !fork, let existing = runs.first(where: { $0.provider == provider && $0.isConversation(sessionID) }) {
             if existing.archived { setArchived(existing.id, false) }
             selectedRunID = existing.id
             return existing.id
@@ -1216,6 +1216,7 @@ final class WorkspaceManager: ObservableObject {
     private func handleClaude(_ event: ClaudeStreamEvent, id: UUID) {
         switch event {
         case .initialized(let session, let model):
+            rememberEarlierSession(id, replacedBy: session)
             update(id) {
                 $0.providerSessionID = session
                 if let model, !model.isEmpty { $0.resolvedModel = model }
