@@ -6,7 +6,7 @@ import Foundation
 enum CloudflareRelaySetup {
     static let scriptName = "nook-relay"
     /// The relay's modules, as in apps/relay/worker; `index.js` is the entry point.
-    static let modules = ["index.js", "mux.js", "room.js"]
+    static let modules = ["index.js", "mux.js", "room.js", "push.js"]
     static let compatibilityDate = "2025-06-01"
     static let api = "https://api.cloudflare.com/client/v4"
 
