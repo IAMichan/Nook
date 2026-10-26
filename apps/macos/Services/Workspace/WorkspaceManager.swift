@@ -1955,6 +1955,7 @@ final class WorkspaceManager: ObservableObject {
             process.stop(grace: 1)
         }
         for index in runs.indices where runs[index].status.isActive {
+            runs[index].interruptedWhileWaiting = runs[index].status == .waitingApproval ? true : nil
             runs[index].status = .stopped
             runs[index].statusDetail = "interrupted"
             runs[index].turnStartedAt = nil

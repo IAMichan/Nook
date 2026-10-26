@@ -48,6 +48,7 @@ final class RunStore: @unchecked Sendable {
         return runs.map { run in
             guard run.status.isActive else { return run }
             var recovered = run
+            recovered.interruptedWhileWaiting = run.status == .waitingApproval ? true : nil
             recovered.status = run.status.afterRelaunch
             recovered.statusDetail = "interrupted"
             recovered.turnStartedAt = nil

@@ -7,9 +7,12 @@ extension WorkspaceManager {
     /// agents' executables are known; with the setting off nothing happens.
     func continueInterruptedRuns(now: Date = Date()) {
         let enabled = settings.continueAfterRelaunch
-        for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: !(questions[run.id] ?? []).isEmpty, now: now) {
+        for run in runs where RestartContinuation.shouldContinue(run, enabled: enabled, hasPendingQuestion: !(questions[run.id] ?? []).isEmpty,
+                                                                 settled: FinishedSessions.shared.contains(FinishedSessions.key(run: run)),
+                                                                 now: now) {
             update(run.id) {
-                $0.continuations = ($0.continuations ?? 0) + 1
+                $0.continuations = RestartContinuation.chainLength($0, now: now) + 1
+                $0.lastContinuedAt = now
                 // No longer "interrupted": a second launch before this turn ends must not continue it again.
                 $0.statusDetail = nil
             }
@@ -20,8 +23,11 @@ extension WorkspaceManager {
 
     /// A turn that ended normally clears the chain of restart continuations.
     func clearContinuations(_ id: UUID) {
-        guard run(id)?.continuations != nil else { return }
-        update(id) { $0.continuations = nil }
+        guard run(id)?.continuations != nil || run(id)?.lastContinuedAt != nil else { return }
+        update(id) {
+            $0.continuations = nil
+            $0.lastContinuedAt = nil
+        }
     }
 
     func snooze(_ id: UUID, _ choice: SnoozePolicy.Choice, now: Date = Date()) {

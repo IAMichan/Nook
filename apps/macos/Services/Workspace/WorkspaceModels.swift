@@ -270,6 +270,10 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var autoResume: Bool? = nil
     /// Times in a row Nook went on after a restart cut this session off; back to nil after a turn that ends normally.
     var continuations: Int? = nil
+    /// When Nook last went on with it after a restart (see `RestartContinuation.loopWindow`).
+    var lastContinuedAt: Date? = nil
+    /// The restart cut it off while it waited for your approval: that approval is gone, so Nook does not go on by itself.
+    var interruptedWhileWaiting: Bool? = nil
     /// Snoozed until this time, and since when (see `SnoozePolicy`).
     var snoozedUntil: Date? = nil
     var snoozedAt: Date? = nil
