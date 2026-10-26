@@ -107,7 +107,7 @@ struct AgentRunPanel: View {
                         composer(run).chatColumn()
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 let turns = turnDiffs(run)
                 if let selection = diffSelection, !turns.isEmpty {
                     TurnDiffPanel(turns: turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
@@ -130,7 +130,7 @@ struct AgentRunPanel: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
@@ -610,8 +610,6 @@ struct AgentRunPanel: View {
                 }
                 .scrollTargetLayout()
                 .chatColumn()
-                // A row too wide for the window must not widen the column: it would be centred and run off both sides.
-                .containerRelativeFrame(.horizontal, alignment: .leading)
             }
             .padding(.vertical, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

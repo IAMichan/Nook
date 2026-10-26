@@ -281,7 +281,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput))
                     .environment(\.sessionPanelDocked, docked)
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
                     VStack(spacing: 0) {
                         BottomSplitHandle(onDrag: dragBottom, onEnd: { dragStart = nil },
@@ -292,7 +292,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
             if docked {
                 // The switch takes the height of the conversation's header, so the card starts where the conversation does.
@@ -318,7 +318,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .animation(NookTheme.reveal, value: side == .conversation)
         .animation(NookTheme.reveal, value: bottom == .conversation)
