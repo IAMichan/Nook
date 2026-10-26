@@ -21,7 +21,7 @@ enum TeamsWebData {
     /// The session from a request the website sent: its address and its authentication header ("skypetoken=…"). Nil
     /// for any other request, or a token that does not say who you are.
     static func session(url: String, header: String, now: Date = Date()) -> Session? {
-        guard let range = url.range(of: #"^https://[^/?#]+/api/chatsvc/[^/?#]+(?=/v1/)"#, options: .regularExpression) else { return nil }
+        guard let range = url.range(of: chatService, options: .regularExpression) else { return nil }
         let value = header.trimmingCharacters(in: .whitespaces)
         var token = value
         for prefix in ["skypetoken=", "bearer "] where token.lowercased().hasPrefix(prefix) {
@@ -34,17 +34,23 @@ enum TeamsWebData {
                       me: id.hasPrefix("8:") ? id : "8:" + id)
     }
 
+    /// The chat service's address in a request: "…/api/chatsvc/{region}" on the website's own host, or the regional
+    /// host the new Teams asks directly ("https://emea.ng.msg.teams.microsoft.com").
+    static let chatService = #"^https://(?:[^/?#]+/api/chatsvc/[^/?#]+|[^/?#]+\.msg\.teams\.microsoft\.com)(?=/v1/)"#
+
     /// The session from what Teams' sign-in service (`/api/authsvc/v1.0/authz`) answers: the session token and the
     /// chat service of your region. Nil for any other answer.
     static func session(authz json: [String: Any], now: Date = Date()) -> Session? {
         guard let token = (json["tokens"] as? [String: Any])?["skypeToken"] as? String, !token.isEmpty else { return nil }
         let regions = json["regionGtms"] as? [String: Any] ?? [:]
-        var base = (regions["chatServiceAfd"] as? String) ?? ""
-        if base.range(of: "/api/chatsvc/") == nil, let region = json["region"] as? String, !region.isEmpty {
-            base = "https://teams.microsoft.com/api/chatsvc/" + region
+        let header = "skypetoken=" + token
+        for key in ["chatServiceAfd", "chatService"] {
+            var base = (regions[key] as? String) ?? ""
+            while base.hasSuffix("/") { base.removeLast() }
+            if let found = session(url: base + "/v1/", header: header, now: now) { return found }
         }
-        while base.hasSuffix("/") { base.removeLast() }
-        return session(url: base + "/v1/", header: "skypetoken=" + token, now: now)
+        guard let region = json["region"] as? String, !region.isEmpty else { return nil }
+        return session(skypeToken: token, region: region, now: now)
     }
 
     /// A token the website signed in with that Teams' sign-in service turns into a session token: one for
@@ -54,6 +60,35 @@ enum TeamsWebData {
               audience.contains("api.spaces.skype.com") else { return false }
         let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
         return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+    }
+
+    /// A session token itself (it says who you are) that has not run out, as the website may keep it.
+    static func isSkypeToken(_ token: String, now: Date = Date()) -> Bool {
+        guard let claims = claims(token), let id = claims["skypeid"] as? String, !id.isEmpty else { return false }
+        let exp = (claims["exp"] as? Double) ?? (claims["exp"] as? Int).map(Double.init)
+        return exp.map { Date(timeIntervalSince1970: $0) > now } ?? true
+    }
+
+    /// The session for a session token found on its own, with the chat service of `region` ("emea").
+    static func session(skypeToken token: String, region: String, now: Date = Date()) -> Session? {
+        session(url: "https://teams.microsoft.com/api/chatsvc/\(region)/v1/", header: "skypetoken=" + token, now: now)
+    }
+
+    /// The region a session token names ("rgn"), if it does.
+    static func region(_ token: String) -> String? {
+        (claims(token)?["rgn"] as? String).flatMap { $0.isEmpty ? nil : $0.lowercased() }
+    }
+
+    /// The tokens in a text the website handled (a sign-in answer, an entry of its token cache): each one once.
+    static func tokens(in text: String) -> [String] {
+        var found: [String] = []
+        var rest = text[...]
+        while let range = rest.range(of: #"eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+"#, options: .regularExpression) {
+            let token = String(rest[range])
+            if !found.contains(token) { found.append(token) }
+            rest = rest[range.upperBound...]
+        }
+        return found
     }
 
     /// The token in the website's `authtoken` cookie: "Bearer%3DeyJ…%26Origin%3D…".
