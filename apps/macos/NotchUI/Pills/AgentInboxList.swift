@@ -100,7 +100,7 @@ struct AgentInboxList: View {
         let sections = InboxLayout.sections(rows: visible, state: store.state, showWorking: store.showWorking, now: now,
                                             settledLimit: settledLimit, selectedID: current)
         // The rows as shown, top to bottom (a folded shelf only with the open session): what select all and a ⇧-click range go by.
-        let shown = sections.flatMap { rows(of: $0).map(\.id) }
+        let shown = sections.flatMap { self.rows(of: $0).map(\.id) }
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 searchField
