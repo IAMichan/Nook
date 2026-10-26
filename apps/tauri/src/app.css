@@ -48,7 +48,7 @@ html, body {
   user-select: none;
 }
 
-body.bar { background: transparent; overflow: hidden; }
+html:has(body.bar), body.bar { background: transparent; overflow: hidden; }
 
 #app { height: 100%; }
 

@@ -8,8 +8,8 @@ use crate::state::AppState;
 
 pub const BAR: &str = "bar";
 
-/// Maten van de balk: dicht (een pil met Nook en een stipje per agent) en open (het paneel met tabs).
-pub const COLLAPSED: (f64, f64) = (240.0, 38.0);
+/// Bar sizes: closed (a small round Nook) and open (the panel with tabs).
+pub const COLLAPSED: (f64, f64) = (44.0, 44.0);
 /// A compact agent notice: the bar keeps its height and grows wider, with the message and its buttons in the row.
 pub const NOTICE: (f64, f64) = (560.0, 38.0);
 pub const EXPANDED: (f64, f64) = (760.0, 540.0);
@@ -70,8 +70,15 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
         ("floating", Some(fx), Some(fy)) => (left + width / 2.0 + fx - w / 2.0, top + fy),
         _ => (left + (width - w) / 2.0, top),
     };
+    // The closed bar is a fixed round Nook: stretching it would only blow the circle up, so its size is pinned by min
+    // and max. (Toggling `resizable` instead changes the window frame, which throws the first open off.)
+    let _ = window.set_max_size(None::<LogicalSize<f64>>);
+    let _ = window.set_min_size(Some(if expanded { LogicalSize::new(COLLAPSED.0, COLLAPSED.1) } else { LogicalSize::new(w, h) }));
     let _ = window.set_size(LogicalSize::new(w, h));
     let _ = window.set_position(LogicalPosition::new(x, y));
+    if !expanded {
+        let _ = window.set_max_size(Some(LogicalSize::new(w, h)));
+    }
 }
 
 /// `--window` opent het hoofdvenster, `--settings` meteen de instellingen.

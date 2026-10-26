@@ -17,7 +17,6 @@
   import { agents } from "../lib/agents.svelte";
   import { quiet } from "../lib/quiet.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
-  import AgentDots from "./agents/AgentDots.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
   import NoticeOk from "../components/NoticeOk.svelte";
   import { compactNotice, Countdown, noticeTone } from "../lib/notice";
@@ -30,6 +29,7 @@
   let pinnedOpen = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let inside = $state(false);
+  let openedAt = 0;
   // Agent notices: a compact one widens the closed bar (`strip`); a detailed one opens the panel. `noticeLeft` is what
   // is left of its countdown, for the ring on OK.
   let strip = $state(false);
@@ -46,6 +46,8 @@
     if (!expanded) {
       strip = false;
       expanded = true;
+      // Resizing and focusing the window can fire a blur of its own; that must not close the panel that is opening.
+      openedAt = Date.now();
       await api.barExpand(true);
       // Het aanbod naast de balk zou het paneel bedekken; het staat ook in Vandaag.
       services.asideHide();
@@ -126,6 +128,12 @@
     // Both the pointer and a notice that ran out call this; a second timer must not orphan the first.
     clearTimeout(closeTimer);
     closeTimer = setTimeout(close, 450);
+  }
+
+  // The closed bar only opens on a click; it then stays open until Esc, a click elsewhere or the window loses focus.
+  async function openByClick() {
+    pinnedOpen = true;
+    await open();
   }
 
   function select(t: Tab) {
@@ -223,9 +231,9 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !nook.busy && !agents.pending && !whatsapp.chat && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => Date.now() - openedAt > 600 && close()} />
 
-<div class="bar" class:expanded class:floating role="region" onmouseenter={() => { inside = true; if (!strip) open(); }} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
     {@const card = agents.attention}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -240,11 +248,10 @@
     </div>
   {:else if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="pill" onmousedown={drag}>
-      <Orb size={20} {mood} />
-      {#if nook.working}<span class="dot working"></span>{/if}
-      {#if nook.waiting}<span class="dot waiting"></span>{/if}
-      <AgentDots onhover={() => open("agents")} />
+    <div class="pill round" role="button" tabindex="0" title="Open Nook" onmousedown={drag} onclick={openByClick} onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openByClick()}>
+      <span class="orbwrap"><Orb size={26} {mood} /></span>
+      {#if nook.working}<span class="dot working corner"></span>{/if}
+      {#if nook.waiting}<span class="dot waiting corner"></span>{/if}
     </div>
   {:else}
     <div class="panel">
@@ -305,6 +312,30 @@
     cursor: default;
   }
   .floating .pill { border-radius: 999px; cursor: grab; }
+  /* The closed bar is a small round Nook with a thick black rim, so it stays out of the way of the browser's tabs. */
+  .pill.round {
+    position: relative;
+    box-sizing: border-box;
+    border: 3px solid #000;
+    border-radius: 50%;
+    gap: 0;
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow 0.25s ease;
+  }
+  .pill.round:hover { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--paper) 35%, transparent); }
+  .pill.round:active .orbwrap { transform: scale(0.88); }
+  .orbwrap { display: flex; transition: transform 0.15s ease; }
+  /* Hovering the closed bar: a small hop, as if Nook noticed you. */
+  .pill.round:hover .orbwrap { animation: hop 0.7s cubic-bezier(0.3, 1.5, 0.5, 1); }
+  @keyframes hop {
+    0% { transform: translateY(0) scale(1); }
+    30% { transform: translateY(-4px) scale(1.18); }
+    60% { transform: translateY(1px) scale(0.94); }
+    100% { transform: translateY(0) scale(1.06); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pill.round:hover .orbwrap { animation: none; } }
+  .dot.corner { position: absolute; top: 3px; right: 3px; }
   /* A compact notice in the bar's own row: mark and message on the left, View and the countdown OK on the right. */
   .pill.strip { justify-content: flex-start; gap: 8px; padding: 0 4px 0 14px; }
   .strip .message { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -321,8 +352,6 @@
     animation: drop 0.32s cubic-bezier(0.2, 1.2, 0.4, 1);
     transform-origin: top center;
   }
-  .floating .panel { border-radius: 22px; }
-  @keyframes drop { from { transform: scaleY(0.7); opacity: 0; } }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 12px 6px; }
   nav { display: flex; gap: 4px; }
   nav button { background: transparent; border: none; color: var(--text2); border-radius: 999px; padding: 5px 12px; display: flex; gap: 6px; align-items: center; }
