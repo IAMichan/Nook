@@ -34,6 +34,9 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var artifactView: WKWebView?
     @Published private(set) var artifactLoading = false
     @Published private(set) var artifactTitle = ""
+    /// The window a page in the artifact tab opened (the "Continue with Google" sign-in): it must stay in Nook with the
+    /// page's own configuration, since the page that opened it waits for its answer.
+    @Published private(set) var artifactPopup: WKWebView?
 
     /// The side panel of the open app, if it has one.
     var side: WKWebView? { current.flatMap { sides[$0.id] } }
@@ -86,9 +89,17 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         view.load(URLRequest(url: url))
     }
 
+    /// Closes the window the artifact's page opened, for instance a sign-in you gave up on.
+    func closeArtifactPopup() {
+        artifactPopup?.stopLoading()
+        artifactPopup = nil
+    }
+
     /// Puts the session's artifact away.
     func closeArtifact() {
         artifactView?.stopLoading()
+        artifactPopup?.stopLoading()
+        artifactPopup = nil
         artifactView = nil
         artifactLoading = false
         artifactTitle = ""
@@ -281,6 +292,13 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
             sideTitle = ""
             return view
         }
+        if webView === artifactView || webView === artifactPopup {
+            artifactPopup?.stopLoading()
+            // WebKit loads the request in the view returned, which must use the configuration it hands over.
+            let view = makeSideView(configuration: configuration)
+            artifactPopup = view
+            return view
+        }
         if let url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             NSWorkspace.shared.open(url)
         }
@@ -289,6 +307,10 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     /// The page in the side panel closed itself (`window.close()`).
     func webViewDidClose(_ webView: WKWebView) {
+        if webView === artifactPopup {
+            artifactPopup = nil
+            return
+        }
         guard let id = sides.first(where: { $0.value === webView })?.key else { return }
         sides[id] = nil
         if current?.id == id {
@@ -490,7 +512,26 @@ struct SessionArtifactPanel: View {
                 .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(height: 32)
                 NookDivider()
-                WebViewHost(webView: webView)
+                ZStack {
+                    WebViewHost(webView: webView)
+                    // A sign-in window the page opened, over the page until it closes itself or you close it.
+                    if let popup = store.artifactPopup {
+                        VStack(spacing: 0) {
+                            HStack {
+                                Spacer(minLength: NookTheme.Spacing.xs)
+                                NookIconButton(systemName: "xmark", label: tr("embedded.artifact.close"), size: 26) {
+                                    store.closeArtifactPopup()
+                                }
+                                .help(tr("embedded.artifact.close"))
+                            }
+                            .padding(.horizontal, NookTheme.Spacing.xs)
+                            .frame(height: 32)
+                            NookDivider()
+                            WebViewHost(webView: popup)
+                        }
+                        .background(NookTheme.field)
+                    }
+                }
             }
             .background(NookTheme.field)
         } else {
