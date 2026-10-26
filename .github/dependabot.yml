@@ -35,6 +35,11 @@ updates:
       npm:
         applies-to: version-updates
         patterns: ["*"]
+    ignore:
+      # svelte-check accepts only TypeScript 5 and 6 as a peer, so `npm ci` fails on TypeScript 7. Drop this once a
+      # svelte-check release accepts it.
+      - dependency-name: typescript
+        versions: [">=7"]
 
   - package-ecosystem: gomod
     # nook-chatd, the chat bridge helper.
