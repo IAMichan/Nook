@@ -609,6 +609,7 @@ struct WorkspaceSettingsSection: View {
             }
             BrowserSearchPicker()
             AgentLinkTargetPicker()
+            BrowserExtensionsRows()
         }
     }
 
@@ -795,5 +796,37 @@ private struct BrowserSearchPicker: View {
         Picker(tr("settings.ws.browserSearch"), selection: $engine) {
             ForEach(BrowserSearchEngine.allCases) { Text($0.name).tag($0.rawValue) }
         }
+    }
+}
+
+/// Web extensions for Nook's browser (see BrowserExtensions): the folders added, each with a button to remove it.
+private struct BrowserExtensionsRows: View {
+    @ObservedObject private var extensions = BrowserExtensions.shared
+
+    var body: some View {
+        LabeledContent {
+            Button(tr("settings.ws.extensions.add")) { choose() }
+                .disabled(!BrowserExtensions.isSupported)
+        } label: {
+            SettingLabel(tr("settings.ws.extensions"),
+                         hint: BrowserExtensions.isSupported ? tr("settings.ws.extensions.hint") : tr("settings.ws.extensions.unsupported"))
+        }
+        ForEach(extensions.entries) { entry in
+            LabeledContent {
+                Button(tr("button.delete")) { extensions.remove(entry.path) }
+            } label: {
+                SettingLabel(entry.name, hint: entry.problem ?? entry.path)
+            }
+        }
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = tr("settings.ws.extensions.pick")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await BrowserExtensions.shared.add(url) }
     }
 }
