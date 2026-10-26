@@ -54,6 +54,7 @@ enum AppTextReader {
         // One budget for the whole walk, not one per ancestor: twelve ancestors of 5000 elements each kept a chat app (Slack,
         // Teams) busy answering for seconds.
         var budget = Self.aroundFocusBudget
+        let deadline = CFAbsoluteTimeGetCurrent() + Self.walkSeconds
         if let focused = value(app, kAXFocusedUIElementAttribute), CFGetTypeID(focused) == AXUIElementGetTypeID() {
             var element = focused as! AXUIElement
             for _ in 0..<12 {
@@ -61,25 +62,25 @@ enum AppTextReader {
                 element = parent as! AXUIElement
                 let role = (value(element, kAXRoleAttribute) as? String) ?? ""
                 if role == "AXWindow" || role == "AXApplication" { break }
-                let text = collectedText(element, chars: limit * 4, budget: &budget)
+                let text = collectedText(element, chars: limit * 4, budget: &budget, deadline: deadline)
                 if text.count >= minimum || budget <= 0 { found = text; break }
             }
         }
         if found == nil, let window = value(app, kAXFocusedWindowAttribute), CFGetTypeID(window) == AXUIElementGetTypeID() {
             budget = max(budget, Self.aroundFocusBudget / 2)
-            found = collectedText(window as! AXUIElement, chars: limit * 4, budget: &budget)
+            found = collectedText(window as! AXUIElement, chars: limit * 4, budget: &budget, deadline: deadline)
         }
         guard let text = found, !text.isEmpty else { return nil }
         return String(text.suffix(limit))
     }
 
     /// How many elements `textAroundFocus` asks the app about at most.
-    private static let aroundFocusBudget = 2000
+    private static let aroundFocusBudget = 800
 
-    private static func collectedText(_ element: AXUIElement, chars: Int, budget: inout Int) -> String {
+    private static func collectedText(_ element: AXUIElement, chars: Int, budget: inout Int, deadline: CFAbsoluteTime) -> String {
         var lines: [String] = []
         var count = 0
-        collect(element, depth: 0, into: &lines, budget: &budget, count: &count, chars: chars)
+        collect(element, depth: 0, into: &lines, budget: &budget, count: &count, chars: chars, deadline: deadline)
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -103,18 +104,36 @@ enum AppTextReader {
         return result
     }
 
-    private static func collect(_ element: AXUIElement, depth: Int, into lines: inout [String], budget: inout Int, count: inout Int, chars: Int) {
-        guard depth < 60, budget > 0, count < chars else { return }
+    /// How long one walk through an app's elements may take. A chat app with thousands of elements keeps answering for
+    /// seconds, and every answer costs the app and Nook CPU; what has been read by then is enough.
+    private static let walkSeconds: CFTimeInterval = 0.6
+
+    /// The attributes `collect` needs of an element, asked in one round trip: one message to the app instead of five.
+    private static let walkAttributes = [kAXRoleAttribute, kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
+                                         kAXChildrenAttribute] as CFArray
+
+    private static func collect(_ element: AXUIElement, depth: Int, into lines: inout [String], budget: inout Int, count: inout Int, chars: Int,
+                                deadline: CFAbsoluteTime = CFAbsoluteTimeGetCurrent() + walkSeconds) {
+        guard depth < 60, budget > 0, count < chars, CFAbsoluteTimeGetCurrent() < deadline else { return }
         budget -= 1
-        let role = (value(element, kAXRoleAttribute) as? String) ?? ""
+        var raw: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(element, walkAttributes, AXCopyMultipleAttributeOptions(rawValue: 0), &raw) == .success,
+              let values = raw as? [AnyObject], values.count == 5 else { return }
+        func attribute(_ i: Int) -> AnyObject? {
+            let item = values[i]
+            // An attribute the element does not have comes back as an AXValue holding an error.
+            if CFGetTypeID(item) == AXValueGetTypeID(), AXValueGetType(item as! AXValue) == .axError { return nil }
+            return item
+        }
+        let role = (attribute(0) as? String) ?? ""
         // Never password fields.
         if role == "AXSecureTextField" { return }
         var parts: [String] = []
-        if let text = value(element, kAXValueAttribute) as? String { parts.append(text) }
+        if let text = attribute(1) as? String { parts.append(text) }
         if ["AXButton", "AXLink", "AXCell", "AXRow", "AXHeading", "AXMenuButton", "AXRadioButton", "AXTab", "AXImage"].contains(role)
             || parts.isEmpty {
-            if let title = value(element, kAXTitleAttribute) as? String { parts.append(title) }
-            if role != "AXGroup", let description = value(element, kAXDescriptionAttribute) as? String { parts.append(description) }
+            if let title = attribute(2) as? String { parts.append(title) }
+            if role != "AXGroup", let description = attribute(3) as? String { parts.append(description) }
         }
         for part in parts {
             let clean = part.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -125,8 +144,8 @@ enum AppTextReader {
         }
         // Menus and toolbars are not content.
         if ["AXMenuBar", "AXMenu", "AXToolbar", "AXScrollBar"].contains(role) { return }
-        for child in (value(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [] {
-            collect(child, depth: depth + 1, into: &lines, budget: &budget, count: &count, chars: chars)
+        for child in (attribute(4) as? [AXUIElement]) ?? [] {
+            collect(child, depth: depth + 1, into: &lines, budget: &budget, count: &count, chars: chars, deadline: deadline)
         }
     }
 
