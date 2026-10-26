@@ -39,6 +39,7 @@ final class SlackWebSession: NSObject, ObservableObject, WKNavigationDelegate, W
         close()
         self.onSignedIn = onSignedIn
         let configuration = WKWebViewConfiguration()
+        configuration.userContentController.addGoogleSignInHelp()
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.storeID)
         configuration.applicationNameForUserAgent = Self.safariName
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 980, height: 760), configuration: configuration)

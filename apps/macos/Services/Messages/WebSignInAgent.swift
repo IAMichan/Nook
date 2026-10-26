@@ -24,4 +24,24 @@ enum WebSignInAgent {
     static func agent(for url: URL?, otherwise: String?, now: Date = Date()) -> String? {
         isGoogleSignIn(url) ? firefox(now: now) : otherwise
     }
+
+    /// Runs on Google's sign-in pages before Google's own scripts: the page is told passkeys are not available here.
+    /// macOS lets an app's own browser use passkeys only for the app's own sites, so Google's passkey sign-in (also with
+    /// a phone nearby, "make sure Bluetooth is on") always fails in it; without passkeys Google asks for your password
+    /// or a prompt on your phone instead. Other sites keep passkeys as they are.
+    static let noPasskeysOnGoogle = """
+    (() => {
+      if (!/(^|\\.)accounts\\.google\\.com$/i.test(location.hostname)) return;
+      try { delete window.PublicKeyCredential; } catch (error) {}
+      try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true, writable: true }); } catch (error) {}
+      try {
+        const credentials = navigator.credentials;
+        if (!credentials) return;
+        const refuse = () => Promise.reject(new DOMException('Passkeys are not available here.', 'NotAllowedError'));
+        const get = credentials.get.bind(credentials), create = credentials.create.bind(credentials);
+        credentials.get = (options) => (options && options.publicKey ? refuse() : get(options));
+        credentials.create = (options) => (options && options.publicKey ? refuse() : create(options));
+      } catch (error) {}
+    })();
+    """
 }

@@ -14,3 +14,12 @@ extension WKWebView {
         return true
     }
 }
+
+extension WKUserContentController {
+    /// What every sign-in window needs on Google's sign-in pages besides its agent (see
+    /// `WebSignInAgent.noPasskeysOnGoogle`).
+    func addGoogleSignInHelp() {
+        addUserScript(WKUserScript(source: WebSignInAgent.noPasskeysOnGoogle, injectionTime: .atDocumentStart,
+                                   forMainFrameOnly: false))
+    }
+}

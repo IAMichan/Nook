@@ -39,6 +39,7 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         self.step = step
         self.onDone = onDone
         let configuration = WKWebViewConfiguration()
+        configuration.userContentController.addGoogleSignInHelp()
         // Its own store, gone with the window: the sign-in lives in the chat service, not in Nook.
         configuration.websiteDataStore = .nonPersistent()
         let wanted: [String]

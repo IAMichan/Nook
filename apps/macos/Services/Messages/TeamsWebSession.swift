@@ -134,6 +134,7 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
 
     private func makeWebView(store: UUID) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        configuration.userContentController.addGoogleSignInHelp()
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: store)
         configuration.applicationNameForUserAgent = Self.safariName
         configuration.userContentController.addUserScript(WKUserScript(source: Self.script, injectionTime: .atDocumentStart,
