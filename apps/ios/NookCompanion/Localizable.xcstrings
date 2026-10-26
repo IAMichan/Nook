@@ -932,6 +932,34 @@
         }
       }
     },
+    "Approving is turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Genehmigen ist für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobar está desactivado para este iPhone en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’approbation est désactivée pour cet iPhone dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goedkeuren staat uit voor deze iPhone in Nook op je Mac."
+          }
+        }
+      }
+    },
     "Archive" : {
       "localizations" : {
         "de" : {
@@ -4962,6 +4990,34 @@
         }
       }
     },
+    "Seeing sessions and your day is turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sitzungen und deinen Tag sehen ist für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver las sesiones y tu día está desactivado para este iPhone en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’affichage des sessions et de votre journée est désactivé pour cet iPhone dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sessies en je dag zien staat uit voor deze iPhone in Nook op je Mac."
+          }
+        }
+      }
+    },
     "Send" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5016,6 +5072,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wordt verstuurd"
+          }
+        }
+      }
+    },
+    "Sending messages is turned off for this iPhone in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nachrichten senden ist für dieses iPhone in Nook auf deinem Mac ausgeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar mensajes está desactivado para este iPhone en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’envoi de messages est désactivé pour cet iPhone dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berichten sturen staat uit voor deze iPhone in Nook op je Mac."
           }
         }
       }

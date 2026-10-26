@@ -90,7 +90,7 @@ enum Base64URL {
 
 // MARK: Messages
 
-enum CompanionOp: String, Codable, Sendable {
+enum CompanionOp: String, Codable, Sendable, CaseIterable {
     case hello, list, decide, answer, send, stop
     /// The phone's APNs token (`text`, hex) and its environment (`item`: "production" or "development"); `unregister` removes it.
     case register, unregister
@@ -273,6 +273,8 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var protocolVersion: Int?
     var oldestPhone: Int?
     var appVersion: String?
+    /// What this phone may do (`CompanionScope` names), with `features`; nil from a Mac without scopes (everything).
+    var scopes: [String]?
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -613,6 +615,8 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     /// What the phone said it runs (`CompanionProtocol`): its protocol and app version; nil until it said so.
     var protocolVersion: Int?
     var appVersion: String?
+    /// What it may do (`CompanionScope` names, `grantedScopes`); nil for a phone paired before scopes: everything.
+    var scopes: [String]?
 
     init(id: String, name: String, pairedAt: Date, lastSeen: Date? = nil, pushToken: String? = nil, pushProduction: Bool? = nil) {
         self.id = id; self.name = name; self.pairedAt = pairedAt; self.lastSeen = lastSeen

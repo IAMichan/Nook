@@ -63,6 +63,9 @@ final class CompanionClient: ObservableObject {
     /// app version, from the last `hello`, `list` or `subscribe` answer.
     @Published private(set) var compatibility: CompanionCompatibility = .ok
     @Published private(set) var macAppVersion: String?
+    /// What the Mac lets this phone do (`CompanionScope` names), from the last answer that listed features; nil from a
+    /// Mac without scopes, which allows everything.
+    @Published private(set) var scopes: Set<String>?
     private(set) var pushToken: String?
 
     private var link: PairingLink?
@@ -600,6 +603,9 @@ final class CompanionClient: ObservableObject {
 
     func can(_ feature: String) -> Bool { features.contains(feature) }
 
+    /// Whether the Mac lets this phone do what `scope` covers; the screens hide what it may not.
+    func allows(_ scope: CompanionScope) -> Bool { scopes?.contains(scope.rawValue) ?? true }
+
     /// `can`, after asking the Mac first when its features are not known yet (a screen that loads right after launch,
     /// before the first `list` came back).
     private func supports(_ feature: String) async -> Bool {
@@ -790,6 +796,8 @@ final class CompanionClient: ObservableObject {
             let compatible = CompanionCompatibility.check(response)
             if compatible != compatibility { compatibility = compatible }
             if response.appVersion != macAppVersion { macAppVersion = response.appVersion }
+            let granted = response.scopes.map(Set.init)
+            if granted != scopes { scopes = granted }
         }
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)

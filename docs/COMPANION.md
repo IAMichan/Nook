@@ -34,6 +34,14 @@ Most differences between an older Mac and a newer phone (or the other way round)
 - Settings › Devices on the Mac shows the app version of each paired phone, and says when a phone's app is too old for this Nook.
 - With a Mac that lists `requestUpdate`, *Show the update on your Mac* in the Agents menu opens Nook's update panel on the Mac (`AppUpdater.showPanel`) when an update is ready. It never installs anything: installing stays a click on the Mac. It is logged as `companion_update_request`.
 
+## What a Phone May Do
+
+Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/Sources/CompanionScopes.swift`, tested in `CompanionScopesTests`): **read** (sessions, conversations, Today, usage), **approve** (allow, deny, answer questions), **operate** (start sessions, send messages, stop and manage them), **chats** (the Chats tab), **music** and **nookChat** (chatting with Nook).
+
+- They are chosen next to the pairing code on the Mac (everything by default) and changed later per phone in Settings › Devices › *What this iPhone may do*. A phone paired before scopes existed may do everything, as before; a scope name a Mac does not know (from a newer Nook) is ignored.
+- One table (`CompanionScopes.table`) says which scope each request needs; connection requests (`hello`, `list`, `subscribe`, `ping`) and the phone's own token registrations always pass. The test fails when a new op has no entry, and an op missing from the table is refused.
+- The Mac refuses a request outside the phone's scopes (`notAllowedFromPhone`), leaves out of every answer what the phone may not see, lists only the features it may use, and sends the phone its scopes with every `hello`, `list` and `subscribe` answer. The phone hides what it may not use (approve buttons, the message field, the Chats and Nook tabs). A change on the Mac ends the phone's live connection, so it reconnects and learns at once.
+
 ## Security Architecture
 
 - **Out-of-band key exchange:** The 32-byte random key is transferred exclusively via the QR code and never sent over the network.

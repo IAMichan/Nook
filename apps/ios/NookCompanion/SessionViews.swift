@@ -65,7 +65,11 @@ struct SessionDetailView: View {
                     }
                 // An agent in a terminal on the Mac keeps its conversation there; the phone only decides its approvals.
                 ComposerDock {
-                    if session.canSend != false {
+                    if !client.allows(.operate) {
+                        Label("Sending messages is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
+                            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+                            .card(padding: Theme.Spacing.lg)
+                    } else if session.canSend != false {
                         // The Mac's composer: send, or stop while the agent works and nothing is typed.
                         SessionComposer(text: $message, prompt: "Message to the agent", busy: stoppable(session),
                                         onStop: canStop(session) ? { confirmStop = true } : nil) {
@@ -132,7 +136,7 @@ struct SessionDetailView: View {
 
     /// Stopping is for sessions Nook runs; one outside Nook ends instead (`SessionAction.end`).
     private func canStop(_ session: SessionDigest) -> Bool {
-        session.canSend != false && !actions(session).contains(.end)
+        client.allows(.operate) && session.canSend != false && !actions(session).contains(.end)
     }
 
     private func actions(_ session: SessionDigest) -> [SessionAction] {
@@ -255,6 +259,8 @@ struct ItemView: View {
                     .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
             }
             switch item.kind {
+            case _ where !client.allows(.approve):
+                ApproveOffLabel()
             case .approval:
                 if item.canAllow {
                     NookSplitButton(primary: NoticeAction(label: "Allow", symbol: "checkmark") {
@@ -296,6 +302,14 @@ struct ItemView: View {
 
     /// Typed, so both words go through the String Catalog.
     private var heading: LocalizedStringKey { item.kind == .approval ? "Approval" : "Question" }
+}
+
+/// In place of Allow, Deny or an answer when the Mac does not let this phone approve (`CompanionScope.approve`).
+struct ApproveOffLabel: View {
+    var body: some View {
+        Label("Approving is turned off for this iPhone in Nook on your Mac.", systemImage: "lock.fill")
+            .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+    }
 }
 
 // MARK: Starting a session

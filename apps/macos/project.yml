@@ -313,6 +313,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionRelay.swift
       - path: ../../packages/protocol/Sources/CompanionCompatibility.swift
       - path: ../../packages/protocol/Sources/CompanionDiagnosis.swift
+      - path: ../../packages/protocol/Sources/CompanionScopes.swift
       - path: Services/Companion/CloudflareRelaySetup.swift
       - path: Services/Companion/KeepAwakePolicy.swift
       - path: Services/Workspace/GitLabAPI.swift

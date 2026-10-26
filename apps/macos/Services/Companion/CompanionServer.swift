@@ -209,6 +209,8 @@ final class CompanionServer: ObservableObject {
     func relayClosed(_ peer: CompanionPeer) { closed(peer) }
 
     private func send(_ response: CompanionResponse, key: Data, deviceID: String, on transport: CompanionTransport) {
+        // Only what this phone may see, and only the features it may use (`CompanionScopes`).
+        let response = CompanionScopes.redact(response, granted: scopes(of: deviceID))
         guard let json = try? JSONEncoder().encode(response),
               let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: deviceID, direction: .response),
               let framed = CompanionFrameReader.frame(sealed) else { return }
@@ -232,6 +234,11 @@ final class CompanionServer: ObservableObject {
             return
         }
         peer.lastHeard = Date()
+        // What this phone may do is decided on the Mac (Settings › Devices); anything else is refused before it runs.
+        if !pairing, !CompanionScopes.allows(request.op, granted: scopes(of: claimed)) {
+            send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection)
+            return
+        }
         let keeps = !pairing && CommandReceipts.keeps(request.op)
         if keeps {
             // A repeat of a request that changes something (its answer got lost, or it waited in the phone's outbox):
@@ -340,6 +347,16 @@ final class CompanionServer: ObservableObject {
             peer.sent = sessions
             send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.transport)
         }
+    }
+
+    /// What a paired phone may do; nothing beyond keeping the connection for a key without a device.
+    private func scopes(of deviceID: String) -> Set<CompanionScope> {
+        CompanionStore.shared.devices.first { $0.id == deviceID }?.grantedScopes ?? []
+    }
+
+    /// Ends a phone's live connections, so it connects again and learns what it may do now.
+    func dropStreams(for deviceID: String) {
+        for peer in streams where peer.deviceID == deviceID { peer.transport.cancel() }
     }
 
     func audit(_ action: String, _ detail: String) {

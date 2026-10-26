@@ -35,6 +35,10 @@ struct CompanionSettingsRows: View {
                     if device.protocolVersion != nil, !CompanionCompatibility.phoneSupported(device.protocolVersion) {
                         SettingNote(tr("companion.device.outdated"), tone: .error)
                     }
+                    DisclosureGroup(tr("companion.scopes.title")) {
+                        scopeToggles(Binding(get: { device.grantedScopes }, set: { store.setScopes(device: device.id, $0) }))
+                    }
+                    .padding(.leading, NookTheme.Spacing.xxl)
                 }
                 if store.devices.isEmpty { SettingNote(tr("companion.none")) }
                 if let link {
@@ -131,6 +135,31 @@ struct CompanionSettingsRows: View {
               let text = try? String(contentsOf: url, encoding: .utf8) else { return }
         keyProblem = !store.saveAPNsKey(pem: text)
         APNsClient.shared.forgetToken()
+    }
+
+    /// One switch per `CompanionScope`: what a phone may do from afar.
+    @ViewBuilder
+    private func scopeToggles(_ scopes: Binding<Set<CompanionScope>>) -> some View {
+        ForEach(CompanionScope.allCases, id: \.self) { scope in
+            Toggle(Self.scopeLabel(scope), isOn: Binding(
+                get: { scopes.wrappedValue.contains(scope) },
+                set: { on in
+                    var next = scopes.wrappedValue
+                    if on { next.insert(scope) } else { next.remove(scope) }
+                    scopes.wrappedValue = next
+                }))
+        }
+    }
+
+    private static func scopeLabel(_ scope: CompanionScope) -> String {
+        switch scope {
+        case .read: return tr("companion.scope.read")
+        case .approve: return tr("companion.scope.approve")
+        case .operate: return tr("companion.scope.operate")
+        case .chats: return tr("companion.scope.chats")
+        case .music: return tr("companion.scope.music")
+        case .nookChat: return tr("companion.scope.nookChat")
+        }
     }
 
     /// When the phone was last seen, and which version of the app it runs once it said so.
@@ -306,6 +335,9 @@ struct CompanionSettingsRows: View {
                     }
                 }
                 Button(tr("companion.cancelPairing")) { store.cancelPairing(); self.link = nil; copied = false }
+                // What the phone that pairs now may do; changed later per phone above.
+                Text(tr("companion.scopes.pairing")).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+                scopeToggles($store.pendingScopes)
             }
         }
     }

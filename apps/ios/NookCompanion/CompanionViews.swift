@@ -33,18 +33,23 @@ struct RootView: View {
                     .tabItem { Label("Agents", systemImage: "square.stack.3d.up.fill") }
                     .badge(client.sessions.needingYou)
                     .tag(Tab.sessions)
-                    NavigationStack(path: $inboxPath) {
-                        InboxListView(path: $inboxPath)
+                    // A tab the Mac does not let this phone use (`CompanionScope`) is left out.
+                    if client.allows(.chats) {
+                        NavigationStack(path: $inboxPath) {
+                            InboxListView(path: $inboxPath)
+                        }
+                        .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+                        .badge(client.inboxUnread)
+                        .tag(Tab.chats)
                     }
-                    .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
-                    .badge(client.inboxUnread)
-                    .tag(Tab.chats)
-                    NavigationStack(path: $chatPath) {
-                        ChatListView(path: $chatPath)
+                    if client.allows(.nookChat) {
+                        NavigationStack(path: $chatPath) {
+                            ChatListView(path: $chatPath)
+                        }
+                        // Nook's own chats; "Chats" are your chat apps.
+                        .tabItem { Label("Nook", systemImage: "sparkles") }
+                        .tag(Tab.nook)
                     }
-                    // Nook's own chats; "Chats" are your chat apps.
-                    .tabItem { Label("Nook", systemImage: "sparkles") }
-                    .tag(Tab.nook)
                     NavigationStack {
                         UsageScreen()
                     }
@@ -535,6 +540,8 @@ struct SessionNotice: View {
     private func actions(_ item: SessionDigest.Item) -> some View {
         HStack(spacing: Theme.Spacing.md) {
             switch item.kind {
+            case _ where !client.allows(.approve):
+                ApproveOffLabel()
             case .approval:
                 if item.canAllow {
                     NookSplitButton(primary: NoticeAction(label: "Allow", symbol: "checkmark") {
