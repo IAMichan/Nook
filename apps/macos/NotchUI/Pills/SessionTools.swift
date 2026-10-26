@@ -336,7 +336,7 @@ struct SessionWorkbench<Conversation: View>: View {
         guard let tab = viewModel.closedSessionTabs.reopen(skipping: { open.contains($0.tool) || !$0.tool.available(in: directory) })
         else { return false }
         withAnimation(NookTheme.swap) {
-            if tab.tool == .pullRequest { viewModel.sidePullRequest = tab.pullRequest }
+            if tab.tool == .pullRequest { viewModel.openSidePullRequest(tab.pullRequest) }
             viewModel[keyPath: (tab.bottom ? SessionPanelSlot.bottom : SessionPanelSlot.side).tool] = tab.tool
         }
         return true
@@ -363,24 +363,32 @@ struct SessionWorkbench<Conversation: View>: View {
 
     private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
+                         pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
                          closeHelp: tr(slot.closeHelp), closeSymbol: slot.closeSymbol,
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
-                         openPullRequest: openPullRequest,
-                         closeTab: { closeTab($0, in: slot) },
+                         selectPullRequest: { id in
+                             withAnimation(NookTheme.swap) { viewModel.activeSidePullRequest = id; viewModel.sessionTool = .pullRequest }
+                         },
+                         openPullRequest: { request in withAnimation(NookTheme.swap) { viewModel.openSidePullRequest(request) } },
+                         updatePullRequest: { viewModel.updateSidePullRequest($0) },
+                         showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
+                         closeTab: { closeSessionTab($0, in: slot) },
                          close: { viewModel[keyPath: slot.tool] = .conversation })
     }
 
-    /// Opens the Pull request tab beside the session: on `request`, or on the list to pick one. Asked again while a pull
-    /// request is open there, it goes back to that list to pick another.
-    private func openPullRequest(_ request: PullRequestOpenRequest?) {
-        withAnimation(NookTheme.swap) {
-            if let request {
-                viewModel.sidePullRequest = request
-            } else if viewModel.sessionTool == .pullRequest {
-                viewModel.sidePullRequest = nil
+    /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
+    private func closeSessionTab(_ tab: SessionTab, in slot: SessionPanelSlot) {
+        switch tab {
+        case .tool(let item): closeTab(item, in: slot)
+        case .pullRequest(let id):
+            if viewModel.sidePullRequestTabs.count > 1 {
+                let request = viewModel.sidePullRequestTabs.first { $0.id == id }?.request
+                viewModel.closedSessionTabs.push(ClosedSessionTab(tool: .pullRequest, bottom: false, pullRequest: request))
+                withAnimation(NookTheme.swap) { viewModel.closeSidePullRequest(id) }
+            } else {
+                closeTab(.pullRequest, in: slot)
             }
-            viewModel.sessionTool = .pullRequest
         }
     }
 
@@ -393,7 +401,10 @@ struct SessionWorkbench<Conversation: View>: View {
                                                           pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
-            if item == .pullRequest { viewModel.sidePullRequest = nil }
+            if item == .pullRequest {
+                viewModel.sidePullRequestTabs = []
+                viewModel.activeSidePullRequest = nil
+            }
             if viewModel[keyPath: slot.tool] == item {
                 viewModel[keyPath: slot.tool] = rest.isEmpty ? .picker : rest[min(index, rest.count - 1)]
             }
@@ -456,6 +467,12 @@ private struct BottomSplitHandle: View {
     }
 }
 
+/// One tab of a tool panel: a tool, or one of the Pull request tabs (there can be several).
+private enum SessionTab: Hashable {
+    case tool(SessionTool)
+    case pullRequest(UUID)
+}
+
 /// A tool panel beside or under a session: its open tools as tabs, + to open another, the button that closes it, and
 /// the tool in view (or the list of tools while none is open). It sits flat on the notch, not as a card.
 private struct SessionToolPanel: View {
@@ -464,15 +481,22 @@ private struct SessionToolPanel: View {
     let tool: SessionTool
     let tabs: [SessionTool]
     let pullRequest: PullRequestOpenRequest?
+    let pullRequestTabs: [SidePullRequestTab]
+    let activePullRequest: UUID?
     let outputs: [SessionOutput]
     @Binding var outputSelection: String?
     let outputsFresh: Bool
     let closeHelp: String
     let closeSymbol: String
     let show: (SessionTool) -> Void
-    /// Opens the Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
+    let selectPullRequest: (UUID) -> Void
+    /// Opens a Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
     let openPullRequest: (PullRequestOpenRequest?) -> Void
-    let closeTab: (SessionTool) -> Void
+    /// The active tab's pull request was read again.
+    let updatePullRequest: (PullRequestOpenRequest) -> Void
+    /// The active tab goes back to the list to pick another.
+    let showPullRequestList: () -> Void
+    let closeTab: (SessionTab) -> Void
     let close: () -> Void
     @ObservedObject private var bridge = WorkspaceBridge.shared
     /// The open page's title for the browser's tab, once the browser was started (it is not started for it).
@@ -500,14 +524,14 @@ private struct SessionToolPanel: View {
                         // Back to the list to pick another, as the + of the tab does.
                         subheader {
                             HStack(spacing: NookTheme.Spacing.xs) {
-                                ToolbarIconButton("chevron.left", tr("agents.pr.back")) { openPullRequest(nil) }
+                                ToolbarIconButton("chevron.left", tr("agents.pr.back"), showPullRequestList)
                                 Text(tr("agents.pr.back")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                                 Spacer(minLength: 0)
                             }
                             .padding(.horizontal, NookTheme.Spacing.sm)
                         }
                         PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
-                            openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
                         })
                             .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
@@ -529,27 +553,51 @@ private struct SessionToolPanel: View {
     /// The open tabs, + right after them, and the button that closes the panel. The
     /// tabs scroll sideways when they do not fit, so the close button always stays in view.
     private var header: some View {
-        SidePanelTabBar(items: tabs.map(tabItem), selected: tool, onSelect: show, onClose: closeTab) {
+        SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
             addMenu
         } trailing: {
             ToolbarIconButton(closeSymbol, closeHelp, height: 24, width: 24, close)
         }
     }
 
-    /// A tab with what it shows: the page's title in the browser, the number and title of a pull request.
-    private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTool> {
+    /// The tab in view: a Pull request tab by its own id, as there can be several.
+    private var selectedTab: SessionTab {
+        if tool == .pullRequest, let active = activePullRequest ?? pullRequestTabs.first?.id { return .pullRequest(active) }
+        return .tool(tool)
+    }
+
+    private func selectTab(_ tab: SessionTab) {
+        switch tab {
+        case .tool(let item): show(item)
+        case .pullRequest(let id): selectPullRequest(id)
+        }
+    }
+
+    /// The tabs of a tool: one, or for the Pull request tool one for each pull request (or list) open.
+    private func tabItems(_ item: SessionTool) -> [SidePanelTabItem<SessionTab>] {
+        guard item == .pullRequest, !pullRequestTabs.isEmpty else { return [tabItem(item)] }
+        return pullRequestTabs.map { tab in
+            let request = tab.request
+            let title = request.map { "#\($0.item.number) " + ($0.item.title.isEmpty ? $0.item.repo : $0.item.title) } ?? item.title
+            let fresh = item != tool && bridge.hasUnseen(directory, item.rawValue)
+            return SidePanelTabItem(value: .pullRequest(tab.id), title: title, icon: AnyView(SidePanelPullRequestIcon(item: request?.item)),
+                                    fresh: fresh, help: request.map { $0.item.repo + " #\($0.item.number)" } ?? item.help)
+        }
+    }
+
+    /// A tab with what it shows: the page's title in the browser, the name of a tool.
+    private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTab> {
         let fresh = item != tool && (item == .outputs ? outputsFresh : bridge.hasUnseen(directory, item.rawValue))
         switch item {
-        case .pullRequest:
-            let title = pullRequest.map { "#\($0.item.number) " + ($0.item.title.isEmpty ? $0.item.repo : $0.item.title) } ?? item.title
-            return SidePanelTabItem(value: item, title: title, icon: AnyView(SidePanelPullRequestIcon(item: pullRequest?.item)),
-                                    fresh: fresh, help: pullRequest.map { $0.item.repo + " #\($0.item.number)" } ?? item.help)
         case .browser:
-            return SidePanelTabItem(value: item, title: browserTitle.isEmpty ? item.title : browserTitle,
+            return SidePanelTabItem(value: .tool(item), title: browserTitle.isEmpty ? item.title : browserTitle,
                                     icon: AnyView(SidePanelSymbol(symbol: "globe")), fresh: fresh,
                                     help: browserTitle.isEmpty ? item.help : browserTitle)
+        case .pullRequest:
+            return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelPullRequestIcon(item: nil)),
+                                    fresh: fresh, help: item.help)
         default:
-            return SidePanelTabItem(value: item, title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
+            return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
                                     fresh: fresh, help: item.help)
         }
     }
