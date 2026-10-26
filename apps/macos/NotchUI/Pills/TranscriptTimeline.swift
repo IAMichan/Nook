@@ -70,6 +70,7 @@ struct TranscriptConversation: View {
         let lastPrompt = shown.last(where: { $0.kind == .user && !$0.queued })?.id
         let cards = Dictionary(turns.filter { !(working && $0.id == lastPrompt) }.compactMap { turn in turn.answerID.map { ($0, turn) } },
                                uniquingKeysWith: { first, _ in first })
+        let beforeNew = newSince.flatMap { id in rows.firstIndex { $0.id == id } }.flatMap { $0 > 0 ? rows[$0 - 1].id : nil }
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
                 // No scroll bar, not even when the system shows them always: the rail beside it marks your messages.
@@ -94,7 +95,8 @@ struct TranscriptConversation: View {
                                 }
                                 .id(row.id)
                             } else {
-                                self.row(row, answerable: answerable, cards: cards).id(row.id)
+                                // The "new since" line is a hairline of its own: a fold right above it gives up its own.
+                                self.row(row, answerable: answerable, cards: cards, ruled: row.id != beforeNew).id(row.id)
                             }
                         }
                         if let footer {
@@ -231,12 +233,13 @@ struct TranscriptConversation: View {
     // MARK: Rows
 
     @ViewBuilder
-    private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff]) -> some View {
+    private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff], ruled: Bool = true) -> some View {
         if case let (key, text, inner)? = Self.fold(row) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 TranscriptFoldLine(text: text,
                                    open: open.contains(key),
-                                   checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
+                                   checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check)),
+                                   ruled: ruled) { toggle(key) }
                 if open.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         ForEach(inner) { flatRow($0, answerable: nil, cards: cards).id($0.id) }
@@ -848,6 +851,8 @@ struct TranscriptFoldLine: View {
     let open: Bool
     /// What the turn's tests and builds came to, in sight while its work is folded.
     var checks: [VerificationCheck] = []
+    /// The hairline under the line; off when another rule follows right away.
+    var ruled = true
     let action: () -> Void
     @State private var hovering = false
 
@@ -865,7 +870,7 @@ struct TranscriptFoldLine: View {
             .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
             .padding(.top, NookTheme.Spacing.xxs)
             .padding(.bottom, NookTheme.Spacing.md)
-            .overlay(alignment: .bottom) { NookDivider() }
+            .overlay(alignment: .bottom) { if ruled { NookDivider() } }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
