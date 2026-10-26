@@ -198,7 +198,7 @@ extension AppModel {
                 case .user: return (kind: .user, text: message.text)
                 case .assistant: return (kind: .assistant, text: message.text)
                 case .thinking: return message.text.isEmpty ? nil : (kind: .thinking, text: message.text)
-                case .tools: return nil
+                case .tools, .notice: return nil
                 }
             }
         }

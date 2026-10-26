@@ -144,6 +144,18 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(PullRequestWatchList.including(["globex"], in: full), full)
     }
 
+    func testOwnRepositoriesAreAlwaysSearched() {
+        XCTAssertEqual(PullRequestWatchList.ownRepositories("Ada"), "user:Ada")
+        XCTAssertNil(PullRequestWatchList.ownRepositories(""))
+        XCTAssertNil(PullRequestWatchList.ownRepositories("bad name"))
+        XCTAssertEqual(PullRequestWatchList.search("user:Ada", closed: false), "is:pr is:open archived:false user:Ada sort:updated-desc")
+        XCTAssertEqual(PullRequestWatchList.including(["globex"], in: ["acme"], owner: "Ada"), ["acme", "globex", "user:Ada"])
+        let full = (0..<PullRequestWatchList.limit).map { "org\($0)" }
+        XCTAssertEqual(PullRequestWatchList.including([], in: full, owner: "Ada").last, "user:Ada",
+                       "a full watch list still finds pull requests on your own repositories")
+        XCTAssertEqual(PullRequestWatchList.including([], in: [], owner: ""), [])
+    }
+
     func testOrganizationQueries() throws {
         let queries = try PullRequestGraphQL.organizationBodies().map { body in
             try XCTUnwrap((JSONSerialization.jsonObject(with: body) as? [String: Any])?["query"] as? String)

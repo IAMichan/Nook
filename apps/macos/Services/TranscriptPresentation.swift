@@ -3,8 +3,10 @@ import Foundation
 // How an agent's own transcript reads in Nook, as a thread: your messages in a bubble on the right,
 // the agent's answers as plain text on the left, and the work in between as quiet one-line rows. Steps in a row become
 // one line that says what they did ("Ran 3 commands and read 2 files"); a finished turn folds everything before its
-// final answer into "Worked for 1m 3s"; the turn that still runs shows for how long it has been working and what it
-// does right now at its end. Everything in this file depends only on Foundation so tests can use it independently.
+// final answer into "Worked for 1m 3s", and the work after a message you sent while it ran into "Continued for 20s";
+// the turn that still runs shows for how long it has been working and, at its end, what it thinks and does right now.
+// A turn you stopped stays open, and a compaction, an error or a usage limit stays in sight when its turn folds.
+// Everything in this file depends only on Foundation so tests can use it independently.
 
 /// One row of a transcript as the conversation view shows it.
 enum TranscriptRow: Identifiable, Equatable {
@@ -17,25 +19,33 @@ enum TranscriptRow: Identifiable, Equatable {
     /// Two or more steps in a row, behind one sentence.
     /// `thoughts`: what the agent thought between the steps, by the id of the step each came right before.
     case group(id: String, steps: [AgentToolStep], thoughts: [String: [AgentChatMessage]])
-    /// The work of a finished turn before its answer, and the `seconds` it took (nil: the transcript has no times).
+    /// The work of a finished turn before its answer, and the `seconds` the whole turn took (nil: the transcript has no
+    /// times).
     case fold(id: String, seconds: Double?, rows: [TranscriptRow])
+    /// The work of a finished turn after a message you sent while it ran, and the `seconds` since that message:
+    /// "Continued for 20s".
+    case continued(id: String, seconds: Double?, rows: [TranscriptRow])
+    /// A compaction, an error or a usage limit: never folded away.
+    case notice(AgentChatMessage)
     /// At the top of the turn that runs: "Working for 12s" since `since`.
     case working(since: Date?)
-    /// At the end of the turn that runs: the step that runs now, or nil while the agent thinks.
-    case live(AgentToolStep?)
-    /// At the end of a turn you stopped: "Interrupted", after the message `id` it stopped at.
-    case interrupted(id: String)
+    /// At the end of the turn that runs: the step that runs now (nil while the agent thinks), and what the agent thought
+    /// right before it, which says why.
+    case live(AgentToolStep?, thought: AgentChatMessage?)
+    /// At the end of a turn you stopped: "You stopped after 12s", after the message `id` it stopped at.
+    case interrupted(id: String, seconds: Double?)
 
     var id: String {
         switch self {
-        case .user(let message), .thinking(let message): return message.id
+        case .user(let message), .thinking(let message), .notice(let message): return message.id
         case .assistant(let message, _): return message.id
         case .step(let step): return "step:" + step.id
         case .group(let id, _, _): return "group:" + id
         case .fold(let id, _, _): return "fold:" + id
+        case .continued(let id, _, _): return "continued:" + id
         case .working: return "working"
         case .live: return "live"
-        case .interrupted(let id): return "interrupted:" + id
+        case .interrupted(let id, _): return "interrupted:" + id
         }
     }
 }
@@ -103,11 +113,12 @@ enum TranscriptPresentation {
         return rows
     }
 
-    /// A turn starts at each message of yours; anything before the first one is a turn of its own.
+    /// A turn starts at each message of yours; anything before the first one is a turn of its own. A message you sent
+    /// while the agent worked steers the turn it ran in rather than starting one.
     static func split(_ messages: [AgentChatMessage]) -> [[AgentChatMessage]] {
         var turns: [[AgentChatMessage]] = []
         for message in messages {
-            if message.fromUser || turns.isEmpty { turns.append([message]) } else { turns[turns.count - 1].append(message) }
+            if message.fromUser && !message.queued || turns.isEmpty { turns.append([message]) } else { turns[turns.count - 1].append(message) }
         }
         return turns
     }
@@ -115,32 +126,55 @@ enum TranscriptPresentation {
     /// How long a turn took: from your message to the last thing that came in.
     static func seconds(_ turn: [AgentChatMessage]) -> Double? {
         guard let start = turn.first?.date else { return nil }
-        guard let end = turn.compactMap({ $0.updated ?? $0.date }).max(), end >= start else { return nil }
+        return seconds(from: start, turn)
+    }
+
+    /// From `start` to the last thing in `messages` that came in.
+    private static func seconds(from start: Date?, _ messages: [AgentChatMessage]) -> Double? {
+        guard let start, let end = messages.compactMap({ $0.updated ?? $0.date }).max(), end >= start else { return nil }
         return end.timeIntervalSince(start)
     }
 
     private static func present(_ turn: [AgentChatMessage], open: Bool) -> [TranscriptRow] {
         guard turn.first != nil else { return [] }
         if open { return presentOpen(turn) }
-        // A turn you stopped says so at its end, so it does not read as if the agent finished.
+        // A turn you stopped stays open, so it shows how far it got, and says at its end for how long it ran, so it does
+        // not read as if the agent finished.
         guard let stop = turn.last(where: \.interrupted) else { return presentClosed(turn) }
-        return presentClosed(turn) + [.interrupted(id: stop.id)]
+        let answer = turn.last { $0.kind == .assistant }?.id
+        return group(turn, finalID: answer) + [.interrupted(id: stop.id, seconds: turn.first?.fromUser == true ? seconds(turn) : nil)]
     }
 
+    /// A finished turn: your message, "Worked for …" over its work, and its final answer; the rest a click away. Each
+    /// message you sent while it ran stays in sight with "Continued for …" over the work that came after it. A
+    /// compaction, an error or a usage limit stays in sight too.
     private static func presentClosed(_ turn: [AgentChatMessage]) -> [TranscriptRow] {
         guard let first = turn.first else { return [] }
-        let answer = turn.lastIndex { $0.kind == .assistant }
-        // Fold a finished turn: your message, "Worked for …", and its final answer; the rest a click away.
-        guard first.fromUser, let answer else { return group(turn, finalID: answer.map { turn[$0].id }) }
-        let work = turn.indices.filter { $0 != 0 && $0 != answer }.map { turn[$0] }
-        guard let firstWork = work.first else { return [.user(first), .assistant(turn[answer], isFinal: true)] }
-        return [.user(first),
-                .fold(id: firstWork.id, seconds: seconds(turn), rows: group(work, finalID: nil)),
-                .assistant(turn[answer], isFinal: true)]
+        let answer = turn.last { $0.kind == .assistant }
+        guard first.fromUser, let answer else { return group(turn, finalID: answer?.id) }
+        // The work between your messages: the first part after your prompt, then one after each message you sent.
+        var segments: [(steer: AgentChatMessage?, messages: [AgentChatMessage])] = [(nil, [])]
+        for message in turn.dropFirst() {
+            if message.fromUser { segments.append((message, [])) } else { segments[segments.count - 1].messages.append(message) }
+        }
+        var rows: [TranscriptRow] = [.user(first)]
+        for (index, segment) in segments.enumerated() {
+            if let steer = segment.steer { rows.append(.user(steer)) }
+            let work = segment.messages.filter { $0.id != answer.id && !$0.isNotice }
+            if let firstWork = work.first {
+                let inner = group(work, finalID: nil)
+                rows.append(index == 0 ? .fold(id: firstWork.id, seconds: seconds(turn), rows: inner)
+                                       : .continued(id: firstWork.id, seconds: seconds(from: segment.steer?.date, segment.messages), rows: inner))
+            }
+            for message in segment.messages where message.id == answer.id || message.isNotice {
+                rows.append(message.isNotice ? .notice(message) : .assistant(message, isFinal: true))
+            }
+        }
+        return rows
     }
 
     /// The turn that runs: how long it has been going right under your message, the work so far, and at the end the step
-    /// that runs now (taken out of its group) or that the agent is thinking.
+    /// that runs now (taken out of its group) with what the agent thought right before it, or what it thinks now.
     private static func presentOpen(_ turn: [AgentChatMessage]) -> [TranscriptRow] {
         var rows: [TranscriptRow] = []
         var work = turn
@@ -155,14 +189,20 @@ enum TranscriptPresentation {
             last.steps.removeLast()
             if last.steps.isEmpty { work.removeLast() } else { work[work.count - 1] = last }
         }
+        // The thought the work ends with goes with the live line: why the agent runs this step, or what it thinks now.
+        var thought: AgentChatMessage?
+        if let last = work.last, last.isThinking, !last.text.isEmpty {
+            thought = last
+            work.removeLast()
+        }
         rows += group(work, finalID: nil)
-        rows.append(.live(current))
+        rows.append(.live(current, thought: thought))
         return rows
     }
 
     /// Steps in a row become one row, also across the agent's thinking between them: a thought that is followed by more
     /// steps is part of that work, not a line of its own, so a busy turn reads as one list instead of a zigzag. A thought
-    /// that opens the work or ends it stands on its own, as do answers.
+    /// that opens the work or ends it stands on its own, as do answers and notices.
     static func group(_ messages: [AgentChatMessage], finalID: String?) -> [TranscriptRow] {
         var rows: [TranscriptRow] = []
         var steps: [AgentToolStep] = []
@@ -192,6 +232,9 @@ enum TranscriptPresentation {
             case .assistant:
                 flush()
                 rows.append(.assistant(message, isFinal: message.id == finalID))
+            case .notice:
+                flush()
+                rows.append(.notice(message))
             case .thinking:
                 if steps.isEmpty { rows.append(.thinking(message)) } else { pending.append(message) }
             }
@@ -215,6 +258,9 @@ enum TranscriptPresentation {
             guard let step = last.steps.last else { return .reviewing }
             if step.state == .running { return AgentActivity.of(step) }
             return step.state == .failed ? .recovering : .reviewing
+        case .notice:
+            if case .compacted = last.notice { return .reviewing }
+            return .recovering
         }
     }
 
@@ -224,8 +270,8 @@ enum TranscriptPresentation {
             switch row {
             case .step(let step): return [step]
             case .group(_, let steps, _): return steps
-            case .fold(_, _, let inner): return self.steps(inner)
-            case .live(let step): return step.map { [$0] } ?? []
+            case .fold(_, _, let inner), .continued(_, _, let inner): return self.steps(inner)
+            case .live(let step, _): return step.map { [$0] } ?? []
             default: return []
             }
         }
@@ -243,6 +289,14 @@ enum TranscriptPresentation {
             }
         }
         return nil
+    }
+
+    /// The whole command line of a step, for when its line does not show it all: the line shows a description instead,
+    /// or only the start of a long or multi-line command. Nil when the line says it all (or the step ran no command).
+    static func fullCommand(_ step: AgentToolStep) -> String? {
+        guard let command = step.command?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty,
+              command != step.summary || command.count > 60 || command.contains("\n") else { return nil }
+        return command
     }
 
     /// A thought on one line: its first bold heading or its first sentence, as reasoning shows in the work log.

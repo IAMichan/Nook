@@ -32,6 +32,20 @@ struct AgentToolStep: Identifiable, Equatable {
     var error: String? = nil
     /// What an edit changed, as a unified diff made from the tool's input (see EditPatch), for the turn's diff.
     var patch: String? = nil
+    /// What a command, search or other tool gave back, shortened: what the step shows when you open it. Nil for a step
+    /// that read or changed a file (the file itself is a click away) and for one without a result yet.
+    var output: String? = nil
+}
+
+/// Something that happened to the conversation rather than in it: the context was compacted, or the agent's run hit an
+/// error or a usage limit. It stays in sight between the agent's work, also when a finished turn folds.
+enum AgentNotice: Equatable {
+    /// `tokens`: how many the context held before, when the agent says.
+    case compacted(tokens: Int?)
+    /// An error the agent's run reported (an API error), in its own words.
+    case error(String)
+    /// A usage limit stopped the agent; `resets`: when it can go on, when the agent says.
+    case limit(String, resets: Date?)
 }
 
 /// A single message from an active session's conversation.
@@ -43,6 +57,8 @@ struct AgentChatMessage: Identifiable, Equatable {
         case thinking
         /// Steps in a row, between the messages.
         case tools
+        /// A compaction, an error or a usage limit (see `notice`).
+        case notice
     }
 
     let id: String
@@ -56,10 +72,13 @@ struct AgentChatMessage: Identifiable, Equatable {
     var interrupted = false
     /// Your message, sent while the agent was still working on the one before (it steered the turn).
     var queued = false
+    /// What a `.notice` message stands for.
+    var notice: AgentNotice? = nil
 
     var fromUser: Bool { kind == .user }
     var isThinking: Bool { kind == .thinking }
     var isTools: Bool { kind == .tools }
+    var isNotice: Bool { kind == .notice }
 
     init(id: String, fromUser: Bool, text: String) {
         self.id = id
@@ -74,6 +93,13 @@ struct AgentChatMessage: Identifiable, Equatable {
         self.steps = steps
         self.date = date
         self.updated = date
+    }
+
+    init(id: String, notice: AgentNotice, date: Date? = nil) {
+        self.init(id: id, kind: .notice, text: "", date: date)
+        self.notice = notice
+        if case .error(let text) = notice { self.text = text }
+        if case .limit(let text, _) = notice { self.text = text }
     }
 
     /// A later part of the same message came in at `date`.
@@ -219,7 +245,8 @@ enum AgentTranscript {
                     for block in (message["content"] as? [[String: Any]]) ?? [] where block["type"] as? String == "tool_result" {
                         guard let callID = block["tool_use_id"] as? String else { continue }
                         let failed = (block["is_error"] as? Bool) == true
-                        finish(step: callID, failed: failed, error: failed ? errorLine(Self.text(block["content"])) : nil,
+                        let result = Self.text(block["content"])
+                        finish(step: callID, failed: failed, error: failed ? errorLine(result) : nil, output: result,
                                at: when, in: &messages)
                     }
                     let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -229,6 +256,11 @@ enum AgentTranscript {
                     }
                     guard !text.isEmpty, isTypedPrompt(text) else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
+                } else if (object["isApiErrorMessage"] as? Bool) == true {
+                    // An API error Claude Code wrote in the place of an answer: an error, not something the agent said.
+                    let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
+                    messages.append(AgentChatMessage(id: id, notice: notice(error: text), date: when))
                 } else {
                     // One line can hold several blocks; keep their order (thinking, text, steps).
                     for (offset, block) in ((message["content"] as? [[String: Any]]) ?? []).enumerated() {
@@ -256,6 +288,12 @@ enum AgentTranscript {
                     }
                     if let content = message["content"] as? String { append(reply: content, id: id, at: when, to: &messages) }
                 }
+            }
+            // Claude Code: the context was compacted, by hand (/compact) or because it was full.
+            else if type == "system" {
+                guard object["subtype"] as? String == "compact_boundary", (object["isSidechain"] as? Bool) != true else { continue }
+                let tokens = ((object["compactMetadata"] as? [String: Any])?["preTokens"] as? NSNumber)?.intValue
+                append(compaction: tokens, id: id, at: when, to: &messages)
             }
             // Claude Code: a message you sent while the agent was working (in the CLI, the desktop app or Nook). It is
             // written as a queued command, never as a user line; task notifications and messages from other agents
@@ -290,9 +328,19 @@ enum AgentTranscript {
                     append(thinking: (payload["text"] as? String) ?? "", id: id, at: when, to: &messages)
                 case "turn_aborted":
                     if !messages.isEmpty { messages[messages.count - 1].interrupted = true }
+                case "context_compacted":
+                    append(compaction: nil, id: id, at: when, to: &messages)
+                case "error":
+                    let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
+                    messages.append(AgentChatMessage(id: id, notice: notice(error: text), date: when))
                 default:
                     continue
                 }
+            }
+            // Codex: the context was compacted (older versions only write this line, newer ones an event as well).
+            else if type == "compacted" {
+                append(compaction: nil, id: id, at: when, to: &messages)
             }
             // Codex (response_item): the commands and tools it runs.
             else if type == "response_item", let payload = object["payload"] as? [String: Any],
@@ -327,7 +375,7 @@ enum AgentTranscript {
                     finish(step: callID, failed: false, at: when, in: &messages)
                 case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
                     let code = codexExitCode(payload["output"])
-                    finish(step: callID, failed: (code ?? 0) != 0, at: when, in: &messages)
+                    finish(step: callID, failed: (code ?? 0) != 0, output: codexOutput(payload["output"]), at: when, in: &messages)
                 default:
                     continue
                 }
@@ -403,15 +451,60 @@ enum AgentTranscript {
     }
 
     /// Marks the step with this call id done or failed. Results follow their call closely, so only recent lists are searched.
-    private static func finish(step callID: String, failed: Bool, error: String? = nil, at date: Date?,
+    /// `output`: what the tool gave back, kept (shortened) for a step that does not stand for a file.
+    private static func finish(step callID: String, failed: Bool, error: String? = nil, output: String? = nil, at date: Date?,
                                in messages: inout [AgentChatMessage]) {
         for index in messages.indices.reversed().prefix(12) where messages[index].isTools {
             guard let position = messages[index].steps.lastIndex(where: { $0.id == callID }) else { continue }
             messages[index].steps[position].state = failed ? .failed : .done
             messages[index].steps[position].error = error
+            let category = ToolCategory.of(tool: messages[index].steps[position].name)
+            if category != .read && category != .edit { messages[index].steps[position].output = output.flatMap(Self.output) }
             messages[index].touch(date)
             return
         }
+    }
+
+    /// A compaction right after another (Codex writes both a line and an event for one) is the same one.
+    private static func append(compaction tokens: Int?, id: String, at date: Date?, to messages: inout [AgentChatMessage]) {
+        if let last = messages.last, case .compacted(let earlier) = last.notice {
+            if earlier == nil, let tokens { messages[messages.count - 1].notice = .compacted(tokens: tokens) }
+            return
+        }
+        messages.append(AgentChatMessage(id: id, notice: .compacted(tokens: tokens), date: date))
+    }
+
+    /// An error the agent reported, or the usage limit it ran into: "Claude AI usage limit reached|1760040000" (with when
+    /// it resets), "5-hour limit reached ∙ resets 3pm", "You've hit your usage limit".
+    static func notice(error text: String) -> AgentNotice {
+        let lower = text.lowercased()
+        guard lower.contains("limit reached") || lower.contains("hit your") && lower.contains("limit")
+                || lower.contains("usage limit") || lower.contains("rate limit") else { return .error(errorLine(text) ?? text) }
+        if let bar = text.lastIndex(of: "|"), let seconds = TimeInterval(text[text.index(after: bar)...].trimmingCharacters(in: .whitespaces)) {
+            return .limit(String(text[..<bar]).trimmingCharacters(in: .whitespaces), resets: Date(timeIntervalSince1970: seconds))
+        }
+        return .limit(errorLine(text) ?? text, resets: nil)
+    }
+
+    /// What a Codex tool gave back: the `output` of the JSON it wraps it in, or what follows the "Output:" line of the
+    /// header newer versions start with.
+    static func codexOutput(_ value: Any?) -> String? {
+        guard let text = value as? String else { return nil }
+        if let data = text.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            return object["output"] as? String
+        }
+        if text.hasPrefix("Exit code:"), let range = text.range(of: "Output:\n") { return String(text[range.upperBound...]) }
+        return text
+    }
+
+    /// The most a step keeps of what its tool gave back: the start, where a command says what it does, and a note when
+    /// there was more. Nil when it gave back nothing.
+    private static let maxOutput = 3_000
+    static func output(_ raw: String) -> String? {
+        let text = raw.replacingOccurrences(of: "<tool_use_error>", with: "").replacingOccurrences(of: "</tool_use_error>", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return text.count > maxOutput ? String(text.prefix(maxOutput - 1)) + "…" : text
     }
 
     /// "2026-10-19T14:03:11.482Z", with or without the fraction, as the agents write it.

@@ -529,6 +529,36 @@ enum WAJID {
     }
 }
 
+/// A chat's unread messages as Nook counted them when it last ran. The inbox lives in memory and the history loaded at
+/// the next launch counts nothing as new, and GOWA keeps no unread count of its own: without this, every chat came back
+/// read after a restart.
+struct WAUnreadCarry: Codable, Equatable, Sendable {
+    var count: Int
+    /// The newest message counted: reading the chat (in Nook, in WhatsApp) or answering in it after this ends the carry.
+    var last: Date
+
+    /// Still unread: nothing read the chat or answered in it since its newest counted message.
+    func holds(readSince: Date?) -> Bool {
+        count > 0 && (readSince.map { $0 < last } ?? true)
+    }
+
+    /// What the next launch starts from, by chat: the carries that still hold plus what came in since. `readSince` says
+    /// when a chat was last read or answered in; carries older than `ChatReadMarks.maxAge` are forgotten.
+    static func kept(carried: [String: WAUnreadCarry], inbox: WAInbox, readSince: (String) -> Date?,
+                     now: Date = Date()) -> [String: WAUnreadCarry] {
+        var kept = carried.filter { key, carry in
+            carry.holds(readSince: readSince(key)) && now.timeIntervalSince(carry.last) < ChatReadMarks.maxAge
+        }
+        for conversation in inbox.conversations.values where conversation.unread > 0 {
+            let newest = conversation.messages.last { !$0.fromMe }?.date ?? conversation.lastActivity
+            let earlier = kept[conversation.id]
+            kept[conversation.id] = WAUnreadCarry(count: conversation.unread + (earlier?.count ?? 0),
+                                                  last: max(newest, earlier?.last ?? .distantPast))
+        }
+        return kept
+    }
+}
+
 /// The conversations, grouped by chat: one entry per conversation, never one per message.
 struct WAInbox: Equatable, Sendable {
     /// Messages kept per chat (in memory only): enough for the notch card to scroll back a while.
