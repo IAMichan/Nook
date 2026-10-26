@@ -11,6 +11,7 @@
   import Agents from "./Agents.svelte";
   import Workspace from "./Workspace.svelte";
   import Music from "./services/Music.svelte";
+  import Commands from "./Commands.svelte";
   import { services, serviceEvents, type NowPlaying } from "../lib/services";
   import { listening } from "../lib/listening.svelte";
   import { attachments } from "../lib/attachments.svelte";
@@ -27,7 +28,7 @@
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
 
-  type Tab = "nook" | "agents" | "workspace" | "music";
+  type Tab = "nook" | "agents" | "workspace" | "music" | "commands";
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
@@ -382,6 +383,7 @@
           {#if nook.info?.capabilities.terminals}
             <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
           {/if}
+          <button class:on={shown === "commands"} onclick={() => select("commands")}>{tr("Commando's", "Commands")}</button>
           {#if playing}
             <button class:on={shown === "music"} onclick={() => select("music")}>{tr("Muziek", "Music")} {#if playing.playing}<span class="dot unread"></span>{/if}</button>
           {/if}
@@ -407,6 +409,8 @@
           </div>
         {:else if shown === "agents"}
           <Agents compact />
+        {:else if shown === "commands"}
+          <Commands onuse={(text) => { barDraft.text = text; select("nook"); pinnedOpen = true; }} />
         {:else if shown === "music" && playing}
           <Music info={playing} {since} />
         {:else}
