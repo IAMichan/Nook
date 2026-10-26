@@ -84,7 +84,9 @@ final class MessagesBridge: ChatHistoryBridge {
 
     func canLoadOlder(name: String) -> Bool { isReady && !chatIDs(name).isEmpty }
 
-    func canSend(name: String) -> Bool { isReady && !chatGUIDs(name).isEmpty }
+    /// Every chat of Messages in the inbox: the chat's own id in Messages is looked up when you send, if Nook did not
+    /// read it since it started (`resolve`).
+    func canSend(name: String) -> Bool { isReady }
 
     /// Messages' own ids of the chats of `name`, the one with the newest message first.
     private func chatGUIDs(_ name: String) -> [String] {
@@ -388,8 +390,9 @@ final class MessagesBridge: ChatHistoryBridge {
     /// Runs the script that sends `items` (`AppData.MessagesSend`), away from the main thread: the first time macOS asks
     /// whether Nook may control Messages, and Messages may need a moment to start.
     private func deliver(_ items: [AppData.MessagesSend.Item], to name: String) async throws {
-        let chats = chatGUIDs(name)
-        guard !chats.isEmpty else { throw NookError(tr("chat.compose.unsupported")) }
+        var chats = chatGUIDs(name)
+        if chats.isEmpty { chats = try await resolve(name) }
+        guard !chats.isEmpty else { throw NookError(tr("chat.messages.notFound", name)) }
         let script = AppData.MessagesSend.script(items, chats: chats)
         let result = await Task.detached(priority: .userInitiated) { SystemControl.appleScriptResult(script, timeout: 30) }.value
         guard result.text != AppData.MessagesSend.done else { return }
@@ -398,6 +401,57 @@ final class MessagesBridge: ChatHistoryBridge {
         if result.errorNumber == -1743 { throw NookError(tr("chat.messages.automation"), kind: .config) }
         let reason = result.errorNumber == -1728 ? nil : result.errorMessage
         throw NookError([tr("chat.compose.notSent"), reason].compactMap { $0 }.joined(separator: " "))
+    }
+
+    /// Messages' own ids of the chat Nook shows as `name`, looked up in the database when Nook did not read it since it
+    /// started (an older chat, or one collected from notifications): by the messages Nook keeps of it, else as a group
+    /// with that name, else as the person of that name in Contacts (or that number or address itself). The newest
+    /// first; what is found is kept, so the chat's next read and send know it.
+    private func resolve(_ name: String) async throws -> [String] {
+        var found: [(chat: String, guid: String)] = []
+        let rows = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages
+            .compactMap { $0.id.hasPrefix("imessage-") ? Int64($0.id.dropFirst("imessage-".count)) : nil } ?? []
+        if !rows.isEmpty {
+            for row in try await query("""
+            SELECT DISTINCT c.ROWID AS chat, c.guid AS guid FROM chat_message_join cmj JOIN chat c ON c.ROWID = cmj.chat_id
+            WHERE cmj.message_id IN (\(rows.suffix(50).map(String.init).joined(separator: ",")))
+            """) {
+                found.append((AppData.string(row["chat"]), AppData.string(row["guid"])))
+            }
+        }
+        if found.isEmpty {
+            for row in try await query("SELECT ROWID AS chat, guid FROM chat WHERE display_name = \(AppData.literal(name))") {
+                found.append((AppData.string(row["chat"]), AppData.string(row["guid"])))
+            }
+        }
+        if found.isEmpty {
+            let fold = { (text: String) in text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+            var keys = Set((await ContactDirectory.entries()).filter { fold($0.name) == fold(name) }.flatMap(\.handles).map(AppData.key))
+            keys.insert(AppData.key(name))
+            keys.remove("")
+            // Chats with one person (style 45): the person's handle as Messages keeps it ("+316…", an address).
+            for row in try await query("""
+            SELECT c.ROWID AS chat, c.guid AS guid, h.id AS handle FROM chat c
+            JOIN chat_handle_join chj ON chj.chat_id = c.ROWID JOIN handle h ON h.ROWID = chj.handle_id WHERE c.style = 45
+            """) where keys.contains(AppData.key(AppData.string(row["handle"]))) {
+                found.append((AppData.string(row["chat"]), AppData.string(row["guid"])))
+            }
+        }
+        found.removeAll { $0.chat.isEmpty || $0.guid.isEmpty }
+        guard !found.isEmpty else { return [] }
+        // The chat with the newest message first, as `chatGUIDs` orders them.
+        let last = try await query("""
+        SELECT cmj.chat_id AS chat, MAX(m.date) AS last FROM chat_message_join cmj JOIN message m ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id IN (\(Set(found.map(\.chat)).sorted().joined(separator: ","))) GROUP BY cmj.chat_id
+        """)
+        for row in last {
+            active[AppData.string(row["chat"])] = AppData.appleDate(AppData.number(row["last"]) ?? 0)
+        }
+        for chat in found {
+            guids[chat.chat] = chat.guid
+            if names[chat.chat] == nil { names[chat.chat] = name }
+        }
+        return chatGUIDs(name)
     }
 
     /// Where Messages may read a file to send from. Messages sends only files it may read itself: one in Nook's
