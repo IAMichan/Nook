@@ -227,19 +227,19 @@ def groove(pads, bass, sparkle, drums, prog, bpm, duration, rng, drums_from, dru
             f = hz(tones[arp[step]] + 12)
             tp = np.arange(int(0.9 * SR)) / SR
             pl = (np.sin(2 * np.pi * f * tp) + 0.45 * np.sin(4 * np.pi * f * tp) * np.exp(-tp / 0.07)
-                  + 0.2 * np.sin(6 * np.pi * f * tp) * np.exp(-tp / 0.04)) * np.exp(-tp / 0.3) * np.minimum(1, tp / 0.004)
+                  + 0.2 * np.sin(6 * np.pi * f * tp) * np.exp(-tp / 0.04)) * np.exp(-tp / 0.45) * np.minimum(1, tp / 0.006)
             accent = 1.0 if step % 4 == 0 else 0.75
-            add(sparkle, pl, at, pan=0.35 if step % 2 else -0.35, gain=0.05 * accent)
+            add(sparkle, pl, at, pan=0.35 if step % 2 else -0.35, gain=0.04 * accent)
         if not (drums_from - 1e-3 <= b * bar < drums_until - 1e-3):
             continue
-        for k_at in (0, 2) + ((2.5,) if b % 2 else ()):
+        for k_at in (0, 2):
             at = b * bar + k_at * beat
-            add(drums, kick, at, gain=0.34 if k_at != 2.5 else 0.2)
+            add(drums, kick, at, gain=0.3)
             i = int(at * SR)
             d = np.arange(pads.shape[1] - i) / SR
             duck[i:] *= 1 - 0.28 * np.exp(-d / 0.16)[: pads.shape[1] - i]
         for s_at in (1, 3):
-            add(sparkle, snap, b * bar + s_at * beat, pan=0.1, gain=0.055)
+            add(sparkle, snap, b * bar + s_at * beat, pan=0.1, gain=0.045)
         for h in range(8):
             if h % 2:
                 add(drums, hat, b * bar + h * beat / 2 + swing, pan=0.25, gain=0.012)
@@ -264,7 +264,7 @@ def main():
     ap.add_argument("--chord", type=float, default=6.0, help="seconds per chord (slower is calmer)")
     ap.add_argument("--seed", type=int, default=7, help="same seed, same music")
     ap.add_argument("--no-bells", action="store_true", help="pads only")
-    ap.add_argument("--bpm", type=float, help="adds a soft lo-fi groove at this tempo (80-90 feels relaxed)")
+    ap.add_argument("--bpm", type=float, help="adds a soft lo-fi groove at this tempo (70-76 feels relaxed)")
     ap.add_argument("--drums-from", type=float, help="seconds where the drums come in (the 'drop'); default: start")
     ap.add_argument("--drums-until", type=float, help="seconds where the drums stop; default: the end")
     ap.add_argument("--out", required=True)
