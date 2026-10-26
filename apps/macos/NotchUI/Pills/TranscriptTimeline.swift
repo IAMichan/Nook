@@ -317,13 +317,17 @@ struct TranscriptConversation: View {
         let key = "step:" + step.id
         let tasks = step.tasks.flatMap { $0.isEmpty ? nil : $0 }
         let file = tasks == nil ? directory.flatMap { folder in step.file.map { SessionOutputs.resolve($0, in: folder) } } : nil
-        let output = tasks == nil && file == nil ? TranscriptPresentation.detail(step) : nil
+        // A command or another tool opens to its whole command line and what it gave back, as a tool call in a session
+        // Nook runs does.
+        let command = tasks == nil && file == nil ? TranscriptPresentation.fullCommand(step) : nil
+        let output = tasks == nil && file == nil ? step.output : nil
+        let opens = tasks != nil || command != nil || output != nil
         let text = TranscriptStepText.parts(step)
         let error = step.state == .failed ? step.error : nil
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
-                               open: tasks == nil && output == nil ? nil : open.contains(key), reveals: file.map { $0 == preview }) {
+                               open: opens ? open.contains(key) : nil, reveals: file.map { $0 == preview }, quietChevron: true) {
                 if let file { show(file) } else { toggle(key) }
             }
             .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
@@ -340,8 +344,13 @@ struct TranscriptConversation: View {
                     .padding(.bottom, NookTheme.Spacing.xxs)
                     .help(error)
             }
-            if let output, open.contains(key) {
-                TranscriptStepOutput(text: output)
+            if command != nil || output != nil, open.contains(key) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    if let command { CodeBlock(title: tr("ws.tool.input"), text: command) }
+                    if let output { CodeBlock(title: tr("ws.tool.output"), text: output, failed: step.state == .failed) }
+                }
+                .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
+                .padding(.bottom, NookTheme.Spacing.xs)
             }
             if let tasks, open.contains(key) {
                 TaskListRows(steps: tasks)
@@ -643,6 +652,9 @@ struct TranscriptWorkLine: View {
     var open: Bool? = nil
     /// Nil: the line has no file to show; true while its file is open in the side panel.
     var reveals: Bool? = nil
+    /// The chevron shows under the pointer only (and while open), as a tool call's does: a single step keeps its line
+    /// bare at rest.
+    var quietChevron = false
     var action: (() -> Void)? = nil
     @State private var hovering = false
 
@@ -677,6 +689,7 @@ struct TranscriptWorkLine: View {
                     .font(NookTheme.font(9, .bold))
                     .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                    .opacity(!quietChevron || open || hovering ? 1 : 0)
             }
             if failed {
                 Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral.opacity(0.6))
@@ -706,88 +719,37 @@ struct TranscriptWorkLine: View {
     }
 }
 
-/// What a step gave back, opened under its line: monospaced, selectable, and scrolling when it is long.
-struct TranscriptStepOutput: View {
-    let text: String
-
-    var body: some View {
-        ScrollView {
-            Text(text)
-                .font(NookTheme.mono(11.5))
-                .foregroundStyle(NookTheme.textSecondary)
-                .lineSpacing(2)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(NookTheme.Spacing.md)
-        }
-        .scrollIndicators(.never)
-        .frame(maxHeight: 256)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
-        .padding(.leading, 26)
-        .padding(.bottom, NookTheme.Spacing.xs)
-    }
-}
-
-/// Something that happened to the conversation, in sight also when its turn folds: a compaction as a quiet line across
-/// the conversation ("Context compacted from 167k tokens"), an error in coral and a usage limit in amber, in the agent's
-/// own words.
+/// Something that happened to the conversation, in sight also when its turn folds. A compaction is a quiet word across
+/// the column with room around it, as a new day is in a chat ("Context compacted from 167k tokens"); an error or a usage
+/// limit is the timeline's problem card, as in a session Nook runs.
 struct TranscriptNotice: View {
     let message: AgentChatMessage
 
     var body: some View {
         switch message.notice {
         case .compacted(let tokens):
-            HStack(spacing: NookTheme.Spacing.md) {
-                NookDivider()
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    Text(tokens.map { tr("agents.notice.compactedFrom", TokenTally.format($0)) } ?? tr("agents.notice.compacted"))
-                        .lineLimit(1)
-                }
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .layoutPriority(1)
-                NookDivider()
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                Text(tokens.map { tr("agents.notice.compactedFrom", TokenTally.format($0)) } ?? tr("agents.notice.compacted"))
+                    .lineLimit(1)
             }
-            .padding(.vertical, NookTheme.Spacing.xs)
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .accessibilityElement(children: .combine)
         case .limit(let text, let resets):
-            line(symbol: "hourglass", color: NookTheme.amber,
-                 title: resets.map { tr("agents.notice.limitUntil", $0.formatted(date: .omitted, time: .shortened)) }
-                     ?? tr("agents.notice.limit"),
-                 detail: resets == nil && !text.isEmpty ? text : nil)
+            TimelineProblemCard(symbol: "hourglass", tint: NookTheme.amber,
+                                text: resets.map { tr("agents.notice.limitUntil", $0.formatted(date: .omitted, time: .shortened)) }
+                                    ?? tr("agents.notice.limit"),
+                                detail: resets == nil ? text : nil)
+                .padding(.vertical, NookTheme.Spacing.xs)
         case .error(let text):
-            line(symbol: "exclamationmark.triangle", color: NookTheme.coral, title: text, detail: nil)
+            TimelineProblemCard(text: text)
+                .padding(.vertical, NookTheme.Spacing.xs)
         case nil:
             EmptyView()
         }
-    }
-
-    private func line(symbol: String, color: Color, title: String, detail: String?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            Image(systemName: symbol)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(color)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(title)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(color)
-                    .lineLimit(4)
-                if let detail {
-                    Text(detail)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(3)
-                }
-            }
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .frame(minHeight: 24)
-        .padding(.vertical, NookTheme.Spacing.xxs)
     }
 }
 

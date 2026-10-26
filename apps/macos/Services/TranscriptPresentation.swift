@@ -291,16 +291,12 @@ enum TranscriptPresentation {
         return nil
     }
 
-    /// What a step shows when you open it: the whole command line (when its line shows a description, or only part of
-    /// it) and what the tool gave back. Nil when there is nothing more to see than its line.
-    static func detail(_ step: AgentToolStep) -> String? {
-        var blocks: [String] = []
-        if let command = step.command?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty,
-           command != step.summary || command.count > 60 || command.contains("\n") {
-            blocks.append("$ " + command)
-        }
-        if let output = step.output, !output.isEmpty { blocks.append(output) }
-        return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
+    /// The whole command line of a step, for when its line does not show it all: the line shows a description instead,
+    /// or only the start of a long or multi-line command. Nil when the line says it all (or the step ran no command).
+    static func fullCommand(_ step: AgentToolStep) -> String? {
+        guard let command = step.command?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty,
+              command != step.summary || command.count > 60 || command.contains("\n") else { return nil }
+        return command
     }
 
     /// A thought on one line: its first bold heading or its first sentence, as reasoning shows in the work log.

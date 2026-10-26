@@ -295,10 +295,10 @@ final class TranscriptPresentationTests: XCTestCase {
         ]
         let steps = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8)).flatMap(\.steps)
         XCTAssertEqual(steps.map(\.output), ["Executed 3 tests, with 0 failures", nil], "a file it read is a click away instead")
-        XCTAssertEqual(TranscriptPresentation.detail(steps[0]), "$ swift test --filter Foo\n\nExecuted 3 tests, with 0 failures",
-                       "a step that shows a description opens to its command line and output")
-        XCTAssertNil(TranscriptPresentation.detail(AgentToolStep(id: "x", name: "Bash", summary: "ls", command: "ls")),
-                     "nothing more to see than its line")
+        XCTAssertEqual(TranscriptPresentation.fullCommand(steps[0]), "swift test --filter Foo",
+                       "a step whose line shows a description opens to its command line")
+        XCTAssertNil(TranscriptPresentation.fullCommand(AgentToolStep(id: "x", name: "Bash", summary: "ls", command: "ls")),
+                     "its line already shows the whole command")
         XCTAssertEqual(AgentTranscript.codexOutput(#"{"output":"ok\n","metadata":{"exit_code":0}}"#), "ok\n")
         XCTAssertEqual(AgentTranscript.codexOutput("Exit code: 0\nWall time: 0.1 seconds\nOutput:\nhello"), "hello")
     }
