@@ -167,7 +167,7 @@ pub fn decode_entities(text: &str) -> String {
         result = result.replace(entity, value);
     }
     rx!(r"&#(\d{2,6});")
-        .replace_all(&result, |c: &fancy_regex::Captures| {
+        .replace_all(&result, |c: &fancy_regex::Captures<str>| {
             c[1].parse::<u32>().ok().and_then(char::from_u32).map(String::from).unwrap_or_default()
         })
         .to_string()

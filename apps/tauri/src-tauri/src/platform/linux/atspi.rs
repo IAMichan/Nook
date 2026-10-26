@@ -4,8 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use zbus::blocking::Connection;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::{block_on, Connection, OwnedObjectPath, OwnedVariant};
 
 const REGISTRY: &str = "org.a11y.atspi.Registry";
 const ROOT: &str = "/org/a11y/atspi/accessible/root";
@@ -57,38 +56,43 @@ impl Frame {
 impl Atspi {
     /// Verbindt met de toegankelijkheidsbus (en zet toegankelijkheid aan voor apps die daarna starten).
     pub fn connect() -> Result<Self, String> {
-        let session = Connection::session().map_err(|e| format!("Geen sessiebus: {e}"))?;
-        let _ = session.call_method(
-            Some("org.a11y.Bus"),
-            "/org/a11y/bus",
-            Some("org.freedesktop.DBus.Properties"),
-            "Set",
-            &("org.a11y.Status", "IsEnabled", zbus::zvariant::Value::from(true)),
-        );
-        let reply = session
-            .call_method(Some("org.a11y.Bus"), "/org/a11y/bus", Some("org.a11y.Bus"), "GetAddress", &())
-            .map_err(|e| format!("De toegankelijkheidsbus (at-spi) draait niet: {e}"))?;
-        let address: String = reply.body().deserialize().map_err(|e| e.to_string())?;
-        let bus = zbus::blocking::connection::Builder::address(address.as_str())
-            .map_err(|e| e.to_string())?
-            .method_timeout(Duration::from_millis(1500))
-            .build()
-            .map_err(|e| format!("Kon niet met at-spi verbinden: {e}"))?;
-        Ok(Self { bus })
+        block_on(async {
+            let session = Connection::session().await.map_err(|e| format!("Geen sessiebus: {e}"))?;
+            let _ = session
+                .call_method(
+                    Some("org.a11y.Bus"),
+                    "/org/a11y/bus",
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Set",
+                    &("org.a11y.Status", "IsEnabled", zbus::Variant::from(true)),
+                )
+                .await;
+            let reply = session
+                .call_method(Some("org.a11y.Bus"), "/org/a11y/bus", Some("org.a11y.Bus"), "GetAddress", &())
+                .await
+                .map_err(|e| format!("De toegankelijkheidsbus (at-spi) draait niet: {e}"))?;
+            let address: String = reply.body().deserialize().map_err(|e| e.to_string())?;
+            let bus = zbus::connection::Builder::address(address.as_str())
+                .method_timeout(Duration::from_millis(1500))
+                .build()
+                .await
+                .map_err(|e| format!("Kon niet met at-spi verbinden: {e}"))?;
+            Ok(Self { bus })
+        })
     }
 
-    fn call<B: serde::Serialize + zbus::zvariant::DynamicType, R: for<'d> serde::Deserialize<'d> + zbus::zvariant::Type>(
+    fn call<B: serde::Serialize + zbus::DynamicType, R: for<'d> serde::Deserialize<'d> + zbus::Type>(
         &self,
         node: &Node,
         iface: &str,
         method: &str,
         body: &B,
     ) -> Option<R> {
-        let reply = self.bus.call_method(Some(node.0.as_str()), node.1.as_str(), Some(iface), method, body).ok()?;
+        let reply = block_on(self.bus.call_method(Some(node.0.as_str()), node.1.as_str(), Some(iface), method, body)).ok()?;
         reply.body().deserialize().ok()
     }
 
-    fn property(&self, node: &Node, iface: &str, name: &str) -> Option<OwnedValue> {
+    fn property(&self, node: &Node, iface: &str, name: &str) -> Option<OwnedVariant> {
         self.call(node, "org.freedesktop.DBus.Properties", "Get", &(iface, name))
     }
 
@@ -113,17 +117,16 @@ impl Atspi {
     }
 
     fn pid(&self, bus_name: &str) -> u32 {
-        self.bus
-            .call_method(
-                Some("org.freedesktop.DBus"),
-                "/org/freedesktop/DBus",
-                Some("org.freedesktop.DBus"),
-                "GetConnectionUnixProcessID",
-                &(bus_name,),
-            )
-            .ok()
-            .and_then(|r| r.body().deserialize::<u32>().ok())
-            .unwrap_or(0)
+        block_on(self.bus.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "GetConnectionUnixProcessID",
+            &(bus_name,),
+        ))
+        .ok()
+        .and_then(|r| r.body().deserialize::<u32>().ok())
+        .unwrap_or(0)
     }
 
     fn has(states: &[u32], state: u32) -> bool {

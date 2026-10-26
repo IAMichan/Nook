@@ -81,7 +81,7 @@ pub fn base64_url(bytes: &[u8]) -> String {
 /// Onraadbare, URL-veilige tekst uit de cryptografische generator van het systeem.
 pub fn random_token(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
-    rand::Rng::fill(&mut rand::rngs::OsRng, &mut buf[..]);
+    rand::TryRng::try_fill_bytes(&mut rand::rngs::SysRng, &mut buf).expect("de systeemgenerator geeft willekeurige bytes");
     base64_url(&buf)
 }
 

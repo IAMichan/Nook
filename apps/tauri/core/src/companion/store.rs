@@ -5,9 +5,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use chacha20poly1305::aead::rand_core::RngCore;
-use chacha20poly1305::aead::OsRng;
 use chrono::{DateTime, Duration, Utc};
+use rand::TryRng;
 use serde::{Deserialize, Serialize};
 
 use super::models::{base64url_decode, base64url_encode, is_control, PairedDevice, KEY_LENGTH, PAIRING_WINDOW};
@@ -142,7 +141,7 @@ impl CompanionStore {
     /// bewijst dat ze hem heeft.
     pub fn begin_pairing(&self, now: DateTime<Utc>) -> Vec<u8> {
         let mut key = vec![0u8; KEY_LENGTH];
-        OsRng.fill_bytes(&mut key);
+        rand::rngs::SysRng.try_fill_bytes(&mut key).expect("de systeemgenerator geeft willekeurige bytes");
         *self.pending.lock().unwrap_or_else(|e| e.into_inner()) =
             Some(Pending { key: key.clone(), until: now + Duration::seconds(PAIRING_WINDOW) });
         key

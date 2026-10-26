@@ -4,8 +4,7 @@
 use std::collections::HashMap;
 
 use nook_core::platform::{MediaCommand, NowPlaying};
-use zbus::blocking::Connection;
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
+use zbus::{block_on, Connection, ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
 const PATH: &str = "/org/mpris/MediaPlayer2";
 const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
@@ -22,16 +21,20 @@ struct Player {
 
 impl Mpris {
     pub fn connect() -> Option<Self> {
-        Some(Self { bus: Connection::session().ok()? })
+        Some(Self { bus: block_on(Connection::session()).ok()? })
     }
 
     fn players(&self) -> Vec<Player> {
-        let names: Vec<String> = self
-            .bus
-            .call_method(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", Some("org.freedesktop.DBus"), "ListNames", &())
-            .ok()
-            .and_then(|r| r.body().deserialize().ok())
-            .unwrap_or_default();
+        let names: Vec<String> = block_on(self.bus.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "ListNames",
+            &(),
+        ))
+        .ok()
+        .and_then(|r| r.body().deserialize().ok())
+        .unwrap_or_default();
         let mut players: Vec<Player> = names
             .into_iter()
             .filter(|n| n.starts_with("org.mpris.MediaPlayer2."))
@@ -52,34 +55,37 @@ impl Mpris {
         self.players().into_iter().find(|p| p.status == "Playing" || p.status == "Paused")
     }
 
-    fn get(&self, name: &str, iface: &str, prop: &str) -> Option<OwnedValue> {
-        self.bus
-            .call_method(Some(name), PATH, Some("org.freedesktop.DBus.Properties"), "Get", &(iface, prop))
+    fn get(&self, name: &str, iface: &str, prop: &str) -> Option<OwnedVariant> {
+        block_on(self.bus.call_method(Some(name), PATH, Some("org.freedesktop.DBus.Properties"), "Get", &(iface, prop)))
             .ok()?
             .body()
-            .deserialize::<OwnedValue>()
+            .deserialize::<OwnedVariant>()
             .ok()
     }
 
-    fn set(&self, prop: &str, value: Value<'_>) -> Result<(), String> {
+    fn set(&self, prop: &str, value: Variant<'_>) -> Result<(), String> {
         let player = self.active().ok_or("Er speelt nu niets.")?;
-        self.bus
-            .call_method(Some(player.name.as_str()), PATH, Some("org.freedesktop.DBus.Properties"), "Set", &(PLAYER, prop, value))
-            .map(|_| ())
-            .map_err(|e| format!("De speler weigerde: {e}"))
+        block_on(self.bus.call_method(
+            Some(player.name.as_str()),
+            PATH,
+            Some("org.freedesktop.DBus.Properties"),
+            "Set",
+            &(PLAYER, prop, value),
+        ))
+        .map(|_| ())
+        .map_err(|e| format!("De speler weigerde: {e}"))
     }
 
     fn call(&self, method: &str) -> Result<(), String> {
         let player = self.active().or_else(|| self.players().into_iter().next()).ok_or("Er is geen muziekspeler open.")?;
-        self.bus
-            .call_method(Some(player.name.as_str()), PATH, Some(PLAYER), method, &())
+        block_on(self.bus.call_method(Some(player.name.as_str()), PATH, Some(PLAYER), method, &()))
             .map(|_| ())
             .map_err(|e| format!("De speler weigerde: {e}"))
     }
 
     pub fn now_playing(&self) -> Option<NowPlaying> {
         let player = self.active()?;
-        let metadata: HashMap<String, OwnedValue> =
+        let metadata: HashMap<String, OwnedVariant> =
             self.get(&player.name, PLAYER, "Metadata").and_then(|v| v.try_into().ok()).unwrap_or_default();
         let text = |key: &str| metadata.get(key).and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default();
         let artist = metadata
@@ -130,29 +136,28 @@ impl Mpris {
 
     pub fn seek(&self, seconds: f64) -> Result<(), String> {
         let player = self.active().ok_or("Er speelt nu niets.")?;
-        let metadata: HashMap<String, OwnedValue> =
+        let metadata: HashMap<String, OwnedVariant> =
             self.get(&player.name, PLAYER, "Metadata").and_then(|v| v.try_into().ok()).unwrap_or_default();
         let track = metadata
             .get("mpris:trackid")
-            .and_then(|v| zbus::zvariant::OwnedObjectPath::try_from(v.clone()).ok())
+            .and_then(|v| OwnedObjectPath::try_from(v.clone()).ok())
             .ok_or("Deze speler zegt niet welk nummer speelt.")?;
         let micros = (seconds.max(0.0) * 1_000_000.0) as i64;
-        self.bus
-            .call_method(Some(player.name.as_str()), PATH, Some(PLAYER), "SetPosition", &(ObjectPath::from(&track), micros))
+        block_on(self.bus.call_method(Some(player.name.as_str()), PATH, Some(PLAYER), "SetPosition", &(ObjectPath::from(&track), micros)))
             .map(|_| ())
             .map_err(|e| format!("Doorspoelen mislukte: {e}"))
     }
 
     pub fn set_shuffle(&self, on: bool) -> Result<(), String> {
-        self.set("Shuffle", Value::from(on))
+        self.set("Shuffle", Variant::from(on))
     }
 
     pub fn set_repeat(&self, on: bool) -> Result<(), String> {
-        self.set("LoopStatus", Value::from(if on { "Playlist" } else { "None" }))
+        self.set("LoopStatus", Variant::from(if on { "Playlist" } else { "None" }))
     }
 
     pub fn set_volume(&self, percent: u8) -> Result<(), String> {
-        self.set("Volume", Value::from(percent.min(100) as f64 / 100.0))
+        self.set("Volume", Variant::from(percent.min(100) as f64 / 100.0))
     }
 }
 
