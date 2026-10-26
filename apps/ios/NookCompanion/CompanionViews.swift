@@ -56,7 +56,7 @@ struct RootView: View {
         .tint(Theme.text)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
-        .task { client.startPolling() }
+        .task { client.appBecameActive() }
         // A prompt link starts on the Agents tab, where its New session sheet opens.
         .onChange(of: client.pendingPrompt) { _, prompt in
             if prompt != nil { tab = .sessions }
@@ -68,8 +68,13 @@ struct RootView: View {
             sessionPath = [id]
             client.openSession = nil
         }
+        // Back in front: connect, or check the connection (replaced at once after a longer break, see CompanionWakeup).
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { client.startPolling() } else { client.stopPolling() }
+            switch phase {
+            case .active: client.appBecameActive()
+            case .background: client.appWentToBackground()
+            default: break
+            }
         }
         .alert("", isPresented: Binding(get: { client.notice != nil }, set: { if !$0 { client.notice = nil } })) {
             Button("OK", role: .cancel) {}
