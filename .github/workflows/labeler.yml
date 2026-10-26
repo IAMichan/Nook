@@ -1,0 +1,23 @@
+name: Labeler
+
+# Adds area labels to a pull request from the paths it changes (.github/labeler.yml). It runs on pull_request_target
+# so pull requests from forks get labels too; it never checks out or runs the pull request's code, it only reads the
+# list of changed files. Runs on ubuntu, takes seconds, and starts no other runner.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0

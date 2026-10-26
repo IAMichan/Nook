@@ -13,7 +13,7 @@ enum WorkspaceBridgeScript {
     # pull requests. Every request goes to Nook over a local Unix socket that only your user can open; Nook decides what
     # may run directly and asks you in the notch for the rest. Without Nook the tools are simply not there.
     #   --agent <name>   who is asking (claude-code, codex, …)
-    # See docs/WERKRUIMTE-AGENTS.md.
+    # See docs/WORKSPACE-AGENTS.md.
     use strict;
     use warnings;
     use IO::Socket::UNIX;
