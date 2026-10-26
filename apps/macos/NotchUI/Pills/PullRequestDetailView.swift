@@ -131,7 +131,9 @@ struct PullRequestDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if !merging { Task { await model.refresh() } }
         }
-        .onChange(of: detail.map { "\($0.state.rawValue)|\($0.conflicted)" }) { _, _ in
+        // `initial`: a page that opens on a read kept from before (one read ahead under the pointer) already knows the
+        // state, and the tab still shows the row's.
+        .onChange(of: detail.map { "\($0.state.rawValue)|\($0.conflicted)" }, initial: true) { _, _ in
             guard let detail, let onUpdate else { return }
             let updated = item.updated(from: detail)
             if updated != item { onUpdate(updated) }
