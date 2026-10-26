@@ -41,7 +41,8 @@ enum MarkdownBlock: Equatable {
 
     /// Cleans up artifacts models sometimes output: trailing backslashes (hard breaks), `<br>`, and Windows line endings.
     static func clean(_ text: String) -> String {
-        var normalized = text.contains("\r") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
+        // By its scalars: "\r\n" is one Character in Swift, so `text.contains("\r")` misses every Windows line end.
+        var normalized = text.unicodeScalars.contains("\r") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
         if normalized.contains("<"), let rx = brRegex {
             normalized = rx.stringByReplacingMatches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized), withTemplate: "\n")
         }
