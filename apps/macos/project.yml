@@ -188,6 +188,7 @@ targets:
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
+      - path: Core/I18n+Bridge.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -310,6 +311,7 @@ targets:
       - path: Services/Workspace/UsageLedger.swift
       - path: Services/Workspace/LimitPool.swift
       - path: Services/Workspace/WorkspaceBridgeProtocol.swift
+      - path: Services/Workspace/WorkspaceBridgeArguments.swift
       - path: Services/Workspace/TimelinePresentation.swift
       - path: Services/Workspace/AgentProgress.swift
       - path: Services/Workspace/CommandConsole.swift

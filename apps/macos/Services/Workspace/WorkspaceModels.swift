@@ -501,7 +501,9 @@ struct RunEvent: Codable, Identifiable, Equatable, Sendable {
     /// An MCP app's page (see McpUI) is shown, not read: it has to arrive whole.
     static let appOutputLimit = 256_000
 
+    /// Also hides a secret the workspace bridge handed to the agent (request_secret): it is never stored or shown.
     static func clip(_ text: String, _ limit: Int = outputLimit) -> String {
+        let text = BridgeSecret.redact(text)
         let limit = limit == outputLimit && text.contains(McpUI.fence) ? appOutputLimit : limit
         return text.count > limit ? String(text.prefix(limit)) + "\n…" : text
     }

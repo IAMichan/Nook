@@ -52,7 +52,7 @@ Key capabilities:
 
 ## Nook Workspace MCP for Your Agents
 
-Agents can use Nook's integrated terminal, browser, and PR workflow via a local MCP server (`~/.nook/nook-mcp`): start a dev server in a visible Nook terminal (`terminal_run`, `terminal_read`), open and inspect pages in Nook's browser (`browser_open`, `browser_read`, `browser_screenshot`), and propose a pull request (`pull_request_create`). Sessions started by Nook receive this automatically; external agents can be linked in **Settings › Workspace**. See [WERKRUIMTE-AGENTS.md](WERKRUIMTE-AGENTS.md).
+Agents can use Nook's integrated terminal, browser, and PR workflow via a local MCP server (`~/.nook/nook-mcp`): start a dev server in a visible Nook terminal (`terminal_run`, `terminal_read`), open, inspect and drive pages in Nook's browser (`browser_open`, `browser_read`, `browser_screenshot`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_wait_for`), propose and watch a pull request (`pull_request_create`, `watch_pull_request`, `get_pull_request_status`), propose scheduled tasks (`schedule_task`, `list_scheduled_tasks`, `update_scheduled_task`, `run_scheduled_task_now`, always after your approval), and ask you for a named secret (`request_secret`). Sessions started by Nook receive this automatically; external agents can be linked in **Settings › Workspace**. See [WERKRUIMTE-AGENTS.md](WERKRUIMTE-AGENTS.md).
 
 ## Connecting a Custom Agent
 

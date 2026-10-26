@@ -15,6 +15,10 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case browserOpen = "browser_open"
     case browserRead = "browser_read"
     case browserScreenshot = "browser_screenshot"
+    case browserSnapshot = "browser_snapshot"
+    case browserClick = "browser_click"
+    case browserType = "browser_type"
+    case browserWaitFor = "browser_wait_for"
     case pullRequestCreate = "pull_request_create"
     case orchestratorCapabilities = "orchestrator_capabilities"
     case delegateTask = "delegate_task"
@@ -28,6 +32,13 @@ enum BridgeTool: String, CaseIterable, Sendable {
     case deviceOpen = "device_open"
     case deviceScreenshot = "device_screenshot"
     case deviceClose = "device_close"
+    case scheduleTask = "schedule_task"
+    case listScheduledTasks = "list_scheduled_tasks"
+    case updateScheduledTask = "update_scheduled_task"
+    case runScheduledTaskNow = "run_scheduled_task_now"
+    case watchPullRequest = "watch_pull_request"
+    case getPullRequestStatus = "get_pull_request_status"
+    case requestSecret = "request_secret"
 
     /// The MCP server name, in the agent's configuration and in its tool names.
     static let serverName = "nook"
@@ -40,8 +51,11 @@ enum BridgeTool: String, CaseIterable, Sendable {
     var effect: Effect {
         switch self {
         case .workspaceInfo, .terminalRead, .terminalList, .browserRead, .browserScreenshot,
-             .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList, .deviceList, .deviceScreenshot: return .read
-        case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .deviceOpen, .deviceClose: return .local
+             .orchestratorCapabilities, .taskStatus, .taskWait, .sessionRead, .sessionList, .deviceList, .deviceScreenshot,
+             .browserSnapshot, .browserWaitFor, .listScheduledTasks, .getPullRequestStatus: return .read
+        case .terminalRun, .terminalStop, .browserOpen, .delegateTask, .taskCancel, .sessionSend, .deviceOpen, .deviceClose,
+             .browserClick, .browserType, .scheduleTask, .updateScheduledTask, .runScheduledTaskNow, .watchPullRequest,
+             .requestSecret: return .local
         case .pullRequestCreate: return .outward
         }
     }
@@ -79,12 +93,24 @@ enum BridgeTool: String, CaseIterable, Sendable {
         case .deviceOpen: return "Open simulator"
         case .deviceScreenshot: return "Simulator screenshot"
         case .deviceClose: return "Close simulator"
+        case .browserSnapshot: return "Nook browser elements"
+        case .browserClick: return "Click in Nook browser"
+        case .browserType: return "Type in Nook browser"
+        case .browserWaitFor: return "Wait in Nook browser"
+        case .scheduleTask: return "Schedule task"
+        case .listScheduledTasks: return "Scheduled tasks"
+        case .updateScheduledTask: return "Change scheduled task"
+        case .runScheduledTaskNow: return "Run scheduled task"
+        case .watchPullRequest: return "Watch pull request"
+        case .getPullRequestStatus: return "Pull request status"
+        case .requestSecret: return "Ask for a secret"
         }
     }
 
     /// The most telling argument of a call, for the timeline: the command, the address, the title or the terminal.
     static func detail(_ input: [String: Any]) -> String? {
-        for key in ["command", "url", "title", "terminal_id", "task", "task_id", "session_id", "message", "device_id"] {
+        for key in ["command", "url", "title", "terminal_id", "task", "task_id", "session_id", "message", "device_id", "ref",
+                    "selector", "text", "name"] {
             if let value = input[key] as? String, !value.isEmpty { return value }
         }
         return nil
@@ -132,6 +158,28 @@ enum BridgeTool: String, CaseIterable, Sendable {
             return "Takes a screenshot (PNG) of the simulator this session opened most recently, or of device_id."
         case .deviceClose:
             return "Stops following a simulator in this session. With shutdown: true the simulator is also shut down."
+        case .browserSnapshot:
+            return "Lists what you can interact with on the page in Nook's browser: links, buttons, fields and headings, each with a ref such as \"e7\" to pass to browser_click or browser_type. Take a new snapshot after the page changed; refs from an older one may be gone. Password fields never show their value."
+        case .browserClick:
+            return "Clicks one element on the page in Nook's browser, found by ref (from browser_snapshot, preferred), CSS selector or visible text. On this Mac's own pages (localhost) it runs directly; on other sites the user approves it first unless the session has full rights."
+        case .browserType:
+            return "Types text into one field on the page in Nook's browser (found by ref, selector or text), replacing what is there unless append is true; with submit: true it submits the field's form. On localhost it runs directly; on other sites the user approves it first unless the session has full rights. Never type passwords or secrets the user did not give you for this."
+        case .browserWaitFor:
+            return "Waits until the page in Nook's browser shows some text or an element (or until it is gone), at most timeout_seconds (default 10, at most 30). Use it after browser_click or browser_type when the page loads or changes."
+        case .scheduleTask:
+            return "Proposes a scheduled task: a prompt Nook runs on a schedule (every N minutes, or at a time on chosen weekdays) in a new session in a folder, or as a message to this session. The user approves it in Nook first and can change or remove it in Settings. Tasks run with ask or acceptEdits rights, never more than yours, and only while the user has scheduled tasks switched on. Pass client_request_id so a retry does not propose a second task."
+        case .listScheduledTasks:
+            return "Lists Nook's scheduled tasks for your folder or session (all: true for every task): id, title, schedule, where it runs, whether it is on, its next and last run, and the start of its prompt."
+        case .updateScheduledTask:
+            return "Proposes a change to a scheduled task (from list_scheduled_tasks): its title, prompt, schedule, rights, or switching it on or off. The user approves the change in Nook first."
+        case .runScheduledTaskNow:
+            return "Runs a scheduled task once now, with its own prompt, after the user's approval. Returns started, busy (it is running already) or not available (scheduled tasks are switched off). Pass client_request_id so a retry does not run it twice."
+        case .watchPullRequest:
+            return "Watches a pull request (GitHub) or merge request (GitLab) for this session, the same watch the user can switch on in Nook: CI, reviews, comments and the merge show in your session's timeline, and what you can act on (failed CI, a review, a comment) comes to you as a message. Without url or number it takes the open pull request of your branch. After the call, end your turn; do not call it again when an update arrives. A session watches one pull request at a time; stop: true ends the watch. Only for sessions Nook started."
+        case .getPullRequestStatus:
+            return "Reads a pull request's status now, the way Nook's watch sees it: state, CI (with the failed checks), each reviewer's verdict and the number of comments. GitHub (with the user's GitHub connection) and GitLab (with its token in Nook). Without url or number it takes the open pull request of your branch."
+        case .requestSecret:
+            return "Asks the user for a secret by name (an API key or token you need for this task). The user sees the name and your reason in Nook and allows it, using the value stored in Nook's keychain under that name or pasting one. The value comes back only to you, between <nook-secret> markers; Nook hides it in its own timeline and records only the name in its audit log. Do not print it, write it into files in the repository or send it anywhere the task does not need it."
         case .sessionRead:
             return "Reads a summary of another Nook session: what the user asked, what the agent answered, the commands it ran and the files it changed. Use it when the user points you at a session with a link like [title](nook-context://v1/session/<id>) or an @-mention; the id is in the <nook_context> record."
         }
@@ -216,6 +264,57 @@ enum BridgeTool: String, CaseIterable, Sendable {
             ], required: ["task_ids"])
         case .taskCancel:
             return object(["task_id": ["type": "string", "description": "The task id from delegate_task."]], required: ["task_id"])
+        case .browserSnapshot:
+            return object(["limit": ["type": "integer", "description": "At most this many elements (default 150, at most 400)."]])
+        case .browserClick:
+            return object(BridgeBrowserScript.targetProperties)
+        case .browserType:
+            var properties = BridgeBrowserScript.targetProperties
+            properties["value"] = ["type": "string", "description": "The text to type."]
+            properties["append"] = ["type": "boolean", "description": "Add to what the field holds instead of replacing it. Default false."]
+            properties["submit"] = ["type": "boolean", "description": "Submit the field's form afterwards (like pressing Enter). Default false."]
+            return object(properties, required: ["value"])
+        case .browserWaitFor:
+            return object([
+                "text": ["type": "string", "description": "Wait until the page shows this text."],
+                "selector": ["type": "string", "description": "Wait until an element matching this CSS selector exists."],
+                "gone": ["type": "boolean", "description": "Wait until the text or element is gone instead. Default false."],
+                "timeout_seconds": ["type": "integer", "description": "How long to wait (default 10, at most 30)."]
+            ])
+        case .scheduleTask:
+            var properties = BridgeScheduleArguments.scheduleProperties
+            properties["title"] = ["type": "string", "description": "Short title for the task."]
+            properties["prompt"] = ["type": "string", "description": "The complete prompt the session gets each time; it sees nothing of this conversation."]
+            properties["target"] = ["type": "string", "enum": ["new_session", "this_session"],
+                                    "description": "new_session (default): each run starts a new session in project_path. this_session: each run sends the prompt to this session."]
+            properties["project_path"] = ["type": "string", "description": "With new_session: the folder to run in. Defaults to your folder."]
+            properties["agent"] = ["type": "string", "description": "With new_session: claude, codex, gemini, opencode, cursor, grok or antigravity. Defaults to your own."]
+            properties["client_request_id"] = ["type": "string", "description": "Makes a retry of this call return the same task instead of proposing a second one."]
+            return object(properties, required: ["title", "prompt"])
+        case .listScheduledTasks:
+            return object(["all": ["type": "boolean", "description": "List every task, not only those for your folder or session. Default false."]])
+        case .updateScheduledTask:
+            var properties = BridgeScheduleArguments.scheduleProperties
+            properties["task_id"] = ["type": "string", "description": "The task id from list_scheduled_tasks."]
+            properties["title"] = ["type": "string", "description": "New title."]
+            properties["prompt"] = ["type": "string", "description": "New prompt."]
+            return object(properties, required: ["task_id"])
+        case .runScheduledTaskNow:
+            return object([
+                "task_id": ["type": "string", "description": "The task id from list_scheduled_tasks."],
+                "client_request_id": ["type": "string", "description": "Makes a retry of this call return the first answer instead of running the task again."]
+            ], required: ["task_id"])
+        case .watchPullRequest:
+            var properties = BridgePullRequestTarget.properties
+            properties["stop"] = ["type": "boolean", "description": "Stop watching this pull request instead. Default false."]
+            return object(properties)
+        case .getPullRequestStatus:
+            return object(BridgePullRequestTarget.properties)
+        case .requestSecret:
+            return object([
+                "name": ["type": "string", "description": "The secret's name: letters, digits, dot, dash or underscore, such as STRIPE_TEST_KEY."],
+                "reason": ["type": "string", "description": "Why you need it, in one sentence the user reads before deciding."]
+            ], required: ["name", "reason"])
         case .pullRequestCreate:
             return object([
                 "title": ["type": "string", "description": "Title of the pull request."],
@@ -231,7 +330,7 @@ enum BridgeTool: String, CaseIterable, Sendable {
         var tool: [String: Any] = ["name": rawValue, "description": summary, "inputSchema": schema]
         tool["annotations"] = [
             "readOnlyHint": effect == .read,
-            "openWorldHint": effect == .outward || self == .browserOpen
+            "openWorldHint": effect == .outward || self == .browserOpen || self == .browserClick || self == .browserType
         ]
         return tool
     }
@@ -279,6 +378,10 @@ enum BridgeVerdict: Equatable, Sendable {
         case outward
         /// It starts another agent session.
         case delegation
+        /// It adds, changes or runs a scheduled task: work that happens later, without the user watching.
+        case schedule
+        /// It hands a secret to the agent.
+        case secret
     }
 
     case allow
@@ -289,14 +392,23 @@ enum BridgeVerdict: Equatable, Sendable {
 /// The rules of the bridge, the same for every agent. Nook is the gatekeeper for its own tools: the agent's own
 /// permission settings never widen them.
 enum BridgePolicy {
+    /// `localPage`: the page in Nook's browser is on this Mac (localhost); only clicking and typing look at it.
     static func verdict(tool: BridgeTool, caller: BridgeCaller, command: CommandAssessment.Level? = nil,
-                        enabled: Bool = true) -> BridgeVerdict {
+                        enabled: Bool = true, localPage: Bool = false) -> BridgeVerdict {
         guard enabled else { return .refuse(.disabled) }
         if tool.effect == .read { return .allow }
         if caller.mode == .plan { return .refuse(.planMode) }
         switch tool {
         case .pullRequestCreate:
             return .ask(.outward)
+        case .scheduleTask, .updateScheduledTask, .runScheduledTaskNow:
+            // Work that runs later without anyone watching: always your decision, whatever the session's rights.
+            return .ask(.schedule)
+        case .requestSecret:
+            return .ask(.secret)
+        case .browserClick, .browserType:
+            // Your own dev server is a sandbox; on a real site a click can send or buy something.
+            return localPage || caller.permission == .bypass ? .allow : .ask(.needsReview)
         case .sessionSend:
             return caller.permission == .bypass ? .allow : .ask(.delegation)
         case .delegateTask:
@@ -371,7 +483,11 @@ struct BridgeLaunch: Equatable, Sendable {
     in your own shell. For work that can run on its own (research, a review, a side task) you can hand it to another agent \
     session with delegate_task: it sees only the brief you write, never has more rights than you, and its result comes back \
     through task_status (or Nook tells you when it has finished). For an iOS app, device_open shows an iOS Simulator in \
-    Nook (the user watches it live) and gives you the agent-device command to drive it; device_screenshot shows you the screen.
+    Nook (the user watches it live) and gives you the agent-device command to drive it; device_screenshot shows you the screen. \
+    In Nook's browser, browser_snapshot lists the elements with refs for browser_click and browser_type. After opening a pull \
+    request, watch_pull_request tells you when checks fail or pass, reviews arrive or it is merged. schedule_task proposes \
+    recurring work (the user approves it), and request_secret asks the user for an API key by name instead of you asking \
+    them to paste it into the chat.
     """
 
     /// Claude Code: the server as `--mcp-config` (next to the user's own servers) and its tools allowed up front, because

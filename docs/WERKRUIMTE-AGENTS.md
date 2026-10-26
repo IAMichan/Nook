@@ -28,6 +28,8 @@ Claude Code / Codex ──stdio (MCP)──▶ nook-mcp (Perl) ──bridge.sock
 | Component | File | Role |
 |---|---|---|
 | Protocol, policies, launch args | `Services/Workspace/WorkspaceBridgeProtocol.swift` | `BridgeTool` schemas, `BridgePolicy`, `BridgeURLPolicy`, `BridgeLaunch`, `BridgeRPC` (JSON-RPC). Pure Foundation, fully unit-tested. |
+| Argument checks | `Services/Workspace/WorkspaceBridgeArguments.swift` | Validation for scheduled tasks, pull request targets, browser targets and secret names; the `client_request_id` ledger; the browser scripts; secret redaction. Pure Foundation, tested in `WorkspaceBridgeToolsTests`. |
+| Newer tools | `Services/Workspace/WorkspaceBridge+Tools.swift` | Scheduled tasks, pull request watch/status, browser click/type/snapshot/wait, `request_secret`. |
 | MCP server script | `Services/Workspace/WorkspaceBridgeScript.swift` | Self-contained Perl script `nook-mcp` (`~/Library/Application Support/Nook/`, symlinked at `~/.nook/nook-mcp`). |
 | Bridge service | `Services/Workspace/WorkspaceBridge.swift` | Listens on `bridge.sock`, identifies the calling session, enforces `BridgePolicy`, requests approval, and executes tools. |
 | Process launcher | `Services/Workspace/AgentProcess.swift` | Automatically attaches `nook-mcp` to sessions launched by Nook. |
@@ -61,6 +63,17 @@ codex mcp add nook -- ~/.nook/nook-mcp --agent codex
 | `task_wait` | Waits for up to eight delegated tasks until any one (`mode: any`) or all of them (`mode: all`) have finished or ask a question, at most `timeout_seconds` (default 45, at most 840). Returns each task's state and which are settled; tasks keep running after a timeout and wake the parent when done. | Immediate |
 | `task_cancel` | Cancels a delegated task and any subtasks it spawned. | Immediate (disabled in Plan mode) |
 | `session_read` | Reads a summary of another Nook session (prompt, answer, commands, changed files) for `@`-mentions. | Immediate |
+| `browser_snapshot` | Lists the links, buttons, fields and headings on the page, each interactive one with a ref (`e7`) for `browser_click` / `browser_type`. Password values are never shown. | Immediate |
+| `browser_click` | Clicks one element by ref, CSS selector or visible text. | Local pages (`localhost`): immediate · Other sites: requires approval (unless the session has full access); disabled in Plan mode |
+| `browser_type` | Types into one field (replace or append, optionally submit its form), firing `input`/`change` so frameworks notice. The typed text is never written to the audit log. | Same as `browser_click` |
+| `browser_wait_for` | Waits until text or a selector appears (or is gone), at most 30 seconds. | Immediate |
+| `list_scheduled_tasks` | Lists scheduled tasks for the caller's folder or session (`all: true` for every task) with schedule, target, rights, next and last run. | Immediate |
+| `schedule_task` | Proposes a scheduled task: every N minutes or at a time on chosen weekdays, in a new session in a folder or as a message to this session. Rights are `ask` or `acceptEdits`, never `bypass` and never more than the caller. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
+| `update_scheduled_task` | Proposes a change to a task's title, prompt, schedule, rights or on/off state; the card shows the task after the change and before it. | Always requires approval; disabled in Plan mode |
+| `run_scheduled_task_now` | Runs a task once with its own prompt; returns `started`, `busy` or `not available`. Deduplicated by `client_request_id`. | Always requires approval; disabled in Plan mode |
+| `watch_pull_request` | Turns on the session's existing pull request watch (GitHub / GitLab, see `WorkspaceManager.watchPullRequest`): news goes to the timeline, and failed CI, reviews and comments wake the agent with a message. Kept with the session across restarts; `stop: true` ends it. Sessions Nook started only. | Immediate (disabled in Plan mode) |
+| `get_pull_request_status` | Reads state, CI with failed checks, each reviewer's verdict and the comment count, via the same snapshot as the watch. Review and comment texts are left out. | Immediate |
+| `request_secret` | Asks for a named secret. The card shows the name and the agent's reason; on **Allow** Nook returns the value kept under `agent-secret.<name>` in its keychain (`SecretStore`), or asks you to paste one (optionally keeping it). The value goes only to the calling session, between `<nook-secret>` markers that Nook's timeline replaces before storing or showing tool output; the audit entry records the name only. | Always requires approval; disabled in Plan mode |
 
 ## Multi-Agent Delegation (`delegate_task`)
 
@@ -76,4 +89,6 @@ Delegation rules are implemented in `Delegation.swift` (pure Foundation, tested 
 - The socket directory is `0700` and `bridge.sock` is `0600`, with peer UID verification on every connection (`UnixSocketServer`).
 - Approval cards display the **entire** command or pull request details (repository, head → base branch, title, body) along with `CommandRisk` warnings.
 - Agents cannot send arbitrary keystrokes to an existing interactive shell; they can only start tracked commands via `terminal_run` and read output from terminals in their own project directory.
+- Agents can only reach secrets kept under the `agent-secret.` prefix, never Nook's own keys and tokens. The agent's own transcript (outside Nook) does contain a secret it was given.
+- A retried call with the same `client_request_id` gets the first answer; a retry while the first call still waits for you gets no second approval card.
 - The workspace browser uses an ephemeral data store (no persistent cookies or disk storage across app launches) and blocks `file://` and custom URL schemes.

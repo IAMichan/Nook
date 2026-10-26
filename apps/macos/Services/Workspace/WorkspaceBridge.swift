@@ -41,6 +41,8 @@ final class WorkspaceBridge: ObservableObject {
     private var waiters: [String: CheckedContinuation<Bool, Never>] = [:]
     /// Simulators each session opened with device_open, most recent last.
     private var openDevices: [String: [String]] = [:]
+    /// Answers to calls that carried a client_request_id (see WorkspaceBridge+Tools).
+    var ledger = BridgeRequestLedger()
     private var installed = false
     private var started = false
 
@@ -82,8 +84,8 @@ final class WorkspaceBridge: ObservableObject {
         waiter.resume(returning: allowed)
     }
 
-    private func ask(_ caller: BridgeCaller, tool: BridgeTool, title: String, detail: String, note: String, danger: Bool,
-                     connection: String) async -> Bool {
+    func ask(_ caller: BridgeCaller, tool: BridgeTool, title: String, detail: String, note: String, danger: Bool,
+             connection: String) async -> Bool {
         let id = String(UUID().uuidString.prefix(8)).lowercased()
         let request = BridgeRequest(id: id, caller: caller, tool: tool, title: title, detail: detail, note: note,
                                     danger: danger, created: Date(), connection: connection)
@@ -127,14 +129,14 @@ final class WorkspaceBridge: ObservableObject {
         return unseen[WorkspacePathPolicy.normalize(directory)]?.contains(tool) == true
     }
 
-    private func markUnseen(_ directory: String, _ tool: String) {
+    func markUnseen(_ directory: String, _ tool: String) {
         guard !directory.isEmpty else { return }
         unseen[WorkspacePathPolicy.normalize(directory), default: []].insert(tool)
     }
 
     // MARK: Messages
 
-    private struct Context {
+    struct Context {
         let agentID: String
         let cwd: String
         let env: [String: Any]
@@ -218,27 +220,39 @@ final class WorkspaceBridge: ObservableObject {
             case .sessionList: return sessionList(arguments)
             case .sessionSend: return await sessionSend(arguments, caller, context)
             case .deviceList, .deviceOpen, .deviceScreenshot, .deviceClose: return try await device(tool, arguments, caller)
+            case .browserSnapshot: return try await browserSnapshot(arguments)
+            case .browserClick, .browserType: return try await browserInteract(tool, arguments, caller, context)
+            case .browserWaitFor: return await browserWaitFor(arguments)
+            case .listScheduledTasks: return listScheduledTasks(arguments, caller)
+            case .scheduleTask: return try await scheduleTask(arguments, caller, context)
+            case .updateScheduledTask: return await updateScheduledTask(arguments, caller, context)
+            case .runScheduledTaskNow: return try await runScheduledTaskNow(arguments, caller, context)
+            case .watchPullRequest: return try await watchPullRequest(arguments, caller)
+            case .getPullRequestStatus: return try await pullRequestStatus(arguments, caller)
+            case .requestSecret: return await requestSecret(arguments, caller, context)
             }
         } catch {
             return .error(error.localizedDescription)
         }
     }
 
-    private func verdict(_ tool: BridgeTool, _ caller: BridgeCaller, command: CommandAssessment.Level? = nil) -> BridgeVerdict {
-        BridgePolicy.verdict(tool: tool, caller: caller, command: command, enabled: WorkspaceSettings.shared.agentTools)
+    func verdict(_ tool: BridgeTool, _ caller: BridgeCaller, command: CommandAssessment.Level? = nil,
+                 localPage: Bool = false) -> BridgeVerdict {
+        BridgePolicy.verdict(tool: tool, caller: caller, command: command, enabled: WorkspaceSettings.shared.agentTools,
+                             localPage: localPage)
     }
 
     /// The answer for a refused call, in words the agent can act on.
-    private static func refusal(_ reason: BridgeVerdict.Reason) -> String {
+    static func refusal(_ reason: BridgeVerdict.Reason) -> String {
         switch reason {
         case .disabled: return "The user has switched off agent access to Nook's workspace (Settings › Agents › Workspace)."
         case .planMode: return "This session is in Plan mode: it may read, not start processes or open pull requests. Describe the step in your plan instead."
         case .dangerous: return "Nook refuses this command through its terminal because it is dangerous. Ask the user to run it themselves if it is really needed."
-        case .needsReview, .outward, .delegation: return "The user did not approve this in Nook."
+        case .needsReview, .outward, .delegation, .schedule, .secret: return "The user did not approve this in Nook."
         }
     }
 
-    private func audit(_ tool: BridgeTool, _ caller: BridgeCaller, _ args: String, _ result: String) {
+    func audit(_ tool: BridgeTool, _ caller: BridgeCaller, _ args: String, _ result: String) {
         app?.store.audit(tool: "agent_" + tool.rawValue, args: "\(caller.agent) · \(args)", result: result)
     }
 
@@ -367,7 +381,7 @@ final class WorkspaceBridge: ObservableObject {
     }
 
     /// A folder for a command: absolute, `~/…`, or relative to the caller's folder. It must exist and not be a system folder.
-    private func resolveFolder(_ raw: String, _ caller: BridgeCaller) throws -> String {
+    func resolveFolder(_ raw: String, _ caller: BridgeCaller) throws -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let base = caller.directory.isEmpty ? home : caller.directory
         var path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
