@@ -10,6 +10,8 @@
 pub mod apns;
 pub mod backend;
 pub mod client;
+#[cfg(test)]
+mod fixtures;
 pub mod models;
 pub mod push;
 pub mod seal;

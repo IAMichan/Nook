@@ -34,6 +34,7 @@ EXCLUDE_SOURCES=(
   "Services/WhatsApp/WhatsAppGateway.swift"
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
+  "../../packages/protocol/Sources/CompanionSeal.swift"
 )
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(

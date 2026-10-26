@@ -108,6 +108,21 @@ On the power adapter Nook holds off all sleep (`PreventSystemSleep`), which keep
 - **Staying connected:** `apps/macos/Services/Companion/CompanionEndpoints.swift` (the Mac's addresses), the live connections in `CompanionServer.swift`; on the phone `apps/ios/NookCompanion/CompanionConnection.swift` (`CompanionChannel`, `RouteProbe`) and the supervisor in `CompanionClient.swift`.
 - **iOS app:** `apps/ios/NookCompanion/` (XcodeGen project in `apps/ios/project.yml`; see [`apps/ios/README.md`](../apps/ios/README.md)).
 
+## Shared Fixtures
+
+The wire format is pinned by golden fixtures in `packages/protocol/Fixtures` that every implementation reads in its own tests, so the Mac, the iPhone app, the Tauri app and the relay cannot drift apart: requests and responses as they travel, sealed frames with a fixed key and nonce, the 4-byte framing, relay rooms, mux frames and close codes, and pairing links (valid and refused).
+
+| Fixture | Swift (`CompanionFixturesTests`, Mac and iPhone share the code) | Rust (`apps/tauri/core/src/companion/fixtures.rs`, `cargo test`) | Relay (`apps/relay/test/fixtures.test.js`, `npm test`) |
+| --- | --- | --- | --- |
+| `requests.json` | all | the `core` ones (approve/answer/send/stop/register) | — |
+| `responses.json` | all | the `core` ones; unknown fields ignored | — |
+| `sealed.json` | yes (CryptoKit: on a Mac, not in the Linux core tests) | yes | — |
+| `framing.json` | yes | yes | — |
+| `pairing.json` | yes, with alternates and relay | host, port, key, name | — |
+| `relay.json` | rooms, mux, close codes | — | rooms, mux, close codes |
+
+A change to the wire format starts with the fixture; each implementation's test then says what still needs to follow.
+
 ## Direct APNs Push Notifications
 
 Nook sends push notifications directly from your Mac without any intermediary server: your Mac signs the APNs JWT using your own Apple Developer `.p8` key and sends it straight to Apple (`api.push.apple.com`).

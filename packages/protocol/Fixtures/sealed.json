@@ -1,0 +1,18 @@
+{
+  "comment": "CompanionSeal with a fixed key and nonce. key is base64url, nonce hex; s is the envelope's base64 (nonce + ciphertext + tag). Never reuse a nonce outside tests.",
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "deviceID": "630dcd2966c43366",
+  "nonce": "000102030405060708090a0b",
+  "vectors": [
+    {
+      "direction": "q",
+      "plaintext": "{\"id\":\"A\",\"sent\":1700000000,\"op\":\"list\"}",
+      "s": "AAECAwQFBgcICQoL/Q9SIGxJgr1H181AE4xJD9cEaovDJP1OcBGi7PQJueDkK60SZr8z9gqwpfyVrbj6Z7+1SWuhTow="
+    },
+    {
+      "direction": "r",
+      "plaintext": "{\"id\":\"A\",\"ok\":true}",
+      "s": "AAECAwQFBgcICQoL/Q9SIGxJgr1H181cHcAHWZ9AOMbbY0QcUFh62ldRSNjw234t"
+    }
+  ]
+}
