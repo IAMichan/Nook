@@ -128,6 +128,7 @@ struct SelectableProse: NSViewRepresentable {
         static let quoteLimit = ComposerQuotes.characterLimit
 
         func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            addLinkItems(to: menu, in: view, at: charIndex)
             guard quote != nil || ask != nil, let text = SelectableProse.selection(of: view) else { return menu }
             var index = 0
             for (title, action, wanted) in [
@@ -144,6 +145,41 @@ struct SelectableProse: NSViewRepresentable {
             }
             menu.insertItem(.separator(), at: index)
             return menu
+        }
+
+        /// On a web link in an agent's conversation: open it in the side panel or the system browser, or copy it.
+        private func addLinkItems(to menu: NSMenu, in view: NSTextView, at charIndex: Int) {
+            guard pullRequestLinksBeside, let storage = view.textStorage, charIndex >= 0, charIndex < storage.length,
+                  let link = storage.attribute(.link, at: charIndex, effectiveRange: nil),
+                  let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)),
+                  MarkdownBlock.isSafeLink(url), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+            for (offset, (title, action)) in [
+                (tr("link.openInPanel"), #selector(openLinkInPanel(_:))),
+                (tr("link.openSystem"), #selector(openLinkInSystem(_:))),
+                (tr("link.copy"), #selector(copyLink(_:))),
+            ].enumerated() {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.target = self
+                item.representedObject = url
+                menu.insertItem(item, at: offset)
+            }
+            menu.insertItem(.separator(), at: 3)
+        }
+
+        @objc private func openLinkInPanel(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            Task { @MainActor in AppModel.shared.openLinkBeside(url, forced: true) }
+        }
+
+        @objc private func openLinkInSystem(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            NSWorkspace.shared.open(url)
+        }
+
+        @objc private func copyLink(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
         }
 
         @objc private func quoteSelection(_ sender: NSMenuItem) {
@@ -189,10 +225,13 @@ struct SelectableProse: NSViewRepresentable {
             }
             guard let url, MarkdownBlock.isSafeLink(url) else { return true }
             // A pull request opens in Nook (beside the session, or on the Pull requests page), an artifact beside the
-            // chat next to the app that made it; any other link in the browser.
+            // chat next to the app that made it; in an agent's conversation every web link opens in the side panel.
             let beside = pullRequestLinksBeside
             if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: beside) }) {
                 return true
+            } else if beside {
+                // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
+                if !MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) { NSWorkspace.shared.open(url) }
             } else if EmbeddedArtifact.app(for: url) != nil {
                 Task { @MainActor in AppModel.shared.openArtifact(url) }
             } else {

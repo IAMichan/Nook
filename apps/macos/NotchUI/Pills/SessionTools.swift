@@ -6,7 +6,7 @@ import SwiftUI
 /// what the agent produced: its plans, task list and the files it wrote (`outputs`).
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, outputs, pullRequest, picker
+    case conversation, terminal, browser, changes, outputs, pullRequest, artifact, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.outputs, .terminal, .browser, .changes]
@@ -14,8 +14,9 @@ enum SessionTool: String {
     /// the session, never in the bottom panel).
     static let launchable: [SessionTool] = panelTools + [.pullRequest]
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
-    /// + menu, and not kept across launches).
-    static let sideTabs: [SessionTool] = panelTools + [.pullRequest]
+    /// + menu, and not kept across launches). An artifact (a Claude artifact, a ChatGPT canvas) clicked in the conversation
+    /// opens the same way, in the signed-in web version of the app that made it.
+    static let sideTabs: [SessionTool] = panelTools + [.pullRequest, .artifact]
 
     var symbol: String {
         switch self {
@@ -25,13 +26,14 @@ enum SessionTool: String {
         case .changes: return "plus.forwardslash.minus"
         case .outputs: return "list.bullet.clipboard"
         case .pullRequest: return PullRequestIcon.generic
+        case .artifact: return "square.on.square"
         case .picker: return "square.grid.2x2"
         }
     }
 
     /// Whether the tool works for a session in `directory`: without a folder there is only the browser and the outputs.
     func available(in directory: String) -> Bool {
-        if self == .pullRequest || self == .outputs { return true }
+        if self == .pullRequest || self == .outputs || self == .artifact { return true }
         return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
@@ -45,7 +47,7 @@ enum SessionTool: String {
         case .browser: return "b"
         case .changes: return "c"
         case .pullRequest: return "p"
-        case .conversation, .picker: return " "
+        case .conversation, .artifact, .picker: return " "
         }
     }
     /// What the icon in the session's header does.
@@ -338,7 +340,7 @@ struct SessionWorkbench<Conversation: View>: View {
     /// this session cannot use.
     private func reopenClosed() -> Bool {
         let open = tabs(.side) + tabs(.bottom)
-        guard let tab = viewModel.closedSessionTabs.reopen(skipping: { open.contains($0.tool) || !$0.tool.available(in: directory) })
+        guard let tab = viewModel.closedSessionTabs.reopen(skipping: { open.contains($0.tool) || $0.tool == .artifact || !$0.tool.available(in: directory) })
         else { return false }
         withAnimation(NookTheme.swap) {
             if tab.tool == .pullRequest { viewModel.openSidePullRequest(tab.pullRequest) }
@@ -406,6 +408,7 @@ struct SessionWorkbench<Conversation: View>: View {
                                                           pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
+            if item == .artifact { EmbeddedAppStore.shared.closeArtifact() }
             if item == .pullRequest {
                 viewModel.sidePullRequestTabs = []
                 viewModel.activeSidePullRequest = nil
@@ -540,6 +543,7 @@ private struct SessionToolPanel: View {
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
+                case .artifact: SessionArtifactPanel()
                 default: BrowserView()
                 }
             }
