@@ -122,7 +122,8 @@ struct PullRequestDetail: Equatable, Sendable {
         switch mergeState {
         case "blocked": return "agents.pr.note.blocked"
         case "behind": return "agents.pr.note.behind"
-        case "unstable": return "agents.pr.note.unstable"
+        // GitHub calls a head with checks still running "unstable" too; only say they fail when one has.
+        case "unstable": return checkSummary == .pending ? "agents.pr.note.checksRunning" : "agents.pr.note.unstable"
         default: break
         }
         if mergeable == nil { return "agents.pr.note.checking" }

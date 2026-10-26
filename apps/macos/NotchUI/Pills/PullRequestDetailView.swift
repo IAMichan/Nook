@@ -1359,6 +1359,8 @@ struct PullRequestDetailView: View {
         case "behind": (PullRequestIcon.behind, PullRequestIcon.blockerTint, tr("agents.pr.blocker.behind", detail.baseBranch))
         case "unstable": (PullRequestIcon.symbol(PullRequestCheck.Outcome.failing), PullRequestIcon.tint(PullRequestCheck.Outcome.failing),
                           tr("agents.pr.blocker.unstable"))
+        case "checksRunning": (PullRequestIcon.symbol(PullRequestCheck.Outcome.pending), PullRequestIcon.tint(PullRequestCheck.Outcome.pending),
+                               tr("agents.pr.blocker.checksRunning"))
         case "checking": (PullRequestIcon.symbol(PullRequestCheck.Outcome.pending), PullRequestIcon.tint(PullRequestCheck.Outcome.pending),
                           tr("agents.pr.blocker.checking"))
         default: ("info.circle", NookTheme.textTertiary, tr(note))
