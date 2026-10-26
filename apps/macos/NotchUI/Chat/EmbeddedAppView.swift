@@ -494,55 +494,36 @@ private struct EmbeddedArtifactPanel: View {
     }
 }
 
-/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the page, with a bar for its
-/// title and the user's own browser. It shares the sign-in of the app that made it.
+/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the page fills it, with no bar
+/// or frame of its own, so it reads as part of Nook and takes all the room. One small button floats in the corner to
+/// open it in the user's own browser. A sign-in window the page opens covers the whole panel the same way. It shares the
+/// sign-in of the app that made it.
 struct SessionArtifactPanel: View {
     @ObservedObject private var store = EmbeddedAppStore.shared
 
     var body: some View {
         if let webView = store.artifactView {
-            VStack(spacing: 0) {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    Text(store.artifactTitle.isEmpty ? tr("embedded.artifact") : store.artifactTitle)
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if store.artifactLoading { ProgressView().controlSize(.small) }
-                    Spacer(minLength: NookTheme.Spacing.xs)
-                    NookIconButton(systemName: "arrow.up.forward.app", label: tr("browser.openExternal"), size: 26) {
-                        store.openArtifactInDefaultBrowser()
-                    }
-                    .help(tr("browser.openExternal"))
-                }
-                .padding(.horizontal, NookTheme.Spacing.xs)
-                .frame(height: 32)
-                NookDivider()
-                ZStack {
-                    WebViewHost(webView: webView)
-                    // A sign-in window the page opened, over the page until it closes itself or you close it.
-                    if let popup = store.artifactPopup {
-                        VStack(spacing: 0) {
-                            HStack {
-                                Spacer(minLength: NookTheme.Spacing.xs)
-                                NookIconButton(systemName: "xmark", label: tr("embedded.artifact.close"), size: 26) {
-                                    store.closeArtifactPopup()
-                                }
-                                .help(tr("embedded.artifact.close"))
-                            }
-                            .padding(.horizontal, NookTheme.Spacing.xs)
-                            .frame(height: 32)
-                            NookDivider()
-                            WebViewHost(webView: popup)
-                        }
-                        .background(NookTheme.field)
-                    }
+            ZStack(alignment: .topTrailing) {
+                WebViewHost(webView: webView)
+                if let popup = store.artifactPopup {
+                    WebViewHost(webView: popup)
+                    cornerButton("xmark", help: tr("embedded.artifact.close")) { store.closeArtifactPopup() }
+                } else if store.artifactLoading {
+                    ProgressView().controlSize(.small).padding(NookTheme.Spacing.sm)
+                } else {
+                    cornerButton("arrow.up.forward.app", help: tr("browser.openExternal")) { store.openArtifactInDefaultBrowser() }
                 }
             }
             .background(NookTheme.field)
         } else {
             Color.clear
         }
+    }
+
+    private func cornerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        NookIconButton(systemName: symbol, label: help, size: 26, action: action)
+            .help(help)
+            .padding(NookTheme.Spacing.xs)
     }
 }
 
