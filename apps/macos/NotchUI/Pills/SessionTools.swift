@@ -543,8 +543,13 @@ private struct SessionToolPanel: View {
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
-                case .artifact: SessionArtifactPanel()
-                default: BrowserView()
+                // The pages sit in rounded corners like the other panels, not edge to edge.
+                case .artifact:
+                    SessionArtifactPanel()
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+                default:
+                    BrowserView()
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
