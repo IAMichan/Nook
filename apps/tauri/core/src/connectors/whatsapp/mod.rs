@@ -935,6 +935,23 @@ pub mod files {
         })
     }
 
+    /// The extension a file's own first bytes give it, for when the gateway names no usable MIME type (voice notes
+    /// often arrive as plain bytes): the sound formats Nook plays, plus the pictures and PDFs it opens.
+    pub fn sniff_extension(data: &[u8]) -> Option<&'static str> {
+        Some(match data {
+            [b'O', b'g', b'g', b'S', ..] => "ogg",
+            [b'I', b'D', b'3', ..] | [0xFF, 0xFB | 0xF3 | 0xF2, ..] => "mp3",
+            [b'#', b'!', b'A', b'M', b'R', ..] => "amr",
+            [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'A', b'V', b'E', ..] => "wav",
+            [0xFF, 0xF1 | 0xF9, ..] => "aac",
+            [_, _, _, _, b'f', b't', b'y', b'p', ..] => "m4a",
+            [0xFF, 0xD8, 0xFF, ..] => "jpg",
+            [0x89, b'P', b'N', b'G', ..] => "png",
+            [b'%', b'P', b'D', b'F', ..] => "pdf",
+            _ => return None,
+        })
+    }
+
     /// A safe file name: the document's own name when there is one, else one after its kind, with an extension the
     /// system recognizes. Never a path: separators, reserved characters and leading dots go.
     pub fn file_name(media: &Media, given: Option<&str>, mime: Option<&str>) -> String {
@@ -1135,6 +1152,14 @@ mod tests {
         let mut m = Message::new(id, chat, chat, "Lisa", "hoi", DateTime::from_timestamp(1_800_000_000 + at, 0).unwrap(), from_me);
         m.mentions_me = mention;
         m
+    }
+
+    #[test]
+    fn a_file_without_a_type_is_known_by_its_first_bytes() {
+        assert_eq!(files::sniff_extension(b"OggS rest"), Some("ogg"));
+        assert_eq!(files::sniff_extension(b"   ftypM4A "), Some("m4a"));
+        assert_eq!(files::sniff_extension(b"RIFF$   WAVEfmt "), Some("wav"));
+        assert_eq!(files::sniff_extension(b"just text"), None);
     }
 
     #[test]

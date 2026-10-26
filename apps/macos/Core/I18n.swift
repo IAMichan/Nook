@@ -287,6 +287,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.mail.cc": "Cc",
         "chat.mail.subject": "Onderwerp",
         "chat.mail.optional": "optioneel",
+        "chat.mail.dismiss": "Concept sluiten",
+        "chat.mail.dismissed": "gesloten, niet verstuurd",
+        "chat.mail.reopen": "Weer openen",
         "chat.choices.choose": "Kies iets",
         "chat.choices.sendCount": "Verstuur (%d)",
 
@@ -1066,6 +1069,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.mail.cc": "Cc",
         "chat.mail.subject": "Subject",
         "chat.mail.optional": "optional",
+        "chat.mail.dismiss": "Close draft",
+        "chat.mail.dismissed": "closed, not sent",
+        "chat.mail.reopen": "Reopen",
         "chat.choices.choose": "Choose an option",
         "chat.choices.sendCount": "Send (%d)",
 
@@ -1845,6 +1851,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.mail.cc": "Cc",
         "chat.mail.subject": "Betreff",
         "chat.mail.optional": "optional",
+        "chat.mail.dismiss": "Entwurf schließen",
+        "chat.mail.dismissed": "geschlossen, nicht gesendet",
+        "chat.mail.reopen": "Wieder öffnen",
         "chat.choices.choose": "Wähle eine Option",
         "chat.choices.sendCount": "Senden (%d)",
 

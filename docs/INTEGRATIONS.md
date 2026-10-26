@@ -71,3 +71,8 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
   bridgev2 connector for it exists. It shows the chat list and the messages of chats you load in Nook, and answers with
   text. Files, emoji, edits, deletions, pinning, muting, archiving, read receipts and typing are not offered for it
   (`ChatAbilities(send: true)`), and its messages carry the time Nook first saw them, since the website shows none.
+- **CI logs of GitLab merge requests.** A GitHub check's steps and log open in Nook (`CICheckLogView` on the Mac,
+  `CheckLog.svelte` in `apps/tauri`). A watched GitLab merge request still opens its pipelines page in the browser:
+  Nook does not read GitLab job traces yet.
+
+Add an item here when a change cannot reach every member yet.

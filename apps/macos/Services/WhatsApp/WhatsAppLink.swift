@@ -637,10 +637,10 @@ final class WhatsAppLink: ObservableObject {
         let unnamed = knownChats.filter { WAJID.isGroup($0.jid) && WAJID.isPlaceholderName($0.name, for: $0.jid) }.map(\.jid)
             + inbox.conversations.values.filter { WAJID.isGroup($0.id) && WAJID.isPlaceholderName($0.name, for: $0.id) }.map(\.id)
         guard !unnamed.isEmpty else { return }
-        let listed = await provider.groupNames()
+        let groupList = await provider.groupNames()
         guard gen == generation else { return }
         for jid in Set(unnamed) {
-            if let name = listed[jid] {
+            if let name = groupList[jid] {
                 nameGroup(jid, name)
             } else if shouldAskName(jid) {
                 guard let name = await provider.groupName(jid), gen == generation else { continue }

@@ -29,6 +29,8 @@ struct PullRequestDetailView: View {
     @StateObject private var model: PullRequestDetailModel
     @State private var tab: Tab = .summary
     @State private var openFile: String?
+    /// The check whose steps and log the Summary shows in place of itself.
+    @State private var openCheck: PullRequestCheck?
     /// Files you marked as viewed; a mark lapses when a push changes the file.
     @State private var viewed = PullRequestViewedFiles.load()
     /// The review guide written for this pull request, if any, and whether one is being written.
@@ -570,7 +572,18 @@ struct PullRequestDetailView: View {
     private func content(_ detail: PullRequestDetail, now: Date) -> some View {
         switch tab {
         case .summary:
-            page { summary(detail, now: now) }
+            if let check = openCheck, let url = detail.url {
+                // The check as last read: a running one turns failed or passed in place.
+                CICheckLogView(pullRequest: url, check: detail.checks.first { $0.id == check.id } ?? check) {
+                    openCheck = nil
+                    // Back where the check was: the page is built again on this turn, so it can scroll on the next.
+                    DispatchQueue.main.async { revealChecks() }
+                }
+                .padding(.top, NookTheme.Spacing.md)
+                .id(check.id)
+            } else {
+                page { summary(detail, now: now) }
+            }
         case .guide:
             if detail.activityLoaded {
                 page { reviewGuide(detail) }
@@ -1001,6 +1014,7 @@ struct PullRequestDetailView: View {
     private func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
         openFile = nil
+        openCheck = nil
         condensed = false
     }
 
@@ -1158,7 +1172,7 @@ struct PullRequestDetailView: View {
                 ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
                 // The ones that need you first: failing, then running, then passed, skipped last.
-                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check) }
+                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check, detail: detail) }
             }
         }
     }
@@ -1170,8 +1184,16 @@ struct PullRequestDetailView: View {
             .map(\.element)
     }
 
-    private func checkRow(_ check: PullRequestCheck) -> some View {
-        HoverRow(action: { if let url = check.url { NSWorkspace.shared.open(url) } }) {
+    /// A GitHub Actions job opens its steps and log here; a check from another app has no log to read, so its own page.
+    private func checkRow(_ check: PullRequestCheck, detail: PullRequestDetail) -> some View {
+        let readsHere = CILogParser.jobID(from: check.url) != nil && detail.url.flatMap(GitHubPullRequests.parse) != nil
+        return HoverRow(action: {
+            if readsHere {
+                withAnimation(NookTheme.swap) { openCheck = check }
+            } else if let url = check.url {
+                NSWorkspace.shared.open(url)
+            }
+        }) {
             HStack(spacing: NookTheme.Spacing.md) {
                 CheckOutcomeGlyph(outcome: check.outcome).frame(width: 16)
                 Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
@@ -1181,7 +1203,9 @@ struct PullRequestDetailView: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                 if check.url != nil {
-                    Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: readsHere ? "chevron.right" : "arrow.up.right")
+                        .font(NookTheme.font(9, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
                 }
             }
         }

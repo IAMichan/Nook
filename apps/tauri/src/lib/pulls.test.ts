@@ -3,7 +3,7 @@ import type { AccountPullRequests, PullRequestItem } from "./connectors";
 import { renderMarkdown } from "./markdown";
 import {
   activeCount, activitySentence, apply, authors, chosenMethod, defaultFilter, diffLines, eventLabel, isActive, matches,
-  noteText, unreadable,
+  jobId, noteText, unreadable,
 } from "./pulls";
 
 const item = (number: number, extra: Partial<PullRequestItem> = {}): PullRequestItem => ({
@@ -107,5 +107,16 @@ describe("pull request detail", () => {
     const link = renderMarkdown('[x](https://a.b/"onmouseover="alert(1))');
     expect(link).not.toContain('"onmouseover');
     expect(renderMarkdown("[x](javascript:alert(1))")).not.toContain("href");
+  });
+});
+
+describe("jobId", () => {
+  it("reads only GitHub Actions jobs", () => {
+    expect(jobId("https://github.com/o/r/actions/runs/123/job/456")).toBe(456);
+    expect(jobId("https://github.com/o/r/actions/runs/123/job/456?pr=7")).toBe(456);
+    // A check run page, another host, nothing.
+    expect(jobId("https://github.com/o/r/runs/456")).toBeNull();
+    expect(jobId("https://ci.example.com/actions/runs/1/job/2")).toBeNull();
+    expect(jobId(null)).toBeNull();
   });
 });

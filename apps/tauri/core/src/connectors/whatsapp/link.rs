@@ -1049,7 +1049,12 @@ impl WhatsAppLink {
         if file.data.is_empty() {
             return Err(ConnectorError::new(FETCH_FAILED));
         }
-        let name = files::file_name(&media, file.name.as_deref(), file.mime.as_deref());
+        let mut name = files::file_name(&media, file.name.as_deref(), file.mime.as_deref());
+        if files::extension(&name).is_none() {
+            if let Some(ext) = files::sniff_extension(&file.data) {
+                name = format!("{name}.{ext}");
+            }
+        }
         let root = self.files_dir();
         let folder = root.join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir_all(&folder).map_err(|e| ConnectorError::new(e.to_string()))?;
