@@ -377,14 +377,15 @@ final class SpawnedProcess: @unchecked Sendable {
     }
 
     /// Sends a signal to the whole group. Never once the leader is reaped: its group id could belong to another program.
-    /// True while the group id is still ours, also when nothing in it lives any more: macOS answers ESRCH for a group
-    /// whose only member is the exited, unreaped leader.
+    /// True while the group id is still ours (the leader is not reaped, so no other program can get it). That holds
+    /// also when nothing in the group lives any more and macOS refuses the signal for an exited, unreaped leader.
     @discardableResult
     func signalGroup(_ signal: Int32) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard pid > 0, !reaped else { return false }
-        return killpg(pid, signal) == 0 || errno == ESRCH
+        _ = killpg(pid, signal)
+        return true
     }
 
     /// Keeps an exited leader unreaped (so the group can still be signalled) until `release()`.
