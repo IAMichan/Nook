@@ -354,6 +354,7 @@ targets:
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
       - path: Brain/ChartRescue.swift
+      - path: Brain/IncrementalMarkdown.swift
       - path: Brain/Weather.swift
       - path: Brain/ChatImage.swift
       - path: Services/WhatsApp/WhatsAppGateway.swift

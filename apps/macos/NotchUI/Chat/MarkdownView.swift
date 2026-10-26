@@ -87,6 +87,14 @@ private struct MarkdownSegment {
     }
 }
 
+/// A run of prose blocks, compared by value so SwiftUI leaves a finished run alone while the answer streams on.
+private struct ProseSegment: View, Equatable {
+    let blocks: [MarkdownBlock]
+    let size: CGFloat
+
+    var body: some View { SelectableProse(blocks: blocks, size: size) }
+}
+
 /// Renders an answer with headings, lists, tables, charts, code blocks, call-outs, and questions, in Nook's visual style.
 /// Parsed Markdown per text. SwiftUI asks for a message's body far more often than its text changes (scrolling, hover,
 /// another message streaming in); parsing once per text keeps long conversations smooth.
@@ -102,25 +110,28 @@ enum MarkdownCache {
         return cache
     }()
 
-    /// Texts parsed most recently, newest last. A text that continues one of them is the same answer one token further:
-    /// the shorter one is dropped from the cache, so a streaming answer keeps one entry instead of one per token, which
-    /// pushed the parsed finished messages out of the cache and made them parse again.
-    private static var recent: [String] = []
+    /// Texts parsed most recently, newest last, each with its parse kept for the next token. A text that continues one
+    /// of them is the same answer one token further: only the text after its last finished block is parsed again
+    /// (`IncrementalMarkdown`), and the shorter text is dropped from the cache, so a streaming answer keeps one entry
+    /// instead of one per token, which pushed the parsed finished messages out of the cache and made them parse again.
+    private static var recent: [IncrementalMarkdown<MarkdownBlock>] = []
     private static let recentLimit = 8
     private static let lock = NSLock()
 
     static func blocks(_ text: String) -> [MarkdownBlock] {
         let key = text as NSString
         if let hit = cache.object(forKey: key) { return hit.blocks }
-        let blocks = MarkdownBlock.parse(text)
-        cache.setObject(ParsedMarkdown(blocks), forKey: key)
         lock.lock()
-        if let earlier = recent.firstIndex(where: { $0.utf8.count < text.utf8.count && text.utf8.starts(with: $0.utf8) }) {
-            cache.removeObject(forKey: recent.remove(at: earlier) as NSString)
+        var parse = IncrementalMarkdown<MarkdownBlock>()
+        if let earlier = recent.firstIndex(where: { $0.continues(text) }) {
+            parse = recent.remove(at: earlier)
+            cache.removeObject(forKey: parse.source as NSString)
         }
-        recent.append(text)
+        let blocks = parse.update(text, parse: MarkdownBlock.parse)
+        recent.append(parse)
         if recent.count > recentLimit { recent.removeFirst() }
         lock.unlock()
+        cache.setObject(ParsedMarkdown(blocks), forKey: key)
         return blocks
     }
 }
@@ -182,7 +193,9 @@ struct MarkdownView: View {
                 if let choices, choices.index == segment.offset {
                     ChoiceList(options: choices.options, size: size) { onChoose?($0) }
                 } else if segment.prose {
-                    SelectableProse(blocks: segment.blocks, size: size)
+                    // Segments are keyed by their first block, which a streaming answer never moves; equal blocks
+                    // skip the text view's update, so only the segment still being written is set again.
+                    ProseSegment(blocks: segment.blocks, size: size).equatable()
                 } else {
                     view(for: segment.blocks[0])
                 }
