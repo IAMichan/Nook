@@ -221,6 +221,7 @@ struct PullRequestWatchStrip: View {
                 // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
                 Button(action: openCI) {
                     HStack(spacing: NookTheme.Spacing.xs) {
+                        if let ciOutcome { CheckOutcomeGlyph(outcome: ciOutcome) }
                         Text(ci)
                         Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
                     }
@@ -260,6 +261,16 @@ struct PullRequestWatchStrip: View {
 
     /// "…/pull/12" or "…/-/merge_requests/12".
     private var number: Int? { Int(url.lastPathComponent) }
+
+    /// The checks as the shared CI icon shows them, the same one the pull request rows and page use.
+    private var ciOutcome: PullRequestCheck.Outcome? {
+        switch watch?.checks ?? seen?.checks ?? "" {
+        case "success": return .passing
+        case "failure": return .failing
+        case "pending": return .pending
+        default: return nil
+        }
+    }
 
     private var ci: String? {
         switch watch?.checks ?? seen?.checks ?? "" {
