@@ -56,7 +56,7 @@ struct RootView: View {
         .tint(Theme.text)
         .preferredColorScheme(.dark)
         .background(Theme.canvas.ignoresSafeArea())
-        .task { client.startPolling() }
+        .task { client.appBecameActive() }
         // A prompt link starts on the Agents tab, where its New session sheet opens.
         .onChange(of: client.pendingPrompt) { _, prompt in
             if prompt != nil { tab = .sessions }
@@ -68,8 +68,13 @@ struct RootView: View {
             sessionPath = [id]
             client.openSession = nil
         }
+        // Back in front: connect, or check the connection (replaced at once after a longer break, see CompanionWakeup).
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { client.startPolling() } else { client.stopPolling() }
+            switch phase {
+            case .active: client.appBecameActive()
+            case .background: client.appWentToBackground()
+            default: break
+            }
         }
         .alert("", isPresented: Binding(get: { client.notice != nil }, set: { if !$0 { client.notice = nil } })) {
             Button("OK", role: .cancel) {}
@@ -224,6 +229,10 @@ struct SessionListView: View {
                         if client.can(CompanionFeature.liveActivity) {
                             Toggle(isOn: $live.enabled) { Label("Live Activities", systemImage: "platter.filled.top.iphone") }
                                 .disabled(!live.allowedBySystem)
+                        }
+                        // How the phone reaches the Mac right now: the local network, Tailscale, or the relay.
+                        if client.phase == .connected, let route = client.activeRoute {
+                            Section { Label(RouteText.connected(route), systemImage: RouteText.symbol(route)) }
                         }
                         Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                     } label: { NookIconLabel(symbol: "ellipsis") }
@@ -392,6 +401,7 @@ struct ConnectionLine: View {
     var body: some View {
         if case .offline(let reason) = client.phase {
             Banner(text: reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, symbol: "wifi.slash")
+            if let hint = client.awayHint { Banner(text: hint, symbol: "globe") }
         }
     }
 }
@@ -527,6 +537,28 @@ struct SessionNotice: View {
             if session.items.count > 1 {
                 Text("and \(session.items.count - 1) more").font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
             }
+        }
+    }
+}
+
+/// How the phone reaches the Mac, in words and a symbol.
+enum RouteText {
+    static func connected(_ route: CompanionRoute) -> String {
+        if route.isRelay { return String(localized: "Connected through your relay") }
+        switch route.kind {
+        case .tailnet: return String(localized: "Connected over Tailscale")
+        case .vpn: return String(localized: "Connected over a VPN")
+        case .internet: return String(localized: "Connected over the internet")
+        case .lan, .loopback: return String(localized: "Connected over your local network")
+        }
+    }
+
+    static func symbol(_ route: CompanionRoute) -> String {
+        if route.isRelay { return "globe" }
+        switch route.kind {
+        case .tailnet, .vpn: return "lock.shield"
+        case .internet: return "globe"
+        case .lan, .loopback: return "wifi"
         }
     }
 }

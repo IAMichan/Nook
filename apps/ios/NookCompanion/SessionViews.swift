@@ -34,6 +34,14 @@ struct SessionDetailView: View {
                         ForEach(session.items) { item in
                             ItemView(session: session, item: item)
                         }
+                        // Messages that wait in the outbox until the Mac takes them.
+                        let waiting = client.outbox.waiting(for: session.id)
+                        ForEach(waiting) { entry in
+                            MessageBubble(text: entry.request.text ?? "", mine: true).opacity(0.6)
+                        }
+                        if !waiting.isEmpty {
+                            Banner(text: String(localized: "Waits to be sent: it goes as soon as your Mac can be reached."), symbol: "clock")
+                        }
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
                     .padding(.horizontal, Theme.Spacing.xl)

@@ -422,6 +422,34 @@
         }
       }
     },
+    "A message that waited more than a day for your Mac was not sent." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Nachricht, die länger als einen Tag auf deinen Mac gewartet hat, wurde nicht gesendet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un mensaje que esperó a tu Mac más de un día no se envió."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un message qui attendait votre Mac depuis plus d’un jour n’a pas été envoyé."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een bericht dat langer dan een dag op je Mac wachtte, is niet verstuurd."
+          }
+        }
+      }
+    },
     "Activity" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -822,6 +850,62 @@
         }
       }
     },
+    "Away from home? Check that Tailscale is on on this iPhone." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterwegs? Prüfe, ob Tailscale auf diesem iPhone an ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Fuera de casa? Comprueba que Tailscale esté activado en este iPhone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors de chez vous ? Vérifiez que Tailscale est activé sur cet iPhone."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buiten de deur? Kijk of Tailscale aanstaat op deze iPhone."
+          }
+        }
+      }
+    },
+    "Away from home? Turn on Tailscale on this iPhone and on your Mac, or set up a relay in Nook on your Mac." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unterwegs? Schalte Tailscale auf diesem iPhone und auf deinem Mac ein, oder richte in Nook auf deinem Mac ein Relay ein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Fuera de casa? Activa Tailscale en este iPhone y en tu Mac, o configura un relé en Nook en tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors de chez vous ? Activez Tailscale sur cet iPhone et sur votre Mac, ou configurez un relais dans Nook sur votre Mac."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buiten de deur? Zet Tailscale aan op deze iPhone en op je Mac, of stel een relay in in Nook op je Mac."
+          }
+        }
+      }
+    },
     "By model" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1077,6 +1161,146 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Koppel er een in Nook › Instellingen › Agents."
+          }
+        }
+      }
+    },
+    "Connected over Tailscale" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über Tailscale verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado por Tailscale"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté via Tailscale"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden via Tailscale"
+          }
+        }
+      }
+    },
+    "Connected over a VPN" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über ein VPN verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado por una VPN"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté via un VPN"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden via een vpn"
+          }
+        }
+      }
+    },
+    "Connected over the internet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über das Internet verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado por internet"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté via Internet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden via internet"
+          }
+        }
+      }
+    },
+    "Connected over your local network" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über dein lokales Netzwerk verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado por tu red local"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté via votre réseau local"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden via je lokale netwerk"
+          }
+        }
+      }
+    },
+    "Connected through your relay" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über dein Relay verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado a través de tu relé"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecté via votre relais"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbonden via je relay"
           }
         }
       }
@@ -5019,6 +5243,34 @@
         }
       }
     },
+    "This session is gone; your message was not sent." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Sitzung gibt es nicht mehr; deine Nachricht wurde nicht gesendet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta sesión ya no existe; tu mensaje no se envió."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette session n’existe plus ; votre message n’a pas été envoyé."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze sessie bestaat niet meer; je bericht is niet verstuurd."
+          }
+        }
+      }
+    },
     "Title (optional)" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5560,6 +5812,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wacht op je Mac op jou"
+          }
+        }
+      }
+    },
+    "Waits to be sent: it goes as soon as your Mac can be reached." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf das Senden: geht los, sobald dein Mac erreichbar ist."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando para enviarse: sale en cuanto tu Mac esté disponible."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente d’envoi : il part dès que votre Mac est joignable."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wacht om verstuurd te worden: het gaat zodra je Mac bereikbaar is."
           }
         }
       }

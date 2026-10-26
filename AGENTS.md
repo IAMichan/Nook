@@ -22,6 +22,7 @@ Nook is an open-source project. **English is the default language across the ent
 apps/
   macos/       # Native macOS app (Swift, SwiftUI/AppKit, XcodeGen)
   ios/         # Nook Companion for iPhone (SwiftUI, XcodeGen)
+  relay/       # Relay for the iPhone companion away from home (Cloudflare Worker; passes sealed bytes)
   android/     # Planned Android scaffold
   windows/     # Planned Windows scaffold
   linux/       # Planned Linux scaffold
