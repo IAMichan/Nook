@@ -122,6 +122,15 @@ final class CompanionStore: ObservableObject {
         save()
     }
 
+    /// What the phone said it runs; saved only when it changed.
+    func noteVersions(device id: String, protocolVersion: Int?, appVersion: String?) {
+        guard let index = devices.firstIndex(where: { $0.id == id }),
+              devices[index].protocolVersion != protocolVersion || devices[index].appVersion != appVersion else { return }
+        devices[index].protocolVersion = protocolVersion
+        devices[index].appVersion = appVersion
+        save()
+    }
+
     func touch(_ id: String, now: Date = Date()) {
         guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
         // Not on every request: a minute is fine for "last seen".

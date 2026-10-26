@@ -273,6 +273,10 @@ final class CompanionServer: ObservableObject {
         } else {
             store.touch(claimed)
         }
+        if [CompanionOp.hello, .list, .subscribe].contains(request.op) {
+            store.noteVersions(device: claimed, protocolVersion: request.protocolVersion,
+                               appVersion: CompanionProtocol.cleanVersion(request.appVersion))
+        }
         if request.op == .subscribe, !pairing {
             subscribe(peer, request: request, deviceID: claimed, key: key)
             return
@@ -304,8 +308,9 @@ final class CompanionServer: ObservableObject {
         peer.sent = sessions
         if !streams.contains(where: { $0 === peer }) { streams.append(peer) }
         KeepAwake.shared.update()
-        send(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
-                               features: CompanionFeature.all, endpoints: endpoints(), relay: CompanionRelayClient.shared.advertised),
+        send(Self.versioned(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
+                                              features: CompanionFeature.all, endpoints: endpoints(),
+                                              relay: CompanionRelayClient.shared.advertised)),
              key: key, deviceID: deviceID, on: peer.transport)
         if streamTimer == nil {
             // Closes connections that went quiet (a phone that left without saying so) and catches changes the
@@ -349,11 +354,19 @@ final class CompanionServer: ObservableObject {
         let macName = MachineName.local
         switch request.op {
         case .hello, .list, .subscribe:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
-                                     features: CompanionFeature.all, endpoints: endpoints(),
-                                     relay: CompanionRelayClient.shared.advertised)
+            return Self.versioned(CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
+                                                    features: CompanionFeature.all, endpoints: endpoints(),
+                                                    relay: CompanionRelayClient.shared.advertised))
         case .ping:
             return CompanionResponse(id: request.id, ok: true)
+        case .requestUpdate:
+            // Only opens the update panel, where installing stays a click on the Mac; nothing is installed from here.
+            let updater = AppUpdater.shared
+            if case .unavailable = updater.phase { return CompanionResponse(id: request.id, ok: true, message: "unavailable") }
+            guard updater.available != nil else { return CompanionResponse(id: request.id, ok: true, message: "none") }
+            updater.showPanel()
+            audit("update_request", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
+            return CompanionResponse(id: request.id, ok: true, message: "available")
         case .register:
             // The token goes into a URL on Apple's host: only hex is accepted.
             guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
@@ -463,6 +476,15 @@ final class CompanionServer: ObservableObject {
         case .inboxMark:
             return inboxMark(request, app: app)
         }
+    }
+
+    /// An answer to `hello`, `list` or `subscribe`, with the versions this Mac speaks (`CompanionProtocol`).
+    private static func versioned(_ response: CompanionResponse) -> CompanionResponse {
+        var response = response
+        response.protocolVersion = CompanionProtocol.version
+        response.oldestPhone = CompanionProtocol.oldestPhone
+        response.appVersion = CompanionProtocol.appVersion
+        return response
     }
 
     private func canAllow(_ pending: PendingPermission) -> Bool {

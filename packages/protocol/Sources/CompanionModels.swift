@@ -121,6 +121,9 @@ enum CompanionOp: String, Codable, Sendable {
     case subscribe
     /// A cheap sign of life on an open connection, and a quick check whether a route reaches the Mac.
     case ping
+    /// Opens Nook's update panel on the Mac (`CompanionFeature.requestUpdate`), so the update waits there for a click.
+    /// It never installs anything; `message` in the answer is "available", "none" or "unavailable".
+    case requestUpdate
 }
 
 /// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
@@ -154,7 +157,9 @@ enum CompanionFeature {
     static let retry = "retry"
     /// The Mac says which relay it uses (`CompanionResponse.relay`) and answers phones that come through it.
     static let relay = "relay"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay]
+    /// The Mac takes `requestUpdate`: it opens its update panel when the phone asks.
+    static let requestUpdate = "requestUpdate"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay, requestUpdate]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -213,12 +218,22 @@ struct CompanionRequest: Codable, Equatable, Sendable {
     var replyTo: String?
     /// What `liveActivity` registers.
     var live: LiveActivityRegistration?
+    /// The phone's protocol and app version (`CompanionProtocol`), with `hello`, `list` and `subscribe`; nil from a
+    /// phone that predates versions.
+    var protocolVersion: Int?
+    var appVersion: String?
 
     init(id: String = UUID().uuidString, sent: Double = Date().timeIntervalSince1970, op: CompanionOp, session: String? = nil,
          item: String? = nil, text: String? = nil, allow: Bool? = nil, conversation: String? = nil, launch: LaunchRequest? = nil,
-         replyTo: String? = nil, live: LiveActivityRegistration? = nil) {
+         replyTo: String? = nil, live: LiveActivityRegistration? = nil, protocolVersion: Int? = nil, appVersion: String? = nil) {
         self.id = id; self.sent = sent; self.op = op; self.session = session; self.item = item; self.text = text; self.allow = allow
         self.conversation = conversation; self.launch = launch; self.replyTo = replyTo; self.live = live
+        self.protocolVersion = protocolVersion; self.appVersion = appVersion
+    }
+
+    /// A request that says which versions this side speaks: `hello`, `list` and `subscribe` carry them.
+    static func versioned(_ op: CompanionOp, text: String? = nil) -> CompanionRequest {
+        CompanionRequest(op: op, text: text, protocolVersion: CompanionProtocol.version, appVersion: CompanionProtocol.appVersion)
     }
 }
 
@@ -253,6 +268,11 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     /// Set on what the Mac sends by itself over a subscribed connection: 1, 2, 3… The phone ignores one that does not
     /// grow, so an old message played back on the connection cannot turn the list back.
     var seq: Int?
+    /// The Mac's protocol version, the oldest phone protocol it still supports, and its app version
+    /// (`CompanionProtocol`), with `hello`, `list` and `subscribe`; nil from a Mac that predates versions.
+    var protocolVersion: Int?
+    var oldestPhone: Int?
+    var appVersion: String?
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -590,6 +610,9 @@ struct PairedDevice: Codable, Equatable, Identifiable, Sendable {
     var liveStartToken: String?
     var liveTokens: [String: String]?
     var liveProduction: Bool?
+    /// What the phone said it runs (`CompanionProtocol`): its protocol and app version; nil until it said so.
+    var protocolVersion: Int?
+    var appVersion: String?
 
     init(id: String, name: String, pairedAt: Date, lastSeen: Date? = nil, pushToken: String? = nil, pushProduction: Bool? = nil) {
         self.id = id; self.name = name; self.pairedAt = pairedAt; self.lastSeen = lastSeen

@@ -234,6 +234,12 @@ struct SessionListView: View {
                         if client.phase == .connected, let route = client.activeRoute {
                             Section { Label(RouteText.connected(route), systemImage: RouteText.symbol(route)) }
                         }
+                        // Opens the update panel on the Mac; installing stays a click there.
+                        if client.can(CompanionFeature.requestUpdate) {
+                            Button { Task { await client.requestMacUpdate() } } label: {
+                                Label("Show the update on your Mac", systemImage: "arrow.down.circle")
+                            }
+                        }
                         Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                     } label: { NookIconLabel(symbol: "ellipsis") }
                     .accessibilityLabel("More")
@@ -402,6 +408,17 @@ struct ConnectionLine: View {
         if case .offline(let reason) = client.phase {
             Banner(text: reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, symbol: "wifi.slash")
             if let hint = client.awayHint { Banner(text: hint, symbol: "globe") }
+        }
+        // The Mac and this app are too far apart in version for some of what the phone does (`CompanionCompatibility`).
+        switch client.compatibility {
+        case .macTooOld:
+            Banner(text: String(localized: "Update Nook on your Mac: it is too old for this version of the app."),
+                   symbol: "arrow.down.circle.fill")
+        case .phoneTooOld:
+            Banner(text: String(localized: "Update the app: Nook on your Mac needs a newer Nook Companion."),
+                   symbol: "arrow.down.circle.fill")
+        case .ok:
+            EmptyView()
         }
     }
 }

@@ -27,11 +27,13 @@ struct CompanionSettingsRows: View {
                 ForEach(store.devices) { device in
                     HStack(spacing: NookTheme.Spacing.md) {
                         Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
-                        SettingLabel(device.name, detail: device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) }
-                                     ?? tr("companion.neverSeen"))
+                        SettingLabel(device.name, detail: deviceDetail(device))
                         Spacer()
                         ConfirmedButton(tr("companion.remove"), question: tr("confirm.remove", device.name),
                                         detail: tr("confirm.removeDevice.detail")) { store.remove(device.id) }
+                    }
+                    if device.protocolVersion != nil, !CompanionCompatibility.phoneSupported(device.protocolVersion) {
+                        SettingNote(tr("companion.device.outdated"), tone: .error)
                     }
                 }
                 if store.devices.isEmpty { SettingNote(tr("companion.none")) }
@@ -129,6 +131,13 @@ struct CompanionSettingsRows: View {
               let text = try? String(contentsOf: url, encoding: .utf8) else { return }
         keyProblem = !store.saveAPNsKey(pem: text)
         APNsClient.shared.forgetToken()
+    }
+
+    /// When the phone was last seen, and which version of the app it runs once it said so.
+    private func deviceDetail(_ device: PairedDevice) -> String {
+        let seen = device.lastSeen.map { tr("companion.lastSeen", $0.formatted(.relative(presentation: .named))) } ?? tr("companion.neverSeen")
+        guard let version = device.appVersion else { return seen }
+        return seen + " · " + tr("companion.device.version", version)
     }
 
     private var isListening: Bool { if case .listening = server.state { return true }; return false }

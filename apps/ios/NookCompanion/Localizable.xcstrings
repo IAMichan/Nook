@@ -3058,6 +3058,62 @@
         }
       }
     },
+    "Nook on your Mac cannot update itself. Update it the way you installed it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac kann sich nicht selbst aktualisieren. Aktualisiere es so, wie du es installiert hast."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac no puede actualizarse solo. Actualízalo de la misma forma en que lo instalaste."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur votre Mac ne peut pas se mettre à jour lui-même. Mettez-le à jour comme vous l’avez installé."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac kan zichzelf niet bijwerken. Werk hem bij zoals je hem installeerde."
+          }
+        }
+      }
+    },
+    "Nook on your Mac has no update ready yet." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook auf deinem Mac hat noch kein Update bereit."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook en tu Mac aún no tiene ninguna actualización lista."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook sur votre Mac n’a pas encore de mise à jour prête."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook op je Mac heeft nog geen update klaarstaan."
+          }
+        }
+      }
+    },
     "Nook on your iPhone" : {
       "localizations" : {
         "de" : {
@@ -4523,6 +4579,34 @@
         }
       }
     },
+    "Show the update on your Mac" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update auf deinem Mac zeigen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar la actualización en tu Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher la mise à jour sur votre Mac"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon de update op je Mac"
+          }
+        }
+      }
+    },
     "Slow down a little." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5038,6 +5122,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "De sleutel kon niet worden bewaard."
+          }
+        }
+      }
+    },
+    "The update is waiting on your Mac: install it there." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Update wartet auf deinem Mac: Installiere es dort."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La actualización te espera en tu Mac: instálala allí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La mise à jour vous attend sur votre Mac : installez-la là-bas."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De update staat klaar op je Mac: installeer hem daar."
           }
         }
       }
@@ -5640,6 +5752,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Werk Nook op je Mac bij om hier je usage te zien."
+          }
+        }
+      }
+    },
+    "Update Nook on your Mac: it is too old for this version of the app." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiere Nook auf deinem Mac: Es ist zu alt für diese Version der App."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Nook en tu Mac: es demasiado antiguo para esta versión de la app."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettez à jour Nook sur votre Mac : il est trop ancien pour cette version de l’app."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werk Nook op je Mac bij: die is te oud voor deze versie van de app."
+          }
+        }
+      }
+    },
+    "Update the app: Nook on your Mac needs a newer Nook Companion." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiere die App: Nook auf deinem Mac braucht ein neueres Nook Companion."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza la app: Nook en tu Mac necesita un Nook Companion más reciente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettez à jour l’app : Nook sur votre Mac a besoin d’un Nook Companion plus récent."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werk de app bij: Nook op je Mac heeft een nieuwere Nook Companion nodig."
           }
         }
       }

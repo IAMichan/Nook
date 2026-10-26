@@ -59,6 +59,10 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var outbox = CompanionOutbox()
     /// The route the live connection (or the last answer) went over.
     @Published private(set) var activeRoute: CompanionRoute?
+    /// Whether this app and Nook on the Mac speak a protocol both understand (`CompanionCompatibility`), and the Mac's
+    /// app version, from the last `hello`, `list` or `subscribe` answer.
+    @Published private(set) var compatibility: CompanionCompatibility = .ok
+    @Published private(set) var macAppVersion: String?
     private(set) var pushToken: String?
 
     private var link: PairingLink?
@@ -119,7 +123,7 @@ final class CompanionClient: ObservableObject {
         let name = UIDevice.current.name
         Task {
             do {
-                guard let picked = await RouteProbe.pick(candidates, key: parsed.key, makeRequest: { CompanionRequest(op: .hello, text: name) }) else {
+                guard let picked = await RouteProbe.pick(candidates, key: parsed.key, makeRequest: { CompanionRequest.versioned(.hello, text: name) }) else {
                     throw CompanionClientError.timeout
                 }
                 let response = picked.answer
@@ -258,7 +262,7 @@ final class CompanionClient: ObservableObject {
         while !Task.isCancelled, let link {
             // Every route is asked for the list: any Mac answers it, and the answer says whether it keeps a live
             // connection, so a Mac that was updated (or rolled back) in the meantime is met as it is now.
-            guard let picked = await RouteProbe.pick(attemptOrder(), key: link.key, makeRequest: { CompanionRequest(op: .list) }) else {
+            guard let picked = await RouteProbe.pick(attemptOrder(), key: link.key, makeRequest: { CompanionRequest.versioned(.list) }) else {
                 if Task.isCancelled { return }
                 // Nothing answered: the Mac may listen on another port now; Bonjour finds it on the local network.
                 if await relocate() { continue }
@@ -303,7 +307,7 @@ final class CompanionClient: ObservableObject {
         }
         do {
             try await channel.open(timeout: 5)
-            let response = try await channel.request(CompanionRequest(op: .subscribe), timeout: 10)
+            let response = try await channel.request(CompanionRequest.versioned(.subscribe), timeout: 10)
             guard response.ok else {
                 channel.close()
                 failures += 1
@@ -509,7 +513,7 @@ final class CompanionClient: ObservableObject {
 
     func refresh() async {
         guard link != nil else { return }
-        await perform(CompanionRequest(op: .list))
+        await perform(CompanionRequest.versioned(.list))
         guard phase == .connected else { return }
         // The Live Activities follow the list (and the Mac gets the tokens it does not have yet).
         await LiveActivities.shared.reconcile(sessions)
@@ -679,6 +683,19 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
     }
 
+    // MARK: Versions
+
+    /// Opens Nook's update panel on the Mac, where the update waits for a click there; nothing is installed from the
+    /// phone. Says what happened in `notice`.
+    func requestMacUpdate() async {
+        guard can(CompanionFeature.requestUpdate), let response = await perform(CompanionRequest(op: .requestUpdate)) else { return }
+        switch response.message {
+        case "available": notice = String(localized: "The update is waiting on your Mac: install it there.")
+        case "none": notice = String(localized: "Nook on your Mac has no update ready yet.")
+        default: notice = String(localized: "Nook on your Mac cannot update itself. Update it the way you installed it.")
+        }
+    }
+
     /// Sends a request and takes in whatever the answer carries. The answer when the Mac said yes, else nil with the reason
     /// in `notice`. `quiet` is for the requests a screen repeats by itself: a session or chat that is gone says so on that
     /// screen instead of in an alert every few seconds.
@@ -742,6 +759,12 @@ final class CompanionClient: ObservableObject {
             if list != sessions { sessions = list }
         }
         if let name = response.macName, name != macName { macName = name }
+        // Only an answer to hello, list or subscribe says what the Mac speaks (it carries the features too).
+        if response.features != nil {
+            let compatible = CompanionCompatibility.check(response)
+            if compatible != compatibility { compatibility = compatible }
+            if response.appVersion != macAppVersion { macAppVersion = response.appVersion }
+        }
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)
             UserDefaults.standard.set(features, forKey: Self.featuresKey)
