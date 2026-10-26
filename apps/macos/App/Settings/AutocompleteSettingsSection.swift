@@ -153,9 +153,7 @@ struct AutocompleteSettingsSection: View {
                 }
             }
         } header: {
-            Text(tr("autocomplete.section.model"))
-        } footer: {
-            Text(tr("autocomplete.modelFooter"))
+            SettingsSectionTitle(tr("autocomplete.section.model"), info: tr("autocomplete.modelFooter"))
         }
     }
 
@@ -185,9 +183,7 @@ struct AutocompleteSettingsSection: View {
             if let model = downloads.downloading, !CompletionCatalogModel.catalog.contains(model) { downloadRow(model) }
             if let error = downloads.error { SettingNote(error, tone: .error) }
         } header: {
-            Text(tr("autocomplete.section.download"))
-        } footer: {
-            Text(tr("autocomplete.download.footer"))
+            SettingsSectionTitle(tr("autocomplete.section.download"), info: tr("autocomplete.download.footer"))
         }
         .id(downloads.changes)
     }
@@ -370,9 +366,7 @@ struct AutocompleteSettingsSection: View {
             SettingToggle(tr("autocomplete.context.screen"), detail: tr("autocomplete.context.screenDetail"), isOn: $store.prefs.screenContext)
             SettingToggle(tr("autocomplete.context.clipboard"), detail: tr("autocomplete.context.clipboardDetail"), isOn: $store.prefs.clipboardContext)
         } header: {
-            Text(tr("autocomplete.section.context"))
-        } footer: {
-            Text(tr("autocomplete.privacy"))
+            SettingsSectionTitle(tr("autocomplete.section.context"), info: tr("autocomplete.privacy"))
         }
     }
 
@@ -423,15 +417,13 @@ struct AutocompleteSettingsSection: View {
                     .fixedSize()
                 }
             } header: {
-                Text(tr("autocomplete.section.apps"))
+                SettingsSectionTitle(tr("autocomplete.section.apps"), info: tr("autocomplete.appsFooter"))
             }
             Section {
                 if apps.isEmpty {
                     SettingNote(installed.isEmpty ? tr("autocomplete.loading.apps") : tr("autocomplete.apps.noMatch"))
                 }
                 ForEach(apps) { app in appRow(app) }
-            } footer: {
-                Text(tr("autocomplete.appsFooter"))
             }
         }
         .task { if installed.isEmpty { installed = await InstalledApp.scan() } }
@@ -559,9 +551,7 @@ struct AutocompleteSettingsSection: View {
                 }
             }
         } header: {
-            Text(tr("autocomplete.apps.sites"))
-        } footer: {
-            Text(tr("autocomplete.apps.sitesFooter"))
+            SettingsSectionTitle(tr("autocomplete.apps.sites"), info: tr("autocomplete.apps.sitesFooter"))
         }
     }
 
@@ -652,11 +642,13 @@ struct AutocompleteSettingsSection: View {
                 }
             }
 
-            Section(tr("autocomplete.stats.details")) {
+            Section {
                 LabeledContent(tr("autocomplete.stats.saved")) { Text(duration(stats.minutesSaved)).monospacedDigit() }
                 LabeledContent(tr("autocomplete.stats.characters")) { Text("\(stats.totalCharacters)").monospacedDigit() }
                 LabeledContent(tr("autocomplete.stats.acceptance")) { Text("\(Int((stats.acceptance * 100).rounded()))%").monospacedDigit() }
                 LabeledContent(tr("autocomplete.stats.streakTitle")) { Text(tr("autocomplete.stats.streak", stats.streak())).monospacedDigit() }
+            } header: {
+                SettingsSectionTitle(tr("autocomplete.stats.details"), info: tr("autocomplete.stats.footer"))
             }
 
             let top = stats.topApps(6)
@@ -680,8 +672,6 @@ struct AutocompleteSettingsSection: View {
                     .confirmationDialog(tr("autocomplete.stats.resetConfirm"), isPresented: $confirmReset) {
                         Button(tr("autocomplete.stats.reset"), role: .destructive) { store.resetStats() }
                     }
-            } footer: {
-                Text(tr("autocomplete.stats.footer"))
             }
         }
     }

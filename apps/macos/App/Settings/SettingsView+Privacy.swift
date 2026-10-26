@@ -80,9 +80,7 @@ extension SettingsView {
             }
             Button(tr("settings.privacy.neverRead.add")) { chooseNeverReadApp() }
         } header: {
-            Text(tr("settings.privacy.neverRead.title"))
-        } footer: {
-            Text(tr("settings.privacy.neverRead.footer"))
+            SettingsSectionTitle(tr("settings.privacy.neverRead.title"), info: tr("settings.privacy.neverRead.footer"))
         }
     }
 

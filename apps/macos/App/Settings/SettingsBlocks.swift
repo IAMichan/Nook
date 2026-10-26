@@ -67,7 +67,10 @@ struct SettingsHeader: View {
                     .frame(width: 36, height: 36)
             }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(section.title).font(NookTheme.TextStyle.display).foregroundStyle(NookTheme.paper)
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(section.title).font(NookTheme.TextStyle.display).foregroundStyle(NookTheme.paper)
+                    if let info = section.info { SettingsInfoButton(text: info) }
+                }
                 Text(section.subtitle).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
             }
             Spacer(minLength: 0)
@@ -162,24 +165,85 @@ struct SettingToggle: View {
     }
 }
 
-/// A setting's title with a short caption under it: the label of `SettingToggle`, and of rows that hold a button or a
-/// picker instead of a switch.
+/// A setting's title for rows that hold a button or a picker. With `detail:` a short caption stays under it, for what
+/// you need to see (a state, a size, the step to take); with `hint:` only the title shows and the explanation is on
+/// hover and for VoiceOver, as with `SettingToggle`.
 struct SettingLabel: View {
     let title: String
     let detail: String
+    private var showsDetail = true
 
     init(_ title: String, detail: String) {
         self.title = title
         self.detail = detail
     }
 
+    init(_ title: String, hint: String) {
+        self.title = title
+        self.detail = hint
+        self.showsDetail = false
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+        if showsDetail {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(title)
+                Text(detail)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
             Text(title)
-            Text(detail)
+                .help(detail)
+                .accessibilityHint(detail)
+        }
+    }
+}
+
+/// A section's title with an optional ⓘ next to it. The explanation of a section lives behind that ⓘ (a click opens it,
+/// hovering shows it too) instead of in a footer, so every page reads as titles and controls. Footers stay for what
+/// must be seen: a warning, an error, or the one step that unlocks the section.
+struct SettingsSectionTitle: View {
+    let title: String
+    var info: String? = nil
+
+    init(_ title: String, info: String? = nil) {
+        self.title = title
+        self.info = info
+    }
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text(title)
+            if let info { SettingsInfoButton(text: info) }
+        }
+    }
+}
+
+/// The small ⓘ that holds an explanation: a click opens it in a popover, hovering shows it as a tooltip.
+struct SettingsInfoButton: View {
+    let text: String
+    @State private var shown = false
+
+    var body: some View {
+        Button { shown.toggle() } label: {
+            Image(systemName: "info.circle")
                 .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
+                .foregroundStyle(NookTheme.textTertiary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(text)
+        .accessibilityLabel(tr("settings.info.more"))
+        .accessibilityHint(text)
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            Text(text)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textStrong)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 300, alignment: .leading)
+                .padding(NookTheme.Spacing.lg)
         }
     }
 }
@@ -372,9 +436,7 @@ struct WorkspaceSettingsSection: View {
                 Button(tr("sched.settings.open")) { showScheduled = true }
             }
         } header: {
-            Text(tr("sched.title"))
-        } footer: {
-            Text(tr("sched.settings.footer"))
+            SettingsSectionTitle(tr("sched.title"), info: tr("sched.settings.footer"))
         }
         .sheet(isPresented: $showScheduled) {
             ScheduledTasksView { showScheduled = false }
@@ -437,9 +499,7 @@ struct WorkspaceSettingsSection: View {
                 }
             }
         } header: {
-            Text(tr("settings.ws.newSession"))
-        } footer: {
-            Text(tr("settings.ws.footer"))
+            SettingsSectionTitle(tr("settings.ws.newSession"), info: tr("settings.ws.footer"))
         }
     }
 
@@ -486,8 +546,8 @@ struct WorkspaceSettingsSection: View {
                           prompt: Text(tr("settings.ws.commitInstructions.placeholder")), axis: .vertical)
                     .lineLimit(2...5)
             }
-        } footer: {
-            Text(tr("settings.ws.commitStyle.footer"))
+        } header: {
+            SettingsSectionTitle(tr("settings.ws.commitStyle"), info: tr("settings.ws.commitStyle.footer"))
         }
         Section(tr("settings.ws.behavior")) {
             Toggle(tr("settings.ws.autoTitles"), isOn: $ws.autoTitles)
@@ -534,9 +594,7 @@ struct WorkspaceSettingsSection: View {
             }
             .disabled(!ws.agentTools)
         } header: {
-            Text(tr("settings.bridge.title"))
-        } footer: {
-            Text(tr("settings.bridge.footer"))
+            SettingsSectionTitle(tr("settings.bridge.title"), info: tr("settings.bridge.footer"))
         }
     }
 
@@ -596,9 +654,7 @@ struct WatchedPullRequestsSection: View {
                 SettingNote(tr("settings.pulls.full", PullRequestWatchList.limit))
             }
         } header: {
-            Text(tr("settings.pulls.title"))
-        } footer: {
-            Text(tr("settings.pulls.footer"))
+            SettingsSectionTitle(tr("settings.pulls.title"), info: tr("settings.pulls.footer"))
         }
     }
 

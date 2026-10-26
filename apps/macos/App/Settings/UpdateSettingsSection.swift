@@ -39,9 +39,7 @@ struct UpdateSettingsSection: View {
                 }
             }
         } header: {
-            Text(tr("update.settings.title"))
-        } footer: {
-            Text(tr("update.settings.footer"))
+            SettingsSectionTitle(tr("update.settings.title"), info: tr("update.settings.footer"))
         }
     }
 

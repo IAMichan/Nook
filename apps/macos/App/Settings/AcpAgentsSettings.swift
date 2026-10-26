@@ -45,9 +45,8 @@ struct AcpAgentsSection: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 AgentLogo(.acp, size: 16)
                 Text(tr("acp.title"))
+                SettingsInfoButton(text: tr("acp.footer"))
             }
-        } footer: {
-            Text(tr("acp.footer"))
         }
         .sheet(isPresented: $showRegistry) {
             AcpRegistrySheet { entry, folder in

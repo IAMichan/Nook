@@ -53,9 +53,7 @@ struct LocalQualitySection: View {
                 }
             }
         } header: {
-            Text(tr("settings.quality.title"))
-        } footer: {
-            Text(tr("settings.quality.footer"))
+            SettingsSectionTitle(tr("settings.quality.title"), info: tr("settings.quality.footer"))
         }
     }
 }

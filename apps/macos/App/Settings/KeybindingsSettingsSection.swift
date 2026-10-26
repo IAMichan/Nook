@@ -11,9 +11,7 @@ struct KeybindingsSettingsSection: View {
             Section {
                 ForEach(Keybindings.commandIDs, id: \.self) { command in row(command) }
             } header: {
-                Text(tr("keys.title"))
-            } footer: {
-                Text(tr("keys.detail"))
+                SettingsSectionTitle(tr("keys.title"), info: tr("keys.detail"))
             }
             Section {
                 LabeledContent(tr("keys.file")) {
@@ -26,9 +24,7 @@ struct KeybindingsSettingsSection: View {
                 }
                 ForEach(notes.indices, id: \.self) { index in SettingNote(notes[index].text, tone: notes[index].tone) }
             } header: {
-                Text(tr("keys.file.title"))
-            } footer: {
-                Text(tr("keys.file.detail", Self.displayPath))
+                SettingsSectionTitle(tr("keys.file.title"), info: tr("keys.file.detail", Self.displayPath))
             }
         }
         .onAppear { center.reload() }

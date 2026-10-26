@@ -58,8 +58,6 @@ extension SettingsView {
             Section {
                 NookSearchField(prompt: tr("settings.connections.searchPrompt"), text: $connectionSearch, style: .inline)
                 ServiceCategoryChips(selection: $connectionCategory)
-            } footer: {
-                Text(tr("connect.intro"))
             }
 
             if !expired.isEmpty {
@@ -174,9 +172,7 @@ extension SettingsView {
                         }
                     }
                 } header: {
-                    Text(tr("connect.notListed"))
-                } footer: {
-                    Text(tr("settings2.connections.missingDetail"))
+                    SettingsSectionTitle(tr("connect.notListed"), info: tr("settings2.connections.missingDetail"))
                 }
             }
         }

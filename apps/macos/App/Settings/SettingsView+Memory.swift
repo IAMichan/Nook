@@ -85,8 +85,6 @@ struct MemorySettingsSection: View {
                 }
                 Button(tr("memory.settings.clear"), role: .destructive) { confirmClear = true }
                     .disabled(app.memory.items.isEmpty && app.memory.learnedWords == 0)
-            } footer: {
-                Text(tr("memory.settings.privacyFooter"))
             }
         }
         .onAppear { importable = app.memory.importable().map { ImportFile(url: $0.url, count: $0.count) } }
@@ -149,9 +147,7 @@ struct MemorySettingsSection: View {
                 }
             }
         } header: {
-            Text(tr("memory.import.title"))
-        } footer: {
-            Text(tr("memory.import.footer"))
+            SettingsSectionTitle(tr("memory.import.title"), info: tr("memory.import.footer"))
         }
     }
 

@@ -24,7 +24,7 @@ extension SettingsView {
                 LabeledContent {
                     Button(tr("button.view")) { app.showWeekRecap() }
                 } label: {
-                    SettingLabel(tr("settings.agents.weekRecap"), detail: tr("settings.agents.weekRecapDetail"))
+                    SettingLabel(tr("settings.agents.weekRecap"), hint: tr("settings.agents.weekRecapDetail"))
                 }
             }
         }

@@ -38,9 +38,7 @@ struct ChatsSettingsSection: View {
                 }
                 addRow
             } header: {
-                Text(tr("chats.settings.otherApps"))
-            } footer: {
-                Text(tr("chats.settings.privacy"))
+                SettingsSectionTitle(tr("chats.settings.otherApps"), info: tr("chats.settings.privacy"))
             }
 
             Section {
@@ -52,9 +50,7 @@ struct ChatsSettingsSection: View {
             Section {
                 giphyRow
             } header: {
-                Text(tr("chats.giphy.title"))
-            } footer: {
-                Text(tr("chats.giphy.footer"))
+                SettingsSectionTitle(tr("chats.giphy.title"), info: tr("chats.giphy.footer"))
             }
         }
     }
@@ -88,7 +84,7 @@ struct ChatsSettingsSection: View {
     /// Your GIPHY key, for the GIFs the chat's "+" offers: pasted once, kept in the Keychain.
     @ViewBuilder
     private var giphyRow: some View {
-        SettingLabel(tr("chats.giphy.key"), detail: tr("chats.giphy.keyDetail"))
+        SettingLabel(tr("chats.giphy.key"), hint: tr("chats.giphy.keyDetail"))
         HStack(spacing: NookTheme.Spacing.sm) {
             SecureField("", text: $giphyKey, prompt: Text(giphySet ? "••••••••" : tr("chats.giphy.key")))
                 .labelsHidden()
@@ -125,7 +121,7 @@ struct ChatsSettingsSection: View {
     /// Adding a source: a website or an app's name typed in one field, or a Mac app picked from the Applications folder.
     private var addRow: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            SettingLabel(tr("chats.settings.addField"), detail: tr("chats.settings.addDetail"))
+            SettingLabel(tr("chats.settings.addField"), hint: tr("chats.settings.addDetail"))
             HStack(spacing: NookTheme.Spacing.sm) {
                 TextField("", text: $typed, prompt: Text(tr("chats.settings.addPrompt")))
                     .labelsHidden()

@@ -25,9 +25,7 @@ extension SettingsView {
                         ? tr("settings.private.activeLocal")
                         : tr("settings.private.activeExternal", settings.privateSources.count))
         } header: {
-            Text(tr("settings.private.title"))
-        } footer: {
-            Text(tr("settings.private.footer"))
+            SettingsSectionTitle(tr("settings.private.title"), info: tr("settings.private.footer"))
         }
     }
 

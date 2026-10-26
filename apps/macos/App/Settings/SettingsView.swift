@@ -7,11 +7,11 @@ import EventKit
 /// Settings sections, in the order of the sidebar. Each subject lives in exactly one place.
 enum SettingsSection: String, CaseIterable, Identifiable {
     case start, general, appearance, shortcuts, notifications, brain, assistant, memory, autocomplete, dictation, connections, chats,
-         agents, usage, workspace, devices, privacy
+         devices, agents, usage, workspace, privacy
 
     /// The sidebar groups: what belongs together sits together.
     enum Group: String, CaseIterable, Identifiable {
-        case nook, intelligence, input, connect, security
+        case nook, intelligence, input, connect, agents, security
 
         var id: String { rawValue }
 
@@ -22,7 +22,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             case .nook: return [.start, .general, .appearance, .shortcuts, .notifications]
             case .intelligence: return [.brain, .assistant, .memory]
             case .input: return [.autocomplete, .dictation]
-            case .connect: return [.connections, .chats, .agents, .usage, .workspace, .devices]
+            // What Nook reads from and your devices, apart from the coding agents and what they cost.
+            case .connect: return [.connections, .chats, .devices]
+            case .agents: return [.agents, .usage, .workspace]
             case .security: return [.privacy]
             }
         }
@@ -35,6 +37,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var subtitle: String { tr("settings.section.\(rawValue).sub") }
 
     var symbol: String { tileSymbol }
+
+    /// What a whole page is about and how it treats your data, behind the ⓘ next to its title; nil for most pages.
+    var info: String? {
+        switch self {
+        case .connections: return tr("connect.intro")
+        case .memory: return tr("memory.settings.privacyFooter")
+        default: return nil
+        }
+    }
 }
 
 /// Settings: sidebar navigation with sections. A one-sentence summary is displayed at the top of each view.

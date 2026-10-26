@@ -39,11 +39,10 @@ struct AutocompletePlaygroundSection: View {
                             .foregroundStyle(NookTheme.textSecondary)
                     }
                     Spacer()
+                    SettingsInfoButton(text: tr("autocomplete.playground.footer"))
                     Button(tr("autocomplete.playground.clear")) { editor.clear() }.disabled(playground.isEmpty)
                 }
                 .font(NookTheme.TextStyle.detail)
-            } footer: {
-                Text(tr("autocomplete.playground.footer"))
             }
 
             if let last = playground.last {

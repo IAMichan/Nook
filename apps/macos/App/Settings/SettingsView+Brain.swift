@@ -80,8 +80,12 @@ extension SettingsView {
                     Text(tr("settings.brain.externalChoice")).tag(BrainKind.external)
                 }
                 .pickerStyle(.segmented)
+                .help(tr("settings.brain.localDefault"))
             } footer: {
-                Text(settings.isLocalBrain ? tr("settings.brain.localDefault") : tr("settings.brain.externalWarning"))
+                // Local needs no warning (its explanation is on hover); leaving the Mac is said out loud.
+                if !settings.isLocalBrain {
+                    Text(tr("settings.brain.externalWarning"))
+                }
             }
 
             if settings.isLocalBrain {
@@ -102,9 +106,8 @@ extension SettingsView {
                         Text(tr("settings.brain.otherAI")).tag(ExternalKind.other)
                     }
                     .pickerStyle(.segmented)
+                    .help(brainExplanation)
                     providerFields
-                } footer: {
-                    Text(brainExplanation)
                 }
             }
 
