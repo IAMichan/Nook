@@ -66,6 +66,15 @@ final class EnergyPolicyTests: XCTestCase {
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(displayAsleep: true), mode: .full).pace, .paused)
     }
 
+    func testModelsOnThisMacOnlyRunOptionalWorkAtFullSpeed() {
+        XCTAssertTrue(EnergyPolicy.plan(for: EnergySignals(), mode: .automatic).runsLocalModels)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic).runsLocalModels)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(), mode: .saver).runsLocalModels)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(hot: true), mode: .full).runsLocalModels)
+        // Full power on battery is your choice to keep going.
+        XCTAssertTrue(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .full).runsLocalModels)
+    }
+
     func testTheReasonsNameTheStrongestFirst() {
         let plan = EnergyPolicy.plan(for: EnergySignals(hot: true, onBattery: true, displayAsleep: true), mode: .automatic)
         XCTAssertEqual(plan.reasons, [.displayAsleep, .hot, .battery])

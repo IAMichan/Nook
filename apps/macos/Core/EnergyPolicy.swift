@@ -91,6 +91,11 @@ struct EnergyPlan: Equatable {
     /// Nook looks over your shoulder and offers help by himself.
     var thinksAlong: Bool { pace != .paused }
 
+    /// Optional work on a model on this Mac (thinking along, learning from a chat): every run is a full burst on the GPU,
+    /// the biggest draw Nook has, so it only runs at full speed. On battery, or when the Mac has no room, it waits; anything
+    /// you ask for still runs on the model you chose.
+    var runsLocalModels: Bool { pace == .full }
+
     /// At least this long between two looks while thinking along, on top of the usual gaps: a look is a model run.
     var thinkAlongGap: TimeInterval {
         switch pace {

@@ -19,7 +19,7 @@ Enable it in **Settings › Autocomplete**, which has five tabs:
 - Finishes the word you are typing (token healing, with both the MLX and the GGUF engine) and keeps suggesting while you edit a sentence: before its period or a closing bracket always, and mid-line (on by default, shown as a card under the cursor so it never covers your text). An emoji picker (type `:` and pick by arrow keys, number or click, or type on to search: `:smile`, `:duim`), inline typo fixes, and numbered word alternatives.
 - Optionally, the number of words completed today next to Nook's icon in the menu bar.
 - Learns from your own writing locally while automatically filtering out secrets, API keys, and national ID numbers. Besides the words you use, it learns the phrases you write again and again (`CompletionPhrases`: which word follows the one to three words before it, recent writing weighing more). A phrase you nearly always finish the same way is suggested at once, without waiting for the model; pressing Escape on one makes it count less. The most frequent phrases also go into the prompt.
-- Respects macOS smart quotes and can shorten or pause completions on battery power.
+- Respects macOS smart quotes and shortens completions on battery power; by default it pauses on battery altogether, since every suggestion is a model run on this Mac (turn it back on under **Battery** in Settings).
 
 ## How It Works
 

@@ -64,9 +64,12 @@ extension AppModel {
         // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy, and less often
         // on battery (`EnergyPolicy`). With a model on this Mac (built in, Ollama or LM Studio, as the brain or as the
         // screen brain) each look is a full run on the GPU, so it looks less often too (`ThinkAlong.localLookGap`).
+        // On battery that look waits altogether (`EnergyPlan.runsLocalModels`): a cloud brain still thinks along.
         let plan = EnergyMonitor.shared.plan
         guard plan.thinksAlong else { return }
-        let minGap = max((settings.screenWorker ?? settings.selection).isLocal ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
+        let local = (settings.screenWorker ?? settings.selection).isLocal
+        guard !local || plan.runsLocalModels else { return }
+        let minGap = max(local ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
         let frontApp = NSWorkspace.shared.frontmostApplication
         let bundle = frontApp?.bundleIdentifier ?? ""
         // Window title and contents from live cache; throttled to at most once per 5 minutes without cache.

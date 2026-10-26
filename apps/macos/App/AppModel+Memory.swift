@@ -199,7 +199,10 @@ extension AppModel {
             // Let the next question go first: a reflection is never in the way.
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard let self else { return }
-            if self.chat.conversations.contains(where: \.busy) {
+            // A reflection on a model on this Mac is a second full run on the GPU: on battery it waits for a later answer
+            // (`EnergyPlan.runsLocalModels`), like it does while another question runs.
+            if self.chat.conversations.contains(where: \.busy)
+                || (self.settings.isLocalBrain && !EnergyMonitor.shared.plan.runsLocalModels) {
                 self.memory.endReflection(conversation, covered: max(0, userTurns.count - 4))
                 return
             }
