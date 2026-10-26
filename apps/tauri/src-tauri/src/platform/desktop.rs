@@ -13,6 +13,8 @@ pub const COLLAPSED: (f64, f64) = (44.0, 44.0);
 /// A compact agent notice: the bar keeps its height and grows wider, with the message and its buttons in the row.
 pub const NOTICE: (f64, f64) = (560.0, 38.0);
 pub const EXPANDED: (f64, f64) = (760.0, 540.0);
+/// The smallest the open panel can be dragged to.
+pub const EXPANDED_MIN: (f64, f64) = (480.0, 320.0);
 pub const EXPANDED_LARGE: (f64, f64) = (960.0, 680.0);
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
@@ -73,7 +75,7 @@ pub fn place_bar_sized(app: &AppHandle, expanded: bool, notice: bool) {
     // The closed bar is a fixed round Nook: stretching it would only blow the circle up, so its size is pinned by min
     // and max. (Toggling `resizable` instead changes the window frame, which throws the first open off.)
     let _ = window.set_max_size(None::<LogicalSize<f64>>);
-    let _ = window.set_min_size(Some(if expanded { LogicalSize::new(COLLAPSED.0, COLLAPSED.1) } else { LogicalSize::new(w, h) }));
+    let _ = window.set_min_size(Some(if expanded { LogicalSize::new(EXPANDED_MIN.0, EXPANDED_MIN.1) } else { LogicalSize::new(w, h) }));
     let _ = window.set_size(LogicalSize::new(w, h));
     let _ = window.set_position(LogicalPosition::new(x, y));
     if !expanded {

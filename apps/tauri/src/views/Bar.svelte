@@ -2,6 +2,7 @@
   // De balk bovenaan het scherm: in rust een pil met Nook, open een paneel met de tabs Nook, Agents en Werkruimte.
   import { untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
   import { api, events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import Chat from "../components/Chat.svelte";
@@ -124,7 +125,7 @@
   function leave() {
     inside = false;
     // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
-    if (pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
+    if (resizing || pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
     // Both the pointer and a notice that ran out call this; a second timer must not orphan the first.
     clearTimeout(closeTimer);
     closeTimer = setTimeout(close, 450);
@@ -139,6 +140,59 @@
   function select(t: Tab) {
     tab = t;
     localStorage.setItem("bar.tab", t);
+  }
+
+  // The window has no frame, so its own resize border is a hairline: the open panel carries its own grips on the edges
+  // and corners (the top edge is where the bar hangs, so it has none).
+  const grips = ["left", "right", "bottom", "bottom-left", "bottom-right"] as const;
+
+  // The panel resizes itself: a grip captures the pointer and sets the window's size while it moves. (The system's own
+  // resize drag takes the focus and mouse from the page, so the panel closed under the user's hand and left the round
+  // Nook stretched over the whole window.) `resizing` also keeps a stray blur from closing the panel meanwhile.
+  let resizing = $state(false);
+  const MIN = { w: 480, h: 320 };
+
+  function resize(e: PointerEvent, grip: (typeof grips)[number]) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    resizing = true;
+    const start = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight, left: window.screenX, top: window.screenY };
+    const win = getCurrentWindow();
+    let frame = 0;
+    let next: { w: number; h: number; left: number } | null = null;
+
+    const apply = async () => {
+      frame = 0;
+      if (!next) return;
+      const { w, h, left } = next;
+      next = null;
+      await win.setSize(new LogicalSize(w, h));
+      if (grip.includes("left")) await win.setPosition(new LogicalPosition(left, start.top));
+    };
+    const move = (m: PointerEvent) => {
+      const dx = m.screenX - start.x;
+      const dy = m.screenY - start.y;
+      let w = start.w;
+      let h = start.h;
+      if (grip.includes("right")) w = start.w + dx;
+      if (grip.includes("left")) w = start.w - dx;
+      if (grip.includes("bottom")) h = start.h + dy;
+      w = Math.max(MIN.w, w);
+      h = Math.max(MIN.h, h);
+      next = { w, h, left: start.left + (start.w - w) };
+      if (!frame) frame = requestAnimationFrame(apply);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      setTimeout(() => (resizing = false), 300);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
   }
 
   async function drag(e: MouseEvent) {
@@ -231,7 +285,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => Date.now() - openedAt > 600 && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !resizing && Date.now() - openedAt > 600 && close()} />
 
 <div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
@@ -294,6 +348,10 @@
           <Workspace compact />
         {/if}
       </div>
+      {#each grips as g (g)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="grip {g}" onpointerdown={(e) => resize(e, g)}></div>
+      {/each}
     </div>
   {/if}
 </div>
@@ -351,7 +409,18 @@
     overflow: hidden;
     animation: drop 0.32s cubic-bezier(0.2, 1.2, 0.4, 1);
     transform-origin: top center;
+    position: relative;
   }
+  .grip { position: absolute; z-index: 5; touch-action: none; }
+  .grip.left, .grip.right { top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
+  .grip.left { left: 0; }
+  .grip.right { right: 0; }
+  .grip.bottom { left: 12px; right: 12px; bottom: 0; height: 8px; cursor: ns-resize; }
+  .grip.bottom-left, .grip.bottom-right { bottom: 0; width: 16px; height: 16px; }
+  .grip.bottom-left { left: 0; cursor: nesw-resize; }
+  .grip.bottom-right { right: 0; cursor: nwse-resize; }
+  .floating .panel { border-radius: 22px; }
+  @keyframes drop { from { transform: scaleY(0.7); opacity: 0; } }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 12px 6px; }
   nav { display: flex; gap: 4px; }
   nav button { background: transparent; border: none; color: var(--text2); border-radius: 999px; padding: 5px 12px; display: flex; gap: 6px; align-items: center; }
