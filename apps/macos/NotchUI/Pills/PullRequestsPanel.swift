@@ -239,19 +239,14 @@ struct PullRequestsPanel: View {
     /// The toolbar: the search (which also takes `label:bug`, `author:ada`, `review:approved` …), then Sort and
     /// Filters. Involvement, which used to be tabs, is a filter there too.
     private var searchRow: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            NookSearchField(prompt: tr("agents.pulls.search"), text: $filter.query, focus: $searching,
-                            onEscape: { searching = false })
-            // ⌘F jumps to the search field.
-            .keyCommand("chat.find") { searching = true }
-            .help(tr("agents.pulls.searchHelp"))
-
+        PullRequestSearchBar(filter: $filter, accounts: accounts, prompt: tr("agents.pulls.search"),
+                             watching: !watching.entries.isEmpty, focus: $searching, onEscape: { searching = false }) {
             PullRequestSortMenu(sort: Binding(get: { sort }, set: { sortRaw = $0.rawValue }),
                                 grouping: Binding(get: { grouping }, set: { groupingRaw = $0.rawValue }))
-            PullRequestFilterMenu(filter: $filter, facets: PullRequestFilter.facets(in: accounts, state: filter.state),
-                                  accounts: accounts.map { (id: $0.id, name: $0.login.isEmpty ? $0.name : $0.name + " · @" + $0.login) },
-                                  watching: !watching.entries.isEmpty)
         }
+        // ⌘F jumps to the search field.
+        .keyCommand("chat.find") { searching = true }
+        .help(tr("agents.pulls.searchHelp"))
     }
 
     /// "12 of 40 shown · Clear", while something narrows the list.

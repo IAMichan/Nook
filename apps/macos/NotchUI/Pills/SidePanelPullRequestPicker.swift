@@ -8,7 +8,9 @@ struct SidePanelPullRequestPicker: View {
     let choose: (PullRequestOpenRequest) -> Void
     @ObservedObject private var store = PullRequestStore.shared
     @StateObject private var git: FolderGitModel
-    @State private var query = ""
+    /// Open pull requests by default, like the Pull requests page; the Filters bring back closed and merged ones.
+    @State private var filter = PullRequestFilter()
+    @ObservedObject private var watching = PullRequestWatchSettings.shared
 
     init(directory: String, choose: @escaping (PullRequestOpenRequest) -> Void) {
         self.directory = directory
@@ -27,8 +29,8 @@ struct SidePanelPullRequestPicker: View {
         let branch = git.status?.branch ?? ""
         var seen = Set<String>()
         func take(_ pick: (AccountPullRequests) -> [PullRequestItem]) -> [PullRequestOpenRequest] {
-            store.accounts.flatMap { account in pick(account).map { PullRequestOpenRequest(account: account.id, item: $0) } }
-                .filter { matches($0.item) && seen.insert($0.item.id.lowercased()).inserted }
+            filter.apply(store.accounts).flatMap { account in pick(account).map { PullRequestOpenRequest(account: account.id, item: $0) } }
+                .filter { seen.insert($0.item.id.lowercased()).inserted }
         }
         let onBranch = branch.isEmpty ? [] : take { ($0.mine + $0.reviews + $0.watched).filter { $0.headBranch == branch } }
         return [
@@ -39,18 +41,11 @@ struct SidePanelPullRequestPicker: View {
         ].filter { !$0.items.isEmpty }
     }
 
-    private func matches(_ item: PullRequestItem) -> Bool {
-        let text = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !text.isEmpty else { return true }
-        let number = text.hasPrefix("#") ? String(text.dropFirst()) : text
-        return item.title.lowercased().contains(text) || item.repo.lowercased().contains(text)
-            || item.headBranch.lowercased().contains(text) || String(item.number) == number
-    }
-
     var body: some View {
         let groups = groups
         VStack(spacing: 0) {
-            NookSearchField(prompt: tr("agents.pr.pick.search"), text: $query, style: .inline)
+            PullRequestSearchBar(filter: $filter, accounts: store.accounts, prompt: tr("agents.pr.pick.search"),
+                                 watching: !watching.entries.isEmpty, style: .inline)
                 .padding(NookTheme.Spacing.sm)
             NookDivider()
             if !GitHubPullRequestList.isAvailable {
@@ -59,7 +54,7 @@ struct SidePanelPullRequestPicker: View {
                 if store.loading && !store.loaded {
                     PatientSpinner()
                 } else {
-                    StackedDiffNote(text: tr(query.isEmpty ? "agents.pr.pick.none" : "agents.pr.pick.noMatch"))
+                    StackedDiffNote(text: tr(!filter.isActive ? "agents.pr.pick.none" : "agents.pr.pick.noMatch"))
                 }
             } else {
                 ScrollView {
