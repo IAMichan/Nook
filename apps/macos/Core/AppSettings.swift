@@ -420,6 +420,11 @@ final class AppSettings: ObservableObject {
     @Published var localOnlySources: Set<String> {
         didSet { UserDefaults.standard.set(localOnlySources.sorted(), forKey: "localOnlySources") }
     }
+    /// The model on this Mac that does screen work while an external brain answers the rest, stored as `ScreenBrain.parse`
+    /// reads it ("" for none: screen work is off while the screen is kept on this Mac). See `screenWorker`.
+    @Published var screenBrain: String {
+        didSet { UserDefaults.standard.set(screenBrain, forKey: "screenBrain") }
+    }
     /// Apps Nook never reads, on top of the password managers (`ScreenReader.builtInExcluded`): bundle identifiers.
     @Published var neverReadApps: [String] {
         didSet { UserDefaults.standard.set(neverReadApps, forKey: Self.neverReadAppsKey) }
@@ -455,8 +460,9 @@ final class AppSettings: ObservableObject {
     }
 
     /// The active brain as one value (see `BrainSelection`); setting it writes the stored settings it is made of.
+    /// During screen work on the screen brain (`ScreenBrain.routed`) it is that brain, so the whole run stays on this Mac.
     var selection: BrainSelection {
-        get { .resolve(useLocal: useLocal, provider: provider, localModel: localModel, providerModel: activeProviderModel) }
+        get { ScreenBrain.routed ?? chosenSelection }
         set {
             let stored = newValue.storedValues
             if stored.provider != provider { provider = stored.provider }
@@ -465,6 +471,23 @@ final class AppSettings: ObservableObject {
                 setProviderModel(newValue.model)
             }
         }
+    }
+
+    /// The brain the user chose in Settings › Brain, whatever run is going on.
+    var chosenSelection: BrainSelection {
+        .resolve(useLocal: useLocal, provider: provider, localModel: localModel, providerModel: activeProviderModel)
+    }
+
+    /// The model on this Mac that does screen work right now (see `ScreenBrain`): only while the chosen brain is external
+    /// and the screen is kept on this Mac, by hand or by the privacy level.
+    var screenWorker: BrainSelection? {
+        let screenPrivate = localOnlySources.union(privacyLevel.localOnlySources).contains(SourceCatalog.screen)
+        return ScreenBrain.worker(chosen: chosenSelection, screenPrivate: screenPrivate, stored: screenBrain)
+    }
+
+    /// Whether Nook may do screen work at all: the active brain may read the screen, or a screen brain does it on this Mac.
+    var screenWorkAllowed: Bool {
+        !privateSources.contains(SourceCatalog.screen) || screenWorker != nil
     }
 
     /// Whether the brain runs on this Mac (built-in model, Ollama or LM Studio): no data leaves the Mac, no cost per token.
@@ -484,10 +507,16 @@ final class AppSettings: ObservableObject {
     /// What the active model can handle: prompts, tools and rounds are sized to it.
     var brainProfile: ModelProfile {
         let memory = ModelAdvisor.Hardware.current.memoryGB
-        if useLocal, localModel == AppleModel.id { return .apple }
-        if useLocal { return (ModelAdvisor.catalog.first { $0.id == localModel }?.profile ?? .localSmall).roomier(memoryGB: memory) }
-        if provider.isLocalServer { return ModelAdvisor.profile(forServerModel: activeProviderModel).roomier(memoryGB: memory) }
-        return .cloud
+        let selection = self.selection
+        switch selection.runtime {
+        case .mlx:
+            if selection.model == AppleModel.id { return .apple }
+            return (ModelAdvisor.catalog.first { $0.id == selection.model }?.profile ?? .localSmall).roomier(memoryGB: memory)
+        case .ollama, .lmstudio:
+            return ModelAdvisor.profile(forServerModel: selection.model).roomier(memoryGB: memory)
+        case .external:
+            return .cloud
+        }
     }
 
     /// Short label for the model chip: "Qwen 2.5 (7B)", "Ollama · qwen2.5:7b", "Claude · claude-haiku-5-5".
@@ -503,12 +532,26 @@ final class AppSettings: ObservableObject {
 
     /// Whether Nook can reason. Local models or local server backends do not require an API key.
     var brainReady: Bool {
+        if let routed = ScreenBrain.routed { return !routed.model.isEmpty }
         if useLocal { return !localModel.isEmpty }
         switch provider {
         case .claude: return hasAPIKey
         case .claudeCode: return ClaudeCodeBrain.executable != nil
         case .ollama, .lmstudio: return !activeProviderModel.isEmpty || provider == .lmstudio
         default: return hasProviderKey && !activeProviderModel.isEmpty
+        }
+    }
+
+    /// How a screen brain is named in Settings and in a reply's note: "Qwen 3 (8B)", "Ollama · qwen3:8b".
+    static func screenBrainName(_ selection: BrainSelection) -> String {
+        switch selection.runtime {
+        case .mlx:
+            if selection.model == AppleModel.id { return AppleModel.title }
+            return ModelAdvisor.catalog.first { $0.id == selection.model }?.title
+                ?? selection.model.split(separator: "/").last.map(String.init) ?? selection.model
+        case .ollama: return "Ollama · \(selection.model)"
+        case .lmstudio: return "LM Studio · \(selection.model)"
+        case .external: return selection.model
         }
     }
 
@@ -526,6 +569,7 @@ final class AppSettings: ObservableObject {
 
     /// Name of the current reasoning engine, for notifications.
     var activeModelName: String {
+        if let routed = ScreenBrain.routed { return Self.screenBrainName(routed) }
         if useLocal, localModel == AppleModel.id { return AppleModel.title }
         if useLocal { return localModel.split(separator: "/").last.map(String.init) ?? localModel }
         let name = activeProviderModel
@@ -627,6 +671,7 @@ final class AppSettings: ObservableObject {
         screenWithEveryQuestion = defaults.object(forKey: "screenWithEveryQuestion") as? Bool ?? true
         energyMode = EnergyMode(rawValue: defaults.string(forKey: "energyMode") ?? "") ?? .automatic
         localOnlySources = Set(defaults.stringArray(forKey: "localOnlySources") ?? [])
+        screenBrain = defaults.string(forKey: "screenBrain") ?? ""
         neverReadApps = defaults.stringArray(forKey: Self.neverReadAppsKey) ?? []
         privacyLevel = PrivacyLevel(rawValue: defaults.string(forKey: "privacyLevel") ?? "") ?? .balanced
         evidenceFirst = defaults.bool(forKey: "evidenceFirst")

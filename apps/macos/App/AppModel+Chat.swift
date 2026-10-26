@@ -127,18 +127,25 @@ extension AppModel {
              in target: UUID? = nil, reveal: Bool = true, note: String = "") {
         let conversation = target.flatMap { chat.conversation($0) == nil ? nil : $0 } ?? chat.ensureActive()
         if chat.isBusy(conversation) { stop(conversation: conversation) }
+        // A question about the screen, or a follow-up on an answer that read it, while the screen stays on this Mac: the
+        // screen brain answers it (`ScreenBrain`), so the screen text never leaves the Mac. Everything else goes to the
+        // chosen brain as always.
+        let screenBrain = ScreenBrain.routed ?? screenWorker(for: text, in: conversation)
+        let runs = screenBrain ?? settings.selection
         var question = ChatMessage(role: .user, text: text)
         question.images = images
         chat.append(question, to: conversation)
         var reply = ChatMessage(role: .nook, text: "")
         reply.streaming = true
         // Only some brains can see pictures; say so instead of answering as if they had.
-        let selection = settings.selection
-        let localModel = ModelAdvisor.catalog.first { $0.id == selection.model }
-        if !images.isEmpty, selection.runtime == .mlx && !(localModel?.seesImages ?? false) {
+        let localModel = ModelAdvisor.catalog.first { $0.id == runs.model }
+        if !images.isEmpty, runs.runtime == .mlx && !(localModel?.seesImages ?? false) {
             reply.notices.append(tr("image.unsupported"))
         }
-        reply.status = settings.useLocal && settings.localModel != AppleModel.id && !EmbeddedModel.shared.isLoaded
+        if let screenBrain, !settings.chosenSelection.isLocal {
+            reply.notices.append(tr("screenBrain.answered", AppSettings.screenBrainName(screenBrain)))
+        }
+        reply.status = runs.runtime == .mlx && runs.model != AppleModel.id && !EmbeddedModel.shared.isLoaded
             ? tr("app.status.loadingModel") : tr("app.status.thinking")
         chat.append(reply, to: conversation)
         replies[conversation] = reply.id
@@ -148,21 +155,34 @@ extension AppModel {
             warmUp()
             if reveal { showChat() }
         }
-        let history = chat.history(before: question.id, hiding: settings.privateSources)
+        // The screen brain is on this Mac: it may read the whole conversation.
+        let history = chat.history(before: question.id, hiding: screenBrain != nil ? [] : settings.privateSources)
         let replyID = reply.id
-        chatTasks[conversation] = Task { [weak self] in
-            await ReplyContext.$images.withValue(images) {
-                await ReplyContext.$focus.withValue(focus) {
-                    await ReplyContext.$reflects.withValue(reflects) {
-                        await ReplyContext.$messageID.withValue(replyID) {
-                            await ReplyContext.$note.withValue(note) {
-                                await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+        // The answer's task inherits the brain it runs on.
+        chatTasks[conversation] = ScreenBrain.$routed.withValue(screenBrain) {
+            Task { [weak self] in
+                await ReplyContext.$images.withValue(images) {
+                    await ReplyContext.$focus.withValue(focus) {
+                        await ReplyContext.$reflects.withValue(reflects) {
+                            await ReplyContext.$messageID.withValue(replyID) {
+                                await ReplyContext.$note.withValue(note) {
+                                    await self?.answer(text, history: history, replyID: replyID, conversation: conversation)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    /// The screen brain for a chat question that needs the screen: one about what is on screen, or a follow-up on an
+    /// answer that read it. Nil when the chosen brain may read the screen itself or no screen brain was picked.
+    private func screenWorker(for text: String, in conversation: UUID) -> BrainSelection? {
+        guard let worker = settings.screenWorker else { return nil }
+        if Self.refersToScreen(text) { return worker }
+        let last = chat.conversation(conversation)?.messages.last { $0.role == .nook }
+        return last?.used(anyOf: [SourceCatalog.screen]) == true ? worker : nil
     }
 
     func answer(_ text: String, history: [ChatTurn], replyID id: UUID, conversation: UUID, retry: Bool = false, correction: String? = nil) async {

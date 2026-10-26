@@ -386,27 +386,29 @@ extension AppModel {
     /// Double Tap: the notch asks what Nook should do; the form in front is filled with your memory and the screen, or
     /// the text you ask for is typed at your cursor, on the brain you chose, with every step in the notch. What goes to an
     /// external brain follows the same rules as a question: memories kept on this Mac stay here, and the screen only when
-    /// the privacy level allows it.
+    /// the privacy level allows it. With a screen brain (`AppSettings.screenWorker`) Double Tap runs on it instead, so it reads
+    /// what a brain on this Mac may read and nothing it reads leaves the Mac.
     func startDoubleTap() {
         let doubleTap = DoubleTap.shared
         doubleTap.ask = { [weak self] system, prompt, timeout in
-            await self?.brain.rewrite(system: system, prompt: prompt, timeout: timeout)
+            guard let self else { return nil }
+            return await self.onScreenBrain { await self.brain.rewrite(system: system, prompt: prompt, timeout: timeout) }
         }
         doubleTap.facts = { [weak self] in
-            guard let self, self.settings.useMemory, !self.settings.privateSources.contains(SourceCatalog.memory) else { return [] }
-            let local = self.settings.isLocalBrain
+            guard let self, self.settings.useMemory, !self.doubleTapHidden.contains(SourceCatalog.memory) else { return [] }
+            let local = self.settings.isLocalBrain || self.settings.screenWorker != nil
             return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil && (local || !$0.localOnly) }
                 .sorted { $0.strength > $1.strength }.prefix(30).map(\.text)
         }
         doubleTap.screenText = { [weak self] bundleID in
-            guard let self, self.settings.liveScreen, !self.settings.privateSources.contains(SourceCatalog.screen) else { return nil }
+            guard let self, self.settings.liveScreen, !self.doubleTapHidden.contains(SourceCatalog.screen) else { return nil }
             let windows = self.screenContext.windows.filter { $0.bundleID == bundleID }
-            return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.settings.shielded)
+            return ((windows.first { $0.isFront } ?? windows.first)?.text).map(self.doubleTapShielded)
         }
         doubleTap.clipboardText = { [weak self] in
-            guard let self, !self.settings.privateSources.contains("clipboard"),
+            guard let self, !self.doubleTapHidden.contains("clipboard"),
                   let text = NSPasteboard.general.string(forType: .string) else { return nil }
-            return self.settings.shielded(String(text.prefix(4_000)))
+            return self.doubleTapShielded(String(text.prefix(4_000)))
         }
         // Nook's violet cursor shows where it selects and types in the document, as when it takes over a task.
         doubleTap.showCursor = { point, label in
@@ -432,6 +434,16 @@ extension AppModel {
         }
         doubleTap.onAsk = { [weak self] in self?.presentTakeoverPrompt() }
         doubleTap.refresh()
+    }
+
+    /// The sources Double Tap may not read: none when it runs on the screen brain, which is on this Mac.
+    private var doubleTapHidden: Set<String> {
+        settings.screenWorker != nil ? [] : settings.privateSources
+    }
+
+    /// What Double Tap read, as the brain it runs on may get it: unchanged for the screen brain on this Mac.
+    private func doubleTapShielded(_ text: String) -> String {
+        settings.screenWorker != nil ? text : settings.shielded(text)
     }
 
     /// What a double tap filled in, as a card that waits for you: Send presses the form's own button (only from here,

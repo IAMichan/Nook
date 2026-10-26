@@ -8,13 +8,20 @@ import NaturalLanguage
 extension AppModel {
     // MARK: Screen Context
 
+    /// Runs screen work on the screen brain when one keeps the screen on this Mac (`AppSettings.screenWorker`), otherwise
+    /// on the chosen brain. Tasks the work starts inherit the choice, so the whole run stays on this Mac.
+    func onScreenBrain<T>(_ work: () async -> T) async -> T {
+        guard ScreenBrain.routed == nil, let worker = settings.screenWorker else { return await work() }
+        return await ScreenBrain.$routed.withValue(worker) { await work() }
+    }
+
     func lookAtScreen(manual: Bool) {
         guard settings.brainReady else {
             if manual { presentSetupCard() }
             return
         }
-        // The screen is kept on this Mac: an external brain does not get its text.
-        guard !settings.privateSources.contains(SourceCatalog.screen) else {
+        // The screen is kept on this Mac: an external brain does not get its text, so only a screen brain may look.
+        guard settings.screenWorkAllowed else {
             if manual { viewModel.show(.card(errorCard(tr("app.look.private")))) }
             return
         }
@@ -22,22 +29,24 @@ extension AppModel {
             viewModel.show(.card(thinkingCard(context: tr("app.look.context"), title: tr("app.look.title"))))
         }
         Task {
-            do {
-                let snapshot = try await screen.capture()
-                let hash = snapshot.text.hashValue
-                if !manual {
-                    if hash == lastScreenHash { return }
+            await onScreenBrain {
+                do {
+                    let snapshot = try await screen.capture()
+                    let hash = snapshot.text.hashValue
+                    if !manual {
+                        if hash == lastScreenHash { return }
+                    }
+                    lastScreenHash = hash
+                    await runBrain(
+                        userText: "This is what the user currently has on screen. Do you see anything you can help with, such as an event, a commitment, or a task? Propose an appropriate action. If nothing relevant: NONE.",
+                        snapshot: snapshot,
+                        silentIfNone: !manual,
+                        context: tr("app.look.saw", snapshot.appName),
+                        ownRequest: true
+                    )
+                } catch {
+                    if manual { replaceThinking(with: errorCard(error.localizedDescription)) }
                 }
-                lastScreenHash = hash
-                await runBrain(
-                    userText: "This is what the user currently has on screen. Do you see anything you can help with, such as an event, a commitment, or a task? Propose an appropriate action. If nothing relevant: NONE.",
-                    snapshot: snapshot,
-                    silentIfNone: !manual,
-                    context: tr("app.look.saw", snapshot.appName),
-                    ownRequest: true
-                )
-            } catch {
-                if manual { replaceThinking(with: errorCard(error.localizedDescription)) }
             }
         }
     }
@@ -50,14 +59,14 @@ extension AppModel {
     func thinkAlongTick() {
         // Not while you share your screen or sit in a meeting and chose quiet for it.
         guard settings.autoWatch, settings.brainReady, !autoBusy, !demoMode, !quiet.silent,
-              !settings.privateSources.contains(SourceCatalog.screen),
+              settings.screenWorkAllowed,
               ScreenAccess.isUsable, viewModel.state.isResting else { return }
         // Thinking along is optional: never while the Mac is hot, saving power or busy with something heavy, and less often
         // on battery (`EnergyPolicy`). With the model on this Mac each look is a full run on the GPU, so it looks less
         // often too (`ThinkAlong.localLookGap`).
         let plan = EnergyMonitor.shared.plan
         guard plan.thinksAlong else { return }
-        let minGap = max(settings.useLocal ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
+        let minGap = max((settings.screenWorker ?? settings.selection).runtime == .mlx ? ThinkAlong.localLookGap : 0, plan.thinkAlongGap)
         let frontApp = NSWorkspace.shared.frontmostApplication
         let bundle = frontApp?.bundleIdentifier ?? ""
         // Window title and contents from live cache; throttled to at most once per 5 minutes without cache.
@@ -70,7 +79,7 @@ extension AppModel {
         autoBusy = true
         let appName = frontApp?.localizedName ?? "deze app"
         Task {
-            await thinkAlongRun(bundleID: bundle, appName: appName, window: window)
+            await onScreenBrain { await thinkAlongRun(bundleID: bundle, appName: appName, window: window) }
             autoBusy = false
         }
     }
