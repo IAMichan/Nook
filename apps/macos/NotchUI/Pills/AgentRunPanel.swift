@@ -37,6 +37,8 @@ struct AgentRunPanel: View {
     @State private var visit: TimelineVisit?
     /// The block the "New since your last visit" line sits above; decided as the session opens.
     @State private var newSince: UUID?
+    /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
+    @State private var quotes = ComposerQuotes()
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -132,11 +134,11 @@ struct AgentRunPanel: View {
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
-            // Selected words of an answer can be quoted into the reply (right-click › Quote in reply).
-            .environment(\.quoteSelection, { text in
-                draft = ReviewComments.quote(text, into: draft)
-                focused = true
-            })
+            // Selected words of an answer go with the reply as a chip above the composer (right-click › Quote in your
+            // message, or Ask about this, which also puts the keyboard in the box; the same with ⇧⌘L and ⌘L).
+            .environment(\.quoteSelection, { addQuote($0, ask: false) })
+            .environment(\.askAboutSelection, { addQuote($0, ask: true) })
+            .keyCommands(["selection.quote": { quoteSelected(ask: false) }, "selection.ask": { quoteSelected(ask: true) }])
             // An open terminal follows the agent to the next command it runs.
             .onChange(of: runningCommand) { _, next in
                 if consoleEventID != nil, let next { consoleEventID = next }
@@ -193,6 +195,7 @@ struct AgentRunPanel: View {
                 filePreview = nil
                 diffSelection = nil
                 countedLines = [:]
+                quotes.removeAll()
                 seenOutputs = nil
                 consoleEventID = nil
                 // Folds you had open in this session last time come back (the timeline lands on its own, below).
@@ -719,6 +722,25 @@ struct AgentRunPanel: View {
             lastViewedAt: Date()))
     }
 
+    // MARK: Quotes
+
+    /// Picks a passage of an answer for the next message; `ask` also puts the keyboard in the box to ask about it.
+    private func addQuote(_ text: String, ask: Bool) {
+        switch quotes.add(text) {
+        case .tooLong: ToastCenter.shared.warning(tr("ws.review.quoteTooLong"))
+        case .full: ToastCenter.shared.warning(tr("compose.quote.full"))
+        case .empty: break
+        case nil: if ask { focused = true }
+        }
+    }
+
+    /// ⇧⌘L / ⌘L on words selected in an answer; false (the key goes on) when nothing is selected there.
+    private func quoteSelected(ask: Bool) -> Bool {
+        guard let text = SelectableProse.selection(in: NSApp.keyWindow) else { return false }
+        addQuote(text, ask: ask)
+        return true
+    }
+
     /// Sends the first queued message now; false (the key goes on) when nothing waits or it cannot go in yet.
     private func steerFirstQueued() -> Bool {
         guard let first = workspace.queued[runID]?.messages.first, workspace.canSendQueuedNow(runID) else { return false }
@@ -961,7 +983,9 @@ struct AgentRunPanel: View {
             guard !text.isEmpty, !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
-            workspace.send(runID, text: outgoing.send)
+            let message = quotes.message(outgoing.send)
+            quotes.removeAll()
+            workspace.send(runID, text: message)
         }
         // Codex over app-server and Claude Code take a new message during the turn (steering); others get it after the turn.
         // Return does what you chose in Settings, Cmd+Return the other.
@@ -974,9 +998,11 @@ struct AgentRunPanel: View {
                 guard !text.isEmpty else { return }
                 let outgoing = composerModel.outgoing(text)
                 draft = ""
+                let message = quotes.message(outgoing.send)
+                quotes.removeAll()
                 if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
-                   workspace.steer(runID, text: outgoing.send) { return }
-                workspace.enqueue(runID, text: outgoing.send)
+                   workspace.steer(runID, text: message) { return }
+                workspace.enqueue(runID, text: message)
             }
         }
         let primary = ComposerDispatch.resolve(busy: true, intent: preferred, canSteer: canSteer)
@@ -1038,9 +1064,13 @@ struct AgentRunPanel: View {
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
         // The watched pull request, or the session's open one you stopped watching (or never watched).
         let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchablePullRequest()
-        if pullRequest != nil || !waiting.isEmpty {
+        if pullRequest != nil || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    if !quotes.isEmpty {
+                        ComposerQuoteChips(quotes: quotes.items) { id in quotes.remove(id) }
+                        if pullRequest != nil || !waiting.isEmpty { ComposerTrayDivider() }
+                    }
                     if let pullRequest {
                         PullRequestWatchStrip(url: pullRequest, watch: watch) {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)

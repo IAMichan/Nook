@@ -60,7 +60,8 @@ final class KeyCommandCenter: ObservableObject {
     static let wiredCommands: Set<String> = [
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
         "composer.historyNext", "composer.access", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle",
-        "session.new", "session.undo", "diff.toggle", "panel.reopenClosed",
+        "session.new", "session.undo", "diff.toggle", "panel.reopenClosed", "selection.quote",
+        "selection.ask",
     ]
 
     func update(_ id: UUID, window: NSWindow?, enabled: Bool, priority: Int, context: [String: Bool],

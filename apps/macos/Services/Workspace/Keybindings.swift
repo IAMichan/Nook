@@ -358,7 +358,7 @@ enum Keybindings {
         "composer.send", "composer.sendAlternate", "composer.newline", "composer.stash", "composer.historyPrevious",
         "composer.historyNext", "composer.access", "queue.steerFirst", "chat.find", "search.toggle", "commandPalette.toggle", "session.new",
         "session.previous", "session.next", "diff.toggle", "modelPicker.toggle", "session.settle", "session.pin",
-        "session.undo", "session.interrupt", "panel.reopenClosed",
+        "session.undo", "session.interrupt", "panel.reopenClosed", "selection.quote", "selection.ask",
     ]
 
     /// Default chat and workspace keybindings. `session.interrupt` stays unbound on purpose. ⌘S also brings a stashed
@@ -384,5 +384,7 @@ enum Keybindings {
         KeybindingRule(key: "mod+shift+p", command: "session.pin", when: "!terminalFocus"),
         KeybindingRule(key: "mod+z", command: "session.undo", when: "!terminalFocus && !editableFocus"),
         KeybindingRule(key: "mod+shift+t", command: "panel.reopenClosed", when: "!terminalFocus"),
+        KeybindingRule(key: "mod+shift+l", command: "selection.quote", when: "!terminalFocus && !editableFocus"),
+        KeybindingRule(key: "mod+l", command: "selection.ask", when: "!terminalFocus && !editableFocus"),
     ]
 }
