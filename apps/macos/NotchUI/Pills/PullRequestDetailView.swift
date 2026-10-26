@@ -384,26 +384,59 @@ struct PullRequestDetailView: View {
         .fixedSize()
     }
 
-    /// The round button at the bottom right that opens the composer (a comment or a review).
+    /// The round button at the bottom right that opens the composer (a comment or a review), with a
+    /// dropdown beside it to start straight as a comment, an approval or a request for changes.
     private func writeButton(_ detail: PullRequestDetail) -> some View {
-        Button {
-            withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
-        } label: {
-            Image(systemName: "bubble.left")
-                .font(NookTheme.font(14, .medium))
-                .foregroundStyle(NookTheme.paper)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(NookTheme.smoke))
-                .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1))
-                .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
-                .contentShape(Circle())
+        HStack(spacing: NookTheme.Spacing.xs) {
+            ComposerDropdown(width: 220) {
+                Image(systemName: "chevron.up")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: 24, height: 38)
+                    .background(Capsule().fill(NookTheme.smoke))
+                    .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+                    .contentShape(Capsule())
+            } content: {
+                ForEach(PullRequestAction.Verdict.allCases, id: \.self) { verdict in
+                    DropdownRow(symbol: PullRequestActionPanel.verdictSymbol(verdict),
+                                title: tr(PullRequestActionPanel.verdictKey(verdict))) { openWriter(detail, review: verdict) }
+                }
+            }
+            .disabled(actions.sending)
+            .help(tr("agents.pr.write.choose"))
+            .accessibilityLabel(tr("agents.pr.write.choose"))
+            Button {
+                openWriter(detail, review: nil)
+            } label: {
+                Image(systemName: "bubble.left")
+                    .font(NookTheme.font(14, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(NookTheme.smoke))
+                    .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1))
+                    .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(actions.sending)
+            .help(tr("agents.pr.write.open"))
+            .accessibilityLabel(tr("agents.pr.write.open"))
         }
-        .buttonStyle(.plain)
-        .disabled(actions.sending)
-        .help(tr("agents.pr.write.open"))
-        .accessibilityLabel(tr("agents.pr.write.open"))
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.bottom, NookTheme.Spacing.md)
+    }
+
+    /// Opens the composer as a plain comment (nil) or as a review with the verdict picked in the dropdown.
+    private func openWriter(_ detail: PullRequestDetail, review verdict: PullRequestAction.Verdict?) {
+        withAnimation(NookTheme.swap) {
+            actions.open(.write, detail: detail)
+            if let verdict {
+                actions.asReview = true
+                actions.verdict = verdict
+            } else {
+                actions.asReview = false
+            }
+        }
     }
 
     // MARK: Stack
