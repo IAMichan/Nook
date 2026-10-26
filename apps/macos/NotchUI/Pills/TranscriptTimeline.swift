@@ -107,8 +107,6 @@ struct TranscriptConversation: View {
                     }
                     .scrollTargetLayout()
                     .chatColumn()
-                    // A row too wide for the window must not widen the column: it would be centred and run off both sides.
-                    .containerRelativeFrame(.horizontal, alignment: .leading)
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
