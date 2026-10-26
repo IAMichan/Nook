@@ -296,6 +296,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(inbox.threads[ChatInbox.key(app: "whatsapp", chat: "Daan van Oosterom")])
     }
 
+    func testAChatOnlyGroupsWroteInIsNoGroupAndGoesBack() {
+        var inbox = ChatInbox()
+        // Notifications of two groups landed in one person's chat: two different "senders" do not make it a group.
+        inbox.add(notice("Aron", "ok", app: "teams", sender: "Dev"), id: "n1")
+        inbox.add(notice("Aron", "top", app: "teams", sender: "Business", at: 10), id: "n2")
+        for (name, people) in [("Dev", ["Rutger", "Thomas"]), ("Business", ["Thomas", "Sander"])] {
+            inbox.merge(BridgedChat(app: "teams", name: name, messages: people.enumerated().map { index, who in
+                InboxMessage(id: name + who, sender: who, text: "hi \(index)", date: now.addingTimeInterval(-60 - Double(index)))
+            }, unread: 0))
+        }
+        inbox.trim(now: now)
+        XCTAssertNil(inbox.threads[ChatInbox.key(app: "teams", chat: "Aron")])
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "teams", chat: "Dev")]?.messages.last?.text, "ok")
+    }
+
     func testAGroupIsNeverFoldedIntoAPersonsChat() {
         var inbox = ChatInbox()
         // A group only its notifications know, where one person wrote: it stays a group.

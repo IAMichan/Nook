@@ -75,7 +75,9 @@ extension ChatsEntry {
                 var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
                 let preview = conversation.messages.last.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let newest = conversation.messages.last
-                let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
+                let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
+                                                   private: !conversation.isGroup)
+                let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
@@ -99,11 +101,25 @@ extension ChatsEntry {
         }
         // While the phone is linked every WhatsApp chat comes from the link, with its history: what notifications (or an
         // import) collected before stays out of the list, or each chat would show twice.
-        for thread in capture.inbox.sorted
-        where capture.sources.isOn(thread.app) && !(thread.app == "whatsapp" && linkedWhatsApp) {
+        // One chat, one card: an app that names the same chat twice (a chat without a topic is named after whoever wrote
+        // last) leaves two threads holding the same messages; the fuller one stays.
+        var newestSeen: [String: Int] = [:]
+        let threads = capture.inbox.sorted.filter { $0.app != "whatsapp" || !linkedWhatsApp }
+        for thread in threads {
+            guard let id = thread.messages.last?.id else { continue }
+            let key = thread.app + "|" + id
+            newestSeen[key] = max(newestSeen[key] ?? 0, thread.messages.count)
+        }
+        var shownNewest = Set<String>()
+        for thread in threads where capture.sources.isOn(thread.app) {
+            if let id = thread.messages.last?.id {
+                let key = thread.app + "|" + id
+                guard thread.messages.count == newestSeen[key], shownNewest.insert(key).inserted else { continue }
+            }
             let preview = thread.messages.last.map(line) ?? ""
             let newest = thread.messages.last
-            let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
+            let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
+            let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
                                       preview: preview, last: thread.last, read: thread.readState,
                                       lastIsMine: newest?.isMine ?? false, ticks: ticks,
