@@ -7,11 +7,12 @@
   import type { PullRequestItem } from "../../../lib/connectors";
   import { renderMarkdown } from "../../../lib/markdown";
   import {
-    activitySentence, chosenMethod, detailStateNames, diffLines, eventLabel, itemId, methodNames, noteText, pullsApi,
-    type MergeMethod, type PullRequestDetail, type PullRequestEvent, type PullRequestFile,
+    activitySentence, chosenMethod, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
+    type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile,
   } from "../../../lib/pulls";
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
+  import CheckLog from "./CheckLog.svelte";
   import PullGlyph from "./PullGlyph.svelte";
 
   let { accountId, item, onback }: { accountId: string; item: PullRequestItem; onback: () => void } = $props();
@@ -24,6 +25,8 @@
   let error = $state<string | null>(null);
   let tab = $state<Tab>("conversation");
   let openFile = $state<string | null>(null);
+  /// The check whose steps and log the conversation shows in its place; kept by name and link across a refresh.
+  let openCheck = $state<PullRequestCheck | null>(null);
   let savedMethod = $state(readMethod());
   let confirming = $state(false);
   let merging = $state(false);
@@ -34,6 +37,7 @@
   const method = $derived(chosenMethod(savedMethod, detail?.methods ?? []));
   const ready = $derived(!!detail && detail.canMerge && detail.mergeNote === null);
   const file = $derived(detail?.files.find((f) => f.path === openFile) ?? null);
+  const shownCheck = $derived(openCheck && (detail?.checks.find((c) => c.name === openCheck!.name && c.url === openCheck!.url) ?? openCheck));
   const fileIndex = $derived(detail && file ? detail.files.indexOf(file) : -1);
 
   function readMethod(): string | null {
@@ -163,28 +167,31 @@
     </div>
 
     <div class="tabs" role="tablist">
-      <button role="tab" aria-selected={tab === "conversation"} class:on={tab === "conversation"} onclick={() => ((tab = "conversation"), (openFile = null))}>Gesprek</button>
-      <button role="tab" aria-selected={tab === "commits"} class:on={tab === "commits"} onclick={() => ((tab = "commits"), (openFile = null))}>Commits ({detail.commits.length})</button>
-      <button role="tab" aria-selected={tab === "files"} class:on={tab === "files"} onclick={() => (tab = "files")}>Bestanden ({Math.max(detail.changedFiles, detail.files.length)})</button>
+      <button role="tab" aria-selected={tab === "conversation"} class:on={tab === "conversation"} onclick={() => ((tab = "conversation"), (openFile = null), (openCheck = null))}>Gesprek</button>
+      <button role="tab" aria-selected={tab === "commits"} class:on={tab === "commits"} onclick={() => ((tab = "commits"), (openFile = null), (openCheck = null))}>Commits ({detail.commits.length})</button>
+      <button role="tab" aria-selected={tab === "files"} class:on={tab === "files"} onclick={() => ((tab = "files"), (openCheck = null))}>Bestanden ({Math.max(detail.changedFiles, detail.files.length)})</button>
     </div>
 
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <div class="content" onclick={linkClick}>
-      {#if tab === "conversation"}
+      {#if tab === "conversation" && shownCheck}
+        <CheckLog accountId={accountId} repo={detail.repo} check={shownCheck} onback={() => (openCheck = null)} />
+      {:else if tab === "conversation"}
         <div class="card markdown">
           {#if detail.body}{@html renderMarkdown(detail.body)}{:else}<span class="faint">Geen beschrijving.</span>{/if}
         </div>
         <div class="section">
           <div class="label faint">Checks</div>
           {#each detail.checks as check, i (i)}
-            <button class="line" disabled={!check.url} onclick={() => open(check.url)}>
+            <!-- A GitHub Actions job opens its steps and log here; a check from another app only has its own page. -->
+            <button class="line" disabled={!check.url} onclick={() => (jobId(check.url) !== null ? (openCheck = check) : open(check.url))}>
               <span class="mark">
                 {#if check.outcome === "passing"}<span class="good">✓</span>{:else if check.outcome === "failing"}<span class="bad">✕</span>{:else if check.outcome === "pending"}<span class="dot waiting"></span>{:else}<span class="faint">–</span>{/if}
               </span>
               <span class="name">{check.name}</span>
               <span class="faint small ellipsis">{check.detail}</span>
               <span class="spacer"></span>
-              {#if check.url}<span class="faint small">↗</span>{/if}
+              {#if check.url}<span class="faint small">{jobId(check.url) !== null ? "›" : "↗"}</span>{/if}
             </button>
           {:else}
             <span class="faint small">Geen checks op de laatste commit.</span>
