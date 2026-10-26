@@ -108,6 +108,13 @@ enum CompanionAgents {
                                                  detail: CompanionPolicy.clip(step.name, limit: 120), date: date,
                                                  failed: step.state == .failed))
                 }
+            case .notice:
+                // An error or a usage limit shows as one on the phone; a compaction as a quiet note.
+                let failed: Bool
+                if case .compacted = message.notice { failed = false } else { failed = true }
+                let text = CompanionPolicy.clip(message.text.isEmpty ? tr("agents.notice.compacted") : message.text)
+                entries.append(TimelineEntry(id: message.id, kind: failed ? .error : .notice, text: text, detail: nil, date: date,
+                                             failed: failed))
             case .thinking:
                 continue
             }

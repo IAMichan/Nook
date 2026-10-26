@@ -65,19 +65,46 @@ final class TranscriptPresentationTests: XCTestCase {
         messages.append(message("s3", .tools, steps: [step("d", "Grep", "TODO"), step("e", "Bash", "swift test", .running)], at: 70))
         let rows = TranscriptPresentation.rows(Array(messages), working: true)
         XCTAssertEqual(rows.map(\.id), ["u1", "working", "t1", "group:s1", "x1", "group:s2", "live"])
-        guard case .working(let since) = rows[1], case .group(_, let steps, _) = rows[5], case .live(let current) = rows[6] else {
+        guard case .working(let since) = rows[1], case .group(_, let steps, _) = rows[5], case .live(let current, let thought) = rows[6] else {
             return XCTFail("\(rows)")
         }
         XCTAssertEqual(since, start)
         XCTAssertEqual(steps.map(\.id), ["c", "d"], "steps split by an answer stay apart, those split by nothing join")
         XCTAssertEqual(current?.id, "e", "the step that runs is the live line, not part of the group")
+        XCTAssertNil(thought)
+    }
+
+    func testTheThoughtBeforeTheRunningStepGoesWithTheLiveLine() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Read", "App.swift")], at: 2),
+            message("t1", .thinking, "**De test draaien** om te zien wat er faalt.", at: 4),
+            message("s2", .tools, steps: [step("b", "Bash", "swift test", .running)], at: 5)
+        ], working: true)
+        XCTAssertEqual(rows.map(\.id), ["u1", "working", "step:a", "live"], "the thought is not a line of its own")
+        guard case .live(let current, let thought) = rows[3] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(current?.id, "b")
+        XCTAssertEqual(thought?.id, "t1", "why the agent runs the step shows right above it")
+    }
+
+    func testWhileTheAgentThinksItsThoughtIsTheLiveLine() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Hoi", at: 0),
+            message("s1", .tools, steps: [step("a", "Read", "App.swift")], at: 2),
+            message("t1", .thinking, "Nu nadenken over de fix.", at: 4)
+        ], working: true)
+        XCTAssertEqual(rows.map(\.id), ["u1", "working", "step:a", "live"])
+        guard case .live(let current, let thought) = rows[3] else { return XCTFail("\(rows)") }
+        XCTAssertNil(current)
+        XCTAssertEqual(thought?.id, "t1")
     }
 
     func testRunningTurnWithoutARunningStepThinks() {
         let rows = TranscriptPresentation.rows([message("u1", .user, "Hoi", at: 0)], working: true)
         XCTAssertEqual(rows.map(\.id), ["u1", "working", "live"])
-        guard case .live(let current) = rows[2] else { return XCTFail("\(rows)") }
+        guard case .live(let current, let thought) = rows[2] else { return XCTFail("\(rows)") }
         XCTAssertNil(current)
+        XCTAssertNil(thought)
     }
 
     func testOnlyTheLastTurnStaysOpen() {
@@ -130,8 +157,8 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertEqual(TranscriptPresentation.seconds(messages), 63)
     }
 
-    /// A message sent while the agent worked (from the CLI, the desktop app or Nook) is a queued command line, and starts
-    /// a turn of its own; task notifications and other agents' messages in that shape stay out.
+    /// A message sent while the agent worked (from the CLI, the desktop app or Nook) is a queued command line, and shows
+    /// as yours; task notifications and other agents' messages in that shape stay out.
     func testMessageSentWhileWorkingShowsAsYourPrompt() {
         let lines = [
             #"{"type":"user","uuid":"u1","timestamp":"2026-10-19T10:00:00Z","message":{"role":"user","content":"Fix the build"}}"#,
@@ -192,6 +219,88 @@ final class TranscriptPresentationTests: XCTestCase {
         XCTAssertTrue(messages[1].interrupted)
         let rows = TranscriptPresentation.rows(messages, working: false)
         XCTAssertEqual(rows.map(\.id), ["u1", "step:t1", "interrupted:t1-steps", "u2"])
+    }
+
+    func testAMessageSentWhileTheAgentWorkedSplitsTheFoldOfItsTurn() {
+        var steer = message("q1", .user, "Ook de linter", at: 20)
+        steer.queued = true
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de build", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift build")], at: 10),
+            steer,
+            message("s2", .tools, steps: [step("b", "Bash", "swiftlint")], at: 30),
+            message("x1", .assistant, "Klaar.", at: 50),
+            message("u2", .user, "Dank", at: 60)
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:s1", "q1", "continued:s2", "x1", "u2"],
+                       "the steer stays in sight, between the work it split")
+        guard case .fold(_, let total, _) = rows[1], case .continued(_, let since, let inner) = rows[3] else {
+            return XCTFail("\(rows)")
+        }
+        XCTAssertEqual(total, 50, "the first fold keeps the whole turn's time")
+        XCTAssertEqual(since, 30, "the work after the steer counts from the steer")
+        XCTAssertEqual(inner.map(\.id), ["step:b"])
+    }
+
+    func testAStoppedTurnStaysOpenAndSaysForHowLong() {
+        var stopped = message("x1", .assistant, "Ik begin met…", at: 12)
+        stopped.interrupted = true
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift test")], at: 5),
+            stopped
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "step:a", "x1", "interrupted:x1"], "how far it got stays in sight")
+        guard case .interrupted(_, let seconds) = rows[3] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(seconds, 12)
+    }
+
+    func testNoticesStayInSightWhenTheirTurnFolds() {
+        let rows = TranscriptPresentation.rows([
+            message("u1", .user, "Fix de test", at: 0),
+            message("s1", .tools, steps: [step("a", "Bash", "swift test")], at: 5),
+            AgentChatMessage(id: "n1", notice: .compacted(tokens: 167_000), date: start.addingTimeInterval(8)),
+            message("s2", .tools, steps: [step("b", "Read", "App.swift")], at: 9),
+            message("x1", .assistant, "Klaar.", at: 20)
+        ], working: false)
+        XCTAssertEqual(rows.map(\.id), ["u1", "fold:s1", "n1", "x1"])
+        guard case .fold(_, _, let inner) = rows[1] else { return XCTFail("\(rows)") }
+        XCTAssertEqual(inner.map(\.id), ["group:s1"], "the work on both sides of the notice folds as one")
+    }
+
+    func testTranscriptReadsCompactionsErrorsAndUsageLimits() {
+        let lines = [
+            #"{"type":"user","uuid":"u1","message":{"role":"user","content":"Fix de test"}}"#,
+            #"{"type":"system","subtype":"compact_boundary","uuid":"c1","content":"Conversation compacted","compactMetadata":{"trigger":"auto","preTokens":167000}}"#,
+            #"{"type":"assistant","uuid":"e1","isApiErrorMessage":true,"message":{"role":"assistant","content":[{"type":"text","text":"API Error: 529 Overloaded"}]}}"#,
+            #"{"type":"assistant","uuid":"e2","isApiErrorMessage":true,"message":{"role":"assistant","content":[{"type":"text","text":"Claude AI usage limit reached|1760040000"}]}}"#,
+            #"{"type":"event_msg","timestamp":"2026-10-19T10:00:00Z","payload":{"type":"context_compacted"}}"#,
+            #"{"type":"compacted","payload":{"message":""}}"#
+        ]
+        let messages = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.map(\.kind), [.user, .notice, .notice, .notice, .notice],
+                       "Codex's line and event for one compaction are one notice")
+        XCTAssertEqual(messages[1].notice, .compacted(tokens: 167_000))
+        XCTAssertEqual(messages[2].notice, .error("API Error: 529 Overloaded"), "an API error is no answer of the agent")
+        XCTAssertEqual(messages[3].notice, .limit("Claude AI usage limit reached", resets: Date(timeIntervalSince1970: 1_760_040_000)))
+        XCTAssertEqual(messages[4].notice, .compacted(tokens: nil))
+        XCTAssertEqual(AgentTranscript.notice(error: "You've hit your usage limit. Try again later."),
+                       .limit("You've hit your usage limit. Try again later.", resets: nil))
+    }
+
+    func testStepsKeepWhatTheirToolGaveBack() {
+        let lines = [
+            #"{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"swift test --filter Foo","description":"Run the tests"}},{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/p/A.swift"}}]}}"#,
+            #"{"type":"user","uuid":"r1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"Executed 3 tests, with 0 failures"},{"type":"tool_result","tool_use_id":"t2","content":"import Foundation"}]}}"#
+        ]
+        let steps = AgentTranscript.jsonl(Data(lines.joined(separator: "\n").utf8)).flatMap(\.steps)
+        XCTAssertEqual(steps.map(\.output), ["Executed 3 tests, with 0 failures", nil], "a file it read is a click away instead")
+        XCTAssertEqual(TranscriptPresentation.detail(steps[0]), "$ swift test --filter Foo\n\nExecuted 3 tests, with 0 failures",
+                       "a step that shows a description opens to its command line and output")
+        XCTAssertNil(TranscriptPresentation.detail(AgentToolStep(id: "x", name: "Bash", summary: "ls", command: "ls")),
+                     "nothing more to see than its line")
+        XCTAssertEqual(AgentTranscript.codexOutput(#"{"output":"ok\n","metadata":{"exit_code":0}}"#), "ok\n")
+        XCTAssertEqual(AgentTranscript.codexOutput("Exit code: 0\nWall time: 0.1 seconds\nOutput:\nhello"), "hello")
     }
 
     func testCodexCommandWithAnExitCodeFails() {
