@@ -782,7 +782,8 @@ struct WAInbox: Equatable, Sendable {
         // An older message the chat no longer keeps: its ticks wait in the ledger for when its history comes back.
         for id in pending where seenIds.contains(id) {
             receiptLedger.note(id, receipt: status, reader: nil, at: date)
-            if WAJID.kind(key) == .person { receiptLedger.note(id, receipt: status, reader: key, at: date) }
+            // A receipt that names no chat (OpenWA's may not) has no person to keep it for.
+            if !key.isEmpty, WAJID.kind(key) == .person { receiptLedger.note(id, receipt: status, reader: key, at: date) }
         }
         if earlyReceipts.count > 500 { earlyReceipts.removeAll() }
         return changed

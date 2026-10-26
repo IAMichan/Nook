@@ -1405,6 +1405,14 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(filled[2], [anna(.read, nil), bo(.delivered)])
         XCTAssertEqual(filled[3], [anna(.read, now), bo(.delivered)], "the newest keeps what its app said")
         XCTAssertEqual(ChatReceipts.overall(of: filled[0]), .delivered)
+
+        // Two members called Jan are told apart by their id: one's read is never passed on to the other.
+        let jan1 = { (receipt: ChatReceipt) in ChatReader(name: "Jan", receipt: receipt, key: "j1") }
+        let jan2 = { (receipt: ChatReceipt) in ChatReader(name: "Jan", receipt: receipt, key: "j2") }
+        let twins = ChatReceipts.filledReaders([[jan1(.sent), jan2(.sent), ChatReader(name: "Jan", receipt: .sent)],
+                                                [jan1(.read), jan2(.delivered)]])
+        XCTAssertEqual(twins[0].map(\.receipt), [.read, .delivered, .sent], "a name two people share matches neither")
+        XCTAssertEqual(twins[0].map(\.key), ["j1", "j2", nil])
         XCTAssertNil(ChatReceipts.overall(of: []))
 
         // In a private chat, their message after yours says yours reached them; in a group it says nothing of the rest.

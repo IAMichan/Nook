@@ -347,7 +347,7 @@ extension AppModel {
         }
         guard conversation.isGroup, !message.readers.isEmpty || conversation.members != nil else { return [] }
         let named = message.readers.map { id, reader in
-            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date)
+            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date, key: WAJID.normalized(id))
         }
         return ChatReceipts.everyone(named, members: names.all)
     }

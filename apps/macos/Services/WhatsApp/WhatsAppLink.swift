@@ -169,6 +169,8 @@ final class WhatsAppLink: ObservableObject {
     @Published private(set) var qrPNG: Data?
     /// Who the numbers are: your Contacts and the phone's, refreshed with the chat list (see `WANameBook`).
     @Published private(set) var names = WANameBook()
+    /// The gateway's contact list as it last answered.
+    private var gatewayContacts: [WAContact] = []
     private var receiptSave: Task<Void, Never>?
 
     /// Writes the kept ticks a moment after the last change: a burst of receipts is one write.
@@ -353,6 +355,7 @@ final class WhatsAppLink: ObservableObject {
         if online, let provider { Task { await provider.setOnline(false, chat: nil) } }
         online = false
         onlineChat = nil
+        if forget { gatewayContacts = [] }
         previews = [:]
         previewOrder = []
         previewsLoading = []
@@ -595,7 +598,10 @@ final class WhatsAppLink: ObservableObject {
             WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
         }
         // Who the numbers are: your Contacts first (what you call someone), then the phone's address book.
-        let book = WANameBook(contacts: await ContactDirectory.names(), gateway: await provider.contacts())
+        // A failed request answers with an empty list: the last list stays, rather than every name going back to a number.
+        let listed = await provider.contacts()
+        if !listed.isEmpty { gatewayContacts = listed }
+        let book = WANameBook(contacts: await ContactDirectory.names(), gateway: gatewayContacts)
         if gen == generation, book != names {
             names = book
             inbox.setNames(book)

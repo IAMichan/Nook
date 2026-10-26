@@ -35,6 +35,8 @@ struct ChatReader: Codable, Equatable, Sendable, Identifiable {
     var receipt: ChatReceipt
     /// When it reached them or they read it, when the app says.
     var date: Date? = nil
+    /// Who it is in the app (a member's id), when known: two people can share a name. Nil for a member known by name only.
+    var key: String? = nil
 
     var id: String { name }
 
@@ -42,7 +44,7 @@ struct ChatReader: Codable, Equatable, Sendable, Identifiable {
     func advanced(to new: ChatReceipt, at date: Date?) -> ChatReader {
         let next = receipt.advanced(to: new)
         guard next != receipt else { return self }
-        return ChatReader(name: name, receipt: next, date: date ?? self.date)
+        return ChatReader(name: name, receipt: next, date: date ?? self.date, key: key)
     }
 }
 
@@ -85,18 +87,30 @@ enum ChatReceipts {
     /// Every message's info with what a later one says, oldest first (one list per message, empty for theirs): someone
     /// who has or read a later message of yours has the earlier ones too, since reading a chat reads what came before.
     /// A step that comes from a later message has no time of its own (when they read the earlier one is not known).
+    /// People are told apart by their `key`. Someone known by name only is matched by that name, as long as one person
+    /// alone goes by it: two members called "Jan" never pass each other's reads on.
     static func filledReaders(_ lists: [[ChatReader]]) -> [[ChatReader]] {
         var later: [String: ChatReceipt] = [:]
+        var byName: [String: Set<String>] = [:]
+        func identityOf(_ reader: ChatReader) -> String? {
+            if let key = reader.key, !key.isEmpty { return key }
+            return reader.name.isEmpty ? nil : "\u{1}" + reader.name
+        }
+        func laterStep(_ reader: ChatReader) -> ChatReceipt? {
+            if let key = reader.key, !key.isEmpty { return later[key] }
+            guard let people = byName[reader.name], people.count == 1, let only = people.first else { return nil }
+            return later[only]
+        }
         var out = lists
         for index in lists.indices.reversed() {
             out[index] = lists[index].map { reader in
-                guard !reader.name.isEmpty, reader.receipt >= .sent, let step = later[reader.name], step > reader.receipt else {
-                    return reader
-                }
-                return ChatReader(name: reader.name, receipt: step, date: nil)
+                guard reader.receipt >= .sent, let step = laterStep(reader), step > reader.receipt else { return reader }
+                return ChatReader(name: reader.name, receipt: step, date: nil, key: reader.key)
             }
-            for reader in out[index] where !reader.name.isEmpty && reader.receipt >= .delivered {
-                later[reader.name] = max(later[reader.name] ?? reader.receipt, reader.receipt)
+            for reader in out[index] where reader.receipt >= .delivered {
+                guard let identity = identityOf(reader) else { continue }
+                later[identity] = max(later[identity] ?? reader.receipt, reader.receipt)
+                if !reader.name.isEmpty { byName[reader.name, default: []].insert(identity) }
             }
         }
         return out
