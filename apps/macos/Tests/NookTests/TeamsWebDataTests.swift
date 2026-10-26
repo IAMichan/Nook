@@ -111,9 +111,10 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertTrue(firefox?.contains("Firefox/15") == true, firefox ?? "")
         XCTAssertNil(WebSignInAgent.agent(for: URL(string: "https://teams.microsoft.com/v2/"), otherwise: nil, now: now))
         XCTAssertEqual(WebSignInAgent.agent(for: URL(string: "https://www.instagram.com"), otherwise: "Own", now: now), "Own")
-        XCTAssertTrue(WebSignInAgent.noPasskeysOnGoogle.contains(#"(^|\.)accounts\.google\.com$"#),
-                      "passkeys are hidden on Google's sign-in pages only")
-        XCTAssertTrue(WebSignInAgent.noPasskeysOnGoogle.contains("PublicKeyCredential"))
+        XCTAssertTrue(WebSignInAgent.googlePasskeys.contains(#"(^|\.)accounts\.google\.com$"#),
+                      "passkeys change on Google's sign-in pages only")
+        XCTAssertFalse(WebSignInAgent.googlePasskeys.contains("delete "), "the page keeps passkeys as a browser has them")
+        XCTAssertTrue(WebSignInAgent.skipOnGoogle.contains(#"accounts\.google\.com"#))
     }
 
     func testChatsAndMessages() {

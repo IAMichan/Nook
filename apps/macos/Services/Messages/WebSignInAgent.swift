@@ -25,23 +25,36 @@ enum WebSignInAgent {
         isGoogleSignIn(url) ? firefox(now: now) : otherwise
     }
 
-    /// Runs on Google's sign-in pages before Google's own scripts: the page is told passkeys are not available here.
-    /// macOS lets an app's own browser use passkeys only for the app's own sites, so Google's passkey sign-in (also with
-    /// a phone nearby, "make sure Bluetooth is on") always fails in it; without passkeys Google asks for your password
-    /// or a prompt on your phone instead. Other sites keep passkeys as they are.
-    static let noPasskeysOnGoogle = """
+    /// Runs on Google's sign-in pages before Google's own scripts. macOS lets an app's own browser use passkeys only for
+    /// the app's own sites, so Google's passkey sign-in (also with a phone nearby, "make sure Bluetooth is on") always
+    /// fails in it. The page still sees passkeys as a browser has them (Google turns away a browser without them as
+    /// not secure, and a changed function that does not read as the browser's own), but hears there is no passkey on
+    /// this Mac, and a passkey request is answered at once as if you cancelled it, so "Try another way" leads to your
+    /// password or a prompt on your phone. Every change is a Proxy, which reads as the browser's own function.
+    static let googlePasskeys = """
     (() => {
       if (!/(^|\\.)accounts\\.google\\.com$/i.test(location.hostname)) return;
-      try { delete window.PublicKeyCredential; } catch (error) {}
-      try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true, writable: true }); } catch (error) {}
-      try {
-        const credentials = navigator.credentials;
-        if (!credentials) return;
-        const refuse = () => Promise.reject(new DOMException('Passkeys are not available here.', 'NotAllowedError'));
-        const get = credentials.get.bind(credentials), create = credentials.create.bind(credentials);
-        credentials.get = (options) => (options && options.publicKey ? refuse() : get(options));
-        credentials.create = (options) => (options && options.publicKey ? refuse() : create(options));
-      } catch (error) {}
+      const wrap = (owner, name, apply) => {
+        try {
+          const original = owner && owner[name];
+          if (typeof original !== 'function') return;
+          const descriptor = Object.getOwnPropertyDescriptor(owner, name) || { configurable: true, enumerable: false, writable: true };
+          Object.defineProperty(owner, name, { ...descriptor, value: new Proxy(original, { apply }) });
+        } catch (error) {}
+      };
+      const none = () => Promise.resolve(false);
+      const key = window.PublicKeyCredential;
+      wrap(key, 'isUserVerifyingPlatformAuthenticatorAvailable', none);
+      wrap(key, 'isConditionalMediationAvailable', none);
+      const refuse = () => Promise.reject(new DOMException('The operation either timed out or was not allowed.', 'NotAllowedError'));
+      const container = window.CredentialsContainer && CredentialsContainer.prototype;
+      for (const name of ['get', 'create']) {
+        wrap(container, name, (target, self, args) => (args[0] && args[0].publicKey ? refuse() : Reflect.apply(target, self, args)));
+      }
     })();
     """
+
+    /// Google's sign-in pages, where Nook's own page scripts stay out (see `googlePasskeys`): a script of a sign-in
+    /// window that changes the page starts with this and returns on them.
+    static let skipOnGoogle = "if (/(^|\\.)accounts\\.google\\.com$/i.test(location.hostname)) return;"
 }
