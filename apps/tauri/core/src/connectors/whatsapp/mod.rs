@@ -373,6 +373,14 @@ pub mod jid {
         }
     }
 
+    /// The name a gateway makes up for a chat it has no real name for: nothing, the number, or "Group <id>" (the id
+    /// again). Such a name is no name: the group's own is asked for instead.
+    pub fn is_placeholder_name(chat: &str, name: &str) -> bool {
+        let user = chat.split('@').next().unwrap_or(chat);
+        let user = user.split(':').next().unwrap_or(user);
+        name.trim().is_empty() || name == display_number(chat) || name == user || name.strip_prefix("Group ").is_some_and(|rest| rest == user)
+    }
+
     /// "33612345678@s.whatsapp.net" → "+33612345678".
     pub fn display_number(jid: &str) -> String {
         let user = jid.split('@').next().unwrap_or(jid);
@@ -468,7 +476,7 @@ impl Inbox {
         let number = jid::fallback_name(&chat);
         // In een privégesprek noemt de ander het: nooit je eigen naam op je eigen bericht.
         let person = (kind == ChatKind::Person && !message.from_me && !message.sender_name.is_empty()).then(|| message.sender_name.clone());
-        let given = name.map(str::to_string).or_else(|| message.chat_name.clone()).filter(|n| !n.is_empty());
+        let given = name.map(str::to_string).or_else(|| message.chat_name.clone()).filter(|n| !jid::is_placeholder_name(&chat, n));
         let conversation = self.conversations.entry(chat.clone()).or_insert_with(|| Conversation {
             id: chat.clone(),
             name: given.clone().or_else(|| person.clone()).unwrap_or_else(|| number.clone()),
@@ -480,7 +488,7 @@ impl Inbox {
         });
         if let Some(name) = given {
             conversation.name = name;
-        } else if conversation.name == number {
+        } else if jid::is_placeholder_name(&chat, &conversation.name) {
             if let Some(person) = person {
                 conversation.name = person;
             }
@@ -1127,6 +1135,28 @@ mod tests {
         let mut m = Message::new(id, chat, chat, "Lisa", "hoi", DateTime::from_timestamp(1_800_000_000 + at, 0).unwrap(), from_me);
         m.mentions_me = mention;
         m
+    }
+
+    #[test]
+    fn a_made_up_group_name_is_no_name() {
+        assert!(jid::is_placeholder_name("120363418432353030@g.us", "Group 120363418432353030"));
+        assert!(jid::is_placeholder_name("31612224835-1537682185@g.us", "Group 31612224835-1537682185"));
+        assert!(jid::is_placeholder_name("120363418432353030@g.us", ""));
+        assert!(!jid::is_placeholder_name("120363418432353030@g.us", "Familie"));
+        assert!(!jid::is_placeholder_name("120363418432353030@g.us", "Group chat"));
+    }
+
+    #[test]
+    fn a_group_arriving_under_its_id_stays_unnamed_until_its_real_name_is_known() {
+        let mut inbox = Inbox::default();
+        let filters = WhatsAppSettings::default().filters();
+        let mut m = msg("g1", "120363418432353030@g.us", 0, false, false);
+        m.chat_name = Some("Group 120363418432353030".into());
+        inbox.add(m, &filters, None, false);
+        let name = inbox.conversations.get("120363418432353030@g.us").unwrap().name.clone();
+        assert!(jid::is_placeholder_name("120363418432353030@g.us", &name));
+        inbox.rename("120363418432353030@g.us", "Familie");
+        assert_eq!(inbox.conversations.get("120363418432353030@g.us").unwrap().name, "Familie");
     }
 
     #[test]

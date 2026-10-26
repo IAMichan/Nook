@@ -77,6 +77,39 @@ pub async fn whatsapp_open_file(app: AppHandle, c: State<'_, Connectors>, chat: 
         .map_err(|_| "Er is geen app op deze computer die dit bestand kan openen.".to_string())
 }
 
+/// A voice message or other sound for the card's own player: fetched like any file, but handed to the page as data
+/// instead of opened with the system's app (Windows often has none for Opus).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Audio {
+    mime: String,
+    base64: String,
+}
+
+#[tauri::command]
+pub async fn whatsapp_audio(c: State<'_, Connectors>, chat: String, message: String) -> Res<Audio> {
+    use base64::Engine;
+    let link = c.whatsapp.clone();
+    let path = link.download(&message, &chat).await.map_err(|e| e.message)?;
+    if !link.owns_file(&path) {
+        return Err("Nook speelt alleen bestanden die het zelf ophaalde.".into());
+    }
+    let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let mime = match extension.as_str() {
+        "ogg" | "oga" | "opus" => "audio/ogg",
+        "mp3" => "audio/mpeg",
+        "m4a" | "aac" => "audio/mp4",
+        "wav" => "audio/wav",
+        "amr" => "audio/amr",
+        _ => return Err("Dit is geen geluid dat Nook kan afspelen.".into()),
+    };
+    let bytes = std::fs::read(&path).map_err(|_| "Het bestand kon niet worden gelezen.".to_string())?;
+    if bytes.len() > 25 * 1024 * 1024 {
+        return Err("Dit geluid is te groot om hier af te spelen.".into());
+    }
+    Ok(Audio { mime: mime.into(), base64: base64::engine::general_purpose::STANDARD.encode(bytes) })
+}
+
 /// "Laat Nook antwoorden": a new Nook where Nook reads only this chat and proposes an answer to it as a plan. The
 /// prompt is Nook's own, so nothing of it is learned. Returns the Nook's id.
 #[tauri::command]

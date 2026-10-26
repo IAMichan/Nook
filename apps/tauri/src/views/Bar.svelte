@@ -12,6 +12,8 @@
   import Workspace from "./Workspace.svelte";
   import Music from "./services/Music.svelte";
   import Commands from "./Commands.svelte";
+  import NookHistory from "./NookHistory.svelte";
+  import Chats from "./Chats.svelte";
   import { services, serviceEvents, type NowPlaying } from "../lib/services";
   import { listening } from "../lib/listening.svelte";
   import { attachments } from "../lib/attachments.svelte";
@@ -28,7 +30,7 @@
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
 
-  type Tab = "nook" | "agents" | "workspace" | "music" | "commands";
+  type Tab = "nook" | "chats" | "agents" | "workspace" | "music" | "commands";
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
@@ -185,6 +187,24 @@
   function toggleLanguage() {
     const next = english() ? "nl" : "en";
     nook.saveSettings({ appLanguage: next, language: next });
+  }
+
+  // "Laat Nook antwoorden" on a WhatsApp card: the new Nook opens in the Nook tab.
+  function openNookFromCard(id: string) {
+    select("nook");
+    pinnedOpen = true;
+    nook.select(id);
+  }
+
+  // The right-hand column of the Nook tab: the chat history (as on the Mac) or Today.
+  let side = $state<"history" | "today">(localStorage.getItem("bar.side") === "today" ? "today" : "history");
+  function pickSide(next: "history" | "today") {
+    side = next;
+    try {
+      localStorage.setItem("bar.side", next);
+    } catch {
+      // Not remembered; the column still switches.
+    }
   }
 
   function select(t: Tab) {
@@ -379,6 +399,7 @@
         <Orb size={20} {mood} {ring} onpiece={(id) => { select("nook"); nook.select(id); }} />
         <nav>
           <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
+          <button class:on={shown === "chats"} onclick={() => select("chats")}>{tr("Chats", "Chats")}</button>
           <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
             <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
@@ -400,13 +421,23 @@
         ondismiss={dismissNotice}
         onview={(id) => { agents.select(id); select("agents"); pinnedOpen = true; }}
       />
-      <WhatsAppCard onnook={(id) => { select("nook"); pinnedOpen = true; nook.select(id); }} />
+      {#if shown !== "chats"}
+        <WhatsAppCard onnook={openNookFromCard} />
+      {/if}
       <div class="body">
         {#if shown === "nook"}
           <div class="nooktab">
             <div class="chatcol"><Chat compact autofocus={pinnedOpen} /></div>
-            <div class="side"><Today /></div>
+            <div class="side">
+              <div class="sidetabs" role="tablist">
+                <button role="tab" aria-selected={side === "history"} class:on={side === "history"} onclick={() => pickSide("history")}>{tr("Geschiedenis", "History")}</button>
+                <button role="tab" aria-selected={side === "today"} class:on={side === "today"} onclick={() => pickSide("today")}>{tr("Vandaag", "Today")}</button>
+              </div>
+              <div class="sidebody">{#if side === "history"}<NookHistory />{:else}<Today />{/if}</div>
+            </div>
           </div>
+        {:else if shown === "chats"}
+          <Chats onnook={openNookFromCard} />
         {:else if shown === "agents"}
           <Agents compact />
         {:else if shown === "commands"}
@@ -542,6 +573,10 @@
   .body { flex: 1; min-height: 0; }
   .nooktab { display: grid; grid-template-columns: 1fr 220px; height: 100%; }
   .chatcol { min-height: 0; }
-  .side { border-left: 1px solid var(--line); overflow-y: auto; }
+  .side { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .sidetabs { display: flex; gap: 2px; padding: 4px 8px 6px; }
+  .sidetabs button { flex: 1; background: transparent; border: 0; color: var(--text3); border-radius: 999px; padding: 3px 8px; font-size: 11px; }
+  .sidetabs button.on { background: var(--smoke); color: var(--paper); }
+  .sidebody { flex: 1; min-height: 0; overflow-y: auto; }
   .panel :global(.composer) { background: var(--notch); }
 </style>

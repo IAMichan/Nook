@@ -504,6 +504,39 @@ impl WhatsAppLink {
         self.with(|i| i.inbox.visible(&filters).into_iter().cloned().collect())
     }
 
+    /// Every chat for the Chats tab, as on the Mac: the ones with messages here and then the rest of the phone's chats
+    /// from the gateway, newest first. Quiet groups are in; hidden chats and status updates are not.
+    pub fn chat_list(&self) -> Vec<super::Conversation> {
+        let ignored = self.settings().ignored;
+        self.with(|i| {
+            let mut out: Vec<super::Conversation> = i
+                .inbox
+                .sorted()
+                .into_iter()
+                .filter(|c| !ignored.contains(&c.id) && c.kind != super::ChatKind::Status)
+                .cloned()
+                .collect();
+            let have: HashSet<String> = out.iter().map(|c| c.id.clone()).collect();
+            for k in &i.known {
+                let kind = jid::kind(&k.jid);
+                if have.contains(&k.jid) || ignored.contains(&k.jid) || kind == super::ChatKind::Status {
+                    continue;
+                }
+                out.push(super::Conversation {
+                    id: k.jid.clone(),
+                    name: if jid::is_placeholder_name(&k.jid, &k.name) { jid::fallback_name(&k.jid) } else { k.name.clone() },
+                    is_group: kind == super::ChatKind::Group,
+                    kind,
+                    messages: vec![],
+                    unread: 0,
+                    last_activity: k.last,
+                });
+            }
+            out.sort_by_key(|c| std::cmp::Reverse(c.last_activity));
+            out
+        })
+    }
+
     pub fn gowa_running(&self) -> bool {
         let mut g = self.gowa.lock().unwrap_or_else(|e| e.into_inner());
         match g.child.as_mut() {
@@ -672,6 +705,21 @@ impl WhatsAppLink {
                 i.known = chats.into_iter().map(|c| ChatInfo { jid: jid::normalized(&c.jid), ..c }).collect();
             }
         });
+        // The gateway names a group it has no subject for after its id: ask for the real names of the newest ones.
+        let unnamed: Vec<String> = self.with(|i| {
+            i.known.iter().filter(|k| jid::is_group(&k.jid) && jid::is_placeholder_name(&k.jid, &k.name)).take(40).map(|k| k.jid.clone()).collect()
+        });
+        for chat in unnamed {
+            if let Some(name) = provider.group_name(&chat).await {
+                self.with(|i| {
+                    if i.generation == gen {
+                        if let Some(k) = i.known.iter_mut().find(|k| k.jid == chat) {
+                            k.name = name;
+                        }
+                    }
+                });
+            }
+        }
     }
 
     fn poll(self: &Arc<Self>) {
@@ -745,7 +793,7 @@ impl WhatsAppLink {
     fn name_group(self: &Arc<Self>, chat: &str) {
         let Some((provider, gen)) = self.with(|i| {
             let conversation = i.inbox.conversations.get(chat)?;
-            if !jid::is_group(chat) || conversation.name != jid::display_number(chat) || !i.naming.insert(chat.to_string()) {
+            if !jid::is_group(chat) || !jid::is_placeholder_name(chat, &conversation.name) || !i.naming.insert(chat.to_string()) {
                 return None;
             }
             i.provider.clone().map(|p| (p, i.generation))
@@ -1052,7 +1100,7 @@ impl WhatsAppLink {
             }
             for k in &i.known {
                 if seen.insert(k.jid.clone()) {
-                    out.push((k.jid.clone(), if k.name.is_empty() { jid::fallback_name(&k.jid) } else { k.name.clone() }));
+                    out.push((k.jid.clone(), if jid::is_placeholder_name(&k.jid, &k.name) { jid::fallback_name(&k.jid) } else { k.name.clone() }));
                 }
             }
         });
