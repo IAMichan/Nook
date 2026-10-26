@@ -325,10 +325,6 @@ struct SessionPanel: View {
                                 .disabled(active)
                             Button(tr("ws.quick.pull")) { perform(.pull) }
                                 .disabled(active || progress != nil || !behind)
-                            if let link = workspace.openPullRequests[runID] {
-                                Divider()
-                                Button(tr("ws.quick.viewPR")) { done { PullRequestViewer.show(link) } }
-                            }
                         }))
     }
 
@@ -351,7 +347,7 @@ struct SessionPanel: View {
         progress = tr(action.labelKey)
         Task {
             do {
-                // A pull request it made stays put: "View PR" in the menu opens it in the side panel when you want it.
+                // A pull request it made stays put in the tray above the composer.
                 let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch let failure {

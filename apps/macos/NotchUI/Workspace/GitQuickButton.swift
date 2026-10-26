@@ -33,9 +33,6 @@ struct GitQuickButton: View {
                 case nil:
                     EmptyView()
                 }
-                if let link = workspace.openPullRequests[runID] {
-                    Button(tr("ws.quick.viewPR")) { PullRequestViewer.show(link) }
-                }
             }
         }
         .controlSize(.small)
@@ -74,7 +71,7 @@ struct GitQuickButton: View {
         progress = tr(action.labelKey)
         Task {
             do {
-                // A pull request it made stays put: "View PR" opens it in the side panel when you want it.
+                // A pull request it made stays put in the tray above the composer.
                 let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch {
