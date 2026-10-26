@@ -112,9 +112,9 @@ struct SessionPanel: View {
                     .padding(.vertical, NookTheme.Spacing.sm)
             }
         }
-        .padding(NookTheme.Spacing.sm)
+        .padding(NookTheme.Spacing.md)
         .frame(width: 300, alignment: .leading)
-        .background(DropdownStyle.panel)
+        .cardBackground(DropdownStyle.panel, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
         .task(id: directory) {
             targets = OpenInTarget.available()
             let folder = directory
@@ -132,17 +132,14 @@ struct SessionPanel: View {
     // MARK: Machine and folder
 
     private var machineRow: some View {
-        PanelRow(icon: AnyView(HStack(spacing: NookTheme.Spacing.xxs) {
-            Image(systemName: "laptopcomputer")
-            Image(systemName: "folder")
-        }.font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary).fixedSize()),
+        PanelRow(icon: symbol("laptopcomputer"),
                  title: machine.isEmpty ? "Mac" : machine,
-                 detail: AgentPathFormat.tilde(directory),
-                 iconWidth: 34,
+                 help: AgentPathFormat.tilde(directory),
                  menu: AnyView(Group {
                      Button(tr("button.openTerminalHere")) { done { app.openTerminal(in: directory) } }
                      Button(tr("agents.panel.copyPath")) { Pasteboard.copy(directory) }
-                 }))
+                 }),
+                 menuSymbol: "folder")
     }
 
     private var openInRow: some View {
@@ -255,13 +252,14 @@ struct SessionPanel: View {
     private var branchRow: some View {
         let branch = model.status?.branch
         let base = run?.baseBranch ?? model.base
-        let title = base.flatMap { $0 == branch ? nil : tr("agents.panel.from", $0) } ?? (branch ?? tr("agents.git.detached"))
+        let title = branch ?? tr("agents.git.detached")
         var trailing: String?
         if let status = model.status, status.upstream != nil, status.ahead + status.behind > 0 {
             trailing = "↑\(status.ahead) ↓\(status.behind)"
         }
         return PanelRow(icon: symbol("arrow.triangle.branch"), title: title,
-                        detail: title == branch ? nil : branch, trailing: trailing.map { AnyView(Text($0).font(NookTheme.mono(11))) },
+                        trailing: trailing.map { AnyView(Text($0).font(NookTheme.mono(11))) },
+                        help: base.flatMap { $0 == branch ? nil : tr("agents.panel.from", $0) },
                         menu: AnyView(Group {
                             Section(tr("agents.panel.switchBranch")) {
                                 ForEach(model.branches, id: \.self) { name in
@@ -403,8 +401,8 @@ struct SessionPanel: View {
         return PanelRow(icon: symbol("plus.forwardslash.minus"),
                         title: files.isEmpty ? tr("agents.panel.changes") : tr("agents.git.changes", files.count),
                         trailing: AnyView(HStack(spacing: 5) {
-                            Text("+\(added)").foregroundStyle(NookTheme.mint)
-                            Text("−\(removed)").foregroundStyle(NookTheme.coral)
+                            Text("+\(added)").foregroundStyle(added > 0 ? NookTheme.mint : NookTheme.textTertiary)
+                            Text("−\(removed)").foregroundStyle(removed > 0 ? NookTheme.coral : NookTheme.textTertiary)
                         }.font(NookTheme.mono(11.5))),
                         disabledReason: files.isEmpty ? tr("agents.git.noChanges") : nil,
                         action: { done(showChanges) })
@@ -436,6 +434,8 @@ private struct PanelRow: View {
     var disabledReason: String? = nil
     var action: (() -> Void)? = nil
     var menu: AnyView? = nil
+    /// The mark at the end of the line that opens `menu`.
+    var menuSymbol = "chevron.down"
     @State private var hovering = false
 
     private var enabled: Bool { disabledReason == nil }
@@ -448,7 +448,6 @@ private struct PanelRow: View {
                     .disabled(!enabled)
                     .opacity(enabled ? 1 : 0.55)
                 if let menu {
-                    Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
                     Menu { menu } label: { chevron.frame(width: 30, height: 34).contentShape(Rectangle()) }
                         .composerMenu()
                         .help(tr("a11y.more"))
@@ -471,7 +470,7 @@ private struct PanelRow: View {
                 content.opacity(enabled ? 1 : 0.55)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
         .onHover { hovering = $0 }
         .help(disabledReason ?? help ?? "")
     }
@@ -504,8 +503,8 @@ private struct PanelRow: View {
     }
 
     private var chevron: some View {
-        Image(systemName: "chevron.down")
-            .font(NookTheme.font(10, .semibold))
+        Image(systemName: menuSymbol)
+            .font(NookTheme.font(menuSymbol == "chevron.down" ? 10 : 12, menuSymbol == "chevron.down" ? .semibold : .medium))
             .foregroundStyle(NookTheme.textSecondary)
     }
 }

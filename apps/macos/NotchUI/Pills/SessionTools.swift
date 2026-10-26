@@ -272,7 +272,8 @@ struct SessionWorkbench<Conversation: View>: View {
             && totalWidth - (side != .conversation ? toolWidth + PanelSplit.handle : 0) >= PanelLayout.sessionPanelRoom
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
-                conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
+                // Docked, the switch sits above the session panel instead of in the conversation's header.
+                conversation(docked ? AnyView(EmptyView()) : AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
                                                        outputsFresh: outputs.fresh && !outputsShown)))
                     // A pull request link in the conversation opens in the side panel.
                     .environment(\.pullRequestLinksBeside, true)
@@ -294,11 +295,14 @@ struct SessionWorkbench<Conversation: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
             if docked {
-                DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
-                    if let runID { workspace.markReviewed(runID) }
-                    viewModel.sessionTool = .changes
+                VStack(alignment: .trailing, spacing: NookTheme.Spacing.sm) {
+                    SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
+                    DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
+                        if let runID { workspace.markReviewed(runID) }
+                        viewModel.sessionTool = .changes
+                    }
+                    .id(directory)
                 }
-                .id(directory)
                 .frame(width: PanelLayout.sessionPanel)
                 .padding(.leading, NookTheme.Spacing.sm)
             }
