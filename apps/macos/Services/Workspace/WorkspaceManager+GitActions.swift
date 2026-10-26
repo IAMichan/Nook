@@ -136,6 +136,8 @@ extension WorkspaceManager {
         return await Task.detached(priority: .userInitiated) {
             let remotes = git.remotes(directory)
             let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+            // The remote may have renamed its default branch since the last fetch; offline, the local answer stands.
+            if sessionBase == nil { _ = try? git.run(["remote", "set-head", remote, "--auto"], in: directory, timeout: 15) }
             return Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote)
         }.value
     }

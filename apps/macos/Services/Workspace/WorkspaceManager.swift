@@ -228,6 +228,9 @@ final class WorkspaceManager: ObservableObject {
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
+    /// Sessions whose running turn is an independent copy (`forkNext` at launch): the id the agent reports is a new
+    /// conversation, not a continuation, so the source's id is not an earlier id of it.
+    var forkLaunched: Set<UUID> = []
     /// Sessions whose settings changed during a turn: their Claude Code process is not reused afterwards, so the next turn
     /// surely starts with the new flags, even when this Claude Code could not take them over live.
     var claudeChangedDuringTurn: Set<UUID> = []
@@ -1077,7 +1080,7 @@ final class WorkspaceManager: ObservableObject {
             return
         }
         processes[id] = process
-        forkNext.remove(id)
+        if forkNext.remove(id) != nil { forkLaunched.insert(id) } else { forkLaunched.remove(id) }
         if rollback != nil { run.pendingRollback = nil }
         run.move(to: .running)
         run.turnStartedAt = Date()
@@ -1216,7 +1219,7 @@ final class WorkspaceManager: ObservableObject {
     private func handleClaude(_ event: ClaudeStreamEvent, id: UUID) {
         switch event {
         case .initialized(let session, let model):
-            rememberEarlierSession(id, replacedBy: session)
+            if forkLaunched.remove(id) == nil { rememberEarlierSession(id, replacedBy: session) }
             update(id) {
                 $0.providerSessionID = session
                 if let model, !model.isEmpty { $0.resolvedModel = model }
