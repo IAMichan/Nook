@@ -432,7 +432,8 @@ extension AppModel {
         viewModel.register("\(token)#no") { TakeoverState.shared.resolve(false) }
         let no = CardAction(label: tr("takeover.check.no"), outcome: .callback("\(token)#no", ""))
         // The whole step, wrapped: what the user approves must be all there is to read.
-        let lines = max(1, Int(ceil(Double(line.count) / 58.0)))
+        let lines = max(1, line.split(separator: "\n", omittingEmptySubsequences: false)
+            .reduce(0) { $0 + max(1, Int(ceil(Double($1.count) / 58.0))) })
         let card = NookCard(
             id: token,
             mood: .waiting,
@@ -441,7 +442,8 @@ extension AppModel {
             detail: .note(line, label: tr("takeover.check.step")),
             primary: CardAction(label: yes, outcome: .callback("\(token)#yes", "")),
             secondary: no,
-            contentHeight: 124 + CGFloat(min(lines, 8)) * 20,
+            // Header, title and buttons, the step's lines, and the "Step" label under it with the room above it.
+            contentHeight: 124 + CGFloat(min(lines, 8)) * 20 + 30,
             escape: no,
             status: CardStatus(text: tr("card.status.approval"), tone: .waiting)
         )

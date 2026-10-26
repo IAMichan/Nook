@@ -668,20 +668,28 @@ private struct NoteDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            ScrollView(showsIndicators: false) {
-                Text(text)
-                    .font(NookTheme.TextStyle.body)
-                    .lineSpacing(3)
-                    .foregroundStyle(NookTheme.paper)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // A note that fits shows whole; only a long one scrolls. A bare scroll view gave way to the card's spacer
+            // and collapsed to nothing, so an approval card showed its label without the step it asks about.
+            ViewThatFits(in: .vertical) {
+                noteText
+                ScrollView(showsIndicators: false) { noteText }
             }
             .frame(maxHeight: 160)
             Text(label)
                 .font(NookTheme.TextStyle.caption)
                 .foregroundStyle(NookTheme.textTertiary)
         }
+        .layoutPriority(1)
+    }
+
+    private var noteText: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.body)
+            .lineSpacing(3)
+            .foregroundStyle(NookTheme.paper)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
