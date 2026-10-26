@@ -97,6 +97,9 @@ final class NotchViewModel: ObservableObject {
     /// The pull request in the side panel's Pull request tab, opened from a link in the session's conversation.
     @Published var sidePullRequest: PullRequestOpenRequest?
 
+    /// Tabs closed in a session's side or bottom panel, for ⇧⌘T (`panel.reopenClosed`); not published, nothing shows it.
+    var closedSessionTabs = ClosedTabs<ClosedSessionTab>()
+
     /// The pull request the Pull requests page opens next (a pull request link clicked in a chat): it takes this once and
     /// clears it.
     @Published var pullRequestToOpen: PullRequestOpenRequest?

@@ -1,7 +1,7 @@
 import Foundation
 
-/// A block within a Markdown answer.
-enum MarkdownBlock {
+/// A block within a Markdown answer. Equatable, so a finished block of a streaming answer is not drawn again.
+enum MarkdownBlock: Equatable {
     case heading(level: Int, text: String)
     case paragraph(String)
     /// A bulleted or numbered list; nested items keep their depth.

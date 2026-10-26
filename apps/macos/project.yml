@@ -204,6 +204,7 @@ targets:
       - path: Core/I18n+Bridge.swift
       - path: Core/I18n+Releases.swift
       - path: Core/I18n+RelayPush.swift
+      - path: Core/I18n+ChatTimeline.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -305,6 +306,7 @@ targets:
       - path: Services/Workspace/ChangedFilesTree.swift
       - path: Services/Workspace/TimelineSearch.swift
       - path: Services/Workspace/ScrollModel.swift
+      - path: Services/Workspace/TimelineVisits.swift
       - path: Services/Workspace/HistoryWindow.swift
       - path: Services/Workspace/TimelineHandles.swift
       - path: Services/Workspace/SkillIndex.swift
@@ -330,6 +332,7 @@ targets:
       - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/Keybindings.swift
+      - path: Services/Workspace/ClosedTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/UsageLedger.swift
@@ -341,6 +344,7 @@ targets:
       - path: Services/Workspace/CommandConsole.swift
       - path: Services/Workspace/SessionOutputs.swift
       - path: Services/Workspace/ReviewComments.swift
+      - path: Services/Workspace/ComposerQuotes.swift
       - path: Services/Workspace/UnifiedDiff.swift
       - path: Services/Workspace/SessionExport.swift
       - path: Services/Workspace/CustomAgents.swift
@@ -381,6 +385,7 @@ targets:
       - path: Brain/ChatChart.swift
       - path: Brain/MarkdownBlock.swift
       - path: Brain/ChartRescue.swift
+      - path: Brain/IncrementalMarkdown.swift
       - path: Brain/Weather.swift
       - path: Brain/ChatImage.swift
       - path: Services/WhatsApp/WhatsAppGateway.swift
