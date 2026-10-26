@@ -10,6 +10,8 @@ import Combine
 /// to change a part that is there ("punt 5 moet dit worden", "maak de tweede alinea korter", `DoubleTapLogic.asksToEdit`)
 /// finds that part in the document, selects it with the accessibility layer, the mouse or the keyboard, and types the new
 /// text over it (`edit(request:)`). Anything else goes to the chat, where Nook can take the task over with mouse and keyboard.
+/// No cursor in a text is needed: the window that was in front when you tapped (a screenshot with dates, a mail, a page)
+/// goes to the chat with the request (`takeAskedIn`), so "zet dit in mijn agenda" works, and Nook asks back when it is unclear.
 ///
 /// - The key is watched with NSEvent `flagsChanged` monitors only: no event tap, so no Input Monitoring prompt.
 /// - Fields are read and written through the accessibility layer of the app in front; Nook never presses Return and never
@@ -57,6 +59,9 @@ final class DoubleTap: ObservableObject {
     var clipboardText: () -> String? = { nil }
     /// Nook's own cursor where it acts in the document (screen point, top-left origin), and nil when it is done.
     var showCursor: ((CGPoint?, String) -> Void)?
+    /// The app that was in front when the notch asked what Nook should do, and when: a request without a cursor in a
+    /// text (put the dates on this screenshot in my calendar) is about what is in its window (`takeAskedIn`).
+    private var askedIn: (app: NSRunningApplication, date: Date)?
     /// Writes a line to the audit log: what was asked, what happened.
     var record: ((_ args: String, _ result: String) -> Void)?
     /// One tap gives Nook a task (Settings › Shortcuts).
@@ -136,7 +141,12 @@ final class DoubleTap: ObservableObject {
         case .double:
             tapCount += 1
             // Nook asks what to do rather than guessing that a form must be filled in; "fill in the form" is one answer.
-            if let onAsk { onAsk() } else { fill() }
+            if let onAsk {
+                noteAskedIn()
+                onAsk()
+            } else {
+                fill()
+            }
         case .tap:
             // One tap: give Nook a task, once it is clear no second tap follows.
             tapCount += 1
@@ -145,11 +155,27 @@ final class DoubleTap: ObservableObject {
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(DoubleTapGesture.window * 1_000_000_000) + 50_000_000)
                 guard let self, self.tapCount == tap else { return }
+                self.noteAskedIn()
                 self.onAsk?()
             }
         case .none:
             break
         }
+    }
+
+    /// Remembers the app in front as the notch asks what Nook should do; Nook itself does not count.
+    private func noteAskedIn() {
+        let own = ProcessInfo.processInfo.processIdentifier
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != own else { return }
+        askedIn = (app, Date())
+    }
+
+    /// The app that was in front when the notch last asked what Nook should do, once: a later request is about whatever
+    /// is in front then. Nil after a few minutes, or when that app has quit since.
+    func takeAskedIn() -> NSRunningApplication? {
+        defer { askedIn = nil }
+        guard let askedIn, Date().timeIntervalSince(askedIn.date) < 5 * 60, !askedIn.app.isTerminated else { return nil }
+        return askedIn.app
     }
 
     private static func modifier(of key: FlowKey) -> NSEvent.ModifierFlags {

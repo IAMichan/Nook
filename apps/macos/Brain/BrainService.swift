@@ -105,7 +105,8 @@ final class BrainService {
         let language = ownRequest ? settings.ownLanguageInstruction : settings.languageInstruction(for: userText)
         // Asked for the text of a message: write it out, so the user has it even when the action is not proposed.
         let draftNote = intent.wantsDraft ? " The user wants the text of the message: always write it out in full in your answer, so they can copy it." : ""
-        let request = "Request: \(userText)\n\n(\(language) Answer in plain sentences; never output JSON or code unless the request is about code.\(draftNote))"
+        let note = ReplyContext.note.isEmpty ? "" : " " + ReplyContext.note
+        let request = "Request: \(userText)\n\n(\(language) Answer in plain sentences; never output JSON or code unless the request is about code.\(draftNote)\(note))"
         // A greeting needs no calendar, mail or screen: a small model would otherwise talk about those instead of answering.
         let lean = profile.isSmall && intent.isSmallTalk && history.isEmpty && untrusted == nil
         // What Nook gathered goes to an external brain as the privacy level allows; the request itself is the user's own.

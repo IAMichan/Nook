@@ -328,6 +328,41 @@ enum DoubleTapLogic {
         return "…" + tail[start...]
     }
 
+    // MARK: The window in front, for the chat
+
+    /// Past this many characters each part of the window's text is cut, so a long page leaves room for the question.
+    static let maxWindowText = 8_000
+
+    /// The text of the window the user was looking at when they tapped, for a request that goes to the chat: what the app
+    /// itself shows through the accessibility layer, and what Nook read in a picture of it (a screenshot, a scan, a PDF has
+    /// no text of its own). Empty when neither has any.
+    static func windowText(shown: String, recognized: String) -> String {
+        let shown = shown.trimmingCharacters(in: .whitespacesAndNewlines)
+        let recognized = recognized.trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = []
+        if !shown.isEmpty { parts.append("Text of the window:\n" + String(shown.prefix(maxWindowText))) }
+        // The same text read twice tells the brain nothing new.
+        if !recognized.isEmpty, recognized != shown {
+            parts.append("Text Nook read in a picture of the window (OCR, may contain small errors):\n" + String(recognized.prefix(maxWindowText)))
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// What Nook tells the brain with a request asked by tapping while looking at a window (a screenshot with dates, a mail,
+    /// a page) rather than with the cursor in a text: "this" is what is in that window, and when the request leaves
+    /// something open, Nook asks back instead of guessing. `window`: the app, and the title when there is one. The title is
+    /// the app's text, not the user's: it goes in as one short line without quotes, so it cannot pass for an instruction.
+    static func windowNote(window: String) -> String {
+        let flat = window.split(whereSeparator: \.isNewline).joined(separator: " ").replacingOccurrences(of: "\"", with: "'")
+        let name = flat.count > 80 ? String(flat.prefix(79)) + "…" : flat
+        return """
+        The user asked this with Double Tap while looking at the window "\(name)"; its text (and a picture, for brains that \
+        see) is under <screen_content>. "This", "these", "it" and "here" mean what is in that window: take the details from \
+        there (dates, times, places, names, amounts). When something the request needs is missing or unclear there, or the \
+        window holds several candidates and the request does not say which, ask one short question first instead of guessing.
+        """
+    }
+
     // MARK: Prompt
 
     static let system = """

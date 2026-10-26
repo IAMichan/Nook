@@ -165,12 +165,50 @@ extension AppModel {
     }
 
     /// A new conversation in the Nook chat for what was asked in the notch, followed there: its steps in the slim line,
-    /// then its answer, question or plan as a card.
+    /// then its answer, question or plan as a card. Asked with Double Tap, the window that was in front goes with it (a
+    /// screenshot with dates, a mail, a page), so "put this in my calendar" works without a cursor in a text, and Nook asks
+    /// back when the window leaves something open.
     private func askInNotch(_ request: String) {
         let conversation = chat.startNew()
         NotchFollow.shared.conversations.insert(conversation)
-        handleUserText(request, reveal: false)
-        followInNotch()
+        guard let app = DoubleTap.shared.takeAskedIn(), !settings.privateSources.contains(SourceCatalog.screen) else {
+            handleUserText(request, reveal: false)
+            followInNotch()
+            return
+        }
+        let looking = Task { @MainActor [weak self] in
+            let note = await self?.attachFrontWindow(app) ?? ""
+            guard let self, !Task.isCancelled else { return }
+            self.handleUserText(request, reveal: false, note: note)
+            self.followInNotch()
+        }
+        viewModel.showWork(tr("doubletap.step.looking", app.localizedName ?? "")) { [weak self] in
+            looking.cancel()
+            self?.viewModel.endWork()
+        }
+    }
+
+    /// The window of `app` the user was looking at as the chat's attachment: its text, what Nook reads in a picture of it,
+    /// and the picture itself for brains that see, like ⌥-dragging Nook onto it. Returns what the brain is told about it,
+    /// or "" when Nook may not read that app or found nothing in its window.
+    private func attachFrontWindow(_ app: NSRunningApplication) async -> String {
+        guard let bundle = app.bundleIdentifier, !ScreenReader.excludedBundles.contains(bundle) else { return "" }
+        let windows = screenContext.windows.filter { $0.bundleID == bundle }
+        let window = windows.first { $0.isFront } ?? windows.first
+        var image: ChatImage?
+        var recognized = ""
+        if let shot = await ScreenReader.windowImage(of: app) {
+            image = ChatImage.encode(shot.image)
+            recognized = (try? await ScreenReader.recognize(shot.image)) ?? ""
+        }
+        let text = DoubleTapLogic.windowText(shown: window?.text ?? "", recognized: recognized)
+        guard !text.isEmpty || image != nil else { return "" }
+        let appName = app.localizedName ?? bundle
+        let title = window?.title ?? ""
+        let name = title.isEmpty ? appName : "\(appName) — \(title)"
+        attachment = (name, text, Date())
+        attachmentImages = image.map { [$0] } ?? []
+        return DoubleTapLogic.windowNote(window: name)
     }
 
     /// What was typed in the field of a finished conversation's notice (often the answer to a question Nook asked back):
