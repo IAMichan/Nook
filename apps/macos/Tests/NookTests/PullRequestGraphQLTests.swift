@@ -16,6 +16,41 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertTrue(query.contains("additions deletions"), "the lines changed come with the row")
     }
 
+    func testTheQuickRefreshAsksOnlyForOpenOnesAndTheSlowOneOnlyForClosedOnes() throws {
+        func parts(_ closed: Bool) throws -> (query: String, variables: [String: String]) {
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.body(closed: closed)) as? [String: Any])
+            return (try XCTUnwrap(body["query"] as? String), try XCTUnwrap(body["variables"] as? [String: String]))
+        }
+        let open = try parts(false)
+        XCTAssertEqual(Set(open.variables.keys), ["mine", "reviews"])
+        XCTAssertTrue(open.query.contains("mine: search(") && open.query.contains("reviews: search("))
+        XCTAssertFalse(open.query.contains("Closed"), "no closed searches in the quick refresh")
+        XCTAssertTrue(open.query.contains("fragment row on PullRequest") && open.query.contains("viewer { login }"))
+        let closed = try parts(true)
+        XCTAssertEqual(Set(closed.variables.keys), ["mineClosed", "reviewsClosed"])
+        XCTAssertTrue(closed.query.contains("$mineClosed: String!, $reviewsClosed: String!"))
+        XCTAssertFalse(closed.query.contains("  mine: search("))
+    }
+
+    func testAQuickRefreshKeepsTheClosedRowsUntilTheyAreReadAgain() {
+        func item(_ number: Int, _ state: PullRequestItem.State = .open) -> PullRequestItem {
+            PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)
+        }
+        let old = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1), item(2), item(3, .merged), item(4, .closed)],
+                                      reviews: [item(5, .closed)], error: nil)
+        // #2 left the open list, #4 was reopened.
+        let fresh = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1), item(4)], reviews: [], error: nil)
+        let kept = fresh.keepingClosed(from: old)
+        XCTAssertEqual(kept.mine.map(\.number), [1, 4, 3], "open ones as read, then the closed ones not open again")
+        XCTAssertEqual(kept.reviews.map(\.number), [5])
+        XCTAssertEqual(fresh.keepingClosed(from: old) { $0 == "a/b#2" }.mine.map(\.number), [1, 4, 2, 3],
+                       "a row merged from Nook stays until the closed ones are read")
+
+        let replaced = kept.replacingClosed(mine: [item(6, .merged), item(1, .closed)], reviews: [])
+        XCTAssertEqual(replaced.mine.map(\.number), [1, 4, 6], "the closed rows are the new ones; an open row wins")
+        XCTAssertEqual(replaced.reviews.map(\.number), [])
+    }
+
     func testParse() throws {
         let answer = #"""
         {"data":{"viewer":{"login":"michan"},
@@ -107,6 +142,18 @@ final class PullRequestGraphQLTests: XCTestCase {
                        ["acme", "initech/web", "globex"], "typed entries first, an organization already typed once, invalid ones skipped")
         let full = (0..<PullRequestWatchList.limit).map { "org\($0)" }
         XCTAssertEqual(PullRequestWatchList.including(["globex"], in: full), full)
+    }
+
+    func testOwnRepositoriesAreAlwaysSearched() {
+        XCTAssertEqual(PullRequestWatchList.ownRepositories("Ada"), "user:Ada")
+        XCTAssertNil(PullRequestWatchList.ownRepositories(""))
+        XCTAssertNil(PullRequestWatchList.ownRepositories("bad name"))
+        XCTAssertEqual(PullRequestWatchList.search("user:Ada", closed: false), "is:pr is:open archived:false user:Ada sort:updated-desc")
+        XCTAssertEqual(PullRequestWatchList.including(["globex"], in: ["acme"], owner: "Ada"), ["acme", "globex", "user:Ada"])
+        let full = (0..<PullRequestWatchList.limit).map { "org\($0)" }
+        XCTAssertEqual(PullRequestWatchList.including([], in: full, owner: "Ada").last, "user:Ada",
+                       "a full watch list still finds pull requests on your own repositories")
+        XCTAssertEqual(PullRequestWatchList.including([], in: [], owner: ""), [])
     }
 
     func testOrganizationQueries() throws {

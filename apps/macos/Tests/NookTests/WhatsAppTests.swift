@@ -51,6 +51,36 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.unread, 0)
     }
 
+    /// A restart loads history that counts nothing as new: what was unread when Nook quit is carried over until read.
+    func testUnreadIsCarriedAcrossARestartUntilRead() {
+        let chat = "31600000001@s.whatsapp.net"
+        let now = Date(timeIntervalSince1970: 1_800_000_100)
+        var before = WAInbox()
+        before.add(message("1", chat: chat, at: 1), filters: WAFilters())
+        before.add(message("2", chat: chat, at: 2), filters: WAFilters())
+        let saved = WAUnreadCarry.kept(carried: [:], inbox: before, readSince: { _ in nil }, now: now)
+        XCTAssertEqual(saved[chat], WAUnreadCarry(count: 2, last: Date(timeIntervalSince1970: 1_800_000_002)))
+
+        // Next launch: the same messages come back as history, one new message arrives live.
+        var after = WAInbox()
+        after.add(message("1", chat: chat, at: 1), filters: WAFilters(), history: true)
+        after.add(message("2", chat: chat, at: 2), filters: WAFilters(), history: true)
+        after.add(message("3", chat: chat, at: 3), filters: WAFilters())
+        let next = WAUnreadCarry.kept(carried: saved, inbox: after, readSince: { _ in nil }, now: now)
+        XCTAssertEqual(next[chat]?.count, 3)
+        XCTAssertEqual(next[chat]?.last, Date(timeIntervalSince1970: 1_800_000_003))
+
+        // Read (or answered in) after the newest counted message: the carry ends; read before it, it holds.
+        XCTAssertFalse(saved[chat]!.holds(readSince: Date(timeIntervalSince1970: 1_800_000_002)))
+        XCTAssertTrue(saved[chat]!.holds(readSince: Date(timeIntervalSince1970: 1_800_000_001)))
+        let read = WAUnreadCarry.kept(carried: saved, inbox: WAInbox(), readSince: { _ in now }, now: now)
+        XCTAssertNil(read[chat])
+        // A carry left alone for months is forgotten.
+        let stale = WAUnreadCarry.kept(carried: saved, inbox: WAInbox(), readSince: { _ in nil },
+                                       now: now.addingTimeInterval(ChatReadMarks.maxAge))
+        XCTAssertNil(stale[chat])
+    }
+
     /// "@open chat Jan" in the Mac app: a person's chat opens by their number; a group or a hidden id has no such link.
     func testAppLinkOpensAPersonsChatByNumber() {
         XCTAssertEqual(WAJID.appLink("31600000001@s.whatsapp.net")?.absoluteString, "whatsapp://send?phone=31600000001")

@@ -24,6 +24,9 @@ struct ChatsEntry: Identifiable, Equatable {
     let read: ChatReadState
     /// The newest message is your own: nothing in it waits to be read, its ticks say how far it got.
     var lastIsMine = false
+    /// Nook knows where the chat stands in its app; when not (a WhatsApp gateway that counts nothing), the row shows no
+    /// mark rather than a wrong one.
+    var readKnown = true
     /// The newest message is yours: how far it got (sent, delivered, read), as far as its app says. Nil for theirs, and
     /// for every chat collected from notifications, which only ever show what came in.
     var ticks: BubbleTicks? = nil
@@ -40,7 +43,7 @@ struct ChatsEntry: Identifiable, Equatable {
     /// Read in Nook but still unread in the app itself: "Mark as read in <app>" can still pass it on.
     var waitsInApp: Bool { read == .readInNook }
     /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
-    var showsReadMark: Bool { read.isUnread || !lastIsMine }
+    var showsReadMark: Bool { read.isUnread || (readKnown && !lastIsMine) }
 }
 
 /// What the Chats tab opens on when another place sends you there: one app's chats, one chat, or a search.
@@ -69,6 +72,7 @@ extension ChatsEntry {
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
+                                          readKnown: whatsApp.readIsKnown(conversation.id),
                                           ticks: ticks, members: conversation.members == nil ? nil : conversation.memberNames,
                                           handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id]))
             }
@@ -81,7 +85,8 @@ extension ChatsEntry {
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
                                           name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
-                                          preview: "", last: chat.last, read: whatsApp.readState(chat.jid), handle: handle(chat.jid),
+                                          preview: "", last: chat.last, read: whatsApp.readState(chat.jid),
+                                          readKnown: whatsApp.readIsKnown(chat.jid), handle: handle(chat.jid),
                                           avatar: whatsApp.avatars[chat.jid]))
             }
         }
@@ -276,7 +281,7 @@ struct ChatsTab: View {
     @MainActor
     static var unread: Int {
         let link = WhatsAppLink.shared
-        return ChatCaptureService.shared.inbox.totalUnread + (link.isConnected ? link.inbox.visibleUnread(filters: link.filters) : 0)
+        return ChatCaptureService.shared.inbox.totalUnread + (link.isConnected ? link.visibleUnread : 0)
     }
 
     /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
@@ -569,13 +574,16 @@ struct ChatsTab: View {
         let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
         switch entry.read {
         case .unread:
-            return ChatsRowAction(symbol: "checkmark", label: tr("chats.markReadInNook")) { app.markChatReadInNook(entry) }
-        case .readInNook:
-            return ChatsRowAction(symbol: "checkmark.message", label: tr("chats.markReadInApp", appName)) {
-                app.markChatReadInApp(entry)
+            return ChatsRowAction(to: .readInNook, title: tr("chats.row.markRead"), label: tr("chats.markReadInNook")) {
+                app.markChatReadInNook(entry)
             }
+        case .readInNook:
+            return ChatsRowAction(to: .read, title: tr("chats.row.markReadInApp", appName),
+                                  label: tr("chats.markReadInApp", appName)) { app.markChatReadInApp(entry) }
         case .read:
-            return ChatsRowAction(symbol: "envelope.badge", label: tr("chats.markUnread")) { markUnread(entry) }
+            return ChatsRowAction(to: .unread(1), title: tr("chats.row.markUnread"), label: tr("chats.markUnread")) {
+                markUnread(entry)
+            }
         }
     }
 
@@ -797,7 +805,11 @@ private struct ChatsGroupHeader: View {
 
 /// The one step a chat's row offers while the pointer is on it (see `ChatsTab.rowAction`).
 struct ChatsRowAction {
-    let symbol: String
+    /// Where the chat stands after the click: the button shows that mark.
+    let to: ChatReadState
+    /// The short word on the button ("Read", "Read in WhatsApp", "Unread").
+    let title: String
+    /// The whole step, as the tooltip and VoiceOver say it.
     let label: String
     let perform: () -> Void
 }
@@ -833,8 +845,10 @@ private struct ChatsRow: View {
             row.accessibilityAction(named: Text(rowAction?.label ?? "")) { rowAction?.perform() }
             // As the Nook and agent lists have it: the row's action where its time was, while the pointer is on it.
             if let rowAction {
-                ToolbarIconButton(rowAction.symbol, rowAction.label, height: 22, width: 22, rowAction.perform)
+                ChatMarkButton(to: rowAction.to, title: rowAction.title, help: rowAction.label, compact: true,
+                               action: rowAction.perform)
                     .pointerStyle(.link)
+                    .rowActionsBackdrop(NookTheme.rowFill(selected: selected, hovering: true, rest: .clear))
                     .padding(.top, NookTheme.Spacing.sm)
                     .padding(.trailing, NookTheme.Spacing.sm)
                     .opacity(hovering ? 1 : 0)

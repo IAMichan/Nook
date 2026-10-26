@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Nook Contributor Cover</title>
+<link rel="stylesheet" href="../kit/nook-video.css">
+<style>
+  /* The profile grid crops a Reel cover to 3:4 (y 240–1680): everything that matters sits inside it. */
+  #safe { position:absolute; left:0; right:0; top:240px; height:1440px; padding:90px var(--gutter); display:flex; flex-direction:column; }
+  .brand { display:flex; align-items:center; gap:30px; font-size:72px; font-weight:700; letter-spacing:-2px; }
+  .panel { margin-top:70px; }
+  .row .t { font-size:40px; }
+  .big { margin-top:80px; font-size:132px; line-height:1.0; font-weight:700; letter-spacing:-4.5px; }
+  .tags { margin-top:60px; display:flex; flex-wrap:wrap; gap:18px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="safe">
+    <div class="brand"><div class="orb" id="orb" style="--d:110px"><i></i><i></i></div>Nook</div>
+    <div class="panel">
+      <div class="row">
+        <div class="dot" style="--state:var(--amber)"></div>
+        <div><div class="t">Nook · open source</div><div class="d">Looking for contributors</div></div>
+        <div class="chip" style="--state:var(--amber)">Waiting</div>
+      </div>
+      <div class="row">
+        <div class="dot" style="--state:var(--violet)"></div>
+        <div><div class="t">You · first pull request</div><div class="d">All checks passed</div></div>
+        <div class="chip" style="--state:var(--violet)">Merged</div>
+      </div>
+    </div>
+    <div class="big">Build Nook<br><span class="muted">with us.</span></div>
+    <div class="h2" style="margin-top:44px">Open source. No Mac needed.<br>Every skill level welcome.</div>
+    <div class="tags"><span class="tag">Swift</span><span class="tag">Rust</span><span class="tag">Svelte</span><span class="tag">Translations</span></div>
+  </div>
+</div>
+<script src="../kit/nook-video.js"></script>
+<script>NV.boot({ duration: 1, render: t => NV.orb(document.getElementById('orb'), 0, { breath: false }) });</script>
+</body>
+</html>
