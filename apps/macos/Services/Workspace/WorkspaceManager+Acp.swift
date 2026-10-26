@@ -183,11 +183,25 @@ extension WorkspaceManager {
                     self.failAcpTurn(id, WorkspaceManager.cleanError(error.localizedDescription, status: 1))
                 case .success(let response):
                     let stop = AcpRPC.stop(response.dictionary)
+                    self.showThoughtAsReply(id, client)
                     if self.continueSilentTurn(id, client, reason: stop.reason, usage: stop.usage) { return }
                     self.finishAcpTurn(id, reason: stop.reason, usage: stop.usage)
                 }
             }
         }
+    }
+
+    /// Antigravity sometimes writes its whole answer as thinking and ends the turn with no message. Asking it to carry
+    /// on only repeats that, so the thought becomes the reply.
+    private func showThoughtAsReply(_ id: UUID, _ client: AcpClient) {
+        guard run(id)?.provider == .antigravity, acpClients[id] === client, let state = turns[id], !state.unprompted,
+              !state.acpReplied, !state.stopping, state.acpToolCalls == 0 else { return }
+        let thought = state.acpThought.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !thought.isEmpty else { return }
+        finishLiveText(id)
+        finishAcpThought(id)
+        append(id, RunEvent(kind: .assistant, text: thought, state: .done))
+        turns[id]?.acpReplied = true
     }
 
     /// Antigravity ended the turn without a word: it is asked to carry on in the same turn instead (see
@@ -301,6 +315,7 @@ extension WorkspaceManager {
                     append(id, event)
                 }
             case .thoughtChunk(let text):
+                turns[id]?.acpThought += text
                 if let live = turns[id]?.liveReasoningID {
                     mutateEvent(id, live) { $0.text += text }
                 } else {
