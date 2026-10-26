@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Search everything (⌘K or ⇧⌘F, or the magnifying glass in the panel header): one field over conversations with Nook, agent
 /// sessions and their transcripts, chats, call notes, memories, notices, settings and actions. Typing ranks as you go;
-/// a chip (or Tab) keeps one kind; ↑/↓ move, Return opens the hit right where it matched, Esc closes. With nothing
-/// typed it shows your recent searches and how to search more precisely (see `SearchQuery` for the query language).
+/// a chip (or Tab) keeps one kind; ↑/↓ move, Return opens the hit right where it matched, Esc, the cross or a click
+/// beside it closes. With nothing typed it shows your recent searches and how to search more precisely (see
+/// `SearchQuery` for the query language).
 struct SearchPanel: View {
     @EnvironmentObject private var app: AppModel
     /// Shows a tab in the surface that holds the panel (the notch or the main window).
@@ -55,9 +56,13 @@ struct SearchPanel: View {
     var body: some View {
         let list = rows
         VStack(spacing: 0) {
-            NookSearchField(prompt: tr("search.placeholder"), text: $text, style: .large, focus: $focused,
-                            onSubmit: { open(list) }, onEscape: close)
-                .padding(.horizontal, NookTheme.Spacing.xs)
+            HStack(spacing: NookTheme.Spacing.xs) {
+                NookSearchField(prompt: tr("search.placeholder"), text: $text, style: .large, focus: $focused,
+                                onSubmit: { open(list) }, onEscape: close)
+                ToolbarIconButton("xmark", tr("button.close"), height: 22, width: 22, close)
+            }
+            .padding(.leading, NookTheme.Spacing.xs)
+            .padding(.trailing, NookTheme.Spacing.md)
             if !text.isEmpty { chips.padding(.horizontal, NookTheme.Spacing.lg).padding(.bottom, NookTheme.Spacing.md) }
             NookDivider()
             Group {
