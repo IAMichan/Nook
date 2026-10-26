@@ -127,6 +127,21 @@ extension WorkspaceManager {
         return compare
     }
 
+    /// The branch a pull request of this session merges into: the one it started from, else (a chat taken over from a
+    /// terminal has none) the repository's default branch.
+    func pullRequestBaseBranch(_ id: UUID) async -> String? {
+        guard let run = run(id), let git = sessionGit(for: run) else { return nil }
+        let directory = run.workingDirectory
+        let sessionBase = run.baseBranch
+        return await Task.detached(priority: .userInitiated) {
+            let remotes = git.remotes(directory)
+            let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
+            // The remote may have renamed its default branch since the last fetch; offline, the local answer stands.
+            if sessionBase == nil { _ = try? git.run(["remote", "set-head", remote, "--auto"], in: directory, timeout: 15) }
+            return Self.pullRequestBase(sessionBase ?? git.defaultBranch(directory, remote: remote), remote: remote)
+        }.value
+    }
+
     /// The branch a pull request merges into, without the remote's name ("origin/main" → "main").
     nonisolated static func pullRequestBase(_ base: String?, remote: String) -> String? {
         guard var base, !base.isEmpty else { return nil }
