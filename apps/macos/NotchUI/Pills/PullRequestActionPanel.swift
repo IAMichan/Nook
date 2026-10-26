@@ -50,20 +50,35 @@ final class PullRequestActionState: ObservableObject {
     }
 }
 
-/// The ⋯ menu of a pull request, in Nook's own dropdown panel: copy its link, number or checkout command, ask for reviews, edit it, bring
-/// its branch up to date, close or reopen it. What changes GitHub goes through the confirmation in the action panel.
+/// The ⋯ menu of a pull request, in Nook's own dropdown panel: refresh it, copy its link, number or checkout command,
+/// ask for reviews, edit it, bring its branch up to date, close or reopen it. While GitHub is asked the ⋯ spins, as on
+/// page. What changes GitHub goes through the confirmation in the action panel.
 struct PullRequestMoreMenu: View {
     @ObservedObject var state: PullRequestActionState
     let detail: PullRequestDetail
+    var loading = false
+    /// When the page last heard from GitHub, said in the menu's tooltip.
+    var fetchedAt: Date? = nil
+    var onRefresh: (() -> Void)? = nil
 
     var body: some View {
         ComposerDropdown(width: 248) {
-            Image(systemName: "ellipsis")
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(NookTheme.textSecondary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+            Group {
+                if loading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "ellipsis")
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
         } content: {
+            if let onRefresh {
+                DropdownRow(symbol: "arrow.clockwise", title: tr("agents.pulls.refresh"), action: onRefresh)
+                DropdownDivider()
+            }
             if let url = detail.url {
                 DropdownRow(symbol: "link", title: tr("agents.pr.copyLink")) {
                     copy(url.absoluteString, tr("agents.pr.copiedLink"))
@@ -100,7 +115,8 @@ struct PullRequestMoreMenu: View {
                 DropdownRow(symbol: PullRequestIcon.symbol(.open), title: tr("agents.pr.action.reopen")) { ask(.reopen) }
             }
         }
-        .help(tr("agents.pr.action.more"))
+        .help(fetchedAt.map { tr("agents.pr.action.more") + " · " + tr("agents.pulls.updatedAgo", AgentFormat.short(Date().timeIntervalSince($0))) }
+              ?? tr("agents.pr.action.more"))
         .accessibilityLabel(tr("agents.pr.action.more"))
         .disabled(state.sending)
     }

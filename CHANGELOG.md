@@ -27,6 +27,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 - A pull request opens beside the list opens one: half the page, its edge dragged wider or
   narrower (remembered), and a button on its tab line that makes it fill the page.
+- A pull request's page looks: a one-line title, segmented tabs, its tabs as `#number` whose mark turns
+  into a close button, refreshing in the ⋯ menu, and a timeline with each commit as its own entry.
 - `docs/WERKRUIMTE-AGENTS.md` is now `docs/WORKSPACE-AGENTS.md`.
 
 ## [0.1.0-beta.1] - 2026-10-23

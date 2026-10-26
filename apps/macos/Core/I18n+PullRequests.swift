@@ -145,7 +145,6 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.reviews.changes": "Wijzigingen gevraagd door %@",
         "agents.pr.reviews.waiting": "Wacht op %@",
         "agents.pr.timeline.pushedOne": "voegde een commit toe",
-        "agents.pr.timeline.pushed": "voegde %ld commits toe",
     ],
     .en: [
         "agents.pr.blocker.blocked": "Branch protection",
@@ -288,7 +287,6 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.reviews.changes": "Changes requested by %@",
         "agents.pr.reviews.waiting": "Waiting on %@",
         "agents.pr.timeline.pushedOne": "added a commit",
-        "agents.pr.timeline.pushed": "added %ld commits",
     ],
     .de: [
         "agents.pr.blocker.blocked": "Branch-Schutz",
@@ -431,7 +429,6 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.reviews.changes": "Änderungen angefragt von %@",
         "agents.pr.reviews.waiting": "Wartet auf %@",
         "agents.pr.timeline.pushedOne": "hat einen Commit hinzugefügt",
-        "agents.pr.timeline.pushed": "hat %ld Commits hinzugefügt",
     ],
     .fr: [
         "agents.pr.blocker.blocked": "Protection de branche",
@@ -574,7 +571,6 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.reviews.changes": "Modifications demandées par %@",
         "agents.pr.reviews.waiting": "En attente de %@",
         "agents.pr.timeline.pushedOne": "a ajouté un commit",
-        "agents.pr.timeline.pushed": "a ajouté %ld commits",
     ],
     .es: [
         "agents.pr.blocker.blocked": "Protección de rama",
@@ -717,6 +713,5 @@ let pullRequestTranslations: [AppLanguage: [String: String]] = [
         "agents.pr.reviews.changes": "Cambios pedidos por %@",
         "agents.pr.reviews.waiting": "Esperando a %@",
         "agents.pr.timeline.pushedOne": "añadió un commit",
-        "agents.pr.timeline.pushed": "añadió %ld commits",
     ],
 ]
