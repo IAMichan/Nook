@@ -75,6 +75,11 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
     private var sources: [String: Source] = [:]
     /// The website's link to the page before the oldest messages read of a chat, by the chat's id.
     private var backward: [String: String] = [:]
+    /// Chats (by their id) Nook just changed something in (sent, reacted, edited, deleted): their history is read
+    /// again at the next read, even when their newest message stayed the same.
+    private var changedHere: Set<String> = []
+    /// Who wrote each message read through the website ("8:orgid:…"), by its id in Nook: what an answer to it names.
+    private var authors: [String: String] = [:]
     /// Pages followed at most in one scroll back, to reach messages older than those Nook shows.
     private static let olderPages = 20
 
@@ -385,11 +390,18 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             current.session = renewed
             list = try await webGet(address(current.session), token: current.session.token, account: account.id)
         }
-        let names = web[account.id]?.names ?? [:]
+        var names = web[account.id]?.names ?? [:]
         var chats = TeamsWebData.chats(list, me: current.session.me)
-        for index in chats.indices where chats[index].name.isEmpty {
-            chats[index].name = names[chats[index].id] ?? ""
+        for index in chats.indices {
+            // A private chat is named after the other person while their message is the newest; once yours is, the
+            // name it had stays, so your message lands in that chat and not in one of its own.
+            if chats[index].name.isEmpty {
+                chats[index].name = names[chats[index].id] ?? ""
+            } else {
+                names[chats[index].id] = chats[index].name
+            }
         }
+        web[account.id, default: WebState()].names = names
         return (current, chats)
     }
 
@@ -401,6 +413,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         defer { web[account.id] = state }
         let moved = chats.filter { chat in
             (chat.last.map { state.seen[chat.id] != $0 } ?? false) || (chat.name.isEmpty && state.seen[chat.id] == nil)
+                || changedHere.contains(chat.id)
         }.prefix(Self.perRead)
         var fetched: Set<String> = []
         var result: [BridgedChat] = []
@@ -420,6 +433,7 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
                 if !chat.name.isEmpty { state.names[chat.id] = chat.name }
             }
             if let mine = TeamsWebData.myName(answer, me: session.me) { TeamsWebSession.shared.named(mine, in: account.id) }
+            authors.merge(TeamsWebData.authors(answer)) { _, new in new }
             if backward[chat.id] == nil, let link = TeamsWebData.backwardLink(answer, base: session.base) { backward[chat.id] = link }
             let early = state.retries[chat.id] ?? 0
             if TeamsWebData.caughtUp(answer, last: chat.last) || early >= Self.maxRetries {
@@ -428,12 +442,15 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
             } else {
                 state.retries[chat.id] = early + 1
             }
+            changedHere.remove(chat.id)
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
             let messages = TeamsWebData.messages(answer, chat: chat, me: session.me)
+            // Messages deleted since (here or in Teams) leave the chat in Nook too.
             result.append(BridgedChat(app: app, name: chat.name, messages: messages,
-                                      unread: TeamsData.unread(messages, readUntil: chat.readUntil), listed: true))
+                                      unread: TeamsData.unread(messages, readUntil: chat.readUntil), listed: true,
+                                      deleted: TeamsWebData.deleted(answer)))
         }
         for chat in chats where !fetched.contains(chat.id) && !chat.name.isEmpty {
             sources[ChatInbox.key(app: app, chat: chat.name)] = .web(account: account.id, chat: chat)
@@ -490,6 +507,154 @@ final class TeamsBridge: ObservableObject, ChatHistoryBridge {
         case nil:
             return (nil, false)
         }
+    }
+
+    // MARK: Sending
+
+    /// Whether Nook can write in the chat it shows as `name`: one read through the website's session, of an account
+    /// still linked. A chat read only through Microsoft Graph (Chat.Read) is read-only.
+    func canSend(name: String) -> Bool {
+        guard case .web(let id, _) = sources[ChatInbox.key(app: app, chat: name)] else { return false }
+        return TeamsWebSession.shared.accounts.contains { $0.id == id }
+    }
+
+    /// Sends what you typed to the chat Nook shows as `name`, as the website does, as an answer to `replyTo` (a
+    /// message's id in Nook) when set, with the account's current session (renewed first when it is about to run out,
+    /// or when Teams refuses it). The chat shows it at the next read, which comes at once. Throws with a sentence you
+    /// can act on.
+    func send(text: String, to name: String, replyTo: String? = nil) async throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        let (account, chat) = try await webChat(name)
+        var html = TeamsWebData.html(body)
+        if let replyTo, let answered = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?
+            .messages.first(where: { $0.id == replyTo }) {
+            let author = answered.isMine ? account.session.me : authors[replyTo]
+            let sender = answered.isMine ? account.session.name : (answered.sender.isEmpty ? name : answered.sender)
+            html = TeamsWebData.replyHTML(to: replyTo, author: author, sender: sender, text: answered.summary) + html
+        }
+        // One id for both tries: Teams keeps a message once even when the first try reached it.
+        let clientID = String(UInt64.random(in: 1_000_000_000_000_000...9_999_999_999_999_999))
+        let json = TeamsWebData.outgoing(html: html, name: account.session.name, clientMessageID: clientID)
+        try await webAct("POST", account: account, path: "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id) + "/messages",
+                         json: json)
+        // The chat moved: its history is read again, with the message just sent.
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
+
+    /// Puts your emoji on a message (its id in Nook) of the chat Nook shows as `name`, or takes it back when it is
+    /// yours already, as the website does.
+    func react(_ emoji: String, to message: String, in name: String, mine: Bool) async throws {
+        guard message.hasPrefix("teams-") else { throw NookError(tr("chat.compose.unsupported")) }
+        let (account, chat) = try await webChat(name)
+        let path = "/v1/users/ME/conversations/" + ChatJSON.segment(chat.id) + "/messages/"
+            + ChatJSON.segment(String(message.dropFirst("teams-".count))) + "/properties?name=emotions"
+        let key = TeamsData.key(emoji: emoji)
+        if mine {
+            try await webAct("DELETE", account: account, path: path, json: ["emotions": ["key": key]])
+        } else {
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            try await webAct("PUT", account: account, path: path, json: ["emotions": ["key": key, "value": now]])
+        }
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
+
+    /// Changes the text of your message (its id in Nook) in the chat Nook shows as `name`, as the website does: the
+    /// message is put again with the new text, an answer keeping its quote. The chat shows it at the next read, which
+    /// comes at once.
+    func edit(_ message: String, in name: String, to text: String) async throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        guard let id = TeamsWebData.serviceID(message) else { throw NookError(tr("chat.compose.unsupported")) }
+        let (account, chat) = try await webChat(name)
+        var html = TeamsWebData.html(body)
+        if let quote = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?
+            .messages.first(where: { $0.id == message })?.quote, let answered = quote.id {
+            let author = quote.mine ? account.session.me : authors[answered]
+            let sender = quote.mine ? account.session.name : (quote.sender.isEmpty ? name : quote.sender)
+            html = TeamsWebData.replyHTML(to: answered, author: author, sender: sender, text: quote.text) + html
+        }
+        // One id for both tries, as when sending.
+        let clientID = String(UInt64.random(in: 1_000_000_000_000_000...9_999_999_999_999_999))
+        let json = TeamsWebData.edited(html: html, name: account.session.name, clientMessageID: clientID)
+        try await webAct("PUT", account: account, path: TeamsWebData.messagePath(chat: chat.id, message: id), json: json)
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
+
+    /// Deletes your message (its id in Nook) for everyone in the chat Nook shows as `name`, as the website does. The
+    /// next read, which comes at once, finds it marked deleted and drops it from the chat in Nook.
+    func delete(_ message: String, in name: String) async throws {
+        guard let id = TeamsWebData.serviceID(message) else { throw NookError(tr("chat.compose.unsupported")) }
+        let (account, chat) = try await webChat(name)
+        try await webAct("DELETE", account: account, path: TeamsWebData.messagePath(chat: chat.id, message: id), json: [:])
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
+
+    /// Marks the chat Nook shows as `name` read up to its newest message Nook knows (from the chat's messages in Nook,
+    /// or the chat list's newest one), as the website does. Nothing happens for a chat without any.
+    func markRead(name: String) async throws {
+        let (account, chat) = try await webChat(name)
+        var known = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.map(\.id) ?? []
+        if let preview = chat.preview?.id { known.append(preview) }
+        guard let newest = TeamsWebData.newest(known) else { return }
+        try await webAct("PUT", account: account, path: TeamsWebData.horizonPath(chat: chat.id),
+                         json: TeamsWebData.horizon(newest: newest.id, arrived: newest.arrived))
+        changedHere.insert(chat.id)
+        ChatCaptureService.shared.readSoon(app)
+    }
+
+    /// The linked account and chat behind the chat Nook shows as `name`, with a session that does not run out within
+    /// the minute.
+    private func webChat(_ name: String) async throws -> (TeamsWebData.Account, TeamsData.Chat) {
+        guard case .web(let id, let chat) = sources[ChatInbox.key(app: app, chat: name)],
+              var account = TeamsWebSession.shared.accounts.first(where: { $0.id == id }) else {
+            throw NookError(tr("chats.teams.signInAgain"), kind: .auth)
+        }
+        if account.session.expires < Date().addingTimeInterval(60) {
+            guard let renewed = await TeamsWebSession.shared.renew(id) else { throw NookError(tr("chats.teams.signInAgain"), kind: .auth) }
+            account.session = renewed
+        }
+        return (account, chat)
+    }
+
+    /// A change on the chat service at `path` (after the session's base), tried again once with a renewed session
+    /// when Teams refuses the one it had.
+    private func webAct(_ method: String, account: TeamsWebData.Account, path: String, json: [String: Any]) async throws {
+        do {
+            try await webPost(method, account.session.base + path, json, token: account.session.token, account: account.id)
+        } catch let error as NookError where error.kind == .auth {
+            guard let renewed = await TeamsWebSession.shared.renew(account.id) else {
+                throw NookError(tr("chats.teams.signInAgain"), kind: .auth)
+            }
+            try await webPost(method, renewed.base + path, json, token: renewed.token, account: account.id)
+        }
+    }
+
+    /// Sends a change to Teams' chat service with the website's token, as `webGet` asks it.
+    private func webPost(_ method: String, _ address: String, _ json: [String: Any], token: String, account: String) async throws {
+        guard let url = URL(string: address) else { throw NookError(address) }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        // A change without a body (deleting a message) sends none.
+        if !json.isEmpty {
+            request.httpBody = try? JSONSerialization.data(withJSONObject: json)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        request.setValue("skypetoken=" + token, forHTTPHeaderField: "Authentication")
+        request.setValue("redirectAs404", forHTTPHeaderField: "BehaviorOverride")
+        request.timeoutInterval = 30
+        let (_, response) = try await ConnectorHTTP.session.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 {
+            TeamsWebSession.shared.expire(account)
+            throw NookError(tr("chats.teams.signInAgain"), kind: .auth)
+        }
+        if code == 429 { throw NookError(tr("chats.teams.rateLimited"), kind: .rateLimited) }
+        guard (200..<300).contains(code) else { throw NookError(tr("chats.teams.notSent", "HTTP \(code)")) }
     }
 
     /// Asks Teams' chat service with the website's token; a refused token is dropped, so the next read renews it.

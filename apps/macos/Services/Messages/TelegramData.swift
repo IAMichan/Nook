@@ -20,6 +20,10 @@ enum TelegramData {
         /// The group behind the chat, to ask who is in it: a basic group or a supergroup.
         var basicGroup: Int64? = nil
         var supergroup: Int64? = nil
+        /// Pinned at the top of the main chat list.
+        var isPinned: Bool = false
+        /// Its notifications are muted (for a while or for good).
+        var isMuted: Bool = false
     }
 
     /// Where the login stands.
@@ -89,7 +93,8 @@ enum TelegramData {
                     unread: Int(int64(object["unread_count"]) ?? 0), order: order(object["positions"]),
                     photo: picture?.id, avatar: picture?.path, readOutbox: int64(object["last_read_outbox_message_id"]) ?? 0,
                     basicGroup: type(kind) == "chatTypeBasicGroup" ? int64(kind["basic_group_id"]) : nil,
-                    supergroup: type(kind) == "chatTypeSupergroup" ? int64(kind["supergroup_id"]) : nil)
+                    supergroup: type(kind) == "chatTypeSupergroup" ? int64(kind["supergroup_id"]) : nil,
+                    isPinned: isPinned(object["positions"]), isMuted: isMuted(object["notification_settings"]))
     }
 
     /// The people of a group, by their user id: a `basicGroupFullInfo`'s or a `chatMembers`' `members`.
@@ -137,6 +142,37 @@ enum TelegramData {
         return 0
     }
 
+    /// Whether a chat is pinned in the main list, from its `positions`.
+    static func isPinned(_ positions: Any?) -> Bool {
+        for position in positions as? [[String: Any]] ?? [] {
+            let list = position["list"] as? [String: Any] ?? [:]
+            if type(list) == "chatListMain" { return position["is_pinned"] as? Bool == true }
+        }
+        return false
+    }
+
+    /// Whether a chat's `chatNotificationSettings` mute it: notifications stay off for some time yet.
+    static func isMuted(_ settings: Any?) -> Bool {
+        (int64((settings as? [String: Any])?["mute_for"]) ?? 0) > 0
+    }
+
+    /// The chat's new place in the main list from an `updateChatPosition`: its order (0 when it left the list) and
+    /// whether it is pinned. Nil for a position in another list (the archive, a folder).
+    static func mainPosition(_ update: [String: Any]) -> (chat: Int64, order: Int64, pinned: Bool)? {
+        guard let chat = int64(update["chat_id"]), let position = update["position"] as? [String: Any],
+              type(position["list"] as? [String: Any] ?? [:]) == "chatListMain" else { return nil }
+        let order = int64(position["order"]) ?? 0
+        return (chat, order, order != 0 && position["is_pinned"] as? Bool == true)
+    }
+
+    /// The messages Telegram deleted from a chat for good, from an `updateDeleteMessages`; nil when they only left
+    /// TDLib's cache (`is_permanent` false) and are still in the chat.
+    static func deletedMessages(_ update: [String: Any]) -> (chat: Int64, messages: [Int64])? {
+        guard update["is_permanent"] as? Bool == true, let chat = int64(update["chat_id"]) else { return nil }
+        let ids = (update["message_ids"] as? [Any] ?? []).compactMap { int64($0) }
+        return ids.isEmpty ? nil : (chat, ids)
+    }
+
     /// "Anna Smit" from a `user` object; its @username, else its phone number, when it has no name.
     static func userName(_ object: [String: Any]) -> String? {
         guard type(object) == "user" else { return nil }
@@ -170,7 +206,54 @@ enum TelegramData {
         var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
                                    media: attached?.media, poll: asked)
         message.receipt = receipt(object, readOutbox: chat.readOutbox)
+        message.quote = quote(object, chat: chat.id)
+        if let info = object["interaction_info"] { message.reactions = reactions(info) }
         return message
+    }
+
+    /// The message this one answers, in the same chat: `reply_to` (TDLib 1.8.21 and later, with the part you quoted,
+    /// if any) or `reply_to_message_id` (before). The chat finds the answered message by its id in Nook.
+    static func quote(_ object: [String: Any], chat: Int64) -> InboxQuote? {
+        var answered = int64(object["reply_to_message_id"])
+        var quoted = ""
+        if let reply = object["reply_to"] as? [String: Any], type(reply) == "messageReplyToMessage" {
+            if let from = int64(reply["chat_id"]), from != chat, from != 0 { return nil }
+            answered = int64(reply["message_id"])
+            let text = (reply["quote"] as? [String: Any])?["text"]
+            quoted = (text as? String) ?? ((text as? [String: Any])?["text"] as? String) ?? ""
+        }
+        guard let answered, answered != 0 else { return nil }
+        return InboxQuote(id: "telegram-\(chat)-\(answered)", text: quoted)
+    }
+
+    /// The emoji on a message from its `interaction_info`: `reactions.reactions` (TDLib 1.8.21 and later) or a list
+    /// of them (before). Custom emoji and paid stars are left out; an empty list when there are none.
+    static func reactions(_ info: Any?) -> [InboxReaction] {
+        let value = (info as? [String: Any])?["reactions"]
+        let list = ((value as? [String: Any])?["reactions"] as? [[String: Any]]) ?? (value as? [[String: Any]]) ?? []
+        let chips = list.compactMap { reaction -> InboxReaction? in
+            let kind = reaction["type"] as? [String: Any] ?? [:]
+            // Before 1.8.21 the emoji itself was the reaction.
+            let emoji = kind.isEmpty ? reaction["reaction"] as? String : (type(kind) == "reactionTypeEmoji" ? kind["emoji"] as? String : nil)
+            guard let emoji, !emoji.isEmpty else { return nil }
+            return InboxReaction(emoji: emoji, count: Int(int64(reaction["total_count"]) ?? 1),
+                                 mine: reaction["is_chosen"] as? Bool == true)
+        }
+        return chips.enumerated().sorted { $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset }
+            .map(\.element)
+    }
+
+    /// `addMessageReaction` or `removeMessageReaction` for an emoji on a message.
+    static func reaction(_ emoji: String, chat: Int64, message: Int64, add: Bool) -> [String: Any] {
+        var request: [String: Any] = [
+            "@type": add ? "addMessageReaction" : "removeMessageReaction", "chat_id": chat, "message_id": message,
+            "reaction_type": ["@type": "reactionTypeEmoji", "emoji": emoji] as [String: Any],
+        ]
+        if add {
+            request["is_big"] = false
+            request["update_recent_reactions"] = true
+        }
+        return request
     }
 
     /// A `messagePoll`'s poll: its question, each option with its votes and whether you chose it, and whether more
@@ -385,6 +468,46 @@ enum TelegramData {
         "photo": "inputPhoto", "sticker": "inputSticker", "video": "inputVideo", "animation": "inputAnimation",
         "audio": "inputAudio", "voice_note": "inputVoiceNote", "document": "inputDocument",
     ]
+
+    // MARK: Chat actions
+
+    /// How long "muted" lasts: Telegram takes anything over a year as for good.
+    static let muteForever = Int(Int32.max)
+
+    /// `toggleChatIsPinned` in the main chat list.
+    static func togglePinned(_ pinned: Bool, chat: Int64) -> [String: Any] {
+        ["@type": "toggleChatIsPinned", "chat_list": ["@type": "chatListMain"] as [String: Any], "chat_id": chat,
+         "is_pinned": pinned]
+    }
+
+    /// `setChatNotificationSettings` that mutes a chat for good, or unmutes it. The chat's other settings (sound,
+    /// preview…) stay as `current` has them; without them they follow Telegram's defaults.
+    static func setMuted(_ muted: Bool, chat: Int64, current: [String: Any]? = nil) -> [String: Any] {
+        var settings = current ?? [
+            "use_default_sound": true, "use_default_show_preview": true, "use_default_mute_stories": true,
+            "use_default_story_sound": true, "use_default_show_story_sender": true,
+            "use_default_disable_pinned_message_notifications": true, "use_default_disable_mention_notifications": true,
+        ]
+        settings["@type"] = "chatNotificationSettings"
+        settings["use_default_mute_for"] = false
+        settings["mute_for"] = muted ? muteForever : 0
+        return ["@type": "setChatNotificationSettings", "chat_id": chat, "notification_settings": settings]
+    }
+
+    /// `addChatToList` for the archive.
+    static func archive(chat: Int64) -> [String: Any] {
+        ["@type": "addChatToList", "chat_id": chat, "chat_list": ["@type": "chatListArchive"] as [String: Any]]
+    }
+
+    /// `editMessageText`: a message's new text.
+    static func editMessageText(chat: Int64, message: Int64, text: String) -> [String: Any] {
+        ["@type": "editMessageText", "chat_id": chat, "message_id": message, "input_message_content": textContent(text)]
+    }
+
+    /// `deleteMessages` for everyone in the chat.
+    static func deleteMessages(chat: Int64, messages: [Int64]) -> [String: Any] {
+        ["@type": "deleteMessages", "chat_id": chat, "message_ids": messages, "revoke": true]
+    }
 
     /// Whether `sending_state` says a message is still on its way from this device: Nook shows it once Telegram has it.
     static func isPending(_ message: [String: Any]) -> Bool {

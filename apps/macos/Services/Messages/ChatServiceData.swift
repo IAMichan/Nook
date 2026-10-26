@@ -197,6 +197,10 @@ enum ChatServiceData {
             if mine { inbox.receipt = receipt(message) }
             // An empty list too: the last emoji taken back leaves none.
             inbox.reactions = reactions(message, me: chat.me)
+            // The message it answers, by the service's id ("linkedMessageID"; "replyToMessageID" as Nook sends it).
+            if let answered = ((message["linkedMessageID"] as? String) ?? (message["replyToMessageID"] as? String)), !answered.isEmpty {
+                inbox.quote = InboxQuote(id: messageID(answered, chat: chat.id))
+            }
             return inbox
         }
         return messages.sorted { $0.date < $1.date }

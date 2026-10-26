@@ -332,3 +332,182 @@ enum AppData {
         return (lines + refs).joined(separator: "\n")
     }
 }
+
+// MARK: Messages: tapbacks and sending
+
+extension AppData {
+    /// One tapback in Messages' database: a row whose `associated_message_type` says someone put an emoji on a message
+    /// (2000…2005 for ❤️ 👍 👎 😂 ‼️ ❓, 2006 for any emoji in `associated_message_emoji`) or took it back (3000…3006).
+    /// Its `associated_message_guid` points at the message it is on, as "p:0/<guid>" (a part of it) or "bp:<guid>".
+    struct Tapback: Equatable {
+        /// The guid of the message it is on.
+        var target: String
+        var emoji: String
+        /// It puts the emoji there; false when it takes it back.
+        var adds: Bool
+        /// Who did it: "me" for you, else their handle in the database.
+        var sender: String
+        var mine: Bool
+
+        /// The tapback of a row; nil for a row that is none Nook shows (a sticker put on a message, a poll vote…).
+        init?(associated: String, type: Int, emoji custom: String? = nil, sender: String, mine: Bool) {
+            guard let target = Self.target(associated), (2000...2006).contains(type) || (3000...3006).contains(type) else { return nil }
+            let adds = type < 3000
+            let emoji = Self.emoji(type: type, custom: custom)
+            // Taking back an emoji of your own choice may not say which: it takes back whatever that person put there.
+            if adds && emoji == nil { return nil }
+            self.init(target: target, emoji: emoji ?? "", adds: adds, sender: sender, mine: mine)
+        }
+
+        init(target: String, emoji: String, adds: Bool, sender: String, mine: Bool) {
+            self.target = target
+            self.emoji = emoji
+            self.adds = adds
+            self.sender = sender
+            self.mine = mine
+        }
+
+        /// The classic tapbacks by the last digit of their type.
+        private static let classic = [0: "❤️", 1: "👍", 2: "👎", 3: "😂", 4: "‼️", 5: "❓"]
+
+        /// The emoji of a tapback type; for 2006/3006 the one the row names itself. Nil when there is none.
+        static func emoji(type: Int, custom: String? = nil) -> String? {
+            guard (2000...2006).contains(type) || (3000...3006).contains(type) else { return nil }
+            if type % 1000 == 6 {
+                let own = custom?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return own.isEmpty ? nil : own
+            }
+            return classic[type % 1000]
+        }
+
+        /// The guid of the message an `associated_message_guid` points at: "p:0/ABC" and "bp:ABC" are both "ABC".
+        static func target(_ associated: String) -> String? {
+            var guid = Substring(associated.trimmingCharacters(in: .whitespacesAndNewlines))
+            if guid.hasPrefix("p:"), let slash = guid.firstIndex(of: "/") {
+                guid = guid[guid.index(after: slash)...]
+            } else if guid.hasPrefix("bp:") {
+                guid = guid.dropFirst(3)
+            }
+            return guid.isEmpty ? nil : String(guid)
+        }
+
+        /// The ways a tapback can point at the message `guid`, to look them up by: each of its first `parts` parts (a
+        /// message with several photos has one per photo), and the message as a whole.
+        static func pointers(to guid: String, parts: Int = 10) -> [String] {
+            (0..<parts).map { "p:\($0)/\(guid)" } + ["bp:\(guid)"]
+        }
+
+        /// The emoji on each message (by its guid) once these tapbacks, oldest first, are applied: everyone has one
+        /// tapback on a message at most, a newer one replaces theirs and taking it back clears it. The most used emoji
+        /// come first. Every message a tapback points at is in the answer, with no emoji when all were taken back, so a
+        /// chat that showed one drops it.
+        static func reactions(_ tapbacks: [Tapback]) -> [String: [InboxReaction]] {
+            var current: [String: [String: Tapback]] = [:]
+            var order: [String: [String]] = [:]
+            for tapback in tapbacks {
+                if tapback.adds {
+                    current[tapback.target, default: [:]][tapback.sender] = tapback
+                    if !(order[tapback.target]?.contains(tapback.emoji) ?? false) { order[tapback.target, default: []].append(tapback.emoji) }
+                } else {
+                    if let kept = current[tapback.target]?[tapback.sender], tapback.emoji.isEmpty || kept.emoji == tapback.emoji {
+                        current[tapback.target]?[tapback.sender] = nil
+                    }
+                    if current[tapback.target] == nil { current[tapback.target] = [:] }
+                }
+            }
+            var reactions: [String: [InboxReaction]] = [:]
+            for (target, people) in current {
+                var chips: [InboxReaction] = []
+                for emoji in order[target] ?? [] {
+                    let on = people.values.filter { $0.emoji == emoji }
+                    guard !on.isEmpty else { continue }
+                    chips.append(InboxReaction(emoji: emoji, count: on.count, mine: on.contains { $0.mine }))
+                }
+                // A stable sort: emoji used as often keep the order they were first put there in.
+                reactions[target] = chips.enumerated()
+                    .sorted { $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset }
+                    .map(\.element)
+            }
+            return reactions
+        }
+    }
+
+    /// Sending in Messages, which another app can only do through AppleScript: the script that sends text and files
+    /// to one chat, found by the id Messages' database keeps for it (`chat.guid`).
+    enum MessagesSend {
+        enum Item: Equatable {
+            case text(String)
+            /// A file, by its path.
+            case file(String)
+        }
+
+        /// What the script answers once Messages took everything; a script that did not run answers nothing.
+        static let done = "sent"
+
+        /// The script that sends `items` in order to the first of `chats` (ids from the database, the one to prefer
+        /// first) that Messages knows. Every text and path goes in as an AppleScript string, so no quote or backslash in
+        /// it can end that string early. Fails with -1728 when Messages knows none of them.
+        static func script(_ items: [Item], chats: [String]) -> String {
+            var lines: [String] = []
+            var sends: [String] = []
+            var files = 0
+            for item in items {
+                switch item {
+                case .text(let text):
+                    sends.append("send \(MusicScriptOutput.quoted(text)) to theChat")
+                case .file(let path):
+                    files += 1
+                    lines.append("set theFile\(files) to POSIX file \(MusicScriptOutput.quoted(path))")
+                    sends.append("send theFile\(files) to theChat")
+                }
+            }
+            lines.append("tell application \"Messages\"")
+            lines.append("\tset theChat to missing value")
+            for target in targets(chats) {
+                lines += ["\tif theChat is missing value then", "\t\ttry", "\t\t\tset theChat to \(target)", "\t\t\tget id of theChat",
+                          "\t\ton error", "\t\t\tset theChat to missing value", "\t\tend try", "\tend if"]
+            }
+            lines.append("\tif theChat is missing value then error number -1728")
+            lines += sends.map { "\t" + $0 }
+            lines.append("end tell")
+            lines.append("return \(MusicScriptOutput.quoted(done))")
+            return lines.joined(separator: "\n")
+        }
+
+        /// How the script looks for the chats, in order: by each id as the database has it, then as a newer Messages may
+        /// name it ("iMessage;-;+31…" can be "any;-;+31…" there), and last the person of a one-to-one chat on the
+        /// chat's own service.
+        static func targets(_ chats: [String]) -> [String] {
+            var ids: [String] = []
+            for chat in chats {
+                for id in variants(chat) where !ids.contains(id) { ids.append(id) }
+            }
+            var people: [String] = []
+            for chat in chats {
+                guard let person = person(chat) else { continue }
+                let target = "participant \(MusicScriptOutput.quoted(person.handle)) of (1st account whose service type = \(person.service))"
+                if !people.contains(target) { people.append(target) }
+            }
+            return ids.map { "chat id " + MusicScriptOutput.quoted($0) } + people
+        }
+
+        /// A chat's id and the other ways Messages may name it. iMessage and sms never stand in for each other, so a
+        /// message never goes out as an sms you did not choose; "any" is either.
+        static func variants(_ chat: String) -> [String] {
+            guard let split = chat.firstIndex(of: ";") else { return chat.isEmpty ? [] : [chat] }
+            let service = String(chat[..<split])
+            let rest = String(chat[split...])
+            if service == "any" { return [chat, "iMessage" + rest, "SMS" + rest] }
+            return [chat, "any" + rest]
+        }
+
+        /// The person of a one-to-one chat ("iMessage;-;+31612345678") and the service to reach them on; nil for a group.
+        static func person(_ chat: String) -> (handle: String, service: String)? {
+            let parts = chat.components(separatedBy: ";")
+            guard parts.count >= 3, parts[1] == "-" else { return nil }
+            let handle = parts[2...].joined(separator: ";")
+            guard !handle.isEmpty else { return nil }
+            return (handle, parts[0] == "SMS" ? "SMS" : "iMessage")
+        }
+    }
+}

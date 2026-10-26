@@ -40,6 +40,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     private var chats: [Int64: TelegramData.Chat] = [:]
     private var users: [Int64: String] = [:]
     private var messages: [Int64: [InboxMessage]] = [:]
+    /// Messages Telegram deleted for good since the last `read()`, by chat: their ids in Nook, so the chat drops them.
+    private var deleted: [Int64: [String]] = [:]
+    /// Each chat's notification settings as TDLib last sent them, so muting changes only that.
+    private var notificationSettings: [Int64: [String: Any]] = [:]
+    private var actionCount = 0
     /// Chats whose messages or unread count changed since the last `read()`.
     private var changed: Set<Int64> = []
     /// The chats Nook shows: the newest of the main list, plus every chat a new message arrives in.
@@ -156,6 +161,8 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         account = nil
         chats = [:]
         messages = [:]
+        deleted = [:]
+        notificationSettings = [:]
         shown = []
         changed = []
         meID = nil
@@ -169,12 +176,14 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
     func read() async throws -> [BridgedChat] {
         guard isReady else { return [] }
         let ids = changed.intersection(shown)
+        let gone = deleted
         changed = []
+        deleted = [:]
         return ids.compactMap { id in
             guard let chat = chats[id], !chat.title.isEmpty else { return nil }
             let people = (members[id] ?? []).filter { $0 != meID }.compactMap { users[$0] }
             return BridgedChat(app: app, name: chat.title, messages: messages[id] ?? [], unread: chat.unread, avatar: chat.avatar,
-                               members: people.isEmpty ? nil : people)
+                               members: people.isEmpty ? nil : people, deleted: gone[id] ?? [])
         }
     }
 
@@ -232,9 +241,37 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         case "updateAuthorizationState":
             authorization(TelegramData.authorization(object))
         case "updateNewChat":
-            if let chat = (object["chat"] as? [String: Any]).flatMap(TelegramData.chat) {
+            if let raw = object["chat"] as? [String: Any], let chat = TelegramData.chat(raw) {
                 chats[chat.id] = chat
+                notificationSettings[chat.id] = raw["notification_settings"] as? [String: Any]
                 fetchPicture(of: chat.id)
+            }
+        case "chat":
+            // A chat asked again after a pin or mute Telegram refused: it shows as Telegram has it.
+            if object["@extra"] as? String == "refresh", let chat = TelegramData.chat(object) {
+                chats[chat.id]?.isPinned = chat.isPinned
+                chats[chat.id]?.isMuted = chat.isMuted
+                notificationSettings[chat.id] = object["notification_settings"] as? [String: Any]
+                changed.insert(chat.id)
+            }
+        case "updateChatPosition":
+            // Pinned or unpinned (on any device), or moved in the main list.
+            if let position = TelegramData.mainPosition(object) {
+                chats[position.chat]?.order = position.order
+                chats[position.chat]?.isPinned = position.pinned
+            }
+        case "updateChatNotificationSettings":
+            if let id = TelegramData.int64(object["chat_id"]), let settings = object["notification_settings"] as? [String: Any] {
+                chats[id]?.isMuted = TelegramData.isMuted(settings)
+                notificationSettings[id] = settings
+            }
+        case "updateDeleteMessages":
+            // Deleted for everyone (by you, from here or elsewhere, or by someone else): the chat drops them.
+            if let gone = TelegramData.deletedMessages(object) {
+                let ids = Set(gone.messages.map { "telegram-\(gone.chat)-\($0)" })
+                messages[gone.chat]?.removeAll { ids.contains($0.id) }
+                deleted[gone.chat, default: []].append(contentsOf: ids.sorted())
+                changed.insert(gone.chat)
             }
         case "updateChatPhoto":
             if let id = TelegramData.int64(object["chat_id"]) {
@@ -284,6 +321,16 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
                     messages[chat]?[index].text = text
                 }
                 changed.insert(chat)
+            }
+        case "updateMessageInteractionInfo":
+            // Someone put an emoji on a message, or took theirs back: the chat shows it.
+            if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
+               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
+                let reactions = TelegramData.reactions(object["interaction_info"])
+                if messages[chat]?[index].reactions != reactions {
+                    messages[chat]?[index].reactions = reactions
+                    changed.insert(chat)
+                }
             }
         case "updateNewMessage":
             // A message you sent from Nook shows once Telegram has it (`updateMessageSendSucceeded`), under its own id.
@@ -349,6 +396,12 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
                 answerOlder(extra, [])
             } else if let extra = object["@extra"] as? String, extra.hasPrefix("send:") {
                 refused(extra, message)
+            } else if let extra = object["@extra"] as? String, extra.hasPrefix("action:") {
+                // A pin, mute, archive, edit or delete Telegram refused: the chat is asked again, so it shows as it is.
+                ToastCenter.shared.error(tr("chat.action.failed"), detail: Self.explain(message))
+                if let chat = extra.split(separator: ":").last.flatMap({ Int64($0) }) {
+                    send(["@type": "getChat", "chat_id": chat, "@extra": "refresh"])
+                }
             } else if object["@extra"] as? String == "login" {
                 loginError = Self.explain(message)
             } else if case .login(let step) = state, step != .ready {
@@ -473,6 +526,63 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         send(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options])
         messages[ids.chat]?[index].poll = poll.voting(choice)
         changed.insert(ids.chat)
+    }
+
+    /// Your emoji on a message (its id in Nook), after your own click; the same one again takes it back. The chat
+    /// shows it once Telegram has it.
+    func react(_ emoji: String, to id: String, mine: Bool) throws {
+        guard isReady, let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
+        send(TelegramData.reaction(emoji, chat: ids.chat, message: ids.message, add: !mine))
+    }
+
+    // MARK: Chat actions
+
+    /// Whether the chat is pinned at the top of Telegram's main chat list.
+    func isPinned(_ chat: Int64) -> Bool { chats[chat]?.isPinned ?? false }
+
+    /// Whether the chat's notifications are muted.
+    func isMuted(_ chat: Int64) -> Bool { chats[chat]?.isMuted ?? false }
+
+    /// Pins the chat in Telegram's main list, or unpins it, after your own click; Nook shows it at once.
+    func setPinned(_ pinned: Bool, chat: Int64) throws {
+        try act(TelegramData.togglePinned(pinned, chat: chat), chat: chat)
+        chats[chat]?.isPinned = pinned
+    }
+
+    /// Mutes the chat for good, or unmutes it, after your own click; its other notification settings stay.
+    func setMuted(_ muted: Bool, chat: Int64) throws {
+        try act(TelegramData.setMuted(muted, chat: chat, current: notificationSettings[chat]), chat: chat)
+        chats[chat]?.isMuted = muted
+        notificationSettings[chat]?["use_default_mute_for"] = false
+        notificationSettings[chat]?["mute_for"] = muted ? TelegramData.muteForever : 0
+    }
+
+    /// Moves the chat to Telegram's archive; a new message brings it back, as in the Telegram app.
+    func archive(_ chat: Int64) throws {
+        try act(TelegramData.archive(chat: chat), chat: chat)
+    }
+
+    /// The new text of your message (its id in Nook); the chat shows it once Telegram has it (`updateMessageContent`).
+    func edit(_ id: String, to text: String) throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        guard let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
+        try act(TelegramData.editMessageText(chat: ids.chat, message: ids.message, text: body), chat: ids.chat)
+    }
+
+    /// Deletes your message (its id in Nook) for everyone; the chat drops it once Telegram did (`updateDeleteMessages`).
+    func delete(_ id: String) throws {
+        guard let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
+        try act(TelegramData.deleteMessages(chat: ids.chat, messages: [ids.message]), chat: ids.chat)
+    }
+
+    /// Sends a chat action to TDLib, with an `@extra` so a refusal shows as a toast.
+    private func act(_ request: [String: Any], chat: Int64) throws {
+        guard isReady, client != nil, chats[chat] != nil else { throw NookError(tr("chat.compose.telegramOff")) }
+        actionCount += 1
+        var request = request
+        request["@extra"] = "action:\(actionCount):\(chat)"
+        send(request)
     }
 
     // MARK: Sending

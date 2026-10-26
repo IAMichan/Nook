@@ -82,6 +82,13 @@ enum WhatsAppSettings {
         }
     }
 
+    /// The chats pinned on the phone as far as Nook knows, by their JID: the ones you pinned from Nook, and what the
+    /// gateway's chat list says (OpenWA). Forgotten when WhatsApp is turned off.
+    static var pinnedChats: Set<String> {
+        get { Set(defaults.stringArray(forKey: "whatsappPinnedChats") ?? []) }
+        set { defaults.set(Array(newValue).sorted(), forKey: "whatsappPinnedChats") }
+    }
+
     /// GOWA: `user:pass` for basic auth. OpenWA: the API key.
     static var credential: String? { SecretStore.read(credentialAccount) }
 
@@ -202,6 +209,10 @@ final class WhatsAppLink: ObservableObject {
     }()
     @Published var filters = WhatsAppSettings.filters {
         didSet { WhatsAppSettings.filters = filters }
+    }
+    /// The chats pinned on the phone, as far as Nook knows (see `WhatsAppSettings.pinnedChats`).
+    @Published private(set) var pinnedChats = WhatsAppSettings.pinnedChats {
+        didSet { if pinnedChats != oldValue { WhatsAppSettings.pinnedChats = pinnedChats } }
     }
 
     /// A new message reached you (not a muted group, not your own): the notch shows it.
@@ -329,6 +340,7 @@ final class WhatsAppLink: ObservableObject {
             carriedUnread = [:]
             inbox.clear()
             knownChats = []
+            pinnedChats = []
         }
     }
 
@@ -527,7 +539,16 @@ final class WhatsAppLink: ObservableObject {
             return
         }
         guard gen == generation else { return }
-        knownChats = chats.map { WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread) }
+        knownChats = chats.map {
+            WAChatInfo(jid: WAJID.normalized($0.jid), name: $0.name, last: $0.last, unread: $0.unread, pinned: $0.pinned)
+        }
+        // A gateway that says which chats are pinned (OpenWA) is the phone's word: it replaces what Nook remembered.
+        let told = knownChats.filter { $0.pinned != nil }
+        if !told.isEmpty {
+            var pins = pinnedChats
+            for chat in told { if chat.pinned == true { pins.insert(chat.jid) } else { pins.remove(chat.jid) } }
+            pinnedChats = pins
+        }
         // Channels come in under their number ("+120363…"): the channel list names them and says where their picture is.
         for channel in await provider.channels() where gen == generation {
             let jid = WAJID.normalized(channel.jid)
@@ -691,7 +712,7 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         let fetched = (try? await fetchHistory(key, limit: limit).messages) ?? []
         let kept = inbox.conversations[key]?.messages ?? []
-        return WAInbox.newest(fetched, kept, limit: limit)
+        return WAInbox.newest(fetched.filter { !inbox.wasDeleted($0.id) }, kept, limit: limit)
     }
 
     /// Asks the gateway for a chat's newest `limit` messages and keeps them in the inbox; what came (the polls GOWA keeps
@@ -1188,6 +1209,104 @@ final class WhatsAppLink: ObservableObject {
         } catch let error as WAError {
             throw Self.sentence(error)
         }
+    }
+
+    // MARK: Editing, deleting, pinning, archiving
+
+    /// What the linked gateway can do with your messages and chats besides sending (both gateways can all four); false
+    /// while it is not linked.
+    var canEdit: Bool { isConnected && provider?.canEdit == true }
+    var canDelete: Bool { isConnected && provider?.canDelete == true }
+    var canPin: Bool { isConnected && provider?.canPin == true }
+    var canArchive: Bool { isConnected && provider?.canArchive == true }
+
+    /// Whether the chat is pinned on the phone, as far as Nook knows: pinned from Nook, or so in the gateway's chat
+    /// list. False when that is not known.
+    func isPinned(_ chat: String) -> Bool { pinnedChats.contains(WAJID.normalized(chat)) }
+
+    /// The new text of your own message, after your own Return or click; the chat shows it at once. Throws with a
+    /// sentence the user can act on.
+    func edit(_ message: String, chat: String, to text: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canEdit else { throw NookError(tr("chat.compose.unsupported")) }
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        guard body.count <= WAReply.maxLength else { throw NookError(tr("whatsapp.reply.tooLong")) }
+        let key = WAJID.normalized(chat)
+        // Only your own messages can be changed; one Nook does not keep is left to the gateway to judge.
+        if let kept = inbox.conversations[key]?.messages.first(where: { $0.id == message }), !kept.fromMe {
+            throw NookError(tr("chat.action.failed"))
+        }
+        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
+        let gen = generation
+        do {
+            try await provider.edit(message, chat: key, to: body)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        inbox.applyEdit(body, message: message, chat: key)
+        Log.connectors.info("WhatsApp: message edited")
+    }
+
+    /// Deletes a message for everyone, after you confirmed it; it leaves the chat in Nook at once, as on the phone.
+    /// Throws with a sentence the user can act on.
+    func delete(_ message: String, chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canDelete else { throw NookError(tr("chat.compose.unsupported")) }
+        guard rateLimit.allow() else { throw NookError(tr("whatsapp.reply.tooFast")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.delete(message, chat: key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        inbox.applyDelete(message: message, chat: key)
+        Log.connectors.info("WhatsApp: message deleted")
+    }
+
+    /// Pins the chat on the phone, or unpins it, after your own click; Nook remembers it for `isPinned`.
+    func setPinned(_ pinned: Bool, chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canPin else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.setPinned(pinned, chat: key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        if pinned { pinnedChats.insert(key) } else { pinnedChats.remove(key) }
+        Log.connectors.info("WhatsApp: chat \(pinned ? "pinned" : "unpinned")")
+    }
+
+    /// Archives the chat on the phone, after your own click. WhatsApp unpins a chat it archives.
+    func archive(_ chat: String) async throws {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard provider.canArchive else { throw NookError(tr("chat.compose.unsupported")) }
+        let key = WAJID.normalized(chat)
+        let gen = generation
+        do {
+            try await provider.archive(key)
+        } catch let error as WAError {
+            throw Self.actionSentence(error)
+        }
+        guard gen == generation else { return }
+        pinnedChats.remove(key)
+        Log.connectors.info("WhatsApp: chat archived")
+    }
+
+    /// As `sentence`, except that a refusal without words of the gateway's own (only a status code, or none at all)
+    /// becomes Nook's sentence for an action that did not work.
+    private static func actionSentence(_ error: WAError) -> NookError {
+        if case .refused(let why) = error {
+            let reason = why.trimmingCharacters(in: .whitespacesAndNewlines)
+            if reason.isEmpty || reason.hasPrefix("HTTP ") { return NookError(tr("chat.action.failed")) }
+        }
+        return sentence(error)
     }
 
     private static func sentence(_ error: WAError) -> NookError {

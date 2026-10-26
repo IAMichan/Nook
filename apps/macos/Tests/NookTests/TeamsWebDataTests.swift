@@ -161,4 +161,90 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertNil(TeamsWebData.backwardLink(["_metadata": ["backwardLink": "https://example.com/steal"]], base: base))
         XCTAssertNil(TeamsWebData.backwardLink(["_metadata": [String: Any]()], base: base), "the chat's start")
     }
+
+    func testAnAnswerShowsWhatItQuotesAndSendsTheSameWay() {
+        let chat = TeamsData.Chat(id: "19:x@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
+        let content = #"<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="1700">"#
+            + #"<strong itemprop="mri" itemid="8:orgid:me">Me Myself</strong><span itemprop="time" itemid="1700"></span>"#
+            + #"<p itemprop="preview">3 nov 16:00 &amp; on time</p></blockquote><p>At 16:00 at the latest</p>"#
+        let history: [String: Any] = ["messages": [
+            ["id": "1800", "messagetype": "RichText/Html", "content": content, "from": "https://x/contacts/8:orgid:jan",
+             "composetime": "2026-10-26T14:21:00.000Z",
+             "properties": ["emotions": #"[{"key":"like","users":[{"mri":"8:orgid:me"},{"mri":"8:orgid:jan"}]},{"key":"1f64f_foldedhands","users":[{"mri":"8:orgid:jan"}]}]"#]],
+        ]]
+        let message = TeamsWebData.messages(history, chat: chat, me: me).first
+        XCTAssertEqual(message?.text, "At 16:00 at the latest", "the quote is not part of the text")
+        XCTAssertEqual(message?.quote, InboxQuote(id: "teams-1700", sender: "Me Myself", text: "3 nov 16:00 & on time", mine: true))
+        XCTAssertEqual(message?.reactions, [InboxReaction(emoji: "👍", count: 2, mine: true), InboxReaction(emoji: "🙏", count: 1, mine: false)])
+
+        // What Nook sends reads back as the same quote.
+        let sent = TeamsWebData.replyHTML(to: "teams-1800", author: "8:orgid:jan", sender: "Jan", text: "a <b> & c")
+            + TeamsWebData.html("Yes\n\nsure")
+        let read = TeamsWebData.reply(sent, me: me)
+        XCTAssertEqual(read.quote, InboxQuote(id: "teams-1800", sender: "Jan", text: "a <b> & c", mine: false))
+        XCTAssertEqual(read.html, "<p>Yes</p><p>&nbsp;</p><p>sure</p>")
+        XCTAssertNil(TeamsWebData.reply("<p>plain</p>", me: me).quote)
+        let json = TeamsWebData.outgoing(html: "<p>hi</p>", name: "Me", clientMessageID: "42")
+        XCTAssertEqual(json["messagetype"] as? String, "RichText/Html")
+        XCTAssertEqual(json["clientmessageid"] as? String, "42")
+    }
+
+    func testReactionKeysMatchTheEmojiNookShows() {
+        XCTAssertEqual(TeamsData.key(emoji: "👍"), "like")
+        XCTAssertEqual(TeamsData.key(emoji: "❤"), "heart", "with or without the emoji mark")
+        XCTAssertEqual(TeamsData.key(emoji: "🙏"), "1f64f")
+        XCTAssertEqual(TeamsData.emoji(key: "laugh"), "😂")
+        XCTAssertEqual(TeamsData.emoji(key: "1f64f_foldedhands"), "🙏")
+        XCTAssertEqual(TeamsData.emoji(key: "🎉"), "🎉", "Graph writes newer reactions as the emoji itself")
+        XCTAssertNil(TeamsData.emoji(key: "custom_thing"))
+        XCTAssertNil(TeamsWebData.reactions(nil, me: me), "a preview without them keeps what the chat shows")
+    }
+
+    func testAPrivateChatWithoutANameIsNotNamedAfterTheAccount() {
+        let blank = TeamsData.Chat(id: "a", name: "", isGroup: false, last: nil, readUntil: nil)
+        let named = TeamsData.Chat(id: "b", name: "Team", isGroup: true, last: nil, readUntil: nil)
+        let result = TeamsData.distinguish([[blank, named], [blank, named]], labels: ["Work", "School"])
+        XCTAssertEqual(result.map { $0.map(\.name) }, [["", "Team (Work)"], ["", "Team (School)"]])
+    }
+
+    func testDeletedMessagesAreReportedSoTheChatDropsThem() {
+        let json: [String: Any] = ["messages": [
+            ["id": "1800", "messagetype": "RichText/Html", "content": "", "composetime": "2027-01-15T10:00:00.000Z",
+             "from": "https://x/contacts/" + me, "properties": ["deletetime": "1800000000500"]],
+            ["id": "1900", "messagetype": "RichText/Html", "content": "<p>still here</p>", "composetime": "2027-01-15T10:01:00.000Z",
+             "from": "https://x/contacts/8:orgid:jan", "properties": [:]],
+        ]]
+        let chat = TeamsData.Chat(id: "19:a@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
+        XCTAssertEqual(TeamsWebData.deleted(json), ["teams-1800"])
+        XCTAssertEqual(TeamsWebData.messages(json, chat: chat, me: me).map(\.id), ["teams-1900"])
+        XCTAssertEqual(TeamsWebData.deleted(["messages": []]), [])
+    }
+
+    func testEditingAndDeletingAMessageGoToItsOwnAddress() {
+        XCTAssertEqual(TeamsWebData.serviceID("teams-1800"), "1800")
+        XCTAssertNil(TeamsWebData.serviceID("slack-1800"), "only a message read through the chat service")
+        XCTAssertNil(TeamsWebData.serviceID("teams-"))
+        XCTAssertEqual(TeamsWebData.messagePath(chat: "19:abc@thread.v2", message: "1800"),
+                       "/v1/users/ME/conversations/19:abc@thread.v2/messages/1800")
+        XCTAssertEqual(TeamsWebData.messagePath(chat: "19:abc@thread.v2"), "/v1/users/ME/conversations/19:abc@thread.v2/messages")
+        let json = TeamsWebData.edited(html: TeamsWebData.html("new"), name: "Me", clientMessageID: "42")
+        XCTAssertEqual(json["content"] as? String, "<p>new</p>")
+        XCTAssertEqual(json["messagetype"] as? String, "RichText/Html")
+        XCTAssertEqual(json["contenttype"] as? String, "text")
+        XCTAssertEqual(json["imdisplayname"] as? String, "Me")
+        XCTAssertEqual(json["clientmessageid"] as? String, "42")
+    }
+
+    func testMarkingReadPutsTheNewestMessageInTheHorizon() {
+        let newest = TeamsWebData.newest(["teams-1700000000000", "teams-1700000005000", "slack-9999999999999", "teams-x"])
+        XCTAssertEqual(newest?.id, "1700000005000", "message ids are when they arrived")
+        XCTAssertEqual(newest?.arrived, 1_700_000_005_000)
+        XCTAssertNil(TeamsWebData.newest(["slack-1"]))
+        XCTAssertEqual(TeamsWebData.horizonPath(chat: "19:abc@thread.v2"),
+                       "/v1/users/ME/conversations/19:abc@thread.v2/properties?name=consumptionhorizon")
+        let body = TeamsWebData.horizon(newest: "1700000005000", arrived: 1_700_000_005_000,
+                                        now: Date(timeIntervalSince1970: 1_700_000_010))
+        XCTAssertEqual(body["consumptionhorizon"] as? String, "1700000005000;1700000010000;1700000005000")
+        XCTAssertEqual(TeamsWebData.readUntil(body), Date(timeIntervalSince1970: 1_700_000_005), "reads back as until when")
+    }
 }

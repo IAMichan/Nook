@@ -1444,6 +1444,37 @@ final class ChatInboxTests: XCTestCase {
 
         XCTAssertEqual(SlackData.members(["members": ["U1", "U2", "U3"]], users: ["U2": "Anna"], me: "U1"), ["Anna", "U3"])
     }
+
+    func testTelegramAnswersAndReactionsShowAsEveryAppsDo() {
+        let chat = TelegramData.Chat(id: -5, title: "Family", isGroup: true, unread: 0, order: 0)
+        let object: [String: Any] = [
+            "@type": "message", "id": 9, "date": 1_700_000_000,
+            "content": ["@type": "messageText", "text": ["text": "Yes!"]],
+            "reply_to": ["@type": "messageReplyToMessage", "chat_id": -5, "message_id": 7],
+            "interaction_info": ["reactions": ["reactions": [
+                ["type": ["@type": "reactionTypeEmoji", "emoji": "❤️"], "total_count": 1, "is_chosen": false],
+                ["type": ["@type": "reactionTypeEmoji", "emoji": "👍"], "total_count": 3, "is_chosen": true],
+                ["type": ["@type": "reactionTypeCustomEmoji", "custom_emoji_id": 1], "total_count": 1, "is_chosen": false],
+            ]]],
+        ]
+        let message = TelegramData.message(object, chat: chat, users: [:])
+        XCTAssertEqual(message?.quote, InboxQuote(id: "telegram--5-7"))
+        XCTAssertEqual(message?.reactions, [InboxReaction(emoji: "👍", count: 3, mine: true), InboxReaction(emoji: "❤️", count: 1, mine: false)])
+        let add = TelegramData.reaction("👍", chat: -5, message: 9, add: true)
+        XCTAssertEqual(add["@type"] as? String, "addMessageReaction")
+        XCTAssertEqual(TelegramData.reaction("👍", chat: -5, message: 9, add: false)["@type"] as? String, "removeMessageReaction")
+
+        // An answer shows what it answers, found in the chat; a reaction you add shows at once.
+        var inbox = ChatInbox()
+        let answered = InboxMessage(id: "telegram--5-7", sender: "Anna", text: "Dinner?", date: Date(timeIntervalSince1970: 1_699_999_000))
+        inbox.merge(BridgedChat(app: "telegram", name: "Family", messages: [answered, message!], unread: 0))
+        let id = ChatInbox.key(app: "telegram", chat: "Family")
+        XCTAssertEqual(inbox.threads[id]?.messages.last?.quote?.id, answered.id)
+        inbox.toggleReaction("❤️", on: message!.id, in: id)
+        XCTAssertEqual(inbox.threads[id]?.messages.last?.reactions?.last, InboxReaction(emoji: "❤️", count: 2, mine: true))
+        inbox.toggleReaction("👍", on: message!.id, in: id)
+        XCTAssertEqual(inbox.threads[id]?.messages.last?.reactions?.first, InboxReaction(emoji: "👍", count: 2, mine: false))
+    }
 }
 
 private extension ChatSources.Added {

@@ -2,8 +2,8 @@ import Foundation
 
 /// The Chats tab on the iPhone companion: the same inbox as on the Mac (WhatsApp through the linked phone, and every
 /// other chat app collected from its notifications), read from `ChatsEntry.all` so the phone and the Mac list the same
-/// chats. Only a WhatsApp chat can be answered, with your own words and your own tap, as in the Chats tab; any other
-/// chat is answered in its own app. "@nook …" stays on the Mac: the phone never lets Nook write into a chat.
+/// chats. Every chat the Chats tab can write in can be answered, with your own words and your own tap, as there; any
+/// other chat is answered in its own app. "@nook …" stays on the Mac: the phone never lets Nook write into a chat.
 extension CompanionServer {
     /// How many chats the phone lists, newest first.
     static let inboxLimit = 80
@@ -11,7 +11,9 @@ extension CompanionServer {
     func inbox(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
         let capture = ChatCaptureService.shared
         let whatsApp = WhatsAppLink.shared
-        let chats = ChatsEntry.all(whatsApp: whatsApp, capture: capture).prefix(Self.inboxLimit).map(Self.digest)
+        let chats = ChatsEntry.all(whatsApp: whatsApp, capture: capture).prefix(Self.inboxLimit).map {
+            Self.digest($0, canSend: app.chatRoute(for: $0) != nil)
+        }
         // Why the list may be empty: nothing is collected, or macOS does not let Nook read the notifications.
         var status: String?
         if !capture.enabled, !whatsApp.isConnected {
@@ -34,18 +36,19 @@ extension CompanionServer {
         return CompanionResponse(id: request.id, ok: true, inboxLines: inboxLines(current))
     }
 
-    /// Your own words to a WhatsApp chat (to one of its messages, when `replyTo` is set), sent and logged as the Chats
-    /// tab sends them.
+    /// Your own words to a chat the Chats tab writes in (to one of its messages, when `replyTo` is set and the app
+    /// quotes), sent and logged as the Chats tab sends them.
     func inboxSend(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
         guard let entry = inboxEntry(request.item) else { return .failure(request.id, .unknownItem) }
-        guard case .whatsApp(let jid) = entry.origin else { return .failure(request.id, .notAllowedFromPhone) }
+        guard let route = app.chatRoute(for: entry) else { return .failure(request.id, .notAllowedFromPhone) }
         // "@nook …" asks Nook to write the message, which is never sent as it is; that stays on the Mac.
         guard let text = CompanionPolicy.cleanMessage(request.text ?? ""), ChatDraft.instruction(in: text) == nil else {
             return .failure(request.id, .badRequest)
         }
         do {
-            let name = try await app.sendWhatsAppFromChats(text, chat: jid, replyTo: request.replyTo)
-            audit("chat_send", name)
+            let replyTo = app.chatAbilities(route).reply ? request.replyTo : nil
+            try await app.sendChatText(text, route: route, chat: entry.name, replyTo: replyTo)
+            audit("chat_send", entry.name)
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
         }
@@ -74,10 +77,8 @@ extension CompanionServer {
         return ChatsEntry.all(whatsApp: WhatsAppLink.shared, capture: ChatCaptureService.shared).first { $0.id == id }
     }
 
-    private static func digest(_ entry: ChatsEntry) -> InboxChatDigest {
-        let canSend: Bool
-        if case .whatsApp = entry.origin { canSend = true } else { canSend = false }
-        return InboxChatDigest(id: entry.id, app: entry.app, appName: MessagingApps.app(id: entry.app)?.name ?? entry.app,
+    private static func digest(_ entry: ChatsEntry, canSend: Bool) -> InboxChatDigest {
+        InboxChatDigest(id: entry.id, app: entry.app, appName: MessagingApps.app(id: entry.app)?.name ?? entry.app,
                                name: CompanionPolicy.clip(entry.name, limit: 120), preview: CompanionPolicy.clip(entry.preview, limit: 200),
                                last: entry.last.timeIntervalSince1970, unread: entry.unread, canSend: canSend,
                                ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp)
@@ -99,12 +100,16 @@ extension CompanionServer {
                           reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji })
             }
         case .captured(let id):
-            let messages = ChatCaptureService.shared.inbox.threads[id]?.messages ?? []
-            lines = messages.suffix(60).map { message in
-                InboxLine(id: message.id, text: CompanionPolicy.clip(message.poll?.line ?? ChatFormat.plain(message.text)),
-                          date: message.date.timeIntervalSince1970, sender: CompanionPolicy.clip(message.sender, limit: 120),
-                          fromMe: message.isMine, attachment: message.media.map { CompanionPolicy.clip($0.label, limit: 120) },
-                          ticks: nil, quoteSender: nil, quoteText: nil, reactions: [])
+            // The same bubbles as the Chats tab: answers quote what they answer, emoji and ticks show as in every app.
+            let bubbles = ChatCaptureService.shared.inbox.threads[id].map { ChatBubble.bubbles($0, last: 60) { _ in "" } } ?? []
+            lines = bubbles.map { bubble in
+                InboxLine(id: bubble.id, text: CompanionPolicy.clip(bubble.poll?.line ?? ChatFormat.plain(bubble.text)),
+                          date: (bubble.date ?? Date()).timeIntervalSince1970, sender: CompanionPolicy.clip(bubble.sender, limit: 120),
+                          fromMe: bubble.fromMe, attachment: bubble.attachment.map { CompanionPolicy.clip($0, limit: 120) },
+                          ticks: bubble.ticks.map(Self.ticks),
+                          quoteSender: bubble.quote.map { CompanionPolicy.clip($0.sender, limit: 120) },
+                          quoteText: bubble.quote.map { CompanionPolicy.clip($0.text, limit: 200) },
+                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji })
             }
         }
         return CompanionPolicy.newestFitting(lines)

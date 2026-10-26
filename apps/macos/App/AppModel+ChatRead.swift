@@ -36,27 +36,19 @@ extension AppModel {
 
     /// Whether Nook can tell this chat's app itself, or opens the app instead.
     func chatReadHandoff(_ entry: ChatsEntry) -> ChatReadHandoff {
-        chatRoute(for: entry) == nil ? .opensApp : .tells
+        chatAbilities(chatRoute(for: entry)).markRead ? .tells : .opensApp
     }
 
     /// "Mark as read in <app>", after your own click: read in Nook and passed on to the app. Logged, as anything Nook
     /// does in another app is.
     func markChatReadInApp(_ entry: ChatsEntry) {
         let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
-        switch (entry.origin, chatRoute(for: entry)) {
-        case (.whatsApp(let jid), _):
-            WhatsAppLink.shared.markReadInWhatsApp(jid)
-        case (.captured(let thread), .telegram(let chat)?):
-            ChatCaptureService.shared.telegramBridge.markRead(chat: chat)
-            ChatCaptureService.shared.markReadInApp(thread)
-        case (.captured(let thread), .linked(let chat)?):
-            markLinkedChat(chat, read: true)
-            ChatCaptureService.shared.markReadInApp(thread)
-        case (.captured(let thread), _):
+        let told = markReadInChatApp(chatRoute(for: entry))
+        if !told {
             // Nook cannot write in this app: it opens it, and you read the chat there.
             openChatApp(entry.app)
-            ChatCaptureService.shared.markReadInApp(thread)
         }
+        if case .captured(let thread) = entry.origin { ChatCaptureService.shared.markReadInApp(thread) }
         store.audit(tool: "chat_mark_read", args: "\(appName): \(entry.name)",
                     result: chatReadHandoff(entry) == .tells ? "doorgegeven" : "app geopend")
     }

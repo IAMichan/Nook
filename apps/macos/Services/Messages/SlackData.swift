@@ -2,7 +2,9 @@ import Foundation
 
 /// What Slack's Web API answers, turned into chats for the Chats tab: your direct messages and group messages with their
 /// newest messages. Foundation only, so it can be tested anywhere; `SlackBridge` makes the calls.
-/// Methods used: auth.test, users.list, conversations.list (types im, mpim), conversations.history.
+/// Methods used: auth.test, users.list, conversations.list (types im, mpim), conversations.history; and to write, after
+/// your own click: chat.postMessage, chat.update, chat.delete, reactions.add, reactions.remove, conversations.mark,
+/// files.getUploadURLExternal and files.completeUploadExternal.
 enum SlackData {
     /// One direct or group conversation.
     struct Conversation: Equatable, Sendable {
@@ -45,9 +47,13 @@ enum SlackData {
         return Auth(token: token, cookie: cookie, team: (team["name"] as? String) ?? "")
     }
 
-    /// Slack answers 200 with `"ok": false` and the reason ("invalid_auth", "missing_scope"…).
+    /// Slack answers 200 with `"ok": false` and the reason ("invalid_auth", "missing_scope"…). A missing scope says
+    /// which one the token needs: "missing_scope (chat:write)".
     static func error(_ json: [String: Any]) -> String? {
-        (json["ok"] as? Bool) == true ? nil : ((json["error"] as? String) ?? "unknown_error")
+        guard (json["ok"] as? Bool) != true else { return nil }
+        let error = (json["error"] as? String) ?? "unknown_error"
+        if let needed = json["needed"] as? String, !needed.isEmpty { return "\(error) (\(needed))" }
+        return error
     }
 
     /// The cursor of the next page, nil on the last.
@@ -122,7 +128,9 @@ enum SlackData {
     /// with only a file shows its name.
     static func messages(_ json: [String: Any], conversation: Conversation, users: [String: String], me: String?) -> [InboxMessage] {
         let skipped: Set<String> = ["channel_join", "channel_leave", "group_join", "group_leave", "bot_add", "bot_remove",
-                                    "channel_topic", "channel_purpose", "channel_name", "message_deleted", "message_changed"]
+                                    "channel_topic", "channel_purpose", "channel_name", "message_deleted", "message_changed",
+                                    // What stays of a deleted message that had answers: "This message was deleted."
+                                    "tombstone"]
         let messages: [InboxMessage] = (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
             guard let ts = message["ts"] as? String, let seconds = Double(ts) else { return nil }
             if let subtype = message["subtype"] as? String, skipped.contains(subtype) { return nil }
@@ -134,13 +142,65 @@ enum SlackData {
             let user = (message["user"] as? String) ?? (message["bot_id"] as? String) ?? ""
             let mine = me != nil && user == me
             let sender = mine || !conversation.isGroup ? "" : (users[user] ?? (message["username"] as? String) ?? user)
-            var inbox = InboxMessage(id: "slack-\(conversation.id)-\(ts)", sender: sender, text: text,
+            var inbox = InboxMessage(id: messageID(conversation: conversation.id, ts: ts), sender: sender, text: text,
                                      date: Date(timeIntervalSince1970: seconds), fromMe: mine, media: media)
             // Slack keeps no delivery or read receipts: your message is on Slack, and that is all it says.
             if mine { inbox.receipt = .sent }
+            // Always set, also when there are none: an emoji taken back in Slack leaves the message in Nook too.
+            inbox.reactions = Self.reactions(message, me: me)
+            inbox.quote = Self.quote(message, conversation: conversation, users: users, me: me)
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// A message's id in Nook: its conversation and Slack's `ts` of it ("slack-D1-1700000010.000100").
+    static func messageID(conversation: String, ts: String) -> String {
+        "slack-\(conversation)-\(ts)"
+    }
+
+    /// Slack's `ts` of a message by its id in Nook; nil when it is not a message of `conversation` read from Slack.
+    static func ts(of id: String, conversation: String) -> String? {
+        let prefix = messageID(conversation: conversation, ts: "")
+        guard id.hasPrefix(prefix) else { return nil }
+        let ts = String(id.dropFirst(prefix.count))
+        return Double(ts) == nil ? nil : ts
+    }
+
+    /// The message an answer in a thread answers (it has a `thread_ts` that is not its own `ts`): the thread's first
+    /// message, by its id in Nook. An answer also sent to the conversation (`thread_broadcast`) brings that message
+    /// along as `root`, so the quote shows it even when Nook does not have it. Nil for a message outside a thread.
+    static func quote(_ message: [String: Any], conversation: Conversation, users: [String: String], me: String?) -> InboxQuote? {
+        guard let thread = message["thread_ts"] as? String, let ts = message["ts"] as? String, thread != ts else { return nil }
+        var quote = InboxQuote(id: messageID(conversation: conversation.id, ts: thread))
+        if let root = message["root"] as? [String: Any] {
+            let author = (root["user"] as? String) ?? ""
+            quote.mine = me != nil && author == me
+            quote.sender = quote.mine ? "" : (users[author] ?? "")
+            quote.text = clean((root["text"] as? String) ?? "", users: users)
+        }
+        return quote
+    }
+
+    /// The emoji on a message (`reactions: [{name, count, users}]`), the most used first; yours when your id is among
+    /// its people. A skin tone counts with the emoji itself; a workspace's own emoji (no Unicode one) is left out.
+    static func reactions(_ message: [String: Any], me: String?) -> [InboxReaction] {
+        var result: [InboxReaction] = []
+        for reaction in message["reactions"] as? [[String: Any]] ?? [] {
+            guard let name = reaction["name"] as? String, let character = Self.emoji(shortcode: name) else { continue }
+            let people = reaction["users"] as? [String] ?? []
+            let count = max((reaction["count"] as? Int) ?? people.count, 1)
+            let mine = me.map { people.contains($0) } ?? false
+            if let index = result.firstIndex(where: { $0.emoji == character }) {
+                result[index].count += count
+                result[index].mine = result[index].mine || mine
+            } else {
+                result.append(InboxReaction(emoji: character, count: count, mine: mine))
+            }
+        }
+        return result.enumerated().sorted {
+            $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset
+        }.map(\.element)
     }
 
     /// The people of a conversation (`conversations.members` → `members: [user id]`) by name, yourself left out.
@@ -210,4 +270,246 @@ enum SlackData {
             .replacingOccurrences(of: "&amp;", with: "&")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    // MARK: Writing
+
+    /// Your text as Slack's markup wants it: only `&`, `<` and `>` escaped, so it shows exactly as typed.
+    static func escape(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    /// The body of a write method, as a form (`application/x-www-form-urlencoded`), the values escaped.
+    static func form(_ fields: [String: String]) -> Data {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        let body = fields.sorted { $0.key < $1.key }.map { key, value in
+            key + "=" + (value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value)
+        }.joined(separator: "&")
+        return Data(body.utf8)
+    }
+
+    /// What chat.postMessage gets: your text, and as an answer (`thread`, the `ts` of the thread's first message) in
+    /// that thread, also shown in the conversation itself, so it reads as an answer there as in every other app.
+    static func postFields(channel: String, text: String, thread: String?) -> [String: String] {
+        var fields = ["channel": channel, "text": escape(text)]
+        if let thread {
+            fields["thread_ts"] = thread
+            fields["reply_broadcast"] = "true"
+        }
+        return fields
+    }
+
+    /// Where files.getUploadURLExternal says to send the file's bytes, and the file's id to complete it with. Nil when
+    /// Slack names no address of its own.
+    static func uploadTarget(_ json: [String: Any]) -> (url: URL, file: String)? {
+        guard let address = json["upload_url"] as? String, let url = URL(string: address), isSlack(url),
+              let file = json["file_id"] as? String, !file.isEmpty else { return nil }
+        return (url, file)
+    }
+
+    /// What files.completeUploadExternal gets: the uploaded file shared in the conversation (in the thread of `thread`
+    /// when it answers a message), with your caption as its message.
+    static func completeFields(channel: String, file: String, title: String, caption: String, thread: String?) -> [String: String] {
+        let files = [["id": file, "title": title]]
+        let json = (try? JSONSerialization.data(withJSONObject: files, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        var fields = ["files": json, "channel_id": channel]
+        let comment = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !comment.isEmpty { fields["initial_comment"] = escape(comment) }
+        if let thread { fields["thread_ts"] = thread }
+        return fields
+    }
+
+    /// The `ts` of the newest message in a conversations.history answer, to mark the conversation read up to it.
+    static func newestTS(_ json: [String: Any]) -> String? {
+        (json["messages"] as? [[String: Any]])?.compactMap { $0["ts"] as? String }
+            .max { (Double($0) ?? 0) < (Double($1) ?? 0) }
+    }
+
+    // MARK: Emoji
+
+    /// The emoji of one of Slack's emoji names ("+1", "joy", "+1::skin-tone-3"), the skin tone left out. Nil for a name
+    /// Nook does not know, such as a workspace's own emoji.
+    static func emoji(shortcode: String) -> String? {
+        var name = shortcode.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        if let tone = name.range(of: "::skin-tone-") { name = String(name[..<tone.lowerBound]) }
+        return emojiByName[name.lowercased()]
+    }
+
+    /// Slack's name of an emoji, for reactions.add and reactions.remove, with its skin tone when it has one
+    /// ("+1::skin-tone-3"). Nil for an emoji Nook knows no name of.
+    static func shortcode(emoji: String) -> String? {
+        var tone: Int?
+        var base = String.UnicodeScalarView()
+        for scalar in emoji.unicodeScalars {
+            if (0x1F3FB...0x1F3FF).contains(scalar.value) { tone = Int(scalar.value - 0x1F3FB) + 2; continue }
+            if scalar.value == 0xFE0F { continue }
+            base.append(scalar)
+        }
+        guard let name = nameByEmoji[String(base)] else { return nil }
+        return tone.map { name + "::skin-tone-\($0)" } ?? name
+    }
+
+    /// The emoji per Slack name, every alias included.
+    private static let emojiByName: [String: String] = emojiTable.reduce(into: [:]) { result, entry in
+        for name in entry.names where result[name] == nil { result[name] = entry.emoji }
+    }
+
+    /// Slack's own (first) name per emoji, keyed without the variation selector.
+    private static let nameByEmoji: [String: String] = emojiTable.reduce(into: [:]) { result, entry in
+        let key = entry.emoji.replacingOccurrences(of: "\u{FE0F}", with: "")
+        if result[key] == nil, let name = entry.names.first { result[key] = name }
+    }
+
+    private static let emojiTable: [(emoji: String, names: [String])] = emojiNames.split(separator: "\n").compactMap { line in
+        let parts = line.split(separator: " ").map(String.init)
+        guard parts.count >= 2 else { return nil }
+        return (emoji: parts[0], names: Array(parts.dropFirst()))
+    }
+
+    /// `emoji name [aliases…]` as Slack names them; the first name is the one Nook sends. Nook's own row of reactions
+    /// (`ChatReactions.quick`) first, then the ones used most.
+    private static let emojiNames = """
+    👍 +1 thumbsup
+    ❤️ heart
+    😂 joy
+    😮 open_mouth
+    😢 cry
+    🙏 pray
+    👎 -1 thumbsdown
+    🔥 fire
+    🎉 tada
+    👀 eyes
+    ✅ white_check_mark
+    🙌 raised_hands
+    👏 clap
+    😄 smile
+    😀 grinning
+    😃 smiley
+    😁 grin
+    😆 laughing satisfied
+    😅 sweat_smile
+    🤣 rolling_on_the_floor_laughing rofl
+    🙂 slightly_smiling_face simple_smile
+    🙃 upside_down_face
+    😉 wink
+    😊 blush
+    😇 innocent
+    😍 heart_eyes
+    🥰 smiling_face_with_3_hearts
+    😘 kissing_heart
+    😋 yum
+    😛 stuck_out_tongue
+    😜 stuck_out_tongue_winking_eye
+    🤪 zany_face
+    🤗 hugging_face hugs
+    🤩 star-struck star_struck
+    🥳 partying_face
+    😎 sunglasses
+    🤓 nerd_face
+    🤔 thinking_face
+    🤨 face_with_raised_eyebrow
+    😐 neutral_face
+    😑 expressionless
+    😶 no_mouth
+    🙄 face_with_rolling_eyes
+    😏 smirk
+    😬 grimacing
+    😌 relieved
+    😔 pensive
+    😴 sleeping
+    😕 confused
+    🙁 slightly_frowning_face
+    😞 disappointed
+    😟 worried
+    😯 hushed
+    😲 astonished
+    😳 flushed
+    🥺 pleading_face
+    😭 sob
+    😱 scream
+    😓 sweat
+    😩 weary
+    😤 triumph
+    😠 angry
+    😡 rage
+    🤯 exploding_head
+    🤢 nauseated_face
+    🤐 zipper_mouth_face
+    🤑 money_mouth_face
+    🫠 melting_face
+    🫡 saluting_face
+    😈 smiling_imp
+    💀 skull
+    💩 hankey poop shit
+    👻 ghost
+    🤖 robot_face
+    🙈 see_no_evil
+    💯 100
+    🚀 rocket
+    👌 ok_hand
+    👋 wave
+    ✌️ v
+    🤞 crossed_fingers hand_with_index_and_middle_fingers_crossed
+    🤝 handshake
+    💪 muscle
+    👉 point_right
+    ☝️ point_up
+    ✋ raised_hand hand
+    ✍️ writing_hand
+    🫶 heart_hands
+    🤦 face_palm
+    🤷 shrug
+    🙇 bow
+    💃 dancer
+    🕺 man_dancing
+    💔 broken_heart
+    🧡 orange_heart
+    💛 yellow_heart
+    💚 green_heart
+    💙 blue_heart
+    💜 purple_heart
+    🖤 black_heart
+    🤍 white_heart
+    💖 sparkling_heart
+    💕 two_hearts
+    ✔️ heavy_check_mark
+    ❌ x
+    ➕ heavy_plus_sign
+    ⚠️ warning
+    ❗ exclamation heavy_exclamation_mark
+    ❓ question
+    ✨ sparkles
+    ⭐ star
+    ⚡ zap
+    💥 boom collision
+    💡 bulb
+    📝 memo pencil
+    📌 pushpin
+    🔗 link
+    🔒 lock
+    📈 chart_with_upwards_trend
+    💰 moneybag
+    💸 money_with_wings
+    🐛 bug
+    🎯 dart
+    🏆 trophy
+    🎂 birthday
+    🎁 gift
+    🎈 balloon
+    🍾 champagne
+    🍻 beers
+    ☕ coffee
+    🍕 pizza
+    ⌛ hourglass
+    ⏰ alarm_clock
+    📆 calendar
+    🌈 rainbow
+    ☀️ sunny
+    ❄️ snowflake
+    🦄 unicorn_face
+    🐶 dog
+    🐱 cat
+    """
 }

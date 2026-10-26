@@ -17,6 +17,8 @@ struct WAChatInfo: Equatable, Sendable {
     var last: Date
     /// How many messages WhatsApp itself counts unread, when the gateway says (OpenWA); 0 when it does not.
     var unread: Int = 0
+    /// Whether the chat is pinned on the phone, when the gateway says (OpenWA); nil when it does not.
+    var pinned: Bool? = nil
 }
 
 /// What a message holds besides text: a label is shown, and the file itself is only fetched when the notch card shows it
@@ -594,6 +596,9 @@ struct WAInbox: Equatable, Sendable {
     private var seenOrder: [String] = []
     /// Receipts that came before their message (the gateway's webhook can beat the answer to the send itself).
     private var earlyReceipts: [String: WAReceipt] = [:]
+    /// Messages deleted for everyone from Nook: a chat's history from the gateway may still list one for a while, and it
+    /// never comes back (a few hundred at most).
+    private var deletedIds: Set<String> = []
 
     /// Newest activity first.
     var sorted: [WAConversation] {
@@ -622,6 +627,7 @@ struct WAInbox: Equatable, Sendable {
         // An older message the chat let go of (it kept fewer then) comes back when its history is loaded.
         let letGo = seen && history && message.pollVote == nil
             && conversations[chat]?.messages.contains(where: { $0.id == message.id }) != true
+        guard !deletedIds.contains(message.id) else { return .ignored }
         guard !seen || letGo else {
             refresh(message, in: chat)
             return .duplicate
@@ -835,6 +841,44 @@ struct WAInbox: Equatable, Sendable {
         return nil
     }
 
+    /// Your message's new text, once the gateway took the edit. The chat that changed, nil when Nook does not keep that
+    /// message.
+    @discardableResult
+    mutating func applyEdit(_ text: String, message id: String, chat: String) -> String? {
+        let key = WAJID.normalized(chat)
+        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        for chatKey in keys {
+            guard var conversation = conversations[chatKey],
+                  let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
+            guard conversation.messages[index].text != text else { return nil }
+            conversation.messages[index].text = text
+            conversations[chatKey] = conversation
+            return chatKey
+        }
+        return nil
+    }
+
+    /// A message deleted for everyone: it leaves the chat, as it leaves the chat on the phone, and a later history does
+    /// not bring it back. The chat that changed, nil when Nook did not keep that message.
+    @discardableResult
+    mutating func applyDelete(message id: String, chat: String) -> String? {
+        deletedIds.insert(id)
+        if deletedIds.count > 500 { deletedIds = [id] }
+        let key = WAJID.normalized(chat)
+        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        for chatKey in keys {
+            guard var conversation = conversations[chatKey],
+                  let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
+            conversation.messages.remove(at: index)
+            conversations[chatKey] = conversation
+            return chatKey
+        }
+        return nil
+    }
+
+    /// Whether Nook deleted this message for everyone.
+    func wasDeleted(_ id: String) -> Bool { deletedIds.contains(id) }
+
     /// The conversations the pill lists: quiet chats (a muted group, status updates, a channel, a chat you muted)
     /// stay out of it unless something in them mentions you.
     func visible(filters: WAFilters) -> [WAConversation] {
@@ -883,6 +927,7 @@ struct WAInbox: Equatable, Sendable {
         seenIds = []
         seenOrder = []
         earlyReceipts = [:]
+        deletedIds = []
         pollLedger = WAPollLedger()
     }
 
@@ -1717,6 +1762,17 @@ enum WAOpenWA {
             guard let id = c["id"] as? String, !id.isEmpty else { return nil }
             return (id, (c["name"] as? String) ?? "", (c["unreadCount"] as? Int) ?? 0, WADate.epoch(c["timestamp"]) ?? .distantPast)
         }
+    }
+
+    /// The same list's `pinned` flags, by the chat's id as OpenWA gives it: only the chats that carry one.
+    static func pinned(_ data: Data) -> [String: Bool] {
+        guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [:] }
+        var out: [String: Bool] = [:]
+        for c in list {
+            guard let id = c["id"] as? String, !id.isEmpty, let pinned = c["pinned"] as? Bool else { continue }
+            out[id] = pinned
+        }
+        return out
     }
 
     /// `GET /api/sessions/{id}/messages` → `{messages: [{waMessageId, chatId, from, author, chatName,
