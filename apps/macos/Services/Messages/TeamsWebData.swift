@@ -210,16 +210,66 @@ enum TeamsWebData {
             let properties = message["properties"] as? [String: Any] ?? [:]
             if properties["deletetime"] != nil { return nil }
             let content = (message["content"] as? String) ?? ""
-            var text = (type == "Text" ? content : TeamsData.plain(html: content)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let answer: (html: String, quote: InboxQuote?) = type == "Text" ? (content, nil) : reply(content, me: me)
+            var text = (type == "Text" ? answer.html : TeamsData.plain(html: answer.html)).trimmingCharacters(in: .whitespacesAndNewlines)
             if text.isEmpty { text = files(properties["files"]) }
             guard !text.isEmpty else { return nil }
             let mine = contact(message["from"]) == me
             let sender = mine || !chat.isGroup ? "" : ((message["imdisplayname"] as? String) ?? "")
             var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
             if mine { inbox.receipt = .sent }
+            inbox.quote = answer.quote
+            inbox.reactions = reactions(properties["emotions"], me: me)
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// The answer a message's rich text holds (`<blockquote itemtype="http://schema.skype.com/Reply" itemid="{id}">`
+    /// with who wrote the answered message and the start of its text): the quote, and the message without it.
+    static func reply(_ html: String, me: String) -> (html: String, quote: InboxQuote?) {
+        let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        guard let range = html.range(of: #"<blockquote[^>]*schema\.skype\.com/Reply[^>]*>[\s\S]*?</blockquote>"#, options: options)
+        else { return (html, nil) }
+        let block = String(html[range])
+        let rest = html.replacingCharacters(in: range, with: "")
+        let opening = block.range(of: "<blockquote[^>]*>", options: options).map { String(block[$0]) } ?? ""
+        let author = block.range(of: #"<strong[^>]*itemprop="mri"[^>]*>[\s\S]*?</strong>"#, options: options).map { String(block[$0]) }
+        let preview = block.range(of: #"<p[^>]*itemprop="preview"[^>]*>[\s\S]*?</p>"#, options: options).map { String(block[$0]) }
+        let mri = author.flatMap { attribute("itemid", in: $0) }
+        let id = attribute("itemid", in: opening)
+        var quote = InboxQuote(id: id.map { "teams-" + $0 }, sender: TeamsData.plain(html: author ?? ""),
+                               text: TeamsData.plain(html: preview ?? ""), mine: mri != nil && mri == me)
+        if quote.text.isEmpty {
+            // No preview of its own: whatever the quote says besides who and when.
+            var body = block
+            for pattern in [#"<strong[^>]*itemprop="mri"[\s\S]*?</strong>"#, #"<span[^>]*itemprop="time"[\s\S]*?</span>"#] {
+                body = body.replacingOccurrences(of: pattern, with: "", options: options)
+            }
+            quote.text = TeamsData.plain(html: body)
+        }
+        return (rest, quote)
+    }
+
+    /// An attribute's value in an HTML tag, entities left as they are (ids have none).
+    static func attribute(_ name: String, in tag: String) -> String? {
+        guard let range = tag.range(of: "\\s" + name + #"="[^"]*""#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        let value = tag[range].drop { $0 != "\"" }.dropFirst().dropLast()
+        return value.isEmpty ? nil : String(value)
+    }
+
+    /// The emoji on a message from its "emotions" property (a list, or that list as JSON text): each key with the
+    /// people who chose it. Nil when the message does not say (a chat list's preview), so what the chat showed stays.
+    static func reactions(_ value: Any?, me: String) -> [InboxReaction]? {
+        var list = value as? [[String: Any]]
+        if list == nil, let text = value as? String, let data = text.data(using: .utf8) {
+            list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+        }
+        guard let list else { return nil }
+        return TeamsData.reactions(list.flatMap { emotion -> [(key: String, mine: Bool)] in
+            let key = (emotion["key"] as? String) ?? ""
+            return (emotion["users"] as? [[String: Any]] ?? []).map { (key: key, mine: contact($0["mri"]) == me) }
+        })
     }
 
     /// The names of the files sent with a message (a JSON list, as text).
@@ -254,6 +304,55 @@ enum TeamsWebData {
               let url = URL(string: link), url.scheme == "https", let host = url.host?.lowercased(),
               host == URL(string: base)?.host?.lowercased() else { return nil }
         return link
+    }
+
+    // MARK: Sending
+
+    /// What sending a message posts to {base}/v1/users/ME/conversations/{id}/messages, as the website sends it: your
+    /// message as rich text (`html(_:)`, after `replyHTML` for an answer) under your name, with an id of the sender's
+    /// own that tells a retry from a new message.
+    static func outgoing(html: String, name: String, clientMessageID: String) -> [String: Any] {
+        [
+            "content": html, "messagetype": "RichText/Html", "contenttype": "text",
+            "clientmessageid": clientMessageID, "imdisplayname": name,
+            "properties": ["importance": "", "subject": ""],
+        ]
+    }
+
+    /// Text as the rich text the website sends: escaped, each line a paragraph of its own, an empty line kept.
+    static func html(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            "<p>" + (line.isEmpty ? "&nbsp;" : escaped(String(line))) + "</p>"
+        }.joined()
+    }
+
+    /// The quote an answer starts with, as the website writes it (and `reply(_:me:)` reads it): the answered message's
+    /// id in Nook ("teams-…"), who wrote it (their id, when known, and name) and the start of its text.
+    static func replyHTML(to message: String, author: String?, sender: String, text: String) -> String {
+        let id = escaped(message.hasPrefix("teams-") ? String(message.dropFirst("teams-".count)) : message)
+        let preview = text.count > 200 ? String(text.prefix(200)) + "…" : text
+        return #"<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="\#(id)">"#
+            + #"<strong itemprop="mri" itemid="\#(escaped(author ?? ""))">\#(escaped(sender))</strong>"#
+            + #"<span itemprop="time" itemid="\#(id)"></span>"#
+            + #"<p itemprop="preview">\#(escaped(preview))</p></blockquote>"#
+    }
+
+    /// Text escaped for HTML.
+    static func escaped(_ text: String) -> String {
+        var escaped = text
+        for (character, entity) in [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ("\"", "&quot;")] {
+            escaped = escaped.replacingOccurrences(of: character, with: entity)
+        }
+        return escaped
+    }
+
+    /// Who wrote each message ("8:orgid:…"), by its id in Nook.
+    static func authors(_ json: [String: Any]) -> [String: String] {
+        var authors: [String: String] = [:]
+        for message in json["messages"] as? [[String: Any]] ?? [] {
+            if let id = message["id"] as? String, let from = contact(message["from"]) { authors["teams-" + id] = from }
+        }
+        return authors
     }
 
     /// Whether the messages already list the newest one the chat list announced (see `TeamsData.caughtUp`).

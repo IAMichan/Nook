@@ -285,6 +285,16 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
                 }
                 changed.insert(chat)
             }
+        case "updateMessageInteractionInfo":
+            // Someone put an emoji on a message, or took theirs back: the chat shows it.
+            if let chat = TelegramData.int64(object["chat_id"]), let id = TelegramData.int64(object["message_id"]),
+               let index = messages[chat]?.firstIndex(where: { $0.id == "telegram-\(chat)-\(id)" }) {
+                let reactions = TelegramData.reactions(object["interaction_info"])
+                if messages[chat]?[index].reactions != reactions {
+                    messages[chat]?[index].reactions = reactions
+                    changed.insert(chat)
+                }
+            }
         case "updateNewMessage":
             // A message you sent from Nook shows once Telegram has it (`updateMessageSendSucceeded`), under its own id.
             if let message = object["message"] as? [String: Any], let id = TelegramData.int64(message["chat_id"]),
@@ -473,6 +483,13 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
         send(["@type": "setPollAnswer", "chat_id": ids.chat, "message_id": ids.message, "option_ids": options])
         messages[ids.chat]?[index].poll = poll.voting(choice)
         changed.insert(ids.chat)
+    }
+
+    /// Your emoji on a message (its id in Nook), after your own click; the same one again takes it back. The chat
+    /// shows it once Telegram has it.
+    func react(_ emoji: String, to id: String, mine: Bool) throws {
+        guard isReady, let ids = TelegramData.ids(id) else { throw NookError(tr("chat.compose.telegramOff")) }
+        send(TelegramData.reaction(emoji, chat: ids.chat, message: ids.message, add: !mine))
     }
 
     // MARK: Sending

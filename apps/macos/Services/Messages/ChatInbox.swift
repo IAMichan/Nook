@@ -338,6 +338,8 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var readers: [ChatReader]? = nil
     /// The emoji on it, the most used first, when its app says; nil when it does not.
     var reactions: [InboxReaction]? = nil
+    /// The message this one answers, when its app says.
+    var quote: InboxQuote? = nil
 
     var isMine: Bool { fromMe == true }
 
@@ -368,6 +370,17 @@ struct BridgedChat: Equatable, Sendable {
     var listed: Bool = false
     /// Messages (by their id in Nook) the app says were deleted since: the chat drops them.
     var deleted: [String] = []
+}
+
+/// The message another one answers: its id in Nook, so the chat shows it as it has it, and what the app quoted of it,
+/// for when Nook does not have that message (any longer). Every app's answers show the same way (`ChatBubble.quote`).
+struct InboxQuote: Codable, Equatable, Sendable {
+    /// The answered message's id in Nook; nil when the app only quotes it.
+    var id: String?
+    /// Who wrote it, as the app quoted it; empty when it does not say.
+    var sender: String = ""
+    var text: String = ""
+    var mine: Bool = false
 }
 
 /// One emoji on a message, with how many people put it there and whether you are one of them.
@@ -715,6 +728,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             if !message.text.isEmpty, thread.messages[index].text != message.text { thread.messages[index].text = message.text }
             if message.media != nil, thread.messages[index].media != message.media { thread.messages[index].media = message.media }
             if message.poll != nil, thread.messages[index].poll != message.poll { thread.messages[index].poll = message.poll }
+            if message.quote != nil, thread.messages[index].quote != message.quote { thread.messages[index].quote = message.quote }
             if let receipt = message.receipt {
                 let kept = thread.messages[index].receipt
                 let next = kept.map { $0.advanced(to: receipt) } ?? receipt
@@ -767,6 +781,24 @@ struct ChatInbox: Codable, Equatable, Sendable {
         thread.capacity = max(thread.keeps, thread.messages.count) + step
         threads[id] = thread
         return thread.capacity
+    }
+
+    /// Your emoji on a message, or taken back, as you just sent it: the chat shows it before its app's next read
+    /// confirms it.
+    mutating func toggleReaction(_ emoji: String, on message: String, in id: String) {
+        guard let index = threads[id]?.messages.firstIndex(where: { $0.id == message }) else { return }
+        var chips = threads[id]?.messages[index].reactions ?? []
+        if let chip = chips.firstIndex(where: { $0.emoji == emoji && $0.mine }) {
+            chips[chip].count -= 1
+            chips[chip].mine = false
+            if chips[chip].count <= 0 { chips.remove(at: chip) }
+        } else if let chip = chips.firstIndex(where: { $0.emoji == emoji }) {
+            chips[chip].count += 1
+            chips[chip].mine = true
+        } else {
+            chips.append(InboxReaction(emoji: emoji, count: 1, mine: true))
+        }
+        threads[id]?.messages[index].reactions = chips
     }
 
     /// Read in Nook: the badge goes and stays gone after a restart. The app itself is not told.

@@ -1,12 +1,13 @@
 // Sending from the Chats tab: text, files, polls, places and contact cards, to every chat Nook can write in.
 import Foundation
 
-/// Where what you send in a chat goes: WhatsApp through the linked phone's gateway, Telegram through TDLib, or any app the
-/// chat helper on this Mac links (Instagram, Messenger, Signal…). A chat without
-/// one is only read: its text is copied for its own app instead.
+/// Where what you send in a chat goes: WhatsApp through the linked phone's gateway, Telegram through TDLib, Teams through
+/// the website's session (by the chat's name in Nook), or any app the chat helper on this Mac links (Instagram,
+/// Messenger, Signal…). A chat without one is only read: its text is copied for its own app instead.
 enum ChatRoute: Equatable {
     case whatsApp(String)
     case telegram(Int64)
+    case teams(String)
     case linked(String)
 }
 
@@ -21,6 +22,8 @@ extension AppModel {
             let telegram = capture.telegramBridge
             if entry.app == telegram.app, telegram.isReady, let id = telegram.chatID(named: entry.name) { return .telegram(id) }
             if let id = capture.serviceBridge.chatID(app: entry.app, name: entry.name) { return .linked(id) }
+            let teams = capture.teamsBridge
+            if entry.app == teams.app, teams.canSend(name: entry.name) { return .teams(entry.name) }
             return nil
         }
     }
@@ -31,7 +34,7 @@ extension AppModel {
         case .whatsApp: return WhatsAppLink.shared.sends
         case .telegram: return ChatOutgoing.Kind.everything
         case .linked: return ChatCaptureService.shared.serviceBridge.sends
-        case nil: return []
+        case .teams, nil: return []
         }
     }
 
@@ -45,6 +48,9 @@ extension AppModel {
         case .telegram(let id):
             try ChatCaptureService.shared.telegramBridge.send(text: text, to: id, replyTo: replyTo)
             store.audit(tool: "telegram_send", args: name, result: "verstuurd")
+        case .teams(let chat):
+            try await ChatCaptureService.shared.teamsBridge.send(text: text, to: chat, replyTo: replyTo)
+            store.audit(tool: "teams_send", args: name, result: "verstuurd")
         case .linked(let id):
             try await ChatCaptureService.shared.serviceBridge.send(text: text, to: id, replyTo: replyTo)
             store.audit(tool: "chat_send", args: name, result: "verstuurd")
@@ -65,6 +71,9 @@ extension AppModel {
         case .linked(let id):
             try await ChatCaptureService.shared.serviceBridge.send(outgoing, to: id, replyTo: replyTo)
             tool = "chat_send"
+        case .teams:
+            // Teams takes text from Nook; `chatSends` offers nothing else for it.
+            throw NookError(tr("chat.compose.unsupported"))
         }
         store.audit(tool: tool, args: "\(name): \(outgoing.kind.rawValue)", result: "verstuurd")
         if case .file(let file) = outgoing, file.kind == .sticker || file.kind == .gif {
@@ -94,6 +103,36 @@ extension AppModel {
                 ToastCenter.shared.error(error.localizedDescription)
             }
         }
+    }
+
+    /// Whether a message in this chat takes your emoji from Nook: WhatsApp, Telegram, Teams, and an app the chat
+    /// helper links when that app has reactions.
+    func chatReacts(_ route: ChatRoute?) -> Bool {
+        switch route {
+        case .whatsApp, .telegram, .teams: return true
+        case .linked: return linkedChat(route)?.canReact == true
+        case nil: return false
+        }
+    }
+
+    /// Your emoji on a message in any chat Nook writes in, after your own click; the same one again takes it back. A
+    /// chat collected in the inbox shows it at once, before its app's next read confirms it.
+    func reactInChat(_ emoji: String, to bubble: ChatBubble, route: ChatRoute, thread: String?, name: String) async throws {
+        let mine = bubble.reactions.contains { $0.emoji == emoji && $0.mine }
+        switch route {
+        case .whatsApp(let jid):
+            try await reactWhatsApp(emoji, to: bubble.id, chat: jid)
+            return
+        case .telegram:
+            try ChatCaptureService.shared.telegramBridge.react(emoji, to: bubble.id, mine: mine)
+        case .teams(let chat):
+            try await ChatCaptureService.shared.teamsBridge.react(emoji, to: bubble.id, in: chat, mine: mine)
+        case .linked(let id):
+            try await reactInLinkedChat(emoji, to: bubble, chat: id, name: name)
+        }
+        if let thread { ChatCaptureService.shared.toggleReaction(emoji, on: bubble.id, in: thread) }
+        if case .linked = route { return }
+        store.audit(tool: "chat_react", args: "\(name): \(emoji)", result: mine ? "weggehaald" : "verstuurd")
     }
 
     /// Your emoji on a message, after your own click; the same one again takes it back.

@@ -13,6 +13,31 @@ extension ChatBubble {
     /// A message of any chat app as a bubble: its text, and its file as the chat shows it. While the file is not on this
     /// Mac the bubble names it (a button that opens the chat's app); once it is, it shows as itself.
     /// `members`: the group's other people, so your message's info also lists who does not have it yet.
+    /// A chat's newest `last` messages (all when nil) as bubbles, each answer quoting the message it answers the same
+    /// way in every app, as WhatsApp's do: who wrote it ("You" for your own, the chat's name in a private chat) and its
+    /// text, found among all of the chat's messages.
+    static func bubbles(_ thread: InboxThread, last: Int? = nil, time: (Date) -> String) -> [ChatBubble] {
+        let byID = Dictionary(thread.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let shown = last.map { Array(thread.messages.suffix($0)) } ?? thread.messages
+        return shown.map { message in
+            var bubble = ChatBubble(message, time: time(message.date), members: thread.members ?? [])
+            bubble.quote = message.quote.flatMap { quote(of: $0, in: byID, chat: thread.name) }
+            return bubble
+        }
+    }
+
+    /// What an answer quotes: the answered message as the chat has it, else what its app quoted of it. Nil when
+    /// neither says anything.
+    static func quote(of quote: InboxQuote, in byID: [String: InboxMessage], chat: String) -> BubbleQuote? {
+        if let id = quote.id, let answered = byID[id] {
+            let sender = answered.isMine ? tr("chat.you") : (answered.sender.isEmpty ? chat : answered.sender)
+            return BubbleQuote(sender: sender, text: answered.summary, mine: answered.isMine)
+        }
+        let text = quote.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return BubbleQuote(sender: quote.mine ? tr("chat.you") : quote.sender, text: text, mine: quote.mine)
+    }
+
     init(_ message: InboxMessage, time: String, members: [String] = []) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)

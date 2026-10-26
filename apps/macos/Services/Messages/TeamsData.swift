@@ -140,7 +140,10 @@ enum TeamsData {
         }
         return lists.enumerated().map { index, list in
             list.map { chat in
-                guard (accounts[fold(chat.name)]?.count ?? 0) > 1, index < labels.count, !labels[index].isEmpty else { return chat }
+                // A chat without a name yet (a private chat whose newest message is yours) is named by its messages
+                // later: "(account)" alone would make it a chat of its own.
+                guard !chat.name.isEmpty, (accounts[fold(chat.name)]?.count ?? 0) > 1, index < labels.count, !labels[index].isEmpty
+                else { return chat }
                 var named = chat
                 named.name = "\(chat.name) (\(labels[index]))"
                 return named
@@ -163,8 +166,10 @@ enum TeamsData {
             var text = (body["content"] as? String) ?? ""
             if (body["contentType"] as? String)?.lowercased() == "html" { text = plain(html: text) }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let attachments = message["attachments"] as? [[String: Any]] ?? []
             if text.isEmpty {
-                text = (message["attachments"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: ", ")
+                text = attachments.filter { $0["contentType"] as? String != "messageReference" }
+                    .compactMap { $0["name"] as? String }.joined(separator: ", ")
             }
             guard !text.isEmpty else { return nil }
             let user = ((message["from"] as? [String: Any])?["user"] as? [String: Any]) ?? [:]
@@ -173,9 +178,74 @@ enum TeamsData {
             var inbox = InboxMessage(id: "teams-\(id)", sender: sender, text: text, date: sent, fromMe: mine)
             // Graph shares no one's read receipts but your own: your message is on Teams, and that is all it says.
             if mine { inbox.receipt = .sent }
+            inbox.quote = attachments.lazy.compactMap { quote($0, me: me) }.first
+            inbox.reactions = reactions((message["reactions"] as? [[String: Any]] ?? []).map { reaction -> (key: String, mine: Bool) in
+                let user = (reaction["user"] as? [String: Any])?["user"] as? [String: Any]
+                return (key: (reaction["reactionType"] as? String) ?? "", mine: me != nil && user?["id"] as? String == me)
+            })
             return inbox
         }
         return messages.sorted { $0.date < $1.date }
+    }
+
+    /// The message an answer quotes, from Graph's `messageReference` attachment (its content a JSON text with the
+    /// message's id, the start of its text and who sent it). Nil for any other attachment.
+    static func quote(_ attachment: [String: Any], me: String?) -> InboxQuote? {
+        guard attachment["contentType"] as? String == "messageReference",
+              let content = (attachment["content"] as? String)?.data(using: .utf8),
+              let reference = (try? JSONSerialization.jsonObject(with: content)) as? [String: Any] else { return nil }
+        let id = (reference["messageId"] as? String) ?? (attachment["id"] as? String)
+        let user = (reference["messageSender"] as? [String: Any])?["user"] as? [String: Any]
+        let mine = me != nil && user?["id"] as? String == me
+        return InboxQuote(id: id.map { "teams-" + $0 }, sender: (user?["displayName"] as? String) ?? "",
+                          text: plain(html: (reference["messagePreview"] as? String) ?? ""), mine: mine)
+    }
+
+    // MARK: Reactions
+
+    /// Teams' own reactions by their key, each as the emoji the reaction buttons of every chat in Nook use.
+    static let emotions: [(key: String, emoji: String)] = [
+        ("like", "👍"), ("heart", "❤️"), ("laugh", "😂"), ("surprised", "😮"), ("sad", "😢"), ("angry", "😡"),
+    ]
+
+    /// The emoji of a Teams reaction key: one of its own ("like"), an emoji itself (as Graph writes the newer ones),
+    /// or the newer keys' code points before "_" ("1f64f_foldedhands", "2764-fe0f_heart"). Nil when it says none.
+    static func emoji(key: String) -> String? {
+        if let known = emotions.first(where: { $0.key == key.lowercased() }) { return known.emoji }
+        if key.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation || $0.properties.isEmoji && $0.value > 0xFF }) {
+            return key
+        }
+        let code = key.split(separator: "_").first.map(String.init) ?? ""
+        let scalars = code.split(separator: "-").compactMap { UInt32($0, radix: 16).flatMap { Unicode.Scalar($0) } }
+        guard !scalars.isEmpty, scalars.count == code.split(separator: "-").count,
+              scalars.contains(where: { $0.properties.isEmoji && $0.value > 0xFF }) else { return nil }
+        return String(String.UnicodeScalarView(scalars))
+    }
+
+    /// The key Teams keeps an emoji under: its own for the six it always had, else the emoji's code points
+    /// ("1f64f"), as the newer keys start.
+    static func key(emoji: String) -> String {
+        // "❤" and "❤️" are the same heart.
+        let bare = { (emoji: String) in emoji.unicodeScalars.filter { $0.value != 0xFE0F } }
+        if let known = emotions.first(where: { Array(bare($0.emoji)) == Array(bare(emoji)) }) { return known.key }
+        return bare(emoji).map { String($0.value, radix: 16) }.joined(separator: "-")
+    }
+
+    /// Reactions as (key, yours) pairs, one per person, as chips: one per emoji with how many, the most used first
+    /// (then in the order they came). An empty list too, so the last one taken back leaves none.
+    static func reactions(_ pairs: [(key: String, mine: Bool)]) -> [InboxReaction] {
+        var chips: [InboxReaction] = []
+        for pair in pairs {
+            guard let emoji = emoji(key: pair.key) else { continue }
+            if let index = chips.firstIndex(where: { $0.emoji == emoji }) {
+                chips[index].count += 1
+                chips[index].mine = chips[index].mine || pair.mine
+            } else {
+                chips.append(InboxReaction(emoji: emoji, count: 1, mine: pair.mine))
+            }
+        }
+        return chips.enumerated().sorted { $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset }
+            .map(\.element)
     }
 
     /// Whether an answer of /me/chats/{id}/messages already lists the newest message the chat list announced. Graph can

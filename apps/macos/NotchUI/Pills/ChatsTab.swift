@@ -1050,7 +1050,7 @@ private struct ChatsDetail: View {
             return bubblesMemo.whatsApp(whatsApp.inbox.conversations[jid], previews: whatsApp.previewRevision)
         case .captured(let id):
             return bubblesMemo.captured(capture.inbox.threads[id]) { thread in
-                (thread?.messages ?? []).map { ChatBubble($0, time: Self.time.string(from: $0.date), members: thread?.members ?? []) }
+                thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
             }
         }
     }
@@ -1063,7 +1063,7 @@ private struct ChatsDetail: View {
             ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
                            onOpen: { open($0) }, onZoom: { zoom($0) },
                            onReply: route == nil ? nil : quote,
-                           onReact: whatsAppChat != nil || linkedChat?.canReact == true ? react : nil,
+                           onReact: app.chatReacts(route) ? react : nil,
                            onEdit: linkedChat?.canEdit == true ? edit : nil,
                            onDelete: linkedChat?.canDelete == true ? { deleting = $0 } : nil,
                            onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
@@ -1157,13 +1157,12 @@ private struct ChatsDetail: View {
 
     /// Your emoji on a message, after your own click (the same one again takes it back); the chat shows it at once.
     private func react(_ bubble: ChatBubble, _ emoji: String) {
+        guard let route else { return }
+        var thread: String?
+        if case .captured(let id) = entry.origin { thread = id }
         Task { @MainActor in
             do {
-                if let chat = whatsAppChat {
-                    try await app.reactWhatsApp(emoji, to: bubble.id, chat: chat)
-                } else if let chat = linkedChat {
-                    try await app.reactInLinkedChat(emoji, to: bubble, chat: chat.id, name: entry.name)
-                }
+                try await app.reactInChat(emoji, to: bubble, route: route, thread: thread, name: entry.name)
             } catch {
                 notice = error.localizedDescription
             }

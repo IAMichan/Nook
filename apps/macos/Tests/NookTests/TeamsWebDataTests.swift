@@ -160,4 +160,49 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertNil(TeamsWebData.backwardLink(["_metadata": ["backwardLink": "https://example.com/steal"]], base: base))
         XCTAssertNil(TeamsWebData.backwardLink(["_metadata": [String: Any]()], base: base), "the chat's start")
     }
+
+    func testAnAnswerShowsWhatItQuotesAndSendsTheSameWay() {
+        let chat = TeamsData.Chat(id: "19:x@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
+        let content = #"<blockquote itemscope="" itemtype="http://schema.skype.com/Reply" itemid="1700">"#
+            + #"<strong itemprop="mri" itemid="8:orgid:me">Me Myself</strong><span itemprop="time" itemid="1700"></span>"#
+            + #"<p itemprop="preview">3 nov 16:00 &amp; on time</p></blockquote><p>At 16:00 at the latest</p>"#
+        let history: [String: Any] = ["messages": [
+            ["id": "1800", "messagetype": "RichText/Html", "content": content, "from": "https://x/contacts/8:orgid:jan",
+             "composetime": "2026-10-26T14:21:00.000Z",
+             "properties": ["emotions": #"[{"key":"like","users":[{"mri":"8:orgid:me"},{"mri":"8:orgid:jan"}]},{"key":"1f64f_foldedhands","users":[{"mri":"8:orgid:jan"}]}]"#]],
+        ]]
+        let message = TeamsWebData.messages(history, chat: chat, me: me).first
+        XCTAssertEqual(message?.text, "At 16:00 at the latest", "the quote is not part of the text")
+        XCTAssertEqual(message?.quote, InboxQuote(id: "teams-1700", sender: "Me Myself", text: "3 nov 16:00 & on time", mine: true))
+        XCTAssertEqual(message?.reactions, [InboxReaction(emoji: "👍", count: 2, mine: true), InboxReaction(emoji: "🙏", count: 1, mine: false)])
+
+        // What Nook sends reads back as the same quote.
+        let sent = TeamsWebData.replyHTML(to: "teams-1800", author: "8:orgid:jan", sender: "Jan", text: "a <b> & c")
+            + TeamsWebData.html("Yes\n\nsure")
+        let read = TeamsWebData.reply(sent, me: me)
+        XCTAssertEqual(read.quote, InboxQuote(id: "teams-1800", sender: "Jan", text: "a <b> & c", mine: false))
+        XCTAssertEqual(read.html, "<p>Yes</p><p>&nbsp;</p><p>sure</p>")
+        XCTAssertNil(TeamsWebData.reply("<p>plain</p>", me: me).quote)
+        let json = TeamsWebData.outgoing(html: "<p>hi</p>", name: "Me", clientMessageID: "42")
+        XCTAssertEqual(json["messagetype"] as? String, "RichText/Html")
+        XCTAssertEqual(json["clientmessageid"] as? String, "42")
+    }
+
+    func testReactionKeysMatchTheEmojiNookShows() {
+        XCTAssertEqual(TeamsData.key(emoji: "👍"), "like")
+        XCTAssertEqual(TeamsData.key(emoji: "❤"), "heart", "with or without the emoji mark")
+        XCTAssertEqual(TeamsData.key(emoji: "🙏"), "1f64f")
+        XCTAssertEqual(TeamsData.emoji(key: "laugh"), "😂")
+        XCTAssertEqual(TeamsData.emoji(key: "1f64f_foldedhands"), "🙏")
+        XCTAssertEqual(TeamsData.emoji(key: "🎉"), "🎉", "Graph writes newer reactions as the emoji itself")
+        XCTAssertNil(TeamsData.emoji(key: "custom_thing"))
+        XCTAssertNil(TeamsWebData.reactions(nil, me: me), "a preview without them keeps what the chat shows")
+    }
+
+    func testAPrivateChatWithoutANameIsNotNamedAfterTheAccount() {
+        let blank = TeamsData.Chat(id: "a", name: "", isGroup: false, last: nil, readUntil: nil)
+        let named = TeamsData.Chat(id: "b", name: "Team", isGroup: true, last: nil, readUntil: nil)
+        let result = TeamsData.distinguish([[blank, named], [blank, named]], labels: ["Work", "School"])
+        XCTAssertEqual(result.map { $0.map(\.name) }, [["", "Team (Work)"], ["", "Team (School)"]])
+    }
 }

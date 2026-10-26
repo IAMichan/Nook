@@ -277,6 +277,10 @@ final class ChatCaptureService: ObservableObject {
     /// Time between the quick reads after a bridged app's notification.
     private static let nudgeGap: TimeInterval = 5
 
+    /// Something was sent from Nook to a bridged app's chat: its bridge reads now, and twice more shortly after, so the
+    /// message shows in the chat.
+    func readSoon(_ app: String) { nudge(app) }
+
     /// A notification of a bridged app came in: its bridge reads now, and twice more shortly after.
     private func nudge(_ app: String) {
         bridgeDue[app] = nil
@@ -396,6 +400,12 @@ final class ChatCaptureService: ObservableObject {
     func markReadInApp(_ id: String) {
         guard inbox.threads[id] != nil else { return }
         inbox.markReadInApp(id)
+        save()
+    }
+
+    /// Shows your emoji on a message (or takes it back) as you just sent it to its app.
+    func toggleReaction(_ emoji: String, on message: String, in id: String) {
+        inbox.toggleReaction(emoji, on: message, in: id)
         save()
     }
 

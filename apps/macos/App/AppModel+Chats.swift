@@ -57,7 +57,7 @@ extension AppModel {
         let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
         let time = DateFormatter()
         time.dateFormat = "HH:mm"
-        let bubbles = thread.messages.suffix(8).map { ChatBubble($0, time: time.string(from: $0.date)) }
+        let bubbles = ChatBubble.bubbles(thread, last: 8) { time.string(from: $0) }
         viewModel.register("\(token)#open") { [weak self] in self?.showChats(ChatsFocus(chat: id)) }
         viewModel.register("\(token)#app") { [weak self] in self?.openChatApp(thread.app) }
         let unread = thread.unread > 1 ? " · \(tr("whatsapp.card.unread", thread.unread))" : ""

@@ -170,7 +170,54 @@ enum TelegramData {
         var message = InboxMessage(id: "telegram-\(chat.id)-\(id)", sender: sender, text: text, date: date, fromMe: mine,
                                    media: attached?.media, poll: asked)
         message.receipt = receipt(object, readOutbox: chat.readOutbox)
+        message.quote = quote(object, chat: chat.id)
+        if let info = object["interaction_info"] { message.reactions = reactions(info) }
         return message
+    }
+
+    /// The message this one answers, in the same chat: `reply_to` (TDLib 1.8.21 and later, with the part you quoted,
+    /// if any) or `reply_to_message_id` (before). The chat finds the answered message by its id in Nook.
+    static func quote(_ object: [String: Any], chat: Int64) -> InboxQuote? {
+        var answered = int64(object["reply_to_message_id"])
+        var quoted = ""
+        if let reply = object["reply_to"] as? [String: Any], type(reply) == "messageReplyToMessage" {
+            if let from = int64(reply["chat_id"]), from != chat, from != 0 { return nil }
+            answered = int64(reply["message_id"])
+            let text = (reply["quote"] as? [String: Any])?["text"]
+            quoted = (text as? String) ?? ((text as? [String: Any])?["text"] as? String) ?? ""
+        }
+        guard let answered, answered != 0 else { return nil }
+        return InboxQuote(id: "telegram-\(chat)-\(answered)", text: quoted)
+    }
+
+    /// The emoji on a message from its `interaction_info`: `reactions.reactions` (TDLib 1.8.21 and later) or a list
+    /// of them (before). Custom emoji and paid stars are left out; an empty list when there are none.
+    static func reactions(_ info: Any?) -> [InboxReaction] {
+        let value = (info as? [String: Any])?["reactions"]
+        let list = ((value as? [String: Any])?["reactions"] as? [[String: Any]]) ?? (value as? [[String: Any]]) ?? []
+        let chips = list.compactMap { reaction -> InboxReaction? in
+            let kind = reaction["type"] as? [String: Any] ?? [:]
+            // Before 1.8.21 the emoji itself was the reaction.
+            let emoji = kind.isEmpty ? reaction["reaction"] as? String : (type(kind) == "reactionTypeEmoji" ? kind["emoji"] as? String : nil)
+            guard let emoji, !emoji.isEmpty else { return nil }
+            return InboxReaction(emoji: emoji, count: Int(int64(reaction["total_count"]) ?? 1),
+                                 mine: reaction["is_chosen"] as? Bool == true)
+        }
+        return chips.enumerated().sorted { $0.element.count != $1.element.count ? $0.element.count > $1.element.count : $0.offset < $1.offset }
+            .map(\.element)
+    }
+
+    /// `addMessageReaction` or `removeMessageReaction` for an emoji on a message.
+    static func reaction(_ emoji: String, chat: Int64, message: Int64, add: Bool) -> [String: Any] {
+        var request: [String: Any] = [
+            "@type": add ? "addMessageReaction" : "removeMessageReaction", "chat_id": chat, "message_id": message,
+            "reaction_type": ["@type": "reactionTypeEmoji", "emoji": emoji] as [String: Any],
+        ]
+        if add {
+            request["is_big"] = false
+            request["update_recent_reactions"] = true
+        }
+        return request
     }
 
     /// A `messagePoll`'s poll: its question, each option with its votes and whether you chose it, and whether more
