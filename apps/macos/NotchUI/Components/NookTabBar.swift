@@ -26,6 +26,9 @@ struct NookTabBar<Value: Hashable>: View {
     /// The selected tab on the accent (`iris`) instead of `smoke`: for a tab bar that sits on a `graphite` surface of
     /// its own, where `smoke` would barely show.
     var prominent = false
+    /// Small tabs on a shared track, the selected one on a rounded square: a segmented control, as on pull
+    /// request page (Summary, Guide, Timeline, Code).
+    var segmented = false
     @Namespace private var selection
     @State private var hovered: Value?
 
@@ -47,20 +50,22 @@ struct NookTabBar<Value: Hashable>: View {
                         // Room for the cross, so a tab keeps its width when the cross appears.
                         if closable { Color.clear.frame(width: 12, height: 12) }
                     }
-                    .font(NookTheme.font(13, .medium))
+                    .font(NookTheme.font(segmented ? 12 : 13, .medium))
                     .foregroundStyle(item.value == selected ? selectedText
                                      : (hovered == item.value ? NookTheme.paper : NookTheme.textTertiary))
-                    .padding(.leading, 12)
-                    .padding(.trailing, closable ? 8 : 12)
-                    .padding(.vertical, 5)
+                    .padding(.leading, segmented ? 10 : 12)
+                    .padding(.trailing, closable ? 8 : (segmented ? 10 : 12))
+                    .padding(.vertical, segmented ? 4 : 5)
                     .background {
                         if item.value == selected {
-                            Capsule()
-                                .fill(prominent ? NookTheme.iris : NookTheme.smoke)
+                            shape
+                                .fill(prominent ? NookTheme.iris : (segmented ? NookTheme.line2 : NookTheme.smoke))
                                 .matchedGeometryEffect(id: "selection", in: selection)
+                        } else if segmented && hovered == item.value {
+                            shape.fill(NookTheme.rowHover)
                         }
                     }
-                    .contentShape(Capsule())
+                    .contentShape(shape)
                 }
                 .buttonStyle(.plain)
                 .help(item.help ?? "")
@@ -87,7 +92,17 @@ struct NookTabBar<Value: Hashable>: View {
                 }
             }
         }
+        .padding(segmented ? NookTheme.Spacing.xxs : 0)
+        .background {
+            if segmented {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.surface)
+            }
+        }
         .animation(NookTheme.hover, value: hovered)
+    }
+
+    private var shape: AnyShape {
+        segmented ? AnyShape(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)) : AnyShape(Capsule())
     }
 
     /// The selected tab's title: dark on a light accent, as `onIris` says.

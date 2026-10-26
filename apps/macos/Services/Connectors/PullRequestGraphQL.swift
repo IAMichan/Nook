@@ -101,6 +101,34 @@ extension AccountPullRequests {
 
     var isEmpty: Bool { mine.isEmpty && reviews.isEmpty && watched.isEmpty }
 
+    /// A quick refresh read only the open pull requests: the closed and merged ones of the last full read stay (each
+    /// one not open again), and so does a row that just left the open list for a reason `keep` knows (merged from Nook),
+    /// until the next read of the closed ones.
+    func keepingClosed(from old: AccountPullRequests?, keep: (String) -> Bool = { _ in false }) -> AccountPullRequests {
+        guard let old else { return self }
+        func kept(_ fresh: [PullRequestItem], _ before: [PullRequestItem]) -> [PullRequestItem] {
+            let listed = Set(fresh.map(\.id))
+            return fresh + before.filter { !listed.contains($0.id) && ($0.state != .open || keep($0.id)) }
+        }
+        var account = self
+        account.mine = kept(mine, old.mine)
+        account.reviews = kept(reviews, old.reviews)
+        return account
+    }
+
+    /// The closed and merged rows replaced by the ones just read; the open rows stay as they are.
+    func replacingClosed(mine closedMine: [PullRequestItem], reviews closedReviews: [PullRequestItem]) -> AccountPullRequests {
+        func replaced(_ rows: [PullRequestItem], _ closed: [PullRequestItem]) -> [PullRequestItem] {
+            let open = rows.filter { $0.state == .open }
+            let listed = Set(open.map(\.id))
+            return open + closed.filter { !listed.contains($0.id) }
+        }
+        var account = self
+        account.mine = replaced(mine, closedMine)
+        account.reviews = replaced(reviews, closedReviews)
+        return account
+    }
+
     /// The accounts with the watched rows just found put in (an account missing from `watched` keeps the ones it has),
     /// each pull request once: yours and your reviews stay where they are, and a watched one only shows under the first
     /// account where nothing lists it yet.
@@ -244,6 +272,22 @@ enum PullRequestGraphQL {
                          "mineClosed": "is:pr is:closed archived:false author:@me sort:updated-desc",
                          "reviewsClosed": "is:pr is:closed archived:false reviewed-by:@me -author:@me sort:updated-desc"]
         return (try? JSONSerialization.data(withJSONObject: ["query": query, "variables": variables])) ?? Data()
+    }
+
+    /// Half of `body()`: the open searches alone (the quick refresh the list does while you look at it), or the closed
+    /// and merged ones alone (which hardly change, and are read again only now and then). Half the searches per request
+    /// is about half the time GitHub takes to answer.
+    static func body(closed: Bool) -> Data {
+        let names = closed ? ["mineClosed", "reviewsClosed"] : ["mine", "reviews"]
+        let all = (try? JSONSerialization.jsonObject(with: body())) as? [String: Any]
+        let variables = ((all?["variables"] as? [String: String]) ?? [:]).filter { names.contains($0.key) }
+        let fields = query.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { line in names.contains { line.trimmingCharacters(in: .whitespaces).hasPrefix($0 + ":") } }
+            .joined(separator: "\n")
+        let declarations = names.map { "$\($0): String!" }.joined(separator: ", ")
+        let fragment = query[query.range(of: "fragment row")!.lowerBound...]
+        let text = "query NookPullRequests\(closed ? "Closed" : "Open")(\(declarations)) {\n  viewer { login }\n\(fields)\n}\n\(fragment)"
+        return (try? JSONSerialization.data(withJSONObject: ["query": text, "variables": variables])) ?? Data()
     }
 
     /// The answer: your login and both lists, open pull requests first, then the closed and merged ones. Throws GitHub's

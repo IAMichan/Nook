@@ -23,11 +23,20 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
+  the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
+  only a refresh you ask for shows a spinner.
 - "Post this on LinkedIn" and other requests to post on a site that don't start with a known verb are taken over
   again instead of being answered with text.
 
 ### Changed
 
+- A pull request opens beside the list opens one: half the page, its edge dragged wider or
+  narrower (remembered), and a button on its tab line that makes it fill the page.
+- A pull request's page looks: a one-line title, segmented tabs, its tabs as `#number` whose mark turns
+  into a close button, refreshing in the ⋯ menu, and a timeline with each commit as its own entry.
+- A pull request's Summary opens with whether it can merge: conflicts, checks, reviews and a branch behind, one line
+  each with its state's color, and a click on a line goes to what needs you. Failing checks are listed first.
 - `docs/WERKRUIMTE-AGENTS.md` is now `docs/WORKSPACE-AGENTS.md`.
 
 ## [0.1.0-beta.1] - 2026-10-23
