@@ -295,8 +295,11 @@ final class CompanionClient: ObservableObject {
 
     /// One live connection over `route`, until it closes.
     private func runChannel(on route: CompanionRoute, link: PairingLink) async {
-        let channel = CompanionChannel(route: route, key: link.key) { [weak self] update in
+        guard let channel = CompanionChannel(route: route, key: link.key, onUpdate: { [weak self] update in
             Task { @MainActor in self?.received(update) }
+        }) else {
+            failures += 1
+            return
         }
         do {
             try await channel.open(timeout: 5)
@@ -430,8 +433,9 @@ final class CompanionClient: ObservableObject {
         lastSearch = Date()
         guard let place = await MacFinder.find(name: link.macName) else { return false }
         if routes.contains(where: { $0.hostKey == place.host.lowercased() && $0.port == place.port }) { return false }
-        // The Mac listens on one port on every network: all routes follow it.
+        // The Mac listens on one port on every network: all direct routes follow it.
         var next = routes.map { route -> CompanionRoute in
+            guard !route.isRelay else { return route }
             var moved = route
             moved.port = place.port
             return moved
@@ -452,6 +456,15 @@ final class CompanionClient: ObservableObject {
         if let channel, let index = merged.firstIndex(where: { $0.hostKey == channel.route.hostKey }), index > 0 {
             Task { await checkBetterRoutes(channel) }
         }
+    }
+
+    /// What to try when the Mac cannot be reached from where the phone is now; nil when the relay is set up.
+    var awayHint: String? {
+        guard link != nil, !routes.contains(where: \.isRelay) else { return nil }
+        if routes.contains(where: { $0.kind == .tailnet || $0.kind == .vpn }) {
+            return String(localized: "Away from home? Check that Tailscale is on on this iPhone.")
+        }
+        return String(localized: "Away from home? Turn on Tailscale on this iPhone and on your Mac, or set up a relay in Nook on your Mac.")
     }
 
     private func refusalText(_ error: CompanionError?) -> String {
@@ -734,6 +747,11 @@ final class CompanionClient: ObservableObject {
             UserDefaults.standard.set(features, forKey: Self.featuresKey)
         }
         if let endpoints = response.endpoints { learn(endpoints) }
+        // The relay the Mac uses now ("" when none): the route through it follows.
+        if let relay = CompanionRoutes.withRelay(routes, relay: response.relay) {
+            routes = relay
+            PairingStore.saveRoutes(relay)
+        }
         if req.op == .list || req.op == .hello { featuresKnown = true }
         if let options = response.launch, options != launchOptions { launchOptions = options }
         if let timeline = response.timeline, let session = req.session, timelines[session] != timeline { timelines[session] = timeline }
@@ -790,8 +808,7 @@ final class CompanionClient: ObservableObject {
 
     private func exchange(_ req: CompanionRequest, link: PairingLink, route: CompanionRoute) async throws -> CompanionResponse {
         let framed = try CompanionChannel.frame(req, key: link.key, deviceID: PairedDevice.identifier(forKey: link.key))
-        guard let port = NWEndpoint.Port(rawValue: route.port) else { throw CompanionClientError.badRequest }
-        let reply = try await Exchange.run(host: route.host, port: port, payload: framed)
+        let reply = try await Exchange.run(route: route, key: link.key, payload: framed)
         let opened = try CompanionSeal.open(reply, pairingKey: link.key, direction: .response)
         let response = try JSONDecoder().decode(CompanionResponse.self, from: opened)
         guard response.id == req.id else { throw CompanionClientError.badRequest }

@@ -6,6 +6,7 @@ struct CompanionSettingsRows: View {
     @ObservedObject private var store = CompanionStore.shared
     @ObservedObject private var server = CompanionServer.shared
     @ObservedObject private var notifier = CompanionNotifier.shared
+    @ObservedObject private var relay = CompanionRelayClient.shared
     @State private var keyProblem = false
     @State private var link: PairingLink?
     @State private var copied = false
@@ -18,6 +19,7 @@ struct CompanionSettingsRows: View {
             SettingNote(tr("companion.hint"))
             if store.enabled {
                 status
+                awayFromHome
                 ForEach(store.devices) { device in
                     HStack(spacing: NookTheme.Spacing.md) {
                         Image(systemName: "iphone").foregroundStyle(NookTheme.textSecondary).frame(width: 22)
@@ -125,6 +127,30 @@ struct CompanionSettingsRows: View {
     }
 
     private var isListening: Bool { if case .listening = server.state { return true }; return false }
+
+    /// Reaching this Mac outside the home network: Tailscale when it runs here, and the relay (apps/relay).
+    @ViewBuilder
+    private var awayFromHome: some View {
+        if case .listening = server.state {
+            let tailnet = server.endpoints().filter { $0.tailnet == true }.map(\.host)
+            if tailnet.isEmpty {
+                SettingNote(tr("companion.tailscale.off"))
+            } else {
+                SettingNote(tr("companion.tailscale.on", tailnet.joined(separator: ", ")), tone: .success)
+            }
+        }
+        SettingToggle(tr("companion.relay.enable"), detail: tr("companion.relay.hint"), isOn: $relay.enabled)
+        if relay.enabled {
+            TextField(tr("companion.relay.address"), text: $relay.address).textFieldStyle(.roundedBorder)
+            switch relay.status {
+            case .connected: SettingNote(tr("companion.relay.connected"), tone: .success)
+            case .connecting: SettingNote(tr("companion.relay.connecting"))
+            case .invalid: SettingNote(tr("companion.relay.invalid"), tone: .error)
+            case .failed(let message): SettingNote(tr("companion.relay.failed", message), tone: .error)
+            case .off: EmptyView()
+            }
+        }
+    }
 
     @ViewBuilder
     private var status: some View {

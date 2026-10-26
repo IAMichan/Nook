@@ -35,6 +35,8 @@ struct PairingLink: Equatable, Sendable {
     var macName: String
     /// Other addresses to try (`CompanionRoutes.initial`); a phone that does not know them reads only `h`.
     var alternates: [String] = []
+    /// The relay the Mac keeps a connection to (`CompanionRelay`, `&r=<https address>`), to reach it from anywhere.
+    var relay: String?
 
     /// Most alternate addresses a code carries, so the QR code stays easy to scan.
     static let maxAlternates = 6
@@ -48,6 +50,7 @@ struct PairingLink: Equatable, Sendable {
         c.queryItems = [URLQueryItem(name: "h", value: host), URLQueryItem(name: "p", value: String(port)),
                         URLQueryItem(name: "k", value: Base64URL.encode(key)), URLQueryItem(name: "n", value: macName)]
             + alternates.prefix(Self.maxAlternates).map { URLQueryItem(name: "a", value: $0) }
+            + (relay.map { [URLQueryItem(name: "r", value: $0)] } ?? [])
         return c.url
     }
 
@@ -63,7 +66,7 @@ struct PairingLink: Equatable, Sendable {
         let alternates = (c.queryItems ?? []).filter { $0.name == "a" }.compactMap(\.value)
             .filter { validHost($0) && seen.insert($0.lowercased()).inserted }
         return PairingLink(host: host, port: port, key: key, macName: name.isEmpty ? "Mac" : name,
-                           alternates: Array(alternates.prefix(maxAlternates)))
+                           alternates: Array(alternates.prefix(maxAlternates)), relay: q["r"].flatMap(CompanionRelay.normalize))
     }
 
     /// An IPv4/IPv6 address or a host name; nothing with a scheme, path, credentials or spaces.
@@ -149,7 +152,9 @@ enum CompanionFeature {
     /// The Mac answers a repeated request that changed something with its first answer (`CommandReceipts`), so the
     /// phone may send it again after a lost answer, and keep messages in an outbox while the Mac is away.
     static let retry = "retry"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry]
+    /// The Mac says which relay it uses (`CompanionResponse.relay`) and answers phones that come through it.
+    static let relay = "relay"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -243,6 +248,8 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     var inboxLines: [InboxLine]?
     /// Where the Mac can be reached now (`CompanionFeature.routes`), with `hello`, `list` and `subscribe`.
     var endpoints: [CompanionEndpoint]?
+    /// The relay the Mac is connected to (`CompanionFeature.relay`), "" when it uses none; with `endpoints`.
+    var relay: String?
     /// Set on what the Mac sends by itself over a subscribed connection: 1, 2, 3… The phone ignores one that does not
     /// grow, so an old message played back on the connection cannot turn the list back.
     var seq: Int?

@@ -63,14 +63,22 @@ struct CompanionRoute: Codable, Equatable, Hashable, Sendable {
     var learned: Bool
     /// The Mac said this is its Tailscale address (a 100.64/10 address could be any VPN otherwise).
     var tailnet: Bool
+    /// Set for the route through the relay (`CompanionRelay`): the relay's address. `host` and `port` are unused then.
+    var relay: String?
 
-    init(host: String, port: UInt16, learned: Bool = false, tailnet: Bool = false) {
-        self.host = host; self.port = port; self.learned = learned; self.tailnet = tailnet
+    init(host: String, port: UInt16, learned: Bool = false, tailnet: Bool = false, relay: String? = nil) {
+        self.host = host; self.port = port; self.learned = learned; self.tailnet = tailnet; self.relay = relay
     }
 
+    /// The route through a relay; the Mac says which one (`CompanionResponse.relay`).
+    static func viaRelay(_ address: String) -> CompanionRoute {
+        CompanionRoute(host: URLComponents(string: address)?.host ?? address, port: 443, relay: address)
+    }
+
+    var isRelay: Bool { relay != nil }
     var kind: CompanionAddress.Kind { tailnet ? .tailnet : CompanionAddress.classify(host) }
     /// The same address, whatever port it listens on now.
-    var hostKey: String { host.lowercased() }
+    var hostKey: String { relay.map { "relay:" + $0.lowercased() } ?? host.lowercased() }
 }
 
 /// An address the Mac reports it can be reached at (in `CompanionResponse.endpoints`).
@@ -83,6 +91,8 @@ struct CompanionEndpoint: Codable, Equatable, Sendable {
 enum CompanionRoutes {
     /// The order of preference: this device, the local network, the tailnet (or another VPN), the internet.
     static func rank(_ route: CompanionRoute) -> Int {
+        // The relay goes through the internet twice: the last resort, after anything direct.
+        if route.isRelay { return 4 }
         switch route.kind {
         case .loopback: return 0
         case .lan: return 1
@@ -107,7 +117,17 @@ enum CompanionRoutes {
         for host in link.alternates where seen.insert(host.lowercased()).inserted {
             routes = insert(routes, CompanionRoute(host: host, port: link.port, learned: true))
         }
+        if let relay = link.relay { routes = insert(routes, .viaRelay(relay)) }
         return routes
+    }
+
+    /// The routes after the Mac said which relay it uses: nil (a Mac that does not say) changes nothing, an empty
+    /// address removes the relay route, any other replaces it. Nil when nothing changed.
+    static func withRelay(_ saved: [CompanionRoute], relay: String?) -> [CompanionRoute]? {
+        guard let relay else { return nil }
+        var next = saved.filter { !$0.isRelay }
+        if let address = CompanionRelay.normalize(relay), !relay.isEmpty { next = insert(next, .viaRelay(address)) }
+        return next == saved ? nil : next
     }
 
     /// The routes after the Mac reported where it can be reached; nil when nothing changed.
@@ -125,6 +145,10 @@ enum CompanionRoutes {
         var next: [CompanionRoute] = []
         var known: Set<String> = []
         for route in saved {
+            if route.isRelay {
+                next.append(route)
+                continue
+            }
             guard let endpoint = byHost[route.hostKey] else {
                 if !route.learned, known.insert(route.hostKey).inserted { next.append(route) }
                 continue

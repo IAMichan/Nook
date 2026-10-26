@@ -44,9 +44,10 @@ final class CompanionServer: ObservableObject {
         apply()
     }
 
-    /// Starts or stops the listener to match the setting.
+    /// Starts or stops the listener (and the relay connection) to match the settings.
     func apply() {
         if CompanionStore.shared.enabled { start() } else { stop() }
+        CompanionRelayClient.shared.apply()
     }
 
     var port: UInt16 {
@@ -76,7 +77,7 @@ final class CompanionServer: ObservableObject {
         listener?.cancel()
         listener = nil
         state = .stopped
-        for peer in streams { peer.connection.cancel() }
+        for peer in streams { peer.transport.cancel() }
         streams = []
     }
 
@@ -106,7 +107,9 @@ final class CompanionServer: ObservableObject {
         if !host.contains(".") { host += ".local" }
         // The other addresses go along, so a phone that cannot resolve the .local name still finds the Mac.
         let alternates = endpoints().map(\.host).filter { $0.lowercased() != host.lowercased() }
-        return PairingLink(host: host, port: port, key: key, macName: MachineName.local, alternates: alternates)
+        let relay = CompanionRelayClient.shared.advertised
+        return PairingLink(host: host, port: port, key: key, macName: MachineName.local, alternates: alternates,
+                           relay: relay.isEmpty ? nil : relay)
     }
 
     /// Where phones can reach this Mac now (`CompanionEndpoints`); read again at most every 30 seconds.
@@ -123,7 +126,7 @@ final class CompanionServer: ObservableObject {
     private func accept(_ connection: NWConnection) {
         guard open < Self.maxConnections else { connection.cancel(); return }
         open += 1
-        let peer = CompanionPeer(connection)
+        let peer = CompanionPeer(TCPTransport(connection), counted: true)
         connection.stateUpdateHandler = { [weak self] new in
             switch new {
             case .failed, .cancelled: Task { @MainActor in self?.closed(peer) }
@@ -131,23 +134,26 @@ final class CompanionServer: ObservableObject {
             }
         }
         connection.start(queue: queue)
-        // A connection lives at most 30 seconds, unless the phone subscribed on it: then as long as it keeps talking.
-        queue.asyncAfter(deadline: .now() + 30) {
-            Task { @MainActor in if peer.streamID == nil { connection.cancel() } }
+        expireUnlessSubscribed(peer)
+        read(peer, connection: connection, reader: CompanionFrameReader())
+    }
+
+    /// A connection lives at most 30 seconds, unless the phone subscribed on it: then as long as it keeps talking.
+    private func expireUnlessSubscribed(_ peer: CompanionPeer) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+            Task { @MainActor in if peer.streamID == nil { peer.transport.cancel() } }
         }
-        read(peer, reader: CompanionFrameReader())
     }
 
     private func closed(_ peer: CompanionPeer) {
         guard !peer.closed else { return }
         peer.closed = true
-        open = max(0, open - 1)
+        if peer.counted { open = max(0, open - 1) }
         streams.removeAll { $0 === peer }
         if streams.isEmpty { streamTimer?.invalidate(); streamTimer = nil }
     }
 
-    private func read(_ peer: CompanionPeer, reader: CompanionFrameReader) {
-        let connection = peer.connection
+    private func read(_ peer: CompanionPeer, connection: NWConnection, reader: CompanionFrameReader) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, complete, error in
             var reader = reader
             guard let self else { return }
@@ -156,13 +162,8 @@ final class CompanionServer: ObservableObject {
                 if reader.overflowed { connection.cancel(); return }
                 let remaining = reader
                 Task { @MainActor in
-                    if peer.streamID != nil {
-                        // A live connection: a slow request (a question to Nook) must not hold up the pings behind it.
-                        for frame in frames { Task { await self.respond(to: frame, peer: peer) } }
-                    } else {
-                        for frame in frames { await self.respond(to: frame, peer: peer) }
-                    }
-                    if !complete, error == nil { self.read(peer, reader: remaining) } else { connection.cancel() }
+                    await self.dispatch(frames, peer: peer)
+                    if !complete, error == nil { self.read(peer, connection: connection, reader: remaining) } else { connection.cancel() }
                 }
             } else if complete || error != nil {
                 connection.cancel()
@@ -170,15 +171,43 @@ final class CompanionServer: ObservableObject {
         }
     }
 
-    private func send(_ response: CompanionResponse, key: Data, deviceID: String, on connection: NWConnection) {
+    private func dispatch(_ frames: [Data], peer: CompanionPeer) async {
+        if peer.streamID != nil {
+            // A live connection: a slow request (a question to Nook) must not hold up the pings behind it.
+            for frame in frames { Task { await self.respond(to: frame, peer: peer) } }
+        } else {
+            for frame in frames { await respond(to: frame, peer: peer) }
+        }
+    }
+
+    // MARK: Through the relay
+
+    /// A phone connected through the relay (`CompanionRelayClient`): from here on it is a connection like any other.
+    func relayOpened(_ transport: CompanionTransport) -> CompanionPeer {
+        let peer = CompanionPeer(transport, counted: false)
+        expireUnlessSubscribed(peer)
+        return peer
+    }
+
+    /// Bytes from a phone through the relay, in the order they came.
+    func relayReceived(_ peer: CompanionPeer, data: Data) {
+        let frames = peer.reader.feed(data)
+        if peer.reader.overflowed { peer.transport.cancel(); return }
+        guard !frames.isEmpty else { return }
+        peer.pending = peer.pending.then { [weak self] in await self?.dispatch(frames, peer: peer) }
+    }
+
+    func relayClosed(_ peer: CompanionPeer) { closed(peer) }
+
+    private func send(_ response: CompanionResponse, key: Data, deviceID: String, on transport: CompanionTransport) {
         guard let json = try? JSONEncoder().encode(response),
               let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: deviceID, direction: .response),
               let framed = CompanionFrameReader.frame(sealed) else { return }
-        connection.send(content: framed, completion: .contentProcessed { _ in })
+        transport.send(framed)
     }
 
     private func respond(to frame: Data, peer: CompanionPeer) async {
-        let connection = peer.connection
+        let connection = peer.transport
         let store = CompanionStore.shared
         guard let claimed = CompanionSeal.claimedDevice(frame) else { connection.cancel(); return }
         // The key of a paired device, or the key of the open pairing window (which proves itself by opening the message).
@@ -229,9 +258,9 @@ final class CompanionServer: ObservableObject {
 
     /// Keeps the connection open for this phone and answers like `list`; from now on the sessions follow by themselves.
     private func subscribe(_ peer: CompanionPeer, request: CompanionRequest, deviceID: String, key: Data) {
-        guard let app else { send(.failure(request.id, .failed), key: key, deviceID: deviceID, on: peer.connection); return }
+        guard let app else { send(.failure(request.id, .failed), key: key, deviceID: deviceID, on: peer.transport); return }
         // One live connection per phone: a newer one (another network, the app restarted) replaces the older.
-        for old in streams where old !== peer && old.deviceID == deviceID { old.connection.cancel() }
+        for old in streams where old !== peer && old.deviceID == deviceID { old.transport.cancel() }
         streams.removeAll { $0 !== peer && $0.deviceID == deviceID }
         peer.deviceID = deviceID
         peer.key = key
@@ -241,8 +270,8 @@ final class CompanionServer: ObservableObject {
         peer.sent = sessions
         if !streams.contains(where: { $0 === peer }) { streams.append(peer) }
         send(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
-                               features: CompanionFeature.all, endpoints: endpoints()),
-             key: key, deviceID: deviceID, on: peer.connection)
+                               features: CompanionFeature.all, endpoints: endpoints(), relay: CompanionRelayClient.shared.advertised),
+             key: key, deviceID: deviceID, on: peer.transport)
         if streamTimer == nil {
             // Closes connections that went quiet (a phone that left without saying so) and catches changes the
             // workspace does not announce (agents in a terminal).
@@ -256,7 +285,7 @@ final class CompanionServer: ObservableObject {
         let paired = Set(CompanionStore.shared.devices.map(\.id))
         for peer in streams where now.timeIntervalSince(peer.lastHeard) > CompanionTiming.streamIdle
             || !paired.contains(peer.deviceID ?? "") {
-            peer.connection.cancel()
+            peer.transport.cancel()
         }
         pushChanges()
     }
@@ -269,7 +298,7 @@ final class CompanionServer: ObservableObject {
             guard let key = peer.key, let deviceID = peer.deviceID, let id = peer.streamID else { continue }
             peer.seq += 1
             peer.sent = sessions
-            send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.connection)
+            send(CompanionResponse(id: id, ok: true, sessions: sessions, seq: peer.seq), key: key, deviceID: deviceID, on: peer.transport)
         }
     }
 
@@ -286,7 +315,8 @@ final class CompanionServer: ObservableObject {
         switch request.op {
         case .hello, .list, .subscribe:
             return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
-                                     features: CompanionFeature.all, endpoints: endpoints())
+                                     features: CompanionFeature.all, endpoints: endpoints(),
+                                     relay: CompanionRelayClient.shared.advertised)
         case .ping:
             return CompanionResponse(id: request.id, ok: true)
         case .register:
@@ -442,11 +472,17 @@ final class CompanionServer: ObservableObject {
     }
 }
 
-/// One connection from a phone, and what the Mac knows about it once the phone subscribed on it.
+/// One connection from a phone (directly, or through the relay), and what the Mac knows about it once the phone
+/// subscribed on it.
 @MainActor
 final class CompanionPeer {
-    let connection: NWConnection
+    let transport: CompanionTransport
+    /// A direct connection, counted against `CompanionServer.maxConnections`; the relay limits its own.
+    let counted: Bool
     var closed = false
+    /// Bytes through the relay that do not make a whole frame yet, and the frames still being answered, in order.
+    var reader = CompanionFrameReader()
+    var pending = SerialTail()
     /// When the phone last sent anything (a request or a ping).
     var lastHeard = Date()
     /// Set when the phone subscribed: the id every update carries, the phone and its key, and what it was sent.
@@ -456,5 +492,42 @@ final class CompanionPeer {
     var seq = 0
     var sent: [SessionDigest]?
 
+    init(_ transport: CompanionTransport, counted: Bool) {
+        self.transport = transport
+        self.counted = counted
+    }
+}
+
+/// How the Mac answers a phone: a direct TCP connection, or a connection through the relay.
+@MainActor
+protocol CompanionTransport: AnyObject {
+    func send(_ data: Data)
+    /// Ends the connection; the server hears of it as for any other close.
+    func cancel()
+}
+
+@MainActor
+final class TCPTransport: CompanionTransport {
+    private let connection: NWConnection
+
     init(_ connection: NWConnection) { self.connection = connection }
+
+    func send(_ data: Data) { connection.send(content: data, completion: .contentProcessed { _ in }) }
+    func cancel() { connection.cancel() }
+}
+
+/// Runs work one after another: each piece starts when the previous one finished.
+@MainActor
+struct SerialTail {
+    private var last: Task<Void, Never>?
+
+    func then(_ work: @escaping @MainActor () async -> Void) -> SerialTail {
+        let previous = last
+        var next = SerialTail()
+        next.last = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        return next
+    }
 }

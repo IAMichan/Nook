@@ -11,6 +11,8 @@ final class CompanionChannel: @unchecked Sendable {
     private let key: Data
     private let deviceID: String
     private let connection: NWConnection
+    /// Through the relay: a WebSocket, one message per chunk of bytes.
+    private let webSocket: Bool
     private let queue = DispatchQueue(label: "nook.companion.channel")
     private let onUpdate: @Sendable (CompanionResponse) -> Void
 
@@ -25,13 +27,16 @@ final class CompanionChannel: @unchecked Sendable {
     private var lastHeard = Date()
     private var heartbeat: DispatchSourceTimer?
 
-    /// `onUpdate` gets what the Mac sends by itself (the sessions after a change), on the channel's queue.
-    init(route: CompanionRoute, key: Data, onUpdate: @escaping @Sendable (CompanionResponse) -> Void) {
+    /// `onUpdate` gets what the Mac sends by itself (the sessions after a change), on the channel's queue. Nil when the
+    /// route cannot be opened at all (a relay address that is not https).
+    init?(route: CompanionRoute, key: Data, onUpdate: @escaping @Sendable (CompanionResponse) -> Void) {
+        guard let connection = RouteLink.connection(route, key: key) else { return nil }
         self.route = route
         self.key = key
         self.deviceID = PairedDevice.identifier(forKey: key)
         self.onUpdate = onUpdate
-        connection = NWConnection(host: NWEndpoint.Host(route.host), port: NWEndpoint.Port(rawValue: route.port) ?? .any, using: .tcp)
+        self.connection = connection
+        self.webSocket = route.isRelay
     }
 
     /// Whether it is connected and not closed yet.
@@ -63,9 +68,9 @@ final class CompanionChannel: @unchecked Sendable {
                     lastSeq = 0
                 }
                 waiting[request.id] = continuation
-                connection.send(content: framed, completion: .contentProcessed { [weak self] error in
+                RouteLink.send(connection, framed, webSocket: webSocket) { [weak self] error in
                     if let error { self?.fail(error) }
-                })
+                }
                 queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
                     self?.waiting.removeValue(forKey: request.id)?.resume(throwing: CompanionClientError.timeout)
                 }
@@ -125,7 +130,7 @@ final class CompanionChannel: @unchecked Sendable {
     }
 
     private func receive() {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, complete, error in
+        RouteLink.receive(connection, webSocket: webSocket) { [weak self] data, complete, error in
             guard let self else { return }
             if let data, !data.isEmpty {
                 self.lastHeard = Date()
@@ -157,7 +162,7 @@ final class CompanionChannel: @unchecked Sendable {
     private func beat() {
         if Date().timeIntervalSince(lastHeard) > CompanionTiming.silenceLimit { return fail(CompanionClientError.timeout) }
         guard let framed = try? Self.frame(CompanionRequest(op: .ping), key: key, deviceID: deviceID) else { return }
-        connection.send(content: framed, completion: .contentProcessed { _ in })
+        RouteLink.send(connection, framed, webSocket: webSocket) { _ in }
     }
 
     private func fail(_ error: Error) {
@@ -183,8 +188,7 @@ enum RouteProbe {
     /// pairing key: its answer cannot be opened).
     static func check(_ route: CompanionRoute, key: Data, request: CompanionRequest, timeout: TimeInterval) async -> CompanionResponse? {
         guard let framed = try? CompanionChannel.frame(request, key: key, deviceID: PairedDevice.identifier(forKey: key)),
-              let port = NWEndpoint.Port(rawValue: route.port),
-              let reply = try? await Exchange.run(host: route.host, port: port, payload: framed, timeout: timeout),
+              let reply = try? await Exchange.run(route: route, key: key, payload: framed, timeout: timeout),
               let opened = try? CompanionSeal.open(reply, pairingKey: key, direction: .response),
               let response = try? JSONDecoder().decode(CompanionResponse.self, from: opened),
               response.id == request.id else { return nil }
@@ -241,8 +245,9 @@ enum RouteProbe {
 /// One short connection: send the frame, read until one whole frame came back, with a timeout. Cancelling the task
 /// closes the connection at once.
 enum Exchange {
-    static func run(host: String, port: NWEndpoint.Port, payload: Data, timeout: TimeInterval = 8) async throws -> Data {
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
+    static func run(route: CompanionRoute, key: Data, payload: Data, timeout: TimeInterval = 8) async throws -> Data {
+        guard let connection = RouteLink.connection(route, key: key) else { throw CompanionClientError.badRequest }
+        let webSocket = route.isRelay
         let queue = DispatchQueue(label: "nook.companion.client")
         let box = Once()
         return try await withTaskCancellationHandler {
@@ -253,7 +258,7 @@ enum Exchange {
                     box.resume(result)
                 }
                 func receive() {
-                    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, complete, error in
+                    RouteLink.receive(connection, webSocket: webSocket) { data, complete, error in
                         if let data, !data.isEmpty {
                             let frames = reader.feed(data)
                             if let first = frames.first { return finish(.success(first)) }
@@ -266,9 +271,9 @@ enum Exchange {
                 connection.stateUpdateHandler = { state in
                     switch state {
                     case .ready:
-                        connection.send(content: payload, completion: .contentProcessed { error in
+                        RouteLink.send(connection, payload, webSocket: webSocket) { error in
                             if error != nil { finish(.failure(CompanionClientError.closed)) } else { receive() }
-                        })
+                        }
                     case .failed(let error): finish(.failure(error))
                     case .waiting(let error): finish(.failure(error))
                     default: break
@@ -318,6 +323,51 @@ enum Exchange {
             continuation = nil
             lock.unlock()
             c.resume(with: result)
+        }
+    }
+}
+
+/// How a route is opened: TCP straight to the Mac, or a WebSocket to this pairing's room on the relay
+/// (`CompanionRelay`). Either way the same sealed frames travel; the relay passes them on.
+enum RouteLink {
+    static func connection(_ route: CompanionRoute, key: Data) -> NWConnection? {
+        if let relay = route.relay {
+            guard let url = CompanionRelay.socketURL(relay: relay, room: CompanionRelay.room(forKey: key), role: .phone) else { return nil }
+            let parameters: NWParameters = url.scheme == "wss" ? .tls : .tcp
+            let options = NWProtocolWebSocket.Options()
+            options.autoReplyPing = true
+            parameters.defaultProtocolStack.applicationProtocols.insert(options, at: 0)
+            return NWConnection(to: .url(url), using: parameters)
+        }
+        guard let port = NWEndpoint.Port(rawValue: route.port) else { return nil }
+        return NWConnection(host: NWEndpoint.Host(route.host), port: port, using: .tcp)
+    }
+
+    static func send(_ connection: NWConnection, _ data: Data, webSocket: Bool, completion: @escaping (NWError?) -> Void) {
+        if webSocket {
+            let context = NWConnection.ContentContext(identifier: "frame", metadata: [NWProtocolWebSocket.Metadata(opcode: .binary)])
+            connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed(completion))
+        } else {
+            connection.send(content: data, completion: .contentProcessed(completion))
+        }
+    }
+
+    /// Hands over the next bytes: `complete` when the other side ended the connection (for the relay: it closed the
+    /// socket, for instance because the Mac is not connected to it).
+    static func receive(_ connection: NWConnection, webSocket: Bool, handler: @escaping (Data?, Bool, NWError?) -> Void) {
+        guard webSocket else {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, complete, error in
+                handler(data, complete, error)
+            }
+            return
+        }
+        connection.receiveMessage { data, context, _, error in
+            let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
+            switch metadata?.opcode {
+            case .close?: handler(nil, true, error)
+            case .binary?, .cont?: handler(data, false, error)
+            default: handler(nil, error != nil, error)
+            }
         }
     }
 }

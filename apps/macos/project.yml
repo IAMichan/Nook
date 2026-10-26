@@ -300,6 +300,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionPush.swift
       - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: ../../packages/protocol/Sources/CompanionRoutes.swift
+      - path: ../../packages/protocol/Sources/CompanionRelay.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift
