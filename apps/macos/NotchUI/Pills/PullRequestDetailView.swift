@@ -18,7 +18,8 @@ struct PullRequestDetailView: View {
     @EnvironmentObject private var app: AppModel
     let accountID: String
     let item: PullRequestItem
-    /// Beside the pull request list (a side panel): the button that leaves it closes the panel, on the right.
+    /// Beside the pull request list (a side panel): the button that leaves it closes the panel, on the right. The
+    /// Pull requests page puts that button on its tab line instead and passes no `onBack`.
     let inline: Bool
     /// Nil beside a session, where the side panel's tab closes it instead.
     let onBack: (() -> Void)?

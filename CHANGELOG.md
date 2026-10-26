@@ -25,6 +25,8 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Changed
 
+- A pull request opens beside the list opens one: half the page, its edge dragged wider or
+  narrower (remembered), and a button on its tab line that makes it fill the page.
 - `docs/WERKRUIMTE-AGENTS.md` is now `docs/WORKSPACE-AGENTS.md`.
 
 ## [0.1.0-beta.1] - 2026-10-23
