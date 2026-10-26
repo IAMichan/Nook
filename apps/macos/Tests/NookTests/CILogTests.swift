@@ -37,4 +37,18 @@ final class CILogTests: XCTestCase {
         XCTAssertEqual(cleaned.text, "line 8\nline 9\nline 10")
         XCTAssertEqual(cleaned.omitted, 7)
     }
+
+    func testLinesTakeTheirKindFromGitHubMarkersAndWords() {
+        let lines = CILogParser.lines("##[group]Run build\n##[command]xcodebuild\nCompiling\nFoo.swift:1: error: nope\n"
+            + "Foo.swift:2: warning: hmm\n##[endgroup]\n##[debug]noise\n##[error]Process completed with exit code 65.")
+        XCTAssertEqual(lines.map(\.kind), [.group, .command, .plain, .error, .warning, .error])
+        XCTAssertEqual(lines.first?.text, "Run build")
+        XCTAssertEqual(lines.last?.text, "Process completed with exit code 65.")
+    }
+
+    func testProblemsKeepTheirGroupOnce() {
+        let lines = CILogParser.lines("##[group]A\nfine\n##[group]Build\nx: error: one\ny: error: two\n##[group]Post\nfine")
+        XCTAssertEqual(CILogParser.problems(lines).map(\.text), ["Build", "x: error: one", "y: error: two"])
+        XCTAssertTrue(CILogParser.problems(CILogParser.lines("all good")).isEmpty)
+    }
 }
