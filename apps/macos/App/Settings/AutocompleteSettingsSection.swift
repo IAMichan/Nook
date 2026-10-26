@@ -8,6 +8,7 @@ struct AutocompleteSettingsSection: View {
     @ObservedObject private var store = AutocompleteStore.shared
     @ObservedObject private var autocomplete = AutocompleteController.shared
     @ObservedObject private var downloads = CompletionDownloads.shared
+    @ObservedObject private var energy = EnergyMonitor.shared
     @State private var instructions = AutocompleteStore.shared.prefs.instructions
     @State private var editingApp: String?
     @State private var confirmForget = false
@@ -59,6 +60,7 @@ struct AutocompleteSettingsSection: View {
                 modelSection
                 downloadSection
                 suggestionsSection
+                batterySection
                 keysLink
             case .apps:
                 appsSection
@@ -578,7 +580,28 @@ struct AutocompleteSettingsSection: View {
                 set: { store.prefs.sites[site, default: CompletionSiteRule()].instructions = $0 })
     }
 
-    // MARK: Emoji, typos, battery, labs
+    // MARK: Battery
+
+    /// What autocomplete leaves out on battery and in Low Power Mode (see `CompletionPower`).
+    private var batterySection: some View {
+        let saving = energy.signals.onBattery || energy.signals.lowPowerMode
+        return Section(tr("autocomplete.section.battery")) {
+            SettingNote(tr(saving ? "autocomplete.battery.now" : "autocomplete.battery.plugged"), tone: saving ? .success : .info)
+            SettingToggle(tr("autocomplete.battery.fewerRuns"), detail: tr("autocomplete.battery.fewerRunsDetail"), isOn: $store.prefs.fewerRunsOnBattery)
+            SettingToggle(tr("autocomplete.battery.shorter"), detail: tr("autocomplete.battery.shorterDetail"), isOn: $store.prefs.shorterOnBattery)
+            SettingToggle(tr("autocomplete.battery.smaller"),
+                          detail: autocomplete.lighterModel.map { tr("autocomplete.battery.smallerDetail", $0.title) } ?? tr("autocomplete.battery.smallerNone"),
+                          isOn: $store.prefs.smallerModelOnBattery)
+            SettingToggle(tr("autocomplete.battery.onDemand"), detail: tr("autocomplete.battery.onDemandDetail"), isOn: $store.prefs.onDemandOnBattery)
+            if store.prefs.onDemandOnBattery {
+                CompletionKeyRecorder(title: tr("autocomplete.key.suggestNow"), shortcut: $store.prefs.suggestNow, fallback: nil, allowsOff: true)
+                if store.prefs.suggestNow == nil { SettingNote(tr("autocomplete.battery.onDemandNoKey"), tone: .warning) }
+            }
+            Toggle(tr("autocomplete.battery.pause"), isOn: $store.prefs.pauseOnBattery)
+        }
+    }
+
+    // MARK: Emoji, typos, labs
 
     private var extrasSection: some View {
         Section(tr("autocomplete.section.extras")) {
@@ -592,8 +615,6 @@ struct AutocompleteSettingsSection: View {
             }
             SettingToggle(tr("autocomplete.typos"), detail: tr("autocomplete.typosDetail"), isOn: $store.prefs.typos)
             if store.prefs.typos { Toggle(tr("autocomplete.typoFixes"), isOn: $store.prefs.showTypoFixes) }
-            Toggle(tr("autocomplete.battery.shorter"), isOn: $store.prefs.shorterOnBattery)
-            Toggle(tr("autocomplete.battery.pause"), isOn: $store.prefs.pauseOnBattery)
             SettingToggle(tr("autocomplete.alternatives"), detail: tr("autocomplete.alternativesDetail"), isOn: $store.prefs.wordAlternatives)
             if store.prefs.wordAlternatives {
                 Toggle(tr("autocomplete.alternativesAuto"), isOn: $store.prefs.autoAlternatives)
@@ -832,6 +853,7 @@ struct AutocompleteKeysSection: View {
                                   fallback: .shiftTab, allowsOff: false)
             CompletionKeyRecorder(title: tr("autocomplete.key.toggleAll"), shortcut: $store.prefs.toggleAll, fallback: nil, allowsOff: true)
             CompletionKeyRecorder(title: tr("autocomplete.key.toggleApp"), shortcut: $store.prefs.toggleApp, fallback: nil, allowsOff: true)
+            CompletionKeyRecorder(title: tr("autocomplete.key.suggestNow"), shortcut: $store.prefs.suggestNow, fallback: nil, allowsOff: true)
             Picker(tr("autocomplete.escape"), selection: $store.prefs.escape) {
                 ForEach(CompletionEscape.allCases) { Text(tr("autocomplete.escape.\($0.rawValue)")).tag($0) }
             }

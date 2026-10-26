@@ -72,6 +72,7 @@ enum SettingsSearch {
         ("memory.settings.clear", .memory),
         ("autocomplete.enable", .autocomplete),
         ("autocomplete.section.model", .autocomplete),
+        ("autocomplete.section.battery", .autocomplete),
         ("autocomplete.section.apps", .autocomplete),
         ("autocomplete.section.personal", .autocomplete),
         ("autocomplete.emoji", .autocomplete),

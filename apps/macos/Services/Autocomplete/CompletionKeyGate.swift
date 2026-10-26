@@ -44,6 +44,7 @@ struct CompletionKeyGate: Equatable {
     var toggleApp: CompletionShortcut?
     /// Nil while other words are turned off.
     var alternatives: CompletionShortcut?
+    var suggestNow: CompletionShortcut?
     var showing = Showing.nothing
     /// An accept key pressed now would be held until the suggestion on its way shows (see `holdAcceptKey`).
     var canHold = false
@@ -63,6 +64,7 @@ struct CompletionKeyGate: Equatable {
         if appKnown, key.matches(toggleApp) { return true }
         if key.matches(alternatives) { return true }
         guard active else { return false }
+        if key.matches(suggestNow) { return true }
 
         let plainEscape = key.code == Self.escape && key.modifiers == 0
         let tabLeftToApp = leaveTab && key.code == Self.tab
