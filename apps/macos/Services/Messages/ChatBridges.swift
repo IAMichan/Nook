@@ -383,7 +383,7 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
             names[chat] = name
             if group { groups.insert(chat) }
             guard let message = Self.message(row, contacts: contacts) else { continue }
-            if message.fromMe { self.mine[id] = (chat, message) }
+            if message.isMine { self.mine[id] = (chat, message) }
             messages[chat, default: []].append(message)
         }
         if self.mine.count > Self.tracked {
