@@ -62,6 +62,7 @@ func main() {
 	}
 	live := NewHub()
 	store.changed = live.Changed
+	store.typing = live.Typing
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

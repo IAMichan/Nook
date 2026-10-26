@@ -700,10 +700,11 @@ struct WAInbox: Equatable, Sendable {
         return outcome
     }
 
-    /// A delivery or read receipt for your own messages: their ticks move forward, never back. The chat whose ticks
+    /// A delivery or read receipt for your own messages: their ticks move forward, never back. In a private chat the
+    /// other person also keeps when it reached them and when they read it, for the message's info. The chat whose ticks
     /// changed, nil when none did (a receipt for an incoming message, or for one Nook doesn't keep).
     @discardableResult
-    mutating func applyReceipt(_ status: WAReceipt, ids: [String], chat: String) -> String? {
+    mutating func applyReceipt(_ status: WAReceipt, ids: [String], chat: String, at date: Date = Date()) -> String? {
         let key = WAJID.normalized(chat)
         // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
         let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
@@ -718,6 +719,11 @@ struct WAInbox: Equatable, Sendable {
                 let old = conversation.messages[index].receipt
                 let new = (old ?? .sent).advanced(to: status)
                 if new != old { conversation.messages[index].receipt = new; touched = true }
+                if WAJID.kind(chatKey) == .person, status >= .delivered {
+                    let reader = conversation.messages[index].readers[chatKey] ?? ChatReader(name: chatKey, receipt: .sent)
+                    let next = reader.advanced(to: status, at: date)
+                    if next != reader { conversation.messages[index].readers[chatKey] = next; touched = true }
+                }
             }
             if touched { conversations[chatKey] = conversation; changed = chatKey }
             if pending.isEmpty { break }
@@ -1049,6 +1055,15 @@ enum WAGatewayKind: String, CaseIterable, Sendable {
 }
 
 /// What one webhook delivery holds for Nook.
+/// One person typing in a chat, or no longer: `from` is who, `name` how they are called (empty when the gateway does
+/// not say).
+struct WATyping: Equatable, Sendable {
+    var from: String
+    var name: String = ""
+    var active: Bool
+    var recording: Bool = false
+}
+
 enum WAWebhookEvent: Equatable, Sendable {
     case message(WAMessage)
     /// Your own messages reached the phone or were read: their ticks move.
@@ -1057,6 +1072,8 @@ enum WAWebhookEvent: Equatable, Sendable {
     case memberReceipt(ids: [String], chat: String, member: String, status: WAReceipt)
     /// You read the chat on the phone (or another linked device): it is read here too.
     case readElsewhere(chat: String)
+    /// People in a chat started or stopped typing (or recording a voice message).
+    case typing(chat: String, people: [WATyping])
     /// Someone (you too, from the phone) put an emoji on a message, or took it back (an empty emoji).
     case reaction(chat: String, message: String, emoji: String, sender: String, fromMe: Bool)
     /// A valid delivery Nook has no use for (a revoked message, a test ping…).
@@ -1209,6 +1226,7 @@ enum WAWebhook {
     private static func parseGOWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         if json["event"] as? String == "message.ack" { return parseGOWAReceipt(json) }
         if json["event"] as? String == "message.reaction" { return parseGOWAReaction(json) }
+        if json["event"] as? String == "chat_presence" { return parseGOWAPresence(json) }
         guard json["event"] as? String == "message",
               let p = json["payload"] as? [String: Any],
               let id = p["id"] as? String, !id.isEmpty,
@@ -1237,6 +1255,15 @@ enum WAWebhook {
         message.replyTo = nonEmpty(p["replied_to_id"])
         message.quotedText = nonEmpty(p["quoted_body"])
         return .message(message)
+    }
+
+    /// `{"event":"chat_presence","payload":{from, sender_display_name, chat_id, state: "composing"|"paused", media: ""|"audio",
+    /// is_group}}`: WhatsApp only sends it while this device says it is online (`WhatsAppProvider.setOnline`).
+    private static func parseGOWAPresence(_ json: [String: Any]) -> WAWebhookEvent {
+        guard let p = json["payload"] as? [String: Any], let chat = nonEmpty(p["chat_id"]) else { return .ignored }
+        return .typing(chat: chat, people: [WATyping(from: nonEmpty(p["from"]) ?? chat, name: nonEmpty(p["sender_display_name"]) ?? "",
+                                                     active: p["state"] as? String == "composing",
+                                                     recording: p["media"] as? String == "audio")])
     }
 
     /// `{"event":"message.reaction","payload":{id, chat_id, from, is_from_me, reaction, reacted_message_id}}`; an empty
@@ -1304,7 +1331,8 @@ enum WAWebhook {
     /// body, type, timestamp (epoch s), fromMe, isGroup, mentionedIds, contact{name, pushName}, media{filename}}}`
     private static func parseOpenWA(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         let event = json["event"] as? String
-        if event == "message.ack" || event == "message.failed" { return parseOpenWAReceipt(json) }
+        if event == "message.ack" || event == "message.failed" || event == "message.receipt" { return parseOpenWAReceipt(json) }
+        if event == "presence.update" { return parseOpenWAPresence(json) }
         if event == "message.reaction" { return parseOpenWAReaction(json, me: me) }
         guard event == "message.received" || event == "message.sent",
               let d = json["data"] as? [String: Any],
@@ -1340,6 +1368,19 @@ enum WAWebhook {
     }
 
     /// `{"event":"message.reaction","data":{messageId, chatId, reaction, senderId}}`; an empty `reaction` takes it back.
+    /// `{"event":"presence.update","data":{chatId, participants: [{id, state: available|unavailable|composing|recording|
+    /// paused}]}}`, for the chats Nook subscribed to (`WhatsAppProvider.setOnline`). Coming online or going offline says
+    /// nothing of typing: it ends it.
+    private static func parseOpenWAPresence(_ json: [String: Any]) -> WAWebhookEvent {
+        guard let d = json["data"] as? [String: Any], let chat = nonEmpty(d["chatId"]) else { return .ignored }
+        let people = (d["participants"] as? [[String: Any]] ?? []).compactMap { person -> WATyping? in
+            guard let id = nonEmpty(person["id"]) else { return nil }
+            let state = person["state"] as? String
+            return WATyping(from: id, active: state == "composing" || state == "recording", recording: state == "recording")
+        }
+        return people.isEmpty ? .ignored : .typing(chat: chat, people: people)
+    }
+
     private static func parseOpenWAReaction(_ json: [String: Any], me: String?) -> WAWebhookEvent {
         guard let d = json["data"] as? [String: Any],
               let chat = nonEmpty(d["chatId"]), let target = nonEmpty(d["messageId"]) else { return .ignored }

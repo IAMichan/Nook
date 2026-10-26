@@ -40,6 +40,11 @@ struct ChatsEntry: Identifiable, Equatable {
 
     /// New messages here.
     var unread: Int { read.count }
+    /// The JID of a chat through the phone's WhatsApp link; nil for any other chat.
+    var whatsAppChat: String? {
+        if case .whatsApp(let jid) = origin { return jid }
+        return nil
+    }
     /// Read in Nook but still unread in the app itself: "Mark as read in <app>" can still pass it on.
     var waitsInApp: Bool { read == .readInNook }
     /// Whether the row shows where the chat stands: not while the newest message is yours and nothing waits.
@@ -105,10 +110,13 @@ extension ChatsEntry {
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
 
-    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?").
+    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"). A photo, video or
+    /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
     @MainActor
     static func line(_ message: WAMessage, group: Bool) -> String {
-        let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
+        let caption = ChatFormat.plain(message.text)
+        let file = AppModel.whatsAppFileLabel(message.media)
+        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
         let who = message.fromMe ? tr("chat.you") : (group ? message.senderName : "")
         return who.isEmpty ? text : "\(who): \(text)"
     }
@@ -825,6 +833,8 @@ private struct ChatsRow: View {
     let action: () -> Void
     @State private var hovering = false
     @State private var prefetch: Task<Void, Never>?
+    /// Someone typing here shows in place of the newest message, as in WhatsApp's own list.
+    @ObservedObject private var typing = ChatTypingCenter.shared
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -855,6 +865,10 @@ private struct ChatsRow: View {
                     .allowsHitTesting(hovering)
                     .accessibilityHidden(true)
             }
+        }
+        .onAppear {
+            // A chat on the phone with no message here yet: its newest one is fetched for the line under its name.
+            if entry.preview.isEmpty, case .whatsApp(let jid) = entry.origin { WhatsAppLink.shared.loadLine(jid) }
         }
         .onHover { inside in
             hovering = inside
@@ -903,13 +917,20 @@ private struct ChatsRow: View {
                             .opacity(hovering && rowAction != nil ? 0 : 1)
                     }
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        if let ticks = entry.ticks { TicksView(ticks: ticks) }
-                        // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
-                        Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
-                                             : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
-                            .lineLimit(1)
+                        if let ticks = entry.ticks, typing.line(entry.id) == nil { TicksView(ticks: ticks) }
+                        if let typingLine = typing.line(entry.id) {
+                            Text(typingLine)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(NookTheme.mint)
+                                .lineLimit(1)
+                        } else {
+                            // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
+                            Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
+                                .font(NookTheme.TextStyle.detail)
+                                .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
+                                                 : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
+                                .lineLimit(1)
+                        }
                         Spacer(minLength: NookTheme.Spacing.xs)
                         // Where it stands, the same mark for every app; your own newest message has its ticks in front.
                         if entry.showsReadMark {
@@ -1001,6 +1022,8 @@ private struct ChatsDetail: View {
     /// Your message waiting for "Delete for everyone" to be confirmed.
     @State private var deleting: ChatBubble?
     @State private var bubblesMemo = ChatBubblesMemo()
+    /// Who is typing in this chat, under its last message.
+    @ObservedObject private var typing = ChatTypingCenter.shared
     /// The collected chat whose removal waits for a yes.
     @State private var removing: String?
     /// The chats Nook writes in through the linked chat service, for what can be done in this one.
@@ -1063,7 +1086,8 @@ private struct ChatsDetail: View {
                            onReact: abilities.react ? react : nil,
                            onEdit: abilities.edit ? edit : nil,
                            onDelete: abilities.delete ? { deleting = $0 } : nil,
-                           onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil)
+                           onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
+                           typing: typing.line(entry.id))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
                 .padding(.top, NookTheme.Spacing.sm)
@@ -1079,8 +1103,12 @@ private struct ChatsDetail: View {
         .confirmDelete($deleting, question: { _ in tr("chat.delete.question") }, detail: tr("chat.delete.detail", appName),
                        confirmTitle: tr("chat.delete")) { delete($0) }
         .task(id: entry.id) { await loadWhatsApp() }
+        // While a WhatsApp chat is open Nook is online there, as WhatsApp Web is: only then does WhatsApp say who types.
+        .onAppear { WhatsAppLink.shared.setOnline(entry.whatsAppChat) }
+        .onDisappear { WhatsAppLink.shared.setOnline(nil) }
         // Nothing waiting for one chat goes to the next.
         .onChange(of: entry.id) { _, id in
+            WhatsAppLink.shared.setOnline(entry.whatsAppChat)
             composer.reset()
             editing = nil
             reply = ComposerDraftStore.shared.draft(for: Self.draftKey(id)) ?? ""

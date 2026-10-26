@@ -111,9 +111,14 @@ struct InboxRow: View {
                 }
                 HStack(alignment: .top, spacing: Theme.Spacing.md) {
                     HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
-                        if let ticks = chat.ticks { TicksMark(ticks: ticks) }
-                        Text(chat.preview.isEmpty ? chat.appName : chat.preview)
-                            .font(Theme.TextStyle.detail).foregroundStyle(chat.unread > 0 ? Theme.textStrong : Theme.textSecondary).lineLimit(2)
+                        // Someone typing shows in place of the newest message, as on the Mac and in WhatsApp's own list.
+                        if let typing = InboxTyping.text(chat.typing ?? []) {
+                            Text(typing).font(Theme.TextStyle.detail).foregroundStyle(Theme.mint).lineLimit(1)
+                        } else {
+                            if let ticks = chat.ticks { TicksMark(ticks: ticks) }
+                            Text(chat.preview.isEmpty ? chat.appName : chat.preview)
+                                .font(Theme.TextStyle.detail).foregroundStyle(chat.unread > 0 ? Theme.textStrong : Theme.textSecondary).lineLimit(2)
+                        }
                     }
                     Spacer(minLength: 0)
                     CountBadge(count: chat.unread)
@@ -217,9 +222,13 @@ struct InboxChatView: View {
     @State private var sending = false
     /// The message the field answers, quoted above it until it is sent or let go.
     @State private var replyingTo: InboxLine?
+    /// Your message whose info is open: who has it and who read it.
+    @State private var info: InboxLine?
 
     private var chat: InboxChatDigest? { client.inbox.first { $0.id == chatID } }
     private var lines: [InboxLine] { client.inboxLines[chatID] ?? [] }
+    /// Who is typing here now, as the Mac says it.
+    private var typing: String? { InboxTyping.text(client.inboxTyping[chatID] ?? []) }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -231,7 +240,8 @@ struct InboxChatView: View {
                     ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                         let previous = index > 0 ? lines[index - 1] : nil
                         if Self.newDay(line, after: previous) { DayLine(date: Date(timeIntervalSince1970: line.date)) }
-                        InboxBubble(line: line, showsSender: previous?.sender != line.sender || previous?.fromMe != line.fromMe)
+                        InboxBubble(line: line, showsSender: previous?.sender != line.sender || previous?.fromMe != line.fromMe,
+                                    onInfo: line.readers?.isEmpty == false ? { info = line } : nil)
                             .contextMenu {
                                 if chat?.canSend == true {
                                     Button { withAnimation { replyingTo = line } } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
@@ -241,6 +251,9 @@ struct InboxChatView: View {
                                 }
                             }
                     }
+                    if let typing {
+                        InboxTypingBubble(text: typing).transition(.opacity)
+                    }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
@@ -248,6 +261,11 @@ struct InboxChatView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: lines.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
+            // Someone starts typing: their bubble comes into view under the last message.
+            .onChange(of: typing != nil) { _, shown in
+                if shown { withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
+            }
+            .animation(Theme.reveal, value: typing)
             .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
         }
         .safeAreaInset(edge: .bottom) { footer }
@@ -280,10 +298,15 @@ struct InboxChatView: View {
             }
         }
         .screen()
+        .sheet(item: $info) { line in
+            InboxMessageInfo(line: line)
+                .presentationDetents([.medium, .large])
+        }
         .task(id: chatID) {
             while !Task.isCancelled {
                 await client.loadInboxChat(chatID)
-                try? await Task.sleep(for: .seconds(4))
+                // While someone types, sooner: their words and the end of their typing show without a long wait.
+                try? await Task.sleep(for: .seconds(typing == nil ? 4 : 1.5))
             }
         }
     }
@@ -381,6 +404,8 @@ private struct DayLine: View {
 struct InboxBubble: View {
     let line: InboxLine
     let showsSender: Bool
+    /// Opens your message's info from its ticks (who has it and who read it); nil when the app says nothing per person.
+    var onInfo: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -418,7 +443,16 @@ struct InboxBubble: View {
                     }
                     HStack(spacing: Theme.Spacing.xs) {
                         Text(Date(timeIntervalSince1970: line.date), format: .dateTime.hour().minute())
-                        if let ticks = line.ticks { TicksMark(ticks: ticks) }
+                        if let ticks = line.ticks {
+                            if let onInfo {
+                                // A tap on the ticks says who read it, who has it, and who does not yet, as on the Mac.
+                                Button(action: onInfo) { TicksMark(ticks: ticks) }
+                                    .buttonStyle(.plain)
+                                    .accessibilityHint(Text("Message info"))
+                            } else {
+                                TicksMark(ticks: ticks)
+                            }
+                        }
                     }
                     .font(Theme.TextStyle.caption)
                     .foregroundStyle(Theme.textTertiary)
@@ -436,6 +470,104 @@ struct InboxBubble: View {
                 }
             }
             if !line.fromMe { Spacer(minLength: 48) }
+        }
+    }
+}
+
+// MARK: Typing and message info
+
+/// What a chat shows while people type, in the same words as the Mac's (`ChatTypingLine`).
+enum InboxTyping {
+    static func text(_ typists: [InboxTypist]) -> String? {
+        guard let first = typists.first else { return nil }
+        let names = typists.map(\.name).filter { !$0.isEmpty }
+        if typists.count > 2 { return String(localized: "\(typists.count) people are typing…") }
+        if typists.count == 2, names.count == 2 { return String(localized: "\(names[0]) and \(names[1]) are typing…") }
+        let who = names.first
+        switch first.kind {
+        case "recording": return who.map { String(localized: "\($0) is recording audio…") } ?? String(localized: "recording audio…")
+        case "uploading": return who.map { String(localized: "\($0) is sending a file…") } ?? String(localized: "sending a file…")
+        default: return who.map { String(localized: "\($0) is typing…") } ?? String(localized: "typing…")
+        }
+    }
+}
+
+/// Someone typing, under the chat's last message: three dots that come and go, and who it is.
+struct InboxTypingBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack {
+            HStack(spacing: Theme.Spacing.sm) {
+                TimelineView(.periodic(from: .now, by: 0.3)) { context in
+                    let step = Int(context.date.timeIntervalSinceReferenceDate / 0.3) % 3
+                    HStack(spacing: Theme.Spacing.xxs) {
+                        ForEach(0..<3, id: \.self) { dot in
+                            Circle().fill(Theme.textSecondary).frame(width: 6, height: 6).opacity(dot == step ? 1 : 0.35)
+                        }
+                    }
+                }
+                .accessibilityHidden(true)
+                Text(text).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
+            Spacer(minLength: 48)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+}
+
+/// Your message's info, as on the Mac: how many read it, then who read it (and when), who has it, and who does not yet.
+struct InboxMessageInfo: View {
+    let line: InboxLine
+
+    private var readers: [InboxReader] { line.readers ?? [] }
+    private var read: [InboxReader] { readers.filter { $0.receipt == "read" } }
+    private var delivered: [InboxReader] { readers.filter { $0.receipt == "delivered" } }
+    private var waiting: [InboxReader] { readers.filter { $0.receipt != "read" && $0.receipt != "delivered" } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(line.text.isEmpty ? (line.attachment ?? "") : line.text)
+                        .font(Theme.TextStyle.body).foregroundStyle(Theme.text).lineLimit(4)
+                } footer: {
+                    Text("\(read.count) of \(readers.count) have read it")
+                }
+                section("Read by", read, ticks: "read")
+                section("Delivered to", delivered, ticks: "delivered")
+                section("Not yet", waiting, ticks: "sent")
+            }
+            .navigationTitle(Text("Message info"))
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder
+    private func section(_ title: LocalizedStringKey, _ people: [InboxReader], ticks: String) -> some View {
+        if !people.isEmpty {
+            Section {
+                ForEach(Array(people.enumerated()), id: \.offset) { _, person in
+                    HStack {
+                        Text(person.name).font(Theme.TextStyle.body).foregroundStyle(Theme.text).lineLimit(1)
+                        Spacer(minLength: Theme.Spacing.md)
+                        if let date = person.date {
+                            Text(Date(timeIntervalSince1970: date), format: .dateTime.weekday(.abbreviated).hour().minute())
+                                .font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                HStack(spacing: Theme.Spacing.xs) {
+                    TicksMark(ticks: ticks)
+                    Text(title)
+                }
+            }
         }
     }
 }

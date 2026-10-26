@@ -241,6 +241,10 @@ final class WhatsAppLink: ObservableObject {
     private var historyFetched: [String: Date] = [:]
     /// When each group's members were last asked of the gateway.
     private var membersLoaded: [String: Date] = [:]
+    /// Chats whose newest messages were asked for their line in the Chats tab, and the ones still waiting their turn.
+    private var linesAsked: Set<String> = []
+    private var linesWaiting: [String] = []
+    private var linesLoading = false
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
     private var previews: [String: WAPreview] = [:] {
         didSet { previewRevision &+= 1 }
@@ -317,6 +321,11 @@ final class WhatsAppLink: ObservableObject {
         generation += 1
         historyFetched = [:]
         membersLoaded = [:]
+        linesAsked = []
+        linesWaiting = []
+        if online, let provider { Task { await provider.setOnline(false, chat: nil) } }
+        online = false
+        onlineChat = nil
         previews = [:]
         previewOrder = []
         previewsLoading = []
@@ -492,6 +501,22 @@ final class WhatsAppLink: ObservableObject {
                     if let self, await self.loadMembers(chat) { self.onReceipt?(WAJID.normalized(chat)) }
                 }
             }
+        case .typing(let chat, let people)?:
+            let key = WAJID.normalized(chat)
+            // In a private chat the chat itself types (its name says who); in a group the member, by their name.
+            let group = WAJID.isGroup(key)
+            var names = inbox.conversations[key].map(WAMemberIndex.init)
+            for typing in people {
+                let person = group ? WAJID.normalized(typing.from) : key
+                guard person != me.map(WAJID.normalized) else { continue }
+                if typing.active {
+                    let name = typing.name.isEmpty ? names?.name(typing.from) ?? "" : typing.name
+                    ChatTypingCenter.shared.typing(chat: "wa|" + key, person: person, name: group ? name : "",
+                                                   kind: typing.recording ? .recording : .text)
+                } else {
+                    ChatTypingCenter.shared.stopped(chat: "wa|" + key, person: person)
+                }
+            }
         case .readElsewhere(let chat)?:
             let key = WAJID.normalized(chat)
             readInWhatsApp[key] = Date()
@@ -622,6 +647,10 @@ final class WhatsAppLink: ObservableObject {
         var keys: [String] = []
         for message in messages {
             let key = WAJID.normalized(message.chat)
+            // Their message is here: they stopped typing it.
+            if !message.fromMe {
+                ChatTypingCenter.shared.stopped(chat: "wa|" + key, person: WAJID.isGroup(key) ? WAJID.normalized(message.sender) : key)
+            }
             let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
             if !keys.contains(key) { keys.append(key) }
             if outcome == .notify, !message.fromMe { fresh = key }
@@ -765,6 +794,44 @@ final class WhatsAppLink: ObservableObject {
         }
         return inbox.conversations[key]?.messages != before
     }
+
+    /// Whether Nook told WhatsApp this device is online: while a WhatsApp chat is open in Nook, as WhatsApp Web does, so
+    /// WhatsApp says who is typing. As long as it is, the phone may hold back its own notifications.
+    private var online = false
+
+    /// The chat that is open in Nook, whose presence is watched.
+    private var onlineChat: String?
+
+    /// A WhatsApp chat opened in Nook (its JID), or none is open any more (nil).
+    func setOnline(_ chat: String?) {
+        let key = chat.map(WAJID.normalized)
+        guard key != onlineChat || (key != nil) != online, let provider, isConnected else { return }
+        online = key != nil
+        onlineChat = key
+        Task { await provider.setOnline(key != nil, chat: key) }
+    }
+
+    /// A chat on the phone that wrote nothing since Nook was linked has no messages here, so its row in the Chats tab
+    /// has no line: its newest few are asked of the gateway once, when the row comes into view, one chat at a time.
+    func loadLine(_ chat: String) {
+        let key = WAJID.normalized(chat)
+        guard isConnected, inbox.conversations[key] == nil, linesAsked.insert(key).inserted else { return }
+        linesWaiting.append(key)
+        guard !linesLoading else { return }
+        linesLoading = true
+        let gen = generation
+        Task {
+            while gen == generation, !linesWaiting.isEmpty {
+                let next = linesWaiting.removeFirst()
+                guard inbox.conversations[next] == nil else { continue }
+                _ = try? await fetchHistory(next, limit: Self.lineFetch)
+            }
+            linesLoading = false
+        }
+    }
+
+    /// How many messages a row's line is looked for in: a few, as the newest can be a reaction or a vote that shows nothing.
+    static let lineFetch = 5
 
     /// A group's members, asked of the gateway when the chat opens (again after ten minutes, for who joined or left),
     /// so its info lists them and your messages' ticks wait for all of them. True when the conversation changed.

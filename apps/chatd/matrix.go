@@ -295,7 +295,21 @@ func (in *intent) MarkUnread(ctx context.Context, roomID id.RoomID, unread bool)
 	return nil
 }
 
+// MarkTyping is someone on the network typing (or recording, or sending a file) in a chat: passed on to Nook live, never
+// stored. Your own typing, from another device, is left out.
 func (in *intent) MarkTyping(ctx context.Context, roomID id.RoomID, typingType bridgev2.TypingType, timeout time.Duration) error {
+	if in.double || in.m.store.typing == nil {
+		return nil
+	}
+	kind := "text"
+	switch typingType {
+	case bridgev2.TypingTypeRecordingMedia:
+		kind = "recording"
+	case bridgev2.TypingTypeUploadingMedia:
+		kind = "uploading"
+	}
+	name, _ := in.m.store.Profile(in.user)
+	in.m.store.typing(roomID, in.user, name, kind, timeout)
 	return nil
 }
 

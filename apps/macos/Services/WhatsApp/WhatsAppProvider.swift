@@ -78,6 +78,9 @@ protocol WhatsAppProvider: Sendable {
     func setPinned(_ pinned: Bool, chat: String) async throws
     /// Archives the chat on the phone.
     func archive(_ chat: String) async throws
+    /// Says this device is online while `chat` is open in Nook, or no longer: WhatsApp only says who is typing to a
+    /// device that is, and OpenWA only for a chat it was asked to watch.
+    func setOnline(_ online: Bool, chat: String?) async
 }
 
 extension WhatsAppProvider {
@@ -85,6 +88,7 @@ extension WhatsAppProvider {
     func groupNames() async -> [String: String] { [:] }
     func groupMembers(_ chat: String) async -> [WAMember] { [] }
     func channels() async -> [WAChannel] { [] }
+    func setOnline(_ online: Bool, chat: String?) async {}
     var canVote: Bool { false }
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
     var sends: Set<ChatOutgoing.Kind> { [] }
@@ -282,7 +286,8 @@ actor GOWAProvider: WhatsAppProvider {
         let id: String
         if let deviceId { id = deviceId } else { id = try await device().id }
         let (data, code) = try await http.call("PATCH", "/devices/\(WAHTTP.pathComponent(id))/webhook", json: [
-            "webhook_url": url, "webhook_secret": secret, "webhook_events": "message,message.ack,message.reaction",
+            "webhook_url": url, "webhook_secret": secret,
+            "webhook_events": "message,message.ack,message.reaction,chat_presence",
         ])
         try check(data, code)
     }
@@ -393,6 +398,10 @@ actor GOWAProvider: WhatsAppProvider {
     func markRead(chat: String, lastIncoming: String?) async throws {
         guard let id = lastIncoming else { return }
         _ = try await scoped("POST", "/message/\(WAHTTP.pathComponent(id))/read", json: ["phone": chat])
+    }
+
+    func setOnline(_ online: Bool, chat: String?) async {
+        _ = try? await scoped("POST", "/send/presence", json: ["type": online ? "available" : "unavailable"])
     }
 
     func groupName(_ chat: String) async -> String? {
@@ -554,7 +563,8 @@ actor OpenWAProvider: WhatsAppProvider {
 
     func registerWebhook(url: String, secret: String) async throws {
         let id = try await sid()
-        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack", "message.reaction"],
+        let body: [String: any Sendable] = ["url": url, "events": ["message.received", "message.sent", "message.ack", "message.receipt",
+                                                                       "message.reaction", "presence.update"],
                                             "secret": secret]
         let (list, listCode) = try await http.call("GET", "/api/sessions/\(id)/webhooks")
         try check(list, listCode)
@@ -596,6 +606,15 @@ actor OpenWAProvider: WhatsAppProvider {
     /// An empty emoji takes the reaction back.
     func react(_ emoji: String, to message: String, chat: String, old: String?) async throws {
         _ = try await scoped("POST", "/messages/react", json: ["chatId": Self.openwaId(chat), "messageId": message, "emoji": emoji])
+    }
+
+    /// Online while a chat is open, and that chat's presence watched (Baileys only; whatsapp-web.js answers 501 and
+    /// says nothing of typing). The watch ends with the connection: it is asked again each time a chat opens.
+    func setOnline(_ online: Bool, chat: String?) async {
+        _ = try? await scoped("PUT", "/presence", json: ["available": online])
+        if online, let chat {
+            _ = try? await scoped("POST", "/presence/subscribe", json: ["chatId": Self.openwaId(chat)])
+        }
     }
 
     func markRead(chat: String, lastIncoming: String?) async throws {

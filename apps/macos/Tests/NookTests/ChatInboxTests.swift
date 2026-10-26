@@ -1346,6 +1346,96 @@ final class ChatInboxTests: XCTestCase {
                        ["Gone", "Anna"], "someone who left since still shows")
     }
 
+    func testAPrivateChatsInfoNamesItsPerson() {
+        XCTAssertEqual(ChatReceipts.person("Papa", receipt: .read, date: now),
+                       [ChatReader(name: "Papa", receipt: .read, date: now)])
+        XCTAssertEqual(ChatReceipts.person("Papa", receipt: .delivered, date: nil).map(\.receipt), [.delivered])
+        XCTAssertTrue(ChatReceipts.person("Papa", receipt: .sent, date: nil).isEmpty, "only sent: nothing to tell yet")
+        XCTAssertTrue(ChatReceipts.person("Papa", receipt: .failed, date: nil).isEmpty)
+        XCTAssertTrue(ChatReceipts.person("Papa", receipt: nil, date: nil).isEmpty)
+        XCTAssertEqual(ChatReceipts.everyone([ChatReader(name: "", receipt: .read, date: now)], members: ["Anna"]).map(\.name),
+                       ["Anna"], "a group never lists a reader without a name")
+
+        var thread = InboxThread(id: "messages|papa", app: "messages", name: "Papa")
+        thread.messages = [message("1", "hoi", mine: false), message("2", "hey", mine: true)]
+        XCTAssertTrue(thread.isPrivate)
+        thread.members = ["Anna", "Jan"]
+        XCTAssertFalse(thread.isPrivate)
+    }
+
+    func testTheChatHelperSaysWhoReadYourMessage() {
+        var group = ChatServiceData.Chat(id: "!g", app: "signal", title: "Club", isGroup: true, unread: 0, last: nil)
+        group.me = "me"
+        group.people = ["me": "Me", "a": "Anna", "b": "Bo"]
+        let message: [String: Any] = [
+            "sendStatus": ["deliveredToUsers": ["a", "b", "me"]],
+            "seen": ["a": "2026-10-22T09:14:56Z", "b": false, "me": true],
+        ]
+        let readers = ChatServiceData.readers(message, chat: group)
+        XCTAssertEqual(readers?.map(\.name), ["Anna", "Bo"])
+        XCTAssertEqual(readers?.map(\.receipt), [.read, .delivered])
+        XCTAssertEqual(readers?.first?.date, ChatJSON.date("2026-10-22T09:14:56Z"))
+
+        let person = ChatServiceData.Chat(id: "!p", app: "instagram", title: "Papa", isGroup: false, unread: 0, last: nil)
+        let seen = ChatServiceData.readers(["seen": "2026-10-22T09:14:56Z"], chat: person)
+        XCTAssertEqual(seen, [ChatReader(name: "", receipt: .read, date: ChatJSON.date("2026-10-22T09:14:56Z"))])
+        XCTAssertNil(ChatServiceData.readers(["seen": false], chat: person), "nothing said, nothing listed")
+    }
+
+    func testEveryMessageOfYoursHasTicks() {
+        let filled = ChatReceipts.filled([
+            (true, nil), (false, nil), (true, .sent), (true, nil), (true, .read), (true, .delivered), (true, .failed), (true, nil),
+        ])
+        XCTAssertEqual(filled, [.read, nil, .read, .read, .read, .delivered, .failed, .sent],
+                       "older ones go as far as a later one did; theirs have none; a red mark stays; the newest unknown has one tick")
+        XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
+    }
+
+    func testWhoIsTyping() {
+        var state = ChatTypingState()
+        let soon = now.addingTimeInterval(5)
+        state.typing(ChatTypist(id: "jan", name: "Jan", kind: .text, until: soon), in: "g")
+        state.typing(ChatTypist(id: "jan", name: "Jan", kind: .recording, until: soon), in: "g")
+        XCTAssertEqual(state.typists(in: "g", now: now).map(\.kind), [.recording], "a new word replaces their earlier one")
+        state.typing(ChatTypist(id: "anna", name: "Anna", kind: .text, until: now.addingTimeInterval(20)), in: "g")
+        XCTAssertEqual(state.nextExpiry, soon)
+        XCTAssertTrue(state.expire(now: now.addingTimeInterval(6)))
+        XCTAssertEqual(state.typists(in: "g", now: now.addingTimeInterval(6)).map(\.id), ["anna"])
+        XCTAssertTrue(state.stopped("anna", in: "g"))
+        XCTAssertFalse(state.stopped("anna", in: "g"))
+        XCTAssertNil(state.nextExpiry, "no one types anywhere")
+
+        XCTAssertNil(ChatTypingLine.text([]))
+        XCTAssertEqual(ChatTypingLine.text([ChatTypist(id: "p", name: "", kind: .text, until: soon)]), tr("chat.typing"))
+        XCTAssertEqual(ChatTypingLine.text([ChatTypist(id: "j", name: "Jan", kind: .recording, until: soon)]),
+                       tr("chat.recording.named", "Jan"))
+        XCTAssertEqual(ChatTypingLine.text([ChatTypist(id: "j", name: "Jan", kind: .text, until: soon),
+                                            ChatTypist(id: "a", name: "Anna", kind: .text, until: soon)]),
+                       tr("chat.typing.two", "Jan", "Anna"))
+        XCTAssertEqual(ChatTypingLine.text((0..<3).map { ChatTypist(id: "\($0)", name: "P\($0)", kind: .text, until: soon) }),
+                       tr("chat.typing.many", 3))
+    }
+
+    func testTheChatHelperAndTelegramSayWhoTypes() {
+        XCTAssertEqual(ChatServiceData.event(["type": "typing", "chatID": "!r", "userID": "@signal_x", "name": "Jan",
+                                              "kind": "recording", "timeoutMs": 5000]),
+                       .typing(chat: "!r", person: "@signal_x", name: "Jan", kind: .recording, seconds: 5))
+        XCTAssertEqual(ChatServiceData.event(["type": "typing", "chatID": "!r", "userID": "@signal_x", "timeoutMs": 0]),
+                       .typing(chat: "!r", person: "@signal_x", name: "", kind: .text, seconds: 0))
+        XCTAssertEqual(ChatServiceData.event(["type": "typing", "chatID": "!r"]), .other)
+
+        let typing: [String: Any] = ["chat_id": 7, "sender_id": ["@type": "messageSenderUser", "user_id": 9],
+                                     "action": ["@type": "chatActionUploadingPhoto"]]
+        XCTAssertEqual(TelegramData.chatAction(typing)?.kind, .uploading)
+        var cancel = typing
+        cancel["action"] = ["@type": "chatActionCancel"]
+        XCTAssertEqual(TelegramData.chatAction(cancel)?.user, 9)
+        XCTAssertNil(TelegramData.chatAction(cancel)?.kind)
+        var sticker = typing
+        sticker["action"] = ["@type": "chatActionChoosingSticker"]
+        XCTAssertNil(TelegramData.chatAction(sticker))
+    }
+
     func testEachAppsStatusAsTicks() {
         XCTAssertEqual(ChatReceipts.messages(sent: true, delivered: true, read: true, failed: false), .read)
         XCTAssertEqual(ChatReceipts.messages(sent: true, delivered: true, read: false, failed: false), .delivered)

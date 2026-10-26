@@ -144,6 +144,26 @@ final class CompanionModelsTests: XCTestCase {
         XCTAssertNil(try JSONDecoder().decode(CompanionRequest.self, from: Data(#"{"id":"a","sent":1,"op":"inbox"}"#.utf8)).replyTo)
     }
 
+    func testWhoReadItAndWhoTypesReachThePhone() throws {
+        var chat = InboxChatDigest(id: "wa|g", app: "whatsapp", appName: "WhatsApp", name: "Club", preview: "", last: 1, unread: 0,
+                                   canSend: true, ticks: nil, waitsInApp: false)
+        chat.typing = [InboxTypist(name: "Jan", kind: "recording")]
+        var line = InboxLine(id: "m1", text: "Hi", date: 1, sender: "", fromMe: true, attachment: nil, ticks: "read",
+                             quoteSender: nil, quoteText: nil, reactions: [])
+        line.readers = [InboxReader(name: "Jan", receipt: "read", date: 2), InboxReader(name: "Anna", receipt: "sent", date: nil)]
+        var response = CompanionResponse(id: "x", ok: true, inbox: [chat], inboxLines: [line])
+        response.inboxTyping = [InboxTypist(name: "", kind: "text")]
+        XCTAssertEqual(try JSONDecoder().decode(CompanionResponse.self, from: JSONEncoder().encode(response)), response)
+        // A Mac from before sends neither: the phone shows no one typing and no info behind the ticks.
+        let old = #"{"id":"a","ok":true,"inbox":[{"id":"c","app":"telegram","appName":"Telegram","name":"Anna","preview":"","last":1,"unread":0,"canSend":false,"waitsInApp":false}],"inboxLines":[{"id":"m","text":"Hi","date":1,"sender":"","fromMe":true,"reactions":[]}]}"#
+        let decoded = try JSONDecoder().decode(CompanionResponse.self, from: Data(old.utf8))
+        XCTAssertNil(decoded.inbox?.first?.typing)
+        XCTAssertNil(decoded.inboxLines?.first?.readers)
+        XCTAssertNil(decoded.inboxTyping)
+        // A phone without the chats scope sees none of it.
+        XCTAssertNil(CompanionScopes.redact(response, granted: []).inboxTyping)
+    }
+
     func testOldMessagesStillDecode() throws {
         // A Mac or phone of the first version sends none of the new fields.
         let request = #"{"id":"a","sent":1,"op":"list"}"#

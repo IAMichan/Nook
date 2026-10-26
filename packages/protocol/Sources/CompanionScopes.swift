@@ -86,6 +86,7 @@ enum CompanionScopes {
         if !granted.contains(.chats) {
             response.inbox = nil
             response.inboxLines = nil
+            response.inboxTyping = nil
         }
         if !granted.contains(.nookChat) {
             response.conversations = nil

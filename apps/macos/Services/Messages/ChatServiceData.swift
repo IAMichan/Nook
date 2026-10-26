@@ -20,6 +20,8 @@ enum ChatServiceData {
         var members: [String] = []
         /// Your own id in it, to tell your emoji from the others'.
         var me: String? = nil
+        /// Everyone's name by their id in it, to say who read your message.
+        var people: [String: String] = [:]
         /// Pinned or muted in its app.
         var isPinned = false
         var isMuted = false
@@ -58,7 +60,7 @@ enum ChatServiceData {
             let abilities = chat["capabilities"] as? [String: Any]
             return Chat(id: id, app: source, title: title, isGroup: isGroup, unread: unread,
                         last: ChatJSON.date(chat["lastActivity"]), picture: picture(chat), members: isGroup ? members(chat) : [],
-                        me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String,
+                        me: people.first { $0["isSelf"] as? Bool == true }?["id"] as? String, people: names(people),
                         isPinned: chat["isPinned"] as? Bool == true, isMuted: chat["isMuted"] as? Bool == true,
                         canEdit: supports(abilities?["edit"]), canDelete: supports(abilities?["delete"]),
                         canReact: supports(abilities?["reaction"]))
@@ -126,6 +128,31 @@ enum ChatServiceData {
         return .sent
     }
 
+    /// Who has your message and who read it (and when), as far as the service says: `deliveredToUsers`, and `seen` as a
+    /// time (a private chat: its person, without a name) or per person. Nil when it says nothing of the kind.
+    static func readers(_ message: [String: Any], chat: Chat) -> [ChatReader]? {
+        var readers: [String: ChatReader] = [:]
+        let delivered = ((message["sendStatus"] as? [String: Any])?["deliveredToUsers"] as? [String]) ?? []
+        for id in delivered where id != chat.me {
+            readers[id] = ChatReader(name: chat.isGroup ? chat.people[id] ?? id : "", receipt: .delivered)
+        }
+        switch message["seen"] {
+        case let time as String where !time.isEmpty && !chat.isGroup:
+            return [ChatReader(name: "", receipt: .read, date: ChatJSON.date(time))]
+        case let people as [String: Any]:
+            for (id, value) in people where id != chat.me && seen(value) {
+                readers[id] = ChatReader(name: chat.isGroup ? chat.people[id] ?? id : "", receipt: .read,
+                                         date: ChatJSON.date(value))
+            }
+        default: break
+        }
+        guard !readers.isEmpty else { return nil }
+        // The first to read first: a private chat's info takes the first one's time.
+        return readers.values.sorted { a, b in
+            a.receipt != b.receipt ? a.receipt > b.receipt : (a.date ?? .distantFuture) < (b.date ?? .distantFuture)
+        }
+    }
+
     /// Whether a message was seen: `true`, a time, or (in a group) by anyone.
     private static func seen(_ value: Any?) -> Bool {
         switch value {
@@ -141,6 +168,8 @@ enum ChatServiceData {
         case ready
         case subscribed
         case changed(chat: String)
+        /// Someone in a chat is typing (or recording, or sending a file) for `seconds`; 0 says they stopped.
+        case typing(chat: String, person: String, name: String, kind: ChatTypist.Kind, seconds: TimeInterval)
         case other
     }
 
@@ -151,6 +180,13 @@ enum ChatServiceData {
         case "chat.upserted", "chat.deleted", "message.upserted", "message.deleted":
             guard let chat = json["chatID"] as? String, !chat.isEmpty else { return .other }
             return .changed(chat: chat)
+        case "typing":
+            guard let chat = json["chatID"] as? String, !chat.isEmpty,
+                  let person = json["userID"] as? String, !person.isEmpty else { return .other }
+            let kind = ChatTypist.Kind(rawValue: (json["kind"] as? String) ?? "") ?? .text
+            let millis = (json["timeoutMs"] as? Double) ?? (json["timeoutMs"] as? Int).map(Double.init) ?? 0
+            return .typing(chat: chat, person: person, name: (json["name"] as? String) ?? "", kind: kind,
+                           seconds: max(0, millis / 1000))
         default: return .other
         }
     }
@@ -166,6 +202,17 @@ enum ChatServiceData {
             let name = ((person["fullName"] as? String) ?? (person["username"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
             return name.isEmpty ? nil : name
         }
+    }
+
+    /// The people of a chat by their id: their full name, else their username.
+    static func names(_ people: [[String: Any]]) -> [String: String] {
+        var names: [String: String] = [:]
+        for person in people {
+            guard let id = person["id"] as? String else { continue }
+            let name = ((person["fullName"] as? String) ?? (person["username"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty { names[id] = name }
+        }
+        return names
     }
 
     /// A chat's picture: its own, else (in a private chat) the other person's.
@@ -194,7 +241,10 @@ enum ChatServiceData {
             let sender = mine || !chat.isGroup ? "" : ((message["senderName"] as? String) ?? "")
             var inbox = InboxMessage(id: messageID(id, chat: chat.id), sender: sender, text: text, date: sent, fromMe: mine,
                                      media: media)
-            if mine { inbox.receipt = receipt(message) }
+            if mine {
+                inbox.receipt = receipt(message)
+                inbox.readers = readers(message, chat: chat)
+            }
             // An empty list too: the last emoji taken back leaves none.
             inbox.reactions = reactions(message, me: chat.me)
             // The message it answers, by the service's id ("linkedMessageID"; "replyToMessageID" as Nook sends it).

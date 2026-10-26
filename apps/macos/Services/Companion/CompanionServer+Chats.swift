@@ -33,7 +33,7 @@ extension CompanionServer {
         guard let current = inboxEntry(entry.id) else { return .failure(request.id, .unknownItem) }
         let readOnOpen = UserDefaults.standard.object(forKey: ChatsTab.readOnOpenKey) as? Bool ?? true
         if readOnOpen, current.read.isUnread { app.markChatReadInNook(current) }
-        return CompanionResponse(id: request.id, ok: true, inboxLines: inboxLines(current))
+        return CompanionResponse(id: request.id, ok: true, inboxLines: inboxLines(current), inboxTyping: Self.typing(current.id))
     }
 
     /// Your own words to a chat the Chats tab writes in (to one of its messages, when `replyTo` is set and the app
@@ -52,7 +52,8 @@ extension CompanionServer {
         } catch {
             return .failure(request.id, .failed, message: error.localizedDescription)
         }
-        return CompanionResponse(id: request.id, ok: true, inboxLines: inboxEntry(entry.id).map(inboxLines) ?? [])
+        return CompanionResponse(id: request.id, ok: true, inboxLines: inboxEntry(entry.id).map(inboxLines) ?? [],
+                                 inboxTyping: Self.typing(entry.id))
     }
 
     /// Read or unread by hand, as on the Mac: read is passed on to the chat's app where Nook can tell it (so the sender
@@ -81,7 +82,31 @@ extension CompanionServer {
         InboxChatDigest(id: entry.id, app: entry.app, appName: MessagingApps.app(id: entry.app)?.name ?? entry.app,
                                name: CompanionPolicy.clip(entry.name, limit: 120), preview: CompanionPolicy.clip(entry.preview, limit: 200),
                                last: entry.last.timeIntervalSince1970, unread: entry.unread, canSend: canSend,
-                               ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp)
+                               ticks: entry.ticks.map(Self.ticks), waitsInApp: entry.waitsInApp, typing: typing(entry.id))
+    }
+
+    /// Who is typing in a chat now, as the Chats tab on the Mac shows it.
+    private static func typing(_ chat: String) -> [InboxTypist] {
+        ChatTypingCenter.shared.typists(chat).map { InboxTypist(name: CompanionPolicy.clip($0.name, limit: 120), kind: $0.kind.rawValue) }
+    }
+
+    /// Your message's info as the Mac's ticks open it: who has it and who read it, and when.
+    private static func readers(_ bubble: ChatBubble) -> [InboxReader]? {
+        guard bubble.fromMe, !bubble.readers.isEmpty else { return nil }
+        return bubble.readers.prefix(256).map { reader in
+            InboxReader(name: CompanionPolicy.clip(reader.name, limit: 120), receipt: receiptName(reader.receipt),
+                        date: reader.date?.timeIntervalSince1970)
+        }
+    }
+
+    private static func receiptName(_ receipt: ChatReceipt) -> String {
+        switch receipt {
+        case .failed: return "failed"
+        case .pending: return "pending"
+        case .sent: return "sent"
+        case .delivered: return "delivered"
+        case .read: return "read"
+        }
     }
 
     /// The newest messages of a chat that fit in one answer, oldest first.
@@ -97,7 +122,8 @@ extension CompanionServer {
                           ticks: bubble.ticks.map(Self.ticks),
                           quoteSender: bubble.quote.map { CompanionPolicy.clip($0.sender, limit: 120) },
                           quoteText: bubble.quote.map { CompanionPolicy.clip($0.text, limit: 200) },
-                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji })
+                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji },
+                          readers: Self.readers(bubble))
             }
         case .captured(let id):
             // The same bubbles as the Chats tab: answers quote what they answer, emoji and ticks show as in every app.
@@ -109,7 +135,8 @@ extension CompanionServer {
                           ticks: bubble.ticks.map(Self.ticks),
                           quoteSender: bubble.quote.map { CompanionPolicy.clip($0.sender, limit: 120) },
                           quoteText: bubble.quote.map { CompanionPolicy.clip($0.text, limit: 200) },
-                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji })
+                          reactions: bubble.reactions.map { $0.count > 1 ? "\($0.emoji) \($0.count)" : $0.emoji },
+                          readers: Self.readers(bubble))
             }
         }
         return CompanionPolicy.newestFitting(lines)
