@@ -56,7 +56,7 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     /// Without the entitlement passkeys cannot work here: sites like Google then ask for Bluetooth and a nearby phone
     /// and stop there. Hiding them makes such sites offer a password, a code or the phone prompt instead. Other
     /// credential requests pass through.
-    private static let hidePasskeys = """
+    static let hidePasskeys = """
     (function () {
       try { Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true }); } catch (e) {}
       var credentials = navigator.credentials;
