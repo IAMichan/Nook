@@ -1,23 +1,35 @@
 import Foundation
 
-/// Stores workspace sessions on your Mac: a list of sessions and a timeline per session.
-/// Only readable by current user (directory 0700, files 0600). Writes atomically so crashes never leave partial files.
+/// Stores workspace sessions on your Mac: a list of sessions (`runs.json`) and the timelines, as an append-only log in
+/// `runs.sqlite` (see `RunEventLog`). Only readable by current user (directory 0700, files 0600).
+///
+/// Saving a timeline writes only what changed since it was last written: new events as `event` rows, events that
+/// changed (a streamed answer, a finished tool) as `update` rows. Nothing already written is rewritten, so a crash loses
+/// at most the changes not yet saved and never what was there before.
 final class RunStore: @unchecked Sendable {
     let directory: URL
     private let lock = NSLock()
     private let fileManager = FileManager.default
+    private var log: RunEventLog?
+    private var opened = false
+    /// Per timeline, what the log holds: each event's fingerprint in timeline order. Saves compare against it.
+    private var written: [UUID: WrittenTimeline] = [:]
+    /// Sessions deleted this launch: a save still queued for one must not bring its timeline back.
+    private var deleted: Set<UUID> = []
 
-    /// Keep this many events per timeline; older ones are dropped (the agent maintains the full transcript itself).
-    static let eventLimit = 4_000
+    /// A log this much longer than its timeline (rows of updates no longer needed) is compacted into one snapshot.
+    static let compactionMinimumRows = 256
 
     init(directory: URL) {
         self.directory = directory
-        try? fileManager.createDirectory(at: eventsDirectory, withIntermediateDirectories: true,
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true,
                                          attributes: [.posixPermissions: 0o700])
         try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     }
 
     private var runsURL: URL { directory.appendingPathComponent("runs.json") }
+    var databaseURL: URL { directory.appendingPathComponent("runs.sqlite") }
+    /// Timelines as JSON files, from before the log; imported once and kept as a backup.
     private var eventsDirectory: URL { directory.appendingPathComponent("events", isDirectory: true) }
 
     private func eventsURL(_ id: UUID) -> URL {
@@ -42,6 +54,8 @@ final class RunStore: @unchecked Sendable {
     func loadRuns(now: Date = Date()) -> [WorkspaceRun] {
         lock.lock()
         defer { lock.unlock() }
+        // Opened here, off the main thread at launch: the one-time import of old timelines can take a moment.
+        _ = openLog()
         // Entry by entry, and an unreadable file is kept aside: the next save must never wipe your sessions.
         guard let runs = SafeStorage.load(LossyArray<WorkspaceRun>.self, from: runsURL, decoder: Self.decoder, skipped: { $0.skipped })
             .value?.elements else { return [] }
@@ -71,8 +85,7 @@ final class RunStore: @unchecked Sendable {
     func loadEvents(_ id: UUID) -> [RunEvent] {
         lock.lock()
         defer { lock.unlock() }
-        guard var events = SafeStorage.load(LossyArray<RunEvent>.self, from: eventsURL(id), decoder: Self.decoder, skipped: { $0.skipped })
-            .value?.elements else { return [] }
+        var events = readTimeline(id)
         // A tool or approval still running when Nook stopped is no longer running.
         for index in events.indices where events[index].state == .running || events[index].state == .pending {
             events[index].state = events[index].kind == .approval ? .expired : .failed
@@ -80,11 +93,50 @@ final class RunStore: @unchecked Sendable {
         return events
     }
 
+    /// Writes what changed in the timeline since it was last written. The whole timeline is kept, however long.
     func saveEvents(_ id: UUID, _ events: [RunEvent]) throws {
         lock.lock()
         defer { lock.unlock() }
-        let kept = events.count > Self.eventLimit ? Array(events.suffix(Self.eventLimit)) : events
-        try write(Self.encoder.encode(kept), to: eventsURL(id))
+        guard !deleted.contains(id) else { return }
+        guard let log = openLog() else { throw RunStoreError.unavailable }
+        let before = writtenTimeline(id, log: log)
+        guard let change = TimelineChange.between(before, events) else { return }
+        switch change {
+        case .snapshot(let after):
+            try writeSnapshot(id, events, log: log)
+            written[id] = after
+        case .rows(let rows, let after):
+            if !rows.isEmpty {
+                let now = Date()
+                let saved = log.transaction {
+                    for (kind, event) in rows {
+                        guard let payload = try? Self.encoder.encode(event), log.append(id, kind, payload, at: now) != nil else { return false }
+                    }
+                    return true
+                }
+                guard saved else { throw RunStoreError.writeFailed }
+            }
+            written[id] = after
+        }
+    }
+
+    /// Adds one event at the end of the timeline right away (a message, a tool call), without waiting for the next save.
+    func appendEvent(_ id: UUID, _ event: RunEvent) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !deleted.contains(id), let log = openLog() else { return }
+        var timeline = writtenTimeline(id, log: log)
+        // Already written (an event appended twice): the next save notices any change.
+        guard timeline.fingerprints[event.id] == nil, let payload = try? Self.encoder.encode(event),
+              log.append(id, .event, payload) != nil else { return }
+        timeline.add(event.id, Self.fingerprint(event))
+        written[id] = timeline
+    }
+
+    func appendEventAsync(_ id: UUID, _ event: RunEvent) {
+        ioQueue.async { [weak self] in
+            self?.appendEvent(id, event)
+        }
     }
 
     /// Without `runs` only the timeline is written (the session list has not been read yet).
@@ -96,15 +148,165 @@ final class RunStore: @unchecked Sendable {
         }
     }
 
+    /// Forgets a session's timeline: its log rows and the old JSON copy, if any.
     func deleteEvents(_ id: UUID) {
         lock.lock()
         defer { lock.unlock() }
+        openLog()?.delete(id)
+        written[id] = nil
+        deleted.insert(id)
         try? fileManager.removeItem(at: eventsURL(id))
+    }
+
+    /// Waits until every save handed to the background queue is written.
+    func flush() {
+        ioQueue.sync {}
+    }
+
+    // MARK: Log
+
+    /// Opens the log on first use and imports the old JSON timelines once. Call with the lock held.
+    private func openLog() -> RunEventLog? {
+        if opened { return log }
+        opened = true
+        log = RunEventLog(url: databaseURL)
+        if let log {
+            importJSONTimelines(into: log)
+        } else {
+            SafeStorage.report("runs.sqlite could not be opened; timelines are not saved this launch")
+        }
+        return log
+    }
+
+    private static let importedKey = "json_timelines_imported"
+
+    /// Copies each `events/<id>.json` into the log as a snapshot, once. The files stay where they are, as a backup.
+    private func importJSONTimelines(into log: RunEventLog) {
+        guard log.meta(Self.importedKey) == nil else { return }
+        let files = (try? fileManager.contentsOfDirectory(at: eventsDirectory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let done = log.transaction {
+            for file in files where file.pathExtension == "json" {
+                guard let id = UUID(uuidString: file.deletingPathExtension().lastPathComponent), !log.hasRows(id) else { continue }
+                // Unreadable entries or files are copied aside by SafeStorage, as before.
+                guard let events = SafeStorage.load(LossyArray<RunEvent>.self, from: file, decoder: Self.decoder, skipped: { $0.skipped })
+                    .value?.elements, let payload = try? Self.encoder.encode(events) else { continue }
+                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                guard log.append(id, .snapshot, payload, at: modified) != nil else { return false }
+            }
+            log.setMeta(Self.importedKey, ISO8601DateFormatter().string(from: Date()))
+            return true
+        }
+        if !done { SafeStorage.report("Importing the JSON timelines into runs.sqlite failed; trying again next launch") }
+    }
+
+    /// Replays the session's rows, compacting a log that grew much longer than its timeline. Call with the lock held.
+    private func readTimeline(_ id: UUID) -> [RunEvent] {
+        guard let log = openLog() else { return [] }
+        let rows = log.rows(id)
+        let result = RunEventFold.fold(rows, decoder: Self.decoder)
+        written[id] = WrittenTimeline(result.events)
+        // Unreadable rows (a newer version's) are left alone: compacting would drop them.
+        if result.unreadableRows == 0, rows.count >= Self.compactionMinimumRows, result.supersededRows >= result.events.count {
+            try? writeSnapshot(id, result.events, log: log)
+        }
+        return result.events
+    }
+
+    /// One row with the whole timeline, replacing the session's earlier rows in the same transaction.
+    private func writeSnapshot(_ id: UUID, _ events: [RunEvent], log: RunEventLog) throws {
+        let payload = try Self.encoder.encode(events)
+        let saved = log.transaction {
+            guard let seq = log.append(id, .snapshot, payload) else { return false }
+            log.delete(id, through: seq - 1)
+            return true
+        }
+        guard saved else { throw RunStoreError.writeFailed }
+    }
+
+    /// What the log holds for a timeline, read from it when this launch has not seen it yet. Call with the lock held.
+    private func writtenTimeline(_ id: UUID, log: RunEventLog) -> WrittenTimeline {
+        if let known = written[id] { return known }
+        let timeline = WrittenTimeline(RunEventFold.fold(log.rows(id), decoder: Self.decoder).events)
+        written[id] = timeline
+        return timeline
+    }
+
+    /// Tells two versions of an event apart without keeping a copy of it.
+    static func fingerprint(_ event: RunEvent) -> Int {
+        var hasher = Hasher()
+        hasher.combine(event.id)
+        hasher.combine(event.date)
+        hasher.combine(event.kind)
+        hasher.combine(event.text)
+        hasher.combine(event.tool)
+        hasher.combine(event.callID)
+        hasher.combine(event.detail)
+        hasher.combine(event.output)
+        hasher.combine(event.state)
+        return hasher.finalize()
     }
 
     private func write(_ data: Data, to url: URL) throws {
         try data.write(to: url, options: [.atomic])
         try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+}
+
+enum RunStoreError: Error {
+    case unavailable, writeFailed
+}
+
+/// The ids and fingerprints of a timeline as written to the log, in order.
+struct WrittenTimeline: Equatable {
+    var order: [UUID] = []
+    var fingerprints: [UUID: Int] = [:]
+
+    init() {}
+
+    init(_ events: [RunEvent]) {
+        for event in events { add(event.id, RunStore.fingerprint(event)) }
+    }
+
+    mutating func add(_ id: UUID, _ fingerprint: Int) {
+        if fingerprints.updateValue(fingerprint, forKey: id) == nil { order.append(id) }
+    }
+}
+
+/// What a save has to write: the new and changed events as rows, or, when events were removed or reordered, a snapshot.
+enum TimelineChange {
+    case rows([(RunEventLog.Kind, RunEvent)], after: WrittenTimeline)
+    case snapshot(after: WrittenTimeline)
+
+    /// Nil when nothing changed.
+    static func between(_ before: WrittenTimeline, _ events: [RunEvent]) -> TimelineChange? {
+        var after = WrittenTimeline()
+        var rows: [(RunEventLog.Kind, RunEvent)] = []
+        var structural = false
+        // The next position in `before.order` an event written earlier may take.
+        var position = 0
+        var kept = 0
+        for event in events {
+            let fingerprint = RunStore.fingerprint(event)
+            after.add(event.id, fingerprint)
+            if let old = before.fingerprints[event.id] {
+                kept += 1
+                // Written events keep their order: one that moved needs a snapshot.
+                guard position < before.order.count, let at = before.order[position...].firstIndex(of: event.id) else {
+                    structural = true
+                    continue
+                }
+                position = at + 1
+                if old != fingerprint { rows.append((.update, event)) }
+            } else {
+                // A new event goes at the end: one placed before written events needs a snapshot.
+                if position < before.order.count { structural = true }
+                rows.append((.event, event))
+            }
+        }
+        // Events that are no longer in the timeline, or a duplicate id: also a snapshot.
+        if kept != before.order.count || after.order.count != events.count { structural = true }
+        if structural { return .snapshot(after: after) }
+        return rows.isEmpty ? nil : .rows(rows, after: after)
     }
 }
 

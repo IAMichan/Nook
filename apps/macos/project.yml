@@ -346,6 +346,7 @@ targets:
       - path: Services/Workspace/AgentStreamParsers.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
+      - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/Workspace/ProcessGroups.swift
       - path: Services/AgentTranscript.swift
