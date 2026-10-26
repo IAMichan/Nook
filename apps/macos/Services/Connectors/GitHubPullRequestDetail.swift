@@ -111,6 +111,14 @@ enum GitHubPullRequestDetail {
         }
     }
 
+    /// The people who can be asked for a review of this pull request (see `PullRequestDetailParser.reviewerCandidates`).
+    /// Empty when GitHub does not tell this account, so the reviewer field still takes names typed by hand.
+    static func reviewerCandidates(for detail: PullRequestDetail, token: String) async -> [String] {
+        let get = getter(repo: detail.repo, token: token)
+        let users = ((try? await get("/assignees?per_page=100")) as? [[String: Any]]) ?? []
+        return PullRequestDetailParser.reviewerCandidates(users, detail: detail)
+    }
+
     /// Only what deciding on a merge needs: the pull request, the repository's merge methods and access, and the checks
     /// of its head. Much lighter than `load`, for merging several pull requests at once.
     static func loadForMerge(repo: String, number: Int, token: String) async throws -> PullRequestDetail {

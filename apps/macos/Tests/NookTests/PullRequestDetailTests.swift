@@ -193,6 +193,15 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertEqual(detail.lineCommentCount, 0)
     }
 
+    func testReviewerCandidatesLeaveOutAuthorBotsAndThoseAsked() throws {
+        var object = try json(pull)
+        object["requested_reviewers"] = [["login": "Bob"]]
+        let detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        let users: [[String: Any]] = [["login": "zoe"], ["login": "ada"], ["login": "bob"], ["login": "dependabot[bot]"],
+                                      ["login": "Carl"], ["login": "zoe"], ["id": 4]]
+        XCTAssertEqual(PullRequestDetailParser.reviewerCandidates(users, detail: detail), ["Carl", "zoe"])
+    }
+
     func testPagesFromCounts() {
         XCTAssertNil(PullRequestDetailParser.pages(count: nil, limit: 3))
         XCTAssertEqual(PullRequestDetailParser.pages(count: 0, limit: 3), 1)

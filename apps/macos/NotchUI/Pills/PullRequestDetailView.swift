@@ -904,6 +904,7 @@ struct PullRequestDetailView: View {
         case .checksFailing, .checksRunning: tr("agents.pr.ready.showChecks")
         case .changesRequested: tr("agents.pr.ready.showReviews")
         case .behind: tr("agents.pr.action.updateBranch")
+        case .noReviews: tr("agents.pr.ready.askReview")
         default: nil
         }
     }
@@ -919,6 +920,8 @@ struct PullRequestDetailView: View {
                 actions.close()
                 actions.pending = .updateBranch(headSHA: detail.headSHA)
             }
+        case .noReviews where detail.isOpen:
+            return { actions.open(.reviewers, detail: detail) }
         default:
             return nil
         }
@@ -937,24 +940,30 @@ struct PullRequestDetailView: View {
     }
 
     /// The reviewers' pictures, ringed by what they said (mint approved, amber changes requested, grey still asked).
+    /// While the pull request is open a + after them asks someone else for a review.
     @ViewBuilder
     private func reviewers(_ detail: PullRequestDetail) -> some View {
         let verdicts = detail.verdicts
         let waiting = detail.requestedReviewers.filter { login in !verdicts.contains { $0.author == login } }
-        if verdicts.isEmpty && waiting.isEmpty {
-            if detail.activityLoaded {
-                Text(tr("agents.pr.reviews.none")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+        HStack(spacing: NookTheme.Spacing.xs) {
+            if verdicts.isEmpty && waiting.isEmpty {
+                if detail.activityLoaded {
+                    Text(tr("agents.pr.reviews.none")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
+                } else {
+                    ProgressView().controlSize(.mini)
+                }
             } else {
-                ProgressView().controlSize(.mini)
-            }
-        } else {
-            HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(verdicts, id: \.author) { verdict in
                     reviewer(verdict.author, ring: PullRequestIcon.tint(verdict.approved ? PullRequestIcon.Review.approved : .changesRequested),
                              help: tr(verdict.approved ? "agents.pr.reviews.approved" : "agents.pr.reviews.changes", "@" + verdict.author))
                 }
                 ForEach(waiting, id: \.self) { login in
                     reviewer(login, ring: NookTheme.line2, help: tr("agents.pr.reviews.waiting", "@" + login))
+                }
+            }
+            if detail.isOpen {
+                ToolbarIconButton("person.badge.plus", tr("agents.pr.action.requestReviewers")) {
+                    actions.open(.reviewers, detail: detail)
                 }
             }
         }

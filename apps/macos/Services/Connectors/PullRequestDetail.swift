@@ -550,6 +550,18 @@ enum PullRequestDetailParser {
         }
     }
 
+    /// Who can be asked for a review, from GitHub's assignable users of the repository: not the author (GitHub refuses
+    /// that), not a bot, and not someone still asked. Someone who already reviewed stays, to be asked again.
+    static func reviewerCandidates(_ users: [[String: Any]], detail: PullRequestDetail) -> [String] {
+        let skip = Set(([detail.author] + detail.requestedReviewers).map { $0.lowercased() })
+        var seen = Set<String>()
+        return users.compactMap { $0["login"] as? String }
+            .filter { login in
+                !login.hasSuffix("[bot]") && !skip.contains(login.lowercased()) && seen.insert(login.lowercased()).inserted
+            }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     // MARK: Helpers
 
     private static func login(_ user: Any?) -> String { ((user as? [String: Any])?["login"] as? String) ?? "?" }
