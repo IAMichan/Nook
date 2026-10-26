@@ -672,6 +672,21 @@ impl WhatsAppLink {
                 i.known = chats.into_iter().map(|c| ChatInfo { jid: jid::normalized(&c.jid), ..c }).collect();
             }
         });
+        // The gateway names a group it has no subject for after its id: ask for the real names of the newest ones.
+        let unnamed: Vec<String> = self.with(|i| {
+            i.known.iter().filter(|k| jid::is_group(&k.jid) && jid::is_placeholder_name(&k.jid, &k.name)).take(40).map(|k| k.jid.clone()).collect()
+        });
+        for chat in unnamed {
+            if let Some(name) = provider.group_name(&chat).await {
+                self.with(|i| {
+                    if i.generation == gen {
+                        if let Some(k) = i.known.iter_mut().find(|k| k.jid == chat) {
+                            k.name = name;
+                        }
+                    }
+                });
+            }
+        }
     }
 
     fn poll(self: &Arc<Self>) {
@@ -745,7 +760,7 @@ impl WhatsAppLink {
     fn name_group(self: &Arc<Self>, chat: &str) {
         let Some((provider, gen)) = self.with(|i| {
             let conversation = i.inbox.conversations.get(chat)?;
-            if !jid::is_group(chat) || conversation.name != jid::display_number(chat) || !i.naming.insert(chat.to_string()) {
+            if !jid::is_group(chat) || !jid::is_placeholder_name(chat, &conversation.name) || !i.naming.insert(chat.to_string()) {
                 return None;
             }
             i.provider.clone().map(|p| (p, i.generation))
@@ -1052,7 +1067,7 @@ impl WhatsAppLink {
             }
             for k in &i.known {
                 if seen.insert(k.jid.clone()) {
-                    out.push((k.jid.clone(), if k.name.is_empty() { jid::fallback_name(&k.jid) } else { k.name.clone() }));
+                    out.push((k.jid.clone(), if jid::is_placeholder_name(&k.jid, &k.name) { jid::fallback_name(&k.jid) } else { k.name.clone() }));
                 }
             }
         });
