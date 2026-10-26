@@ -1244,6 +1244,15 @@ private struct ChatsDetail: View {
                             .accessibilityHidden(true)
                         ChatMembersButton(members: members)
                     }
+                    // Read but not new: where it stands, small, instead of a strip above the answer field.
+                    if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
+                        Text("·")
+                            .font(NookTheme.TextStyle.detail)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .accessibilityHidden(true)
+                        ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                                       markReadInApp: { app.markChatReadInApp(entry) })
+                    }
                 }
             }
             Spacer(minLength: NookTheme.Spacing.sm)
@@ -1307,7 +1316,8 @@ private struct ChatsDetail: View {
     private var footer: some View {
         let route = self.route
         let sends = app.chatSends(route)
-        // Where the chat stands and the one step left sit in the tray above the box, as an agent's queued messages do.
+        // Something new and its steps sit in the tray above the box, as an agent's queued messages do; once read in
+        // Nook, where it stands moves to the header, so the tray is gone.
         let field = ChatReplyField(
             text: $reply, notice: $notice, focus: $replyFocused,
             placeholder: route == nil ? tr("chats.reply.copyPrompt", entry.name) : tr("chats.reply.prompt", entry.name),
@@ -1339,7 +1349,7 @@ private struct ChatsDetail: View {
                     copyForApp()
                 }
             })
-            .tray(entry.read.isUnread || (!entry.lastIsMine && !bubbles.isEmpty)
+            .tray(entry.read.isUnread
                 ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                                markReadInNook: { app.markChatReadInNook(entry) },
                                markReadInApp: { app.markChatReadInApp(entry) })
