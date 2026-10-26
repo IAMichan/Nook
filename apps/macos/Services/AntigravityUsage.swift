@@ -26,11 +26,19 @@ final class AntigravityUsage: ObservableObject {
     private var again = false
     private var lastFetch = Date.distantPast
     private static let minimumInterval: TimeInterval = 30
+    /// The timer's pace at full speed.
+    private static let interval: TimeInterval = 180
 
     func start() {
         timer?.invalidate()
-        timer = Timer.scheduledCoalesced(withTimeInterval: 180) { [weak self] _ in
-            Task { @MainActor in self?.refreshNow() }
+        timer = Timer.scheduledCoalesced(withTimeInterval: Self.interval) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // On battery or away, less often (`EnergyPlan.slowdown`); signing in still reads at once (`force`).
+                let wait = Self.interval * EnergyMonitor.shared.plan.slowdown - 10
+                guard Date().timeIntervalSince(self.lastFetch) >= wait else { return }
+                self.refreshNow()
+            }
         }
         refreshNow()
     }

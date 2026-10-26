@@ -239,6 +239,8 @@ final class AutocompleteController: ObservableObject {
             let wait = Double(Self.launchDelay) - Date().timeIntervalSince(Self.launched)
             if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
             guard prefs.enabled, activeModel?.identity == model.identity else { return }
+            // Paused on battery: no model in memory for suggestions that do not come; the first key on the charger loads it.
+            guard !(prefs.pauseOnBattery && onBattery) else { return }
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
             if case .brain(let id, _) = model { EmbeddedModel.shared.preloadForAutocomplete(id) }
         }

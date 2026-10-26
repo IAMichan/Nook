@@ -4,7 +4,7 @@ import Foundation
 /// dictation, a look at the screen) always runs at full speed; this is about what Nook does by himself: reading the
 /// screen on a timer, thinking along, looking for agents, checking for meetings.
 enum EnergyMode: String, CaseIterable, Identifiable, Codable {
-    /// Nook steps back on battery, when the Mac is hot or busy, and when you are away.
+    /// Nook steps back on battery (and pauses when it runs low), when the Mac is hot or busy, and when you are away.
     case automatic
     /// Always light: the screen is read less often and suggestions come less often, wherever the power comes from.
     case saver
@@ -27,6 +27,9 @@ struct EnergySignals: Equatable {
     var busy = false
     /// Running on the battery.
     var onBattery = false
+    /// Running on the battery and it is nearly empty (see `isLowBattery`). Only this, not the charge itself: the charge
+    /// changes every few minutes, and every view that follows the plan would redraw for it.
+    var lowBattery = false
     /// No keyboard or pointer input for a while.
     var away = false
     /// The displays are asleep.
@@ -34,11 +37,23 @@ struct EnergySignals: Equatable {
 
     /// After this long without input you count as away: nothing on screen is being looked at.
     static let awayAfter: TimeInterval = 300
+
+    /// At or below this charge on battery, the battery counts as low: macOS warns at the same point.
+    static let lowBatteryAt = 20
+    /// The charge the battery has to climb back above before it no longer counts as low, so a battery that hovers around
+    /// the line (or reads one percent higher for a moment) does not flip the plan back and forth.
+    static let lowBatteryClearsAt = 25
+
+    /// Whether the battery counts as low now, given whether it did on the last reading. On the charger it never does.
+    static func isLowBattery(level: Int?, onBattery: Bool, wasLow: Bool) -> Bool {
+        guard onBattery, let level else { return false }
+        return level <= (wasLow ? lowBatteryClearsAt : lowBatteryAt)
+    }
 }
 
 /// Why Nook does less than usual right now, in the order the status line names them.
 enum EnergyReason: String, CaseIterable, Equatable {
-    case displayAsleep, hot, lowPowerMode, busy, away, battery, saver
+    case displayAsleep, hot, lowBattery, lowPowerMode, busy, away, battery, saver
 
     var textKey: String { "settings.energy.reason.\(rawValue)" }
 }
@@ -57,6 +72,9 @@ enum EnergyPace: Equatable {
 struct EnergyPlan: Equatable {
     var pace: EnergyPace
     var reasons: [EnergyReason]
+    /// Listening for "Hey Nook" waits: the battery is nearly empty and you let Nook save it. The microphone and the speech
+    /// gate run all the time, so they are the one wake-up that never stops by itself.
+    var sparesBattery = false
 
     /// Multiply a worker's usual interval by this: 1 at full speed, 2 when light, 6 when paused.
     var slowdown: Double {
@@ -72,6 +90,11 @@ struct EnergyPlan: Equatable {
 
     /// Nook looks over your shoulder and offers help by himself.
     var thinksAlong: Bool { pace != .paused }
+
+    /// Optional work on a model on this Mac (thinking along, learning from a chat): every run is a full burst on the GPU,
+    /// the biggest draw Nook has, so it only runs at full speed. On battery, or when the Mac has no room, it waits; anything
+    /// you ask for still runs on the model you chose.
+    var runsLocalModels: Bool { pace == .full }
 
     /// At least this long between two looks while thinking along, on top of the usual gaps: a look is a model run.
     var thinkAlongGap: TimeInterval {
@@ -140,6 +163,10 @@ enum EnergyPolicy {
         if signals.displayAsleep { paused.append(.displayAsleep) }
         // A hot Mac gets a break whatever you chose; working on would only keep it hot.
         if signals.hot { paused.append(.hot) }
+        // A nearly empty battery: every bit of optional work shortens the time you have left. Full power keeps going, lighter.
+        if signals.lowBattery {
+            if mode == .full { light.append(.lowBattery) } else { paused.append(.lowBattery) }
+        }
         // Low Power Mode is you asking macOS to save power: Nook follows, unless you told him to keep going.
         if signals.lowPowerMode {
             if mode == .full { light.append(.lowPowerMode) } else { paused.append(.lowPowerMode) }
@@ -150,7 +177,9 @@ enum EnergyPolicy {
         if signals.onBattery, mode != .full { light.append(.battery) }
         if mode == .saver { light.append(.saver) }
 
-        if !paused.isEmpty { return EnergyPlan(pace: .paused, reasons: paused + light) }
+        if !paused.isEmpty {
+            return EnergyPlan(pace: .paused, reasons: paused + light, sparesBattery: paused.contains(.lowBattery))
+        }
         if !light.isEmpty { return EnergyPlan(pace: .light, reasons: light) }
         return .fullSpeed
     }

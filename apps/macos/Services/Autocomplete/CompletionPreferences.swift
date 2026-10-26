@@ -139,7 +139,8 @@ struct CompletionPreferences: Codable, Equatable {
 
     // Battery
     var shorterOnBattery = true
-    var pauseOnBattery = false
+    /// Every suggestion is a run of a model on this Mac, on almost every key: the biggest draw on the battery there is.
+    var pauseOnBattery = true
 
     // Labs
     var wordAlternatives = false

@@ -31,9 +31,48 @@ final class EnergyPolicyTests: XCTestCase {
         }
     }
 
+    func testALowBatteryPausesTheOptionalWork() {
+        let plan = EnergyPolicy.plan(for: EnergySignals(onBattery: true, lowBattery: true), mode: .automatic)
+        XCTAssertEqual(plan.pace, .paused)
+        XCTAssertEqual(plan.reasons, [.lowBattery, .battery])
+        XCTAssertEqual(plan.mainReason, .lowBattery)
+        XCTAssertTrue(plan.sparesBattery, "listening for the wake word waits too")
+        XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(onBattery: true, lowBattery: true), mode: .saver).pace, .paused)
+        // Full power keeps going, lighter, and keeps listening.
+        let full = EnergyPolicy.plan(for: EnergySignals(onBattery: true, lowBattery: true), mode: .full)
+        XCTAssertEqual(full.pace, .light)
+        XCTAssertEqual(full.reasons, [.lowBattery])
+        XCTAssertFalse(full.sparesBattery)
+        // A battery that is merely in use does not hold back the wake word.
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic).sparesBattery)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(hot: true), mode: .automatic).sparesBattery)
+    }
+
+    func testTheBatteryCountsAsLowBelowTheLineAndFineOnlyAfterChargingALittle() {
+        XCTAssertFalse(EnergySignals.isLowBattery(level: 21, onBattery: true, wasLow: false))
+        XCTAssertTrue(EnergySignals.isLowBattery(level: 20, onBattery: true, wasLow: false))
+        XCTAssertTrue(EnergySignals.isLowBattery(level: 5, onBattery: true, wasLow: false))
+        // Once low it stays low up to 25%, so a battery hovering around 20% does not flip the plan back and forth.
+        XCTAssertTrue(EnergySignals.isLowBattery(level: 23, onBattery: true, wasLow: true))
+        XCTAssertTrue(EnergySignals.isLowBattery(level: 25, onBattery: true, wasLow: true))
+        XCTAssertFalse(EnergySignals.isLowBattery(level: 26, onBattery: true, wasLow: true))
+        // On the charger, or on a Mac without a battery, never.
+        XCTAssertFalse(EnergySignals.isLowBattery(level: 10, onBattery: false, wasLow: true))
+        XCTAssertFalse(EnergySignals.isLowBattery(level: nil, onBattery: true, wasLow: false))
+    }
+
     func testAwayAndASleepingDisplayPauseEverythingOptional() {
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(away: true), mode: .full).pace, .paused)
         XCTAssertEqual(EnergyPolicy.plan(for: EnergySignals(displayAsleep: true), mode: .full).pace, .paused)
+    }
+
+    func testModelsOnThisMacOnlyRunOptionalWorkAtFullSpeed() {
+        XCTAssertTrue(EnergyPolicy.plan(for: EnergySignals(), mode: .automatic).runsLocalModels)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .automatic).runsLocalModels)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(), mode: .saver).runsLocalModels)
+        XCTAssertFalse(EnergyPolicy.plan(for: EnergySignals(hot: true), mode: .full).runsLocalModels)
+        // Full power on battery is your choice to keep going.
+        XCTAssertTrue(EnergyPolicy.plan(for: EnergySignals(onBattery: true), mode: .full).runsLocalModels)
     }
 
     func testTheReasonsNameTheStrongestFirst() {

@@ -157,12 +157,14 @@ final class CodexUsage: ObservableObject {
         let previousSessionDate = state.lastSessionDate
         let lastFetch = state.lastAppServerFetch
         let hasSnapshot = snapshots[key] != nil
+        let slowdown = EnergyMonitor.shared.plan.slowdown
         queue.async { [weak self] in
             let result = CodexUsage.work(
                 home: home,
                 previousSessionDate: previousSessionDate,
                 lastAppServerFetch: lastFetch,
-                hasSnapshot: hasSnapshot
+                hasSnapshot: hasSnapshot,
+                slowdown: slowdown
             )
             Task { @MainActor in
                 guard let self else { return }
@@ -199,14 +201,16 @@ final class CodexUsage: ObservableObject {
         home: URL,
         previousSessionDate: Date?,
         lastAppServerFetch: Date?,
-        hasSnapshot: Bool
+        hasSnapshot: Bool,
+        slowdown: Double
     ) -> WorkResult {
         let sessions = recentSessionFiles(home: home)
         let newest = sessions.first?.date
         let sessionChanged = newest != nil && newest != previousSessionDate
         var result = WorkResult(snapshot: nil, newestSessionDate: newest, askedAppServer: false)
 
-        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerInterval } ?? true
+        // On battery or away, `codex app-server` (a Node process each time) is started less often (`EnergyPlan.slowdown`).
+        let due = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerInterval * slowdown } ?? true
         // A running session rewrites its log every minute, and each response in it carries the same limits the app-server
         // reports. Read those instead of starting a whole `codex app-server` each minute; it still runs when due.
         if hasSnapshot, sessionChanged, !due, let latest = sessions.first,
@@ -216,7 +220,7 @@ final class CodexUsage: ObservableObject {
         }
         // Without any limits yet (Codex installed but not signed in, or an app-server that does not answer) a new try every
         // ten minutes, not on every one-minute tick: each one starts `codex app-server` and can wait 15 seconds for it.
-        let retryDue = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerRetryInterval } ?? true
+        let retryDue = lastAppServerFetch.map { Date().timeIntervalSince($0) >= appServerRetryInterval * slowdown } ?? true
         if let codex = codexExecutable() {
             if hasSnapshot ? (sessionChanged || due) : retryDue {
                 result.askedAppServer = true
