@@ -4,15 +4,16 @@ import SwiftUI
 /// first. Nook links those in `ownWay` itself; the others show only while a chat service on this Mac can link them (or
 /// one is linked), as does any other app such a service offers.
 enum ChatAppsCatalog {
-    static let apps = ["whatsapp", "instagram", "messenger", "telegram", "signal", "teams", "slack", "discord", "linkedin", "x",
-                       "messages"]
+    static let apps = ["whatsapp", "instagram", "messenger", "snapchat", "telegram", "signal", "teams", "slack", "discord", "linkedin",
+                       "x", "messages"]
 
-    /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database).
+    /// Nook reads these itself as well, each in its own way (a phone link, a login, a token, this Mac's database, a
+    /// website kept open out of sight).
     /// Telegram links through Nook's own chat helper when this build has it, and through TDLib only without it. Slack
     /// links through the helper (signing in on slack.com) once the helper running here offers it, and with a token
     /// until then: a helper built before it had Slack would otherwise leave Slack with no way to link.
     @MainActor static var ownWay: Set<String> {
-        var apps: Set<String> = ["whatsapp", "teams", "messages"]
+        var apps: Set<String> = ["whatsapp", "teams", "messages", "snapchat"]
         if !ChatHelper.isBuilt { apps.insert("telegram") }
         if !ChatHelper.offers("slack") { apps.insert("slack") }
         return apps
@@ -188,6 +189,8 @@ enum ChatAppStates {
         case capture.messagesBridge.app:
             guard capture.enabled, capture.messagesBridge.isReady, capture.status != .needsAccess else { return nil }
             return tr("chats.apps.own.messages")
+        case capture.snapchatBridge.app:
+            return SnapchatWebSession.shared.isSignedIn ? tr("chats.apps.own.snapchat") : nil
         default:
             return nil
         }

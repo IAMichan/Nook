@@ -28,7 +28,7 @@ Code, it still applies to every coding agent. Mention any member you could not d
 
 | Family | Members | Shared shape (build features here) |
 |---|---|---|
-| Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | `InboxMessage`/`InboxThread` (`ChatInbox.swift`), `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab` |
+| Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | `InboxMessage`/`InboxThread` (`ChatInbox.swift`), `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab` |
 | WhatsApp gateways | GOWA, OpenWA | `WhatsAppProvider` (`WhatsAppProvider.swift`), `WAWebhookEvent` (`WhatsAppGateway.swift`) |
 | Chat helper networks | every bridge in `apps/chatd` | `apps/chatd` (bridgev2 `MatrixAPI` in `matrix.go`, the `/v1` API, the `/v1/ws` live line) → `ChatServiceData` |
 | Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Copilot CLI, Muse Code, OpenCode, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `AgentConfigInstaller`, the hook event protocol, the session rows in the notch |
@@ -40,15 +40,15 @@ Code, it still applies to every coding agent. Mention any member you could not d
 
 `✓` = shown, `–` = the app does not say it (left out on purpose), `?` = not checked yet.
 
-| Feature | WhatsApp (GOWA) | WhatsApp (OpenWA) | Messages | Telegram | Chat helper networks | Slack | Teams |
-|---|---|---|---|---|---|---|---|
-| Ticks on every message of yours | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (one tick, no receipts) | ✓ (one tick, no receipts) |
-| Who read it, in a group | ✓ (per member) | ✓ (`message.receipt`, Baileys engine) | – | ✓ (`getMessageViewers`) | ✓ (`seen` per person) | – | – |
-| When they read it, in a private chat | ✓ (receipt arrival) | ✓ (receipt arrival) | ✓ (`date_read`) | – (only "read up to") | ✓ (`seen` time) | – | – |
-| Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) |
-| Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ |
-| Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – |
+| Feature | WhatsApp (GOWA) | WhatsApp (OpenWA) | Messages | Telegram | Chat helper networks | Slack | Teams | Snapchat |
+|---|---|---|---|---|---|---|---|---|
+| Ticks on every message of yours | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (one tick, no receipts) | ✓ (one tick, no receipts) | ✓ (one tick, no receipts) |
+| Who read it, in a group | ✓ (per member) | ✓ (`message.receipt`, Baileys engine) | – | ✓ (`getMessageViewers`) | ✓ (`seen` per person) | – | – | – (the website does not say per person) |
+| When they read it, in a private chat | ✓ (receipt arrival) | ✓ (receipt arrival) | ✓ (`date_read`) | – (only "read up to") | ✓ (`seen` time) | – | – | – (only "Opened" in the list, without a time) |
+| Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) | – (not read from the page yet) |
+| Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) |
+| People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) |
+| Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – | – |
 
 Every app also gets what is certain from later messages (`ChatReceipts.filled` and `filledReaders`). Someone who read
 a later message of yours read the earlier ones too. In a private chat, their message after yours means yours reached
@@ -67,4 +67,7 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 
 ## Open gaps
 
-None right now. Add an item here when a change cannot reach every member yet.
+- **Snapchat** is read from Snapchat for Web's page (`SnapchatWebData`), not from a service: Snapchat has none, and no
+  bridgev2 connector for it exists. It shows the chat list and the messages of chats you load in Nook, and answers with
+  text. Files, emoji, edits, deletions, pinning, muting, archiving, read receipts and typing are not offered for it
+  (`ChatAbilities(send: true)`), and its messages carry the time Nook first saw them, since the website shows none.

@@ -174,6 +174,7 @@ struct InboxAvatar: View {
         case "signal": return ("bubble.left.fill", Color(hex: 0x3A76F0))
         case "instagram": return ("camera.fill", Color(hex: 0xE1306C))
         case "messenger": return ("bolt.horizontal.fill", Color(hex: 0x0084FF))
+        case "snapchat": return ("camera.viewfinder", Color(hex: 0xF5C400))
         case "slack": return ("number", Color(hex: 0xE01E5A))
         case "discord": return ("gamecontroller.fill", Color(hex: 0x5865F2))
         case "teams": return ("person.3.fill", Color(hex: 0x6264A7))
