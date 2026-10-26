@@ -77,6 +77,15 @@ enum CompletionModelLocator {
         return 0
     }
 
+    /// A model that draws clearly less power than `model`, for the battery: the largest one at most `share` of its size that
+    /// suits completing text at least as well (a code model is no lighter choice for prose). Nil when there is none.
+    static func lighter(than model: CompletionModelFile, candidates: [CompletionModelFile], share: Double = 0.6) -> CompletionModelFile? {
+        let fit = suitability(model)
+        return candidates
+            .filter { $0.url != model.url && Double($0.bytes) <= Double(model.bytes) * share && suitability($0) >= fit }
+            .max { ($0.bytes, $0.modified) < ($1.bytes, $1.modified) }
+    }
+
     /// The GGUF files Nook downloaded or the user dropped in its models folder.
     static func nookModels(in folder: URL) -> [CompletionModelFile] {
         ggufFiles(in: folder, maxDepth: 1).compactMap { model(at: $0, source: .nook) }.sorted { $0.modified > $1.modified }

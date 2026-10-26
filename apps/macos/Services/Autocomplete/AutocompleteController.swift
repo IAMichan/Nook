@@ -25,6 +25,8 @@ final class AutocompleteController: ObservableObject {
     /// GGUF models found on this Mac and Nook's own, newest first.
     @Published private(set) var candidates: [CompletionModelFile] = []
     @Published private(set) var activeModel: CompletionSource?
+    /// The lighter model this Mac has for the battery (see `CompletionPower.lighterModel`), whether or not it runs now.
+    @Published private(set) var lighterModel: CompletionModelFile?
     /// The brain's installed models (MLX), which autocomplete can use too.
     @Published private(set) var brainModels: [(id: String, title: String)] = []
     @Published private(set) var trusted = AXIsProcessTrusted()
@@ -160,6 +162,10 @@ final class AutocompleteController: ObservableObject {
     /// Key window changes (whether keys typed in Nook are its own) and settings or pauses, for the key tap's state.
     private var tapStateObservers: [NSObjectProtocol] = []
     private var storeObserver: AnyCancellable?
+    /// The battery, Low Power Mode, heat and the battery settings, as `power`.
+    private var powerObserver: AnyCancellable?
+    /// The plan the controller last acted on (see `powerChanged`).
+    private var appliedPower = CompletionPower.full
     private var appObserver: NSObjectProtocol?
     private var wakeObservers: [NSObjectProtocol] = []
     private var pressure: DispatchSourceMemoryPressure?
@@ -224,7 +230,9 @@ final class AutocompleteController: ObservableObject {
             candidates = found.filter { FileManager.default.fileExists(atPath: $0.url.path) }
             brainModels = EmbeddedModel.shared.autocompleteModels
             let preferred = AppSettings.shared.localModel
-            let model = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
+            let usual = CompletionSource.resolve(stored: prefs.modelPath, files: found, brainModels: brainModels, preferredBrain: preferred)
+            if case .gguf(let file) = usual { lighterModel = CompletionModelLocator.lighter(than: file, candidates: found) } else { lighterModel = nil }
+            let model = power.lighterModel ? lighterModel.map(CompletionSource.gguf) ?? usual : usual
             if model?.identity != activeModel?.identity { unload() }
             activeModel = model
             guard prefs.enabled else { return }
@@ -240,7 +248,7 @@ final class AutocompleteController: ObservableObject {
             if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
             guard prefs.enabled, activeModel?.identity == model.identity else { return }
             // Paused on battery: no model in memory for suggestions that do not come; the first key on the charger loads it.
-            guard !(prefs.pauseOnBattery && onBattery) else { return }
+            guard !power.paused else { return }
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
             if case .brain(let id, _) = model { EmbeddedModel.shared.preloadForAutocomplete(id) }
         }
@@ -298,6 +306,15 @@ final class AutocompleteController: ObservableObject {
         storeObserver = store.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.publishTapState() } }
         }
+        // Plugged in or out, Low Power Mode, a battery setting: on to the plan at once, and to the lighter model or back.
+        appliedPower = power
+        powerObserver = EnergyMonitor.shared.$signals.combineLatest(store.$prefs)
+            .map { CompletionPower.plan(prefs: $1, signals: $0) }
+            .removeDuplicates()
+            .sink { [weak self] next in
+                // Published before the change is made: act once it is.
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.powerChanged(to: next) } }
+            }
 
         appObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -321,6 +338,15 @@ final class AutocompleteController: ObservableObject {
         return true
     }
 
+    private func powerChanged(to next: CompletionPower) {
+        let previous = appliedPower
+        guard next != previous else { return }
+        appliedPower = next
+        if next.paused || (next.onDemand && !previous.onDemand) { dismiss() }
+        publishTapState()
+        if next.lighterModel != previous.lighterModel, lighterModel != nil { refresh() }
+    }
+
     private func stop() {
         dismiss()
         commitSample()
@@ -328,6 +354,7 @@ final class AutocompleteController: ObservableObject {
         tapStateObservers.forEach { NotificationCenter.default.removeObserver($0) }
         tapStateObservers = []
         storeObserver = nil
+        powerObserver = nil
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
         wakeObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         wakeObservers = []
@@ -371,8 +398,9 @@ final class AutocompleteController: ObservableObject {
     /// (a shortcut, a key recorder) stays Nook's.
     private var ownFieldFocused: Bool { recordingKeys == 0 && AutocompleteField.ownTextView() != nil }
 
-    /// Read by `EnergyMonitor` for the whole app, so this is a cached value and not a trip to IOKit per keystroke.
-    private var onBattery: Bool { EnergyMonitor.shared.signals.onBattery }
+    /// What the battery allows right now. The signals are read by `EnergyMonitor` for the whole app, so this is a cached
+    /// value and not a trip to IOKit per keystroke.
+    private var power: CompletionPower { CompletionPower.plan(prefs: prefs, signals: EnergyMonitor.shared.signals) }
 
     private func isActive(in app: NSRunningApplication?) -> Bool {
         guard let app, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
@@ -383,7 +411,7 @@ final class AutocompleteController: ObservableObject {
             // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
             return false
         }
-        return prefs.isEnabled(inApp: bundleID) && !store.isPaused(app: bundleID) && !(prefs.pauseOnBattery && onBattery)
+        return prefs.isEnabled(inApp: bundleID) && !store.isPaused(app: bundleID) && !power.paused
     }
 
     var isPausedEverywhere: Bool { store.isPaused(app: nil) }
@@ -434,6 +462,7 @@ final class AutocompleteController: ObservableObject {
         gate.toggleAll = prefs.toggleAll
         gate.toggleApp = prefs.toggleApp
         gate.alternatives = prefs.wordAlternatives ? prefs.alternatives : nil
+        gate.suggestNow = prefs.suggestNow
         gate.canHold = canHoldAcceptKey
         gate.holding = heldKey != nil
         if let alternatives {
@@ -511,6 +540,12 @@ final class AutocompleteController: ObservableObject {
         if prefs.wordAlternatives, key.matches(prefs.alternatives) { showAlternatives(); return true }
 
         guard isActive(in: app) else { dismiss(); return false }
+        // Asked for: a suggestion for the text as it is, with the lower bar of a request (see `holdAcceptKey`).
+        if key.matches(prefs.suggestNow) {
+            dismiss()
+            refreshProposal(eager: true)
+            return true
+        }
         if let bundleID, seenApps[bundleID] == nil { seenApps[bundleID] = app?.localizedName ?? bundleID }
 
         let commandLike = !key.flags.intersection([.maskCommand, .maskControl]).isEmpty
@@ -784,12 +819,15 @@ final class AutocompleteController: ObservableObject {
             // Nook typed something, or the key did something else: the field's text is unknown until it is read again.
             lastRead = nil
         }
+        let power = self.power
+        // Only when asked for (see `CompletionPreferences.suggestNow`).
+        if power.onDemand { return }
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.refreshProposal() } }
         refreshWork = work
         // With the text predicted, the read checks the app took in the key (see `refreshProposal`): no need to wait first.
-        let delay = expected == nil ? max(prefs.delayMilliseconds, 30) : prefs.delayMilliseconds
+        let delay = max(expected == nil ? max(prefs.delayMilliseconds, 30) : prefs.delayMilliseconds, power.minimumDelay)
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(delay) / 1000, execute: work)
-        if let expected, let app, let last = lastRead { speculate(on: last.snapshot, before: expected.new, in: app) }
+        if power.speculates, let expected, let app, let last = lastRead { speculate(on: last.snapshot, before: expected.new, in: app) }
     }
 
     /// Reads the field on the reading queue; `done` runs on the main queue unless the user did something else meanwhile.
@@ -937,7 +975,7 @@ final class AutocompleteController: ObservableObject {
               learnedPhrase(before: before, app: bundleID, maxWords: prefs.maxWords) == nil else { return }
         let options = completionOptions(before: before, continuing: false)
         let prompt = self.prompt(for: next, in: app)
-        let branches = rememberBranches(before: before, field: fieldKey(for: next, in: app))
+        let branches = power.branches ? rememberBranches(before: before, field: fieldKey(for: next, in: app)) : nil
         let task = Task { () -> CompletionResult? in
             guard let completer = await loadedCompleter(for: model) else { return nil }
             return await completer.complete(prompt: prompt, options: options, partial: nil, branches: branches)
@@ -961,7 +999,7 @@ final class AutocompleteController: ObservableObject {
 
     private func completionOptions(before: String, continuing: Bool) -> CompletionOptions {
         var maxWords = prefs.maxWords
-        if prefs.shorterOnBattery, onBattery { maxWords = min(maxWords, 4) }
+        if let short = power.maxWords { maxWords = min(maxWords, short) }
         var options = CompletionOptions(maxWords: maxWords, eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }
         options.heal = Self.midWord(before)
@@ -982,7 +1020,8 @@ final class AutocompleteController: ObservableObject {
     }
 
     private func warmFocusedField() {
-        guard completer != nil, let app = frontApp, isActive(in: app) else { return }
+        // On battery the context is read in with the first key: a click alone is often just a click.
+        guard power.warms, completer != nil, let app = frontApp, isActive(in: app) else { return }
         // Every click warms: a few clicks in a row in the same app read the field (and run the model) once.
         let now = Date()
         if let last = lastWarm, last.pid == app.processIdentifier, now.timeIntervalSince(last.date) < Self.warmGap { return }
@@ -1077,8 +1116,8 @@ final class AutocompleteController: ObservableObject {
             }
             guard let completer = await loadedCompleter(for: model), token == readToken else { return }
             // The whole suggestion at once, never word by word as the model writes it.
-            let result = await completer.complete(prompt: prompt, options: options, partial: nil,
-                                                  branches: rememberBranches(before: snapshot.before, field: field))
+            let branches = power.branches ? rememberBranches(before: snapshot.before, field: field) : nil
+            let result = await completer.complete(prompt: prompt, options: options, partial: nil, branches: branches)
             scheduleUnload()
             if let result {
                 memo.remember(result, before: snapshot.before, field: field)
@@ -1112,7 +1151,8 @@ final class AutocompleteController: ObservableObject {
 
     /// Starts writing how the text goes on after the whole suggestion on screen (see `upcoming`).
     private func writeAhead(for completion: Completion) {
-        guard let model = activeModel else { return }
+        // On battery the next suggestion is written once the last word is taken, not for every one that shows.
+        guard power.writesAhead, let model = activeModel else { return }
         let rest = completion.suggestion.remaining
         let typed = NSSpellChecker.isAutomaticQuoteSubstitutionEnabled ? CompletionTypography.smartQuotes(rest, after: completion.anchor.last) : rest
         var next = completion.snapshot

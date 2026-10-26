@@ -126,7 +126,10 @@ struct CompletionPreferences: Codable, Equatable {
     var toggleAll: CompletionShortcut?
     var toggleApp: CompletionShortcut?
     var alternatives: CompletionShortcut?
-    // The three above are off until a key is recorded; JSON leaves out nil, and the default is nil too, so off stays off.
+    /// Ask for a suggestion where the cursor is, also when none came on its own (on battery with `onDemandOnBattery`, the
+    /// only way one comes).
+    var suggestNow: CompletionShortcut?
+    // The four above are off until a key is recorded; JSON leaves out nil, and the default is nil too, so off stays off.
 
     // Emoji
     var emoji = true
@@ -137,10 +140,16 @@ struct CompletionPreferences: Codable, Equatable {
     var typos = true
     var showTypoFixes = true
 
-    // Battery
+    // Battery (and Low Power Mode, see `CompletionPower`)
     var shorterOnBattery = true
     /// Every suggestion is a run of a model on this Mac, on almost every key: the biggest draw on the battery there is.
     var pauseOnBattery = true
+    /// The model runs only once you pause and a suggestion can show: nothing written ahead, nothing on a click.
+    var fewerRunsOnBattery = true
+    /// Suggestions only with the `suggestNow` key.
+    var onDemandOnBattery = false
+    /// A lighter model on this Mac instead of the usual one (see `CompletionModelLocator.lighter`).
+    var smallerModelOnBattery = false
 
     // Labs
     var wordAlternatives = false
