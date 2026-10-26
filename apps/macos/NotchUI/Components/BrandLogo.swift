@@ -1,9 +1,12 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#endif
 
 // The real marks of the AI brands Nook talks to (Claude, OpenAI, Gemini, Mistral, Ollama, Grok, Groq, OpenRouter, DeepSeek,
 // Qwen, Kimi, LM Studio, Meta, Gemma, OpenCode, Cursor), as vector paths so they stay sharp at any size and need no image assets.
 // The marks belong to their owners and are used here only to say which model or agent is meant.
+// The iPhone companion compiles this file too (apps/ios/project.yml), so what needs AppKit stays behind `os(macOS)`.
 
 enum BrandLogo: String, CaseIterable {
     case claude, openai, gemini, mistral, ollama, grok, groq, openrouter, deepseek, qwen, kimi, lmstudio, meta, gemma, opencode, cursor
@@ -21,6 +24,7 @@ enum BrandLogo: String, CaseIterable {
         return table.first { name.contains($0.0) }?.1
     }
 
+    #if os(macOS)
     /// The mark for a provider.
     static func forProvider(_ provider: AIProvider) -> BrandLogo {
         switch provider {
@@ -38,6 +42,7 @@ enum BrandLogo: String, CaseIterable {
         case .lmstudio: return .lmstudio
         }
     }
+    #endif
 
     /// The brand color of the mark; light or dark (following the surface) for the brands whose mark is black or white.
     var style: AnyShapeStyle {
@@ -59,11 +64,16 @@ enum BrandLogo: String, CaseIterable {
     /// Whether the mark is one plain color (black or white in the brand's own art), so it can follow the text color.
     var isMonochrome: Bool { [.openai, .ollama, .grok, .lmstudio, .opencode, .cursor].contains(self) }
 
+    #if os(macOS)
     /// Light on dark surfaces (the notch, the workspace), dark on light ones (Settings in light mode).
     private static let ink = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? NSColor(white: 0.1, alpha: 1)
             : NSColor(red: 0xF4 / 255, green: 0xF3 / 255, blue: 0xF7 / 255, alpha: 1)  // NookTheme.paper
     })
+    #else
+    /// The companion is always dark: paper white.
+    private static let ink = Color(red: 0xF4 / 255, green: 0xF3 / 255, blue: 0xF7 / 255)
+    #endif
 
     fileprivate func paths(_ point: (CGFloat, CGFloat) -> CGPoint) -> [Path] {
         switch self {
@@ -105,6 +115,7 @@ struct BrandMark: View {
     }
 }
 
+#if os(macOS)
 /// Logos as plain images, for the places that can't show a view: menu items and pickers.
 @MainActor
 enum LogoImage {
@@ -133,6 +144,7 @@ enum LogoImage {
         return Image(nsImage: image)
     }
 }
+#endif
 
 // MARK: Paths (generated from the icon set; 24×24 grid)
 

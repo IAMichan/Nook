@@ -16,11 +16,23 @@ body:
       placeholder: |
         1. ...
         2. ...
-  - type: input
-    id: macos
+  - type: dropdown
+    id: platform
     attributes:
-      label: macOS version and Mac model
-      placeholder: macOS 15.5, MacBook Pro M3
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Android
+        - iPhone (Nook Companion)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version and device
+      placeholder: macOS 15.5, MacBook Pro M3 / Windows 11, ThinkPad X1 / Ubuntu 24.04 (X11) / Pixel 8, Android 15
     validations:
       required: true
   - type: input

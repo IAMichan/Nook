@@ -15,20 +15,15 @@ struct TodayView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 header
                 ConnectionLine()
                 if !client.can(CompanionFeature.home), client.phase == .connected {
                     Banner(text: String(localized: "Update Nook on your Mac to see your day, music and usage here."), symbol: "arrow.down.circle")
                 }
-                HStack(spacing: Theme.Spacing.sm) {
-                    OverviewTile(count: waiting.count, title: "Needs you", symbol: "hand.raised.fill", color: Theme.amber, highlight: true)
-                    OverviewTile(count: working, title: "Working", symbol: "bolt.fill", color: Theme.iris)
-                    OverviewTile(count: home?.events.count ?? 0, title: "Agenda", symbol: "calendar", color: Theme.mint)
-                }
                 if !waiting.isEmpty {
-                    SectionHeader(title: "Needs you", count: waiting.count, color: Theme.amber)
-                    ForEach(waiting.prefix(3)) { SessionCard(session: $0) }
+                    SectionHeader(title: "Needs you", count: waiting.count, urgent: true)
+                    ForEach(waiting.prefix(3)) { SessionNotice(session: $0) }
                 }
                 if let home {
                     if !home.lines.isEmpty {
@@ -49,16 +44,12 @@ struct TodayView: View {
                     }
                     if !home.suggestions.isEmpty, client.can(CompanionFeature.chat) {
                         SectionHeader(title: "Start with")
-                        VStack(spacing: Theme.Spacing.sm) {
-                            ForEach(home.suggestions, id: \.self) { suggestion in
-                                SuggestionRow(text: suggestion) { openChat(suggestion) }
-                            }
-                        }
+                        SuggestionGrid(suggestions: home.suggestions) { openChat($0) }
                     }
                 }
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.bottom, Theme.Spacing.xl)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.bottom, Theme.Spacing.xxl)
         }
         .refreshable { await client.loadHome() }
         .navigationDestination(for: String.self) { id in SessionDetailView(sessionID: id) }
@@ -74,9 +65,10 @@ struct TodayView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
-                .font(.caption.weight(.semibold)).tracking(0.8).foregroundStyle(Theme.textTertiary)
-            Text(Self.greeting()).font(.largeTitle.weight(.bold)).foregroundStyle(Theme.text)
+            NookMark(size: 44).padding(.bottom, Theme.Spacing.lg)
+            Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                .font(Theme.TextStyle.label).foregroundStyle(Theme.textTertiary)
+            Text(Self.greeting()).font(Theme.TextStyle.display).foregroundStyle(Theme.text)
             Group {
                 if waiting.isEmpty {
                     Text("All quiet. Here is your day.")
@@ -84,9 +76,11 @@ struct TodayView: View {
                     Text("\(waiting.count) sessions wait for you")
                 }
             }
-            .font(.callout).foregroundStyle(Theme.textSecondary)
+            .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
         }
-        .padding(.top, Theme.Spacing.xl)
+        .padding(.horizontal, Theme.Spacing.xs)
+        .padding(.top, Theme.Spacing.xxl)
+        .padding(.bottom, Theme.Spacing.xs)
     }
 
     private static func greeting() -> String {
@@ -105,45 +99,52 @@ private struct ForYouCard: View {
     let lines: [HomeDigest.Line]
 
     var body: some View {
-        VStack(spacing: 0) {
+        RowGroup {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                if index > 0 { Divider().overlay(Theme.hairline).padding(.leading, 52) }
-                HStack(spacing: Theme.Spacing.md) {
-                    LineIcon(icon: line.icon, tone: line.tone)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(line.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(2)
-                        if !line.subtitle.isEmpty {
-                            Text(line.subtitle).font(.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, Theme.Spacing.sm)
+                if index > 0 { RowSeparator(inset: Theme.Spacing.xl + 34 + Theme.Spacing.lg) }
+                TodayRow(line: line)
             }
         }
-        .card(padding: Theme.Spacing.md)
     }
 }
 
-/// The icon of a "For you" row: an agent's mark, a connection's symbol, or Nook's own symbol, in the row's color.
-private struct LineIcon: View {
-    let icon: String
-    let tone: String
+/// A row of your day, the Mac's `TodayRow`: its icon (an agent's or a connection's own, with the row's color as a dot
+/// on its corner; a symbol on a tile in that color), the title and one line under it.
+private struct TodayRow: View {
+    let line: HomeDigest.Line
+
+    private var parts: (kind: String, value: String) {
+        let split = line.icon.split(separator: ":", maxSplits: 1).map(String.init)
+        return (split.first ?? "", split.count > 1 ? split[1] : "")
+    }
 
     var body: some View {
-        let parts = icon.split(separator: ":", maxSplits: 1).map(String.init)
-        let kind = parts.first ?? ""
-        let value = parts.count > 1 ? parts[1] : ""
-        if kind == "agent" {
-            AgentIcon(agent: value, size: 36)
-        } else {
-            let color = Self.color(tone)
-            Image(systemName: kind == "source" ? Self.sourceSymbol(value) : (value.isEmpty ? "circle.fill" : value))
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 36, height: 36)
-                .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        let tone = Self.color(line.tone)
+        HStack(spacing: Theme.Spacing.lg) {
+            Group {
+                switch parts.kind {
+                case "agent": HomeLogo(content: .agent(parts.value))
+                case "source": HomeLogo(content: .symbol(Self.sourceSymbol(parts.value)), tint: Theme.textStrong)
+                default: HomeLogo(content: .symbol(parts.value.isEmpty ? "circle.fill" : parts.value), tint: tone)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if parts.kind == "agent" || parts.kind == "source" {
+                    Circle().fill(tone).frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(Theme.surface, lineWidth: 2))
+                        .offset(x: 2, y: 2)
+                }
+            }
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(line.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(2)
+                if !line.subtitle.isEmpty {
+                    Text(line.subtitle).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.lg)
     }
 
     static func color(_ tone: String) -> Color {
@@ -151,7 +152,7 @@ private struct LineIcon: View {
         case "amber": return Theme.amber
         case "coral": return Theme.coral
         case "mint": return Theme.mint
-        default: return Theme.iris
+        default: return Theme.blue
         }
     }
 
@@ -176,13 +177,14 @@ private struct AgendaCard: View {
     let events: [HomeDigest.Event]
 
     var body: some View {
-        VStack(spacing: 0) {
+        RowGroup {
             ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                if index > 0 { Divider().overlay(Theme.hairline).padding(.leading, 64) }
-                EventRow(event: event).padding(.vertical, Theme.Spacing.sm)
+                if index > 0 { RowSeparator(inset: Theme.Spacing.xl + 48 + Theme.Spacing.lg) }
+                EventRow(event: event)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.vertical, Theme.Spacing.lg)
             }
         }
-        .card(padding: Theme.Spacing.md)
     }
 }
 
@@ -194,26 +196,25 @@ private struct EventRow: View {
     private var now: Bool { start <= .now && end > .now }
 
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(start, format: .dateTime.hour().minute()).font(.subheadline.weight(.semibold)).monospacedDigit()
-                    .foregroundStyle(now ? Theme.mint : Theme.text)
-                Text(end, format: .dateTime.hour().minute()).font(.caption2).monospacedDigit().foregroundStyle(Theme.textTertiary)
+        HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(start, format: .dateTime.hour().minute()).font(Theme.TextStyle.strong).monospacedDigit()
+                    .foregroundStyle(Theme.text)
+                Text(end, format: .dateTime.hour().minute()).font(Theme.TextStyle.caption).monospacedDigit().foregroundStyle(Theme.textTertiary)
             }
-            .frame(width: 48, alignment: .trailing)
-            RoundedRectangle(cornerRadius: 2).fill(now ? Theme.mint : Theme.iris).frame(width: 3)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text(event.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(2)
-                    if now {
-                        Text("Now").font(.caption2.weight(.bold)).foregroundStyle(Theme.canvas)
-                            .padding(.horizontal, 6).padding(.vertical, 2).background(Theme.mint, in: Capsule())
-                    }
-                }
+            .frame(width: 48, alignment: .leading)
+            Capsule().fill(now ? Theme.mint : Theme.separator).frame(width: 3)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(event.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(2)
                 let detail = [event.location, event.calendar].filter { !$0.isEmpty }.joined(separator: " · ")
-                if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(Theme.textTertiary).lineLimit(1) }
-                if !Calendar.current.isDateInToday(start) {
-                    Text(start, format: .dateTime.weekday(.wide)).font(.caption2).foregroundStyle(Theme.textTertiary)
+                if !detail.isEmpty { Text(detail).font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1) }
+                if now {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        PulseDot(color: Theme.mint, size: 6)
+                        Text("Now").font(Theme.TextStyle.label).foregroundStyle(Theme.text)
+                    }
+                } else if !Calendar.current.isDateInToday(start) {
+                    Text(start, format: .dateTime.weekday(.wide)).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
                 }
             }
             Spacer(minLength: 0)
@@ -231,31 +232,30 @@ private struct NowPlayingCard: View {
     let read: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(spacing: Theme.Spacing.md) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            HStack(spacing: Theme.Spacing.lg) {
                 Image(systemName: "music.note")
-                    .font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(LinearGradient(colors: [Color(hex: 0xFF8A5B), Theme.coral], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(track.title).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
+                    .font(Theme.font(20, .semibold)).foregroundStyle(Theme.textStrong)
+                    .frame(width: 52, height: 52)
+                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(track.title).font(Theme.TextStyle.title).foregroundStyle(Theme.text).lineLimit(1)
                     Text([track.artist, track.app].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.subheadline).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
             if track.duration > 0 {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let position = min(track.duration, track.position + (track.playing ? context.date.timeIntervalSince(read) : 0))
-                    VStack(spacing: 4) {
-                        ProgressView(value: position, total: track.duration).tint(Theme.text)
+                    VStack(spacing: Theme.Spacing.xs) {
+                        UsageBar(fraction: position / track.duration, color: Theme.text, height: 4)
                         HStack {
                             Text(Self.time(position))
                             Spacer()
                             Text(Self.time(track.duration))
                         }
-                        .font(.caption2.monospacedDigit()).foregroundStyle(Theme.textTertiary)
+                        .font(Theme.TextStyle.caption).monospacedDigit().foregroundStyle(Theme.textTertiary)
                     }
                 }
             }
@@ -266,8 +266,8 @@ private struct NowPlayingCard: View {
                     control("backward.fill", "previous", label: "Previous track")
                     Button { press("playpause") } label: {
                         Image(systemName: track.playing ? "pause.fill" : "play.fill")
-                            .font(.title2.weight(.bold)).foregroundStyle(Theme.canvas)
-                            .frame(width: 56, height: 56).background(Theme.text, in: Circle())
+                            .font(Theme.font(20, .bold)).foregroundStyle(Theme.ink)
+                            .frame(width: 52, height: 52).background(Theme.text, in: Circle())
                     }
                     .accessibilityLabel(playLabel)
                     control("forward.fill", "next", label: "Next track")
@@ -283,7 +283,7 @@ private struct NowPlayingCard: View {
 
     private func control(_ symbol: String, _ command: String, label: LocalizedStringKey) -> some View {
         Button { press(command) } label: {
-            Image(systemName: symbol).font(.title3).foregroundStyle(Theme.text).frame(width: 44, height: 44)
+            Image(systemName: symbol).font(Theme.font(18, .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
         }
         .accessibilityLabel(label)
     }
@@ -308,31 +308,31 @@ private struct LimitsGlance: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(spacing: Theme.Spacing.md) {
+            VStack(spacing: Theme.Spacing.xl) {
                 ForEach(accounts.filter { !$0.limits.isEmpty }) { account in
                     let top = account.limits.max { $0.percent < $1.percent }
-                    HStack(spacing: Theme.Spacing.md) {
+                    HStack(spacing: Theme.Spacing.lg) {
                         AgentIcon(agent: account.agent, size: 30)
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text(account.agent).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
-                                Text(account.account).font(.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                                Text(account.agent).font(Theme.TextStyle.strong).foregroundStyle(Theme.text)
+                                Text(account.account).font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1)
                                 Spacer()
                                 if let top {
-                                    Text(verbatim: "\(Int(top.percent.rounded()))%").font(.subheadline.weight(.bold)).monospacedDigit()
+                                    Text(verbatim: "\(Int(top.percent.rounded()))%").font(Theme.TextStyle.strong).monospacedDigit()
                                         .foregroundStyle(UsageTone.text(top.percent))
                                 }
                             }
                             if let top {
-                                UsageBar(fraction: top.percent / 100, color: UsageTone.fill(top.percent, agent: account.agent), pace: top.pace())
+                                UsageBar(fraction: top.percent / 100, color: UsageTone.fill(top.percent), pace: top.pace())
                             }
                         }
                     }
                 }
                 HStack {
-                    Text("All usage").font(.footnote.weight(.semibold)).foregroundStyle(Theme.iris)
+                    Text("All usage").font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
                     Spacer()
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.iris)
+                    Image(systemName: "chevron.right").font(Theme.font(12, .semibold)).foregroundStyle(Theme.textTertiary)
                 }
             }
             .card()
@@ -347,15 +347,15 @@ struct SuggestionRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "sparkles").font(.footnote.weight(.semibold)).foregroundStyle(Theme.iris)
-                Text(text).font(.subheadline).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
+            HStack(spacing: Theme.Spacing.lg) {
+                Image(systemName: "sparkles").font(Theme.font(14, .semibold)).foregroundStyle(Theme.textTertiary).frame(width: 18)
+                Text(text).font(Theme.TextStyle.body).foregroundStyle(Theme.textStrong).multilineTextAlignment(.leading)
                 Spacer()
-                Image(systemName: "arrow.up.right").font(.caption.weight(.bold)).foregroundStyle(Theme.textTertiary)
+                Image(systemName: "arrow.up.right").font(Theme.font(12, .semibold)).foregroundStyle(Theme.textTertiary)
             }
-            .padding(Theme.Spacing.md)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(Theme.hairline))
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.lg)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

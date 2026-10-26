@@ -171,4 +171,33 @@ final class TimelinePresentationTests: XCTestCase {
         XCTAssertEqual(tally.lines, EditLines(added: 5, removed: 1), "a failed edit changed nothing")
         XCTAssertNil(ToolTally([event(.tool, "Bash · ls", tool: "Bash", state: .done)]).lines)
     }
+
+    func testBackgroundNoticesJoinTheCommands() {
+        let notice = "task-148 has been launched in the background. I will wait for it to complete before proceeding."
+        XCTAssertEqual(BackgroundWork.notice(notice), ["task-148"])
+        XCTAssertEqual(BackgroundWork.notice("task-1 has been launched in the background.task-2 has been launched in the background."),
+                       ["task-1", "task-2"])
+        XCTAssertEqual(BackgroundWork.notice("task-1 has been launched in the background. Then I fixed the bug."), [],
+                       "a message that says more is an answer")
+        XCTAssertEqual(BackgroundWork.notice("Opgelost."), [])
+
+        let events = [
+            event(.user, "Fix CI"),
+            event(.tool, "rg build", tool: "shell", state: .done, at: 1),
+            event(.tool, "git status", tool: "shell", state: .done, at: 2),
+            event(.assistant, notice, state: .done, at: 3),
+            event(.tool, "rg test", tool: "shell", state: .done, at: 4),
+            event(.tool, "git diff", tool: "shell", state: .done, at: 5)
+        ]
+        let blocks = TimelinePresentation.blocks(events, active: true)
+        XCTAssertEqual(blocks.count, 2, "one group of commands with the notice inside, not two around a message")
+        guard case .tools(_, let grouped, let tally) = blocks[1] else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(grouped.count, 5)
+        XCTAssertEqual(tally.counts[.command], 4)
+
+        let finished = events + [event(.assistant, "Klaar.", state: .done, at: 6), event(.result, "6s", state: .done, at: 7)]
+        let folded = TimelinePresentation.blocks(finished + [event(.user, "Nog iets", at: 9)], active: false)
+        guard case .event(let answer) = folded[2] else { return XCTFail("\(folded)") }
+        XCTAssertEqual(answer.text, "Klaar.", "a notice is never the answer of a turn")
+    }
 }

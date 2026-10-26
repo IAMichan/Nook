@@ -1,101 +1,108 @@
-# Nook voor Windows, Linux en Android
+# Nook for Windows, Linux, and Android
 
-Eén app voor drie platformen, gebouwd met [Tauri 2](https://tauri.app). Dezelfde Nook als op de Mac: chatten met je
-eigen of een externe AI, Nooks, geheugen, plannen die pas na jouw **Uitvoeren** iets doen, je coding-agents en je
-koppelingen. De macOS-app in [`apps/macos`](../macos) is de specificatie: namen, gedrag en teksten volgen die.
+One app for three platforms, built with [Tauri 2](https://tauri.app). The same Nook as on the Mac: chat with your own
+or an external AI, Nooks, memory, plans that only do something after you press **Run**, your coding agents, and your
+connectors. The macOS app in [`apps/macos`](../macos) is the specification: names, behavior, and copy follow it.
 
-> **Status:** vroege versie. Alles uit de Mac-app is geport of staat met een reden op de lijst in
-> [docs/TAURI.md](../../docs/TAURI.md). Op Linux is het in de app getest; Windows-code compileert maar is nog niet op een
-> echte Windows-pc uitgevoerd, en Android bouwt alleen in de CI.
+> **Status:** early version. Everything from the Mac app has either been ported or is on the list in
+> [docs/TAURI.md](../../docs/TAURI.md) with a reason. On Linux it has been tested in the app; Windows code compiles but
+> has not yet been run on a real Windows PC, and Android builds only in CI.
 
-## Opbouw
+> **Interface language:** the Tauri app's interface is Dutch-only for now. Menu paths below give the English name with
+> the Dutch label you will see in the app in parentheses. Adding English and the other Mac languages is one of the
+> most useful things you can contribute; see [CONTRIBUTING.md](../../CONTRIBUTING.md#windows-linux--android-tauri).
+
+## Layout
 
 ```
 apps/tauri/
-  core/                nook-core: de kern in Rust, zonder Tauri, met de tests
-    src/brain/         brein, tool-loop, intenties, bronnen, onderzoek, geheugen, actiepoort
-    src/connectors/    agenda's, GitHub, GitLab, clouddiensten, eigen bronnen, OAuth, MCP, WhatsApp
-    src/services/      scherm, meedenken, stem, Flow, Notetaker, weekoverzicht
-    src/agents/        hub, hooks, IPC, koppelen, accounts
-    src/workspace/     sessies, git, limieten, MCP-brug
-    src/companion/     companion-protocol, server en client
-  src-tauri/           de app: vensters, systeemvak, sneltoetsen, commando's, lijm per gebied
-    src/platform/      wat per besturingssysteem verschilt (windows/, linux/, android.rs, desktop.rs, secrets.rs)
-    src/tools/         het register van bronnen voor het brein (één regel per bron in `sources()`)
-    gen/android/       het Android-project (eigen MainActivity)
-  src/                 de interface in Svelte 5 + TypeScript (balk, hoofdvenster, instellingen, per gebied een map)
+  core/                nook-core: the core in Rust, without Tauri, with the tests
+    src/brain/         brain, tool loop, intents, sources, research, memory, action gate
+    src/connectors/    calendars, GitHub, GitLab, cloud services, custom sources, OAuth, MCP, WhatsApp
+    src/services/      screen, Think Along, voice, Flow, Notetaker, weekly recap
+    src/agents/        hub, hooks, IPC, linking, accounts
+    src/workspace/     sessions, git, limits, MCP bridge
+    src/companion/     companion protocol, server, and client
+  src-tauri/           the app: windows, tray, hotkeys, commands, glue per area
+    src/platform/      what differs per operating system (windows/, linux/, android.rs, desktop.rs, secrets.rs)
+    src/tools/         the brain's registry of sources (one line per source in `sources()`)
+    gen/android/       the Android project (custom MainActivity)
+  src/                 the interface in Svelte 5 + TypeScript (bar, main window, settings, one folder per area)
 ```
 
-- De kern (`core/`) bouwt en test zonder venster of webview: `cargo test -p nook-core`.
-- Wat per platform verschilt, staat achter een trait in `core/src/platform.rs` of `core/src/secrets.rs` en wordt in
-  `src-tauri/src/platform/` ingevuld. Een platform dat iets niet kan, zegt dat (`Capabilities`); de interface verbergt het.
-- De interface praat alleen via `src/lib/api.ts` met Rust (`invoke` en events `nook-stream`, `nook-updated`).
+- The core (`core/`) builds and tests without a window or webview: `cargo test -p nook-core`.
+- What differs per platform sits behind a trait in `core/src/platform.rs` or `core/src/secrets.rs` and is filled in
+  under `src-tauri/src/platform/`. A platform that can't do something says so (`Capabilities`); the interface hides it.
+- The interface talks to Rust only through `src/lib/api.ts` (`invoke` and the events `nook-stream`, `nook-updated`).
 
-## Wat er per platform is
+## What each platform has
 
 | | Windows | Linux | Android |
 |---|---|---|---|
-| Balk bovenaan het scherm (de "notch"), of zwevend | ✓ | ✓ | — (hele scherm) |
-| Hoofdvenster met Nooks, chat en instellingen | ✓ | ✓ | ✓ |
-| Systeemvak en globale sneltoetsen | ✓ | ✓ (X11; Wayland zonder globale toetsen) | — |
-| Geheimen | Referentiebeheer | Secret Service (GNOME Keyring, KWallet) | afgeschermde app-map |
-| Breinen: Ollama, LM Studio, Claude, OpenAI, Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot | ✓ | ✓ | ✓ (lokaal via een server op je netwerk) |
-| Claude Code als brein, coding-agents volgen en starten, terminals, git | ✓ | ✓ | — (goedkeuren via de companion) |
-| Koppelingen: GitHub, GitLab, agenda's (ICS), Cal.com, Notion, Stripe, Vercel, n8n, Resend, MCP, WhatsApp | ✓ | ✓ | ✓ (MCP via stdio —) |
-| Scherm lezen, meekijken, meedenken | ✓ (UI Automation, OCR) | ✓ (AT-SPI, tesseract) | — |
-| Muziek | ✓ (mediabediening van Windows) | ✓ (MPRIS) | — |
-| Praten en voorlezen | ✓ | ✓ (whisper.cpp of een gekozen dienst; espeak-ng) | — |
-| "Hé Nook" | ✓ | — | — |
-| Overal dicteren (Flow) en de Notetaker | ✓ | ✓ (X11; systeemgeluid via PulseAudio/PipeWire) | — |
-| Companion | server voor de iPhone-app | server voor de iPhone-app | telefoonkant |
+| Bar at the top of the screen (the "notch"), or floating | ✓ | ✓ | — (full screen) |
+| Main window with Nooks, chat, and settings | ✓ | ✓ | ✓ |
+| Tray and global hotkeys | ✓ | ✓ (X11; Wayland without global hotkeys) | — |
+| Secrets | Credential Manager | Secret Service (GNOME Keyring, KWallet) | private app folder |
+| Brains: Ollama, LM Studio, Claude, OpenAI, Gemini, Grok, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot | ✓ | ✓ | ✓ (local via a server on your network) |
+| Claude Code as a brain, following and starting coding agents, terminals, git | ✓ | ✓ | — (approve via the companion) |
+| Connectors: GitHub, GitLab, calendars (ICS), Cal.com, Notion, Stripe, Vercel, n8n, Resend, MCP, WhatsApp | ✓ | ✓ | ✓ (MCP via stdio —) |
+| Reading the screen, Look Along, Think Along | ✓ (UI Automation, OCR) | ✓ (AT-SPI, tesseract) | — |
+| Music | ✓ (Windows media controls) | ✓ (MPRIS) | — |
+| Talking and reading aloud | ✓ | ✓ (whisper.cpp or a chosen service; espeak-ng) | — |
+| "Hey Nook" | ✓ | — | — |
+| Dictation everywhere (Flow) and the Notetaker | ✓ | ✓ (X11; system audio via PulseAudio/PipeWire) | — |
+| Companion | server for the iPhone app | server for the iPhone app | phone side |
 
-## Bouwen
+## Building
 
-Vereisten: [Rust](https://rustup.rs) (the version in `rust-toolchain.toml`; rustup installs it by itself), [Node.js](https://nodejs.org) 22 en de
-[Tauri-vereisten](https://tauri.app/start/prerequisites/) van je platform (Windows: WebView2 en de MSVC-buildtools;
-Linux: `libwebkit2gtk-4.1-dev` en vrienden; Android: Android Studio, de NDK en `JAVA_HOME`).
+Requirements: [Rust](https://rustup.rs) (the version in `rust-toolchain.toml`; rustup installs it by itself),
+[Node.js](https://nodejs.org) 22, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
+platform (Windows: WebView2 and the MSVC build tools; Linux: `libwebkit2gtk-4.1-dev` and friends; Android: Android
+Studio, the NDK, and `JAVA_HOME`).
 
 ```sh
 cd apps/tauri
 npm ci
-npm run tauri dev          # starten met herladen
-npm run tauri build        # installatiebestand (Windows: .msi en .exe, Linux: .deb en .AppImage)
+npm run tauri dev          # run with hot reload
+npm run tauri build        # installer (Windows: .msi and .exe, Linux: .deb and .AppImage)
 ```
 
-Android (`src-tauri/gen/android` staat in de repo, met een eigen `MainActivity`; vereist de Android SDK, NDK 27 en
-`NDK_HOME`). De CI-job **Android** levert een ongetekende APK.
+Android (`src-tauri/gen/android` is in the repo, with a custom `MainActivity`; requires the Android SDK, NDK 27, and
+`NDK_HOME`). The CI job **Android** produces an unsigned APK.
 
 ```sh
 npm run tauri android dev
 npm run tauri android build -- --apk
 ```
 
-Controles, zoals de CI ze draait:
+Checks, as CI runs them:
 
 ```sh
 npm run check && npm test && npm run build
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 
-Start-opties: `nook --window` opent meteen het hoofdvenster, `nook --settings` de instellingen.
+Launch options: `nook --window` opens the main window right away, `nook --settings` opens settings.
 
-## Waar vind je wat
+## Where to find what
 
-- **De balk** bovenaan het scherm: in rust een pil met Nook (een stipje per lopende of wachtende Nook). Wijs ernaar of
-  druk **Alt+Ctrl+Spatie** en hij klapt open met de tabs **Nook** (chat en open punten), **Agents** en **Werkruimte**.
-  Liever zwevend? **Instellingen › Algemeen › Plek**; sleep hem waarheen je wilt, de plek wordt onthouden.
-- **Het hoofdvenster** (**Alt+Ctrl+W** of het systeemvak): al je Nooks links, de chat rechts, en de instellingen.
-- **Instellingen › Brein**: kies het brein. Standaard denkt Nook lokaal (Ollama, met modeladvies op basis van je
-  werkgeheugen en installeren met één klik); een externe AI of Claude Code kies je zelf.
-- **Instellingen › Accounts & koppelingen**: bovenaan wat gekoppeld is, daaronder **Koppel** of **Verbinden** bij elke
-  dienst. **Instellingen › Agents**: Claude Code, Codex en de andere agents koppelen (je ziet eerst de diff).
-- **Agents** en **Werkruimte**: sessies volgen en starten, goedkeuren in de balk, terminals, de browser en worktrees.
-- **Sneltoetsen**: Alt+Spatie praten, Alt+Ctrl+Spatie chatten, Alt+Ctrl+W hoofdvenster, Alt+Ctrl+N meekijken,
-  Alt+Ctrl+4 schermdeel, Control+Alt+D vasthouden om te dicteren.
-- **Companion**: op de pc bij Instellingen › Companion (koppel de iPhone-app of Nook op Android met de QR-code); op
-  Android het tabblad Companion.
+- **The bar** at the top of the screen: at rest a pill with Nook (a dot per running or waiting Nook). Hover over it or
+  press **Alt+Ctrl+Space** and it opens with the tabs **Nook** (chat and open items), **Agents**, and **Workspace**
+  (*Werkruimte*). Prefer it floating? **Settings › General › Position** (*Instellingen › Algemeen › Plek*); drag it
+  wherever you like and the position is remembered.
+- **The main window** (**Alt+Ctrl+W** or the tray): all your Nooks on the left, the chat on the right, and settings.
+- **Settings › Brain** (*Instellingen › Brein*): choose the brain. By default Nook thinks locally (Ollama, with model
+  advice based on your memory and one-click install); an external AI or Claude Code is your own choice.
+- **Settings › Accounts & connections** (*Accounts & koppelingen*): what is connected at the top, below it **Connect**
+  (*Koppel* or *Verbinden*) for each service. **Settings › Agents**: link Claude Code, Codex, and the other agents
+  (you see the diff first).
+- **Agents** and **Workspace**: follow and start sessions, approve in the bar, terminals, the browser, and worktrees.
+- **Hotkeys**: Alt+Space talk, Alt+Ctrl+Space chat, Alt+Ctrl+W main window, Alt+Ctrl+N Look Along, Alt+Ctrl+4 screen
+  region, hold Control+Alt+D to dictate.
+- **Companion**: on the PC under Settings › Companion (pair the iPhone app or Nook on Android with the QR code); on
+  Android the Companion tab.
 
-## Nog niet
+## Not yet
 
-Zie [docs/TAURI.md](../../docs/TAURI.md) voor wat per onderdeel geport is en wat nog niet. Testen tegen nep-diensten
-staat daar ook beschreven.
+See [docs/TAURI.md](../../docs/TAURI.md) for what has been ported per part and what hasn't. Testing against fake
+services is described there too.

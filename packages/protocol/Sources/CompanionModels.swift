@@ -26,12 +26,20 @@ enum CompanionConstants {
     static let linesBudget = 150_000
 }
 
-/// What the Mac shows to pair: where to connect and the key. `nook://pair?h=<host>&p=<port>&k=<base64url key>&n=<name>`.
+/// What the Mac shows to pair: where to connect and the key. `nook://pair?h=<host>&p=<port>&k=<base64url key>&n=<name>`,
+/// followed by `&a=<address>` for every other address the Mac can be reached at now (its LAN and Tailscale addresses).
 struct PairingLink: Equatable, Sendable {
     var host: String
     var port: UInt16
     var key: Data
     var macName: String
+    /// Other addresses to try (`CompanionRoutes.initial`); a phone that does not know them reads only `h`.
+    var alternates: [String] = []
+    /// The relay the Mac keeps a connection to (`CompanionRelay`, `&r=<https address>`), to reach it from anywhere.
+    var relay: String?
+
+    /// Most alternate addresses a code carries, so the QR code stays easy to scan.
+    static let maxAlternates = 6
 
     static let keyLength = 32
 
@@ -41,6 +49,8 @@ struct PairingLink: Equatable, Sendable {
         c.host = CompanionConstants.linkHost
         c.queryItems = [URLQueryItem(name: "h", value: host), URLQueryItem(name: "p", value: String(port)),
                         URLQueryItem(name: "k", value: Base64URL.encode(key)), URLQueryItem(name: "n", value: macName)]
+            + alternates.prefix(Self.maxAlternates).map { URLQueryItem(name: "a", value: $0) }
+            + (relay.map { [URLQueryItem(name: "r", value: $0)] } ?? [])
         return c.url
     }
 
@@ -52,7 +62,11 @@ struct PairingLink: Equatable, Sendable {
         guard let host = q["h"], validHost(host), let portText = q["p"], let port = UInt16(portText), port > 0,
               let keyText = q["k"], let key = Base64URL.decode(keyText), key.count == keyLength else { return nil }
         let name = String((q["n"] ?? "Mac").unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }.prefix(60))
-        return PairingLink(host: host, port: port, key: key, macName: name.isEmpty ? "Mac" : name)
+        var seen: Set<String> = [host.lowercased()]
+        let alternates = (c.queryItems ?? []).filter { $0.name == "a" }.compactMap(\.value)
+            .filter { validHost($0) && seen.insert($0.lowercased()).inserted }
+        return PairingLink(host: host, port: port, key: key, macName: name.isEmpty ? "Mac" : name,
+                           alternates: Array(alternates.prefix(maxAlternates)), relay: q["r"].flatMap(CompanionRelay.normalize))
     }
 
     /// An IPv4/IPv6 address or a host name; nothing with a scheme, path, credentials or spaces.
@@ -100,6 +114,21 @@ enum CompanionOp: String, Codable, Sendable {
     /// Live Activities: the phone's push-to-start token, an activity's update token, an ended activity, or the switch
     /// turned off (`live`).
     case liveActivity
+    /// Manages a session from the phone (`session`; `item` is one of `SessionAction`, `text` the new name of `rename`).
+    case manage
+    /// Keeps the connection open: the Mac answers like `list`, then sends the sessions again whenever they change, as
+    /// answers with this request's id and a growing `seq`. Other requests can travel over the same connection.
+    case subscribe
+    /// A cheap sign of life on an open connection, and a quick check whether a route reaches the Mac.
+    case ping
+}
+
+/// What the phone may do to a session besides answering it, as the Mac's Agents list offers it. The Mac lists the ones
+/// that apply in `SessionDigest.actions`.
+enum SessionAction: String, Codable, Sendable, CaseIterable {
+    case rename, archive, snoozeHour, snoozeEvening, snoozeTomorrow, unsnooze
+    /// Ends the process of an agent outside Nook; it saves its conversation, so it can be continued in Nook.
+    case end
 }
 
 /// What a Mac can do beyond the first version of the protocol. The phone only offers what the Mac lists, so a phone that
@@ -114,7 +143,18 @@ enum CompanionFeature {
     static let inbox = "inbox"
     /// The Mac takes `liveActivity` requests and sends Live Activity pushes.
     static let liveActivity = "liveActivity"
-    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity]
+    /// The Mac takes `manage` requests and lists `SessionDigest.actions`; terminal sessions come with their transcript.
+    static let manage = "manage"
+    /// The Mac takes `subscribe` and `ping`, and keeps a subscribed connection open.
+    static let stream = "stream"
+    /// The Mac reports where it can be reached (`CompanionResponse.endpoints`).
+    static let routes = "routes"
+    /// The Mac answers a repeated request that changed something with its first answer (`CommandReceipts`), so the
+    /// phone may send it again after a lost answer, and keep messages in an outbox while the Mac is away.
+    static let retry = "retry"
+    /// The Mac says which relay it uses (`CompanionResponse.relay`) and answers phones that come through it.
+    static let relay = "relay"
+    static let all = [start, timeline, chat, home, usage, music, inbox, liveActivity, manage, stream, routes, retry, relay]
 }
 
 /// A new session, as the phone asks for it. The Mac decides the rest (account, model, permissions) from its own defaults.
@@ -206,6 +246,13 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     /// The chats of the Chats tab, newest first, and the messages of the one asked for (oldest first).
     var inbox: [InboxChatDigest]?
     var inboxLines: [InboxLine]?
+    /// Where the Mac can be reached now (`CompanionFeature.routes`), with `hello`, `list` and `subscribe`.
+    var endpoints: [CompanionEndpoint]?
+    /// The relay the Mac is connected to (`CompanionFeature.relay`), "" when it uses none; with `endpoints`.
+    var relay: String?
+    /// Set on what the Mac sends by itself over a subscribed connection: 1, 2, 3… The phone ignores one that does not
+    /// grow, so an old message played back on the connection cannot turn the list back.
+    var seq: Int?
 
     static func failure(_ id: String, _ error: CompanionError, message: String? = nil) -> CompanionResponse {
         CompanionResponse(id: id, ok: false, error: error, message: message)
@@ -241,6 +288,8 @@ struct SessionDigest: Codable, Equatable, Identifiable, Sendable {
     var canSend: Bool? = nil
     /// The model the session runs on, when the Mac knows it (for the Live Activity).
     var model: String? = nil
+    /// `SessionAction` raw values the phone may take on this session; nil from a Mac without `CompanionFeature.manage`.
+    var actions: [String]? = nil
 }
 
 extension LiveActivitySnapshot {
@@ -463,6 +512,17 @@ struct RequestGuard: Sendable {
         if abs(now.timeIntervalSince1970 - request.sent) > CompanionConstants.freshness { return .stale }
         if case .limited = rate.admit(now: now) { return .rateLimited }
         if !seen.record(request.id) { return .replay }
+        return nil
+    }
+
+    /// A request that failed in passing (`failed`, `busy`) may come again with the same id: it is no repeat then.
+    mutating func forget(_ request: CompanionRequest) { seen.forget(request.id) }
+
+    /// For a request whose id already has an answer (`CommandReceipts`): it must still be fresh and within the rate,
+    /// but being a repeat is the point.
+    mutating func admitRetry(_ request: CompanionRequest, now: Date) -> CompanionError? {
+        if abs(now.timeIntervalSince1970 - request.sent) > CompanionConstants.freshness { return .stale }
+        if case .limited = rate.admit(now: now) { return .rateLimited }
         return nil
     }
 }

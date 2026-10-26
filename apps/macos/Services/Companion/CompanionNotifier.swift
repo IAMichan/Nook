@@ -26,8 +26,13 @@ final class CompanionNotifier: ObservableObject {
             // `objectWillChange` fires before the change lands; look on a later turn of the run loop.
             .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLiveActivities() } }
         // Heartbeats (which move the stale date on) and phase changes held back by the rate limit.
-        liveTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshLiveActivities() }
+        liveTimer = Timer.scheduledCoalesced(withTimeInterval: 15) { [weak self] _ in
+            Task { @MainActor in
+                let store = CompanionStore.shared
+                guard store.enabled, store.canPush, store.push.enabled,
+                      store.devices.contains(where: \.wantsLiveActivities) else { return }
+                self?.refreshLiveActivities()
+            }
         }
     }
 

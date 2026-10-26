@@ -24,8 +24,9 @@ struct PanelView: View {
     /// use most. Search and talk always show.
     @State private var headerHover = false
 
-    /// The height of the header row (tabs, or a task's title), so Nook can be centered on it.
-    static let headerHeight: CGFloat = 32
+    /// The height of the header row (the floating capsule with the tabs, or a task's title), so Nook can be centered
+    /// on it: a 30 pt button with the capsule's 4 pt padding above and below.
+    static let headerHeight: CGFloat = 38
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,10 +40,15 @@ struct PanelView: View {
                 header
                 PanelApprovalBar(viewModel: viewModel, tab: tab, sheet: sheet, hub: app.hub, workspace: app.workspace)
                     .padding(.leading, headerInset)   // Clear of Nook's ring, under the tabs.
+                // A Double Tap Nook works on, or just finished: every step, and what it typed, to check.
+                if !app.demoMode {
+                    DoubleTapRunBar(doubleTap: DoubleTap.shared)
+                        .padding(.leading, headerInset)
+                }
                 content
                     .id(tab)
                     .transition(.opacity.combined(with: .offset(y: 6)))
-                    .padding(.top, headerInset > 0 ? NookTheme.Spacing.xl + NookTheme.Spacing.xs : NookTheme.Spacing.xl)
+                    .padding(.top, headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.xl)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Agents, the chat and Chats keep the footer under their list. A tab without one (Music) shows it at the
                 // bottom as wide as the Agents list, so the refresh and update button stays where it is on Agents.
@@ -64,7 +70,9 @@ struct PanelView: View {
         }
         .animation(NookTheme.reveal, value: searching)
         .background {
+            // Same guard as ⌘K below: never flip the search unseen while a sheet covers the tab.
             Button("") { searching.toggle() }.keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(sheet != nil || app.demoMode)
                 .opacity(0).accessibilityHidden(true)
         }
         // ⌘K (a rule, see `Keybindings`): search everything from every tab, and again to close it.
@@ -118,9 +126,11 @@ struct PanelView: View {
         }
     }
 
+    /// The tabs, search, talk and the bell in one floating capsule centered over the content, so the header is not a
+    /// bar of its own and needs no line under it. The rarer buttons (the window, close, the gear in demo mode) stay
+    /// outside it at the trailing edge.
     private var header: some View {
         HStack(spacing: 0) {
-            NookTabBar(items: tabItems, selected: tab) { select($0) }
             if inWindow {
                 // Empty header space moves the window, as a title bar does. Its height is fixed: a clear color takes all
                 // the height it is offered, and left free it stretched the header to half the window.
@@ -132,18 +142,9 @@ struct PanelView: View {
             } else {
                 Spacer()
             }
-            // The gear sits in the footer instead, which every tab shows outside demo mode. All header buttons are the
-            // same quiet round button, so the header reads as one calm row next to the tabs.
+            // The gear sits in the footer instead, which every tab shows outside demo mode.
             let gear = app.demoMode
             HStack(spacing: NookTheme.Spacing.xxs) {
-                if !app.demoMode {
-                    NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
-                        .help(tr("search.button"))
-                }
-                NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
-                    .help(tr("button.talk"))
-                // What Nook told you lately, for a notice that closed before you looked.
-                if !app.demoMode { NoticeBellButton() }
                 if !inWindow, headerHover {
                     // Go on in the main window, on this tab, with more room.
                     NookIconButton(systemName: "macwindow", label: tr("menu.window"), size: 30) { app.openWindow(continuing: tab) }
@@ -161,8 +162,36 @@ struct PanelView: View {
             }
         }
         .frame(minHeight: Self.headerHeight)
+        // Centered on the header (after Nook's room on the left); the empty space around it still moves the window.
+        .overlay { headerCapsule }
         .padding(.leading, headerInset)
         .onHover { hovering in withAnimation(NookTheme.hover) { headerHover = hovering } }
+    }
+
+    /// The tabs, a thin line, then search, talk and the bell: one `graphite` capsule with a hairline edge and a soft
+    /// shadow, lifted off the content. The selected tab is on the accent.
+    private var headerCapsule: some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            NookTabBar(items: tabItems, selected: tab, onSelect: { select($0) }, prominent: true)
+            NookDivider(vertical: true)
+                .frame(height: 18)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+            if !app.demoMode {
+                NookIconButton(systemName: "magnifyingglass", label: tr("search.button"), size: 30) { searching.toggle() }
+                    .help(tr("search.button"))
+            }
+            NookIconButton(systemName: "mic", label: tr("button.talk"), size: 30) { viewModel.startListening() }
+                .help(tr("button.talk"))
+            // What Nook told you lately, for a notice that closed before you looked.
+            if !app.demoMode { NoticeBellButton() }
+        }
+        .padding(NookTheme.Spacing.xs)
+        .background(
+            Capsule().fill(NookTheme.graphite)
+                .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+                .shadow(color: NookTheme.notch.opacity(0.55), radius: 14, y: 6)
+        )
+        .fixedSize()
     }
 
     @ViewBuilder
@@ -310,7 +339,7 @@ struct NotchSheetView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: headerInset > 0 ? NookTheme.Spacing.xl + NookTheme.Spacing.xs : NookTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: headerInset > 0 ? PanelOrb.belowHeader : NookTheme.Spacing.lg) {
             // Back, a thin line, then what this task is about: the title, and in quieter text whose it is.
             HStack(spacing: NookTheme.Spacing.md) {
                 SheetBackButton(action: close)

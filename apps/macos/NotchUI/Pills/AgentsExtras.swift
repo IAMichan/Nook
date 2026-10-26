@@ -19,7 +19,8 @@ enum AgentsPage {
 /// button follows the line beside the list when you drag it. A tab without a list shows it at the bottom as wide as the
 /// list would be. On the other tabs, pull requests and usage open their page on Agents.
 /// Refresh reads the session lists again and checks main for an update; while there is one (or it installs), the
-/// update button takes its place, so there is never a second round arrow beside it.
+/// update button takes its place, so there is never a second round arrow beside it. On the pull requests page a back
+/// button replaces the icons and the refresh (the page has its own), and only the update button stays beside it.
 struct PanelFooter: View {
     let selected: String
     let open: (String) -> Void
@@ -27,12 +28,30 @@ struct PanelFooter: View {
     @ObservedObject var history: AgentHistory
     /// The icons one under the other, for a narrow column (the Chats tab's rail of icons).
     var vertical = false
+    /// Leaving the pull requests page for where you were; nil keeps the icons there too.
+    var onBack: (() -> Void)? = nil
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
+        if selected == AgentsPage.pullRequests, let onBack {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                FooterIcon(label: tr("agents.pr.back"), active: false, showsLabel: true, action: onBack) {
+                    ToolGlyph(symbol: "chevron.left")
+                }
+                Spacer(minLength: 0)
+                UpdateFooterButton { EmptyView() }
+            }
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            icons
+        }
+    }
+
+    private var icons: some View {
         let layout = vertical ? AnyLayout(VStackLayout(spacing: NookTheme.Spacing.xs))
             : AnyLayout(HStackLayout(spacing: NookTheme.Spacing.xs))
-        layout {
+        return layout {
             FooterIcon(label: tr("agents.footer.settings"), active: false,
                        action: openSettings) { ToolGlyph(symbol: "gearshape") }
             FooterIcon(label: tr("agents.footer.pullRequests"), active: selected == AgentsPage.pullRequests,
@@ -61,17 +80,27 @@ struct PanelFooter: View {
 private struct FooterIcon<Glyph: View>: View {
     let label: String
     let active: Bool
+    /// Writes the label after the glyph (the back button), instead of only in the tooltip.
+    var showsLabel = false
     let action: () -> Void
     @ViewBuilder var glyph: () -> Glyph
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            glyph()
-                .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
-                .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
-                .contentShape(Rectangle())
+            HStack(spacing: NookTheme.Spacing.xs) {
+                glyph()
+                if showsLabel {
+                    Text(label)
+                        .font(NookTheme.TextStyle.body)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
+            .padding(.horizontal, showsLabel ? NookTheme.Spacing.sm : 0)
+            .frame(minWidth: 32, minHeight: 30, maxHeight: 30)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -88,8 +117,9 @@ private struct PullRequestGlyph: View {
 
 /// The pull request marks GitHub uses, drawn on a 16-point grid so they stay crisp at any size: open (a node, a line,
 /// and a second line that bends back with an arrow), draft (the bend replaced by dots), merged (a branch curving back
-/// into the main line), closed (the arrow replaced by a cross), a conflict (an exclamation mark beside the line) and a
-/// stack (three nodes in a chain).
+/// into the main line), closed (the arrow replaced by a cross), a conflict (a branch bending into the main line, a cross
+/// beside it in the free corner) and a stack (three nodes in a chain). Views show a state through `PullRequestStateIcon`,
+/// which picks the size, line weight and color.
 struct PullRequestStateGlyph: View {
     let glyph: PullRequestBadge.Glyph
     var size: CGFloat = 16
@@ -132,9 +162,14 @@ struct PullRequestStateGlyph: View {
                 lines.move(to: point(13.8, 2.8)); lines.addLine(to: point(10.2, 6.4))
                 nodes.append(point(12, 12.4))
             case .conflict:
+                // A branch from the top right bending into the main line, and a cross in the bottom right corner, clear
+                // of both lines so it stays readable at 12 points.
                 trunk()
-                lines.move(to: point(12, 2.8)); lines.addLine(to: point(12, 9))
-                dots.append(point(12, 12.6))
+                lines.move(to: point(12, 5.2 + r))
+                lines.addCurve(to: point(4, 10.4), control1: point(12, 8.8), control2: point(4, 7.8))
+                lines.move(to: point(10.9, 10.9)); lines.addLine(to: point(14.3, 14.3))
+                lines.move(to: point(14.3, 10.9)); lines.addLine(to: point(10.9, 14.3))
+                nodes.append(point(12, 5.2))
             case .merged:
                 trunk()
                 lines.move(to: point(4, 3.6 + r))

@@ -86,7 +86,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // Metal lets the model's buffers leave GPU residency after 180 s without work by default, and the first suggestion
         // after a pause then waits for them to come back. Keep them as long as the model stays loaded (see
         // `AutocompleteController.idleSeconds`). A value already set in the environment wins.
-        setenv("GGML_METAL_RESIDENCY_KEEP_ALIVE_S", "900", 0)
+        setenv("GGML_METAL_RESIDENCY_KEEP_ALIVE_S", "300", 0)
         llama_log_set({ _, _, _ in }, nil)
         llama_backend_init()
     }()
@@ -150,7 +150,8 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
                 // Sliding-window models (Gemma 3 and 4) keep a full cache: otherwise llama.cpp cannot cut it back, and every
                 // key would read the whole prompt again.
                 params.swa_full = true
-                let threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
+                // Every layer runs on the GPU: more than four CPU threads only take cores from the apps you type in.
+                let threads = Int32(max(2, min(4, ProcessInfo.processInfo.activeProcessorCount - 2)))
                 params.n_threads = threads
                 params.n_threads_batch = threads
                 guard let context = llama_init_from_model(model, params) else {

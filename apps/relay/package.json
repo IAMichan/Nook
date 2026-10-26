@@ -1,0 +1,11 @@
+{
+  "name": "nook-relay",
+  "private": true,
+  "type": "module",
+  "description": "Relay that lets the Nook iPhone companion reach Nook on a Mac from anywhere; it passes sealed bytes and reads nothing.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "npx wrangler@4 dev",
+    "deploy": "npx wrangler@4 deploy"
+  }
+}

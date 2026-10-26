@@ -43,6 +43,7 @@ let workspaceFeatureTranslations: [AppLanguage: [String: String]] = [
         "lineage.deleted": "een verwijderde sessie",
         "lineage.open": "Open die sessie",
         "lineage.forked": "Afgesplitst van een andere sessie",
+        "onboarding.plan.agents": "Coding-agents",
     ],
     .en: [
         "settings.scope.title": "Applies to",
@@ -82,6 +83,7 @@ let workspaceFeatureTranslations: [AppLanguage: [String: String]] = [
         "lineage.deleted": "a deleted session",
         "lineage.open": "Open that session",
         "lineage.forked": "Forked from another session",
+        "onboarding.plan.agents": "Coding agents",
     ],
     .de: [
         "settings.scope.title": "Gilt für",
@@ -121,6 +123,7 @@ let workspaceFeatureTranslations: [AppLanguage: [String: String]] = [
         "lineage.deleted": "eine gelöschte Sitzung",
         "lineage.open": "Diese Sitzung öffnen",
         "lineage.forked": "Von einer anderen Sitzung abgezweigt",
+        "onboarding.plan.agents": "Coding-Agents",
     ],
     .fr: [
         "settings.scope.title": "S'applique à",
@@ -160,6 +163,7 @@ let workspaceFeatureTranslations: [AppLanguage: [String: String]] = [
         "lineage.deleted": "une session supprimée",
         "lineage.open": "Ouvrir cette session",
         "lineage.forked": "Dérivé d'une autre session",
+        "onboarding.plan.agents": "Agents de code",
     ],
     .es: [
         "settings.scope.title": "Se aplica a",
@@ -199,5 +203,6 @@ let workspaceFeatureTranslations: [AppLanguage: [String: String]] = [
         "lineage.deleted": "una sesión eliminada",
         "lineage.open": "Abrir esa sesión",
         "lineage.forked": "Bifurcado de otra sesión",
+        "onboarding.plan.agents": "Agentes de código",
     ],
 ]

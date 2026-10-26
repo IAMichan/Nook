@@ -119,6 +119,15 @@ final class FinishedSessions: ObservableObject {
         return "\(agent)|\(conversation)"
     }
 
+    /// The conversation id an agent session reported itself: from its hooks, or from the hub key ("<agent>:<session id>",
+    /// with the folder as fallback when the agent sent no id). Nil for a process Nook only sees, and for an agent that sent no id.
+    nonisolated static func ownConversation(id: String, sessionID: String, cwd: String, detected: Bool) -> String? {
+        if !sessionID.isEmpty { return sessionID }
+        guard !detected, let colon = id.firstIndex(of: ":") else { return nil }
+        let rest = String(id[id.index(after: colon)...])
+        return rest.isEmpty || rest == cwd ? nil : rest
+    }
+
     static func key(run: WorkspaceRun) -> String {
         key(agent: run.provider.displayName, conversation: run.providerSessionID, fallback: "run:" + run.id.uuidString)
     }

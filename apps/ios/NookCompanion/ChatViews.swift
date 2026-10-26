@@ -18,56 +18,52 @@ enum ChatSuggestions {
 
 // MARK: The list
 
-/// Nook's own chats on the Mac: the same conversations as in the notch, newest first.
+/// Nook's own chats on the Mac: the same conversations as in the notch, newest first, under the panel's title row.
 struct ChatListView: View {
     @EnvironmentObject private var client: CompanionClient
     @Binding var path: [ChatRoute]
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                if !client.can(CompanionFeature.chat) {
-                    EmptyState(symbol: "arrow.down.circle", title: "Update Nook on your Mac",
-                               message: "Update Nook on your Mac to chat with Nook from your phone.") {}
-                } else {
-                    if !client.brainReady {
-                        Banner(text: String(localized: "Nook has no brain set up on your Mac yet: choose one in Nook › Settings."), symbol: "brain")
+            LazyVStack(alignment: .leading, spacing: 0) {
+                PanelHeader(title: "Nook") {
+                    if client.can(CompanionFeature.chat) {
+                        NookIconButton(symbol: "square.and.pencil", label: "New chat") { path.append(.new(UUID(), "")) }
                     }
-                    if client.conversations.isEmpty {
-                        if client.phase == .connected {
-                            EmptyState(symbol: "sparkles", title: "Ask Nook anything",
-                                       message: "Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.") {
-                                SuggestionList { path.append(.new(UUID(), $0)) }
-                            }
-                        }
+                }
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    ConnectionLine()
+                    if !client.can(CompanionFeature.chat) {
+                        EmptyState(symbol: "arrow.down.circle", title: "Update Nook on your Mac",
+                                   message: "Update Nook on your Mac to chat with Nook from your phone.") {}
                     } else {
-                        ForEach(client.conversations) { conversation in
-                            NavigationLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
-                                .buttonStyle(.plain)
+                        if !client.brainReady {
+                            Banner(text: String(localized: "Nook has no brain set up on your Mac yet: choose one in Nook › Settings."), symbol: "brain")
+                        }
+                        if client.conversations.isEmpty, client.phase == .connected {
+                            AskNook { path.append(.new(UUID(), $0)) }
                         }
                     }
                 }
+                .padding(.horizontal, Theme.Spacing.xl)
+                if !client.conversations.isEmpty {
+                    VStack(spacing: Theme.Spacing.xxs) {
+                        ForEach(client.conversations) { conversation in
+                            NavigationLink(value: ChatRoute.open(conversation.id)) { ChatRow(conversation: conversation) }
+                                .buttonStyle(RowPress())
+                        }
+                    }
+                    .padding(.horizontal, Theme.Spacing.md)
+                }
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.xxl)
         }
         .refreshable { await client.loadChats() }
-        .navigationTitle("Nook")
+        .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: ChatRoute.self) { route in
             switch route {
             case .new(_, let prompt): ChatView(conversationID: nil, prompt: prompt)
             case .open(let id): ChatView(conversationID: id)
-            }
-        }
-        .toolbar {
-            if client.can(CompanionFeature.chat) {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { path.append(.new(UUID(), "")) } label: {
-                        Image(systemName: "square.and.pencil").font(.body.weight(.semibold)).foregroundStyle(.white)
-                            .frame(width: 32, height: 32).background(Theme.iris, in: Circle())
-                    }
-                    .accessibilityLabel("New chat")
-                }
             }
         }
         .screen()
@@ -80,61 +76,54 @@ struct ChatListView: View {
     }
 }
 
+/// A conversation with Nook, as a row of the Mac's list: its title with when on the right, and how it ended under it.
 struct ChatRow: View {
     let conversation: ChatDigest
 
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
-            NookMark(size: 36)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(conversation.title).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
-                    Spacer(minLength: Theme.Spacing.sm)
-                    Text(Date(timeIntervalSince1970: conversation.updated), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                        .font(.caption2).foregroundStyle(Theme.textTertiary)
-                }
-                if conversation.busy {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text("Writing…")
-                    }
-                    .font(.subheadline).foregroundStyle(Theme.iris)
-                } else if !conversation.preview.isEmpty {
-                    Text(conversation.preview).font(.subheadline).foregroundStyle(Theme.textSecondary).lineLimit(2)
-                }
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                Text(conversation.title).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                Spacer(minLength: Theme.Spacing.md)
                 if conversation.waiting {
-                    Label("Waits for you on your Mac", systemImage: "laptopcomputer")
-                        .font(.caption2.weight(.semibold)).foregroundStyle(Theme.amber)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Theme.amber.opacity(0.14), in: Capsule())
+                    StatusPill(attention: "input")
+                } else {
+                    Text(Date(timeIntervalSince1970: conversation.updated), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1)
                 }
             }
+            if conversation.busy {
+                HStack(spacing: Theme.Spacing.sm) {
+                    PulseDot(color: Theme.blue, size: 6)
+                    Text("Writing…")
+                }
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+            } else if !conversation.preview.isEmpty {
+                Text(conversation.preview).font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(2)
+            }
         }
-        .card(padding: Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 }
 
-/// The first questions as tappable rows.
-private struct SuggestionList: View {
+/// An empty chat, as the Mac's empty Nook tab: Nook, one line that says what he can do, and the starters two per row.
+private struct AskNook: View {
     let pick: (String) -> Void
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.sm) {
-            ForEach(ChatSuggestions.all, id: \.self) { suggestion in
-                Button { pick(suggestion) } label: {
-                    HStack {
-                        Text(suggestion).font(.subheadline).foregroundStyle(Theme.text).multilineTextAlignment(.leading)
-                        Spacer()
-                        Image(systemName: "arrow.up.right").font(.caption.weight(.bold)).foregroundStyle(Theme.iris)
-                    }
-                    .padding(Theme.Spacing.md)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).strokeBorder(Theme.hairline))
-                }
-                .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                NookMark(size: 44).padding(.bottom, Theme.Spacing.md)
+                Text("Ask Nook anything").font(Theme.TextStyle.display).foregroundStyle(Theme.text)
+                Text("Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.")
+                    .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
             }
+            SuggestionGrid(suggestions: ChatSuggestions.all, ask: pick)
         }
+        .padding(.top, Theme.Spacing.xxl)
     }
 }
 
@@ -163,19 +152,16 @@ struct ChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
                     if lines.isEmpty, !sending {
-                        EmptyState(symbol: "sparkles", title: "Ask Nook anything",
-                                   message: "Your calendar, mail, notes, or the web. Plans and drafts wait for your approval on your Mac.") {
-                            SuggestionList { send($0) }
-                        }
+                        AskNook { send($0) }
                     }
                     ForEach(lines) { ChatLineView(line: $0) }
                     if sending, lines.last?.fromNook != true { ThinkingLine(status: "") }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.lg)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: lines.last?.text) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
@@ -183,11 +169,16 @@ struct ChatView: View {
             .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
         }
         .safeAreaInset(edge: .bottom) {
-            ComposerBar(placeholder: "Ask Nook", text: $text, busy: busy, onStop: stop) { question in send(question) }
-                .disabled(!client.brainReady)
+            ComposerDock {
+                SessionComposer(text: $text, prompt: "Ask Nook", canSend: client.brainReady, busy: busy, onStop: stop) {
+                    let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    text = ""
+                    send(question)
+                }
+            }
         }
-        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { SheetTitle(title: title, subtitle: "Nook") } }
         .screen()
         .onAppear {
             guard !promptSent, !prompt.isEmpty else { return }
@@ -227,7 +218,7 @@ struct ChatView: View {
     }
 }
 
-/// A message in a Nook chat: yours in an iris bubble, Nook's as open text under its mark.
+/// A message in a Nook chat: yours in a soft grey bubble, Nook's as open text under its mark, as in the notch.
 struct ChatLineView: View {
     let line: ChatLine
 
@@ -236,20 +227,22 @@ struct ChatLineView: View {
             if line.text.isEmpty, line.streaming {
                 ThinkingLine(status: line.status)
             } else {
-                HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                    NookMark(size: 26)
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Markdown.text(line.text)
-                            .font(.body)
-                            .foregroundStyle(line.failed ? Theme.coral : Theme.text)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if line.onMac {
-                            Label("Nook made a plan, draft or chart: see it on your Mac.", systemImage: "laptopcomputer")
-                                .font(.caption.weight(.medium)).foregroundStyle(Theme.amber)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(Theme.amber.opacity(0.12), in: Capsule())
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    NookMark(size: 22)
+                    Markdown.text(line.text)
+                        .font(Theme.TextStyle.body)
+                        .lineSpacing(3)
+                        .foregroundStyle(line.failed ? Theme.coral : Theme.textStrong)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if line.onMac {
+                        Label {
+                            Text("Nook made a plan, draft or chart: see it on your Mac.").foregroundStyle(Theme.textStrong)
+                        } icon: {
+                            Image(systemName: "laptopcomputer").foregroundStyle(Theme.amber)
                         }
+                        .font(Theme.TextStyle.detail)
+                        .card(padding: Theme.Spacing.lg)
                     }
                 }
             }
@@ -259,23 +252,24 @@ struct ChatLineView: View {
     }
 }
 
-/// Nook at work: its mark, a spinner, and what it is doing.
+/// Nook at work: its mark, a live dot, and what it is doing.
 private struct ThinkingLine: View {
     let status: String
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            NookMark(size: 26)
-            ProgressView().controlSize(.small)
+            NookMark(size: 22)
             Text(status.isEmpty ? String(localized: "Thinking…") : status)
-                .font(.callout).foregroundStyle(Theme.textSecondary)
+                .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
+            PulseDot(color: Theme.textSecondary, size: 5)
         }
     }
 }
 
 // MARK: Shared pieces
 
-/// A message: yours as an iris bubble on the right, the agent's as a card on the left, with inline Markdown.
+/// A message: yours in a soft grey bubble on the right, the agent's as open text with inline Markdown (no bubble), as
+/// in a conversation on the Mac.
 struct MessageBubble: View {
     let text: String
     let mine: Bool
@@ -286,76 +280,31 @@ struct MessageBubble: View {
             HStack {
                 Spacer(minLength: 48)
                 Markdown.text(text)
-                    .font(.body)
-                    .foregroundStyle(.white)
+                    .font(Theme.TextStyle.body)
+                    .foregroundStyle(Theme.text)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Theme.iris, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
+                    .padding(.horizontal, Theme.Spacing.lg + Theme.Spacing.xxs)
+                    .padding(.vertical, Theme.Spacing.md + Theme.Spacing.xxs)
+                    .background(Theme.bubble, in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
             }
         } else {
             Markdown.text(text)
-                .font(.body)
-                .foregroundStyle(failed ? Theme.coral : Theme.text)
+                .font(Theme.TextStyle.body)
+                .lineSpacing(3)
+                .foregroundStyle(failed ? Theme.coral : Theme.textStrong)
                 .textSelection(.enabled)
-                .card(padding: Theme.Spacing.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.Spacing.xs)
         }
-    }
-}
-
-/// The field at the bottom of a conversation: send, or stop while an answer is being written and the field is empty.
-struct ComposerBar: View {
-    let placeholder: LocalizedStringKey
-    @Binding var text: String
-    var busy = false
-    var onStop: (() -> Void)? = nil
-    let onSend: (String) -> Void
-
-    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
-            TextField(placeholder, text: $text, axis: .vertical)
-                .lineLimit(1...6)
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, 11)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.hairline))
-            if busy, trimmed.isEmpty, let onStop {
-                Button(action: onStop) {
-                    Image(systemName: "stop.fill").font(.body.weight(.bold)).foregroundStyle(.white)
-                        .frame(width: 42, height: 42).background(Theme.coral, in: Circle())
-                }
-                .accessibilityLabel("Stop")
-            } else {
-                Button {
-                    let message = trimmed
-                    text = ""
-                    onSend(message)
-                } label: {
-                    Image(systemName: "arrow.up").font(.body.weight(.bold))
-                        .foregroundStyle(trimmed.isEmpty ? Theme.textTertiary : .white)
-                        .frame(width: 42, height: 42)
-                        .background(trimmed.isEmpty ? Theme.raised : Theme.iris, in: Circle())
-                }
-                .disabled(trimmed.isEmpty)
-                .accessibilityLabel("Send")
-            }
-        }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.top, Theme.Spacing.sm)
-        .padding(.bottom, Theme.Spacing.sm)
-        .background(Theme.canvas.opacity(0.96))
-        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
-        .animation(.spring(duration: 0.2), value: trimmed.isEmpty)
     }
 }
 
 enum Markdown {
-    /// Inline Markdown (bold, code, links) with the line breaks kept; plain text when it does not parse.
+    /// Inline Markdown (bold, code, links) with the line breaks kept; plain text when it does not parse. Links are
+    /// `Theme.blue`, as on the Mac.
     static func text(_ source: String) -> Text {
-        if let styled = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+        if var styled = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            for run in styled.runs where run.link != nil { styled[run.range].foregroundColor = Theme.blue }
             return Text(styled)
         }
         return Text(verbatim: source)

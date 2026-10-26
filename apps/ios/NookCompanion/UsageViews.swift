@@ -14,7 +14,8 @@ struct UsageScreen: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            PanelHeader("Usage")
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 if !client.can(CompanionFeature.usage) {
                     EmptyState(symbol: "chart.bar", title: "Update Nook on your Mac",
                                message: "Update Nook on your Mac to see your usage here.") {}
@@ -22,20 +23,19 @@ struct UsageScreen: View {
                     SectionHeader(title: "Plan limits")
                     if latest.accounts.isEmpty {
                         Text("No agent accounts are connected on your Mac.")
-                            .font(.callout).foregroundStyle(Theme.textSecondary).card()
+                            .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).card()
                     }
                     ForEach(latest.accounts) { AccountUsageCard(account: $0) }
 
                     SectionHeader(title: "Sessions in Nook")
                     // Outside the range's figures, so another range can be picked while one loads or after it failed.
-                    Picker("Range", selection: $range) {
-                        Text("Today").tag("today")
-                        Text("Week").tag("week")
-                        Text("Month").tag("month")
+                    HStack(spacing: Theme.Spacing.md) {
+                        FilterChip(title: "Today", selected: range == "today") { range = "today" }
+                        FilterChip(title: "Week", selected: range == "week") { range = "week" }
+                        FilterChip(title: "Month", selected: range == "month") { range = "month" }
                     }
-                    .pickerStyle(.segmented)
                     if let usage {
-                        HStack(spacing: Theme.Spacing.sm) {
+                        HStack(spacing: Theme.Spacing.md) {
                             StatTile(title: "Sessions", value: usage.sessions.formatted(), symbol: "square.stack.3d.up.fill")
                             StatTile(title: "Tokens", value: Tokens.format(usage.inputTokens + usage.outputTokens + usage.cacheTokens),
                                      symbol: "text.word.spacing")
@@ -44,7 +44,7 @@ struct UsageScreen: View {
                         }
                         if usage.days.isEmpty {
                             Text("No sessions with token counts in this period.")
-                                .font(.callout).foregroundStyle(Theme.textSecondary).card()
+                                .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary).card()
                         } else {
                             TokensChart(days: usage.days)
                         }
@@ -53,19 +53,20 @@ struct UsageScreen: View {
                             ModelsCard(models: usage.models)
                         }
                     } else {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xl)
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
                     Text("Limits come from the agents themselves. Tokens and costs count the sessions Nook started.")
-                        .font(.caption).foregroundStyle(Theme.textTertiary).padding(.horizontal, Theme.Spacing.xs)
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, Theme.Spacing.xs).padding(.top, Theme.Spacing.md)
                 } else {
                     ProgressView().controlSize(.large).frame(maxWidth: .infinity).padding(.top, 80)
                 }
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.bottom, Theme.Spacing.xl)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.bottom, Theme.Spacing.xxl)
         }
         .refreshable { await client.loadUsage(range: range) }
-        .navigationTitle("Usage")
+        .toolbar(.hidden, for: .navigationBar)
         .screen()
         .task(id: range) {
             while !Task.isCancelled {
@@ -81,17 +82,17 @@ private struct AccountUsageCard: View {
     let account: UsageDigest.Account
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(spacing: Theme.Spacing.md) {
-                AgentIcon(agent: account.agent, size: 36)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account.agent).font(.headline).foregroundStyle(Theme.text)
-                    Text(account.account).font(.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            HStack(spacing: Theme.Spacing.lg) {
+                AgentIcon(agent: account.agent, size: 34, colored: true)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(account.agent).font(Theme.TextStyle.title).foregroundStyle(Theme.text)
+                    Text(account.account).font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary).lineLimit(1)
                 }
                 Spacer()
             }
             if account.limits.isEmpty {
-                Text("This agent reports no plan limits.").font(.caption).foregroundStyle(Theme.textSecondary)
+                Text("This agent reports no plan limits.").font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary)
             } else {
                 ForEach(account.limits) { LimitRow(limit: $0, agent: account.agent) }
             }
@@ -106,18 +107,18 @@ private struct LimitRow: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-                    Text(limit.label).font(.subheadline.weight(.medium)).foregroundStyle(Theme.text)
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.md) {
+                    Text(limit.label).font(Theme.TextStyle.body).foregroundStyle(Theme.textStrong).lineLimit(1)
                     if let reset = resetText(at: context.date) {
-                        Text(reset).font(.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                        Text(reset).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary).lineLimit(1)
                     }
                     Spacer()
                     Text(verbatim: "\(Int(limit.percent.rounded()))%")
-                        .font(.subheadline.weight(.bold)).monospacedDigit()
+                        .font(Theme.TextStyle.strong).monospacedDigit()
                         .foregroundStyle(UsageTone.text(limit.percent))
                 }
-                UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent, agent: agent), pace: limit.pace(at: context.date))
+                UsageBar(fraction: limit.percent / 100, color: UsageTone.fill(limit.percent), pace: limit.pace(at: context.date))
             }
         }
     }
@@ -138,12 +139,12 @@ private struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Image(systemName: symbol).font(.footnote.weight(.semibold)).foregroundStyle(Theme.iris)
-            Text(value).font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(Theme.text)
+            Image(systemName: symbol).font(Theme.font(13, .semibold)).foregroundStyle(Theme.textTertiary)
+            Text(value).font(Theme.rounded(22, .semibold)).monospacedDigit().foregroundStyle(Theme.text)
                 .lineLimit(1).minimumScaleFactor(0.6)
-            Text(title).font(.caption.weight(.medium)).foregroundStyle(Theme.textSecondary)
+            Text(title).font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
         }
-        .card(padding: Theme.Spacing.md)
+        .card(padding: Theme.Spacing.lg)
         .accessibilityElement(children: .combine)
     }
 }
@@ -155,8 +156,8 @@ private struct TokensChart: View {
     private var agents: [String] { Array(Set(days.map(\.agent))).sorted() }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text("Tokens per day").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            Text("Tokens per day").font(Theme.TextStyle.title).foregroundStyle(Theme.text)
             Chart(days) { day in
                 BarMark(x: .value("Day", Date(timeIntervalSince1970: day.day), unit: .day),
                         y: .value("Tokens", day.tokens))
@@ -187,43 +188,43 @@ private struct ModelsCard: View {
     let models: [UsageDigest.Model]
 
     var body: some View {
-        VStack(spacing: 0) {
+        RowGroup {
             ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
-                if index > 0 { Divider().overlay(Theme.hairline).padding(.leading, 44) }
-                HStack(spacing: Theme.Spacing.md) {
+                if index > 0 { RowSeparator(inset: Theme.Spacing.xl + 30 + Theme.Spacing.lg) }
+                HStack(spacing: Theme.Spacing.lg) {
                     AgentIcon(agent: model.agent, size: 30)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text(model.model == "default" ? String(localized: "Default model") : model.model)
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                        HStack(spacing: 4) {
+                            .font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                        HStack(spacing: Theme.Spacing.xs) {
                             Text(model.agent)
                             Text(verbatim: "·")
                             Text("\(model.sessions) sessions")
                         }
-                        .font(.caption).foregroundStyle(Theme.textTertiary)
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(Tokens.format(model.tokens)).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(Theme.text)
+                    VStack(alignment: .trailing, spacing: Theme.Spacing.xxs) {
+                        Text(Tokens.format(model.tokens)).font(Theme.TextStyle.strong).monospacedDigit().foregroundStyle(Theme.text)
                         if let cost = model.cost {
-                            Text(cost, format: .currency(code: "USD")).font(.caption).foregroundStyle(Theme.textTertiary)
+                            Text(cost, format: .currency(code: "USD")).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
                         }
                     }
                 }
-                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.lg)
             }
         }
-        .card(padding: Theme.Spacing.md)
     }
 }
 
 // MARK: Shared pieces
 
-/// How full a window is, in the colors the notch uses: the agent's own color, amber from 75%, coral from 90%.
+/// How full a window is: a calm grey while there is room, amber from 75%, coral from 90% (color means state).
 enum UsageTone {
-    static func fill(_ percent: Double, agent: String) -> Color {
+    static func fill(_ percent: Double) -> Color {
         switch percent {
-        case ..<75: return AgentIcon.style(agent).color
+        case ..<75: return Theme.textStrong
         case ..<90: return Theme.amber
         default: return Theme.coral
         }
@@ -243,20 +244,21 @@ struct UsageBar: View {
     let fraction: Double
     let color: Color
     var pace: Double? = nil
+    var height: CGFloat = 6
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.raised)
-                Capsule().fill(color).frame(width: max(4, proxy.size.width * min(1, max(0, fraction))))
+                Capsule().fill(color).frame(width: max(height, proxy.size.width * min(1, max(0, fraction))))
                 if let pace {
-                    RoundedRectangle(cornerRadius: 1).fill(Theme.text)
-                        .frame(width: 2, height: 12)
+                    Capsule().fill(Theme.textTertiary)
+                        .frame(width: 2, height: height + 6)
                         .offset(x: proxy.size.width * pace - 1)
                 }
             }
         }
-        .frame(height: 8)
+        .frame(height: height)
         .accessibilityHidden(true)
     }
 }

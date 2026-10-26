@@ -22,7 +22,7 @@ struct AgentCommandPalette: View {
     private var entries: [Entry] {
         var actions: [Entry] = [
             Entry(id: "act:new", symbol: "square.and.pencil", title: tr("agents.newSession"), detail: "") { viewModel.selectedAgentID = "new" },
-            Entry(id: "act:pulls", symbol: "arrow.triangle.pull", title: tr("agents.footer.pullRequests"), detail: "") { viewModel.selectedAgentID = AgentsPage.pullRequests },
+            Entry(id: "act:pulls", symbol: PullRequestIcon.generic, title: tr("agents.footer.pullRequests"), detail: "") { viewModel.selectedAgentID = AgentsPage.pullRequests },
             Entry(id: "act:usage", symbol: "chart.bar", title: tr("agents.footer.usage"), detail: "") { viewModel.selectedAgentID = AgentsPage.usage },
             Entry(id: "act:terminals", symbol: "terminal", title: tr("agents.footer.terminals"), detail: "") { viewModel.selectedAgentID = AgentsPage.terminals },
             Entry(id: "act:browser", symbol: "globe", title: tr("agents.footer.browser"), detail: "") { viewModel.selectedAgentID = AgentsPage.browser },
@@ -88,7 +88,7 @@ struct AgentCommandPalette: View {
 
     private func row(_ entry: Entry, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: entry.symbol).font(NookTheme.font(12, .medium)).frame(width: 18)
+            NookSymbol(entry.symbol, size: 13).font(NookTheme.font(12, .medium)).frame(width: 18)
                 .foregroundStyle(selected ? NookTheme.iris : NookTheme.textTertiary)
             Text(entry.title).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
             if !entry.detail.isEmpty {

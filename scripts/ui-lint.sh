@@ -15,6 +15,9 @@
 #   6. Short UI animations use NookTheme.hover / reveal / scroll / swap, never an inline .easeOut(duration: 0.15).
 #   7. A search field is a NookSearchField and a divider a NookDivider (NotchUI/Components/PanelBlocks.swift), so both
 #      look and behave the same everywhere.
+#   8. A pull request's state, checks and reviews take their icon and color from PullRequestIcon
+#      (NotchUI/Components/PullRequestIcons.swift): no arrow.triangle.pull / .merge, and the drawn marks only through
+#      PullRequestStateIcon or NookSymbol.
 # Keep OWN_COLORS equal to UIConsistencyTests.ownColors.
 set -uo pipefail
 # `report` ends each pipeline below; run it in this shell so the status it sets is the one the script exits with.
@@ -76,5 +79,9 @@ grep -rnE 'Image\(systemName: "magnifyingglass"\)' NotchUI App --include='*.swif
 grep -rnE 'Rectangle\(\)\.fill\(NookTheme\.(line|line2|hairline|separator)[^)]*\)\.frame\(height: 1\)' NotchUI App --include='*.swift' \
   | grep -v '^NotchUI/Components/PanelBlocks.swift:' \
   | report "dividers are a NookDivider (no 1 pt Rectangle drawn inline)"
+
+grep -rnE '"arrow\.triangle\.(pull|merge)"|PullRequestStateGlyph\(' NotchUI App --include='*.swift' \
+  | grep -v -e '^NotchUI/Components/PullRequestIcons.swift:' -e '^NotchUI/Components/NookSymbol.swift:' -e '^NotchUI/Pills/AgentsExtras.swift:' \
+  | report "pull request icons come from PullRequestIcon / PullRequestStateIcon (no arrow.triangle.pull or a hand-sized mark)"
 
 exit $status

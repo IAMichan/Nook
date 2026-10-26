@@ -8,6 +8,8 @@ struct ChatPoll: Codable, Equatable, Sendable {
         var text: String
         var votes: Int = 0
         var chosen: Bool = false
+        /// Who chose it, by name (you as "You", first); nil where the app does not say.
+        var voters: [String]? = nil
 
         var id: String { text }
     }
@@ -16,11 +18,18 @@ struct ChatPoll: Codable, Equatable, Sendable {
     var options: [Option]
     /// More than one option may be chosen.
     var multiple: Bool = false
-    /// True when the votes are not known: a poll Nook found later, whose app keeps the votes. It then shows no counts.
+    /// True when the votes are not all known: a poll Nook found later, whose app keeps the votes. It then shows no
+    /// counts, or the ones Nook saw itself with a word that earlier ones may be missing (`partial`).
     var unknownCounts: Bool? = nil
 
     /// Whether the counts can be shown.
     var counted: Bool { unknownCounts != true }
+
+    /// Some votes are known, but earlier ones may be missing: the counts show, with a word that they may be short.
+    var partial: Bool { !counted && total > 0 }
+
+    /// Whether any option says who chose it.
+    var namesVoters: Bool { options.contains { !($0.voters ?? []).isEmpty } }
 
     /// Votes cast in all, for the share of each option.
     var total: Int { options.reduce(0) { $0 + $1.votes } }

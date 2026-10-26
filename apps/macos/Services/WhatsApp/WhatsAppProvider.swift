@@ -283,10 +283,32 @@ actor GOWAProvider: WhatsAppProvider {
         return out.sorted { $0.date < $1.date }
     }
 
+    /// Page by page from the newest back (GOWA refuses more than 100 at once), until `limit` messages are in or the
+    /// history runs out. A page that fails after the first keeps what came; a short page is the chat's start.
     func messages(chat: String, limit: Int, me: String?) async throws -> [WAMessage] {
-        let data = try await scoped("GET", "/chat/\(WAHTTP.pathComponent(chat))/messages",
-                                    query: [URLQueryItem(name: "limit", value: String(limit))])
-        return WAGOWA.messages(data, me: me).sorted { $0.date < $1.date }
+        var out: [WAMessage] = []
+        var seen = Set<String>()
+        var offset = 0
+        while out.count < limit {
+            let size = min(WAGOWA.messagePage, max(limit - out.count, 1))
+            let data: Data
+            do {
+                data = try await scoped("GET", "/chat/\(WAHTTP.pathComponent(chat))/messages", query: [
+                    URLQueryItem(name: "limit", value: String(size)),
+                    URLQueryItem(name: "offset", value: String(offset)),
+                ])
+            } catch {
+                if offset == 0 { throw error }
+                break
+            }
+            let page = WAGOWA.messages(data, me: me).filter { seen.insert($0.id).inserted }
+            out += page
+            let count = WAGOWA.messageCount(data)
+            // A short page is the start; one that brings nothing new means the gateway ignores the offset.
+            if count < size || (page.isEmpty && offset > 0) { break }
+            offset += count
+        }
+        return Array(out.sorted { $0.date < $1.date }.suffix(limit))
     }
 
     func send(text: String, to chat: String, replyTo: String?) async throws -> String? {

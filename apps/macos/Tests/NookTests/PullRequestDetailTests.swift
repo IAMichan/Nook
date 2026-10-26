@@ -241,4 +241,25 @@ final class PullRequestDetailTests: XCTestCase {
         guard case .commits(let first) = entries[0] else { return XCTFail("not a run") }
         XCTAssertEqual(first.map(\.author), ["ada", "ada"])
     }
+
+    func testRowFollowsWhatThePageRead() throws {
+        let row = PullRequestItem(repo: "acme/app", number: 12, title: "Add merging", url: nil, draft: true, updated: nil, author: "ada")
+        var detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        let open = row.updated(from: detail)
+        XCTAssertEqual(open.state, .open)
+        XCTAssertFalse(open.draft, "marked ready for review on the page")
+        XCTAssertFalse(open.conflict)
+
+        var object = try json(pull)
+        object["mergeable"] = false
+        object["mergeable_state"] = "dirty"
+        detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertTrue(row.updated(from: detail).conflict)
+
+        detail.state = .merged
+        let merged = row.updated(from: detail)
+        XCTAssertEqual(merged.state, .merged)
+        XCTAssertFalse(merged.conflict, "a merged pull request no longer conflicts")
+    }
+
 }

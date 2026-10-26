@@ -175,7 +175,7 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
 }
 
 /// Tokens from a transcript. `cacheRead` represents cached reads: cheap, but still counted against rate limits.
-struct TokenTally: Equatable {
+struct TokenTally: Equatable, Codable {
     var input = 0
     var output = 0
     var cacheRead = 0
@@ -202,7 +202,7 @@ struct TokenTally: Equatable {
 }
 
 /// A completed (or still running) session, from the transcript saved by the agent itself.
-struct PastSession: Identifiable, Equatable {
+struct PastSession: Identifiable, Equatable, Codable {
     let agent: AgentKind
     var sessionID: String
     var title: String
@@ -325,6 +325,10 @@ final class AgentHistory: ObservableObject {
     /// Agents whose executable exists on this Mac.
     @Published private(set) var executables: [AgentKind: String] = [:]
     @Published private(set) var loading = false
+    /// A scan is under way, whether or not it shows (`loading`).
+    private var scanning = false
+    /// Which API-key accounts have their key in the Keychain, and for which account list and when that was read.
+    private var apiKeysRead: (profiles: [String], date: Date, keys: [String: Bool]) = ([], .distantPast, [:])
 
     /// Which accounts Nook reads; AppModel keeps this in sync with `AgentProfileStore`.
     var profiles: [AgentProfile] = AgentKind.allCases.map(AgentProfile.defaultProfile)
@@ -340,15 +344,27 @@ final class AgentHistory: ObservableObject {
     }
 
     /// Refreshes if more than `minimumInterval` has elapsed. Called by the Agents tab when opened.
-    func refresh(minimumInterval: TimeInterval = 20) {
-        guard !loading, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
-        loading = true
+    /// - Parameter showsProgress: publish `loading` while it runs. The 30-second timer does not: flipping it twice per scan
+    ///   redrew every view of the app (it is merged into `AppModel`) for a scan that usually finds nothing new.
+    func refresh(minimumInterval: TimeInterval = 20, showsProgress: Bool = true) {
+        guard !scanning, Date().timeIntervalSince(lastRefresh) >= minimumInterval else { return }
+        scanning = true
+        if showsProgress || sessions.isEmpty { loading = true }
         lastRefresh = Date()
         let scanner = scanner
         let ownFolder = NookPaths.supportDirectory.standardizedFileURL.path
+        // Whether an API-key account has its key: a Keychain read (a round trip to securityd on the main thread) only when asked
+        // for at once (a key was just saved), when the account list changed or ten minutes went by; not on every scan.
+        if minimumInterval == 0 || apiKeysRead.profiles != profiles.map(\.id) || Date().timeIntervalSince(apiKeysRead.date) > 600 {
+            var keys: [String: Bool] = [:]
+            for profile in profiles where profile.kind == .claude && profile.usesAPIKey {
+                keys[profile.id] = !(Keychain.read(profile.keychainAccount) ?? "").isEmpty
+            }
+            apiKeysRead = (profiles.map(\.id), Date(), keys)
+        }
         let homes = profiles.map { profile in
             ProfileHome(id: profile.id, kind: profile.kind, url: profile.homeURL, isDefault: profile.isDefault,
-                        apiKey: profile.kind == .claude && profile.usesAPIKey && !(Keychain.read(profile.keychainAccount) ?? "").isEmpty)
+                        apiKey: profile.kind == .claude && profile.usesAPIKey && apiKeysRead.keys[profile.id] == true)
         }
         // Accounts first: the full scan below can take seconds, but who is logged in is known almost instantly.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -363,7 +379,8 @@ final class AgentHistory: ObservableObject {
             let result = scanner.scan(homes, excludingFolder: ownFolder)
             Task { @MainActor in
                 guard let self else { return }
-                self.loading = false
+                self.scanning = false
+                if self.loading { self.loading = false }
                 if self.sessions != result.sessions { self.sessions = result.sessions }
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
@@ -408,7 +425,7 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     /// A single token entry, with a key to deduplicate entries across transcripts.
-    struct UsageEntry {
+    struct UsageEntry: Codable {
         var key: String
         var date: Date
         var tokens: TokenTally
@@ -416,20 +433,67 @@ private final class HistoryScanner: @unchecked Sendable {
         var model = ""
     }
 
-    struct Parsed {
+    struct Parsed: Codable {
         var session: PastSession?
         var entries: [UsageEntry]
         /// What ties this transcript to the other files of the same conversation (`ResumedConversations`).
         var links: Set<String> = []
     }
 
-    private struct CacheKey: Equatable {
+    private struct CacheKey: Equatable, Codable {
         var modified: Date
         var size: Int
     }
 
+    /// The parsed transcripts, kept on disk between launches: without it every launch read and parsed up to 1500
+    /// transcripts again (hundreds of MB from disk, seconds of CPU) while the rest of the Mac was starting up too.
+    private struct DiskCache: Codable {
+        struct Entry: Codable {
+            var key: CacheKey
+            var parsed: Parsed
+        }
+        /// The build that wrote it: a new build parses differently, so it reads every transcript again.
+        var build: String
+        var entries: [String: Entry]
+    }
+    private var diskLoaded = false
+    private var diskDirty = false
+    private var lastDiskSave = Date.distantPast
+    private static let diskSaveInterval: TimeInterval = 10 * 60
+    private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
+    /// Raise when the parsing changes within a build number.
+    private static let diskFormat = 1
+    private static var diskBuild: String {
+        "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
+    }
+
+    private func loadDiskCache() {
+        guard !diskLoaded else { return }
+        diskLoaded = true
+        guard cache.isEmpty, let data = try? Data(contentsOf: Self.diskURL),
+              let stored = try? PropertyListDecoder().decode(DiskCache.self, from: data), stored.build == Self.diskBuild else { return }
+        cache = stored.entries.mapValues { (key: $0.key, parsed: $0.parsed) }
+    }
+
+    private func saveDiskCache() {
+        guard diskDirty, Date().timeIntervalSince(lastDiskSave) >= Self.diskSaveInterval else { return }
+        diskDirty = false
+        lastDiskSave = Date()
+        let stored = DiskCache(build: Self.diskBuild, entries: cache.mapValues { DiskCache.Entry(key: $0.key, parsed: $0.parsed) })
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(stored) else { return }
+        // Prompts and replies are in it: readable by the user alone, like the transcripts themselves.
+        if (try? data.write(to: Self.diskURL, options: .atomic)) != nil {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.diskURL.path)
+        }
+    }
+
     private var cache: [String: (key: CacheKey, parsed: Parsed)] = [:]
     private let lock = NSLock()
+    /// What the last full build was made from, and what it gave (see `scan`).
+    private var lastSignature: [String] = []
+    private var lastBuilt: (sessions: [PastSession], usage: [String: AgentUsageSummary], ledger: UsageLedger)?
 
     /// How many days back to read transcripts.
     /// Transcripts are read for 90 days (the Usage page's longest window); the session list shows the last 30.
@@ -453,6 +517,7 @@ private final class HistoryScanner: @unchecked Sendable {
         defer { lock.unlock() }
 
         let fm = FileManager.default
+        loadDiskCache()
         let since = Date().addingTimeInterval(-Double(Self.days) * 86_400)
         let listSince = Date().addingTimeInterval(-Double(Self.listDays) * 86_400)
         var installed: Set<AgentKind> = []
@@ -477,58 +542,76 @@ private final class HistoryScanner: @unchecked Sendable {
         files.sort { $0.key.modified > $1.key.modified }
         files = Array(files.prefix(Self.maxFiles))
 
-        // Antigravity's titles live in a database: opened only when one of its transcripts has to be read again.
-        var antigravitySummaries: [String: (title: String, cwd: String)]?
-        var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
-        var parsedAll: [(profile: String, parsed: Parsed, agent: AgentKind)] = []
-        for file in files {
-            let path = file.url.path
-            var parsed: Parsed
-            if let hit = cache[path], hit.key == file.key {
-                parsed = hit.parsed
-            } else {
-                switch file.agent {
-                case .claude: parsed = parseClaude(file.url, key: file.key)
-                case .codex: parsed = parseCodex(file.url, key: file.key)
-                case .gemini: parsed = parseGemini(file.url)
-                case .antigravity:
-                    let summaries = antigravitySummaries ?? readAntigravitySummaries(homes)
-                    antigravitySummaries = summaries
-                    parsed = parseAntigravity(file.url, summaries: summaries)
-                case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
+        // Every 30 seconds most often nothing changed: then the sessions, the usage and the ledger of the last scan still hold,
+        // and rebuilding them (joining resumed chats, every usage entry of 90 days) would only cost CPU. Rebuilt at least daily,
+        // for the 30-day list.
+        let day = Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0
+        let signature = files.map { "\($0.agent.rawValue)|\($0.profile)|\($0.url.path)|\($0.key.modified.timeIntervalSince1970)|\($0.key.size)" }
+            + homes.map { "home|\($0.id)|\($0.url.path)" } + [ownFolder, String(day)]
+        let sessions: [PastSession]
+        var usage: [String: AgentUsageSummary] = [:]
+        var ledger = UsageLedger()
+        if signature == lastSignature, let last = lastBuilt {
+            sessions = last.sessions
+            usage = last.usage
+            ledger = last.ledger
+        } else {
+            // Antigravity's titles live in a database: opened only when one of its transcripts has to be read again.
+            var antigravitySummaries: [String: (title: String, cwd: String)]?
+            var fresh: [String: (key: CacheKey, parsed: Parsed)] = [:]
+            var parsedAll: [(profile: String, parsed: Parsed, agent: AgentKind)] = []
+            for file in files {
+                let path = file.url.path
+                var parsed: Parsed
+                if let hit = cache[path], hit.key == file.key {
+                    parsed = hit.parsed
+                } else {
+                    diskDirty = true
+                    switch file.agent {
+                    case .claude: parsed = parseClaude(file.url, key: file.key)
+                    case .codex: parsed = parseCodex(file.url, key: file.key)
+                    case .gemini: parsed = parseGemini(file.url)
+                    case .antigravity:
+                        let summaries = antigravitySummaries ?? readAntigravitySummaries(homes)
+                        antigravitySummaries = summaries
+                        parsed = parseAntigravity(file.url, summaries: summaries)
+                    case .opencode, .cursor, .grok, .acp: parsed = Parsed(session: nil, entries: [])
+                    }
+                }
+                parsed.session?.profileID = file.profile
+                parsed.session?.path = file.url.path
+                fresh[path] = (file.key, parsed)
+                parsedAll.append((file.profile, parsed, file.agent))
+            }
+            if fresh.count != cache.count { diskDirty = true }
+            cache = fresh
+            saveDiskCache()
+            claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
+            codexProgress = codexProgress.filter { fresh[$0.key] != nil }
+
+            // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
+            let listed = parsedAll.compactMap { entry in entry.parsed.session.map { (session: $0, links: entry.parsed.links) } }
+                .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder }
+                .sorted { $0.session.ended > $1.session.ended }
+            // One conversation per resumed chat, for the Usage page's session counts (90 days); the list keeps to 30 days.
+            let conversations = Self.joinResumed(listed)
+            sessions = conversations.filter { $0.ended >= listSince }
+
+            for home in homes where fm.fileExists(atPath: home.url.path) {
+                usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
+            }
+            // Each reply once, also when a transcript was copied into a resumed conversation.
+            for conversation in conversations { ledger.addSession(agent: conversation.agent.rawValue, ended: conversation.ended) }
+            var counted = Set<String>()
+            for entry in parsedAll {
+                for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
+                    ledger.add(agent: entry.agent.rawValue, model: usage.model,
+                               date: usage.date, tokens: UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
+                                                                     cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite))
                 }
             }
-            parsed.session?.profileID = file.profile
-            parsed.session?.path = file.url.path
-            fresh[path] = (file.key, parsed)
-            parsedAll.append((file.profile, parsed, file.agent))
-        }
-        cache = fresh
-        claudeProgress = claudeProgress.filter { fresh[$0.key] != nil }
-        codexProgress = codexProgress.filter { fresh[$0.key] != nil }
-
-        // Sessions for the list: excluding conversations Nook itself runs via Claude Code (its own directory).
-        let listed = parsedAll.compactMap { entry in entry.parsed.session.map { (session: $0, links: entry.parsed.links) } }
-            .filter { $0.session.prompts > 0 && $0.session.cwd != ownFolder }
-            .sorted { $0.session.ended > $1.session.ended }
-        // One conversation per resumed chat, for the Usage page's session counts (90 days); the list keeps to 30 days.
-        let conversations = Self.joinResumed(listed)
-        let sessions = conversations.filter { $0.ended >= listSince }
-
-        var usage: [String: AgentUsageSummary] = [:]
-        for home in homes where fm.fileExists(atPath: home.url.path) {
-            usage[home.id] = summarize(parsedAll.filter { $0.profile == home.id }.map { $0.parsed }, excludingFolder: ownFolder)
-        }
-        // Each reply once, also when a transcript was copied into a resumed conversation.
-        var ledger = UsageLedger()
-        for conversation in conversations { ledger.addSession(agent: conversation.agent.rawValue, ended: conversation.ended) }
-        var counted = Set<String>()
-        for entry in parsedAll {
-            for usage in entry.parsed.entries where counted.insert(entry.agent.rawValue + "|" + usage.key).inserted {
-                ledger.add(agent: entry.agent.rawValue, model: usage.model,
-                           date: usage.date, tokens: UsageTokens(input: usage.tokens.input, output: usage.tokens.output,
-                                                                 cacheRead: usage.tokens.cacheRead, cacheWrite: usage.tokens.cacheWrite))
-            }
+            lastSignature = signature
+            lastBuilt = (sessions, usage, ledger)
         }
         let accounts = readAccounts(homes)
         for kind in [AgentKind.gemini, .antigravity] where homes.contains(where: { $0.kind == kind && fm.fileExists(atPath: $0.url.path) }) { installed.insert(kind) }
@@ -635,7 +718,8 @@ private final class HistoryScanner: @unchecked Sendable {
     // MARK: Executables
 
     private var foundExecutables: [AgentKind: String] = [:]
-    private var lastShellLookup = Date.distantPast
+    /// Starts now, not in the past: the first shell is asked a minute after launch, not in the middle of it.
+    private var lastShellLookup = Date()
     /// How long to wait before asking the shell again, and which agents it was asked about last time.
     private var shellLookupInterval: TimeInterval = HistoryScanner.shellLookupMinimum
     private var shellLookupMissing: [AgentKind] = []

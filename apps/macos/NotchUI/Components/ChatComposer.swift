@@ -102,6 +102,12 @@ final class ChatComposerModel: ObservableObject {
         }
     }
 
+    /// A send failed: the files that did not go wait again, before any added since, up to the most that may wait.
+    func restore(_ unsent: [ChatAttachment]) {
+        guard !unsent.isEmpty else { return }
+        files = Array((unsent + files.filter { file in !unsent.contains { $0.id == file.id } }).prefix(Self.maxFiles))
+    }
+
     /// The chat changed: nothing waiting for the old one goes to the new one.
     func reset() {
         files = []

@@ -25,7 +25,8 @@ final class GhostOverlay {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .statusBar
+        // Above the notch too: Nook's own fields there get suggestions as well.
+        panel.level = NSWindow.Level(rawValue: NotchPanel.notchLevel.rawValue + 1)
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -142,12 +143,16 @@ final class GhostOverlay {
         panel.invalidateShadow()
     }
 
-    /// Which emoji of the picker is under `point` (AppKit screen coordinates), when the picker is shown there. The panel itself
-    /// takes no clicks; the key tap asks this on a mouse down.
-    func emojiIndex(at point: CGPoint) -> Int? {
-        guard panel.isVisible, panel.contentView === emojiBackground, panel.frame.contains(point) else { return nil }
-        let local = CGPoint(x: point.x - panel.frame.minX, y: panel.frame.height - (point.y - panel.frame.minY))
-        return emojiGrid.index(at: local)
+    /// Where each emoji of the picker is on screen, while the picker is shown: in global display coordinates (top left origin,
+    /// like `CGEvent.location`). The panel itself takes no clicks; the key tap checks a mouse down against these on its own
+    /// thread (see `CompletionKeyGate.emojiCell`).
+    func emojiCells() -> [CGRect] {
+        guard panel.isVisible, panel.contentView === emojiBackground else { return [] }
+        let frame = panel.frame
+        // The grid counts from the panel's top left; global display coordinates from the main screen's top left.
+        let top = (NSScreen.screens.first?.frame.height ?? 0) - frame.maxY
+        let panelRect = CGRect(x: frame.minX, y: top, width: frame.width, height: frame.height)
+        return emojiGrid.cells.map { $0.offsetBy(dx: frame.minX, dy: top).intersection(panelRect) }
     }
 
     /// Below `anchor`, or above it when there is no room below; never past the screen's right edge.
@@ -162,12 +167,13 @@ final class GhostOverlay {
 
     func hide() {
         ghostState = nil
-        panel.orderOut(nil)
+        // Called on nearly every key and click: a window already away needs no trip to the WindowServer.
+        if panel.isVisible { panel.orderOut(nil) }
     }
 
     private func present(_ frame: CGRect) {
         panel.setFrame(frame, display: true)
-        panel.orderFrontRegardless()
+        if !panel.isVisible { panel.orderFrontRegardless() }
     }
 }
 
@@ -215,9 +221,9 @@ private final class EmojiGridView: NSView {
                       width: Self.cell, height: Self.cell)
     }
 
-    /// The emoji under `point` (in this view, from the top left).
-    func index(at point: CGPoint) -> Int? {
-        emoji.indices.first { rect(for: $0).insetBy(dx: -Self.gap / 2, dy: -Self.gap / 2).contains(point) }
+    /// Where a click takes each emoji (in this view, from the top left): its tile and half the gap around it.
+    var cells: [CGRect] {
+        emoji.indices.map { rect(for: $0).insetBy(dx: -Self.gap / 2, dy: -Self.gap / 2) }
     }
 
     override func draw(_ dirtyRect: NSRect) {

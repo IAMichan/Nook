@@ -21,15 +21,13 @@ struct TranscriptConversation: View {
     var interval: UInt64 = 2_000_000_000
     @State private var messages: [AgentChatMessage] = []
     @State private var loaded = false
+    /// The transcript `messages` belong to.
+    @State private var readPath: String?
     /// The session's folder on this Mac, for the files the agent wrote; nil when they are not here (a cloud session).
     var directory: String? = nil
     /// Folds, groups and thoughts you opened.
     @State private var open: Set<String> = []
-    /// The panel next to the conversation with what the agent produced; its button sits in the header of the view
-    /// that shows the conversation (see SessionOutputsButton), which reads the count from TranscriptOutputCount.
-    var outputsOpen: Binding<Bool> = .constant(false)
-    @State private var outputSelection: String?
-    /// A file the agent read or wrote that you clicked: shown in the side panel, in place of the outputs.
+    /// A file the agent read or wrote that you clicked: shown beside the conversation.
     @State private var preview: String?
     /// How wide the results are: drag the line beside them, double-click it to reset. Remembered, as in a Nook session.
     @AppStorage("nook.agents.outputsWidth") private var outputsWidth = PanelLayout.outputs
@@ -39,29 +37,39 @@ struct TranscriptConversation: View {
     /// Follows the end while the agent writes, until you scroll away; then a pill brings you back.
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
+    /// The conversation is taller than the view: only then the rail with your messages shows.
+    @State private var overflows = false
     @State private var scrollPhase: ScrollPhase = .idle
+    @State private var derived = TranscriptDerived()
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
     var body: some View {
-        let rows = TranscriptPresentation.rows(shown, working: working)
+        let _ = derived.update(shown, working: working, directory: directory)
+        let rows = derived.rows
         // Only the very last answer can still be answered by tapping one of its options.
         let answerable = working ? nil : shown.last(where: { $0.kind == .assistant })?.id
-        let outputs = SessionOutputs.collect(shown, directory: directory ?? "").filter { directory != nil || !$0.isFile }
-        let turns = TurnDiff.collect(shown)
-        // A turn still at work gets its card when it is done.
-        let lastPrompt = shown.last(where: { $0.kind == .user })?.id
+        let outputs = derived.outputs
+        let turns = derived.turns
+        // A turn still at work gets its card when it is done (a message you sent while it worked is part of that turn).
+        let lastPrompt = shown.last(where: { $0.kind == .user && !$0.queued })?.id
         let cards = Dictionary(turns.filter { !(working && $0.id == lastPrompt) }.compactMap { turn in turn.answerID.map { ($0, turn) } },
                                uniquingKeysWith: { first, _ in first })
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
-                ScrollView(showsIndicators: true) {
+                // No scroll bar, not even when the system shows them always: the rail beside it marks your messages.
+                ScrollView {
                     // Lazy: a long conversation only lays out what is on screen.
                     LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         if shown.isEmpty {
-                            Text(loaded || (path.isEmpty && load == nil) ? tr("agents.noMessagesInTranscript") : tr("agents.checking"))
-                                .font(NookTheme.TextStyle.body)
-                                .foregroundStyle(NookTheme.textTertiary)
+                            if loaded || (path.isEmpty && load == nil) {
+                                Text(tr("agents.noMessagesInTranscript"))
+                                    .font(NookTheme.TextStyle.body)
+                                    .foregroundStyle(NookTheme.textTertiary)
+                            } else {
+                                // Most transcripts are read in a moment: nothing shows unless it takes longer.
+                                PatientSpinner().frame(height: 160)
+                            }
                         }
                         ForEach(rows) { row in
                             self.row(row, answerable: answerable, cards: cards).id(row.id)
@@ -80,11 +88,25 @@ struct TranscriptConversation: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom)
+                .scrollIndicators(.never)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 48
                 } action: { _, nowAtEnd in
                     atEnd = nowAtEnd
                     if nowAtEnd { scroll.reachedEnd() }
+                }
+                .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height + 1 } action: { _, now in
+                    overflows = now
+                }
+                .overlay(alignment: .trailing) {
+                    if overflows, !derived.marks.isEmpty {
+                        TranscriptPromptRail(marks: derived.marks) { mark in
+                            scroll.userScrolled()
+                            withAnimation(NookTheme.scroll) { proxy.scrollTo(mark.row, anchor: .top) }
+                        }
+                        .padding(.vertical, NookTheme.Spacing.md)
+                        .transition(.opacity)
+                    }
                 }
                 .onScrollPhaseChange { _, phase in
                     scrollPhase = phase
@@ -127,23 +149,13 @@ struct TranscriptConversation: View {
                 .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
                                 available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if outputsOpen.wrappedValue {
-                SessionOutputsPanel(outputs: outputs, selection: $outputSelection, wide: PanelLayout.wide($outputsWidth)) {
-                    withAnimation(NookTheme.reveal) { outputsOpen.wrappedValue = false }
-                }
-                .resizablePanel(width: $outputsWidth, defaultWidth: PanelLayout.outputs, minimum: PanelLayout.minimumPanel,
-                                available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .leading)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
-        .preference(key: TranscriptOutputCount.self, value: outputs.count)
-        // The outputs button in the header asks for the outputs, also while a file is open.
-        .onChange(of: outputsOpen.wrappedValue) { _, isOpen in
-            if isOpen { withAnimation(NookTheme.reveal) { preview = nil; diff = nil } }
-        }
+        // What the agent produced goes to the outputs tab of the side panel around the conversation (`SessionWorkbench`).
+        .preference(key: SessionOutputsReport.self, value: SessionOutputsReport(outputs: outputs))
         // ⌘D: the latest turn's diff; again to close it.
         .keyCommand("diff.toggle", enabled: !turns.isEmpty) {
             withAnimation(NookTheme.reveal) {
@@ -155,15 +167,26 @@ struct TranscriptConversation: View {
             }
         }
         .task(id: path + (working ? "#working" : "")) {
+            // Another session in the same place: its conversation as read last time shows at once (never the previous
+            // session's), and the read below brings it up to date.
+            if readPath != path {
+                readPath = path
+                messages = TranscriptCache.messages(path) ?? []
+                loaded = !messages.isEmpty
+            }
             while !Task.isCancelled {
                 let path = self.path
+                // The first read is what you wait for; later ones follow a working agent in the background.
+                let priority: TaskPriority = loaded ? .utility : .userInitiated
                 if let load = self.load {
                     // Without an answer the conversation already shown stays.
-                    if let fresh = await Task.detached(priority: .utility, operation: { load() }).value, fresh != messages { messages = fresh }
+                    if let fresh = await Task.detached(priority: priority, operation: { load() }).value, fresh != messages { messages = fresh }
                 } else if !path.isEmpty {
-                    let fresh = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
+                    let fresh = await Task.detached(priority: priority) { AgentTranscript.recent(path: path) }.value
                     if fresh != messages { messages = fresh }
                 }
+                guard !Task.isCancelled, readPath == path else { break }
+                TranscriptCache.store(messages, path)
                 loaded = true
                 // An earlier session does not change any more: read once.
                 guard working else { break }
@@ -176,10 +199,9 @@ struct TranscriptConversation: View {
 
     @ViewBuilder
     private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff]) -> some View {
-        if case .fold(let id, let seconds, let inner) = row {
-            let key = "fold:" + id
+        if case let (key, text, inner)? = Self.fold(row) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                TranscriptFoldLine(text: seconds.map { tr("ws.fold.worked", AgentPathFormat.duration($0)) } ?? tr("agents.timeline.worked"),
+                TranscriptFoldLine(text: text,
                                    open: open.contains(key),
                                    checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
                 if open.contains(key) {
@@ -192,6 +214,19 @@ struct TranscriptConversation: View {
             .padding(.bottom, NookTheme.Spacing.xxs)
         } else {
             flatRow(row, answerable: answerable, cards: cards)
+        }
+    }
+
+    /// A fold's key, its line ("Worked for 1m 3s", "Continued for 20s") and the rows it holds; nil for any other row.
+    private static func fold(_ row: TranscriptRow) -> (key: String, text: String, rows: [TranscriptRow])? {
+        switch row {
+        case .fold(let id, let seconds, let inner):
+            return ("fold:" + id, seconds.map { tr("ws.fold.worked", AgentPathFormat.duration($0)) } ?? tr("agents.timeline.worked"), inner)
+        case .continued(let id, let seconds, let inner):
+            return ("continued:" + id,
+                    seconds.map { tr("agents.timeline.continuedFor", AgentPathFormat.duration($0)) } ?? tr("agents.timeline.continued"), inner)
+        default:
+            return nil
         }
     }
 
@@ -222,23 +257,32 @@ struct TranscriptConversation: View {
             stepLine(step)
         case .group(let id, let steps, let thoughts):
             group(id: id, steps: steps, thoughts: thoughts)
-        case .fold:
+        case .fold, .continued:
             EmptyView()
+        case .notice(let message):
+            TranscriptNotice(message: message)
         case .working(let since):
             TranscriptWorkingLine(since: since)
-        case .live(let step):
-            // The agent's task list, live, and what it does now in words rather than a bare "Thinking…".
+        case .live(let step, let thought):
+            // The agent's task list, live, then why it does what it does now (the thought right before it) and what it
+            // does in words rather than a bare "Thinking…".
             let tasks = TranscriptPresentation.tasks(shown)
-            let activity = step.map { AgentActivity.of($0) } ?? TranscriptPresentation.activity(shown)
+            let activity = step.map { AgentActivity.of($0) }
+                ?? (thought == nil ? TranscriptPresentation.activity(shown) : .thinking(""))
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 if let tasks { TaskChecklistCard(steps: tasks) }
-                TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
-                                   label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
-                                   live: true)
-                    .help(step.map(Self.label) ?? "")
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    if let thought { thinking(thought) }
+                    TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
+                                       label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
+                                       live: true)
+                        .help(step.map(Self.label) ?? "")
+                }
             }
-        case .interrupted:
-            TranscriptWorkLine(symbol: "stop.circle", label: tr("agents.transcript.interrupted"))
+        case .interrupted(_, let seconds):
+            TranscriptWorkLine(symbol: "stop.circle",
+                               label: seconds.map { tr("agents.transcript.stoppedAfter", AgentPathFormat.duration($0)) }
+                                   ?? tr("agents.transcript.interrupted"))
                 .padding(.bottom, NookTheme.Spacing.md)
         }
     }
@@ -248,33 +292,42 @@ struct TranscriptConversation: View {
         let tally = ToolTally(steps: steps)
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: ToolTallyText.sentence(tally),
-                               failed: tally.failed, checks: tally.checks, lines: tally.lines, open: open.contains(key)) { toggle(key) }
+                               failed: tally.failed, checks: tally.checks, open: open.contains(key)) { toggle(key) }
             if open.contains(key) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    ForEach(steps) { step in
-                        ForEach(thoughts[step.id] ?? []) { thinking($0) }
-                        stepLine(step)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        ForEach(steps) { step in
+                            ForEach(thoughts[step.id] ?? []) { thinking($0) }
+                            stepLine(step)
+                        }
                     }
                 }
-                .padding(.leading, NookTheme.Spacing.lg)
-                .overlay(alignment: .leading) { Rectangle().fill(NookTheme.line2).frame(width: 1).padding(.leading, 9) }
+                // A step that joins the group during a live turn stays in view at the end of the short scroll.
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                .frame(maxHeight: 288)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     /// One step. A step that set the agent's task list (TodoWrite, update_plan) opens to that list; a step that read or
-    /// wrote a file on this Mac opens that file in the side panel.
+    /// wrote a file on this Mac opens that file in the side panel; a command or another tool opens to its whole command
+    /// line and what it gave back.
     private func stepLine(_ step: AgentToolStep) -> some View {
-        let key = "plan:" + step.id
+        let key = "step:" + step.id
         let tasks = step.tasks.flatMap { $0.isEmpty ? nil : $0 }
         let file = tasks == nil ? directory.flatMap { folder in step.file.map { SessionOutputs.resolve($0, in: folder) } } : nil
+        // A command or another tool opens to its whole command line and what it gave back, as a tool call in a session
+        // Nook runs does.
+        let command = tasks == nil && file == nil ? TranscriptPresentation.fullCommand(step) : nil
+        let output = tasks == nil && file == nil ? step.output : nil
+        let opens = tasks != nil || command != nil || output != nil
         let text = TranscriptStepText.parts(step)
         let error = step.state == .failed ? step.error : nil
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
-                               lines: step.state == .failed ? nil : step.lines,
-                               open: tasks == nil ? nil : open.contains(key), reveals: file.map { $0 == preview }) {
+                               open: opens ? open.contains(key) : nil, reveals: file.map { $0 == preview }, quietChevron: true) {
                 if let file { show(file) } else { toggle(key) }
             }
             .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
@@ -282,14 +335,22 @@ struct TranscriptConversation: View {
             if let error {
                 Text(error)
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coral.opacity(0.85))
-                    .lineLimit(2)
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
                     .truncationMode(.tail)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 26)
+                    .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
                     .padding(.bottom, NookTheme.Spacing.xxs)
                     .help(error)
+            }
+            if command != nil || output != nil, open.contains(key) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                    if let command { CodeBlock(title: tr("ws.tool.input"), text: command) }
+                    if let output { CodeBlock(title: tr("ws.tool.output"), text: output, failed: step.state == .failed) }
+                }
+                .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
+                .padding(.bottom, NookTheme.Spacing.xs)
             }
             if let tasks, open.contains(key) {
                 TaskListRows(steps: tasks)
@@ -343,11 +404,10 @@ struct TranscriptConversation: View {
         }
     }
 
-    /// Opens the diff panel on a turn (and a file), in place of a file or the outputs.
+    /// Opens the diff panel on a turn (and a file), in place of a file.
     private func openDiff(_ selection: TurnDiffSelection) {
         withAnimation(NookTheme.reveal) {
             preview = nil
-            outputsOpen.wrappedValue = false
             diff = selection
         }
     }
@@ -358,10 +418,68 @@ struct TranscriptConversation: View {
     }
 }
 
-/// How many outputs the conversation found, for the button in the header above it.
-struct TranscriptOutputCount: PreferenceKey {
-    static let defaultValue = 0
-    static func reduce(value: inout Int, nextValue: () -> Int) { value = max(value, nextValue()) }
+/// The rows, outputs and turn diffs of a conversation, worked out again only when its messages change. The view's body
+/// runs far more often (a scroll starting and stopping, the side panel resizing, a fold opening), and each of these walks
+/// the whole transcript. Comparing the same array again is cheap: Swift sees it is the same storage.
+@MainActor
+private final class TranscriptDerived {
+    private var key: (messages: [AgentChatMessage], working: Bool, directory: String?)?
+    private(set) var rows: [TranscriptRow] = []
+    private(set) var outputs: [SessionOutput] = []
+    private(set) var turns: [TurnDiff] = []
+    private(set) var marks: [PromptMark] = []
+
+    func update(_ messages: [AgentChatMessage], working: Bool, directory: String?) {
+        if let key, key.working == working, key.directory == directory, key.messages == messages { return }
+        key = (messages, working, directory)
+        rows = TranscriptPresentation.rows(messages, working: working)
+        outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
+        turns = TurnDiff.collect(messages)
+        marks = TranscriptPresentation.promptMarks(rows)
+    }
+}
+
+/// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
+/// the message is, a click scrolls to it, and hovering shows what you wrote.
+struct TranscriptPromptRail: View {
+    let marks: [PromptMark]
+    let onSelect: (PromptMark) -> Void
+    @State private var hovered: String?
+
+    private static let width: CGFloat = 16
+    /// The height each mark can be clicked over.
+    private static let target: CGFloat = 8
+
+    var body: some View {
+        GeometryReader { geometry in
+            let travel = max(0, geometry.size.height - Self.target)
+            ForEach(marks) { mark in
+                let lit = hovered == mark.id
+                Button { onSelect(mark) } label: {
+                    Capsule()
+                        .fill(lit ? NookTheme.paper : NookTheme.textTertiary)
+                        .frame(width: lit ? 12 : 8, height: 2)
+                        .frame(width: Self.width, height: Self.target)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(Self.summary(mark.text))
+                .onHover { inside in
+                    if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
+                }
+                .position(x: Self.width / 2, y: Self.target / 2 + mark.position * travel)
+            }
+        }
+        .frame(width: Self.width)
+        .animation(NookTheme.hover, value: hovered)
+    }
+
+    /// The first line of a message, without the pictures sent along, short enough for a tooltip.
+    private static func summary(_ text: String) -> String {
+        let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = words.split(separator: "\n").first.map(String.init) ?? words
+        return line.count > 80 ? String(line.prefix(79)) + "…" : line
+    }
 }
 
 // MARK: Messages
@@ -410,7 +528,7 @@ struct TranscriptUserBubble: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .padding(NookTheme.Spacing.lg)
+                    .padding(NookTheme.Spacing.md)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
             }
@@ -534,6 +652,9 @@ struct TranscriptWorkLine: View {
     var open: Bool? = nil
     /// Nil: the line has no file to show; true while its file is open in the side panel.
     var reveals: Bool? = nil
+    /// The chevron shows under the pointer only (and while open), as a tool call's does: a single step keeps its line
+    /// bare at rest.
+    var quietChevron = false
     var action: (() -> Void)? = nil
     @State private var hovering = false
 
@@ -541,20 +662,20 @@ struct TranscriptWorkLine: View {
 
     /// The label, then its detail on the same line, so a long command or path truncates as one sentence.
     private var labelText: Text {
-        let color = reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.paper.opacity(0.85) : NookTheme.textSecondary
+        let color = reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.textSecondary : NookTheme.textTertiary
         let head = Text(label).foregroundStyle(color)
         guard let detail, !detail.isEmpty else { return head }
-        return head + Text("  ") + Text(detail)
-            .font(mono ? NookTheme.mono(11.5) : NookTheme.TextStyle.detail)
-            .foregroundStyle(reveals == true ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
+        return head + Text(" ") + Text(detail)
+            .font(mono ? NookTheme.mono(12) : NookTheme.TextStyle.body)
+            .foregroundStyle(color)
     }
 
     var body: some View {
         let content = HStack(spacing: NookTheme.Spacing.sm) {
             Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(NookTheme.TextStyle.label)
-                .foregroundStyle(failed ? NookTheme.coral.opacity(0.85) : NookTheme.textTertiary)
-                .frame(width: 20)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(failed ? NookTheme.coral.opacity(0.6) : NookTheme.textTertiary)
+                .frame(width: 24)
             if live {
                 ShimmerText(text: label)
                     .lineLimit(1)
@@ -566,8 +687,12 @@ struct TranscriptWorkLine: View {
             if let open {
                 Image(systemName: "chevron.right")
                     .font(NookTheme.font(9, .bold))
-                    .foregroundStyle(NookTheme.textTertiary)
+                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                    .opacity(!quietChevron || open || hovering ? 1 : 0)
+            }
+            if failed {
+                Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral.opacity(0.6))
             }
             if let reveals {
                 Image(systemName: "sidebar.right")
@@ -579,8 +704,8 @@ struct TranscriptWorkLine: View {
             if !checks.isEmpty { VerificationChips(checks: checks) }
             Spacer(minLength: 0)
         }
-        .font(NookTheme.TextStyle.detail)
-        .frame(minHeight: 22)
+        .font(NookTheme.TextStyle.body)
+        .frame(minHeight: 24)
         .contentShape(Rectangle())
 
         if let action, clickable {
@@ -590,6 +715,40 @@ struct TranscriptWorkLine: View {
                 .accessibilityAddTraits(open == true || reveals == true ? .isSelected : [])
         } else {
             content
+        }
+    }
+}
+
+/// Something that happened to the conversation, in sight also when its turn folds. A compaction is a quiet word across
+/// the column with room around it, as a new day is in a chat ("Context compacted from 167k tokens"); an error or a usage
+/// limit is the timeline's problem card, as in a session Nook runs.
+struct TranscriptNotice: View {
+    let message: AgentChatMessage
+
+    var body: some View {
+        switch message.notice {
+        case .compacted(let tokens):
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                Text(tokens.map { tr("agents.notice.compactedFrom", TokenTally.format($0)) } ?? tr("agents.notice.compacted"))
+                    .lineLimit(1)
+            }
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(NookTheme.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, NookTheme.Spacing.md)
+            .accessibilityElement(children: .combine)
+        case .limit(let text, let resets):
+            TimelineProblemCard(symbol: "hourglass", tint: NookTheme.amber,
+                                text: resets.map { tr("agents.notice.limitUntil", $0.formatted(date: .omitted, time: .shortened)) }
+                                    ?? tr("agents.notice.limit"),
+                                detail: resets == nil ? text : nil)
+                .padding(.vertical, NookTheme.Spacing.xs)
+        case .error(let text):
+            TimelineProblemCard(text: text)
+                .padding(.vertical, NookTheme.Spacing.xs)
+        case nil:
+            EmptyView()
         }
     }
 }
@@ -613,7 +772,7 @@ struct TranscriptFoldLine: View {
                 if !checks.isEmpty { VerificationChips(checks: checks) }
                 Spacer(minLength: 0)
             }
-            .font(NookTheme.TextStyle.detail)
+            .font(NookTheme.TextStyle.body)
             .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
             .padding(.top, NookTheme.Spacing.xxs)
             .padding(.bottom, NookTheme.Spacing.md)
@@ -641,7 +800,7 @@ struct TranscriptWorkingLine: View {
                 Text(tr("ws.timeline.working"))
             }
         }
-        .font(NookTheme.TextStyle.detail)
+        .font(NookTheme.TextStyle.body)
         .foregroundStyle(NookTheme.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, NookTheme.Spacing.xxs)
@@ -713,5 +872,24 @@ enum TranscriptSymbols {
         case .search: return "magnifyingglass"
         case .other: return "wrench"
         }
+    }
+}
+
+/// The conversations of the last transcripts read, by path, so opening a session again (or switching back to it) shows
+/// its conversation at once instead of an empty panel until the file is read.
+@MainActor
+enum TranscriptCache {
+    private static var byPath: [String: [AgentChatMessage]] = [:]
+    private static var order: [String] = []
+    private static let limit = 12
+
+    static func messages(_ path: String) -> [AgentChatMessage]? { byPath[path] }
+
+    static func store(_ messages: [AgentChatMessage], _ path: String) {
+        guard !path.isEmpty, !messages.isEmpty else { return }
+        byPath[path] = messages
+        order.removeAll { $0 == path }
+        order.append(path)
+        while order.count > limit { byPath[order.removeFirst()] = nil }
     }
 }

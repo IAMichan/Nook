@@ -91,6 +91,11 @@ final class MCPConnector: ContextSource, ObservableObject {
     @Published private(set) var status = ConnectorStatus()
     private var client: MCPClient?
     private var serverTools: [MCPTool] = []
+    /// A server on this Mac (stdio) is a process of its own, often Node through `npx`: it is closed after `idleSeconds`
+    /// without a call, keeping its list of tools, and started again by the next call.
+    private var idleClose: Task<Void, Never>?
+    private var calling = 0
+    private static let idleSeconds: UInt64 = 3 * 60
 
     init(config: MCPServerConfig) {
         self.config = config
@@ -100,7 +105,11 @@ final class MCPConnector: ContextSource, ObservableObject {
     var title: String { config.name }
     var iconDomain: String? { SourceBrand.mcpDomain(name: config.name, transport: config.transport) }
     var isActive: Bool { config.enabled && ConnectorToggle.isOn(id) }
-    var refreshInterval: TimeInterval { 900 }
+    /// A server on this Mac is started for each refresh (its tools seldom change): once an hour; a server online every 15 minutes.
+    var refreshInterval: TimeInterval {
+        if case .stdio(_, _) = config.transport { return 3600 }
+        return 900
+    }
     var toolCount: Int { serverTools.count }
 
     func refresh() async {
@@ -116,6 +125,7 @@ final class MCPConnector: ContextSource, ObservableObject {
             serverTools = tools
             SourceCatalog.register(SourceDescriptor(id: id, title: title, kind: .custom),
                                    tools: tools.map { MCPTool.nookName(server: config.id, tool: $0.name) })
+            closeWhenIdle()
             let reads = tools.filter(\.readOnly).count
             status = ConnectorStatus(
                 state: .ok,
@@ -164,6 +174,12 @@ final class MCPConnector: ContextSource, ObservableObject {
 
     private func call(_ name: String, _ input: [String: Any]) async throws -> String {
         guard isActive else { throw NookError("\(title) is switched off (Settings › Connections).") }
+        idleClose?.cancel()
+        calling += 1
+        defer {
+            calling -= 1
+            closeWhenIdle()
+        }
         do {
             return try await connected().callTool(name, arguments: input)
         } catch let error as MCPOAuthError {
@@ -201,7 +217,19 @@ final class MCPConnector: ContextSource, ObservableObject {
     }
 
     func disconnect() {
+        idleClose?.cancel()
         client?.close()
         client = nil
+    }
+
+    private func closeWhenIdle() {
+        guard case .stdio(_, _) = config.transport else { return }
+        idleClose?.cancel()
+        idleClose = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.idleSeconds * 1_000_000_000)
+            guard !Task.isCancelled, let self, self.calling == 0 else { return }
+            self.client?.close()
+            self.client = nil
+        }
     }
 }
