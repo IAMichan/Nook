@@ -95,17 +95,7 @@ struct EventRow: View {
             ApprovalRow(event: event, expanded: expanded, toggle: toggle, decide: decide)
 
         case .error:
-            HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-                Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(NookTheme.coral)
-                Text(event.text)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(NookTheme.Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.surface))
+            TimelineProblemCard(text: event.text)
 
         case .system where event.tool == "handoff":
             // What the new agent was given: a summary you can read, not a hidden prompt.
@@ -152,6 +142,39 @@ struct EventRow: View {
             }
             .padding(.vertical, NookTheme.Spacing.xs)
         }
+    }
+}
+
+/// A problem in a conversation's timeline, on `surface`: an error (the coral symbol and its words in soft coral) or a usage
+/// limit (an amber symbol, the words in the text ramp, and what the agent said under them). The same card in a session
+/// Nook runs and in an agent's own transcript.
+struct TimelineProblemCard: View {
+    var symbol = "exclamationmark.octagon.fill"
+    var tint = NookTheme.coral
+    let text: String
+    var detail: String? = nil
+
+    private var isError: Bool { tint == NookTheme.coral }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+            Image(systemName: symbol).foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                Text(text)
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(isError ? NookTheme.coralSoft : NookTheme.textStrong)
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                }
+            }
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(NookTheme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.surface))
     }
 }
 
