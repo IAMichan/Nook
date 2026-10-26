@@ -505,9 +505,9 @@ struct TranscriptPromptRail: View {
     let onSelect: (PromptMark) -> Void
     @State private var hovered: String?
 
-    private static let width: CGFloat = 16
+    private static let width: CGFloat = 28
     /// The height each mark can be clicked over.
-    private static let target: CGFloat = 8
+    private static let target: CGFloat = 16
 
     var body: some View {
         GeometryReader { geometry in
