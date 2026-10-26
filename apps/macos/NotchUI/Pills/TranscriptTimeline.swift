@@ -44,6 +44,8 @@ struct TranscriptConversation: View {
     @State private var onScreen = VisibleTimelineRows()
     /// Where you left this conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
+    /// The row the "New since your last visit" line sits above; decided once the conversation has loaded.
+    @State private var newSince: String?
 
     private var shown: [AgentChatMessage] { messages.isEmpty ? fallback : messages }
 
@@ -75,7 +77,15 @@ struct TranscriptConversation: View {
                                 .foregroundStyle(NookTheme.textTertiary)
                         }
                         ForEach(rows) { row in
-                            self.row(row, answerable: answerable, cards: cards).id(row.id)
+                            if row.id == newSince {
+                                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                                    TimelineNewDivider()
+                                    self.row(row, answerable: answerable, cards: cards)
+                                }
+                                .id(row.id)
+                            } else {
+                                self.row(row, answerable: answerable, cards: cards).id(row.id)
+                            }
                         }
                         if let footer {
                             Text(footer)
@@ -118,7 +128,7 @@ struct TranscriptConversation: View {
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in if scroll.shouldFollowEnd { scrollToEnd(proxy) } }
-                // Back where you left it: the end, or the row you were reading (TimelineLanding).
+                // Back where you left it: the end, what is new since, or the row you were reading (TimelineLanding).
                 .onChange(of: loaded) { _, _ in land(proxy) }
                 .onAppear {
                     visit = visitKey.flatMap { TimelineVisitStore.shared.visit(for: $0) }
@@ -374,13 +384,15 @@ struct TranscriptConversation: View {
         proxy.scrollTo("bottom", anchor: .bottom)
     }
 
-    /// Once the conversation has loaded: the row you were reading when you left, else the end. Following stops at a
-    /// row, so what comes in does not pull you away from it.
+    /// Once the conversation has loaded: what came in since your last visit (under its line), the row you were reading
+    /// when you left, else the end. Following stops at a row, so what comes in does not pull you away from it.
     private func land(_ proxy: ScrollViewProxy) {
-        switch TimelineLanding.decide(visitRows, visit: visit) {
-        case .end, .newSince:
+        let rows = visitRows
+        newSince = visit.flatMap { TimelineLanding.firstNew(rows, since: $0.lastViewedAt) }
+        switch TimelineLanding.decide(rows, visit: visit) {
+        case .end:
             scrollToEnd(proxy)
-        case .row(let id):
+        case .newSince(let id), .row(let id):
             scroll.userScrolled()
             proxy.scrollTo(id, anchor: .top)
             // After the other handlers of this change (following the end) and once the lazy rows are laid out.

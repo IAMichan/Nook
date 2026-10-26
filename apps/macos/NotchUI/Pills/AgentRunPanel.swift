@@ -35,6 +35,8 @@ struct AgentRunPanel: View {
     @State private var onScreen = VisibleTimelineRows()
     /// Where you left this session's conversation last time (TimelineVisitStore), read as it opens.
     @State private var visit: TimelineVisit?
+    /// The block the "New since your last visit" line sits above; decided as the session opens.
+    @State private var newSince: UUID?
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -576,21 +578,24 @@ struct AgentRunPanel: View {
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
-                        TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
-                            AnyView(
-                                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                                    eventRow(event)
-                                    // What the turn changed (its card): a file or Open diff opens the diff beside it.
-                                    if let turn = cards[event.id.uuidString] {
-                                        TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
-                                            openDiff(TurnDiffSelection(turn: turn.id, file: file))
+                        VStack(alignment: .leading, spacing: 14) {
+                            if block.id == newSince { TimelineNewDivider() }
+                            TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
+                                AnyView(
+                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                                        eventRow(event)
+                                        // What the turn changed (its card): a file or Open diff opens the diff beside it.
+                                        if let turn = cards[event.id.uuidString] {
+                                            TurnChangesCard(turn: turn, directory: run.workingDirectory) { file in
+                                                openDiff(TurnDiffSelection(turn: turn.id, file: file))
+                                            }
+                                            .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) }
                                         }
-                                        .task(id: turn.id + "|\(turn.files.count)") { await countLines(turn, run: run) }
                                     }
-                                }
-                                .padding(.vertical, current == event.id ? 4 : 0)
-                                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
-                            )
+                                    .padding(.vertical, current == event.id ? 4 : 0)
+                                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
+                                )
+                            }
                         }
                         .id(block.id)
                     }
@@ -665,8 +670,8 @@ struct AgentRunPanel: View {
                 let fresh = TimelineSearch.search(events, query: findQuery)
                 if let first = fresh.next(after: nil) { findIndex = first; reveal(fresh, at: first, blocks: blocks, proxy: proxy) }
             }
-            // Back where you left it: the end, or the block you were reading (TimelineLanding); after the handlers that
-            // follow the end on a new session, hence on the next turn of the run loop.
+            // Back where you left it: the end, what is new since, or the block you were reading (TimelineLanding);
+            // after the handlers that follow the end on a new session, hence on the next turn of the run loop.
             .onAppear {
                 proxy.scrollTo("bottom", anchor: .bottom)
                 DispatchQueue.main.async { land(proxy) }
@@ -704,14 +709,16 @@ struct AgentRunPanel: View {
             .map { ($0.id.uuidString, $0.visitDate) }
     }
 
-    /// The end, or the block you were reading when you left; following stops there, so what comes in does not pull
-    /// you away from it.
+    /// What came in since your last visit (under its line), the block you were reading when you left, or the end;
+    /// following stops at a block, so what comes in does not pull you away from it.
     private func land(_ proxy: ScrollViewProxy) {
-        switch TimelineLanding.decide(visitRows(runID), visit: visit) {
-        case .end, .newSince:
+        let rows = visitRows(runID)
+        newSince = visit.flatMap { TimelineLanding.firstNew(rows, since: $0.lastViewedAt) }.flatMap(UUID.init(uuidString:))
+        switch TimelineLanding.decide(rows, visit: visit) {
+        case .end:
             scroll.jumpedToEnd()
             proxy.scrollTo("bottom", anchor: .bottom)
-        case .row(let id):
+        case .newSince(let id), .row(let id):
             guard let block = UUID(uuidString: id) else { return }
             scroll.userScrolled()
             proxy.scrollTo(block, anchor: .top)
