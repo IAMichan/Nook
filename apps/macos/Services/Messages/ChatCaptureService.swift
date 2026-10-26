@@ -40,18 +40,19 @@ final class ChatCaptureService: ObservableObject {
 
     /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token,
     /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in, Instagram through its
-    /// own web API once you logged in on it inside Nook.
+    /// own web API once you logged in on it inside Nook, Snapchat from its website once you signed in on it inside Nook.
     let messagesBridge = MessagesBridge()
     let slackBridge = SlackBridge()
     let telegramBridge = TelegramBridge()
     let teamsBridge = TeamsBridge()
+    let snapchatBridge = SnapchatBridge()
     /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every app linked through Nook's own chat
     /// helper.
     let whatsAppDesktopBridge = WhatsAppDesktopBridge()
     let serviceBridge = ChatServiceBridge()
     /// The chat helper goes last: an app another bridge reads is left to that one.
     private var bridges: [ChatBridge] {
-        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, serviceBridge]
+        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, snapchatBridge, serviceBridge]
     }
 
     /// You logged in to an app from its row in Settings › Chats: it is switched on, collecting with it, and read now.
