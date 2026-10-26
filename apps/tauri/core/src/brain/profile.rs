@@ -278,7 +278,7 @@ pub fn catalog_entry(name: &str) -> Option<&'static LocalModelOption> {
 /// Het aantal miljard parameters uit de naam ("qwen2.5:14b" → 14), afgerond.
 pub fn parameter_billions(name: &str) -> Option<u64> {
     let lower = name.to_lowercase();
-    let caps = rx!(r"(\d+(?:\.\d+)?)b\b").captures(&lower).ok()??;
+    let caps = rx!(r"(\d+(?:\.\d+)?)b\b").captures(lower.as_str()).ok()??;
     caps[1].parse::<f64>().ok().map(|v| v.round() as u64)
 }
 

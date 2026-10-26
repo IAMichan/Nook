@@ -4,7 +4,7 @@
 //! `{"d": "<toestel-id>", "s": "<base64 van nonce + versleutelde tekst + tag>"}`, net als `ChaChaPoly.SealedBox.combined`.
 
 use base64::Engine;
-use chacha20poly1305::aead::{Aead, AeadCore, KeyInit, OsRng, Payload};
+use chacha20poly1305::aead::{Aead, Generate, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ struct Envelope {
 fn cipher(pairing_key: &[u8]) -> ChaCha20Poly1305 {
     let mut derived = [0u8; 32];
     Hkdf::<Sha256>::new(Some(b"nook-companion"), pairing_key).expand(b"v1", &mut derived).expect("32 bytes is een geldige HKDF-lengte");
-    ChaCha20Poly1305::new(Key::from_slice(&derived))
+    ChaCha20Poly1305::new(&Key::from(derived))
 }
 
 fn aad(device_id: &str, direction: Direction) -> Vec<u8> {
@@ -48,15 +48,14 @@ fn aad(device_id: &str, direction: Direction) -> Vec<u8> {
 }
 
 pub fn seal(plaintext: &[u8], pairing_key: &[u8], device_id: &str, direction: Direction) -> Vec<u8> {
-    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    seal_with_nonce(plaintext, pairing_key, device_id, direction, nonce.into())
+    seal_with_nonce(plaintext, pairing_key, device_id, direction, <[u8; 12]>::generate())
 }
 
 /// Met een vaste nonce; alleen voor testvectoren. Een nonce mag nooit twee keer met dezelfde sleutel.
 pub fn seal_with_nonce(plaintext: &[u8], pairing_key: &[u8], device_id: &str, direction: Direction, nonce: [u8; 12]) -> Vec<u8> {
     let aad = aad(device_id, direction);
     let sealed = cipher(pairing_key)
-        .encrypt(Nonce::from_slice(&nonce), Payload { msg: plaintext, aad: &aad })
+        .encrypt(&Nonce::from(nonce), Payload { msg: plaintext, aad: &aad })
         .expect("versleutelen in het geheugen faalt niet");
     let mut combined = nonce.to_vec();
     combined.extend(sealed);
@@ -76,8 +75,9 @@ pub fn open(envelope: &[u8], pairing_key: &[u8], direction: Direction) -> Result
         return Err(SealError::Malformed);
     }
     let (nonce, sealed) = combined.split_at(12);
+    let nonce = Nonce::try_from(nonce).expect("split_at(12) geeft 12 bytes");
     let aad = aad(&parsed.d, direction);
-    cipher(pairing_key).decrypt(Nonce::from_slice(nonce), Payload { msg: sealed, aad: &aad }).map_err(|_| SealError::Authentication)
+    cipher(pairing_key).decrypt(&nonce, Payload { msg: sealed, aad: &aad }).map_err(|_| SealError::Authentication)
 }
 
 #[cfg(test)]

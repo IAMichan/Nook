@@ -234,7 +234,7 @@ impl WhatsAppLink {
             return s;
         }
         let mut bytes = [0u8; 32];
-        rand::Rng::fill(&mut rand::rngs::OsRng, &mut bytes[..]);
+        rand::TryRng::try_fill_bytes(&mut rand::rngs::SysRng, &mut bytes).expect("de systeemgenerator geeft willekeurige bytes");
         let secret = super::hex(&bytes);
         let _ = self.env.secrets.write(SECRET_ACCOUNT, &secret);
         secret

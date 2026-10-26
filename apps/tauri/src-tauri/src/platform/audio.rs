@@ -8,6 +8,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::Sample;
 use nook_core::services::audio::Resampler;
 
 pub type Sink = Box<dyn FnMut(&[f32]) + Send>;
@@ -87,7 +88,7 @@ fn spawn_cpal(loopback: bool, mut sink: Sink) -> Result<Recording, String> {
                 }
             };
             let channels = config.channels() as usize;
-            let rate = config.sample_rate().0;
+            let rate = config.sample_rate();
             let format = config.sample_format();
             let stream_config: cpal::StreamConfig = config.into();
             let mut resampler = Resampler::new(rate, channels, 16_000);
@@ -97,24 +98,30 @@ fn spawn_cpal(loopback: bool, mut sink: Sink) -> Result<Recording, String> {
                     sink(&out);
                 }
             };
-            let error = |e: cpal::StreamError| log::warn!("Opname: {e}");
+            let error = |e: cpal::Error| log::warn!("Opname: {e}");
             let stream = match format {
-                cpal::SampleFormat::F32 => device.build_input_stream(&stream_config, move |data: &[f32], _: &_| deliver(data), error, None),
+                cpal::SampleFormat::F32 => device.build_input_stream(stream_config, move |data: &[f32], _: &_| deliver(data), error, None),
                 cpal::SampleFormat::I16 => device.build_input_stream(
-                    &stream_config,
+                    stream_config,
                     move |data: &[i16], _: &_| deliver(&data.iter().map(|s| *s as f32 / i16::MAX as f32).collect::<Vec<_>>()),
                     error,
                     None,
                 ),
                 cpal::SampleFormat::U16 => device.build_input_stream(
-                    &stream_config,
+                    stream_config,
                     move |data: &[u16], _: &_| deliver(&data.iter().map(|s| (*s as f32 - 32768.0) / 32768.0).collect::<Vec<_>>()),
                     error,
                     None,
                 ),
                 cpal::SampleFormat::I32 => device.build_input_stream(
-                    &stream_config,
+                    stream_config,
                     move |data: &[i32], _: &_| deliver(&data.iter().map(|s| *s as f32 / i32::MAX as f32).collect::<Vec<_>>()),
+                    error,
+                    None,
+                ),
+                cpal::SampleFormat::I24 => device.build_input_stream(
+                    stream_config,
+                    move |data: &[cpal::I24], _: &_| deliver(&data.iter().map(|s| s.to_sample::<f32>()).collect::<Vec<_>>()),
                     error,
                     None,
                 ),
