@@ -1,0 +1,14 @@
+{
+  "comment": "The relay's rooms (first 16 bytes of HMAC-SHA256(key, \"nook-companion-relay-room-v1\"), hex), RelayMux frames ([kind][connection, 4 bytes big-endian][payload], hex) and close codes.",
+  "rooms": [
+    { "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", "room": "cae98fe2b67a6f65273aa18446bdf884" },
+    { "key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc", "room": "db2200e2648462a8a27991cd32f8ba45" }
+  ],
+  "mux": [
+    { "kind": 1, "connection": 4294967295, "payload": "", "frame": "01ffffffff" },
+    { "kind": 2, "connection": 16909060, "payload": "0908", "frame": "02010203040908" },
+    { "kind": 3, "connection": 5, "payload": "", "frame": "0300000005" }
+  ],
+  "invalidMux": ["020000", "0900000001"],
+  "closeCodes": { "macOffline": 4404, "roomFull": 4429, "replaced": 4000 }
+}

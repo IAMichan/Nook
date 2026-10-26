@@ -98,6 +98,21 @@ final class InboxLayoutTests: XCTestCase {
         XCTAssertEqual(sections(rows, state, limit: 13)[0].hiddenCount, 0)
     }
 
+    func testOpenSessionStaysOnTheSettledPage() {
+        let rows = (0..<5).map { row("r\($0)", age: Double($0) * 10) }
+        let state = InboxState(settled: Set(rows.map(\.id)))
+        let s = sections(rows, state, limit: 3, selected: "r4")
+        XCTAssertEqual(ids(s, .settled), ["r0", "r1", "r2", "r4"])
+        XCTAssertEqual(s[0].hiddenCount, 1)
+    }
+
+    func testFoldedShelfStillShowsTheOpenSession() {
+        let settled = sections([row("a"), row("b")], InboxState(settled: ["a", "b"]))[0]
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "b").map(\.id), ["b"])
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: true, selectedID: "x").map(\.id), [])
+        XCTAssertEqual(InboxLayout.shownRows(settled, folded: false, selectedID: "b").map(\.id), ["a", "b"])
+    }
+
     func testSettledRowThatNeedsYouIsNotHidden() {
         var r = row("a", .approval); r.settled = true
         XCTAssertEqual(ids(sections([r]), .active), ["a"])

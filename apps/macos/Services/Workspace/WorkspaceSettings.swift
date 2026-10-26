@@ -64,6 +64,17 @@ final class WorkspaceSettings: ObservableObject {
     @Published var autoArchiveDays: Int {
         didSet { defaults.set(autoArchiveDays, forKey: "ws.autoArchiveDays") }
     }
+    /// Nook removes a session's worktree by itself once its pull request is merged, or this many days after the session
+    /// settled (0 = never). Off by default; a worktree in use or with uncommitted changes always stays (`WorktreeCleanup`).
+    @Published var worktreeCleanupOnMerge: Bool {
+        didSet { defaults.set(worktreeCleanupOnMerge, forKey: "ws.worktreeCleanupOnMerge") }
+    }
+    @Published var worktreeCleanupDays: Int {
+        didSet { defaults.set(worktreeCleanupDays, forKey: "ws.worktreeCleanupDays") }
+    }
+    var worktreeCleanupRules: WorktreeCleanup.Rules {
+        WorktreeCleanup.Rules(onMergedPullRequest: worktreeCleanupOnMerge, daysAfterSettled: worktreeCleanupDays)
+    }
     /// Show costs reported by the agent itself.
     @Published var showCost: Bool {
         didSet { defaults.set(showCost, forKey: "ws.showCost") }
@@ -71,6 +82,10 @@ final class WorkspaceSettings: ObservableObject {
     /// Codex runs over `codex app-server` (approvals, questions, steering, live reasoning); off: one `codex exec` per turn.
     @Published var codexAppServer: Bool {
         didSet { defaults.set(codexAppServer, forKey: "ws.codexAppServer") }
+    }
+    /// Keeps what agents and Nook say to each other over stdio, per session (`ProviderTrafficLog`). Off by default.
+    @Published var providerTrafficLog: Bool {
+        didSet { defaults.set(providerTrafficLog, forKey: ProviderTrafficLog.enabledKey) }
     }
     /// Coding agents may use Nook's terminal, browser and pull requests through the workspace bridge.
     @Published var agentTools: Bool {
@@ -114,6 +129,10 @@ final class WorkspaceSettings: ObservableObject {
     }
     /// Previously selected projects, newest first.
     @Published private(set) var recentProjects: [String]
+    /// What project folders set for themselves on top of the defaults above (see `ProjectSettings`).
+    @Published var projectOverrides: ProjectOverrides {
+        didSet { defaults.set(try? JSONEncoder().encode(projectOverrides), forKey: "ws.projectOverrides") }
+    }
 
     static var standardWorktreeRoot: String {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".nook/worktrees", isDirectory: true).path
@@ -135,9 +154,12 @@ final class WorkspaceSettings: ObservableObject {
         editorBundleID = defaults.string(forKey: "ws.editor") ?? ""
         terminalBundleID = defaults.string(forKey: "ws.terminal") ?? Self.builtInTerminal
         autoArchiveDays = defaults.object(forKey: "ws.autoArchiveDays") as? Int ?? 0
+        worktreeCleanupOnMerge = defaults.object(forKey: "ws.worktreeCleanupOnMerge") as? Bool ?? false
+        worktreeCleanupDays = defaults.object(forKey: "ws.worktreeCleanupDays") as? Int ?? 0
         showCost = defaults.object(forKey: "ws.showCost") as? Bool ?? true
         agentTools = defaults.object(forKey: "ws.agentTools") as? Bool ?? true
         codexAppServer = defaults.object(forKey: "ws.codexAppServer") as? Bool ?? true
+        providerTrafficLog = defaults.bool(forKey: ProviderTrafficLog.enabledKey)
         autoTitles = defaults.object(forKey: "ws.autoTitles") as? Bool ?? true
         commitStyle = CommitStyle(rawValue: defaults.string(forKey: CommitStyle.defaultsKey) ?? "") ?? .standard
         commitInstructions = defaults.string(forKey: CommitStyle.instructionsKey) ?? ""
@@ -148,6 +170,8 @@ final class WorkspaceSettings: ObservableObject {
         scheduledWebhookPort = defaults.object(forKey: "ws.scheduledWebhookPort") as? Int ?? 0
         lastProject = defaults.string(forKey: "ws.lastProject") ?? ""
         recentProjects = defaults.stringArray(forKey: "ws.recentProjects") ?? []
+        projectOverrides = defaults.data(forKey: "ws.projectOverrides")
+            .flatMap { try? JSONDecoder().decode(ProjectOverrides.self, from: $0) } ?? ProjectOverrides()
     }
 
     func rememberProject(_ path: String) {
@@ -195,6 +219,31 @@ final class WorkspaceSettings: ObservableObject {
     func permission(for provider: RunProvider) -> PermissionPolicy {
         provider.capabilities.policies.contains(defaultPermission) ? defaultPermission : .acceptEdits
     }
+
+    // MARK: Per project
+
+    /// The global defaults, as `ProjectSettings` reads them.
+    var globalDefaults: SessionDefaults {
+        SessionDefaults(provider: defaultProvider, models: defaultModels, permission: defaultPermission,
+                        isolation: defaultIsolation, branchPrefix: WorktreeNaming.normalizedBranchPrefix(branchPrefix))
+    }
+
+    /// What a new session in this folder starts with: the folder's own overrides, the global values for the rest.
+    func sessionDefaults(for folder: String?) -> SessionDefaults {
+        ProjectSettings.resolve(global: globalDefaults, overrides: projectOverrides, folder: folder)
+    }
+
+    /// Does this folder (or the project it belongs to) set the value itself?
+    func isOverridden(_ key: ProjectSettingKey, for folder: String) -> Bool {
+        guard let project = projectOverrides.project(containing: folder) else { return false }
+        return projectOverrides.isOverridden(key, for: project)
+    }
+
+    func setOverride(_ key: ProjectSettingKey, _ value: String, for project: String) {
+        projectOverrides.set(key, .string(value), for: project)
+    }
+
+    func resetOverride(_ key: ProjectSettingKey, for project: String) { projectOverrides.reset(key, for: project) }
 
     // MARK: Apps
 

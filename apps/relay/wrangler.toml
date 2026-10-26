@@ -3,6 +3,12 @@ name = "nook-relay"
 main = "worker/index.js"
 compatibility_date = "2025-06-01"
 
+# Push for everyone (worker/push.js, POST /v1/push) is opt-in: it is on once Nook's APNs key is set as secrets,
+#   npx wrangler@4 secret put APNS_KEY        (the .p8 file's contents)
+#   npx wrangler@4 secret put APNS_KEY_ID     (10 characters)
+#   npx wrangler@4 secret put APNS_TEAM_ID    (10 characters)
+# and optionally APNS_TOPIC (the companion's bundle id, nl.imdigital.nook.companion by default).
+
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Room"

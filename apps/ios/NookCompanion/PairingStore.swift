@@ -1,69 +1,63 @@
 import Foundation
 import Security
 
-/// The pairing (where the Mac is and the key) of this phone, in the Keychain: this device only, not synced, not in backups.
+/// The Macs this phone is paired with (`CompanionPairings`: where each Mac is, its key and its routes), in the Keychain:
+/// this device only, not synced, not in backups. A phone paired before it could pair with several Macs had one pairing
+/// and its routes under two other accounts; the first load turns them into the list and removes them.
 enum PairingStore {
     private static let service = "nl.imdigital.nook.companion"
-    private static let account = "pairing"
+    private static let pairingsAccount = "pairings"
+    // Before several Macs: one pairing and its routes.
+    private static let legacyAccount = "pairing"
+    private static let legacyRoutesAccount = "routes"
 
-    private struct Stored: Codable {
+    private struct Legacy: Codable {
         var host: String
         var port: UInt16
         var key: String
         var macName: String
     }
 
-    static func load() -> PairingLink? {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                    kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data,
-              let stored = try? JSONDecoder().decode(Stored.self, from: data), let key = Base64URL.decode(stored.key) else { return nil }
-        return PairingLink(host: stored.host, port: stored.port, key: key, macName: stored.macName)
+    static func load() -> CompanionPairings {
+        if let data = read(pairingsAccount), let pairings = try? JSONDecoder().decode(CompanionPairings.self, from: data) {
+            return pairings
+        }
+        let legacy = read(legacyAccount).flatMap { try? JSONDecoder().decode(Legacy.self, from: $0) }
+        let link = legacy.flatMap { stored in
+            Base64URL.decode(stored.key).map { PairingLink(host: stored.host, port: stored.port, key: $0, macName: stored.macName) }
+        }
+        let routes = read(legacyRoutesAccount).flatMap { try? JSONDecoder().decode([CompanionRoute].self, from: $0) }
+        let pairings = CompanionPairings.migrate(legacy: link, routes: routes?.isEmpty == false ? routes : nil)
+        if link != nil, save(pairings) {
+            delete(legacyAccount)
+            delete(legacyRoutesAccount)
+        }
+        return pairings
     }
 
     @discardableResult
-    static func save(_ link: PairingLink) -> Bool {
-        clear()
-        guard let data = try? JSONEncoder().encode(Stored(host: link.host, port: link.port, key: Base64URL.encode(link.key), macName: link.macName)) else { return false }
+    static func save(_ pairings: CompanionPairings) -> Bool {
+        guard let data = try? JSONEncoder().encode(pairings) else { return false }
+        delete(pairingsAccount)
+        // The Notification Service Extension opens relay pushes with the push keys derived from these pairings.
+        PushKeyStore.sync(pairingKeys: pairings.macs.compactMap { $0.link?.key })
+        if pairings.isEmpty { return true }
         let attributes: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                         kSecAttrAccount as String: account, kSecValueData as String: data,
+                                         kSecAttrAccount as String: pairingsAccount, kSecValueData as String: data,
                                          kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 
-    static func clear() {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
-        SecItemDelete(query as CFDictionary)
-        clearRoutes()
-    }
-
-    // MARK: Routes
-
-    /// The ways to reach the paired Mac (`CompanionRoutes`), next to the pairing; nil when none were saved yet (a phone
-    /// paired before routes existed starts from the pairing's own address).
-    private static let routesAccount = "routes"
-
-    static func loadRoutes() -> [CompanionRoute]? {
+    private static func read(_ account: String) -> Data? {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                    kSecAttrAccount as String: routesAccount, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+                                    kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data,
-              let routes = try? JSONDecoder().decode([CompanionRoute].self, from: data), !routes.isEmpty else { return nil }
-        return routes
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        return item as? Data
     }
 
-    static func saveRoutes(_ routes: [CompanionRoute]) {
-        clearRoutes()
-        guard let data = try? JSONEncoder().encode(routes) else { return }
-        let attributes: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                         kSecAttrAccount as String: routesAccount, kSecValueData as String: data,
-                                         kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
-        SecItemAdd(attributes as CFDictionary, nil)
-    }
-
-    private static func clearRoutes() {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: routesAccount]
+    private static func delete(_ account: String) {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(query as CFDictionary)
     }
 }

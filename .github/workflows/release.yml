@@ -18,6 +18,11 @@ name: Release (macOS)
 #     Keychain and grant the permissions once instead of after every update.
 #   neither: signed ad hoc. macOS blocks the first launch and treats every update as a new app.
 # The release notes say how to open a build that is not notarized (Privacy & Security › Open Anyway, or `xattr`).
+#
+# Updates (docs/UPDATES.md, "Release builds"): with the repository secret NOOK_UPDATE_SIGNING_KEY and the repository
+# variable NOOK_UPDATE_PUBLIC_KEY (make the pair once with `swift scripts/sign-update.swift generate`), the .zip gets an
+# Ed25519 signature (.zip.sig) and the app carries the public key, so a downloaded Nook installs the next release from
+# the update button after checking it. Without them the release has no .sig and Nook links to the release instead.
 # TDLib and nook-chatd are not bundled (they need scripts/build-tdlib.sh and scripts/build-chatd.sh); Telegram and the
 # chat-helper apps stay on notifications in this build.
 on:
@@ -125,7 +130,7 @@ jobs:
             -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO SWIFT_COMPILATION_MODE=singlefile \
             MARKETING_VERSION="${{ steps.version.outputs.marketing }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            NOOK_RELAY_URL="${{ vars.NOOK_RELAY_URL }}" \
+            NOOK_RELAY_URL="${{ vars.NOOK_RELAY_URL }}" NOOK_UPDATE_PUBLIC_KEY="${{ vars.NOOK_UPDATE_PUBLIC_KEY }}" \
             2>&1 | tee build.log
       - name: Save Swift package build cache
         if: steps.cache.outputs.cache-hit != 'true'
@@ -177,6 +182,12 @@ jobs:
           for KEY in NookSourceCommit NookSourceBranch NookSourceRoot NookDeveloperDir; do
             /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
           done
+          # Instead it updates from this repository's releases: the full version (with -beta.N) and where to look.
+          for KEY in NookReleaseVersion NookReleaseRepository; do
+            /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+          done
+          /usr/libexec/PlistBuddy -c "Add :NookReleaseVersion string ${{ steps.version.outputs.version }}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NookReleaseRepository string $GITHUB_REPOSITORY" "$PLIST"
           # Sign: nested code first, then the app with its entitlements. See "Signing" at the top.
           if [ -n "$SIGN_IDENTITY" ]; then
             SIGN=(--force --sign "$SIGN_IDENTITY" --keychain "$SIGN_KEYCHAIN")
@@ -233,6 +244,22 @@ jobs:
           ditto -c -k --keepParent Nook.app "Nook-$VERSION-macOS.zip"
           spctl --assess --type open --context context:primary-signature --verbose=2 "Nook-$VERSION-macOS.dmg"
           echo "NOTARIZED=true" >> "$GITHUB_ENV"
+      # The .zip is what a downloaded Nook installs as its update; it checks this signature against the public key it
+      # carries. Signed after notarization, which makes the .zip again.
+      - name: Sign the update
+        working-directory: ${{ runner.temp }}/dist
+        env:
+          NOOK_UPDATE_SIGNING_KEY: ${{ secrets.NOOK_UPDATE_SIGNING_KEY }}
+          NOOK_UPDATE_PUBLIC_KEY: ${{ vars.NOOK_UPDATE_PUBLIC_KEY }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ -z "$NOOK_UPDATE_SIGNING_KEY" ] || [ -z "$NOOK_UPDATE_PUBLIC_KEY" ]; then
+            echo "::warning::NOOK_UPDATE_SIGNING_KEY or NOOK_UPDATE_PUBLIC_KEY is not set: the release has no update signature, so downloaded builds link to it instead of installing it."
+            exit 0
+          fi
+          # Refuses a private key that does not belong to the public key the app carries.
+          swift "$GITHUB_WORKSPACE/scripts/sign-update.swift" sign "Nook-$VERSION-macOS.zip" > "Nook-$VERSION-macOS.zip.sig"
+          test -s "Nook-$VERSION-macOS.zip.sig"
       - name: Checksums
         working-directory: ${{ runner.temp }}/dist
         run: |
@@ -254,10 +281,11 @@ jobs:
             "$GITHUB_WORKSPACE/scripts/release-notes.sh" > notes.md
           FLAGS=""
           [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
+          FILES=("Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" SHA256SUMS.txt)
+          [ -s "Nook-$VERSION-macOS.zip.sig" ] && FILES+=("Nook-$VERSION-macOS.zip.sig")
           # shellcheck disable=SC2086 # FLAGS is empty or one flag
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${{ steps.version.outputs.title }}" \
-            --notes-file notes.md $FLAGS \
-            "Nook-$VERSION-macOS.dmg" "Nook-$VERSION-macOS.zip" SHA256SUMS.txt
+            --notes-file notes.md $FLAGS "${FILES[@]}"
       - name: Keep the build log
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

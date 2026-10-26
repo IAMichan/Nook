@@ -1,31 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// Settings › Overview › Updates: which build this is, whether main has something newer, checking now, and whether Nook
-/// checks by itself. Installing happens from the button in the panel footer, which this opens.
+/// Settings › Overview › Updates: which build this is, whether main (or, for a downloaded build, GitHub Releases) has
+/// something newer, checking now, and whether Nook checks by itself. Installing happens from the button in the panel
+/// footer, which this opens.
 struct UpdateSettingsSection: View {
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
         Section {
             if let source = updater.source {
-                StatusRow(title: status.title, detail: status.detail, state: status.state) {
-                    HStack(spacing: NookTheme.Spacing.md) {
-                        if updater.phase == .checking {
-                            ProgressView().controlSize(.small)
-                        }
-                        switch updater.phase {
-                        case .available, .installing, .readyToRestart, .readyToBuildInXcode, .failed:
-                            Button(tr("update.settings.open")) { updater.showPanel() }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
-                        default:
-                            Button(tr("update.settings.checkNow")) { updater.check() }
-                                .controlSize(.small)
-                                .disabled(updater.phase == .checking)
-                        }
-                    }
-                }
+                StatusRow(title: status.title, detail: status.detail, state: status.state) { actions }
                 LabeledContent(tr("update.settings.build")) {
                     Text(verbatim: [source.shortCommit, source.branch, source.configuration].compactMap { $0 }.joined(separator: " · "))
                         .font(NookTheme.TextStyle.code)
@@ -33,13 +18,51 @@ struct UpdateSettingsSection: View {
                         .textSelection(.enabled)
                 }
                 SettingToggle(tr("update.settings.auto"), detail: tr("update.settings.autoDetail"), isOn: $updater.autoCheck)
+            } else if let release = updater.release {
+                StatusRow(title: status.title, detail: status.detail, state: status.state) { actions }
+                LabeledContent(tr("update.settings.version")) {
+                    Text(verbatim: release.version.description)
+                        .font(NookTheme.TextStyle.code)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .textSelection(.enabled)
+                }
+                if let manual = updater.manualRelease {
+                    StatusRow(title: tr("update.release.manual.title", manual.version.description),
+                              detail: tr(release.publicKey == nil ? "update.release.noKey" : "update.release.unsigned"), state: .warning) {
+                        if let page = manual.page {
+                            Button(tr("update.release.download")) { NSWorkspace.shared.open(page) }
+                                .controlSize(.small)
+                        }
+                    }
+                }
+                SettingToggle(tr("update.settings.auto"), detail: tr("update.release.autoDetail"), isOn: $updater.autoCheck)
             } else {
                 StatusRow(title: tr("update.settings.unavailableTitle"), detail: tr("update.settings.unavailable"), state: .todo) {
                     EmptyView()
                 }
             }
         } header: {
-            SettingsSectionTitle(tr("update.settings.title"), info: tr("update.settings.footer"))
+            SettingsSectionTitle(tr("update.settings.title"),
+                                 info: tr(updater.isReleaseBuild ? "update.release.footer" : "update.settings.footer"))
+        }
+    }
+
+    /// Check now, or open the panel when there is something to do there.
+    private var actions: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            if updater.phase == .checking {
+                ProgressView().controlSize(.small)
+            }
+            switch updater.phase {
+            case .available, .installing, .readyToRestart, .readyToBuildInXcode, .failed:
+                Button(tr("update.settings.open")) { updater.showPanel() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            default:
+                Button(tr("update.settings.checkNow")) { updater.check() }
+                    .controlSize(.small)
+                    .disabled(updater.phase == .checking)
+            }
         }
     }
 
@@ -47,6 +70,9 @@ struct UpdateSettingsSection: View {
         let checked = updater.lastChecked.map { tr("update.settings.lastChecked", NookDates.ago($0)) }
         switch updater.phase {
         case .available:
+            if let release = updater.releaseUpdate {
+                return (tr("update.release.status.available", release.version.description), checked ?? "", .warning)
+            }
             return (tr("update.settings.status.available", updater.available?.count ?? 0), checked ?? "", .warning)
         case .installing(let step):
             return (tr("update.installing.title"), UpdateText.step(step), .todo)

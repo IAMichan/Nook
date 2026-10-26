@@ -25,6 +25,8 @@ final class CompanionServer: ObservableObject {
     private weak var app: AppModel?
     private var guards: [String: RequestGuard] = [:]
     private var receipts: [String: CommandReceipts] = [:]
+    /// Repeats of a request that is still being carried out, by device and request id: they get its answer.
+    private var running: [String: [CheckedContinuation<CompanionResponse, Never>]] = [:]
     private var open = 0
     private static let maxConnections = 8
     private let queue = DispatchQueue(label: "nook.companion.server")
@@ -96,6 +98,7 @@ final class CompanionServer: ObservableObject {
             }
         case .failed(let error):
             state = .failed(error.localizedDescription)
+            CompanionDiagnosticsLog.mac.record("listener", ["state": "failed", "error": error.localizedDescription])
             listener?.cancel()
             listener = nil
             // A taken port: pick another next time.
@@ -155,6 +158,10 @@ final class CompanionServer: ObservableObject {
         peer.closed = true
         if peer.counted { open = max(0, open - 1) }
         let wasLive = streams.contains { $0 === peer }
+        if wasLive {
+            CompanionDiagnosticsLog.mac.record("streamClosed", ["device": peer.deviceID ?? "", "via": peer.counted ? "direct" : "relay",
+                                                                "quiet": String(Int(Date().timeIntervalSince(peer.lastHeard)))])
+        }
         streams.removeAll { $0 === peer }
         if streams.isEmpty { streamTimer?.invalidate(); streamTimer = nil }
         if wasLive { KeepAwake.shared.update() }
@@ -207,6 +214,8 @@ final class CompanionServer: ObservableObject {
     func relayClosed(_ peer: CompanionPeer) { closed(peer) }
 
     private func send(_ response: CompanionResponse, key: Data, deviceID: String, on transport: CompanionTransport) {
+        // Only what this phone may see, and only the features it may use (`CompanionScopes`).
+        let response = CompanionScopes.redact(response, granted: scopes(of: deviceID))
         guard let json = try? JSONEncoder().encode(response),
               let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: deviceID, direction: .response),
               let framed = CompanionFrameReader.frame(sealed) else { return }
@@ -230,15 +239,42 @@ final class CompanionServer: ObservableObject {
             return
         }
         peer.lastHeard = Date()
-        // A repeat of a request that already changed something (its answer got lost, or it waited in the phone's
-        // outbox): the answer it got, without doing it again.
-        if !pairing, CommandReceipts.keeps(request.op), let earlier = receipts[claimed]?.response(for: request.id) {
-            let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date())
-            send(refusal.map { CompanionResponse.failure(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
+        // What this phone may do is decided on the Mac (Settings › Devices); anything else is refused before it runs.
+        if !pairing, !CompanionScopes.allows(request.op, granted: scopes(of: claimed)) {
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "scope", "device": claimed])
+            send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection)
             return
+        }
+        let keeps = !pairing && CommandReceipts.keeps(request.op)
+        if keeps {
+            // A repeat of a request that changes something (its answer got lost, or it waited in the phone's outbox):
+            // the answer it got, without doing it again; while the first is still being carried out, its answer once
+            // it is there.
+            switch receipts[claimed, default: CommandReceipts()].begin(request.id, now: Date()) {
+            case .answered(let earlier):
+                let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date())
+                send(refusal.map { CompanionResponse.failure(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
+                return
+            case .running:
+                if let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date()) {
+                    send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
+                    return
+                }
+                let slot = claimed + "|" + request.id
+                let earlier = await withCheckedContinuation { continuation in
+                    running[slot, default: []].append(continuation)
+                }
+                send(earlier, key: key, deviceID: claimed, on: connection)
+                return
+            case .new:
+                break
+            }
         }
         // The guard lives per device and is changed in place: a repeated id or a burst is refused from here on.
         if let refusal = guards[claimed, default: RequestGuard()].admit(request, now: Date()) {
+            if keeps { receipts[claimed]?.cancel(request.id) }
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": refusal.rawValue, "device": claimed,
+                                                           "skew": String(Int(Date().timeIntervalSince1970 - request.sent))])
             send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
             return
         }
@@ -249,21 +285,25 @@ final class CompanionServer: ObservableObject {
                 return
             }
             audit("paired", request.text ?? "iPhone")
+            CompanionDiagnosticsLog.mac.record("paired", ["device": claimed, "relay": peer.counted ? "no" : "yes"])
         } else {
             store.touch(claimed)
+        }
+        if [CompanionOp.hello, .list, .subscribe].contains(request.op) {
+            store.noteVersions(device: claimed, protocolVersion: request.protocolVersion,
+                               appVersion: CompanionProtocol.cleanVersion(request.appVersion))
         }
         if request.op == .subscribe, !pairing {
             subscribe(peer, request: request, deviceID: claimed, key: key)
             return
         }
         let response = await handle(request, deviceID: claimed)
-        if CommandReceipts.keeps(request.op) {
-            if CommandReceipts.settles(response) {
-                receipts[claimed, default: CommandReceipts()].record(request.id, response)
-            } else {
-                // Failed in passing: the phone may send the same id again (its outbox does), and it must get through.
-                guards[claimed]?.forget(request)
-            }
+        if keeps {
+            receipts[claimed, default: CommandReceipts()].finish(request.id, response, now: Date())
+            // Failed in passing: the phone may send the same id again (its outbox does), and it must get through.
+            if !CommandReceipts.settles(response) { guards[claimed]?.forget(request) }
+            // Repeats that came while it ran get the same answer.
+            for waiter in running.removeValue(forKey: claimed + "|" + request.id) ?? [] { waiter.resume(returning: response) }
         }
         send(response, key: key, deviceID: claimed, on: connection)
     }
@@ -280,12 +320,15 @@ final class CompanionServer: ObservableObject {
         peer.key = key
         peer.streamID = request.id
         peer.seq = 0
+        CompanionDiagnosticsLog.mac.record("subscribed", ["device": deviceID, "via": peer.counted ? "direct" : "relay",
+                                                          "protocol": request.protocolVersion.map { String($0) } ?? "1"])
         let sessions = digests(app)
         peer.sent = sessions
         if !streams.contains(where: { $0 === peer }) { streams.append(peer) }
         KeepAwake.shared.update()
-        send(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
-                               features: CompanionFeature.all, endpoints: endpoints(), relay: CompanionRelayClient.shared.advertised),
+        send(Self.versioned(CompanionResponse(id: request.id, ok: true, macName: MachineName.local, sessions: sessions,
+                                              features: CompanionFeature.all, endpoints: endpoints(),
+                                              relay: CompanionRelayClient.shared.advertised)),
              key: key, deviceID: deviceID, on: peer.transport)
         if streamTimer == nil {
             // Closes connections that went quiet (a phone that left without saying so) and catches changes the
@@ -317,6 +360,16 @@ final class CompanionServer: ObservableObject {
         }
     }
 
+    /// What a paired phone may do; nothing beyond keeping the connection for a key without a device.
+    private func scopes(of deviceID: String) -> Set<CompanionScope> {
+        CompanionStore.shared.devices.first { $0.id == deviceID }?.grantedScopes ?? []
+    }
+
+    /// Ends a phone's live connections, so it connects again and learns what it may do now.
+    func dropStreams(for deviceID: String) {
+        for peer in streams where peer.deviceID == deviceID { peer.transport.cancel() }
+    }
+
     func audit(_ action: String, _ detail: String) {
         app?.store.audit(tool: "companion_" + action, args: detail, result: "ok")
     }
@@ -329,11 +382,19 @@ final class CompanionServer: ObservableObject {
         let macName = MachineName.local
         switch request.op {
         case .hello, .list, .subscribe:
-            return CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
-                                     features: CompanionFeature.all, endpoints: endpoints(),
-                                     relay: CompanionRelayClient.shared.advertised)
+            return Self.versioned(CompanionResponse(id: request.id, ok: true, macName: macName, sessions: digests(app),
+                                                    features: CompanionFeature.all, endpoints: endpoints(),
+                                                    relay: CompanionRelayClient.shared.advertised))
         case .ping:
             return CompanionResponse(id: request.id, ok: true)
+        case .requestUpdate:
+            // Only opens the update panel, where installing stays a click on the Mac; nothing is installed from here.
+            let updater = AppUpdater.shared
+            if case .unavailable = updater.phase { return CompanionResponse(id: request.id, ok: true, message: "unavailable") }
+            guard updater.available != nil else { return CompanionResponse(id: request.id, ok: true, message: "none") }
+            updater.showPanel()
+            audit("update_request", CompanionStore.shared.devices.first { $0.id == deviceID }?.name ?? "")
+            return CompanionResponse(id: request.id, ok: true, message: "available")
         case .register:
             // The token goes into a URL on Apple's host: only hex is accepted.
             guard let token = request.text, APNsJWT.validToken(token) else { return .failure(request.id, .badRequest) }
@@ -445,6 +506,15 @@ final class CompanionServer: ObservableObject {
         }
     }
 
+    /// An answer to `hello`, `list` or `subscribe`, with the versions this Mac speaks (`CompanionProtocol`).
+    private static func versioned(_ response: CompanionResponse) -> CompanionResponse {
+        var response = response
+        response.protocolVersion = CompanionProtocol.version
+        response.oldestPhone = CompanionProtocol.oldestPhone
+        response.appVersion = CompanionProtocol.appVersion
+        return response
+    }
+
     private func canAllow(_ pending: PendingPermission) -> Bool {
         var safe: Bool?
         if let command = (pending.input.object as? [String: Any])?["command"] as? String {
@@ -485,6 +555,11 @@ final class CompanionServer: ObservableObject {
                                  actions: Self.actions(run, now: now).map(\.rawValue))
         }
     }
+}
+
+extension CompanionDiagnosticsLog {
+    /// The Mac's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from Settings › Devices.
+    static let mac = CompanionDiagnosticsLog(url: NookPaths.supportDirectory.appendingPathComponent("companion-diagnostics.ndjson"))
 }
 
 /// One connection from a phone (directly, or through the relay), and what the Mac knows about it once the phone

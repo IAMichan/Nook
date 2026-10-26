@@ -18,7 +18,9 @@ struct TodayView: View {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 header
                 ConnectionLine()
-                if !client.can(CompanionFeature.home), client.phase == .connected {
+                if !client.allows(.read), client.phase == .connected {
+                    Banner(text: String(localized: "Seeing sessions and your day is turned off for this iPhone in Nook on your Mac."), symbol: "lock.fill")
+                } else if !client.can(CompanionFeature.home), client.phase == .connected {
                     Banner(text: String(localized: "Update Nook on your Mac to see your day, music and usage here."), symbol: "arrow.down.circle")
                 }
                 if !waiting.isEmpty {

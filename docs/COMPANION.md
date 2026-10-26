@@ -13,6 +13,15 @@ The phone sees two kinds of sessions:
 2. **On your iPhone:** Open **Nook Companion** and scan the QR code (or paste the pairing link). The app registers the `nook://` scheme, so scanning the code with the Camera app opens it too.
 3. The first authenticated request proves the phone holds the shared key; your Mac stores the paired device key in the macOS Keychain. Unpairing deletes the key on either side.
 
+## Several Macs
+
+One phone can pair with up to eight Macs (`CompanionPairings`, `packages/protocol/Sources/CompanionPairings.swift`, tested in `CompanionPairingsTests`). *Pair another Mac* is in the Agents menu (`…`), next to the list of paired Macs.
+
+- **One active Mac:** the live connection, the tabs and the Live Activities follow the active Mac; picking another Mac in the menu moves the connection there. *Unpair from this Mac* removes only the active one.
+- **The others in the Agents list:** every other Mac is asked for its sessions when the phone connects and every 30 seconds (one short `list` over its own routes), and its sessions show under *On <Mac>*, what waits on you first. A tap makes that Mac active and opens the session.
+- **Kept per Mac:** each Mac has its own key, routes, features and outbox (`companion-outbox-<id>.json`), keyed by the id of its pairing key, so a message written to one Mac never goes to another. The Mac a phone was paired with before this keeps its old storage names; the single stored pairing is turned into the list on the first launch (`PairingStore`).
+- Push notifications and Live Activities still come from the Mac they belong to, but actions from a notification go to the active Mac.
+
 ## What the App Does
 
 - **Today tab:** Nook's home, as the empty notch on the Mac: a greeting, what needs you (approve right there), the *For you* rows, your agenda, what plays on the Mac (play/pause, next, previous), your plan limits at a glance, and conversation starters that open a chat.
@@ -24,7 +33,23 @@ The phone sees two kinds of sessions:
 - **Chats tab:** the Mac's Chats tab: WhatsApp (through the phone linked to Nook) and every other chat app Nook collects on the Mac (Telegram, Messages, Slack…) in one list, newest first, with a search, *All / Unread*, and a badge for what is unread. A chat opens as bubbles (quotes, reactions, ticks, files by name). A WhatsApp chat can be answered from the phone, also as a reply to one of its messages (long-press it): your own words and your own tap, sent and logged as in the Chats tab on the Mac. Any other chat is read-only on the phone and answered in its own app; *@nook* drafting stays on the Mac. Opening a chat reads it in Nook the way opening it on the Mac does (Settings › Chats); *Mark as read* in a chat's menu passes that on to the chat's app where Nook can tell it (WhatsApp, Telegram, an app Nook's chat helper links), and *Mark as unread* is Nook's alone.
 - **Nook tab:** Nook's own conversations (the same ones as in the notch). Ask a question in a new chat or continue one; the answer streams in. It runs through the same brain pipeline as on the Mac; plans, mail drafts, and charts in an answer are shown and approved on the Mac. A question from the phone does not open the notch.
 
-Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
+Which of these the phone offers depends on the Mac: the `hello`/`list` answer lists the `features` it understands (`start`, `timeline`, `chat`, `home`, `usage`, `music`, `inbox`, `liveActivity`, `manage`, `stream`, `routes`, `retry`, `relay`, `requestUpdate`). A Mac (or the Tauri app) without them keeps working with the approve/answer/send/stop features only.
+
+## Versions
+
+Most differences between an older Mac and a newer phone (or the other way round) are covered by `features`: the phone only offers what the Mac lists. For changes `features` cannot cover, both sides also say which **protocol version** and **app version** they run (`protocolVersion` and `appVersion` on `hello`, `list` and `subscribe`, both ways; the Mac adds `oldestPhone`, the oldest phone protocol it still supports). A side that sends none is version 1, so older Macs and phones keep working. `CompanionCompatibility` (`packages/protocol/Sources/CompanionCompatibility.swift`, tested in `CompanionCompatibilityTests`) turns that into **ok**, **Mac too old** or **phone too old**:
+
+- The phone shows *Update Nook on your Mac* or *Update the app* above the Agents list.
+- Settings › Devices on the Mac shows the app version of each paired phone, and says when a phone's app is too old for this Nook.
+- With a Mac that lists `requestUpdate`, *Show the update on your Mac* in the Agents menu opens Nook's update panel on the Mac (`AppUpdater.showPanel`) when an update is ready. It never installs anything: installing stays a click on the Mac. It is logged as `companion_update_request`.
+
+## What a Phone May Do
+
+Each paired phone has its own **scopes** (`CompanionScope`, `packages/protocol/Sources/CompanionScopes.swift`, tested in `CompanionScopesTests`): **read** (sessions, conversations, Today, usage), **approve** (allow, deny, answer questions), **operate** (start sessions, send messages, stop and manage them), **chats** (the Chats tab), **music** and **nookChat** (chatting with Nook).
+
+- They are chosen next to the pairing code on the Mac (everything by default) and changed later per phone in Settings › Devices › *What this iPhone may do*. A phone paired before scopes existed may do everything, as before; a scope name a Mac does not know (from a newer Nook) is ignored.
+- One table (`CompanionScopes.table`) says which scope each request needs; connection requests (`hello`, `list`, `subscribe`, `ping`) and the phone's own token registrations always pass. The test fails when a new op has no entry, and an op missing from the table is refused.
+- The Mac refuses a request outside the phone's scopes (`notAllowedFromPhone`), leaves out of every answer what the phone may not see, lists only the features it may use, and sends the phone its scopes with every `hello`, `list` and `subscribe` answer. The phone hides what it may not use (approve buttons, the message field, the Chats and Nook tabs). A change on the Mac ends the phone's live connection, so it reconnects and learns at once.
 
 ## Security Architecture
 
@@ -33,7 +58,7 @@ Which of these the phone offers depends on the Mac: the `hello`/`list` answer li
 - **Replay & rate protection (`RequestGuard`):** Every request carries a timestamp (max 60 s skew) and a unique nonce. The Mac rejects stale or replayed requests and enforces a limit of 120 requests/minute per device, up to 8 concurrent connections, 256 KB max message size, and a 30 s connection timeout.
 - **Least-privilege policy (`CompanionPolicy`):** Denying a tool call is always permitted from the phone; **allowing a tool call from the phone is restricted to low-risk operations** (reading/editing files or shell commands classified as safe by `CommandRisk`). High-risk or unknown commands, web actions, and MCP tools must be approved on the Mac itself.
 - **Starting sessions is narrowed:** the phone can only start an agent with a connected account in a folder from the Mac's recent projects (never an arbitrary path), and a session started from the phone never uses *allow everything* (`bypass`): it falls back to *accept edits*, so risky actions still wait for approval. A folder another session works in is refused, as in the composer.
-- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_stop`, `companion_start`, `companion_ask`, `companion_chat_stop`, `companion_music`, `companion_chat_send`, `companion_chat_read`, `companion_chat_unread`, `companion_paired`); a message sent to a chat is also logged as `whatsapp_send`, as from the Mac.
+- **Full audit trail:** Every action taken from the phone is recorded in the local SQLite audit log (`companion_allow`, `companion_deny`, `companion_answer`, `companion_send`, `companion_stop`, `companion_start`, `companion_ask`, `companion_chat_stop`, `companion_music`, `companion_chat_send`, `companion_chat_read`, `companion_chat_unread`, `companion_update_request`, `companion_paired`); a message sent to a chat is also logged as `whatsapp_send`, as from the Mac.
 
 ## Staying Connected
 
@@ -45,7 +70,7 @@ The phone keeps one live connection to the Mac while the app is in front, modele
 - **Live connection:** with a Mac that lists `stream`, the phone subscribes (`subscribe`). The Mac answers like `list`, then sends the sessions again whenever they change (at most once a second, with a growing `seq` the phone checks, so an old message played back cannot turn the list back). Other requests travel over the same connection. The phone pings every 5 seconds and drops a connection that sent nothing back for 15 seconds; the Mac closes one that was quiet for 45 seconds, and keeps one live connection per phone. A Mac without `stream` is asked for the list every 5 seconds, as before.
 - **Reconnecting:** one supervisor owns retries: exponential backoff with jitter from 1 second up to a minute, reset after a connection stayed up for 30 seconds (`RetryBackoff`). Coming back to the app after 10 seconds or more replaces the connection at once (iOS can kill a suspended socket without a word); after a shorter glance a 3-second probe is enough (`CompanionWakeup`). A change of network (Wi-Fi to cellular, another Wi-Fi network) probes the connection and ends any wait.
 - **Moving back to a better route:** while connected over a later route (Tailscale), the phone checks the earlier ones every minute and on a network change, and moves over as soon as one answers. A route that answered but then failed to connect is left alone for 5 minutes (`RouteCooldowns`), so a flaky network cannot bounce the connection.
-- **Outbox and retries:** with a Mac that lists `retry`, a message to a session goes through an outbox on the phone (`CompanionOutbox`, a protected file). It shows in its session as waiting, goes as soon as the Mac answers, and keeps its request id. The Mac remembers its answer to every request that changed something (`CommandReceipts`), so a repeat of the same id (a lost answer, a message sent again from the outbox) gets that answer and is never carried out twice; the repeat must still be fresh and within the rate. A message that waited more than a day is dropped. Approvals, answers and stops never wait: they mean something only now.
+- **Outbox and retries:** with a Mac that lists `retry`, a message to a session goes through an outbox on the phone (`CompanionOutbox`, a protected file). It shows in its session as waiting, goes as soon as the Mac answers, and keeps its request id. The Mac remembers its answer to every request that changes something (`CommandReceipts`: messages, approvals, answers, stops, starts, questions to Nook, chat messages and marks, the player, session management and token registrations), so a repeat of the same id (a lost answer, a message sent again from the outbox) gets that answer and is never carried out twice; a repeat that arrives while the first is still running waits for its answer. The repeat must still be fresh and within the rate. The Mac keeps at most 256 answers per phone, the least recently asked for dropped first, each for at most 25 hours (longer than a message may wait in the outbox). A message that waited more than a day is dropped. Approvals, answers and stops never wait: they mean something only now.
 
 ## Away from Home
 
@@ -60,6 +85,19 @@ From a café, a train or mobile data the phone reaches the Mac in one of two way
   - **How phones learn it:** the pairing code carries the relay's address (`&r=…`), and every `hello`, `list` and `subscribe` answer says which relay the Mac uses (`relay`, empty when none), so a phone paired before picks it up the next time it connects at home. The relay route is always the last resort, after every direct route.
   - **Keep-alive:** the Mac sends `ping` every 30 seconds, answered by the relay without waking the room (an idle connection costs nothing), and replaces a socket that heard nothing for 75 seconds; it reconnects with the same backoff as the phone.
 - The phone shows how it is connected (local network, Tailscale, relay) in the Agents menu, and, when it cannot reach the Mac, what to set up for away from home.
+
+## When It Does Not Connect
+
+- **On the phone:** *Why can't I connect?* (under the banner while the Mac cannot be reached, and *Check the connection* in the Agents menu) checks every route once more, in detail (`RouteDiagnostics` in `apps/ios/NookCompanion/CompanionConnection.swift`): nothing reachable, something that answers without this pairing's key, a connection the Mac closes without a word (it no longer knows this phone), the relay's close code (4404: the Mac is not connected to the relay; 4429: the room is full), a refusal (a clock too far off), or an answer and how long it took. `CompanionDiagnosis` (`packages/protocol/Sources/CompanionDiagnosis.swift`, tested in `CompanionDiagnosisTests`) turns that, with the last refusal of the live connection and the version check, into one headline, each hop on the way (this iPhone, the local network, Tailscale, the relay, Nook on the Mac) as works / failed / not checked, and the steps to fix it.
+- **On the Mac:** Settings › Devices › *Away from home* › **Test relay** sends a `ping` into a paired phone's room on the relay, sealed with that phone's key, and waits for this Mac's own answer to come back the same way: the whole path the phone takes from away. It shows the round-trip time, or what failed (the relay cannot be reached, the Mac is not in the room, no answer in time), with the same model.
+
+## Diagnostics
+
+The Mac and the phone each keep a local log of how the companion connects (`CompanionDiagnosticsLog`, `packages/protocol/Sources/CompanionDiagnosticsLog.swift`, tested in `CompanionDiagnosticsLogTests`): one JSON object per line, at most 256 KB with one older file kept (`companion-diagnostics.ndjson` in Nook's support folder on the Mac, in the app's Application Support on the phone).
+
+- **What it records:** on the phone the route chosen (its kind, never its address), unreachable attempts, refusals, closed and failed connections with how long they lasted, wakeups, network changes, moves to a better route, Mac switches and each "Why can't I connect?" result; on the Mac refusals (with the clock difference), pairings, live connections that opened or closed, the relay rooms connecting and closing (with the close code), relay reconnects and *Test relay* results.
+- **Copy diagnostics** (Settings › Devices on the Mac; "Why can't I connect?" on the phone) puts a copy on the clipboard with a short header (versions, what is set up, each phone's app version and scopes). Every line is redacted first (`CompanionRedaction`): IPv4 and IPv6 addresses become the kind of network (`<lan>`, `<vpn>`…), `.local` and `.ts.net` names and relay addresses become placeholders, and ids, rooms, keys and tokens are removed.
+- Nothing is sent anywhere: the user decides where to paste it.
 
 ## Keeping the Mac Awake
 
@@ -86,6 +124,21 @@ On the power adapter Nook holds off all sleep (`PreventSystemSleep`), which keep
 - **Away from home:** `packages/protocol/Sources/CompanionRelay.swift` (rooms, relay addresses, `RelayMux`; tested in `CompanionRelayTests`), `apps/macos/Services/Companion/CompanionRelayClient.swift` (the Mac's rooms, Nook's or your own relay), `CloudflareRelaySetup.swift` and `CloudflareRelayDeployer.swift` (setting up your own relay from Settings; tested in `CloudflareRelaySetupTests`), `KeepAwake.swift` and `KeepAwakePolicy.swift` (keeping the Mac awake), `RouteLink` in `apps/ios/NookCompanion/CompanionConnection.swift` (the phone's WebSocket), and the relay itself in `apps/relay` (tested with `npm test`).
 - **Staying connected:** `apps/macos/Services/Companion/CompanionEndpoints.swift` (the Mac's addresses), the live connections in `CompanionServer.swift`; on the phone `apps/ios/NookCompanion/CompanionConnection.swift` (`CompanionChannel`, `RouteProbe`) and the supervisor in `CompanionClient.swift`.
 - **iOS app:** `apps/ios/NookCompanion/` (XcodeGen project in `apps/ios/project.yml`; see [`apps/ios/README.md`](../apps/ios/README.md)).
+
+## Shared Fixtures
+
+The wire format is pinned by golden fixtures in `packages/protocol/Fixtures` that every implementation reads in its own tests, so the Mac, the iPhone app, the Tauri app and the relay cannot drift apart: requests and responses as they travel, sealed frames with a fixed key and nonce, the 4-byte framing, relay rooms, mux frames and close codes, and pairing links (valid and refused).
+
+| Fixture | Swift (`CompanionFixturesTests`, Mac and iPhone share the code) | Rust (`apps/tauri/core/src/companion/fixtures.rs`, `cargo test`) | Relay (`apps/relay/test/fixtures.test.js`, `npm test`) |
+| --- | --- | --- | --- |
+| `requests.json` | all | the `core` ones (approve/answer/send/stop/register) | — |
+| `responses.json` | all | the `core` ones; unknown fields ignored | — |
+| `sealed.json` | yes (CryptoKit: on a Mac, not in the Linux core tests) | yes | — |
+| `framing.json` | yes | yes | — |
+| `pairing.json` | yes, with alternates and relay | host, port, key, name | — |
+| `relay.json` | rooms, mux, close codes | — | rooms, mux, close codes |
+
+A change to the wire format starts with the fixture; each implementation's test then says what still needs to follow.
 
 ## Direct APNs Push Notifications
 
@@ -115,3 +168,41 @@ While a session works on the Mac, Nook Companion shows it as a **Live Activity**
 **Turning it off:** *Live Activities* in the menu (`…`) of the Agents tab on the phone. Off ends every activity and sends `off`: the Mac forgets the phone's tokens and sends nothing until it is turned on again. iOS's own switch (Settings › Nook Companion › Live Activities) works too. On the Mac, Live Activities need push notifications set up and on (Settings › iPhone Companion › Push Notifications).
 
 **Privacy:** Live Activity pushes pass through Apple like notifications, and follow the same choice: the session title and folder are only sent when **Include session title** is on. Otherwise a push-started activity shows the agent and its phase; one the app started itself keeps the title it had. Commands, files and answers are never sent.
+
+## Push through Nook's relay
+
+For a Mac without an Apple developer account: **Settings › iPhone Companion › Push Notifications › Send through ›
+Nook's relay**. It is the default when the build carries Nook's relay and you have not set up your own key; **My own
+APNs key** keeps the direct path above.
+
+How it works (end to end sealed):
+
+1. For each paired phone, the Mac seals what the notification says (title, text, category, session and item ids, badge)
+   with `CompanionSeal`, unchanged, using a **push key** derived from that phone's pairing key
+   (`HMAC-SHA256(pairingKey, "nook-companion-push-v1")`, `RelayPush.pushKey`). The collapse id is a keyed hash too.
+2. It posts the phone's device token, its room and the sealed blob to the relay's `POST /v1/push`
+   (`apps/relay/worker/push.js`). The relay limits pushes per room and per device token, logs nothing, signs an APNs
+   request with Nook's own APNs key (Worker secrets) and sends Apple a generic alert ("Nook needs you") with
+   `mutable-content` and the blob under `nook-sealed`.
+3. On the phone, the **Notification Service Extension** (`apps/ios/NookNotifications`) opens the blob with the push key
+   and writes the real title, text, buttons, thread and badge. Without a key that opens it, the notification says
+   "Nook needs you".
+
+The app keeps the push keys (never the pairing keys) in one Keychain item in the app group's access group
+(`group.nl.imdigital.nook.companion`), readable after the first unlock so a push that arrives while the phone is locked
+can still be opened (`PushKeyStore`). They are written when you pair and on every launch, and removed with the
+pairing. Because the text is sealed, it is safe for the relay; it still follows **Include session title**.
+
+**Setup for whoever runs the relay** (Nook's own, or yours): put the APNs key of the team that signs the companion app
+into the Worker as secrets (`APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, optionally `APNS_TOPIC`; see
+[`apps/relay/README.md`](../apps/relay/README.md#push-through-the-relay)). Without them `POST /v1/push` answers 501 and
+the test button reports it. The companion app and its extension need the App Group
+`group.nl.imdigital.nook.companion` enabled on both app ids (`nl.imdigital.nook.companion` and
+`nl.imdigital.nook.companion.notifications`) in *Certificates, Identifiers & Profiles*. Pushes only reach phones running
+a companion app signed by that same team: a self-built companion with another bundle id needs its own key and the
+direct path.
+
+Live Activities still go straight to Apple with your own key. Code: `packages/protocol/Sources/RelayPush.swift` and
+`RelayPushSeal.swift` (tested in `RelayPushTests`, with a vector made outside Swift), `apps/macos/Services/Companion/RelayPushClient.swift`,
+`apps/relay/worker/push.js` (tested with `npm test`), `apps/ios/NookNotifications/NotificationService.swift` and
+`apps/ios/NookCompanion/PushKeyStore.swift`.

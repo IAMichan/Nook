@@ -36,6 +36,8 @@ struct NewSessionComposer: View {
     @State private var linkNotice: String?
     /// Set once the session started: what is left in the box then is not worth bringing back.
     @State private var started = false
+    /// The other models the prompt also goes to, each in a session and worktree of its own (`ModelComparison`).
+    @State private var comparing: [ComparisonTarget] = []
     @FocusState private var focused: Bool
 
     /// The key of the task you were typing in `ComposerDraftStore`, so it also outlives a relaunch.
@@ -224,15 +226,18 @@ struct NewSessionComposer: View {
         let name = profile.map { AccountLabel.name($0, app: app) }
         return ComposerDropdown(width: app.connectedProviders.count > 1 ? 340 : 296, takesRoom: true) {
             ComposerPill(agent: config.provider.displayName, account: profile.map { AccountKind.of($0, app: app) },
-                         text: [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
-                            + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider)),
-                         short: config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider))
+                         text: comparing.isEmpty
+                            ? [config.provider.displayName, name].compactMap { $0 }.joined(separator: " · ")
+                                + (config.model.isEmpty ? "" : " · " + app.modelMenuName(config.model, for: config.provider))
+                            : tr("compare.pill", comparing.count + 1),
+                         short: !comparing.isEmpty ? tr("compare.pill", comparing.count + 1)
+                            : (config.model.isEmpty ? config.provider.displayName : app.modelMenuName(config.model, for: config.provider)))
         } content: {
             if app.connectedProviders.isEmpty {
                 DropdownHeader(title: tr("agents.noneConnected"))
             } else {
                 AgentModelPicker(providers: app.connectedProviders, provider: config.provider, profileID: config.profileID,
-                                 model: config.model) { provider, account, model in
+                                 model: config.model, comparing: remoteMachine == nil ? $comparing : nil) { provider, account, model in
                     if provider != config.provider || (account != nil && account != config.profileID) {
                         choose(provider, account: account ?? rememberedProfile(for: provider) ?? config.profileID)
                     }
@@ -474,8 +479,22 @@ struct NewSessionComposer: View {
         if project?.verdict != .ok { return tr("ws.error.config.missingWorkspace") }
         if config.provider == .antigravity, antigravity.installed == nil { return tr("ws.antigravity.installFirst") }
         if workspace.executable(config.provider) == nil { return tr("ws.error.noExecutable", config.provider.displayName) }
+        if !comparing.isEmpty {
+            // Every model works in a worktree of its own.
+            if !worktreeBlockedReason.isEmpty { return tr("compare.needsWorktree", worktreeBlockedReason) }
+            if let missing = comparisonTargets.first(where: { workspace.executable($0.provider) == nil }) {
+                return tr("ws.error.noExecutable", missing.provider.displayName)
+            }
+            return nil
+        }
         if config.isolation == .folder, !allowShared, !sharing.isEmpty { return tr("ws.new.sharedBlocked") }
         return nil
+    }
+
+    /// Every model the prompt goes to, the chosen one first.
+    private var comparisonTargets: [ComparisonTarget] {
+        ModelComparison.targets(primary: ComparisonTarget(provider: config.provider, profileID: config.profileID, model: config.model),
+                                extras: comparing)
     }
 
     private var canStart: Bool { !starting && blockingReason == nil }
@@ -572,7 +591,7 @@ struct NewSessionComposer: View {
     private func choose(_ provider: RunProvider, account: String) {
         if config.provider != provider {
             config.provider = provider
-            config.model = settings.model(for: provider)
+            config.model = settings.sessionDefaults(for: config.projectPath).model(for: provider)
             config.effort = settings.effort(for: provider)
             if !provider.capabilities.policies.contains(config.permission) { config.permission = settings.permission(for: provider) }
         }
@@ -587,14 +606,29 @@ struct NewSessionComposer: View {
     }
 
     /// Keeps what you just chose for the next new session, so it does not fall back to the defaults.
+    /// What the project sets for itself (Settings › Workspace, per project) stays out of the global defaults.
     private func remember() {
-        settings.defaultProvider = config.provider
+        let path = config.projectPath
+        if !settings.isOverridden(.provider, for: path) { settings.defaultProvider = config.provider }
         settings.setProfile(config.profileID, for: config.provider)
-        settings.setModel(config.model, for: config.provider)
+        if !settings.isOverridden(.model(config.provider), for: path) { settings.setModel(config.model, for: config.provider) }
         settings.defaultMode = config.mode
-        settings.defaultPermission = config.permission
+        if !settings.isOverridden(.permission, for: path) { settings.defaultPermission = config.permission }
         settings.setEffort(config.effort, for: config.provider)
-        settings.defaultIsolation = config.isolation
+        if !settings.isOverridden(.isolation, for: path) { settings.defaultIsolation = config.isolation }
+    }
+
+    /// A folder with its own defaults starts with them; what it does not set keeps your current choice.
+    private func applyProjectDefaults(_ path: String) {
+        let resolved = settings.sessionDefaults(for: path)
+        if settings.isOverridden(.provider, for: path), resolved.provider != config.provider,
+           app.connectedProviders.contains(resolved.provider) {
+            choose(resolved.provider, account: rememberedProfile(for: resolved.provider)
+                   ?? app.profiles.preferredProfile(resolved.provider.kind).id)
+        }
+        if settings.isOverridden(.model(config.provider), for: path) { config.model = resolved.model(for: config.provider) }
+        if settings.isOverridden(.permission, for: path) { config.permission = resolved.permission(for: config.provider) }
+        if settings.isOverridden(.isolation, for: path) { config.isolation = resolved.isolation }
     }
 
     private func chooseMachine(_ machine: RemoteMachine) {
@@ -611,6 +645,7 @@ struct NewSessionComposer: View {
         config.projectPath = path
         // The next new session opens on the project you chose last, also when this one never started.
         settings.lastProject = path
+        applyProjectDefaults(path)
         inspecting = true
         error = nil
         Task {
@@ -620,7 +655,7 @@ struct NewSessionComposer: View {
             let canWorktree = info.repoRoot != nil && info.hasCommits && workspace.gitAvailable == true
             if !canWorktree {
                 config.isolation = .folder
-            } else if config.isolation == .folder && settings.defaultIsolation == .worktree {
+            } else if config.isolation == .folder && settings.sessionDefaults(for: path).isolation == .worktree {
                 config.isolation = .worktree
             }
             if let base = info.defaultBase, info.branches.contains(base) {
@@ -669,6 +704,7 @@ struct NewSessionComposer: View {
 
     private func start() {
         guard canStart else { return }
+        if !comparing.isEmpty, remoteMachine == nil { return startComparison() }
         starting = true
         error = nil
         var request = checkedConfig
@@ -697,6 +733,50 @@ struct NewSessionComposer: View {
                 starting = false
             }
         }
+    }
+
+    /// One prompt to several models: a session per model, each in its own worktree, grouped under the first. When a model
+    /// fails, the prompt stays in the box (and in `ComposerDraftStore`) with only the failed models still chosen, and the
+    /// box says which ones failed and why.
+    private func startComparison() {
+        starting = true
+        error = nil
+        var base = checkedConfig
+        base.task = composerModel.outgoing(base.task).send
+        if base.mode == .plan { base.permission = base.provider.capabilities.policies.first ?? .acceptEdits }
+        let targets = comparisonTargets
+        let configs = ModelComparison.configs(base: base, targets: targets, ids: targets.map { _ in UUID() },
+                                              modelName: comparisonName)
+        Task {
+            let outcome = await workspace.startComparison(configs, targets: targets)
+            starting = false
+            if !outcome.started.isEmpty { remember() }
+            guard let retry = ModelComparison.retrySelection(after: outcome) else {
+                started = true
+                NewSessionDraft.saved = nil
+                ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
+                config.task = ""
+                comparing = []
+                pendingID = UUID()
+                if let leader = outcome.leader { onStarted(leader) }
+                return
+            }
+            ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: config.task)
+            if retry.primary.provider != config.provider || retry.primary.profileID != config.profileID {
+                choose(retry.primary.provider, account: retry.primary.profileID)
+            }
+            config.model = retry.primary.model
+            comparing = retry.extras
+            pendingID = UUID()
+            error = tr("compare.failed", outcome.failed.map { comparisonName($0.target) + ": " + $0.message }.joined(separator: "\n"))
+            if !outcome.started.isEmpty { ToastCenter.shared.success(tr("compare.started", outcome.started.count)) }
+        }
+    }
+
+    /// "Claude Code · Opus": how a model of a comparison is named in its session's title and in an error.
+    private func comparisonName(_ target: ComparisonTarget) -> String {
+        target.model.isEmpty ? target.provider.displayName
+            : target.provider.displayName + " · " + app.modelMenuName(target.model, for: target.provider)
     }
 }
 

@@ -185,7 +185,8 @@ struct WSEmptyState: View {
 }
 
 /// A unified diff as a code review shows it: line numbers of the old and new file in a gutter, hunks as separators,
-/// added and removed lines tinted, and the changed words of an edited line highlighted. Long lines wrap.
+/// added and removed lines tinted, and the changed words of an edited line highlighted. Long lines wrap. Code in a
+/// language `SyntaxTokenizer` knows shows plain first and gets its syntax colors once a background task has them.
 struct DiffText: View {
     /// Review comments on this file: shown under their line. With `onComment`, hovering a line
     /// offers a comment button.
@@ -197,14 +198,23 @@ struct DiffText: View {
     private let rows: [UnifiedDiff.Row]
     /// Width of one line-number column, from the largest number in the diff.
     private let numberWidth: CGFloat
+    private let text: String
+    /// The file whose language colors the code: given, or the first file the diff names.
+    private let syntaxPath: String?
+    private let syntaxKey: DiffSyntax.Key
+    /// The syntax-colored lines, once worked out (`DiffSyntaxStyle`); until then the code is plain.
+    @State private var colored: DiffSyntaxStyle.Lines?
     @State private var hovered: Int?
     @State private var editing: Int?
     @State private var commentDraft = ""
 
     init(text: String, comments: [ReviewComment] = [],
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
-         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false) {
+         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil) {
         self.stacked = stacked
+        self.text = text
+        syntaxPath = path ?? DiffSyntax.firstPath(in: text)
+        syntaxKey = DiffSyntax.Key(path: syntaxPath, text: text)
         self.comments = comments
         self.onComment = onComment
         self.onRemoveComment = onRemoveComment
@@ -219,15 +229,23 @@ struct DiffText: View {
     private let markerWidth: CGFloat = 16
 
     var body: some View {
-        if stacked {
-            VStack(alignment: .leading, spacing: 0) { lines }
+        Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: 0) { lines }
+                    .background(WS.code)
+            } else {
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: 0) { lines }
+                        .padding(.bottom, NookTheme.Spacing.md)
+                }
                 .background(WS.code)
-        } else {
-            ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0) { lines }
-                    .padding(.bottom, NookTheme.Spacing.md)
             }
-            .background(WS.code)
+        }
+        .task(id: syntaxKey) {
+            colored = nil
+            guard syntaxPath.flatMap(SyntaxLanguage.detect) != nil || rows.contains(where: { $0.kind == .file }) else { return }
+            let lines = await DiffSyntaxStyle.lines(for: text, path: syntaxPath, key: syntaxKey)
+            if !Task.isCancelled { colored = lines }
         }
     }
 
@@ -260,7 +278,7 @@ struct DiffText: View {
                 .font(NookTheme.mono(11.5, .semibold))
                 .foregroundStyle(tint ?? .clear)
                 .frame(width: markerWidth, alignment: .center)
-            Text(code(row))
+            Text(colored?[index] ?? code(row))
                 .font(NookTheme.mono(11.5))
                 .foregroundStyle(row.kind == .context ? Self.codeColor.opacity(0.82) : Self.codeColor)
                 .fixedSize(horizontal: false, vertical: true)

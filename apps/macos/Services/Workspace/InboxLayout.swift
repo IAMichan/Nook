@@ -234,16 +234,25 @@ enum InboxLayout {
         settled = nest(settled)
 
         let limit = max(0, settledLimit)
+        // The open session stays on the settled page even when it is further down than the page reaches.
+        var settledPage = Array(settled.prefix(limit))
+        if let open = settled.dropFirst(limit).first(where: { $0.id == selectedID }) { settledPage.append(open) }
         var result: [InboxSection] = [
             // Running agents come first: they are the ones you usually want to open.
             InboxSection(kind: .working, rows: working),
             InboxSection(kind: .pinned, rows: pinned),
             InboxSection(kind: .active, rows: active),
             InboxSection(kind: .snoozed, rows: snoozed),
-            InboxSection(kind: .settled, rows: Array(settled.prefix(limit)), hiddenCount: max(0, settled.count - limit)),
+            InboxSection(kind: .settled, rows: settledPage, hiddenCount: settled.count - settledPage.count),
         ]
         result.removeAll { $0.rows.isEmpty }
         return result
+    }
+
+    /// The rows a shelf draws: all of them while it is open; folded, only the session that is open on the right, so the
+    /// session you look at never vanishes from the list (a chat that went quiet settles by itself while you read it).
+    static func shownRows(_ section: InboxSection, folded: Bool, selectedID: String?) -> [InboxEntry] {
+        folded ? section.rows.filter { $0.id == selectedID } : section.rows
     }
 
     /// A row on the Working shelf: busy, or waiting on background work, without needing a person.

@@ -94,6 +94,28 @@ enum NookTheme {
     /// no bubble at all).
     static let bubble = Color(hex: 0x171717)
 
+    /// Syntax colors for code in diffs (`SyntaxToken.Kind`). Muted on purpose: the diff's own + and − tints stay the
+    /// loudest thing, and plain code keeps `textStrong`. Each has a dark and a light value; Nook's windows are dark, so the
+    /// light one only shows where a surface follows a light appearance.
+    enum Syntax {
+        static let keyword = adaptive(dark: 0xC3A6EE, light: 0x7A45B5)
+        static let string = adaptive(dark: 0xA8CF96, light: 0x3D7A2E)
+        static let comment = adaptive(dark: 0x6F7378, light: 0x8A8F96)
+        static let number = adaptive(dark: 0xE6B98A, light: 0x9A5A12)
+        static let type = adaptive(dark: 0x8EC7E3, light: 0x1D6E93)
+        static let property = adaptive(dark: 0xA3BCEB, light: 0x3B5DA6)
+        static let tag = adaptive(dark: 0xE79BB8, light: 0xA33A6C)
+        static let attribute = adaptive(dark: 0xD9C27E, light: 0x86690F)
+
+        private static func adaptive(dark: UInt32, light: UInt32) -> Color {
+            Color(nsColor: NSColor(name: nil) { appearance in
+                let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .aqua ? light : dark
+                return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                               blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+            })
+        }
+    }
+
     // List rows and cards: at rest, under the pointer, and selected.
     static let rowRest = Color(hex: 0x0A0A0A)
     static let rowHover = Color(hex: 0x141414)

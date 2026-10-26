@@ -1,0 +1,13 @@
+{
+  "comment": "CompanionRequest as it travels (before sealing). core: every implementation, including the Tauri app, reads it.",
+  "requests": [
+    { "name": "list", "core": true, "json": { "id": "A", "sent": 1700000000, "op": "list" } },
+    { "name": "decide", "core": true, "json": { "id": "B", "sent": 1700000000.5, "op": "decide", "session": "S1", "item": "I1", "allow": true } },
+    { "name": "answer", "core": true, "json": { "id": "C", "sent": 1700000001, "op": "answer", "session": "S1", "item": "Q1", "text": "Yes" } },
+    { "name": "send", "core": true, "json": { "id": "D", "sent": 1700000002, "op": "send", "session": "S1", "text": "Go on" } },
+    { "name": "register", "core": true, "json": { "id": "E", "sent": 1700000003, "op": "register", "item": "production", "text": "abcdef" } },
+    { "name": "helloVersioned", "core": false, "json": { "id": "F", "sent": 1700000004, "op": "hello", "text": "iPhone", "protocolVersion": 2, "appVersion": "0.1.0" } },
+    { "name": "start", "core": false, "json": { "id": "G", "sent": 1700000005, "op": "start", "launch": { "agent": "claude", "project": "/Users/me/app", "task": "Fix it", "plan": true, "worktree": false } } },
+    { "name": "requestUpdate", "core": false, "json": { "id": "H", "sent": 1700000006, "op": "requestUpdate" } }
+  ]
+}

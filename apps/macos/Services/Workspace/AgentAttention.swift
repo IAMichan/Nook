@@ -103,7 +103,7 @@ enum SnoozePolicy {
 }
 
 /// Goes on with a session that a restart cut off: one "Continue where you left off.",
-/// chained at most `limit` times so a session that keeps crashing does not loop.
+/// chained at most `limit` times within `loopWindow` so a session that keeps crashing Nook does not loop.
 enum RestartContinuation {
     static let limit = 3
     static let message = "Continue where you left off."
@@ -111,12 +111,26 @@ enum RestartContinuation {
     /// Should this run get the continue message after Nook started?
     /// Only a session cut off just now: one that sat interrupted for a day is yours to pick up.
     static let maxAge: TimeInterval = 30 * 60
+    /// Continuations count towards the cap only while they follow each other this closely.
+    static let loopWindow: TimeInterval = 5 * 60
 
-    static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, now: Date = Date()) -> Bool {
-        guard enabled, !run.archived, !hasPendingQuestion else { return false }
+    /// Never a session you archived, settled or snoozed, one that waits on you (a question, an approval that the restart
+    /// cut off), or one stopped by a usage limit, which has its own resume.
+    static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, settled: Bool = false,
+                               now: Date = Date()) -> Bool {
+        guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
+        if run.interruptedWhileWaiting == true, !run.provider.capabilities.pendingRequestsSurviveRestart { return false }
+        if let until = run.snoozedUntil, until > now { return false }
         guard now.timeIntervalSince(run.updatedAt) <= maxAge else { return false }
         guard run.status == .stopped, run.statusDetail == "interrupted" else { return false }
         guard run.limitedAt == nil else { return false }
-        return (run.continuations ?? 0) < limit
+        return chainLength(run, now: now) < limit
+    }
+
+    /// Continuations in a row that still count: none once the last one is older than `loopWindow`.
+    static func chainLength(_ run: WorkspaceRun, now: Date = Date()) -> Int {
+        let count = run.continuations ?? 0
+        guard count > 0, let last = run.lastContinuedAt else { return count }
+        return now.timeIntervalSince(last) <= loopWindow ? count : 0
     }
 }

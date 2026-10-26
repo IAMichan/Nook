@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Notifications.registerCategories()
+        // A phone paired before relay pushes existed gets its push key for the notification extension now.
+        PushKeyStore.sync(pairingKeys: PairingStore.load().macs.compactMap { $0.link?.key })
         Theme.applyBarAppearance()
         Task { @MainActor in LiveActivities.shared.start() }
         return true

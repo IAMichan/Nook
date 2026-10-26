@@ -23,6 +23,10 @@ struct UpdateFooterButton<Idle: View>: View {
     private var look: Look? {
         switch updater.phase {
         case .available:
+            if let release = updater.releaseUpdate {
+                return Look(id: "available", symbol: "arrow.down.circle.fill", label: tr("update.button"), tint: NookTheme.mint,
+                            help: tr("update.release.button.help", release.version.description))
+            }
             guard let update = updater.available else { return nil }
             return Look(id: "available", symbol: "arrow.down.circle.fill", label: tr("update.button"), tint: NookTheme.mint,
                         help: tr("update.button.help", update.count), count: update.count)
@@ -135,6 +139,8 @@ enum UpdateText {
         case .build: return tr("update.step.build")
         case .install: return tr("update.step.install")
         case .restart: return tr("update.step.restart")
+        case .download: return tr("update.step.download")
+        case .verify: return tr("update.step.verify")
         }
     }
 
@@ -168,6 +174,10 @@ enum UpdateText {
         case .notWritable(let folder): return tr("update.reason.notWritable", folder)
         case .copyFailed(let message): return tr("update.reason.copyFailed", message)
         case .cancelled: return tr("update.reason.cancelled")
+        case .download(let message): return tr("update.reason.download", message)
+        case .badSignature: return tr("update.reason.badSignature")
+        case .badBundle(let found): return tr("update.reason.badBundle", found)
+        case .rolledBack(let build): return tr("update.reason.rolledBack", build)
         case .other(let message): return message
         }
     }

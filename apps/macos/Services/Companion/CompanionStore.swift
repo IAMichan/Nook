@@ -10,6 +10,8 @@ final class CompanionStore: ObservableObject {
     @Published private(set) var devices: [PairedDevice] = []
     /// A pairing in progress: the key shown to the phone and when it stops being valid.
     @Published private(set) var pending: (key: Data, until: Date)?
+    /// What the phone that pairs now may do (`CompanionScope`), chosen next to the pairing code; everything by default.
+    @Published var pendingScopes: Set<CompanionScope> = Set(CompanionScope.allCases)
     @Published var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: Self.enabledKey) }
     }
@@ -75,10 +77,12 @@ final class CompanionStore: ObservableObject {
         let id = PairedDevice.identifier(forKey: key)
         guard Keychain.write(Base64URL.encode(key), account: Self.account(id)) == errSecSuccess else { return nil }
         let clean = String(name.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }.prefix(60))
-        let device = PairedDevice(id: id, name: clean.isEmpty ? "iPhone" : clean, pairedAt: now, lastSeen: now)
+        var device = PairedDevice(id: id, name: clean.isEmpty ? "iPhone" : clean, pairedAt: now, lastSeen: now)
+        device.scopes = CompanionScopes.names(pendingScopes)
         devices.removeAll { $0.id == id }
         devices.append(device)
         pending = nil
+        pendingScopes = Set(CompanionScope.allCases)
         save()
         return device
     }
@@ -119,6 +123,23 @@ final class CompanionStore: ObservableObject {
     func dropLiveStartToken(device id: String) {
         guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
         devices[index].liveStartToken = nil
+        save()
+    }
+
+    /// What a phone may do from now on; its live connection starts over so it learns at once.
+    func setScopes(device id: String, _ scopes: Set<CompanionScope>) {
+        guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        devices[index].scopes = CompanionScopes.names(scopes)
+        save()
+        CompanionServer.shared.dropStreams(for: id)
+    }
+
+    /// What the phone said it runs; saved only when it changed.
+    func noteVersions(device id: String, protocolVersion: Int?, appVersion: String?) {
+        guard let index = devices.firstIndex(where: { $0.id == id }),
+              devices[index].protocolVersion != protocolVersion || devices[index].appVersion != appVersion else { return }
+        devices[index].protocolVersion = protocolVersion
+        devices[index].appVersion = appVersion
         save()
     }
 
