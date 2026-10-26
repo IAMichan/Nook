@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from "../../lib/i18n.svelte";
   // Praten tegen Nook: "Ik luister, praat gerust", wat er gehoord is, de luidheid, en Klaar of Annuleren. Na een stilte
   // stopt Nook vanzelf; de herkende vraag gaat naar de chat, en het antwoord wordt voorgelezen als dat aanstaat.
   import { services, serviceEvents, type VoiceEvent } from "../../lib/services";
@@ -50,9 +51,9 @@
 <div class="listening" class:error={voice.phase === "error"}>
   <Orb size={44} mood={voice.phase === "error" ? "error" : "listen"} level={voice.level} />
   <div class="body">
-    <div class="context faint">{voice.phase === "working" ? "Even verstaan…" : voice.phase === "error" ? "Dat lukte niet" : "Ik luister, praat gerust"}</div>
+    <div class="context faint">{voice.phase === "working" ? tr("Even verstaan…", "Listening closely…") : voice.phase === "error" ? tr("Dat lukte niet", "That did not work") : tr("Ik luister, praat gerust", "I'm listening, go ahead")}</div>
     <div class="title">
-      {#if voice.phase === "error"}{voice.error}{:else if voice.text}“{voice.text}”{:else}Zeg het maar…{/if}
+      {#if voice.phase === "error"}{voice.error}{:else if voice.text}“{voice.text}”{:else}{tr("Zeg het maar…", "Go ahead…")}{/if}
     </div>
     {#if voice.phase === "listening"}
       <div class="wave" aria-hidden="true">
@@ -62,9 +63,9 @@
   </div>
   <div class="buttons">
     {#if voice.phase === "listening"}
-      <button class="primary" onclick={() => services.voiceFinish()}>Klaar</button>
+      <button class="primary" onclick={() => services.voiceFinish()}>{tr("Klaar", "Done")}</button>
     {/if}
-    <button onclick={cancel}>{voice.phase === "error" ? "Sluiten" : "Annuleren"}</button>
+    <button onclick={cancel}>{voice.phase === "error" ? tr("Sluiten", "Close") : tr("Annuleren", "Cancel")}</button>
   </div>
 </div>
 

@@ -3,13 +3,14 @@
   // in je vraag kan het ook ("alleen mijn agenda en mail", "niet mijn scherm").
   import { brainApi, type SourceChoice, type SourceScope } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
+  import { tr } from "../lib/i18n.svelte";
 
   let open = $state(false);
   let root: HTMLDivElement;
   let choices = $state<SourceChoice[]>([]);
   const scope = $derived<SourceScope>(nook.active?.scope ?? { mode: "automatic", included: [], excluded: [], focus: [] });
   const label = $derived(
-    scope.mode === "only" ? `Alleen ${scope.included.length}` : scope.excluded.length ? `Zonder ${scope.excluded.length}` : "Automatisch",
+    scope.mode === "only" ? tr(`Alleen ${scope.included.length}`, `Only ${scope.included.length}`) : scope.excluded.length ? tr(`Zonder ${scope.excluded.length}`, `Without ${scope.excluded.length}`) : tr("Automatisch", "Automatic"),
   );
 
   async function toggle() {
@@ -38,20 +39,20 @@
 <svelte:window onclick={(e) => open && !root.contains(e.target as Node) && (open = false)} onkeydown={(e) => e.key === "Escape" && (open = false)} />
 
 <div class="picker" bind:this={root}>
-  <button class="chip" class:restricted={scope.mode === "only" || scope.excluded.length > 0} onclick={toggle} title="Welke bronnen deze Nook mag gebruiken">
+  <button class="chip" class:restricted={scope.mode === "only" || scope.excluded.length > 0} onclick={toggle} title={tr("Welke bronnen deze Nook mag gebruiken", "Which sources this Nook may use")}>
     ◎ {label}
   </button>
   {#if open}
     <div class="menu">
-      <button class="ghost row" onclick={() => set(null)}>{scope.mode === "automatic" && !scope.excluded.length ? "✓ " : ""}Automatisch</button>
+      <button class="ghost row" onclick={() => set(null)}>{scope.mode === "automatic" && !scope.excluded.length ? "✓ " : ""}{tr("Automatisch", "Automatic")}</button>
       <div class="sep"></div>
       {#each choices as c (c.id)}
-        <label class="row" class:private={c.private} title={c.private ? "Alleen op dit apparaat: een externe AI krijgt deze bron niet" : ""}>
+        <label class="row" class:private={c.private} title={c.private ? tr("Alleen op dit apparaat: een externe AI krijgt deze bron niet", "Only on this device: an external AI does not get this source") : ""}>
           <input type="checkbox" checked={allowed(c.id) && !c.private} disabled={c.private} onchange={() => flip(c.id)} />
           {c.title}{c.private ? " 🔒" : ""}
         </label>
       {/each}
-      <p class="faint hint">Of zeg het in je vraag: "alleen mijn agenda en mail".</p>
+      <p class="faint hint">{tr("Of zeg het in je vraag: \"alleen mijn agenda en mail\".", "Or say it in your question: \"only my calendar and mail\".")}</p>
     </div>
   {/if}
 </div>

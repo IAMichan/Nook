@@ -115,10 +115,11 @@ export function onAccent(hex: number): string {
 }
 
 export function relativeTime(iso: string): string {
+  const en = nook.settings?.appLanguage === "en";
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "zojuist";
+  if (diff < 60) return en ? "just now" : "zojuist";
   if (diff < 3600) return `${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} u`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ${en ? "h" : "u"}`;
   if (diff < 7 * 86400) return `${Math.floor(diff / 86400)} d`;
-  return new Date(iso).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+  return new Date(iso).toLocaleDateString(en ? "en-GB" : "nl-NL", { day: "numeric", month: "short" });
 }

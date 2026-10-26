@@ -42,8 +42,10 @@ export function noticeTone(status: AgentStatus): NoticeTone {
 }
 
 /// The line of a compact notice: "Claude Code is klaar · nook".
-export function compactNotice(name: string, project: string, status: AgentStatus): string {
+export function compactNotice(name: string, project: string, status: AgentStatus, english = false): string {
   const tone = noticeTone(status);
-  const who = tone === "done" ? `${name} is klaar` : tone === "failed" ? `${name} is gestopt met een fout` : `${name} wacht op je`;
+  const who = english
+    ? tone === "done" ? `${name} is done` : tone === "failed" ? `${name} stopped with an error` : `${name} is waiting for you`
+    : tone === "done" ? `${name} is klaar` : tone === "failed" ? `${name} is gestopt met een fout` : `${name} wacht op je`;
   return project ? `${who} · ${project}` : who;
 }

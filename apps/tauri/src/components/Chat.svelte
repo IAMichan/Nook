@@ -3,6 +3,7 @@
   // die naar de drie instelstappen leidt.
   import { brainApi } from "../lib/brain";
   import { nook } from "../lib/state.svelte";
+  import { tr } from "../lib/i18n.svelte";
   import Composer from "./Composer.svelte";
   import MessageView from "./MessageView.svelte";
   import Onboarding from "./Onboarding.svelte";
@@ -47,22 +48,22 @@
     {#if empty}
       <div class="empty">
         <div class="welcome-orb"><Orb size={compact ? 44 : 64} /></div>
-        <div class="greeting"><span class="eyebrow">A LITTLE SPACE FOR EVERYTHING</span><h1>What is on your mind?</h1><p>Think it through. Make a plan. Take the next step.</p></div>
+        <div class="greeting"><span class="eyebrow">{tr("EEN RUIMTE VOOR ALLES", "A LITTLE SPACE FOR EVERYTHING")}</span><h1>{tr("Waar denk je aan?", "What is on your mind?")}</h1><p>{tr("Denk het door. Maak een plan. Zet de volgende stap.", "Think it through. Make a plan. Take the next step.")}</p></div>
         {#if welcome}
           <div class="welcome">
-            <p>Connect a brain to get started. Add your tools when you're ready, so Nook can help with your day.</p>
+            <p>{tr("Koppel een brein om te beginnen. Voeg je tools toe als je er klaar voor bent, zodat Nook je dag kan helpen.", "Connect a brain to get started. Add your tools when you're ready, so Nook can help with your day.")}</p>
             <dl>
-              <dt>1 · Brain</dt><dd class:ok={nook.info?.brainReady}>{nook.info?.brainReady ? "Ready" : "Choose a free local model or an AI provider"}</dd>
-              {#if caps?.screenReading}<dt>2 · Screen context</dt><dd class:ok={nook.settings?.liveScreen}>{nook.settings?.liveScreen ? "On" : "Off"}</dd>{/if}
-              <dt>{caps?.screenReading ? 3 : 2} · Connections</dt><dd>Mail, GitHub, Stripe… (optional)</dd>
+              <dt>1 · {tr("Brein", "Brain")}</dt><dd class:ok={nook.info?.brainReady}>{nook.info?.brainReady ? tr("Klaar", "Ready") : tr("Kies een gratis lokaal model of een AI-aanbieder", "Choose a free local model or an AI provider")}</dd>
+              {#if caps?.screenReading}<dt>2 · {tr("Schermcontext", "Screen context")}</dt><dd class:ok={nook.settings?.liveScreen}>{nook.settings?.liveScreen ? tr("Aan", "On") : tr("Uit", "Off")}</dd>{/if}
+              <dt>{caps?.screenReading ? 3 : 2} · {tr("Koppelingen", "Connections")}</dt><dd>{tr("Mail, GitHub, Stripe… (optioneel)", "Mail, GitHub, Stripe… (optional)")}</dd>
             </dl>
             <div class="buttons">
-              <button class="ghost" onclick={() => nook.saveSettings({ onboardingDone: true })}>Set up later</button>
-              <button class="primary" onclick={() => (onboarding = true)}>Set up Nook</button>
+              <button class="ghost" onclick={() => nook.saveSettings({ onboardingDone: true })}>{tr("Later instellen", "Set up later")}</button>
+              <button class="primary" onclick={() => (onboarding = true)}>{tr("Nook instellen", "Set up Nook")}</button>
             </div>
           </div>
         {:else}
-          <p class="empty-note">Your tools and ideas, one conversation away.</p>
+          <p class="empty-note">{tr("Je tools en ideeën, één gesprek verderop.", "Your tools and ideas, one conversation away.")}</p>
         {/if}
         <div class="starters">
           {#each starters as s (s)}<button onclick={() => nook.ask(s)}>{s}</button>{/each}

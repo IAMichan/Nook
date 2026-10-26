@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from "../lib/i18n.svelte";
   // De microfoonknop naast het invoerveld: praten tegen Nook. Alleen als dit platform een microfoon heeft.
   import { nook } from "../lib/state.svelte";
   import { listening } from "../lib/listening.svelte";
@@ -6,7 +7,7 @@
 </script>
 
 {#if nook.info?.capabilities.microphone}
-  <button class="ghost mic" class:on={listening.active} aria-pressed={listening.active} title="Talk to Nook" aria-label="Talk to Nook" onclick={() => listening.toggle()}><Icon name="mic" size={18} /></button>
+  <button class="ghost mic" class:on={listening.active} aria-pressed={listening.active} title={tr("Praat met Nook", "Talk to Nook")} aria-label={tr("Praat met Nook", "Talk to Nook")} onclick={() => listening.toggle()}><Icon name="mic" size={18} /></button>
 {/if}
 
 <style>

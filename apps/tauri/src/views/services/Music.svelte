@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from "../../lib/i18n.svelte";
   // De Muziek-tab: wat er nu speelt, met hoes, doorspoelen, shuffle, herhalen en volume (MusicTab op de Mac).
   import { services, clock, estimatedPosition, type NowPlaying } from "../../lib/services";
 
@@ -68,7 +69,7 @@
       <div class="eq" class:playing={info.playing}><span></span><span></span><span></span></div>
     </div>
     <div class="side">
-      <div class="title">{info.title || "Onbekend nummer"}</div>
+      <div class="title">{info.title || tr("Onbekend nummer", "Unknown track")}</div>
       <div class="sub muted">{info.artist ? `${info.artist} · ${info.app}` : info.app}</div>
       <div class="scrub">
         <span class="time">{clock(position)}</span>
@@ -76,7 +77,7 @@
         <div
           class="bar"
           class:seekable={info.canSeek && duration > 0}
-          title="Voortgang"
+          title={tr("Voortgang", "Progress")}
           onpointerdown={(e) => { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); scrub(e, e.currentTarget as HTMLElement); }}
           onpointermove={(e) => drag !== null && scrub(e, e.currentTarget as HTMLElement)}
           onpointerup={(e) => drag !== null && scrub(e, e.currentTarget as HTMLElement, true)}
@@ -87,17 +88,17 @@
       </div>
       <div class="controls">
         {#if info.shuffle !== null}
-          <button class="toggle" class:on={info.shuffle} title="Willekeurig" aria-label="Willekeurig" onclick={() => run(() => services.shuffle(!info.shuffle))}>⤮</button>
+          <button class="toggle" class:on={info.shuffle} title={tr("Willekeurig", "Shuffle")} aria-label={tr("Willekeurig", "Shuffle")} onclick={() => run(() => services.shuffle(!info.shuffle))}>⤮</button>
         {/if}
-        <button class="round" title="Vorige" aria-label="Vorige" onclick={() => run(() => services.media("previous"))}>⏮</button>
-        <button class="round big" title={info.playing ? "Pauze" : "Afspelen"} aria-label={info.playing ? "Pauze" : "Afspelen"} onclick={() => run(() => services.media("playPause"))}>{info.playing ? "⏸" : "▶"}</button>
-        <button class="round" title="Volgende" aria-label="Volgende" onclick={() => run(() => services.media("next"))}>⏭</button>
+        <button class="round" title={tr("Vorige", "Previous")} aria-label={tr("Vorige", "Previous")} onclick={() => run(() => services.media("previous"))}>⏮</button>
+        <button class="round big" title={info.playing ? tr("Pauze", "Pause") : tr("Afspelen", "Play")} aria-label={info.playing ? tr("Pauze", "Pause") : tr("Afspelen", "Play")} onclick={() => run(() => services.media("playPause"))}>{info.playing ? "⏸" : "▶"}</button>
+        <button class="round" title={tr("Volgende", "Next")} aria-label={tr("Volgende", "Next")} onclick={() => run(() => services.media("next"))}>⏭</button>
         {#if info.repeat !== null}
-          <button class="toggle" class:on={info.repeat} title="Herhalen" aria-label="Herhalen" onclick={() => run(() => services.repeat(!info.repeat))}>⟳</button>
+          <button class="toggle" class:on={info.repeat} title={tr("Herhalen", "Repeat")} aria-label={tr("Herhalen", "Repeat")} onclick={() => run(() => services.repeat(!info.repeat))}>⟳</button>
         {/if}
         <span class="spacer"></span>
         {#if volume !== null}
-          <button class="toggle" title={volume > 0 ? "Dempen" : "Geluid aan"} aria-label={volume > 0 ? "Dempen" : "Geluid aan"} onclick={mute}>{volume === 0 ? "🔇" : volume < 40 ? "🔈" : "🔊"}</button>
+          <button class="toggle" title={volume > 0 ? tr("Dempen", "Mute") : tr("Geluid aan", "Unmute")} aria-label={volume > 0 ? tr("Dempen", "Mute") : tr("Geluid aan", "Unmute")} onclick={mute}>{volume === 0 ? "🔇" : volume < 40 ? "🔈" : "🔊"}</button>
           <input class="volume" type="range" min="0" max="100" value={volume} aria-label="Volume" oninput={setVolume} onchange={commitVolume} />
         {/if}
       </div>
@@ -106,8 +107,8 @@
   </div>
 {:else}
   <div class="idle">
-    <h3>Er speelt nu niets</h3>
-    <p class="muted">Start een nummer in Spotify, je browser of een andere speler, dan zie je het hier.</p>
+    <h3>{tr("Er speelt nu niets", "Nothing is playing")}</h3>
+    <p class="muted">{tr("Start een nummer in Spotify, je browser of een andere speler, dan zie je het hier.", "Start a track in Spotify, your browser or another player and you will see it here.")}</p>
   </div>
 {/if}
 

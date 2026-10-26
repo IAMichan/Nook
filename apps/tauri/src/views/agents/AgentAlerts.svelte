@@ -5,6 +5,7 @@
   // stays as it was. The notice card groups its actions in one bar next to a white OK with the countdown.
   import { agentApi, type QuestionRequest } from "../../lib/agents";
   import { agents } from "../../lib/agents.svelte";
+  import { tr, english } from "../../lib/i18n.svelte";
   import { compactNotice, noticeTone } from "../../lib/notice";
   import NoticeMark from "../../components/NoticeMark.svelte";
   import NoticeOk from "../../components/NoticeOk.svelte";
@@ -32,9 +33,9 @@
     else terminalName = "terminal";
   });
 
-  const stateText = $derived(card?.status === "done" ? "klaar" : card?.status === "failed" ? "liep vast" : "wacht op je");
+  const stateText = $derived(card?.status === "done" ? tr("klaar", "done") : card?.status === "failed" ? tr("liep vast", "got stuck") : tr("wacht op je", "waiting for you"));
   const fallback = $derived(
-    card?.status === "done" ? "Klaar met je opdracht." : card?.status === "failed" ? "Er ging iets mis." : "Wacht op je antwoord in de terminal.",
+    card?.status === "done" ? tr("Klaar met je opdracht.", "Finished your task.") : card?.status === "failed" ? tr("Er ging iets mis.", "Something went wrong.") : tr("Wacht op je antwoord in de terminal.", "Waiting for your answer in the terminal."),
   );
 
   async function openTerminal() {
@@ -43,7 +44,7 @@
       await agentApi.activateTerminal(card.host);
       agents.attention = null;
     } catch {
-      agents.error = `Ik vind de terminal van ${card.name} niet. Staat hij nog open?`;
+      agents.error = tr(`Ik vind de terminal van ${card.name} niet. Staat hij nog open?`, `I can't find the terminal of ${card.name}. Is it still open?`);
     }
   }
 
@@ -74,19 +75,19 @@
       <div class="qtext">
         <div class="qtitle" title={question.items[0]?.question ?? ""}>{question.items[0]?.question ?? ""}</div>
         <div class="faint qsub">
-          {question.agentName} vraagt · {question.project}{#if agents.questions.length > 1} · nog {agents.questions.length - 1}{/if}
+          {question.agentName} {tr("vraagt", "asks")} · {question.project}{#if agents.questions.length > 1} · {tr("nog", "another")} {agents.questions.length - 1}{/if}
         </div>
       </div>
-      {#if !question.sessionKey.startsWith("run:")}<button class="ghost" onclick={() => answerInTerminal(question)}>In terminal</button>{/if}
-      <button class="primary" onclick={() => onview(question.sessionKey)}>Bekijk</button>
+      {#if !question.sessionKey.startsWith("run:")}<button class="ghost" onclick={() => answerInTerminal(question)}>{tr("In terminal", "In terminal")}</button>{/if}
+      <button class="primary" onclick={() => onview(question.sessionKey)}>{tr("Bekijk", "View")}</button>
     </div>
   </div>
 {:else if card && compact}
   <div class="alert">
     <div class="qbar">
       <NoticeMark tone={noticeTone(card.status)} />
-      <div class="qtext"><div class="qtitle">{compactNotice(card.name, card.project, card.status)}</div></div>
-      <button class="ghost" onclick={view}>Bekijk</button>
+      <div class="qtext"><div class="qtitle">{compactNotice(card.name, card.project, card.status, english())}</div></div>
+      <button class="ghost" onclick={view}>{tr("Bekijk", "View")}</button>
       <NoticeOk compact {left} onclick={ondismiss} />
     </div>
   </div>
@@ -100,7 +101,7 @@
       <div class="title">{card.summary || fallback}</div>
       <div class="buttons">
         <div class="actions">
-          <button class="action bright" onclick={view}>Bekijk</button>
+          <button class="action bright" onclick={view}>{tr("Bekijk", "View")}</button>
           {#if card.host}<span class="divider"></span><button class="action" onclick={openTerminal}>Open {terminalName}</button>{/if}
         </div>
         <NoticeOk {left} onclick={ondismiss} />

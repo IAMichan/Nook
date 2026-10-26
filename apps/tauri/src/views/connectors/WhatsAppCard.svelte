@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from "../../lib/i18n.svelte";
   // De WhatsApp-kaart in de balk: de chat als bubbels (die van hen links, de jouwe rechts met vinkjes), foto's in de
   // bubbel en groot met een klik, bestanden die openen met de app van je computer, en een veld om meteen te antwoorden.
   // Alles uit een bericht wordt als tekst getoond, nooit als HTML.
@@ -52,7 +53,7 @@
       <div class="context faint"><ServiceIcon domain="whatsapp.com" title="WhatsApp" size={16} /><span>{context(conversation.unread)}</span></div>
       <div class="title">{conversation.name}</div>
       <div class="chat" bind:this={scroller}>
-        {#if conversation.messages.length > 8}<div class="older faint">Scroll omhoog voor oudere berichten</div>{/if}
+        {#if conversation.messages.length > 8}<div class="older faint">{tr("Scroll omhoog voor oudere berichten", "Scroll up for older messages")}</div>{/if}
         {#each conversation.messages as m (m.id)}
           {@const file = fileLabel(m.media)}
           {@const image = photo(m)}
@@ -62,12 +63,12 @@
             <div class="bubble" class:mine={m.fromMe}>
               {#if isGroup && !m.fromMe && m.senderName}<div class="sender">{m.senderName}</div>{/if}
               {#if image}
-                <button class="photo" title="Groot bekijken" onclick={() => (whatsapp.enlarged = m.id)}><img src={image} alt={file ?? "Foto"} /></button>
+                <button class="photo" title={tr("Groot bekijken", "View larger")} onclick={() => (whatsapp.enlarged = m.id)}><img src={image} alt={file ?? tr("Foto", "Photo")} /></button>
               {:else if file}
                 <div class="file">
                   <span class="icon">{m.media.kind === "video" ? "▶" : m.media.kind === "image" ? "▣" : m.media.kind === "document" ? "▤" : "♪"}</span>
                   <span class="name">{file}</span>
-                  <button class="small" onclick={() => whatsapp.open(m.id, file)}>{m.media.kind === "video" ? "Video afspelen" : "Openen"}</button>
+                  <button class="small" onclick={() => whatsapp.open(m.id, file)}>{m.media.kind === "video" ? tr("Video afspelen", "Play video") : tr("Openen", "Open")}</button>
                 </div>
               {/if}
               {#if text}<div class="text">{text}</div>{/if}
@@ -78,26 +79,26 @@
       </div>
       {#if enlarged}
         <div class="large">
-          <button class="photo" title="Sluit" onclick={() => (whatsapp.enlarged = null)}><img src={enlarged} alt="Foto" /></button>
+          <button class="photo" title={tr("Sluit", "Close")} onclick={() => (whatsapp.enlarged = null)}><img src={enlarged} alt={tr("Foto", "Photo")} /></button>
           <div class="buttons">
-            <button class="ghost" onclick={() => (whatsapp.enlarged = null)}>Sluit</button>
-            <button onclick={() => whatsapp.enlarged && whatsapp.open(whatsapp.enlarged, "Foto")}>Openen</button>
+            <button class="ghost" onclick={() => (whatsapp.enlarged = null)}>{tr("Sluit", "Close")}</button>
+            <button onclick={() => whatsapp.enlarged && whatsapp.open(whatsapp.enlarged, tr("Foto", "Photo"))}>{tr("Openen", "Open")}</button>
           </div>
         </div>
       {/if}
       {#if whatsapp.notice}<div class="notice faint">{whatsapp.notice}</div>{/if}
       <div class="reply">
-        <input placeholder="Antwoord {conversation.name}…" bind:value={whatsapp.draft} onkeydown={keydown} disabled={whatsapp.sending} />
+        <input placeholder={tr(`Antwoord ${conversation.name}…`, `Reply to ${conversation.name}…`)} bind:value={whatsapp.draft} onkeydown={keydown} disabled={whatsapp.sending} />
         <!-- Altijd klikbaar: een leeg veld verstuurt niets. -->
-        <button class="send" title="Verstuur" onclick={() => whatsapp.send()}>↑</button>
+        <button class="send" title={tr("Verstuur", "Send")} onclick={() => whatsapp.send()}>↑</button>
       </div>
       <div class="buttons">
-        <button class="ghost" onclick={() => whatsapp.dismiss()}>Later</button>
-        <button class="ghost" onclick={() => whatsapp.mute()}>Dempen</button>
-        <button class="ghost" onclick={() => whatsapp.hide()}>Niet meer tonen</button>
+        <button class="ghost" onclick={() => whatsapp.dismiss()}>{tr("Later", "Later")}</button>
+        <button class="ghost" onclick={() => whatsapp.mute()}>{tr("Dempen", "Mute")}</button>
+        <button class="ghost" onclick={() => whatsapp.hide()}>{tr("Niet meer tonen", "Stop showing")}</button>
         <span class="spacer"></span>
-        <button onclick={nook}>Laat Nook antwoorden</button>
-        <button class="primary" onclick={() => whatsapp.markRead()}>Gelezen</button>
+        <button onclick={nook}>{tr("Laat Nook antwoorden", "Let Nook reply")}</button>
+        <button class="primary" onclick={() => whatsapp.markRead()}>{tr("Gelezen", "Mark as read")}</button>
       </div>
     </div>
   </div>

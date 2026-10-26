@@ -11,6 +11,7 @@
   import Agents from "./Agents.svelte";
   import Workspace from "./Workspace.svelte";
   import Music from "./services/Music.svelte";
+  import Commands from "./Commands.svelte";
   import { services, serviceEvents, type NowPlaying } from "../lib/services";
   import { listening } from "../lib/listening.svelte";
   import { attachments } from "../lib/attachments.svelte";
@@ -18,6 +19,7 @@
   import { agents } from "../lib/agents.svelte";
   import { quiet } from "../lib/quiet.svelte";
   import { barDraft } from "../lib/draft.svelte";
+  import { tr, english } from "../lib/i18n.svelte";
   import { heard } from "../components/Orb.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
@@ -26,7 +28,7 @@
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
   import { whatsapp } from "../lib/whatsapp.svelte";
 
-  type Tab = "nook" | "agents" | "workspace" | "music";
+  type Tab = "nook" | "agents" | "workspace" | "music" | "commands";
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
@@ -177,6 +179,12 @@
     swallowed = false;
     await openByClick();
     await reading;
+  }
+
+  // One click flips the interface and Nook's answers between Dutch and English.
+  function toggleLanguage() {
+    const next = english() ? "nl" : "en";
+    nook.saveSettings({ appLanguage: next, language: next });
   }
 
   function select(t: Tab) {
@@ -335,10 +343,10 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="pill strip" onmousedown={drag}>
       <NoticeMark tone={noticeTone(card.status)} size={card.status === "done" || card.status === "failed" ? 13 : 15} />
-      <span class="message">{compactNotice(card.name, card.project, card.status)}</span>
+      <span class="message">{compactNotice(card.name, card.project, card.status, english())}</span>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="stripbuttons" onmousedown={(e) => e.stopPropagation()}>
-        <button class="ghost" onclick={() => viewNotice(card.id)}>Bekijk</button>
+        <button class="ghost" onclick={() => viewNotice(card.id)}>{tr("Bekijk", "View")}</button>
         <NoticeOk compact left={noticeLeft} onclick={dismissNotice} />
       </span>
     </div>
@@ -350,7 +358,7 @@
       class:swallowed
       role="button"
       tabindex="0"
-      title={barDraft.files ? "Open Nook (files waiting)" : "Open Nook, or drop a file on me"}
+      title={barDraft.files ? tr("Open Nook (er wachten bestanden)", "Open Nook (files waiting)") : tr("Open Nook, of sleep een bestand op mij", "Open Nook, or drop a file on me")}
       onmousedown={drag}
       onclick={openByClick}
       onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openByClick()}
@@ -373,15 +381,17 @@
           <button class:on={shown === "nook"} onclick={() => select("nook")}>Nook {#if nook.waiting}<span class="dot waiting"></span>{/if}</button>
           <button class:on={shown === "agents"} onclick={() => select("agents")}>Agents {#if agents.pending}<span class="dot waiting"></span>{/if}</button>
           {#if nook.info?.capabilities.terminals}
-            <button class:on={shown === "workspace"} onclick={() => select("workspace")}>Werkruimte</button>
+            <button class:on={shown === "workspace"} onclick={() => select("workspace")}>{tr("Werkruimte", "Workspace")}</button>
           {/if}
+          <button class:on={shown === "commands"} onclick={() => select("commands")}>{tr("Commando's", "Commands")}</button>
           {#if playing}
-            <button class:on={shown === "music"} onclick={() => select("music")}>Muziek {#if playing.playing}<span class="dot unread"></span>{/if}</button>
+            <button class:on={shown === "music"} onclick={() => select("music")}>{tr("Muziek", "Music")} {#if playing.playing}<span class="dot unread"></span>{/if}</button>
           {/if}
         </nav>
         <span class="spacer"></span>
-        <button class="ghost icon" title="Open in venster" onclick={() => api.showMain("chat")}>⧉</button>
-        <button class="ghost icon" title="Instellingen" onclick={() => api.showMain("settings")}>⚙</button>
+        <button class="ghost icon lang" title={tr("Taal: klik voor English", "Language: click for Nederlands")} onclick={toggleLanguage}>{english() ? "EN" : "NL"}</button>
+        <button class="ghost icon" title={tr("Open in venster", "Open in window")} onclick={() => api.showMain("chat")}>⧉</button>
+        <button class="ghost icon" title={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}>⚙</button>
       </header>
       <AgentAlerts
         requests={shown !== "agents"}
@@ -399,6 +409,8 @@
           </div>
         {:else if shown === "agents"}
           <Agents compact />
+        {:else if shown === "commands"}
+          <Commands onuse={(text) => { barDraft.text = text; select("nook"); pinnedOpen = true; }} />
         {:else if shown === "music" && playing}
           <Music info={playing} {since} />
         {:else}
@@ -526,6 +538,7 @@
   nav button.on { background: var(--smoke); color: var(--paper); }
   .spacer { flex: 1; }
   .icon { padding: 4px 8px; }
+  .icon.lang { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
   .body { flex: 1; min-height: 0; }
   .nooktab { display: grid; grid-template-columns: 1fr 220px; height: 100%; }
   .chatcol { min-height: 0; }
