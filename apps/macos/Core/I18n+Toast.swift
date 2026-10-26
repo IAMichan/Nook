@@ -4,6 +4,7 @@ import Foundation
 
 let toastTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "a11y.loading": "Laden",
         "toast.dismiss": "Sluiten",
         "toast.copy": "Melding kopiëren",
         "toast.error": "Er ging iets mis",
@@ -13,6 +14,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.localReady": "%@ staat klaar en is actief",
         "settings.brain.keychainRejected": "De Keychain weigerde de sleutel. Hij werkt tot Nook stopt.",
         "settings.brain.keyNotSaved": "Sleutel niet bewaard",
+        "settings.brain.useFailed": "Model wisselen mislukt",
         "settings.link.done": "%@ gekoppeld",
         "settings.unlink.done": "%@ ontkoppeld",
         "settings.link.failed": "%@ koppelen mislukt",
@@ -30,6 +32,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "Simulatoractie mislukt",
     ],
     .en: [
+        "a11y.loading": "Loading",
         "toast.dismiss": "Dismiss",
         "toast.copy": "Copy message",
         "toast.error": "Something went wrong",
@@ -39,6 +42,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.localReady": "%@ is ready and active",
         "settings.brain.keychainRejected": "Keychain rejected the key. It works until Nook quits.",
         "settings.brain.keyNotSaved": "Key not saved",
+        "settings.brain.useFailed": "Couldn’t switch the model",
         "settings.link.done": "%@ linked",
         "settings.unlink.done": "%@ unlinked",
         "settings.link.failed": "Couldn't link %@",
@@ -56,6 +60,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "Simulator action failed",
     ],
     .de: [
+        "a11y.loading": "Wird geladen",
         "toast.dismiss": "Schließen",
         "toast.copy": "Meldung kopieren",
         "toast.error": "Etwas ist schiefgelaufen",
@@ -65,6 +70,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.localReady": "%@ ist bereit und aktiv",
         "settings.brain.keychainRejected": "Der Schlüsselbund hat den Schlüssel abgelehnt. Er gilt, bis Nook beendet wird.",
         "settings.brain.keyNotSaved": "Schlüssel nicht gespeichert",
+        "settings.brain.useFailed": "Modell konnte nicht gewechselt werden",
         "settings.link.done": "%@ verbunden",
         "settings.unlink.done": "%@ getrennt",
         "settings.link.failed": "%@ konnte nicht verbunden werden",
@@ -82,6 +88,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "Simulator-Aktion fehlgeschlagen",
     ],
     .fr: [
+        "a11y.loading": "Chargement",
         "toast.dismiss": "Fermer",
         "toast.copy": "Copier le message",
         "toast.error": "Un problème est survenu",
@@ -91,6 +98,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.localReady": "%@ est prêt et actif",
         "settings.brain.keychainRejected": "Le trousseau a refusé la clé. Elle fonctionne jusqu’à ce que Nook quitte.",
         "settings.brain.keyNotSaved": "Clé non enregistrée",
+        "settings.brain.useFailed": "Impossible de changer de modèle",
         "settings.link.done": "%@ associé",
         "settings.unlink.done": "%@ dissocié",
         "settings.link.failed": "Impossible d’associer %@",
@@ -108,6 +116,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "sim.action.failed": "L’action du simulateur a échoué",
     ],
     .es: [
+        "a11y.loading": "Cargando",
         "toast.dismiss": "Cerrar",
         "toast.copy": "Copiar mensaje",
         "toast.error": "Algo salió mal",
@@ -117,6 +126,7 @@ let toastTranslations: [AppLanguage: [String: String]] = [
         "settings.brain.localReady": "%@ está listo y activo",
         "settings.brain.keychainRejected": "El llavero rechazó la clave. Funciona hasta que Nook se cierre.",
         "settings.brain.keyNotSaved": "Clave no guardada",
+        "settings.brain.useFailed": "No se pudo cambiar el modelo",
         "settings.link.done": "%@ vinculado",
         "settings.unlink.done": "%@ desvinculado",
         "settings.link.failed": "No se pudo vincular %@",

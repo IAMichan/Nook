@@ -70,4 +70,13 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertEqual(FinishedSessions.key(agent: "Codex", conversation: "", fallback: "x"), "x")
         XCTAssertEqual(FinishedSessions.key(agent: "Codex", conversation: nil, fallback: "x"), "x")
     }
+
+    func testSessionsInOneFolderKeepTheirOwnKeys() {
+        XCTAssertEqual(FinishedSessions.ownConversation(id: "claude:x", sessionID: "a", cwd: "/repo", detected: false), "a")
+        XCTAssertEqual(FinishedSessions.ownConversation(id: "claude:b", sessionID: "", cwd: "/repo", detected: false), "b")
+        XCTAssertNil(FinishedSessions.ownConversation(id: "claude:/repo", sessionID: "", cwd: "/repo", detected: false),
+                     "no id: the folder is not a conversation")
+        XCTAssertNil(FinishedSessions.ownConversation(id: "proc-42", sessionID: "", cwd: "/repo", detected: true),
+                     "a process does not borrow a transcript's id")
+    }
 }

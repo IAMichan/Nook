@@ -299,8 +299,8 @@ private struct CalloutBlock: View {
 
 // MARK: Pull requests
 
-/// A pull request an agent made, as a card instead of its raw tag: GitHub's mark, "Pull request #12", the repository,
-/// and an arrow; a click opens it.
+/// A pull request an agent made, as a card instead of its raw tag: the pull request mark (grey, since the link does not
+/// say its state), "Pull request #12", the repository, and an arrow; a click opens it.
 private struct PullRequestLinkCard: View {
     let url: URL
     @Environment(\.openURL) private var openURL
@@ -311,8 +311,8 @@ private struct PullRequestLinkCard: View {
         let gitLab = url.path.contains("/merge_requests/")
         Button { openURL(url) } label: {
             HStack(spacing: NookTheme.Spacing.md) {
-                PullRequestStateGlyph(glyph: .open, size: 16)
-                    .foregroundStyle(NookTheme.mint)
+                PullRequestStateIcon(glyph: .open, size: .header, tinted: false)
+                    .foregroundStyle(NookTheme.textSecondary)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr(gitLab ? "markdown.mergeRequest" : "markdown.pullRequest", reference?.number ?? 0))
                         .font(NookTheme.TextStyle.strong)

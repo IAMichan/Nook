@@ -6,7 +6,7 @@ import Foundation
 /// (too old), the session falls back to `codex exec` for good, and nothing is lost.
 extension WorkspaceManager {
     /// Closes an idle Codex session after this long; the next message resumes the thread in a new process.
-    private static let codexIdleSeconds: UInt64 = 30 * 60
+    private static let codexIdleSeconds: UInt64 = 10 * 60
 
     // MARK: Turns
 
@@ -177,23 +177,12 @@ extension WorkspaceManager {
     }
 
     /// Steering an agent that cannot take a message into its turn: the turn is interrupted and the message goes out as the
-    /// next prompt as soon as the turn has ended (see `deliverRestartSteer`).
+    /// next prompt as soon as the turn has ended (the same path as "send now" for a queued message, `sendPendingNow`).
     private func steerByRestart(_ id: UUID, text: String) -> Bool {
-        append(id, RunEvent(kind: .user, text: ContextRefs.visible(text)))
         append(id, RunEvent(kind: .system, text: tr("ws.steer.restart")))
-        restartSteers[id] = text
+        pendingSendNow[id] = text
         stop(id)
         return true
-    }
-
-    /// The interrupted turn has ended: its steering message goes out now (or first in the queue when it cannot).
-    func deliverRestartSteer(_ id: UUID) {
-        guard restartSteers[id] != nil else { return }
-        // After the path that ended the turn has finished its own bookkeeping (the process slot, the snapshot).
-        Task { @MainActor [weak self] in
-            guard let self, let text = self.restartSteers.removeValue(forKey: id) else { return }
-            if !self.sendHidden(id, text: text) { self.requeueFirst(id, text: text) }
-        }
     }
 
     /// Stops the running turn politely (`turn/interrupt`). False when this is not a Codex app-server session.
@@ -494,7 +483,7 @@ extension WorkspaceManager {
         turns[id] = nil
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)
-        sendQueued(id)
+        if !sendPendingNow(id) { sendQueued(id) }
         scheduleCodexIdleClose(id)
     }
 

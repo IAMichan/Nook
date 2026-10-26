@@ -18,7 +18,7 @@ struct GitQuickButton: View {
                 case .success(let action)?:
                     Button { start(action) } label: {
                         HStack(spacing: NookTheme.Spacing.sm) {
-                            if progress != nil { ProgressView().controlSize(.mini) } else { Image(systemName: symbol(action)) }
+                            if progress != nil { ProgressView().controlSize(.mini) } else { NookSymbol(symbol(action)) }
                             Text(progress ?? tr(action.labelKey))
                         }
                     }
@@ -57,7 +57,7 @@ struct GitQuickButton: View {
         switch action {
         case .commit: return "checkmark.circle"
         case .commitPush, .push: return "arrow.up.circle"
-        case .commitPushPR, .pushPR, .createPR: return "arrow.triangle.pull"
+        case .commitPushPR, .pushPR, .createPR: return PullRequestIcon.generic
         case .pull: return "arrow.down.circle"
         }
     }

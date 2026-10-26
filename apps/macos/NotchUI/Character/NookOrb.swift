@@ -36,6 +36,7 @@ struct NookOrb: View {
     /// Published only when the plan changes: lets a dozing orb stop drawing while no one can see it.
     @ObservedObject private var energy = EnergyMonitor.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nookAttended) private var attended
     @State private var tracker = OrbTracker()
     @State private var moodSince = Date()
 
@@ -43,19 +44,38 @@ struct NookOrb: View {
         // A dozing Nook keeps animating on every screen, so all orbs nod off together; its slow breathing and nodding
         // need only a few frames a second, and it can doze for hours. While you are away or the display sleeps (the
         // energy plan pauses) nobody sees it breathe, so it holds still instead of drawing all night.
-        let awakeRate = frameRate ?? energy.plan.interactiveFrameRate
-        TimelineView(.animation(minimumInterval: animated ? 1.0 / max(1, awakeRate) : 1.0 / Self.dozingFrameRate,
-                                paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
-            let p = pose(at: context.date)
-            orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
-        }
-        .frame(width: size, height: size)
-        .background(PointerProbe(tracker: tracker))
+        // On a screen or in a window the pointer is not on, at most the unattended rate.
+        let awakeRate = energy.plan.frameRate(frameRate ?? energy.plan.interactiveFrameRate, attended: attended)
+        // The layout sees only a fixed square; Nook is drawn over it. In the layout itself, every frame asked the row
+        // he sits in to place and align everything again, on every screen's notch.
+        Color.clear
+            .frame(width: size, height: size)
+            // Clicks and hover land on his round shape here: the drawing over it lets them through.
+            .contentShape(Circle())
+            .overlay {
+                // In a graph of its own (`SeparateGraph`), so his frames do not update the window he is in.
+                SeparateGraph {
+                    TimelineView(.nookFrames(fps: animated ? awakeRate : Self.dozingFrameRate,
+                                            paused: (dozing && energy.plan.pace == .paused) || !(animated || dozing))) { context in
+                        let p = pose(at: context.date)
+                        orb(p).onChange(of: p.offset) { _, offset in motion?.follow(offset) }
+                    }
+                    // Drawn as one picture: Nook is dozens of layers (shading, eyes, mouth, what he wears). Three times
+                    // his size, so the glow, a hat and a hop are not cut off; laid out at his own size.
+                    .frame(width: size * 3, height: size * 3)
+                    .drawingGroup()
+                }
+                .frame(width: size * 3, height: size * 3)
+                .allowsHitTesting(false)
+                .frame(width: size, height: size)
+            }
+            .background(PointerProbe(tracker: tracker))
         .onChange(of: mood) { _, _ in moodSince = Date() }
         .accessibilityHidden(true)
     }
 
-    private static let dozingFrameRate: Double = 8
+    /// Half the ambient rate on battery: on the shared clock (`NookFrames`) his frames fall on the other animations'.
+    private static let dozingFrameRate: Double = 7.5
 
     /// The look this orb draws: eyes, mouth, gloss, glow and blush.
     var style: NookLook { look ?? appearance.look }

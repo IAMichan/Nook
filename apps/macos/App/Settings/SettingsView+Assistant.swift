@@ -70,7 +70,7 @@ extension SettingsView {
             }
             .opacity(settings.buddyMoments ? 1 : 0.5)
             LabeledContent(tr("settings.buddy.birthday")) {
-                HStack(spacing: 6) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Picker(tr("settings.buddy.birthdayDay"), selection: birthdayPart(\.day)) {
                         Text(verbatim: "–").tag(0)
                         ForEach(1...31, id: \.self) { day in Text(verbatim: "\(day)").tag(day) }

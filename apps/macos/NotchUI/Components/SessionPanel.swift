@@ -336,7 +336,7 @@ struct SessionPanel: View {
         switch action {
         case .commit: return "checkmark.circle"
         case .commitPush, .push: return "arrow.up.circle"
-        case .commitPushPR, .pushPR, .createPR: return "arrow.triangle.pull"
+        case .commitPushPR, .pushPR, .createPR: return PullRequestIcon.generic
         case .pull: return "arrow.down.circle"
         }
     }
@@ -413,7 +413,7 @@ struct SessionPanel: View {
     // MARK: Helpers
 
     private func symbol(_ name: String) -> AnyView {
-        AnyView(Image(systemName: name).font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary))
+        AnyView(NookSymbol(name, size: 13).font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.textSecondary))
     }
 
     /// Closes the panel, then does what was asked (a notch task or another app takes over from here).

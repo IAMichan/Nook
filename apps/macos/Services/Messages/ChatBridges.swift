@@ -286,7 +286,10 @@ final class WhatsAppDesktopBridge: ChatBridge {
         AppDatabase.home + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/"
     }
 
-    var isReady: Bool { !WhatsAppLink.shared.isConnected && FileManager.default.fileExists(atPath: Self.path) }
+    var isReady: Bool {
+        // WhatsApp linked through the chat helper (as Beeper did it) brings it live, with its whole history.
+        !WhatsAppLink.shared.isConnected && !ChatHelper.linked(app) && FileManager.default.fileExists(atPath: Self.path)
+    }
 
     func read() async throws -> [BridgedChat] {
         guard isReady else { isWorking = false; return [] }
@@ -317,6 +320,7 @@ final class WhatsAppDesktopBridge: ChatBridge {
             names[chat] = name
             let mine = (AppData.number(row["me"]) ?? 0) != 0
             var text = AppData.string(row["text"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if ChatFormat.isBlank(text) { text = "" }
             let media = Self.media(row)
             let type = Int(AppData.number(row["type"]) ?? 0)
             // A poll shows as one, its question its text; its options and votes stay in the app.
@@ -507,6 +511,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
     /// The newest activity per chat at the last read: only chats that moved are read again.
     private var seen: [String: Date] = [:]
+    /// Chats told to have changed (the live line, something Nook did in them) that were not read since: read at the next
+    /// turn even when their newest activity looks the same. Kept apart from `seen`, so a change told while a read is
+    /// under way is not lost when that read ends (Instagram tells of the message a moment after the chat moved).
+    private var stale: Set<String> = []
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
     /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
@@ -523,10 +531,10 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     init() {
         live.onChange = { [weak self] chat in
             guard let self else { return }
-            self.seen[chat] = nil
+            self.stale.insert(chat)
             self.onChange()
         }
-        live.onLive = { [weak self] live in self?.isLive = live }
+        live.onLive = { [weak self] live in if self?.isLive != live { self?.isLive = live } }
         // What changed while the line was down is not told: every chat is read again.
         live.onDrop = { [weak self] in
             self?.seen = [:]
@@ -546,6 +554,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
     func reset() {
         seen = [:]
+        stale = []
         covered = []
         isWorking = false
     }
@@ -571,8 +580,16 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
-            for chat in listed where chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil) {
-                let answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+            for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
+                // Before the read: a change told while it runs marks the chat again, for the next turn.
+                stale.remove(chat.id)
+                let answer: [String: Any]
+                do {
+                    answer = try await get(Self.path(chat.id) + "/messages", ["limit": String(Self.history)], token: token)
+                } catch {
+                    stale.insert(chat.id)
+                    throw error
+                }
                 let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
                 let deleted = ChatServiceData.deleted(answer, chat: chat)
                 seen[chat.id] = chat.last ?? .distantPast
@@ -589,6 +606,27 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             isWorking = false
             throw error
         }
+    }
+
+    /// How many older messages one scroll back asks for: the helper's batch (`paginateBatch` in apps/chatd).
+    static let olderStep = 50
+    /// The most messages the helper hands out for one chat in one answer.
+    private static let mostMessages = 500
+
+    /// Scrolling back in the chat Nook shows as `name` in `app`, as Beeper does it: the helper first brings in the next
+    /// batch of older messages from the app (WhatsApp asks the phone), then Nook reads the chat with `have` plus that
+    /// batch. The chat as read, and whether there is still more before it.
+    func older(app: String, name: String, have: Int) async throws -> (chat: BridgedChat?, hasMore: Bool) {
+        guard let token = Self.token, let id = chatID(app: app, name: name), let chat = chats[id] else { return (nil, false) }
+        let answer = try await call("POST", Self.path(id) + "/paginate", [:], token: token, timeout: 75,
+                                    failure: tr("chat.action.failed"))
+        let more = (ChatJSON.object(answer)?["hasMore"] as? Bool) ?? false
+        let limit = min(have + Self.olderStep, Self.mostMessages)
+        let read = try await get(Self.path(id) + "/messages", ["limit": String(limit)], token: token)
+        let messages = await withFiles(ChatServiceData.messages(read, chat: chat), token: token)
+        let bridged = BridgedChat(app: app, name: name, messages: messages, unread: nil,
+                                  members: chat.members.isEmpty ? nil : chat.members)
+        return (bridged, more && limit < Self.mostMessages)
     }
 
     /// The messages with their files on this Mac (see `local`).
@@ -661,7 +699,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         }
         _ = try await post(request.path, request.json ?? [:], token: token, timeout: 30)
         // The chat is read again at the next turn, with the message just sent.
-        seen[chat] = nil
+        stale.insert(chat)
     }
 
     // MARK: Doing things in a chat
@@ -726,7 +764,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         // Said as a chat's own failure: where Nook reads the chat from is not something to show here.
         guard let token = Self.token else { throw NookError(tr("chat.action.failed")) }
         _ = try await call(method, path, json, query: query, token: token, timeout: 30, failure: tr("chat.action.failed"), plain: true)
-        seen[chat] = nil
+        stale.insert(chat)
         onChange()
     }
 

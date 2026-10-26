@@ -64,7 +64,7 @@ struct TelegramSettingsRows: View {
         case .ready:
             StatusRow(title: tr("chats.telegram.connected", telegram.account ?? "Telegram"),
                       detail: tr("chats.telegram.connectedDetail"), state: .done) {
-                Button(tr("chats.telegram.logOut")) { telegram.logOut() }
+                ConfirmedButton(tr("chats.telegram.logOut"), question: tr("confirm.logout", "Telegram")) { telegram.logOut() }
             }
             .onAppear(perform: onReady)
         case .loggingOut, .closed:
@@ -151,11 +151,11 @@ struct TeamsSettingsRows: View {
             if let why = teams.problems[TeamsBridge.webID] {
                 StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
                     Button(tr("chats.teams.signInAgainButton")) { signInOnWeb() }
-                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut() }
                 }
             } else {
                 StatusRow(title: tr("chats.teams.connected", title), detail: tr("chats.teams.web.connectedDetail"), state: .done) {
-                    Button(tr("chats.teams.signOut")) { web.signOut() }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut() }
                 }
             }
         }
@@ -164,13 +164,13 @@ struct TeamsSettingsRows: View {
             if let why = teams.problems[account.id] {
                 StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
                     Button(tr("chats.teams.signInAgainButton")) { teams.signIn() }
-                    Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
                 }
             } else {
                 StatusRow(title: tr("chats.teams.connected", title),
                           detail: account.email.isEmpty || account.email == title ? tr("chats.teams.connectedDetail") : account.email,
                           state: .done) {
-                    Button(tr("chats.teams.signOut")) { teams.signOut(account.id) }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { teams.signOut(account.id) }
                 }
             }
         }
@@ -254,13 +254,13 @@ struct SlackSettingsRows: View {
                 if let problem = capture.bridgeProblems[capture.slackBridge.app] {
                     StatusRow(title: tr("chats.teams.connected", title), detail: problem, state: .error) {
                         Button(tr("chats.teams.signInAgainButton")) { signIn() }
-                        Button(tr("chats.teams.signOut")) { signOut() }
+                        ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
                     }
                 } else {
                     StatusRow(title: tr("chats.teams.connected", title),
                               detail: capture.enabled ? tr("chats.slack.web.connectedDetail") : tr("chats.slack.collectOff"),
                               state: capture.enabled ? .done : .todo) {
-                        Button(tr("chats.teams.signOut")) { signOut() }
+                        ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { signOut() }
                     }
                 }
             } else if !slackSet {
@@ -295,7 +295,8 @@ struct SlackSettingsRows: View {
                 Button(tr("chats.slack.save")) { save() }
                     .disabled(!slackToken.trimmingCharacters(in: .whitespaces).hasPrefix("xox"))
                 if slackSet {
-                    Button(tr("chats.slack.disconnect")) {
+                    ConfirmedButton(tr("chats.slack.disconnect"), question: tr("confirm.logout", "Slack"),
+                                    detail: tr("confirm.keychain.detail")) {
                         Keychain.remove(SlackBridge.tokenAccount)
                         slackSet = false
                         capture.slackTokenChanged()

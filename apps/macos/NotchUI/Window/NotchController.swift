@@ -8,6 +8,25 @@ final class NotchController {
     /// The panel has a fixed bounding size (accommodating the largest state, including a notch you dragged larger); SwiftUI
     /// renders the notch shape within it, and outside the shape clicks pass through.
     static let panelSize = CGSize(width: 2000, height: 1300)
+    /// The copies on other screens only show the resting notch (idle, music, a track): a window that size above every app
+    /// was about 40 MB of transparent backing per screen for the WindowServer to keep and composite.
+    static let mirrorSize = CGSize(width: 1000, height: 260)
+
+    /// The window for a screen: `panelSize`, but no larger than the screen itself. On a laptop a window wider and taller
+    /// than the display was transparent backing the WindowServer kept for nothing.
+    static func canvas(for screen: CGRect) -> CGSize {
+        guard screen.width > 0, screen.height > 0 else { return panelSize }
+        return CGSize(width: min(panelSize.width, max(screen.width, 800)), height: min(panelSize.height, max(screen.height, 500)))
+    }
+
+    /// Fits the window to the screen the notch is on now.
+    private func updateCanvas() {
+        let canvas = Self.canvas(for: geometry.screenFrame)
+        guard viewModel.canvas != canvas else { return }
+        viewModel.canvas = canvas
+        panel?.contentView?.frame = NSRect(origin: .zero, size: canvas)
+        positionPanel()
+    }
 
     let viewModel = NotchViewModel()
     private var panel: NotchPanel?
@@ -62,7 +81,7 @@ final class NotchController {
 
     private func panelFrame() -> NSRect {
         let a = anchor(size: viewModel.size)
-        let size = Self.panelSize
+        let size = viewModel.canvas
         return NSRect(x: a.centerX - size.width / 2, y: a.top - size.height, width: size.width, height: size.height)
     }
 
@@ -70,6 +89,7 @@ final class NotchController {
         self.app = app
         geometry = makeGeometry()
         viewModel.geometry = geometry
+        viewModel.canvas = Self.canvas(for: geometry.screenFrame)
         viewModel.onDragMoved = { [weak self] in self?.dragMoved() }
         viewModel.onDragEnded = { [weak self] in self?.dragStart = nil }
         viewModel.onAnnounce = { [weak self] info in self?.announce(info) }
@@ -79,11 +99,12 @@ final class NotchController {
         let initialFrame = panelFrame()
         let panel = NotchPanel(contentRect: initialFrame)
         let host = NSHostingView(rootView: NotchRootView(viewModel: viewModel)
+            .nookAttention()
             .environmentObject(app)
             .environmentObject(app.workspace)
             .environmentObject(app.workspace.settings))
         host.sizingOptions = []
-        host.frame = NSRect(origin: .zero, size: Self.panelSize)
+        host.frame = NSRect(origin: .zero, size: viewModel.canvas)
         panel.contentView = host
         self.panel = panel
 
@@ -298,6 +319,7 @@ final class NotchController {
     private func screenChanged() {
         geometry = makeGeometry()
         viewModel.geometry = geometry
+        updateCanvas()
         positionPanel()
         refreshMirrors()
         reassertPanels()
@@ -320,6 +342,7 @@ final class NotchController {
         if let target = NotchGeometry.screenWithMouse(), target.frame != geometry.screenFrame {
             geometry = NotchGeometry.make(for: target, floating: true)
             viewModel.geometry = geometry
+            updateCanvas()
             if settings.screenChoice != target.localizedName { settings.screenChoice = target.localizedName }
         }
 
@@ -419,16 +442,18 @@ final class NotchController {
                 continue
             }
             let mirrorModel = NotchViewModel()
+            mirrorModel.canvas = Self.mirrorSize
             mirrorModel.app = app
             mirrorModel.geometry = mirrorGeometry
             mirrorModel.show(resting)
             let panel = NotchPanel()
             let host = NSHostingView(rootView: NotchRootView(viewModel: mirrorModel)
+                .nookAttention()
                 .environmentObject(app)
                 .environmentObject(app.workspace)
                 .environmentObject(app.workspace.settings))
             host.sizingOptions = []
-            host.frame = NSRect(origin: .zero, size: Self.panelSize)
+            host.frame = NSRect(origin: .zero, size: Self.mirrorSize)
             panel.contentView = host
             placeMirror(panel, on: screen.frame)
             // Display only: clicks pass through; the real Nook moves to this screen as soon as the mouse is on it.
@@ -440,7 +465,7 @@ final class NotchController {
     }
 
     private func placeMirror(_ panel: NotchPanel, on screenFrame: CGRect) {
-        let size = Self.panelSize
+        let size = Self.mirrorSize
         panel.setFrame(
             NSRect(x: screenFrame.midX - size.width / 2, y: screenFrame.maxY - size.height, width: size.width, height: size.height),
             display: false
@@ -531,6 +556,8 @@ final class NotchController {
     }
 
     private func pointerMoved(force: Bool = false) {
+        // Which screen and window you point at: the animations elsewhere run slower (`nookAttention`).
+        PointerWhere.shared.moved()
         // Hidden for a share or meeting: hovering the notch area opens nothing.
         guard let panel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation

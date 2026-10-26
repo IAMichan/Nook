@@ -213,3 +213,11 @@ program that shares no code with Nook, and it saves a second repository, CI and 
   cannot come over (Beeper keeps them and its API does not hand them out), so each app is linked once more, with the
   account Beeper knew shown next to it. A WhatsApp that went through Beeper is moved to Nook's own gateway at launch and
   stays off until it is linked again.
+- WhatsApp and scrolling back as Beeper did (later): removing Beeper should not change the Chats tab, so the helper does
+  what Beeper did for it instead of Beeper. It runs `mautrix-whatsapp` (the connector Beeper links WhatsApp with), linked
+  by a QR code from your phone in Settings › Chats › WhatsApp › through the chat service; it asks the phone for a year of
+  history and for older messages on demand. `POST /v1/chats/{chat}/paginate` is Beeper's "load older messages": the
+  bridges' manual backfill brings in a chat's next batch, and the Chats tab asks for it as you scroll back in any chat
+  the helper brings in. WhatsApp comes from one place at a time: the helper once it links WhatsApp, else GOWA, else the
+  WhatsApp app on this Mac. While GOWA is linked, the WhatsApp chats that notifications or the Beeper import collected
+  before stay out of the list, so no chat shows twice.

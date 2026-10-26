@@ -80,6 +80,15 @@ final class MailUnreadTests: XCTestCase {
         XCTAssertEqual(text, "### Vraag | van Lisa <lisa@example.com> | 14 okt | ongelezen | Werk\nKun je morgen?")
     }
 
+    func testReadsEachAccountOnItsOwn() {
+        XCTAssertEqual(MailStats.accounts("Werk\niCloud \n\n"), ["Werk", "iCloud"])
+        let script = MailStats.recentScript(account: "Werk \"A\"")
+        XCTAssertTrue(script.contains("set acc to account \"Werk \\\"A\\\"\""))
+        // One account per script, and no unified-inbox count that makes Mail walk every account.
+        XCTAssertFalse(script.contains("repeat with acc in accounts"))
+        XCTAssertFalse(script.contains("of inbox"))
+    }
+
     func testFailureSaysWhyMailGaveNoAnswer() {
         // A timeout names the wait and the error code, instead of only "Mail did not respond".
         XCTAssertEqual(MailStats.failure(errorNumber: -1712, message: nil, timeout: 15),

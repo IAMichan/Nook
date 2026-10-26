@@ -344,6 +344,28 @@ struct MemoryBook: Equatable {
         return chosen
     }
 
+    /// The memories autocomplete reads while the user writes in `context` (the window, the screen around the field, the text
+    /// so far): the facts that context is about first, then a few of the surest facts about the user (name, work), so a
+    /// signature or a greeting still fits. Preferences, lessons and habits are about how Nook works, not about what the user
+    /// writes; facts Nook is no longer sure of stay out too, since the model writes whatever it reads as true.
+    func forCompletion(_ context: String, limit: Int = 8, background: Int = 3, characters: Int = 900, now: Date = Date()) -> [MemoryItem] {
+        let trusted = MemoryBook(items: items.filter {
+            $0.kind == .fact && !$0.isHabit && $0.currentStrength(at: now) >= Self.completionStrength
+        })
+        var chosen = trusted.recall(context, limit: limit, characters: characters, now: now)
+        var used = chosen.reduce(0) { $0 + $1.text.count + 24 }
+        let general = trusted.items.filter { item in !chosen.contains { $0.id == item.id } }
+            .sorted { ($0.pinned ? 1 : 0, $0.currentStrength(at: now), $0.uses) > ($1.pinned ? 1 : 0, $1.currentStrength(at: now), $1.uses) }
+        for item in general.prefix(background) where chosen.count < limit && used + item.text.count + 24 <= characters {
+            chosen.append(item)
+            used += item.text.count + 24
+        }
+        return chosen
+    }
+
+    /// Learned facts weaker than this are not offered to autocomplete.
+    static let completionStrength = 0.35
+
     static func mentions(_ lowered: String, _ subject: String) -> Bool {
         let name = subject.lowercased()
         guard name.count >= 2 else { return false }

@@ -13,8 +13,8 @@ struct ShortcutRecorder: View {
 
     var body: some View {
         LabeledContent(Self.title(action)) {
-            VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Button { recording ? stop() : start() } label: {
                         if recording {
                             Text(tr("shortcut.record")).foregroundStyle(NookTheme.textSecondary)
@@ -31,12 +31,21 @@ struct ShortcutRecorder: View {
                         }
                         .buttonStyle(.borderless)
                         .help(tr("shortcut.reset"))
+                        .accessibilityLabel(tr("shortcut.reset"))
                     }
                 }
                 if !note.isEmpty { SettingNote(note) }
             }
         }
         .onDisappear { stop() }
+        // The recorder takes every key while it listens: it lets go when you leave the window or the app, so keys
+        // pressed elsewhere are not swallowed.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            if recording { stop() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if recording { stop() }
+        }
     }
 
     static func title(_ action: ShortcutAction) -> String {
@@ -54,6 +63,7 @@ struct ShortcutRecorder: View {
         recording = true
         // Nook's own keys are paused while you press the new ones, so the old shortcut does not fire.
         app.hotKeys = []
+        AutocompleteController.shared.recordingKeys += 1
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             handle(event)
             return nil
@@ -63,7 +73,10 @@ struct ShortcutRecorder: View {
     private func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        if recording { app.reloadHotKeys() }
+        if recording {
+            app.reloadHotKeys()
+            AutocompleteController.shared.recordingKeys -= 1
+        }
         recording = false
     }
 

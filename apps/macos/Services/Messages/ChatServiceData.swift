@@ -183,6 +183,8 @@ enum ChatServiceData {
                   message["isHidden"] as? Bool != true, message["isDeleted"] as? Bool != true,
                   let sent = ChatJSON.date(message["timestamp"]) else { return nil }
             var text = ((message["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only invisible marks (what an app sends around a reaction): nothing to show.
+            if ChatFormat.isBlank(text) { text = "" }
             let media = (message["attachments"] as? [[String: Any]])?.first.flatMap(Self.file)
             if text.isEmpty, media == nil { text = label(message) }
             // The service writes a file's name as the text of a message with only that file.

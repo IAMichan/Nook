@@ -1,4 +1,4 @@
-// nook-chatd links Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack for Nook, on this Mac, without Beeper.
+// nook-chatd links WhatsApp, Telegram, Signal, Messenger, Instagram, X, LinkedIn and Slack for Nook, on this Mac, without Beeper.
 // It runs the mautrix bridgev2 network connectors with no Matrix server behind them: their rooms and messages are kept
 // in a local database, and Nook reads them through a small API on 127.0.0.1 (see api.go). Nook starts it as a child
 // process and it stops when Nook does. See docs/ADR-CHAT-LINKS.md.

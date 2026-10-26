@@ -61,19 +61,3 @@ extension AppModel {
                     result: chatReadHandoff(entry) == .tells ? "doorgegeven" : "app geopend")
     }
 }
-
-extension AppModel {
-    /// "Let Nook answer" for any chat, as on a WhatsApp card: Nook reads only this chat and writes an answer you approve
-    /// (where Nook cannot send, it is copied for the app).
-    func askNookAboutChat(_ entry: ChatsEntry) {
-        switch entry.origin {
-        case .whatsApp(let jid):
-            askNookAboutWhatsApp(jid, name: entry.name)
-        case .captured:
-            let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
-            ask(tr("chats.nookPrompt", entry.name, appName),
-                focus: [Prefetch.Call(tool: "chat_inbox", input: ["chat": entry.name, "app": entry.app, "limit": 20])],
-                reflects: false)
-        }
-    }
-}

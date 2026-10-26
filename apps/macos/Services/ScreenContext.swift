@@ -58,16 +58,33 @@ final class ScreenContext: ObservableObject {
 
     /// How many windows a read for a question keeps; the timer's own reads follow the energy plan (`EnergyPlan.screenWindowLimit`).
     private let maxWindows = 10
-    private let interval: TimeInterval = 7
+    /// The timer's read. A question reads the front window fresh anyway (`snapshot`) and switching apps reads the new one,
+    /// so the background read only keeps the other windows current: every 20 seconds is plenty, and three times less
+    /// capture and OCR than every seven.
+    private let interval: TimeInterval = 20
     /// Non-frontmost windows are refreshed at most this frequently by a read for a question; the timer follows the plan.
     private let backgroundMaxAge: TimeInterval = 30
     private var lastFailure: Date?
     private let failureCooldown: TimeInterval = 60
     /// When the timer last read the screen: on battery or in saver mode it reads less often than the timer fires.
     private var lastPeriodic: Date = .distantPast
+    /// The windows on screen at the last timer read (see `windowSignature`).
+    private var lastWindows: [String] = []
+
+    /// Every window on screen, by number and frame: cheap to read, unlike the shareable content a capture needs.
+    private static func windowSignature() -> [String] {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        return list.map { info in
+            let number = info[kCGWindowNumber as String] as? Int ?? 0
+            let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] ?? [:]
+            return "\(number)|\(bounds["X"] ?? 0)|\(bounds["Y"] ?? 0)|\(bounds["Width"] ?? 0)|\(bounds["Height"] ?? 0)"
+        }
+    }
     /// Per window: on how many periodic ticks in a row its picture changed, and when its text was last read. A window
     /// that changes on every tick (a video, a scrolling log, a game) is read at most every `volatileReadInterval`
-    /// instead of a full capture and OCR every seven seconds; a question still reads it fresh (`snapshot`).
+    /// instead of a full capture and OCR on every tick; a question still reads it fresh (`snapshot`).
     private var changeStreak: [CGWindowID: Int] = [:]
     private var lastRead: [CGWindowID: Date] = [:]
     private let volatileAfter = 3
@@ -94,7 +111,11 @@ final class ScreenContext: ObservableObject {
         observers.append(center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.clear() }
         })
-        Task { await tick() }
+        // The first read waits a little: at launch the rest of Nook (and often the rest of the Mac) is busy starting up.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            await self?.tick()
+        }
     }
 
     func stop() {
@@ -139,6 +160,11 @@ final class ScreenContext: ObservableObject {
         guard plan.readsScreen else { return }
         // The timer fires with a little slack; a tick that lands just short of the stretched interval still counts.
         guard Date().timeIntervalSince(lastPeriodic) >= interval * plan.slowdown - interval * 0.25 else { return }
+        // No key, click or move since the last read and the same windows in the same places: the screen shows what was
+        // read then, so the capture and OCR are skipped. A question still reads it fresh.
+        let windows = Self.windowSignature()
+        if idle >= Date().timeIntervalSince(lastPeriodic), windows == lastWindows { return }
+        lastWindows = windows
         lastPeriodic = Date()
         await refresh(frontOnly: false, accurateFront: false, periodic: true)
     }
@@ -303,7 +329,9 @@ final class ScreenContext: ObservableObject {
             }
             let configuration = SCStreamConfiguration()
             let scale: CGFloat = job.accurate ? 1.5 : 1.0
-            let maxSide = job.isFront ? 2400 : backgroundSide
+            // The timer's read of the front window is the background picture, read with fast OCR: 1600 px is enough for it,
+            // and less than half the pixels to capture and recognize. A question reads it at full size.
+            let maxSide = job.isFront ? (periodic ? 1600 : 2400) : backgroundSide
             configuration.width = min(Int(job.window.frame.width * scale), maxSide)
             configuration.height = min(Int(job.window.frame.height * scale), maxSide)
             configuration.showsCursor = false

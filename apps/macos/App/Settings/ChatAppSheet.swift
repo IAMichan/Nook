@@ -81,6 +81,11 @@ struct ChatAppSheet: View {
             Task { await linker.unlink(account, in: network) }
         }
         .task { await linker.refresh() }
+        // Escape closes the sheet the way Done does.
+        .onExitCommand {
+            Task { if isLinking { await linker.cancel() } }
+            dismiss()
+        }
     }
 
     private var subtitle: String {

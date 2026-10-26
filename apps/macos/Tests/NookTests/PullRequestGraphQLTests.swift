@@ -16,6 +16,41 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertTrue(query.contains("additions deletions"), "the lines changed come with the row")
     }
 
+    func testTheQuickRefreshAsksOnlyForOpenOnesAndTheSlowOneOnlyForClosedOnes() throws {
+        func parts(_ closed: Bool) throws -> (query: String, variables: [String: String]) {
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: PullRequestGraphQL.body(closed: closed)) as? [String: Any])
+            return (try XCTUnwrap(body["query"] as? String), try XCTUnwrap(body["variables"] as? [String: String]))
+        }
+        let open = try parts(false)
+        XCTAssertEqual(Set(open.variables.keys), ["mine", "reviews"])
+        XCTAssertTrue(open.query.contains("mine: search(") && open.query.contains("reviews: search("))
+        XCTAssertFalse(open.query.contains("Closed"), "no closed searches in the quick refresh")
+        XCTAssertTrue(open.query.contains("fragment row on PullRequest") && open.query.contains("viewer { login }"))
+        let closed = try parts(true)
+        XCTAssertEqual(Set(closed.variables.keys), ["mineClosed", "reviewsClosed"])
+        XCTAssertTrue(closed.query.contains("$mineClosed: String!, $reviewsClosed: String!"))
+        XCTAssertFalse(closed.query.contains("  mine: search("))
+    }
+
+    func testAQuickRefreshKeepsTheClosedRowsUntilTheyAreReadAgain() {
+        func item(_ number: Int, _ state: PullRequestItem.State = .open) -> PullRequestItem {
+            PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)
+        }
+        let old = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1), item(2), item(3, .merged), item(4, .closed)],
+                                      reviews: [item(5, .closed)], error: nil)
+        // #2 left the open list, #4 was reopened.
+        let fresh = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1), item(4)], reviews: [], error: nil)
+        let kept = fresh.keepingClosed(from: old)
+        XCTAssertEqual(kept.mine.map(\.number), [1, 4, 3], "open ones as read, then the closed ones not open again")
+        XCTAssertEqual(kept.reviews.map(\.number), [5])
+        XCTAssertEqual(fresh.keepingClosed(from: old) { $0 == "a/b#2" }.mine.map(\.number), [1, 4, 2, 3],
+                       "a row merged from Nook stays until the closed ones are read")
+
+        let replaced = kept.replacingClosed(mine: [item(6, .merged), item(1, .closed)], reviews: [])
+        XCTAssertEqual(replaced.mine.map(\.number), [1, 4, 6], "the closed rows are the new ones; an open row wins")
+        XCTAssertEqual(replaced.reviews.map(\.number), [])
+    }
+
     func testParse() throws {
         let answer = #"""
         {"data":{"viewer":{"login":"michan"},
@@ -109,6 +144,18 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertEqual(PullRequestWatchList.including(["globex"], in: full), full)
     }
 
+    func testOwnRepositoriesAreAlwaysSearched() {
+        XCTAssertEqual(PullRequestWatchList.ownRepositories("Ada"), "user:Ada")
+        XCTAssertNil(PullRequestWatchList.ownRepositories(""))
+        XCTAssertNil(PullRequestWatchList.ownRepositories("bad name"))
+        XCTAssertEqual(PullRequestWatchList.search("user:Ada", closed: false), "is:pr is:open archived:false user:Ada sort:updated-desc")
+        XCTAssertEqual(PullRequestWatchList.including(["globex"], in: ["acme"], owner: "Ada"), ["acme", "globex", "user:Ada"])
+        let full = (0..<PullRequestWatchList.limit).map { "org\($0)" }
+        XCTAssertEqual(PullRequestWatchList.including([], in: full, owner: "Ada").last, "user:Ada",
+                       "a full watch list still finds pull requests on your own repositories")
+        XCTAssertEqual(PullRequestWatchList.including([], in: [], owner: ""), [])
+    }
+
     func testOrganizationQueries() throws {
         let queries = try PullRequestGraphQL.organizationBodies().map { body in
             try XCTUnwrap((JSONSerialization.jsonObject(with: body) as? [String: Any])?["query"] as? String)
@@ -161,5 +208,42 @@ final class PullRequestGraphQLTests: XCTestCase {
         XCTAssertTrue(account.isEmpty)
         let again = try JSONDecoder().decode(AccountPullRequests.self, from: JSONEncoder().encode(account))
         XCTAssertEqual(again, account)
+    }
+
+    func testWatchedEntriesAreSplitIntoSmallRequests() {
+        let entries = (1...10).map { "org\($0)" }
+        let parts = PullRequestWatchList.parts(entries, size: 4)
+        XCTAssertEqual(parts.map(\.count), [4, 4, 2])
+        XCTAssertEqual(parts.flatMap { $0 }, entries, "every entry once, in order")
+        XCTAssertTrue(PullRequestWatchList.parts([]).isEmpty)
+    }
+
+    func testCombinedWatchedRows() {
+        func item(_ repo: String, _ number: Int, _ state: PullRequestItem.State) -> PullRequestItem {
+            PullRequestItem(repo: repo, number: number, title: "", url: nil, draft: false, updated: nil, author: "", state: state)
+        }
+        let combined = PullRequestWatchList.combined([[item("a/b", 1, .open), item("a/b", 2, .merged)],
+                                                      [item("c/d", 3, .open), item("a/b", 1, .open)]])
+        XCTAssertEqual(combined.map(\.id), ["a/b#1", "c/d#3", "a/b#2"], "open first, each pull request once")
+    }
+
+    func testAttachingWatchedRows() {
+        func item(_ number: Int) -> PullRequestItem {
+            PullRequestItem(repo: "a/b", number: number, title: "", url: nil, draft: false, updated: nil, author: "")
+        }
+        var first = AccountPullRequests(id: "github", name: "", login: "", mine: [item(1)], reviews: [], error: nil, watched: [item(9)])
+        first.watchedFailed = true
+        let second = AccountPullRequests(id: "github.werk", name: "", login: "", mine: [], reviews: [], error: nil)
+
+        let kept = AccountPullRequests.attaching([:], to: [first, second])
+        XCTAssertEqual(kept[0].watched.map(\.number), [9], "rows from last time stay until the watched search answers")
+
+        let found = WatchedPullRequests(items: [item(1), item(2), item(3)], unreadable: ["typo"])
+        let both = AccountPullRequests.attaching(["github": found, "github.werk": WatchedPullRequests(items: [item(3), item(4)], unreadable: [])],
+                                                 to: [first, second])
+        XCTAssertEqual(both[0].watched.map(\.number), [2, 3], "yours stays under yours")
+        XCTAssertEqual(both[0].unreadable, ["typo"])
+        XCTAssertFalse(both[0].watchedFailed)
+        XCTAssertEqual(both[1].watched.map(\.number), [4], "a watched row shows under the first account that has it")
     }
 }

@@ -49,6 +49,15 @@ enum WhatsAppSettings {
         defaults.set(ChatReadMarks.pruned(marks), forKey: key)
     }
 
+    /// Each chat's unread messages when Nook last ran (see `WAUnreadCarry`), by its JID.
+    static var unreadCarry: [String: WAUnreadCarry] {
+        get {
+            defaults.data(forKey: "whatsappUnreadCarry")
+                .flatMap { try? JSONDecoder().decode([String: WAUnreadCarry].self, from: $0) } ?? [:]
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "whatsappUnreadCarry") }
+    }
+
     /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
     static var markReadOnReply: Bool {
         get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }
@@ -104,7 +113,8 @@ enum WhatsAppSettings {
 /// WhatsApp, live: Nook talks to the local gateway the user runs (GOWA, which Nook can install and start, or OpenWA),
 /// receives new messages on a webhook bound to 127.0.0.1 (polling when none comes), and keeps the conversations in
 /// memory only: nothing of a message is written to disk or to a log, and everything is forgotten when Nook quits or
-/// WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
+/// WhatsApp is turned off. Only the votes on polls are kept on disk (`WAPollStore`: who chose which option, by poll id),
+/// since no gateway keeps them; they go when WhatsApp is turned off. Sending goes only to chats that are on the phone, a few a minute at most, and only after the
 /// user typed the answer or approved Nook's plan.
 ///
 /// The lifecycle after open-source code (MIT, © 2026 Louis Raillé; see THIRD-PARTY-NOTICES.md).
@@ -139,23 +149,41 @@ final class WhatsAppLink: ObservableObject {
         case refused(String)
     }
 
-    @Published private(set) var inbox = WAInbox()
+    /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
+    @Published private(set) var inbox = WAInbox(polls: WAPollStore.load()) {
+        didSet {
+            if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) }
+            keepUnread()
+        }
+    }
     @Published private(set) var link: Link = .off
     @Published private(set) var webhook: Webhook = .off
     @Published private(set) var qrPNG: Data?
     /// This account (JID or number), once linked.
     @Published private(set) var me: String?
     /// The chats on the phone (names to send to), refreshed every few minutes while linked.
-    @Published private(set) var knownChats: [WAChatInfo] = []
+    @Published private(set) var knownChats: [WAChatInfo] = [] {
+        didSet { knownIndex = Dictionary(knownChats.indices.map { (knownChats[$0].jid, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+    /// Where each chat sits in `knownChats`: the Chats tab asks about every chat on each redraw, so a scan per chat
+    /// made the list quadratic and stalled the main thread.
+    private var knownIndex: [String: Int] = [:]
     /// When a chat was last read in WhatsApp itself: marked read from Nook (by hand), or read on the phone.
     @Published private(set) var readInWhatsApp = WhatsAppSettings.readMarks(WhatsAppLink.readInWhatsAppKey) {
-        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey) }
+        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey); keepUnread() }
     }
     /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows. Kept across
     /// launches, so a chat you read in Nook stays read after a restart.
     @Published private(set) var readInNook = WhatsAppSettings.readMarks(WhatsAppLink.readInNookKey) {
-        didSet { WhatsAppSettings.setReadMarks(readInNook, Self.readInNookKey) }
+        didSet { WhatsAppSettings.setReadMarks(readInNook, Self.readInNookKey); keepUnread() }
     }
+    /// What each chat counted unread when Nook last ran (see `WAUnreadCarry`): it shows until the chat is read or
+    /// answered in, so a restart does not make every chat read.
+    private var carriedUnread = WhatsAppSettings.unreadCarry.filter {
+        Date().timeIntervalSince($0.value.last) < ChatReadMarks.maxAge
+    }
+    /// What the next launch starts from, as last written.
+    private var keptUnread: [String: WAUnreadCarry]?
     private static let readInNookKey = "whatsappReadInNook"
     private static let readInWhatsAppKey = "whatsappReadInWhatsApp"
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
@@ -203,7 +231,12 @@ final class WhatsAppLink: ObservableObject {
     /// When each group's members were last asked of the gateway.
     private var membersLoaded: [String: Date] = [:]
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
-    private var previews: [String: WAPreview] = [:]
+    private var previews: [String: WAPreview] = [:] {
+        didSet { previewRevision &+= 1 }
+    }
+    /// Counts changes to the fetched files. Published, so an open chat shows a photo, sticker or video the moment it
+    /// is fetched, and its bubbles made earlier know they are out of date.
+    @Published private(set) var previewRevision = 0
     private var previewOrder: [String] = []
     private var previewsLoading: Set<String> = []
     /// When a preview last failed: it is tried again after `previewRetry`, not at every redraw.
@@ -293,6 +326,7 @@ final class WhatsAppLink: ObservableObject {
         failures = 0
         if !WhatsAppSettings.enabled { WhatsAppGOWAProcess.shared.stopNow() }
         if forget {
+            carriedUnread = [:]
             inbox.clear()
             knownChats = []
         }
@@ -330,16 +364,19 @@ final class WhatsAppLink: ObservableObject {
                 let status = try await provider.status()
                 guard gen == generation else { return }
                 failures = 0
-                me = status.me
+                // Asked every few seconds: publish only what changed, since the panel redraws for every write.
+                if me != status.me { me = status.me }
                 switch status.link {
                 case .connected:
-                    if link != .connected { qrPNG = nil }
-                    link = .connected
+                    if link != .connected {
+                        qrPNG = nil
+                        link = .connected
+                    }
                     if webhook == .listening { await register(provider, gen: gen) }
                     if !backfilled, gen == generation { await backfill(provider, gen: gen) }
                     if Date().timeIntervalSince(lastChatList) > 300 { await loadChats(provider, gen: gen) }
                 case .needsQR:
-                    link = .needsQR
+                    if link != .needsQR { link = .needsQR }
                     if qrPNG == nil || Date() > qrExpiry {
                         // Not asked again for 15 s even when nothing came: each GOWA login call restarts the pairing.
                         qrExpiry = Date().addingTimeInterval(15)
@@ -349,7 +386,7 @@ final class WhatsAppLink: ObservableObject {
                         }
                     }
                 case .connecting:
-                    link = .connecting
+                    if link != .connecting { link = .connecting }
                 }
             } catch let error as WAError {
                 if gen == generation { apply(error) }
@@ -360,12 +397,15 @@ final class WhatsAppLink: ObservableObject {
     }
 
     private func apply(_ error: WAError) {
+        let next: Link
         switch error {
-        case .unreachable: link = .unreachable
-        case .unauthorized: link = .unauthorized
-        case .notLoggedIn: link = .needsQR
-        case .refused(let why): link = .failed(why)
+        case .unreachable: next = .unreachable
+        case .unauthorized: next = .unauthorized
+        case .notLoggedIn: next = .needsQR
+        case .refused(let why): next = .failed(why)
         }
+        // A gateway that stays down reports the same every few seconds.
+        if link != next { link = next }
         guard error != .notLoggedIn else { return }
         failures += 1
         // GOWA started by Nook and gone (crash, killed): started again, once a minute at most.
@@ -555,12 +595,18 @@ final class WhatsAppLink: ObservableObject {
     private func ingest(_ messages: [WAMessage], announce: Bool) {
         var fresh: String?
         let quietBefore = Date().addingTimeInterval(-Self.freshness)
+        // Added to a copy and published once, only when something changed: a poll overlaps the last one, so most of what
+        // it brings is already here, and every write to the published inbox redraws the panel.
+        var next = inbox
+        var keys: [String] = []
         for message in messages {
             let key = WAJID.normalized(message.chat)
-            let outcome = inbox.add(message, filters: filters, quietBefore: quietBefore)
-            nameGroupIfNeeded(key)
+            let outcome = next.add(message, filters: filters, quietBefore: quietBefore)
+            if !keys.contains(key) { keys.append(key) }
             if outcome == .notify, !message.fromMe { fresh = key }
         }
+        if next != inbox { inbox = next }
+        for key in keys { nameGroupIfNeeded(key) }
         if announce, let fresh { onMessage?(fresh) }
     }
 
@@ -569,7 +615,7 @@ final class WhatsAppLink: ObservableObject {
         guard WAJID.isGroup(chat), let provider, let conversation = inbox.conversations[chat],
               WAJID.isPlaceholderName(conversation.name, for: chat) else { return }
         // A name the chat list already learned comes first: no call at all.
-        if let known = knownChats.first(where: { $0.jid == chat }), !WAJID.isPlaceholderName(known.name, for: chat) {
+        if let known = known(chat), !WAJID.isPlaceholderName(known.name, for: chat) {
             inbox.rename(chat, to: known.name)
             return
         }
@@ -601,6 +647,9 @@ final class WhatsAppLink: ObservableObject {
         guard let provider, isConnected else { return }
         let gen = generation
         for chat in chats.map(WAJID.normalized) where WAJID.kind(chat) != .status {
+            // The Chats tab starts this again (and cancels the run before) when the chat list comes in: a cancelled run
+            // stops here, before it marks the chats it did not get to as asked for six hours.
+            if Task.isCancelled { return }
             if avatars[chat] != nil { continue }
             let target = ChatMedia.destination(key: "wa-avatar-" + chat, name: "avatar.jpg")
             if FileManager.default.fileExists(atPath: target.path) {
@@ -614,11 +663,19 @@ final class WhatsAppLink: ObservableObject {
                 if address == nil { continue }
             } else {
                 if let asked = avatarAsked[chat], Date().timeIntervalSince(asked) < 6 * 3600 { continue }
-                avatarAsked[chat] = Date()
                 address = await provider.avatar(chat)
+                // Asked only counts once answered: a request cut off by cancelling is asked again on the next run.
+                if Task.isCancelled { return }
+                avatarAsked[chat] = Date()
             }
-            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url),
-                  let answer = try? await Self.avatarSession.data(from: url), gen == generation,
+            // Only WhatsApp's own picture servers are asked.
+            guard let url = address, gen == generation, WAAvatar.isWhatsApp(url) else { continue }
+            let answer = try? await Self.avatarSession.data(from: url)
+            if Task.isCancelled {
+                avatarAsked[chat] = nil
+                return
+            }
+            guard let answer, gen == generation,
                   (answer.1 as? HTTPURLResponse)?.statusCode == 200, answer.0.count < 2_000_000,
                   Self.thumbnail(answer.0, side: 8) != nil else { continue }
             try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -630,9 +687,20 @@ final class WhatsAppLink: ObservableObject {
     /// The newest messages of one chat: the gateway's history together with what came in live, so a message that
     /// arrived after the gateway's stored history is never left out (falls back to what Nook kept).
     func messages(of chat: String, limit: Int = 20) async throws -> [WAMessage] {
-        guard let provider, isConnected else { throw NookError(statusLine) }
+        guard isConnected else { throw NookError(statusLine) }
         let key = WAJID.normalized(chat)
-        var fetched = (try? await provider.messages(chat: key, limit: limit, me: me)) ?? []
+        let fetched = (try? await fetchHistory(key, limit: limit).messages) ?? []
+        let kept = inbox.conversations[key]?.messages ?? []
+        return WAInbox.newest(fetched, kept, limit: limit)
+    }
+
+    /// Asks the gateway for a chat's newest `limit` messages and keeps them in the inbox; what came (the polls GOWA keeps
+    /// on this Mac among them), and how many of them came from its history: fewer than `limit` means it has nothing older.
+    /// Throws when the gateway could not answer, so a failed request is never taken for the chat's start.
+    private func fetchHistory(_ key: String, limit: Int) async throws -> (messages: [WAMessage], gateway: Int) {
+        guard let provider, isConnected else { throw NookError(statusLine) }
+        let history = try await provider.messages(chat: key, limit: limit, me: me)
+        var fetched = history
         // GOWA leaves polls out of a chat's history: the ones it keeps on this Mac come in beside it, within the time
         // the history covers (all of them when it reaches back to the chat's start).
         if provider.kind == .gowa {
@@ -643,36 +711,37 @@ final class WhatsAppLink: ObservableObject {
         for message in fetched { inbox.add(message, filters: filters, history: true) }
         // An opened chat keeps the name the chat list showed: the gateway's history may only know it by its id.
         if let shown = inbox.conversations[key]?.name, WAJID.isPlaceholderName(shown, for: key),
-           let known = knownChats.first(where: { $0.jid == key }), !WAJID.isPlaceholderName(known.name, for: key) {
+           let known = known(key), !WAJID.isPlaceholderName(known.name, for: key) {
             inbox.rename(key, to: known.name)
         }
         nameGroupIfNeeded(key)
-        let kept = inbox.conversations[key]?.messages ?? []
-        return WAInbox.newest(fetched, kept, limit: limit)
+        return (fetched, history.count)
     }
 
-    /// "Load older messages": the chat keeps `WAInbox.olderStep` more and asks the gateway for that many. True when
-    /// messages were added; the chat remembers when the gateway has nothing older left.
+    /// "Load older messages": the chat keeps `WAInbox.olderStep` more and asks the gateway for that many (in pages, as
+    /// the gateway allows). True when messages were added; the chat remembers when the gateway has nothing older left,
+    /// judged by what the gateway gave, not by what the chat kept (a blank or a vote shows nothing but is no start).
     func loadOlder(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
         guard isConnected, let limit = inbox.growCapacity(key) else { return false }
         let before = inbox.conversations[key]?.messages.count ?? 0
-        _ = try? await messages(of: key, limit: limit)
-        let after = inbox.conversations[key]?.messages.count ?? 0
-        if after < limit { inbox.markOldestReached(key) }
-        return after > before
+        guard let fetched = try? await fetchHistory(key, limit: limit) else { return false }
+        if fetched.gateway < limit { inbox.markOldestReached(key) }
+        return (inbox.conversations[key]?.messages.count ?? 0) > before
     }
 
     /// A chat's messages from the gateway, so its card can scroll back and shows what the live feed missed (the Mac
     /// slept, a webhook got lost): fetched each time the chat opens, at most once per `WAInbox.historyRefresh`. True
-    /// when the conversation changed.
+    /// when the conversation changed. A history shorter than a chat keeps is the whole chat: no older ones to load.
     func loadHistory(_ chat: String) async -> Bool {
         let key = WAJID.normalized(chat)
         let now = Date()
         guard isConnected, WAInbox.historyDue(last: historyFetched[key], now: now) else { return false }
         historyFetched[key] = now
         let before = inbox.conversations[key]?.messages
-        _ = try? await messages(of: key, limit: WAInbox.keep)
+        if let fetched = try? await fetchHistory(key, limit: WAInbox.keep), fetched.gateway < WAInbox.keep {
+            inbox.markOldestReached(key)
+        }
         return inbox.conversations[key]?.messages != before
     }
 
@@ -822,18 +891,39 @@ final class WhatsAppLink: ObservableObject {
         readInNook[key] = Date()
     }
 
-    /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's, it came in unread (or
-    /// was read in Nook only since), and it was not read in WhatsApp after it arrived. Then "Mark as read" can still
-    /// tell WhatsApp, also when Nook shows no badge any more.
+    /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's and WhatsApp did not say
+    /// it was read there after it arrived (a read on the phone or in WhatsApp on the Mac comes in as it happens). History
+    /// loaded at launch counts too: GOWA says nothing of what was read before, and claiming "read in WhatsApp" for a chat
+    /// that is not was worse than offering "Mark as read" once too often. Then "Mark as read" can still tell WhatsApp,
+    /// also when Nook shows no badge any more.
     func waitsInWhatsApp(_ chat: String) -> Bool {
         let key = WAJID.normalized(chat)
+        if carried(key) > 0 { return true }
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
-            guard !last.fromMe, last.date > readThere else { return false }
-            return conversation.unread > 0 || (readInNook[key].map { $0 >= last.date } ?? false)
+            // OpenWA counts unread itself: a chat it says is read, as of this message or later, is read there.
+            if WhatsAppSettings.gateway == .openwa, let known = known(key), known.unread == 0, known.last >= last.date {
+                return false
+            }
+            return !last.fromMe && last.date > readThere
         }
-        guard let known = knownChats.first(where: { $0.jid == key }) else { return false }
+        guard let known = known(key) else { return false }
         return known.unread > 0 && known.last > readThere
+    }
+
+    /// Whether Nook knows where a chat stands in WhatsApp: something new here, read or answered in it, or a gateway
+    /// that counts unread messages itself (OpenWA). GOWA counts nothing, so a chat known only from the phone's list or
+    /// from history loaded at launch shows no mark in the list rather than a wrong one.
+    func readIsKnown(_ chat: String) -> Bool {
+        let key = WAJID.normalized(chat)
+        if WhatsAppSettings.gateway == .openwa || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
+        if inbox.conversations[key]?.messages.last?.fromMe == true { return true }
+        return unread(key) > 0
+    }
+
+    /// The phone's entry for a chat (`jid` normalized), without going through the whole list.
+    private func known(_ jid: String) -> WAChatInfo? {
+        knownIndex[jid].map { knownChats[$0] }
     }
 
     /// Where the chat stands, as every chat in the Chats tab says it: new, read in Nook only, or read in WhatsApp too.
@@ -859,23 +949,54 @@ final class WhatsAppLink: ObservableObject {
     /// gateway says), until you read it in Nook.
     func unread(_ chat: String) -> Int {
         let key = WAJID.normalized(chat)
-        if let counted = inbox.conversations[key]?.unread, counted > 0 { return counted }
-        guard let known = knownChats.first(where: { $0.jid == key }), known.unread > 0 else { return 0 }
+        let counted = (inbox.conversations[key]?.unread ?? 0) + carried(key)
+        if counted > 0 { return counted }
+        guard let known = known(key), known.unread > 0 else { return 0 }
         if let read = readInNook[key], known.last <= read { return 0 }
         return known.unread
     }
 
+    /// Unread messages in the chats the pill shows, also those still unread from before a restart.
+    var visibleUnread: Int {
+        let visible = inbox.visible(filters: filters)
+        let shown = Set(visible.map(\.id))
+        return visible.reduce(0) { $0 + $1.unread } + carriedUnread.keys.reduce(0) { total, key in
+            // The same chats the pill lists: a quiet group that mentioned you counts too.
+            shown.contains(key) || (!filters.ignored.contains(key) && !filters.isQuiet(key)) ? total + carried(key) : total
+        }
+    }
+
+    /// What a chat still counts unread from before Nook restarted: nothing once it was read or answered in since.
+    private func carried(_ key: String) -> Int {
+        guard let carry = carriedUnread[key], carry.holds(readSince: readSince(key)) else { return 0 }
+        return carry.count
+    }
+
+    /// When a chat was last read (in Nook, in WhatsApp) or answered in.
+    private func readSince(_ key: String) -> Date? {
+        [readInNook[key], readInWhatsApp[key], inbox.conversations[key]?.messages.last { $0.fromMe }?.date].compactMap { $0 }.max()
+    }
+
+    /// Writes down what each chat counts unread, for the next launch; only when that changed.
+    private func keepUnread() {
+        let kept = WAUnreadCarry.kept(carried: carriedUnread, inbox: inbox, readSince: readSince)
+        guard kept != keptUnread else { return }
+        keptUnread = kept
+        WhatsAppSettings.unreadCarry = kept
+    }
+
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
+        carriedUnread[WAJID.normalized(chat)] = nil
         readInNook[WAJID.normalized(chat)] = nil
         inbox.markUnread(chat)
     }
 
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
+        let hadUnread = (inbox.conversations[key]?.unread ?? 0) + carried(key) > 0
         readInNook[key] = Date()
         guard let provider, let conversation = inbox.conversations[key] else { return }
-        let hadUnread = conversation.unread > 0
         inbox.markRead(key)
         guard hadUnread, WhatsAppSettings.markReadOnReply else { return }
         let last = conversation.messages.last { !$0.fromMe }?.id

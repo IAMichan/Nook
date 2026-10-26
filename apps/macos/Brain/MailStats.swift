@@ -97,45 +97,63 @@ enum MailStats {
 
     // MARK: Recent inbox mail (inbox_mail)
 
-    /// The newest messages of each account's inbox, fetched in bulk: one Apple Event per property per mailbox instead of one
-    /// per message, and never a `whose` filter over the whole unified inbox (that took longer than the 25 s limit on a big
-    /// mailbox). Lines: "ROW|||account|||mailbox|||index|||subject|||sender|||date|||read|||replied".
-    static func recentScript(perMailbox: Int = 40) -> String {
+    /// The names of the enabled accounts, one per line, so each inbox can be read on its own.
+    static let accountsScript = """
+    tell application "Mail"
+        set out to ""
+        repeat with acc in accounts
+            try
+                if enabled of acc then set out to out & (name of acc) & linefeed
+            end try
+        end repeat
+        return out
+    end tell
+    """
+
+    /// Account names from the output of `accountsScript`.
+    static func accounts(_ raw: String) -> [String] {
+        raw.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// The newest messages of one account's inbox, fetched in bulk: one Apple Event per property per mailbox instead of
+    /// one per message, and never a `whose` filter over the messages (that took longer than any sensible limit on a big
+    /// mailbox). One account per script, so a slow or syncing account never keeps the others from showing.
+    /// Lines: "TOTAL|||unread", then "ROW|||account|||mailbox|||index|||subject|||sender|||date|||read|||replied".
+    static func recentScript(account: String, perMailbox: Int = 40) -> String {
         """
         tell application "Mail"
-            set out to "TOTAL|||" & (unread count of inbox) & linefeed
-            repeat with acc in accounts
+            set acc to account \(quote(account))
+            set accName to name of acc
+            set unread to 0
+            set out to ""
+            repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
                 try
-                    if enabled of acc then
-                        set accName to name of acc
-                        repeat with box in (mailboxes of acc whose name is "INBOX" or name is "Inbox")
-                            set total to count of messages of box
-                            if total > 0 then
-                                set lo to 1
-                                set hi to total
-                                if total > \(perMailbox) then
-                                    set hi to \(perMailbox)
-                                    -- Mail usually lists the newest first; if not, take the other end.
-                                    if (date received of message 1 of box) < (date received of message total of box) then
-                                        set lo to total - \(perMailbox - 1)
-                                        set hi to total
-                                    end if
-                                end if
-                                set boxName to name of box
-                                set subs to subject of messages lo thru hi of box
-                                set snds to sender of messages lo thru hi of box
-                                set dts to date received of messages lo thru hi of box
-                                set rds to read status of messages lo thru hi of box
-                                set rps to was replied to of messages lo thru hi of box
-                                repeat with i from 1 to (count of subs)
-                                    set out to out & "ROW|||" & accName & "|||" & boxName & "|||" & (lo + i - 1) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & ((item i of dts) as «class isot» as string) & "|||" & (item i of rds) & "|||" & (item i of rps) & linefeed
-                                end repeat
-                            end if
-                        end repeat
-                    end if
+                    set unread to unread + (unread count of box)
                 end try
+                set total to count of messages of box
+                if total > 0 then
+                    set lo to 1
+                    set hi to total
+                    if total > \(perMailbox) then
+                        set hi to \(perMailbox)
+                        -- Mail usually lists the newest first; if not, take the other end.
+                        if (date received of message 1 of box) < (date received of message total of box) then
+                            set lo to total - \(perMailbox - 1)
+                            set hi to total
+                        end if
+                    end if
+                    set boxName to name of box
+                    set subs to subject of messages lo thru hi of box
+                    set snds to sender of messages lo thru hi of box
+                    set dts to date received of messages lo thru hi of box
+                    set rds to read status of messages lo thru hi of box
+                    set rps to was replied to of messages lo thru hi of box
+                    repeat with i from 1 to (count of subs)
+                        set out to out & "ROW|||" & accName & "|||" & boxName & "|||" & (lo + i - 1) & "|||" & (item i of subs) & "|||" & (item i of snds) & "|||" & ((item i of dts) as «class isot» as string) & "|||" & (item i of rds) & "|||" & (item i of rps) & linefeed
+                    end repeat
+                end if
             end repeat
-            return out
+            return "TOTAL|||" & unread & linefeed & out
         end tell
         """
     }
@@ -206,9 +224,6 @@ enum MailStats {
 
     /// Fetches the start of the text of a few messages, by position, in one script. Output: "<<<BODY>>>n" + text per message.
     static func bodiesScript(_ rows: [InboxRow], length: Int = 300) -> String {
-        func quote(_ text: String) -> String {
-            "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
-        }
         var lines = ["tell application \"Mail\"", "set out to \"\""]
         for (n, row) in rows.enumerated() {
             lines.append("""
@@ -221,6 +236,11 @@ enum MailStats {
         }
         lines += ["return out", "end tell"]
         return lines.joined(separator: "\n")
+    }
+
+    /// An AppleScript string literal.
+    static func quote(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 
     /// Splits `bodiesScript` output into texts by row number.

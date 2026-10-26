@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -53,6 +54,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/chats/{chat}/unread", a.authed(a.markUnread))
 	mux.HandleFunc("POST /v1/chats/{chat}/archive", a.authed(a.archive))
 	mux.HandleFunc("GET /v1/chats/{chat}/messages", a.authed(a.messages))
+	mux.HandleFunc("POST /v1/chats/{chat}/paginate", a.authed(a.paginate))
 	mux.HandleFunc("POST /v1/chats/{chat}/messages", a.authed(a.send))
 	mux.HandleFunc("PUT /v1/chats/{chat}/messages/{message}", a.authed(a.edit))
 	mux.HandleFunc("DELETE /v1/chats/{chat}/messages/{message}", a.authed(a.redact))
@@ -331,6 +333,64 @@ func (a *API) messages(w http.ResponseWriter, r *http.Request) {
 		items = append(items, a.messageJSON(r.Context(), net, room, e, reactions[e.ID], names))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// paginate brings in the chat's next batch of older messages from its network (what Beeper does when you scroll back):
+// `{"hasMore": bool}` once they are in the chat's messages. A network that has to ask the phone first (WhatsApp, for
+// what is older than its first sync) answers `hasMore` while the phone sends them; they come in shortly after.
+func (a *API) paginate(w http.ResponseWriter, r *http.Request) {
+	room, net := a.chat(w, r)
+	if room == nil {
+		return
+	}
+	ctx := r.Context()
+	portal, err := net.Bridge.GetPortalByMXID(ctx, room.ID)
+	if err != nil || portal == nil {
+		writeError(w, http.StatusNotFound, "no such chat")
+		return
+	}
+	var source *bridgev2.UserLogin
+	if logins, err := net.Bridge.GetUserLoginsInPortal(ctx, portal.PortalKey); err == nil {
+		for _, login := range logins {
+			if login.Client != nil && login.Client.IsLoggedIn() {
+				source = login
+				break
+			}
+		}
+	}
+	if source == nil {
+		writeError(w, http.StatusConflict, "the account of this chat is not linked")
+		return
+	}
+	task, err := net.Bridge.DB.BackfillTask.GetNextForPortal(ctx, portal.PortalKey, false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if task == nil || task.IsDone {
+		writeJSON(w, http.StatusOK, map[string]any{"hasMore": false})
+		return
+	}
+	done := make(chan error, 1)
+	net.Bridge.WakeupBackfillQueue(&bridgev2.ManualBackfill{Source: source, Portal: portal, DoneCallback: func(err error) {
+		select {
+		case done <- err:
+		default:
+		}
+	}})
+	select {
+	case err = <-done:
+	case <-time.After(60 * time.Second):
+		err = errors.New("the network did not answer in time")
+	case <-ctx.Done():
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	next, err := net.Bridge.DB.BackfillTask.GetNextForPortal(ctx, portal.PortalKey, false)
+	writeJSON(w, http.StatusOK, map[string]any{"hasMore": err == nil && next != nil && !next.IsDone})
 }
 
 func (a *API) messageJSON(ctx context.Context, net *Network, room *Room, e *Stored, reactions []*Stored, names map[id.UserID]string) map[string]any {

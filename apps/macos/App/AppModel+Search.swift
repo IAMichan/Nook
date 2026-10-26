@@ -124,6 +124,8 @@ extension AppModel {
 
     /// The text of a session's timeline worth finding: what you asked, what the agent said, what failed, which tools ran.
     /// Thinking and tool output stay out; they drown the conversation.
+    nonisolated static let toolPassageLimit = 1_000
+
     nonisolated static func searchPassages(_ events: [RunEvent], run: WorkspaceRun) -> [SearchPassage] {
         events.compactMap { event in
             let text = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -133,9 +135,11 @@ extension AppModel {
             case .assistant, .result, .error:
                 return SearchPassage(text: text, author: run.provider.displayName, date: event.date, anchor: event.id.uuidString)
             case .tool, .fileChange:
+                // A tool's output can run to hundreds of KB, and every session's passages stay in memory for the next
+                // search (`SearchCenter.transcripts`): its start is enough to find it by.
                 let line = [event.tool ?? "", text, event.kind == .fileChange ? (event.detail ?? "") : ""]
                     .filter { !$0.isEmpty }.joined(separator: " ")
-                return SearchPassage(text: line, author: run.provider.displayName, date: event.date, anchor: event.id.uuidString)
+                return SearchPassage(text: String(line.prefix(Self.toolPassageLimit)), author: run.provider.displayName, date: event.date, anchor: event.id.uuidString)
             case .thinking, .approval, .system: return nil
             }
         }

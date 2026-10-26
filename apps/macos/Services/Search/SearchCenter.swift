@@ -36,7 +36,9 @@ final class SearchCenter: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             self.index = first
             self.rerun()
-            // The transcripts that are not in memory, read once and kept.
+            // The transcripts that are not in memory, read once and kept; a session that was deleted lets go of its own.
+            let known = Set(app.workspace.runs.map(\.id))
+            Self.transcripts = Self.transcripts.filter { known.contains($0.key) }
             let missing = app.workspace.runs.filter { run in Self.transcripts[run.id]?.updated != run.updatedAt && app.workspace.events[run.id] == nil }
             for run in missing {
                 guard !Task.isCancelled else { return }

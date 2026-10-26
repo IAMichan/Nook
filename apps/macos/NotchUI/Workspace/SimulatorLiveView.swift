@@ -39,14 +39,19 @@ struct SimulatorView: View {
                     SimulatorSnapshotView()
                 }
             case .idle:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                PatientSpinner()
             }
         }
         .task { await hub.prepare() }
+        .onAppear { hub.viewers += 1 }
         .onReceive(NotificationCenter.default.publisher(for: .nookOpenSimulator)) { note in
             if let udid = note.object as? String { choose(udid, alreadyOpen: true) }
         }
-        .onDisappear { stream.stop() }
+        .onDisappear {
+            stream.stop()
+            hub.viewers = max(0, hub.viewers - 1)
+            if hub.viewers == 0 { hub.stopWhenIdle() }
+        }
     }
 
     private func setupNotice(_ text: String, button: String?, action: @escaping () -> Void) -> some View {

@@ -56,6 +56,7 @@ struct ChatReplyField: View {
     private var aboveAccessory: AnyView?
     private var idleAccessory: AnyView?
     private var replacement: AnyView?
+    private var trayContent: AnyView?
     private var hasExtra = false
     private var pasted: (() -> Bool)?
 
@@ -96,6 +97,14 @@ struct ChatReplyField: View {
         return copy
     }
 
+    /// A line in the tray tucked above the box, the same tray the agents show their queued messages in (see
+    /// `ComposerTray`). Nil leaves the box without a tray.
+    func tray<Content: View>(_ content: Content?) -> Self {
+        var copy = self
+        copy.trayContent = content.map { AnyView($0) }
+        return copy
+    }
+
     /// Nothing to send: no text, nothing else waiting, and no "@nook …".
     private var empty: Bool { !asksNook && !hasExtra && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -110,10 +119,7 @@ struct ChatReplyField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if let outgoing {
-                SendingPanel(message: outgoing.text, sent: outgoing.sent, recipient: recipient)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else if showsDraft {
+            if outgoing == nil, showsDraft {
                 DraftPanel(writing: drafting, rewriting: drafting && beforeWriting != nil,
                            edited: drafted.map { $0 != text } ?? false, readyNotice: readyNotice,
                            steer: $steer, steerFocused: $steerFocused,
@@ -144,13 +150,24 @@ struct ChatReplyField: View {
                     .transition(.opacity)
             }
             if let aboveAccessory { aboveAccessory }
-            if let replacement {
-                replacement
-                    .padding(.horizontal, NookTheme.Spacing.xs)
-                    .padding(.vertical, NookTheme.Spacing.xs)
-                    .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
-            } else {
-                field
+            VStack(spacing: 0) {
+                // A message on its way takes the tray, where an agent shows its queued messages; the host's line
+                // comes back once it is there.
+                if let outgoing {
+                    ComposerTray(edge: .top) { SendingPanel(message: outgoing.text, sent: outgoing.sent, recipient: recipient) }
+                        .transition(.opacity)
+                } else if let trayContent {
+                    ComposerTray(edge: .top) { trayContent }
+                        .transition(.opacity)
+                }
+                if let replacement {
+                    replacement
+                        .padding(.horizontal, NookTheme.Spacing.xs)
+                        .padding(.vertical, NookTheme.Spacing.xs)
+                        .cardBackground(NookTheme.field, stroke: NookTheme.fieldStroke, radius: NookTheme.Radius.sheet)
+                } else {
+                    field
+                }
             }
         }
         .animation(NookTheme.reveal, value: showsDraft)
@@ -541,7 +558,7 @@ struct ChatSending: Equatable {
     var sent = false
 }
 
-/// Above the field while a message is sent: a paper plane that glides, who it goes to, and the message itself; once
+/// In the tray above the field while a message is sent: a paper plane that glides, who it goes to, and the message itself; once
 /// it is there, a check in its place.
 private struct SendingPanel: View {
     let message: String
@@ -554,11 +571,12 @@ private struct SendingPanel: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
+        // The same row as the queued messages' header in an agent's tray (see `QueuedMessagesStrip`).
+        HStack(spacing: NookTheme.Spacing.sm) {
             Group {
                 if sent {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(NookTheme.font(13, .semibold))
+                        .font(NookTheme.font(12, .semibold))
                         .foregroundStyle(NookTheme.mint)
                         .transition(.scale.combined(with: .opacity))
                 } else {
@@ -566,33 +584,30 @@ private struct SendingPanel: View {
                         .transition(.opacity)
                 }
             }
-            .frame(width: 18, height: 18)
+            .frame(width: 16, height: 16)
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            Group {
                 if sent {
-                    Text(title)
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.paper)
-                        .lineLimit(1)
+                    Text(title).foregroundStyle(NookTheme.textSecondary)
                 } else {
                     ShimmerText(text: title)
-                        .font(NookTheme.TextStyle.label)
-                        .lineLimit(1)
                 }
-                Text(message)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            .font(NookTheme.TextStyle.label)
+            .lineLimit(1)
+            .layoutPriority(1)
+            Spacer(minLength: 8)
+            Text(message)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .padding(NookTheme.Spacing.md)
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, 3)
         .overlay(alignment: .bottom) {
             if !sent { SendingSweep().padding(.horizontal, NookTheme.Spacing.md) }
         }
-        .cardBackground(NookTheme.mint.opacity(0.07), stroke: NookTheme.mint.opacity(0.2), radius: NookTheme.Radius.panel,
-                        style: .continuous)
         .animation(NookTheme.reveal, value: sent)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title + ": " + message)
@@ -602,10 +617,13 @@ private struct SendingPanel: View {
 /// A paper plane that lifts off, flies out and comes back in, over and over while a message is sent; still with
 /// Reduce Motion.
 private struct GlidingPlane: View {
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
             let phase = reduceMotion ? 0.35 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
             // Out to the top right while it fades, then in again from the bottom left.
             let travel = (phase - 0.35) * 14
@@ -622,11 +640,14 @@ private struct GlidingPlane: View {
 
 /// A short light that runs along the bottom of the sending panel, so it reads as under way even for a slow send.
 private struct SendingSweep: View {
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
         GeometryReader { proxy in
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
                 let phase = reduceMotion ? 0.5 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
                 let width = proxy.size.width * 0.3
                 Capsule()
@@ -644,10 +665,13 @@ private struct SendingSweep: View {
 
 /// Three dots that rise in turn while Nook writes; still with Reduce Motion.
 private struct WritingDots: View {
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        let rate = energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended)
+        TimelineView(.nookFrames(fps: rate, paused: reduceMotion || energy.plan.pace == .paused)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(0..<3) { index in

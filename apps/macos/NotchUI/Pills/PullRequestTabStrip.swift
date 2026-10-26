@@ -7,9 +7,9 @@ struct OpenPullRequest: Identifiable, Equatable {
     var id: String { account + " " + item.id }
 }
 
-/// The pull requests you opened, as tabs above the one you read: each with its state mark, number and title, and a
-/// close button on the open tab or under the pointer. The right-click menu closes it, the others, the ones to its
-/// right, or all of them.
+/// The pull requests you opened, as tabs above the one you read them: each its state mark and
+/// number (the title in its tooltip), the mark turning into a close button under the pointer. The right-click menu
+/// closes it, the others, the ones to its right, or all of them.
 struct PullRequestTabStrip: View {
     let tabs: [OpenPullRequest]
     let active: String?
@@ -32,7 +32,7 @@ struct PullRequestTabStrip: View {
                 if let id { withAnimation(NookTheme.scroll) { proxy.scrollTo(id) } }
             }
         }
-        .frame(height: 30)
+        .frame(height: 28)
     }
 
     @ViewBuilder
@@ -56,58 +56,42 @@ private struct PullRequestTab: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            Button(action: select) {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    PullRequestStateGlyph(glyph: glyph, size: 12, lineWidth: 1.5, nodeRadius: 1.8)
-                        .foregroundStyle(tint)
-                        .frame(width: 12, height: 12)
-                    Text("#\(tab.item.number)").font(NookTheme.mono(11, .medium)).monospacedDigit()
-                        .foregroundStyle(NookTheme.textTertiary)
-                    Text(tab.item.title.isEmpty ? tab.item.repo : tab.item.title)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(active ? NookTheme.paper : NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: 160, alignment: .leading)
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            // The state's mark, which turns into the close button under the pointer, as on tabs.
+            Button(action: close) {
+                Group {
+                    if hovering {
+                        Image(systemName: "xmark").font(NookTheme.font(8.5, .bold)).foregroundStyle(NookTheme.textSecondary)
+                    } else {
+                        PullRequestStateIcon(glyph: tab.item.stateGlyph)
+                    }
                 }
+                .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(tab.item.repo + " #\(tab.item.number)")
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(NookTheme.font(8.5, .bold))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .frame(width: 14, height: 14)
+            .help(tr("agents.pulls.tabs.close"))
+            .accessibilityLabel(tr("agents.pulls.tabs.close"))
+            Button(action: select) {
+                Text("#\(tab.item.number)")
+                    .font(NookTheme.font(12, .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(active || hovering ? NookTheme.paper : NookTheme.textTertiary)
+                    .lineLimit(1)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .opacity(active || hovering ? 1 : 0)
-            .help(tr("agents.pulls.tabs.close"))
-            .accessibilityLabel(tr("agents.pulls.tabs.close"))
         }
-        .padding(.leading, NookTheme.Spacing.sm)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .frame(height: 26)
+        .padding(.leading, NookTheme.Spacing.xs)
+        .padding(.trailing, NookTheme.Spacing.md)
+        .frame(height: 24)
+        .frame(maxWidth: 144)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
             .fill(NookTheme.rowFill(selected: active, hovering: hovering, rest: .clear)))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
         .onHover { hovering = $0 }
+        .help(tab.item.repo + " #\(tab.item.number)" + (tab.item.title.isEmpty ? "" : " · " + tab.item.title))
         .accessibilityAddTraits(active ? .isSelected : [])
-    }
-
-    private var glyph: PullRequestBadge.Glyph {
-        switch tab.item.state {
-        case .merged: return .merged
-        case .closed: return .closed
-        case .open: return tab.item.draft ? .draft : .open
-        }
-    }
-
-    private var tint: Color {
-        switch tab.item.state {
-        case .merged: return NookTheme.violet
-        case .closed: return NookTheme.coralSoft
-        case .open: return tab.item.draft ? NookTheme.textTertiary : NookTheme.mint
-        }
     }
 }

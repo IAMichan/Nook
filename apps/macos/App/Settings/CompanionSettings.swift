@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 
 /// Settings for the iPhone companion: switch it on, pair a phone (QR code or link, valid for five minutes) and remove phones.
@@ -6,9 +7,14 @@ struct CompanionSettingsRows: View {
     @ObservedObject private var store = CompanionStore.shared
     @ObservedObject private var server = CompanionServer.shared
     @ObservedObject private var notifier = CompanionNotifier.shared
+    @ObservedObject private var relay = CompanionRelayClient.shared
+    @ObservedObject private var awake = KeepAwake.shared
     @State private var keyProblem = false
     @State private var link: PairingLink?
     @State private var copied = false
+    /// The Cloudflare token being pasted, and the address of a relay set up some other way.
+    @State private var token = ""
+    @State private var manualAddress = ""
 
     var body: some View {
         // Three sections instead of one long row: the phone and its pairing, push notifications, and the key push
@@ -44,6 +50,7 @@ struct CompanionSettingsRows: View {
         .onChange(of: store.enabled) { _, on in if !on { link = nil } }
 
         if store.enabled {
+            Section { awayFromHome } header: { Text(tr("companion.away.title")) }
             Section { pushSection }
             if store.push.enabled {
                 Section { apnsSetup } header: { Text(tr("companion.push.keyTitle")) }
@@ -126,10 +133,116 @@ struct CompanionSettingsRows: View {
 
     private var isListening: Bool { if case .listening = server.state { return true }; return false }
 
+    /// Reaching this Mac outside the home network: one switch for a relay (Nook's, or one Settings sets up on the user's
+    /// own Cloudflare account), and whether Tailscale runs here.
+    @ViewBuilder
+    private var awayFromHome: some View {
+        SettingToggle(tr("companion.relay.enable"),
+                      detail: CompanionRelayClient.nookRelay == nil ? tr("companion.relay.hint.own") : tr("companion.relay.hint"),
+                      isOn: $relay.enabled)
+        if relay.enabled {
+            if CompanionRelayClient.nookRelay != nil {
+                Picker(tr("companion.relay.which"), selection: $relay.mode) {
+                    Text(tr("companion.relay.mode.nook")).tag(CompanionRelayClient.Mode.nook)
+                    Text(tr("companion.relay.mode.own")).tag(CompanionRelayClient.Mode.own)
+                }
+                .pickerStyle(.segmented)
+            }
+            if relay.mode == .own { ownRelay }
+            relayStatus
+        }
+        keepAwake
+        if case .listening = server.state {
+            let tailnet = server.endpoints().filter { $0.tailnet == true }.map(\.host)
+            if tailnet.isEmpty {
+                SettingNote(tr("companion.tailscale.off"))
+            } else {
+                SettingNote(tr("companion.tailscale.on", tailnet.joined(separator: ", ")), tone: .success)
+            }
+        }
+    }
+
+    /// A Mac that sleeps cannot be reached: Nook keeps it awake while it may be needed (`KeepAwake`).
+    @ViewBuilder
+    private var keepAwake: some View {
+        Picker(tr("companion.awake.title"), selection: $awake.mode) {
+            Text(tr("companion.awake.off")).tag(KeepAwakePolicy.Mode.off)
+            Text(tr("companion.awake.working")).tag(KeepAwakePolicy.Mode.whileWorking)
+            Text(tr("companion.awake.always")).tag(KeepAwakePolicy.Mode.always)
+        }
+        SettingNote(tr("companion.awake.hint"))
+        switch awake.decision.reason {
+        case .working?: SettingNote(tr("companion.awake.now.working"), tone: .success)
+        case .phone?: SettingNote(tr("companion.awake.now.phone"), tone: .success)
+        case .always?: SettingNote(tr("companion.awake.now.always"), tone: .success)
+        case nil: EmptyView()
+        }
+    }
+
+    /// The user's own relay: set up in two steps (open Cloudflare, paste the token), or the one already set up.
+    @ViewBuilder
+    private var ownRelay: some View {
+        if relay.address.isEmpty {
+            SettingNote(tr("companion.relay.setup.intro"))
+            Button(tr("companion.relay.setup.open")) { NSWorkspace.shared.open(CloudflareRelaySetup.tokenPage) }
+            HStack(spacing: NookTheme.Spacing.md) {
+                SecureField(tr("companion.relay.setup.token"), text: $token).textFieldStyle(.roundedBorder)
+                Button(tr("companion.relay.setup.go")) {
+                    relay.setUp(token: token)
+                    token = ""
+                }
+                .disabled(token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || settingUp)
+            }
+            switch relay.setup {
+            case .working(.account): SettingNote(tr("companion.relay.setup.account"))
+            case .working(.uploading): SettingNote(tr("companion.relay.setup.uploading"))
+            case .working(.starting): SettingNote(tr("companion.relay.setup.starting"))
+            case .failed(let message): SettingNote(tr("companion.relay.setup.failed", message), tone: .error)
+            case .idle: EmptyView()
+            }
+            DisclosureGroup(tr("companion.relay.setup.manual")) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    TextField(tr("companion.relay.address"), text: $manualAddress).textFieldStyle(.roundedBorder)
+                    Button(tr("companion.relay.setup.use")) {
+                        relay.address = manualAddress
+                        manualAddress = ""
+                    }
+                    .disabled(CompanionRelay.normalize(manualAddress) == nil)
+                }
+            }
+        } else {
+            HStack(spacing: NookTheme.Spacing.md) {
+                SettingNote(tr("companion.relay.own.address", relay.address))
+                Spacer()
+                Button(tr("companion.relay.own.change")) { relay.forgetOwnRelay() }
+            }
+        }
+    }
+
+    private var settingUp: Bool {
+        if case .working = relay.setup { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var relayStatus: some View {
+        switch relay.status {
+        case .connected: SettingNote(tr("companion.relay.connected"), tone: .success)
+        case .connecting: SettingNote(tr("companion.relay.connecting"))
+        case .invalid:
+            if relay.mode == .own, !relay.address.isEmpty { SettingNote(tr("companion.relay.invalid"), tone: .error) }
+        case .failed(let message): SettingNote(tr("companion.relay.failed", message), tone: .error)
+        case .off: EmptyView()
+        }
+    }
+
     @ViewBuilder
     private var status: some View {
         switch server.state {
-        case .listening(let port): SettingNote(tr("companion.listening", Int(port)), tone: .success)
+        case .listening(let port):
+            SettingNote(tr("companion.listening", Int(port)), tone: .success)
+            let places = server.endpoints().map { $0.tailnet == true ? tr("companion.reachable.tailnet", $0.host) : $0.host }
+            if !places.isEmpty { SettingNote(tr("companion.reachable", places.joined(separator: ", "))) }
         case .failed(let message): SettingNote(tr("companion.failed", message), tone: .error)
         case .stopped: EmptyView()
         }
@@ -140,7 +253,7 @@ struct CompanionSettingsRows: View {
             if let url = link.url, let code = QRCodeView(text: url.absoluteString, side: 140, label: tr("companion.qr")) {
                 code
             }
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 Text(tr("companion.pairSteps")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textStrong).fixedSize(horizontal: false, vertical: true)
                 Button(copied ? tr("companion.copied") : tr("companion.copyLink")) {
                     if let url = link.url {

@@ -24,6 +24,7 @@ import (
 	slack "go.mau.fi/mautrix-slack/pkg/connector"
 	telegram "go.mau.fi/mautrix-telegram/pkg/connector"
 	twitter "go.mau.fi/mautrix-twitter/pkg/connector"
+	whatsapp "go.mau.fi/mautrix-whatsapp/pkg/connector"
 )
 
 // Network is one chat app the helper links, run by its own bridgev2 bridge with its own database.
@@ -46,7 +47,10 @@ type Network struct {
 
 func allNetworks() []*Network {
 	tg := &telegram.TelegramConnector{}
+	wa := &whatsapp.WhatsAppConnector{}
 	return []*Network{
+		{ID: "local-whatsapp", App: "whatsapp", Name: "WhatsApp", Flows: []string{whatsapp.LoginFlowIDQR}, Connector: wa,
+			Configure: func() error { return whatsAppSettings(wa) }},
 		{ID: "local-telegram", App: "telegram", Name: "Telegram", Flows: []string{telegram.LoginFlowIDPhone}, Connector: tg,
 			Configure: func() error { return telegramSettings(tg) }},
 		{ID: "local-signal", App: "signal", Name: "Signal", Flows: []string{"qr"}, Connector: &signal.SignalConnector{}},
@@ -77,6 +81,17 @@ func telegramSettings(tg *telegram.TelegramConnector) error {
 	return nil
 }
 
+// whatsAppSettings asks the phone for a year of history when you link it, as Beeper does, and for what is older than
+// that only when you scroll back to it.
+func whatsAppSettings(wa *whatsapp.WhatsAppConnector) error {
+	wa.Config.HistorySync.RequestFullSync = true
+	wa.Config.HistorySync.BackwardsOnDemand = true
+	return nil
+}
+
+// paginateBatch is how many older messages one scroll back asks a network for.
+const paginateBatch = 50
+
 // bridgeConfig is the same for every network: one local user (you) who may do everything, chats named after the
 // person in a private chat, some history on the first sync, and the chats of an account removed when you unlink it.
 func bridgeConfig() *bridgeconfig.BridgeConfig {
@@ -90,8 +105,10 @@ func bridgeConfig() *bridgeconfig.BridgeConfig {
 		Permissions: bridgeconfig.PermissionConfig{
 			"*": &bridgeconfig.Permissions{SendEvents: true, Login: true, DoublePuppet: true, Admin: true},
 		},
+		// Older messages come in when you scroll back to them (`POST /v1/chats/{chat}/paginate`), a batch at a time.
 		Backfill: bridgeconfig.BackfillConfig{
 			Enabled: true, MaxInitialMessages: 50, MaxCatchupMessages: 500, UnreadHoursThreshold: 720,
+			Queue: bridgeconfig.BackfillQueueConfig{Manual: true, BatchSize: paginateBatch},
 		},
 	}
 }

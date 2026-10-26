@@ -1,0 +1,266 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Nook README Clip</title>
+<link rel="stylesheet" href="../kit/nook-video.css">
+<style>
+  /* A landscape README clip, laid out like docs/assets/release-banner.png: the words on the left,
+     the notch hanging from the menu bar on the right. */
+  html, body { width:1600px; height:900px; }
+  #glow { background: radial-gradient(760px 560px at 70% 30%, rgba(244,243,247,.07) 0%, rgba(244,243,247,0) 70%); }
+  .menubar { height:56px; font-size:21px; gap:40px; padding:0 44px; border-bottom-width:1px; }
+  #wrap { left:1060px; top:0; width:960px; transform-origin:50% 0; }
+  #notch { top:0; }
+  #notchInner { position:absolute; left:0; top:0; width:960px; padding:40px 40px 36px; }
+  .tabs { position:relative; }
+  .tabs span.tab { padding:12px 26px; position:relative; z-index:1; }
+  .tabs span.tab.on { color:var(--paper); font-weight:500; }
+  #pill { position:absolute; top:50%; height:62px; margin-top:-31px; background:var(--smoke); border-radius:var(--r-pill); z-index:0; }
+  .row { padding:26px 32px; }
+  .row .t { font-size:38px; } .row .d { font-size:31px; }
+  .composer { font-size:32px; padding:20px 34px; }
+  .caret { height:34px; }
+  #burst { left:0; top:0; width:0; height:0; z-index:5; }
+
+  .left { left:84px; width:700px; }
+  .h1 { font-size:84px; letter-spacing:-2.5px; line-height:1.05; }
+  .h2 { font-size:34px; margin-top:22px; }
+  .scene { top:300px; }
+  #s5 { top:280px; }
+  #tags { display:flex; flex-wrap:wrap; gap:14px; margin-top:40px; }
+  #tags .tag { font-size:28px; padding:12px 26px; }
+  #bigOrb { left:910px; top:280px; }
+  #burst2 { left:1060px; top:430px; width:0; height:0; }
+
+  /* End card */
+  .cta { padding-bottom:30px; }
+  .brand { display:flex; align-items:center; gap:34px; }
+  .brand .name { font-size:150px; font-weight:700; letter-spacing:-5px; }
+  #ctaLine { margin-top:36px; font-size:40px; color:var(--secondary); }
+  .cta .url { margin-top:48px; font-size:34px; padding:22px 44px; }
+  #ctaFoot { margin-top:38px; font-size:26px; color:var(--tertiary); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="menubar" class="abs menubar"><b>Finder</b><span>File</span><span>Edit</span><span class="clock">Thu 09:41</span></div>
+
+  <!-- The notch -->
+  <div id="wrap" class="abs">
+    <div id="notch" class="abs notch">
+      <div id="notchInner">
+        <div class="tabs" id="tabs">
+          <div class="orb" id="nookOrb" style="--d:88px;margin-right:10px"><i></i><i></i></div>
+          <div id="pill"></div>
+          <span class="tab">Nook</span><span class="tab">Chat</span><span class="tab">Agents</span><span class="tab">Music</span><span class="tab">Shelf</span>
+          <span class="count" id="count"></span>
+        </div>
+        <div style="margin-top:22px">
+          <div class="row" id="row1"><div class="dot" id="dot1"></div><div><div class="t" id="t1"></div><div class="d" id="d1"></div></div><div class="when" id="w1"></div><div class="chip" id="c1"></div></div>
+          <div class="row" id="row2"><div class="dot" id="dot2"></div><div><div class="t" id="t2"></div><div class="d" id="d2"></div></div><div class="when" id="w2"></div><div class="chip" id="c2"></div></div>
+          <div class="row" id="row3"><div class="dot" id="dot3"></div><div><div class="t" id="t3"></div><div class="d" id="d3"></div></div><div class="when" id="w3"></div><div class="chip" id="c3"></div></div>
+        </div>
+        <div class="composer" id="composer"><span class="typed" id="typed"></span><span class="caret" id="caret"></span><span id="hint">Ask Nook anything…</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="burst" class="abs"></div>
+
+  <!-- Scene 1, on screen from the very first frame -->
+  <div id="s1" class="abs left scene"><div class="h1">This lives in<br><span class="muted">your notch.</span></div></div>
+  <!-- Scene 2 -->
+  <div id="s2" class="abs left scene"><div class="h1" id="s2a">Ask anything.</div><div class="h2" id="s2b">It already knows your day.</div></div>
+  <!-- Scene 3 -->
+  <div id="s3" class="abs left scene"><div class="h1" id="s3a">Your agents,<br><span class="muted">in one place.</span></div></div>
+  <!-- Scene 4 -->
+  <div id="s4" class="abs left scene"><div class="h1" id="s4a">Every chat.<br><span class="muted">One inbox.</span></div></div>
+  <!-- Scene 5 -->
+  <div id="s5" class="abs left"><div class="h1" id="s5a">Local-first.<br><span class="muted">Open source.</span></div>
+    <div id="tags"><span class="tag">Apple Silicon</span><span class="tag">macOS 15 or newer</span><span class="tag">MIT</span></div></div>
+  <div class="orb abs" id="bigOrb" style="--d:300px"><i></i><i></i></div>
+  <div id="burst2" class="abs"></div>
+  <!-- Scene 6: the end card -->
+  <div id="cta" class="abs cta">
+    <div class="brand"><div class="orb glow" id="ctaOrb" style="--d:150px"><i></i><i></i></div><div class="name" id="ctaName">Nook</div></div>
+    <div id="ctaLine">Your AI assistant and coding-agent command center, in the notch.</div>
+    <div class="url" id="ctaUrl">github.com/IAMichan/nook</div>
+    <div id="ctaFoot">Apple Silicon · macOS 15 or newer · local-first</div>
+  </div>
+</div>
+
+<script src="../kit/nook-video.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const { prog, settle, pop, ease, lerp, fade, state, orb, words, sparks, clamp, swapText } = NV;
+// 80 BPM: a beat is 0.75 s, a bar 3 s. The drums play from the first frame; there is no intro.
+const T = NV.tempo(80), B = n => T.at(n), BAR = n => T.bar(n);
+const SCALE = 0.78;
+
+// Scenes: the hook, ask anything, agents, chats, local-first, the end card.
+const S2 = B(5), S3 = B(11), S4 = B(16), S5 = B(21), S6 = B(26);
+const HOOK_MERGE = B(2);
+const QUESTION = "What's on my calendar today?", Q_AT = S2 + B(1), ANSWER = S2 + B(3);
+const AGENT_DONE = S3 + B(2), ALLOW = S3 + B(3);
+const SNAP = { dur: 0.6 };
+const TAB = t => t < S2 ? 0 : t < S3 ? 0 : t < S4 ? 2 : 1;
+
+function setRow(n, s, title, sub, when, word) {
+  $('t' + n).textContent = title; $('d' + n).textContent = sub; $('w' + n).textContent = when;
+  state($('dot' + n), s);
+  const c = $('c' + n);
+  c.style.display = word ? '' : 'none';
+  if (word) state(c, s, word);
+}
+function chipPulse(id, t, times) {
+  $(id).style.transform = '';
+  times.forEach(at => { const p = prog(t, at, 0.4); if (p > 0 && p < 1) $(id).style.transform = `scale(${1 + 0.14 * Math.sin(p * Math.PI)})`; });
+}
+// Rows arrive one by one at the start of a scene and leave together just before its end.
+function rowsIn(t, at, outAt, gap = B(0.5)) {
+  [1, 2, 3].forEach(n => fade($('row' + n), t, at + (n - 1) * gap, outAt, { rise: 30, dur: 0.45, outDur: 0.25 }));
+}
+
+function notchContent(t) {
+  $('typed').textContent = ''; $('hint').style.display = ''; $('caret').style.display = 'none';
+  if (t < S2 + B(2.5)) {
+    // The hook: three things land in the notch on the first beats, and the pull request merges on the third.
+    setRow(1, 'done', 'Claude Code · nook', 'Refactor finished, tests pass', '2m', 'Done');
+    setRow(2, 'waiting', 'Sam', 'Are we still on for tonight?', 'now', 'Waiting');
+    const m = t >= HOOK_MERGE;
+    setRow(3, m ? 'merged' : 'open', 'PR #642', 'Load older WhatsApp messages', 'now', m ? 'Merged' : 'Open');
+    $('count').textContent = `${[0.05, B(1), B(1.5)].filter(a => t >= a).length} new`;
+    [[1, 0.05], [2, B(1)], [3, B(1.5)]].forEach(([n, at]) => fade($('row' + n), t, at, S2 + B(2.5) - 0.3, { rise: 30, dur: 0.45, outDur: 0.25 }));
+    chipPulse('c3', t, [HOOK_MERGE]);
+  } else if (t < S3) {
+    // Ask anything: the answer comes from Calendar and Reminders.
+    setRow(1, 'info', 'Standup', 'Calendar · in 20 minutes', '10:00');
+    setRow(2, 'info', 'Design review', 'Calendar · with Sam', '14:30');
+    setRow(3, 'info', 'Reply to Sam', 'Reminders · due today', '18:00');
+    $('count').textContent = '';
+    rowsIn(t, ANSWER, S3 - 0.3, B(0.5));
+  } else if (t < S4) {
+    // Agents: Claude Code finishes, Codex waits for you, you allow it and it gets back to work.
+    const done = t >= AGENT_DONE, allowed = t >= ALLOW;
+    setRow(1, done ? 'done' : 'running', 'Claude Code · nook', done ? 'Refactor finished, tests pass' : 'Refactoring the shelf…', done ? 'now' : '4m', done ? 'Done' : 'Working');
+    setRow(2, allowed ? 'running' : 'waiting', 'Codex · api', allowed ? 'Running the migration…' : 'Wants to run the migration', 'now', allowed ? 'Working' : 'Waiting');
+    setRow(3, 'running', 'Gemini CLI · docs', 'Writing the changelog…', '1m', 'Working');
+    $('count').textContent = '3 agents';
+    rowsIn(t, S3 + 0.05, S4 - 0.3, 0.2);
+    chipPulse('c1', t, [AGENT_DONE]); chipPulse('c2', t, [ALLOW]);
+  } else {
+    // Chats: every app in one list.
+    setRow(1, 'waiting', 'Sam · WhatsApp', 'Are we still on for tonight?', 'now', 'Waiting');
+    setRow(2, 'waiting', 'Lena · Telegram', 'Sent you the slides', '5m', 'Waiting');
+    setRow(3, 'read', 'Design team · Slack', 'Standup moved to 10:15', '12m');
+    $('count').textContent = '2 new';
+    rowsIn(t, S4 + 0.05, S5 - 0.4, 0.2);
+  }
+  // The question is typed into the composer in scene 2.
+  if (t >= Q_AT - 0.2 && t < S3) {
+    $('hint').style.display = 'none';
+    NV.type($('typed'), QUESTION, t, Q_AT, 22);
+    $('caret').style.display = t < ANSWER && Math.floor(t * 2.6) % 2 === 0 ? '' : (t < Q_AT + QUESTION.length / 22 ? '' : 'none');
+  }
+}
+
+function tabs(t) {
+  const spans = Array.from(document.querySelectorAll('#tabs .tab'));
+  const k = TAB(t), changes = [S3, S4];
+  let from = k;
+  changes.forEach(c => { if (t >= c && t < c + 0.6) from = TAB(c - 0.01); });
+  const at = changes.find(c => t >= c && t < c + 0.6);
+  const p = at == null ? 1 : settle(prog(t, at, 0.45));
+  const a = spans[from], b = spans[k];
+  const pill = $('pill');
+  pill.style.left = lerp(a.offsetLeft, b.offsetLeft, p) + 'px';
+  pill.style.width = lerp(a.offsetWidth, b.offsetWidth, p) + 'px';
+  spans.forEach((s, i) => s.classList.toggle('on', i === k));
+}
+
+function render(t) {
+  // The notch: already opening on frame one, there for scenes 1–4, away for the last two.
+  tabs(t);
+  notchContent(t);
+  const open = pop(prog(t, 0, 0.5));
+  const gone = ease(prog(t, S5 - 0.3, 0.45));
+  const n = $('notch'), inner = $('notchInner');
+  n.style.width = lerp(330, 960, open) + 'px';
+  n.style.height = lerp(70, inner.offsetHeight, open) + 'px';
+  const r = lerp(36, 62, clamp(open));
+  n.style.borderRadius = `0 0 ${r}px ${r}px`;
+  n.style.opacity = 1 - gone;
+  $('wrap').style.transform = `translateX(-50%) translateY(${gone * -60}px) scale(${SCALE * lerp(1, 0.96, gone)})`;
+  inner.style.opacity = clamp(prog(t, 0.05, 0.25));
+  $('menubar').style.opacity = 1 - ease(prog(t, S6 - 0.3, 0.4));
+  const celebrating = t >= HOOK_MERGE && t < HOOK_MERGE + 1.2;
+  const thinking = t >= Q_AT + 1.0 && t < ANSWER;
+  const proud = t >= AGENT_DONE && t < AGENT_DONE + 1.2;
+  orb($('nookOrb'), t, { mood: celebrating ? 'celebrate' : thinking ? 'think' : proud ? 'done' : 'rest', blinkOffset: 2.6 });
+  // The sparks burst from Nook in the notch.
+  const o = $('nookOrb').getBoundingClientRect();
+  $('burst').style.left = (o.left + o.width / 2) + 'px'; $('burst').style.top = (o.top + o.height / 2) + 'px';
+  sparks($('burst'), t, HOOK_MERGE, { reach: 150, life: 1.1 });
+
+  // Scene 1: the line is there on the first frame, so a reader takes it in before anything else.
+  const s1 = $('s1');
+  s1.style.opacity = 1 - ease(prog(t, S2 - 0.3, 0.3));
+  s1.style.transform = `scale(${lerp(1.04, 1, settle(prog(t, 0, 0.6)))})`;
+  s1.style.transformOrigin = '0 50%';
+
+  words($('s2a'), t, S2 + 0.05, 0.15, S3 - 0.3, SNAP);
+  words($('s2b'), t, S2 + B(1), 0.12, S3 - 0.3, SNAP);
+  words($('s3a'), t, S3 + 0.05, 0.15, S4 - 0.3, SNAP);
+  words($('s4a'), t, S4 + 0.05, 0.15, S5 - 0.3, SNAP);
+
+  // Scene 5: Nook steps forward, proud of being yours.
+  words($('s5a'), t, S5 + 0.05, 0.15, S6 - 0.3, SNAP);
+  document.querySelectorAll('#tags .tag').forEach((tag, i) => {
+    const p = pop(prog(t, S5 + B(1.5) + i * 0.25, 0.5));
+    tag.style.opacity = clamp(p) * (1 - ease(prog(t, S6 - 0.3, 0.3)));
+    tag.style.transform = `translateY(${(1 - p) * 24}px) scale(${lerp(0.85, 1, p)})`;
+  });
+  const bo = $('bigOrb');
+  const bin = pop(prog(t, S5 + 0.2, 0.6)), bout = ease(prog(t, S6 - 0.3, 0.3));
+  orb(bo, t, { mood: t > S5 + B(3) ? 'proud' : 'rest', scale: lerp(0.5, 1, bin), look: { x: t < S5 + B(2) ? -0.8 : 0, y: 0 }, blinkOffset: 1.7 });
+  bo.style.opacity = clamp(bin) * (1 - bout);
+  sparks($('burst2'), t, S5 + B(3), { reach: 260, life: 1.2, seed: 5 });
+
+  // Scene 6: the end card. Nook pops in and winks.
+  $('cta').style.opacity = ease(prog(t, S6, 0.35));
+  const co = $('ctaOrb');
+  const wink = Math.sin(Math.PI * clamp(prog(t, S6 + B(4), 0.5)));
+  orb(co, t, { scale: lerp(0.6, 1, pop(prog(t, S6, 0.7))), wink, blinkOffset: 0.4 });
+  words($('ctaName'), t, S6 + 0.1, 0.15, null, SNAP);
+  fade($('ctaLine'), t, S6 + B(1), null, SNAP);
+  fade($('ctaUrl'), t, S6 + B(2), null, SNAP);
+  fade($('ctaFoot'), t, S6 + B(3), null, SNAP);
+
+  // The light behind everything lifts a little on each kick while the drums play.
+  if (t < S6 + BAR(1)) {
+    const bt = t - Math.floor(t / T.beat) * T.beat, onKick = T.index(t) % 2 === 0;
+    $('glow').style.opacity = parseFloat($('glow').style.opacity || 1) + (onKick ? 0.3 * Math.exp(-bt / 0.3) : 0);
+  }
+}
+
+NV.boot({
+  duration: S6 + BAR(1) + 2.5,
+  music: { mood: 'calm', bpm: T.bpm, drumsFrom: 0, drumsUntil: S6 + BAR(1) },
+  cues: [
+    { t: 0, sound: 'chime' },
+    { t: B(1), sound: 'tick', gain: 1.5 },
+    { t: B(1.5), sound: 'tick', gain: 1.5 },
+    { t: HOOK_MERGE, sound: 'merge', gain: 0.8 },
+    { t: ANSWER, sound: 'chime', gain: 0.7 },
+    { t: AGENT_DONE, sound: 'done' },
+    { t: ALLOW, sound: 'tick', gain: 1.5 },
+    { t: S4 + 0.05, sound: 'tick', gain: 1.2 },
+    { t: S5 + B(3), sound: 'done', gain: 0.6 },
+    { t: S6 + BAR(1), sound: 'end' },
+  ],
+  render,
+});
+</script>
+</body>
+</html>

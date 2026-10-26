@@ -65,10 +65,14 @@ enum NookDates {
         }
     }
 
+    /// The locale of the app's own language, for dates shown on screen. The defaults stay Dutch for the text the brain
+    /// reads, so its prompts do not change with the interface language.
+    static var appLocale: String { I18n.shared.currentLanguage.rawValue }
+
     /// "Fri 16 Oct 14:00", with the year ("Fri 16 Oct 2027 14:00") when it is not this year.
-    static func short(_ date: Date, now: Date = Date()) -> String {
+    static func short(_ date: Date, now: Date = Date(), locale: String = "nl_NL") -> String {
         let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
-        return formatter(sameYear ? "EEE d MMM HH:mm" : "EEE d MMM yyyy HH:mm").string(from: date)
+        return formatter(sameYear ? "EEE d MMM HH:mm" : "EEE d MMM yyyy HH:mm", locale: locale).string(from: date)
     }
 
     /// How far a date is from now in whole calendar days, for the brain: "today", "tomorrow", "in 365 days", "3 days ago".
@@ -90,8 +94,8 @@ enum NookDates {
     }
 
     /// "FRI"
-    static func weekdayCaps(_ date: Date) -> String {
-        formatter("EEE").string(from: date).replacingOccurrences(of: ".", with: "").uppercased()
+    static func weekdayCaps(_ date: Date, locale: String = "nl_NL") -> String {
+        formatter("EEE", locale: locale).string(from: date).replacingOccurrences(of: ".", with: "").uppercased()
     }
 
     /// "Wednesday"
@@ -100,8 +104,8 @@ enum NookDates {
     }
 
     /// "12 Oct"
-    static func dayMonth(_ date: Date) -> String {
-        formatter("d MMM").string(from: date)
+    static func dayMonth(_ date: Date, locale: String = "nl_NL") -> String {
+        formatter("d MMM", locale: locale).string(from: date)
     }
 
     static func dayNumber(_ date: Date) -> String {
