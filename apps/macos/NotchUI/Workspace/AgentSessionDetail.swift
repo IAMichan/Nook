@@ -181,6 +181,8 @@ struct AgentSessionDetail: View {
                     pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
                     liveComposer(shown).zIndex(1)
                 }
+                // The tray keeps to the box's column, so it follows the box when that is narrower than the panel.
+                .chatColumn()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -615,6 +617,7 @@ struct AgentSessionDetail: View {
             .trailing { ComposerMic(text: $draft) }
             .zIndex(1)
             }
+            .chatColumn()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
