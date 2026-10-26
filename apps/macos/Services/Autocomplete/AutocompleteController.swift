@@ -128,7 +128,7 @@ final class AutocompleteController: ObservableObject {
     /// The context around the typed text, per field (see `prompt(for:in:)`).
     private var fieldContext: (key: String, made: Date, context: CompletionContext)?
     /// The text of the window being written in, read by autocomplete itself (Accessibility), per field (same key as
-    /// `fieldContext`). For when Nook's own screen reading has nothing for this app.
+    /// `fieldContext`). Only for when Nook's own screen reading (OCR) has nothing for this app.
     private var windowText: (key: String, text: String?)?
     /// How long the field's text was at the last prompt (same key as `fieldContext`): much shorter means a message was sent.
     private var fieldLength: (key: String, length: Int)?
@@ -1235,14 +1235,17 @@ final class AutocompleteController: ObservableObject {
             let own = snapshot.before + snapshot.after
             // The pane around the field first (the conversation, the mail being answered): it is what the text replies to.
             // Nook's own screen reading of the whole window fills in until that is read.
-            if let read = windowText, read.key == key, let text = read.text, !text.isEmpty {
+            // Like Cotypist: the screen's text comes from the picture Nook already has (one capture and recognition, shared with
+            // everything else), not from asking the app about every element. Walking its accessibility tree is the fallback for
+            // an app the picture has nothing for, and runs once per field.
+            let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            if let seen {
+                Log.autocomplete.info("window context from screen text (no accessibility read), \(seen.count) characters")
+                input.screenText = CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: "")))
+            } else if let read = windowText, read.key == key, let text = read.text, !text.isEmpty {
                 input.screenText = text
-            } else {
-                if windowText?.key != key { readWindow(key: key, app: app, own: own) }
-                let seen = screenText(bundleID).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-                if let seen {
-                    input.screenText = CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? seen : seen.replacingOccurrences(of: own, with: "")))
-                }
+            } else if windowText?.key != key {
+                readWindow(key: key, app: app, own: own)
             }
         }
         if prefs.clipboardContext {
@@ -1276,6 +1279,14 @@ final class AutocompleteController: ObservableObject {
         let pid = app.processIdentifier
         let limit = builder.maxContextLength * 3
         windowQueue.async {
+            // Measured so a change to the reading can be judged: wall time and the CPU this thread used (Console, subsystem
+            // nl.imdigital.nook, category autocomplete, "window read").
+            let started = (wall: DispatchTime.now().uptimeNanoseconds, cpu: clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID))
+            defer {
+                let wall = Double(DispatchTime.now().uptimeNanoseconds - started.wall) / 1e6
+                let cpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - started.cpu) / 1e6
+                Log.autocomplete.info("window read (accessibility): wall \(wall, format: .fixed(precision: 1)) ms, cpu \(cpu, format: .fixed(precision: 1)) ms")
+            }
             let text = AppTextReader.textAroundFocus(pid: pid, limit: limit).map { text in
                 CompletionScreenText.prose(CompletionPrivacy.sanitize(own.isEmpty ? text : text.replacingOccurrences(of: own, with: "")))
             }
