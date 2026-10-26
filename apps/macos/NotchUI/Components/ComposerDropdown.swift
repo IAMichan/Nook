@@ -331,14 +331,32 @@ struct AgentModelPicker: View {
     var comparing: Binding<[ComparisonTarget]>? = nil
     let choose: (RunProvider, String?, String?) -> Void
     @State private var query = ""
+    @Environment(\.closeDropdown) private var close
     /// Picking a model adds it to the comparison instead of replacing the chosen one.
     @State private var multi = false
 
     var body: some View {
         RailDropdown(groups: [providers], chosen: provider, help: { $0.displayName }, onShow: { _ in query = "" },
-                     icon: { AgentMark(agent: $0.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) }) { current in
+                     icon: { AgentMark(agent: $0.displayName, account: account(of: $0), size: 18, ring: DropdownStyle.panel) },
+                     footer: { addButton }) { current in
             models(of: current)
         }
+    }
+
+    /// Connecting another agent happens in Settings, as adding an external AI does for Nook's own brain.
+    private var addButton: some View {
+        Button {
+            close()
+            app.openSettings(section: .agents)
+        } label: {
+            Image(systemName: "plus")
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tr("agents.picker.add"))
     }
 
     /// The account an agent runs under from here: the chosen one for the agent in use, else the one picking it would take.
@@ -364,6 +382,7 @@ struct AgentModelPicker: View {
             DropdownDivider()
         }
         if let comparing { compareToggle(comparing) }
+        if !(providers.count > 1 || showsAccounts) || accounts.count <= 1 { DropdownHeader(title: current.displayName) }
         DropdownSearch(placeholder: tr("compose.searchModels"), text: $query)
         let shownModels = filtered(current)
         let custom = customModel(current)
@@ -377,7 +396,8 @@ struct AgentModelPicker: View {
                     && (app.workspace.sameModel(option, model, for: current) || family?.contains(model) == true)
                 let order = multi ? compareOrder(option, of: current, chosen: isChosen) : nil
                 // A model that needs a newer agent says which update unlocks it, and cannot be picked until then.
-                DropdownRow(title: name,
+                DropdownRow(brand: BrandLogo.forName(option) ?? BrandLogo.forName(name) ?? BrandLogo.forName(current.displayName),
+                            title: name,
                             detail: app.modelUpdateNote(option, for: current)
                                 ?? (family != nil || option.isEmpty || name == option ? nil : option),
                             trailing: order.map { "\($0)" }
@@ -401,6 +421,8 @@ struct AgentModelPicker: View {
                 }
             }
         }
+        DropdownDivider()
+        DropdownRow(symbol: "gearshape", title: tr("agents.picker.settings")) { app.openSettings(section: .agents) }
     }
 
     // MARK: Several models
