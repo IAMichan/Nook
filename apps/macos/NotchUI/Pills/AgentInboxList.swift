@@ -155,9 +155,15 @@ struct AgentInboxList: View {
         }
     }
 
+    @ViewBuilder
     private var emptyState: some View {
         ListEmptyNote(store.query.isEmpty ? (app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow")) : tr("inbox.noResults"),
                       padding: NookTheme.Spacing.lg)
+        // Nothing here yet: the coding agents step of the first-run flow installs or signs in an agent and adds projects.
+        if store.query.isEmpty, !app.history.loading, !app.demoMode {
+            SmallGhostButton(title: tr("onboarding.agents.setUp")) { app.startOnboarding(at: OnboardingView.agentsStep) }
+                .padding(.horizontal, NookTheme.Spacing.lg)
+        }
     }
 
     // MARK: Search

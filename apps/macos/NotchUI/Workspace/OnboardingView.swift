@@ -1,8 +1,9 @@
 import SwiftUI
 import CoreGraphics
 
-/// The first-run flow, in the main window: pick a brain that suits this Mac, allow what Nook needs, look at the optional
-/// connections. Three steps, each can be skipped; nothing is switched on without a click.
+/// The first-run flow, in the main window: pick a brain that suits this Mac, allow what Nook needs, set up your coding
+/// agents and projects, look at the optional connections. Four steps, each can be skipped; nothing is switched on without
+/// a click.
 struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
@@ -16,7 +17,9 @@ struct OnboardingView: View {
     @State private var error: String?
     @State private var tick = 0
 
-    private let steps = 3
+    private let steps = 4
+    /// The "Coding agents" step, which the empty Agents tab opens directly (`AppModel.startOnboarding(at:)`).
+    static let agentsStep = 2
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -30,6 +33,7 @@ struct OnboardingView: View {
                 switch step {
                 case 0: brainStep
                 case 1: permissionsStep
+                case Self.agentsStep: OnboardingAgentsStep()
                 default: connectionsStep
                 }
             }
@@ -47,7 +51,8 @@ struct OnboardingView: View {
             }
         }
         .padding(NookTheme.Spacing.xxl)
-        .frame(width: 560, height: 440)
+        .frame(width: 560, height: 480)
+        .onAppear { step = min(max(app.onboardingStep, 0), steps - 1) }
         .task { recommendations = await app.brainRecommendations() }
     }
 
