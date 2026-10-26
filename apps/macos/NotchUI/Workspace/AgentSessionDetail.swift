@@ -177,7 +177,10 @@ struct AgentSessionDetail: View {
                 ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
             } else {
                 errorLine
-                liveComposer(shown)
+                VStack(spacing: 0) {
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session)?.branch ?? "", reply: shown.lastReply))
+                    liveComposer(shown).zIndex(1)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -249,6 +252,24 @@ struct AgentSessionDetail: View {
         }
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
+    }
+
+    /// The pull request of a session Nook does not run: the one for its folder and branch, else the last one its reply
+    /// links. Shown in a tray above the composer, as for a session Nook runs.
+    private func pullRequest(cwd: String, branch: String, reply: String) -> URL? {
+        if !cwd.isEmpty, !branch.isEmpty,
+           let link = PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: cwd, branch: branch)]?
+            .first(where: { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }),
+           let url = URL(string: link.url) { return url }
+        return MarkdownBlock.lastGitHubPullRequest(in: reply)
+    }
+
+    /// The tray above a composer with the session's pull request in it (its state, checks and a way to open it).
+    @ViewBuilder
+    private func pullRequestTray(_ url: URL?) -> some View {
+        if let url {
+            ComposerTray(edge: .top) { PullRequestWatchStrip(url: url, watch: nil) }
+        }
     }
 
     /// The composer under a live session. What you send continues the conversation in Nook: an idle session goes on as
@@ -566,6 +587,8 @@ struct AgentSessionDetail: View {
             .id("past:" + session.id)
 
             errorLine
+            VStack(spacing: 0) {
+            pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch, reply: session.lastReply))
             SessionComposer(
                 text: $draft,
                 prompt: canContinue ? tr("agents.reply.resume")
@@ -584,6 +607,8 @@ struct AgentSessionDetail: View {
             .choicesBelowBox()
             .images($images)
             .trailing { ComposerMic(text: $draft) }
+            .zIndex(1)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

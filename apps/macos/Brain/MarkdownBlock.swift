@@ -146,6 +146,16 @@ enum MarkdownBlock: Equatable {
         return url
     }
 
+    private static let gitHubPullRequestRegex = try? NSRegularExpression(pattern: #"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+"#)
+
+    /// The last GitHub pull request link in a text, tagged with `<pr-created>` or written out.
+    static func lastGitHubPullRequest(in text: String) -> URL? {
+        guard text.contains("/pull/"), let rx = gitHubPullRequestRegex,
+              let match = rx.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
+              let range = Range(match.range, in: text) else { return nil }
+        return URL(string: String(text[range]))
+    }
+
     /// "owner/repo" and the number of a GitHub pull request or GitLab merge request link.
     static func pullRequestReference(_ url: URL) -> (repo: String, number: Int)? {
         guard url.scheme?.lowercased() == "https" || url.scheme?.lowercased() == "http", isSafeLink(url) else { return nil }

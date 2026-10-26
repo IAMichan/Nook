@@ -193,7 +193,8 @@ struct PullRequestWatchStrip: View {
     let url: URL
     /// nil while the session's pull request is not watched.
     let watch: PullRequestWatch?
-    let toggle: () -> Void
+    /// Nil for a session Nook does not run: it has nothing to watch with, so the strip only shows and opens the pull request.
+    var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
     /// How the pull request looks while it is not watched (a watch brings its own), so state and checks show either way.
@@ -201,12 +202,14 @@ struct PullRequestWatchStrip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Button(action: toggle) {
-                ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
-                             text: tr(watch == nil ? "ws.prwatch.notWatching" : "ws.prwatch.watching"), showsChevron: false)
+            if let toggle {
+                Button(action: toggle) {
+                    ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
+                                 text: tr(watch == nil ? "ws.prwatch.notWatching" : "ws.prwatch.watching"), showsChevron: false)
+                }
+                .buttonStyle(.plain)
+                .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
             }
-            .buttonStyle(.plain)
-            .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
             // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
             Button(action: open) {
                 PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch?.state ?? seen?.state ?? "open") ?? .open, number: number)
@@ -240,7 +243,7 @@ struct PullRequestWatchStrip: View {
             }
             Spacer(minLength: 6)
             trayButton("arrow.up.right.square", tr("ws.prwatch.open"), action: open)
-            if watch != nil { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
+            if watch != nil, let toggle { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
         }
         .foregroundStyle(NookTheme.textSecondary)
         .task(id: url) {

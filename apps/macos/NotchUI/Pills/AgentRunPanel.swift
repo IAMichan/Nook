@@ -1171,16 +1171,6 @@ private final class RunTimelineDerived {
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
-    private static let pullRequestLink = try? NSRegularExpression(pattern: #"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+"#)
-
-    /// The last GitHub pull request link in an answer, tagged with `<pr-created>` or written out.
-    private static func lastPullRequest(in text: String) -> URL? {
-        guard let rx = pullRequestLink,
-              let match = rx.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
-              let range = Range(match.range, in: text) else { return nil }
-        return URL(string: String(text[range]))
-    }
-
     @discardableResult
     func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
         let active = run.status.isActive
@@ -1194,7 +1184,7 @@ private final class RunTimelineDerived {
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
         createdPullRequest = all.last { $0.kind == .assistant && $0.text.contains("/pull/") }
-            .flatMap { Self.lastPullRequest(in: $0.text) }
+            .flatMap { MarkdownBlock.lastGitHubPullRequest(in: $0.text) }
         return self
     }
 }
