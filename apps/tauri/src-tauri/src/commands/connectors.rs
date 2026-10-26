@@ -615,6 +615,12 @@ pub async fn whatsapp_chats(c: State<'_, Connectors>) -> Res<Vec<Conversation>> 
     Ok(c.whatsapp.visible())
 }
 
+/// Every chat for the Chats tab: those with messages here and the rest of the phone's chats, hidden ones left out.
+#[tauri::command]
+pub async fn whatsapp_chat_list(c: State<'_, Connectors>) -> Res<Vec<Conversation>> {
+    Ok(c.whatsapp.chat_list())
+}
+
 /// Een antwoord dat de gebruiker zelf typte (geen plan nodig: de gebruiker drukte zelf op Versturen).
 #[tauri::command]
 pub async fn whatsapp_reply(c: State<'_, Connectors>, chat: String, text: String) -> Res<String> {
