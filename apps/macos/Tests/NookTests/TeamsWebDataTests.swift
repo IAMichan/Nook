@@ -45,6 +45,30 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertNil(TeamsWebData.bearer(cookie: "something-else"))
     }
 
+    func testTheNewTeamsAsksTheRegionalChatServiceDirectly() {
+        let skype = token(["skypeid": "orgid:me", "exp": 1_900_000_000, "rgn": "EMEA"])
+        let direct = TeamsWebData.session(url: "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations?pageSize=20",
+                                          header: "skypetoken=" + skype)
+        XCTAssertEqual(direct?.base, "https://emea.ng.msg.teams.microsoft.com")
+        XCTAssertNil(TeamsWebData.session(url: "https://evil.example.com/v1/users/ME/conversations", header: "skypetoken=" + skype),
+                     "only Teams' own chat service")
+        let directOnly: [String: Any] = ["tokens": ["skypeToken": skype],
+                                         "regionGtms": ["chatService": "https://amer.ng.msg.teams.microsoft.com/"]]
+        XCTAssertEqual(TeamsWebData.session(authz: directOnly)?.base, "https://amer.ng.msg.teams.microsoft.com")
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(TeamsWebData.isSkypeToken(skype, now: now))
+        XCTAssertFalse(TeamsWebData.isSkypeToken(token(["aud": "https://api.spaces.skype.com"]), now: now))
+        XCTAssertFalse(TeamsWebData.isSkypeToken(token(["skypeid": "orgid:me", "exp": 1]), now: now), "run out")
+        XCTAssertEqual(TeamsWebData.region(skype), "emea")
+        XCTAssertEqual(TeamsWebData.session(skypeToken: skype, region: "emea")?.base, "https://teams.microsoft.com/api/chatsvc/emea")
+
+        let spaces = token(["aud": "https://api.spaces.skype.com", "exp": 1_900_000_000])
+        let cache = #"{"credentialType":"AccessToken","target":"https://api.spaces.skype.com/.default","secret":"\#(spaces)"}"#
+        XCTAssertEqual(TeamsWebData.tokens(in: cache + " " + cache + " " + skype), [spaces, skype], "each token once")
+        XCTAssertEqual(TeamsWebData.tokens(in: "no token here"), [])
+    }
+
     func testChatsAndMessages() {
         let list: [String: Any] = ["conversations": [
             ["id": "19:a_b@unq.gbl.spaces", "threadProperties": [:], "properties": ["consumptionhorizon": "1700000000000;1;2"],
