@@ -69,6 +69,50 @@ final class TeamsWebDataTests: XCTestCase {
         XCTAssertEqual(TeamsWebData.tokens(in: "no token here"), [])
     }
 
+    func testEveryAccountKeepsItsOwnStore() {
+        func session(_ me: String, name: String = "") -> TeamsWebData.Session {
+            TeamsWebData.Session(base: "https://teams.microsoft.com/api/chatsvc/emea", token: me, expires: .distantFuture,
+                                 me: me, name: name)
+        }
+        let school = UUID(), work = UUID(), again = UUID()
+        var (accounts, dropped) = TeamsWebData.keep(session("8:orgid:a", name: "Ann"), store: school, in: [])
+        (accounts, dropped) = TeamsWebData.keep(session("8:orgid:b"), store: work, in: accounts)
+        XCTAssertEqual(accounts.map(\.id), ["8:orgid:a", "8:orgid:b"], "a second account is added, not swapped in")
+        XCTAssertEqual(dropped, [])
+
+        (accounts, dropped) = TeamsWebData.keep(session("8:orgid:a"), store: school, in: accounts)
+        XCTAssertEqual(accounts.count, 2, "a renewal stays the same account")
+        XCTAssertEqual(accounts[0].session.name, "Ann", "the name it knew stays")
+
+        (accounts, dropped) = TeamsWebData.keep(session("8:orgid:a"), store: again, in: accounts)
+        XCTAssertEqual(accounts.map(\.store), [again, work], "the same account signed in once more takes the new store")
+        XCTAssertEqual(dropped, [school], "its old store goes")
+
+        (accounts, dropped) = TeamsWebData.keep(session("8:orgid:c"), store: work, in: accounts)
+        XCTAssertEqual(accounts.map(\.id), ["8:orgid:a", "8:orgid:c"], "another account signed in where one was")
+        XCTAssertEqual(dropped, [])
+    }
+
+    func testTheNameAndAddressComeFromTheSignInToken() {
+        let base = TeamsWebData.Session(base: "b", token: "t", expires: .distantFuture, me: me)
+        let named = TeamsWebData.named(base, by: token(["name": "Ann de Vries", "upn": "ann@school.nl"]))
+        XCTAssertEqual(named.name, "Ann de Vries")
+        XCTAssertEqual(named.email, "ann@school.nl")
+        XCTAssertEqual(TeamsWebData.Account(session: named, store: UUID()).label, "Ann de Vries")
+        XCTAssertNil(TeamsWebData.named(base, by: "not a token").email)
+    }
+
+    func testGoogleSignInPagesGetFirefox() {
+        let now = Date(timeIntervalSince1970: 1_793_000_000) // October 2026
+        XCTAssertTrue(WebSignInAgent.isGoogleSignIn(URL(string: "https://accounts.google.com/v3/signin/identifier")))
+        XCTAssertFalse(WebSignInAgent.isGoogleSignIn(URL(string: "https://login.microsoftonline.com/common")))
+        XCTAssertFalse(WebSignInAgent.isGoogleSignIn(URL(string: "https://accounts.google.com.evil.example")))
+        let firefox = WebSignInAgent.agent(for: URL(string: "https://accounts.google.com/o/saml2"), otherwise: nil, now: now)
+        XCTAssertTrue(firefox?.contains("Firefox/15") == true, firefox ?? "")
+        XCTAssertNil(WebSignInAgent.agent(for: URL(string: "https://teams.microsoft.com/v2/"), otherwise: nil, now: now))
+        XCTAssertEqual(WebSignInAgent.agent(for: URL(string: "https://www.instagram.com"), otherwise: "Own", now: now), "Own")
+    }
+
     func testChatsAndMessages() {
         let list: [String: Any] = ["conversations": [
             ["id": "19:a_b@unq.gbl.spaces", "threadProperties": [:], "properties": ["consumptionhorizon": "1700000000000;1;2"],

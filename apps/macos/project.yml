@@ -233,6 +233,7 @@ targets:
       - path: Services/Messages/TelegramData.swift
       - path: Services/Messages/TeamsData.swift
       - path: Services/Messages/TeamsWebData.swift
+      - path: Services/Messages/WebSignInAgent.swift
       - path: Services/Messages/ChatJSON.swift
       - path: Services/Messages/ChatServiceData.swift
       - path: Services/Messages/BeeperImport.swift

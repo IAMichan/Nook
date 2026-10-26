@@ -55,13 +55,16 @@ final class TeamsBridge: ObservableObject, ChatBridge {
     var isReady: Bool {
         TeamsWebSession.shared.isSignedIn || (Self.clientID != nil && accounts.contains { CloudHelp.secret($0.refreshAccount) != nil })
     }
-    /// Where `problems` keeps why reading through the website's session failed.
-    static let webID = "web"
-    /// What reading through the website's session keeps between rounds: as `Session.seen` and `retries`, and the
+    /// Where `problems` keeps why reading an account linked through the website failed.
+    static func webID(_ id: String) -> String { "web:" + id }
+    /// What reading an account through the website keeps between rounds: as `Session.seen` and `retries`, and the
     /// names of chats without a topic, learned from their messages.
-    private var webSeen: [String: Date] = [:]
-    private var webRetries: [String: Int] = [:]
-    private var webNames: [String: String] = [:]
+    private struct WebState {
+        var seen: [String: Date] = [:]
+        var retries: [String: Int] = [:]
+        var names: [String: String] = [:]
+    }
+    private var web: [String: WebState] = [:]
     private(set) var isWorking = false
 
     /// The app Nook signs in as: its own, or the one an earlier version of Nook asked you to register.
@@ -204,21 +207,31 @@ final class TeamsBridge: ObservableObject, ChatBridge {
     func read() async throws -> [BridgedChat] {
         var result: [BridgedChat] = []
         var failure: Error?
-        if TeamsWebSession.shared.isSignedIn {
+        let linked = TeamsWebSession.shared.accounts
+        for key in problems.keys where key.hasPrefix(Self.webID("")) && !linked.contains(where: { Self.webID($0.id) == key }) {
+            problems[key] = nil
+        }
+        // Every account's chat list first: a chat name two accounts share is told apart before anything is read.
+        var lists: [(account: TeamsWebData.Account, chats: [TeamsData.Chat])] = []
+        for account in linked {
             do {
-                result = try await readWeb()
-                problems[Self.webID] = nil
+                lists.append(try await listWeb(account))
+                problems[Self.webID(account.id)] = nil
             } catch {
-                problems[Self.webID] = error.localizedDescription
-                failure = error
+                problems[Self.webID(account.id)] = error.localizedDescription
+                failure = failure ?? error
             }
+        }
+        let distinct = TeamsData.distinguish(lists.map { $0.chats }, labels: lists.map { $0.account.label })
+        for (index, entry) in lists.enumerated() {
+            result += await readWeb(distinct[index], account: entry.account)
         }
         guard let client = Self.clientID, !accounts.isEmpty else {
             if result.isEmpty, let failure {
                 isWorking = false
                 throw failure
             }
-            isWorking = failure == nil && TeamsWebSession.shared.isSignedIn
+            isWorking = !lists.isEmpty
             return result
         }
         // Every account's chat list first: a chat name two accounts share is told apart before anything is read.
@@ -342,31 +355,40 @@ final class TeamsBridge: ObservableObject, ChatBridge {
 
     // MARK: Through the website's session
 
-    /// The chats as the Teams website reads them: the list, the history of those that moved (and of those whose name
-    /// only their messages tell), and every other one with its newest message. A token about to run out, or refused,
-    /// is renewed by loading the website out of sight first.
-    private func readWeb() async throws -> [BridgedChat] {
-        let web = TeamsWebSession.shared
-        guard var session = web.session else { return [] }
-        if session.expires < Date().addingTimeInterval(600) {
-            guard let renewed = await web.renew() else { throw NookError(tr("chats.teams.signInAgain"), kind: .auth) }
-            session = renewed
+    /// An account's chat list as the Teams website reads it, with the session it was read with. A token about to run
+    /// out, or refused, is renewed by loading the website out of sight first.
+    private func listWeb(_ account: TeamsWebData.Account) async throws -> (account: TeamsWebData.Account, chats: [TeamsData.Chat]) {
+        let site = TeamsWebSession.shared
+        var current = account
+        if current.session.expires < Date().addingTimeInterval(600) {
+            guard let renewed = await site.renew(account.id) else { throw NookError(tr("chats.teams.signInAgain"), kind: .auth) }
+            current.session = renewed
         }
-        let listAddress = session.base + "/v1/users/ME/conversations?view=msnp24Equivalent&pageSize=100"
+        let address = { (session: TeamsWebData.Session) in session.base + "/v1/users/ME/conversations?view=msnp24Equivalent&pageSize=100" }
         let list: [String: Any]
         do {
-            list = try await webGet(listAddress, token: session.token)
+            list = try await webGet(address(current.session), token: current.session.token, account: account.id)
         } catch let error as NookError where error.kind == .auth {
-            guard let renewed = await web.renew() else { throw NookError(tr("chats.teams.signInAgain"), kind: .auth) }
-            session = renewed
-            list = try await webGet(listAddress, token: session.token)
+            guard let renewed = await site.renew(account.id) else { throw NookError(tr("chats.teams.signInAgain"), kind: .auth) }
+            current.session = renewed
+            list = try await webGet(address(current.session), token: current.session.token, account: account.id)
         }
-        var chats = TeamsWebData.chats(list, me: session.me)
+        let names = web[account.id]?.names ?? [:]
+        var chats = TeamsWebData.chats(list, me: current.session.me)
         for index in chats.indices where chats[index].name.isEmpty {
-            chats[index].name = webNames[chats[index].id] ?? ""
+            chats[index].name = names[chats[index].id] ?? ""
         }
+        return (current, chats)
+    }
+
+    /// An account's chats as the Teams website reads them: the history of those that moved (and of those whose name
+    /// only their messages tell), and every other one with its newest message.
+    private func readWeb(_ chats: [TeamsData.Chat], account: TeamsWebData.Account) async -> [BridgedChat] {
+        let session = account.session
+        var state = web[account.id] ?? WebState()
+        defer { web[account.id] = state }
         let moved = chats.filter { chat in
-            (chat.last.map { webSeen[chat.id] != $0 } ?? false) || (chat.name.isEmpty && webSeen[chat.id] == nil)
+            (chat.last.map { state.seen[chat.id] != $0 } ?? false) || (chat.name.isEmpty && state.seen[chat.id] == nil)
         }.prefix(Self.perRead)
         var fetched: Set<String> = []
         var result: [BridgedChat] = []
@@ -375,7 +397,7 @@ final class TeamsBridge: ObservableObject, ChatBridge {
                 + "/messages?view=msnp24Equivalent%7CsupportsMessageProperties&pageSize=\(Self.history)&startTime=1"
             let answer: [String: Any]
             do {
-                answer = try await webGet(address, token: session.token)
+                answer = try await webGet(address, token: session.token, account: account.id)
             } catch let error as NookError where error.kind == .auth || error.kind == .rateLimited {
                 break
             } catch {
@@ -383,15 +405,15 @@ final class TeamsBridge: ObservableObject, ChatBridge {
             }
             if chat.name.isEmpty {
                 chat.name = TeamsWebData.people(answer, me: session.me).joined(separator: ", ")
-                if !chat.name.isEmpty { webNames[chat.id] = chat.name }
+                if !chat.name.isEmpty { state.names[chat.id] = chat.name }
             }
-            if let mine = TeamsWebData.myName(answer, me: session.me) { web.named(mine) }
-            let early = webRetries[chat.id] ?? 0
+            if let mine = TeamsWebData.myName(answer, me: session.me) { TeamsWebSession.shared.named(mine, in: account.id) }
+            let early = state.retries[chat.id] ?? 0
             if TeamsWebData.caughtUp(answer, last: chat.last) || early >= Self.maxRetries {
-                webSeen[chat.id] = chat.last ?? Date.distantPast
-                webRetries[chat.id] = nil
+                state.seen[chat.id] = chat.last ?? Date.distantPast
+                state.retries[chat.id] = nil
             } else {
-                webRetries[chat.id] = early + 1
+                state.retries[chat.id] = early + 1
             }
             fetched.insert(chat.id)
             guard !chat.name.isEmpty else { continue }
@@ -401,14 +423,14 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         }
         for chat in chats where !fetched.contains(chat.id) && !chat.name.isEmpty {
             let preview = chat.preview.map { [$0] } ?? []
-            let unread = webSeen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
+            let unread = state.seen[chat.id] == nil ? TeamsData.unread(preview, readUntil: chat.readUntil) : nil
             result.append(BridgedChat(app: app, name: chat.name, messages: preview, unread: unread, listed: true))
         }
         return result
     }
 
     /// Asks Teams' chat service with the website's token; a refused token is dropped, so the next read renews it.
-    private func webGet(_ address: String, token: String) async throws -> [String: Any] {
+    private func webGet(_ address: String, token: String, account: String) async throws -> [String: Any] {
         guard let url = URL(string: address) else { throw NookError(address) }
         var request = URLRequest(url: url)
         request.setValue("skypetoken=" + token, forHTTPHeaderField: "Authentication")
@@ -416,7 +438,7 @@ final class TeamsBridge: ObservableObject, ChatBridge {
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 {
-            TeamsWebSession.shared.expire()
+            TeamsWebSession.shared.expire(account)
             throw NookError(tr("chats.teams.signInAgain"), kind: .auth)
         }
         if code == 429 { throw NookError(tr("chats.teams.rateLimited"), kind: .rateLimited) }

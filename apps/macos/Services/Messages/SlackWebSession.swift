@@ -106,6 +106,8 @@ final class SlackWebSession: NSObject, ObservableObject, WKNavigationDelegate, W
         guard let url = navigationAction.request.url else { return .cancel }
         // Slack's links to its Mac app ("slack://…") stay out of this window.
         guard url.scheme == "https" || url.scheme == "about" || url.scheme == "blob" else { return .cancel }
+        // Signing in with Google needs the window to call itself Firefox there.
+        if webView.presentsItself(for: navigationAction, otherwise: nil) { return .cancel }
         // After signing in, Slack offers to open its Mac app; go on to the web client instead.
         if navigationAction.targetFrame?.isMainFrame == true, url.path.hasPrefix("/ssb/redirect") {
             webView.load(URLRequest(url: Self.start))

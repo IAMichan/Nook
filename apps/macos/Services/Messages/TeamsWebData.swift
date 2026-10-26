@@ -16,6 +16,54 @@ enum TeamsWebData {
         var me: String
         /// Your name, once one of your own messages says it.
         var name: String = ""
+        /// Your sign-in address, when the token you signed in with says it.
+        var email: String?
+    }
+
+    /// An account linked through the website: its session, and the website's store on this Mac that keeps that
+    /// account's sign-in apart from the others'.
+    struct Account: Codable, Equatable, Sendable, Identifiable {
+        var session: Session
+        var store: UUID
+        var id: String { session.me }
+        /// What the account is called in Settings: your name, else your address.
+        var label: String { !session.name.isEmpty ? session.name : (session.email ?? "") }
+    }
+
+    /// Keeps a session the website gave in `store`: in place of the same account (signed in before, in this store or
+    /// another, whose store is then no longer needed), in place of the account this store held, or as one more account.
+    /// What the accounts already knew of your name and address stays.
+    static func keep(_ found: Session, store: UUID, in accounts: [Account]) -> (accounts: [Account], dropped: [UUID]) {
+        var result = accounts
+        var kept = found
+        if let known = accounts.first(where: { $0.id == found.me })?.session {
+            if kept.name.isEmpty { kept.name = known.name }
+            if kept.email == nil { kept.email = known.email }
+        }
+        var dropped: [UUID] = []
+        if let same = result.firstIndex(where: { $0.id == found.me }) {
+            if result[same].store != store { dropped.append(result[same].store) }
+            result[same] = Account(session: kept, store: store)
+            // The store held another account until now: that one signed out there.
+            result.removeAll { $0.store == store && $0.id != found.me }
+        } else if let held = result.firstIndex(where: { $0.store == store }) {
+            result[held] = Account(session: kept, store: store)
+        } else {
+            result.append(Account(session: kept, store: store))
+        }
+        return (result, dropped)
+    }
+
+    /// The session with your name and address from the token you signed in with, where it says them.
+    static func named(_ session: Session, by token: String) -> Session {
+        guard let claims = claims(token) else { return session }
+        var named = session
+        if named.name.isEmpty, let name = claims["name"] as? String { named.name = name.trimmingCharacters(in: .whitespaces) }
+        if named.email == nil {
+            named.email = ["upn", "preferred_username", "unique_name"].lazy.compactMap { claims[$0] as? String }
+                .first { $0.contains("@") }
+        }
+        return named
     }
 
     /// The session from a request the website sent: its address and its authentication header ("skypetoken=…"). Nil
