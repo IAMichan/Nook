@@ -2,8 +2,8 @@ import Foundation
 
 /// A chat app Nook reads itself, history included, instead of waiting for its notifications: Messages from its database
 /// on this Mac, Slack through its Web API with your token. What a bridge reads lands in the same `ChatInbox` as the
-/// collected notifications (`ChatCaptureService` runs them), so a chat is one chat however it came in. Read-only:
-/// answering still happens in the app itself.
+/// collected notifications (`ChatCaptureService` runs them), so a chat is one chat however it came in. Where the app
+/// lets Nook, a bridge also writes in its chats: what each one can do is listed in `AppModel.chatAbilities`.
 @MainActor
 protocol ChatBridge: AnyObject {
     /// The app's source id (`MessagingApp.id`).
@@ -115,11 +115,11 @@ final class MessagesBridge: ChatHistoryBridge {
         """)
         let batch = Array(rows.prefix(ChatHistory.step))
         let files = try await attachments(batch)
-        let extras = try await extras(batch, contacts: contacts)
+        let extra = try await extras(batch, contacts: contacts)
         var messages: [InboxMessage] = []
         for row in batch {
             let id = NotificationRecord.integer(row["id"]) ?? 0
-            guard let built = build(row, media: files[id], extras: extras, contacts: contacts) else { continue }
+            guard let built = build(row, media: files[id], extras: extra, contacts: contacts) else { continue }
             remember(row, chat: built.message.chat, message: built.inbox)
             messages.append(built.inbox)
         }
@@ -156,14 +156,14 @@ final class MessagesBridge: ChatHistoryBridge {
         }
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
-        let tapped = try await tapped()
+        let retapped = try await tapped()
         let unnamed = try await groupNames(rows, contacts: contacts)
         let files = try await attachments(rows)
-        let extras = try await extras(rows, contacts: contacts)
+        let extra = try await extras(rows, contacts: contacts)
         for row in rows {
             let id = NotificationRecord.integer(row["id"]) ?? 0
             newest = max(newest, id)
-            guard let built = build(row, media: files[id], extras: extras, contacts: contacts) else { continue }
+            guard let built = build(row, media: files[id], extras: extra, contacts: contacts) else { continue }
             let message = built.message
             let inbox = built.inbox
             let chat = message.chat
@@ -172,7 +172,7 @@ final class MessagesBridge: ChatHistoryBridge {
             active[chat] = max(active[chat] ?? .distantPast, message.date)
             remember(row, chat: chat, message: inbox)
             if message.fromMe {
-                // Only its ticks are brought again from here: its tapbacks come with `tapped`.
+                // Only its ticks are brought again from here: its tapbacks come with `tapped()`.
                 var tracked = inbox
                 tracked.reactions = nil
                 mine[id] = (chat, tracked)
@@ -183,11 +183,11 @@ final class MessagesBridge: ChatHistoryBridge {
             for id in mine.keys.sorted().dropLast(Self.tracked) { mine[id] = nil }
         }
         // Tapbacks put on (or taken off) messages read earlier: the chat shows their emoji now.
-        let retapped = tapped.subtracting(rows.map { AppData.string($0["guid"]) })
-        if !retapped.isEmpty {
-            let first = retapped.compactMap { seen[$0]?.row }.min() ?? 0
-            let updated = try await reactions(on: retapped, after: first)
-            for guid in retapped.sorted() {
+        let others = retapped.subtracting(rows.map { AppData.string($0["guid"]) })
+        if !others.isEmpty {
+            let first = others.compactMap { seen[$0]?.row }.min() ?? 0
+            let updated = try await reactions(on: others, after: first)
+            for guid in others.sorted() {
                 guard var known = seen[guid] else { continue }
                 known.message.reactions = updated[guid] ?? []
                 seen[guid] = known
@@ -238,6 +238,191 @@ final class MessagesBridge: ChatHistoryBridge {
             var chat = chat
             chat.messages.sort { $0.date < $1.date }
             return chat
+        }
+    }
+
+    /// One row as a message in Nook, with its file, the message it answers and its tapbacks; nil for a row with nothing
+    /// to show. A photo without a caption has no text to read: it is read as one with a placeholder, then left without.
+    private func build(_ row: [String: Any], media: ChatMedia?, extras: Extras,
+                       contacts: [String: String]) -> (message: AppData.Message, inbox: InboxMessage)? {
+        var readable = row
+        if media != nil, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
+        guard let message = AppData.messages([readable], names: contacts).first else { return nil }
+        let id = NotificationRecord.integer(row["id"]) ?? 0
+        let group = (AppData.number(row["grp"]) ?? 0) != 0
+        var inbox = InboxMessage(
+            id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
+            text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
+        if message.fromMe { inbox.receipt = Self.receipt(row) }
+        inbox.reactions = extras.reactions[AppData.string(row["guid"])]
+        let origin = AppData.string(row["origin"])
+        if !origin.isEmpty, origin != AppData.string(row["guid"]) { inbox.quote = extras.quotes[origin] }
+        return (message, inbox)
+    }
+
+    /// A message read, by its guid, for the tapbacks that come in later, and its chat's own id in Messages, to send to.
+    private func remember(_ row: [String: Any], chat: String, message: InboxMessage) {
+        let chatGUID = AppData.string(row["chatguid"])
+        if !chatGUID.isEmpty { guids[chat] = chatGUID }
+        let guid = AppData.string(row["guid"])
+        guard !guid.isEmpty, let id = NotificationRecord.integer(row["id"]) else { return }
+        seen[guid] = (id, chat, message)
+    }
+
+    /// Only the newest messages read are kept for their tapbacks.
+    private func trimSeen() {
+        guard seen.count > Self.remembered else { return }
+        for (guid, _) in seen.sorted(by: { $0.value.row < $1.value.row }).prefix(seen.count - Self.remembered) { seen[guid] = nil }
+    }
+
+    /// What the messages of some rows answer (by the answered message's guid) and the emoji on them (by their own guid).
+    private struct Extras {
+        var quotes: [String: InboxQuote] = [:]
+        var reactions: [String: [InboxReaction]] = [:]
+    }
+
+    private func extras(_ rows: [[String: Any]], contacts: [String: String]) async throws -> Extras {
+        guard !rows.isEmpty else { return Extras() }
+        let own = Set(rows.map { AppData.string($0["guid"]) }.filter { !$0.isEmpty })
+        let first = rows.compactMap { NotificationRecord.integer($0["id"]) }.min() ?? 0
+        let origins = Set(rows.map { AppData.string($0["origin"]) }.filter { !$0.isEmpty })
+        let emoji = try await reactions(on: own, after: first)
+        let answered = try await quotes(origins, contacts: contacts)
+        return Extras(quotes: answered, reactions: emoji)
+    }
+
+    /// The messages these answer, by their guid: their id in Nook, so the chat shows the one it has, with who wrote it
+    /// and its text for when Nook does not have it.
+    private func quotes(_ guids: Set<String>, contacts: [String: String]) async throws -> [String: InboxQuote] {
+        guard !guids.isEmpty else { return [:] }
+        let rows = try await query("""
+        SELECT m.ROWID AS id, m.guid AS guid, m.is_from_me AS me, COALESCE(h.id, '') AS handle, m.date AS date,
+               m.text AS text, hex(m.attributedBody) AS body
+        FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id
+        WHERE m.guid IN (\(guids.sorted().map(AppData.literal).joined(separator: ",")))
+        """)
+        var quotes: [String: InboxQuote] = [:]
+        for row in rows {
+            guard let id = NotificationRecord.integer(row["id"]) else { continue }
+            let mine = (AppData.number(row["me"]) ?? 0) != 0
+            let handle = AppData.cleanHandle(AppData.string(row["handle"]))
+            quotes[AppData.string(row["guid"])] = InboxQuote(
+                id: "imessage-\(id)", sender: mine ? "" : (contacts[AppData.key(handle)] ?? handle),
+                text: AppData.messages([row], names: contacts).first?.text ?? "", mine: mine)
+        }
+        return quotes
+    }
+
+    /// The emoji on the messages `guids`, from all their tapbacks (each comes after its message, so after row `first`).
+    /// Every message with a tapback is in the answer, with no emoji when all were taken back.
+    private func reactions(on guids: Set<String>, after first: Int64) async throws -> [String: [InboxReaction]] {
+        guard !guids.isEmpty else { return [:] }
+        let pointers = guids.sorted().flatMap { AppData.Tapback.pointers(to: $0) }.map(AppData.literal).joined(separator: ",")
+        let rows: [[String: Any]]
+        do {
+            rows = try await query("""
+            SELECT m.associated_message_guid AS target, m.associated_message_type AS type,
+                   \(customTapbacks ? "m.associated_message_emoji" : "NULL") AS emoji, m.is_from_me AS me,
+                   COALESCE(m.handle_id, 0) AS sender
+            FROM message m
+            WHERE m.ROWID > \(first) AND m.associated_message_type BETWEEN 2000 AND 3999
+                AND m.associated_message_guid IN (\(pointers))
+            ORDER BY m.ROWID
+            """)
+        } catch where customTapbacks && error.localizedDescription.contains("no such column") {
+            // A database from before any emoji could be a tapback: the classic six still show.
+            customTapbacks = false
+            return try await reactions(on: guids, after: first)
+        }
+        let tapbacks = rows.compactMap { tapback -> AppData.Tapback? in
+            let mine = (AppData.number(tapback["me"]) ?? 0) != 0
+            return AppData.Tapback(associated: AppData.string(tapback["target"]), type: Int(AppData.number(tapback["type"]) ?? 0),
+                                   emoji: AppData.string(tapback["emoji"]), sender: mine ? "me" : AppData.string(tapback["sender"]),
+                                   mine: mine)
+        }
+        return AppData.Tapback.reactions(tapbacks)
+    }
+
+    /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look. The first read only
+    /// marks where to look from: the tapbacks until then come with its own messages.
+    private func tapped() async throws -> Set<String> {
+        guard let lastTapback else {
+            let top = try await query("SELECT COALESCE(MAX(ROWID), 0) AS top FROM message")
+            self.lastTapback = top.first.flatMap { NotificationRecord.integer($0["top"]) } ?? 0
+            return []
+        }
+        let rows = try await query("""
+        SELECT ROWID AS id, associated_message_guid AS target FROM message
+        WHERE ROWID > \(lastTapback) AND associated_message_type BETWEEN 2000 AND 3999 ORDER BY ROWID
+        """)
+        self.lastTapback = rows.compactMap { NotificationRecord.integer($0["id"]) }.max() ?? lastTapback
+        return Set(rows.compactMap { AppData.Tapback.target(AppData.string($0["target"])) }.filter { seen[$0] != nil })
+    }
+
+    // MARK: Sending
+
+    /// Your text to the chat `name`, through the Messages app.
+    func send(text: String, to name: String) async throws {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        try await deliver([.text(text)], to: name)
+    }
+
+    /// A file (with its caption after it, as Messages shows one), or a place or a contact card as text. Messages has no
+    /// polls another app can send.
+    func send(_ outgoing: ChatOutgoing, to name: String) async throws {
+        switch outgoing {
+        case .file(let file):
+            guard FileManager.default.isReadableFile(atPath: file.path) else { throw NookError(tr("chat.compose.notAFile", file.name)) }
+            let path = await Task.detached(priority: .userInitiated) { MessagesBridge.readable(file) }.value
+            var items: [AppData.MessagesSend.Item] = [.file(path)]
+            let caption = file.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !caption.isEmpty { items.append(.text(caption)) }
+            try await deliver(items, to: name)
+        case .location, .contact:
+            try await deliver([.text(outgoing.text)], to: name)
+        case .poll:
+            throw NookError(tr("chat.compose.unsupported"))
+        }
+    }
+
+    /// Runs the script that sends `items` (`AppData.MessagesSend`), away from the main thread: the first time macOS asks
+    /// whether Nook may control Messages, and Messages may need a moment to start.
+    private func deliver(_ items: [AppData.MessagesSend.Item], to name: String) async throws {
+        let chats = chatGUIDs(name)
+        guard !chats.isEmpty else { throw NookError(tr("chat.compose.unsupported")) }
+        let script = AppData.MessagesSend.script(items, chats: chats)
+        let result = await Task.detached(priority: .userInitiated) { SystemControl.appleScriptResult(script, timeout: 30) }.value
+        guard result.text != AppData.MessagesSend.done else { return }
+        // -1743: not allowed under Automation; -1728: Messages knows none of the chat's ids. AppleScript's own sentence
+        // says which, in the Mac's language.
+        if result.errorNumber == -1743 { throw NookError(tr("chat.messages.automation"), kind: .config) }
+        let reason = result.errorNumber == -1728 ? nil : result.errorMessage
+        throw NookError([tr("chat.compose.notSent"), reason].compactMap { $0 }.joined(separator: " "))
+    }
+
+    /// Where Messages may read a file to send from. Messages sends only files it may read itself: one in Nook's
+    /// temporary folder (where a converted file or a recording lands) goes out as "Not Delivered". So each file is
+    /// copied into a folder of Nook's own under Messages' attachments (`~/Library/Messages/Attachments/Nook`, which
+    /// the same Full Disk Access lets Nook write), and copies older than a day are cleared then. The original is used
+    /// when copying fails.
+    private nonisolated static func readable(_ file: ChatAttachment) -> String {
+        let manager = FileManager.default
+        let folder = URL(fileURLWithPath: AppDatabase.home + "/Library/Messages/Attachments/Nook", isDirectory: true)
+        let old = Date().addingTimeInterval(-86_400)
+        let copies = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for dir in copies {
+            let changed = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let changed, changed < old { try? manager.removeItem(at: dir) }
+        }
+        let safe = file.name.components(separatedBy: CharacterSet(charactersIn: "/:")).joined(separator: "-")
+        let copy = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent(safe.isEmpty ? file.url.lastPathComponent : String(safe.suffix(120)))
+        do {
+            try manager.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.copyItem(at: file.url, to: copy)
+            return copy.path
+        } catch {
+            return file.path
         }
     }
 
@@ -329,7 +514,8 @@ final class MessagesBridge: ChatHistoryBridge {
     SELECT m.ROWID AS id, cmj.chat_id AS chat, COALESCE(NULLIF(c.display_name, ''), c.chat_identifier, '') AS chatname,
            COALESCE(h.id, '') AS handle, m.is_from_me AS me, m.date AS date, m.text AS text, hex(m.attributedBody) AS body,
            CASE WHEN c.style = 43 THEN 1 ELSE 0 END AS grp, m.is_sent AS sent, m.is_delivered AS delivered,
-           COALESCE(m.date_read, 0) AS readat, COALESCE(m.error, 0) AS error
+           COALESCE(m.date_read, 0) AS readat, COALESCE(m.error, 0) AS error, COALESCE(m.guid, '') AS guid,
+           COALESCE(m.thread_originator_guid, '') AS origin, COALESCE(c.guid, '') AS chatguid
     FROM message m
     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
     JOIN chat c ON c.ROWID = cmj.chat_id
