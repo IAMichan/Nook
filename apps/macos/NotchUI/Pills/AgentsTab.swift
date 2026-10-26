@@ -50,7 +50,10 @@ struct AgentsTab: View {
                 if !app.demoMode {
                     PanelFooter(selected: selectedID(selection), open: { viewModel.selectedAgentID = $0 },
                                 openSettings: { app.openSettings() }, history: app.history,
-                                onBack: { viewModel.selectedAgentID = beforePullRequests })
+                                onBack: { viewModel.selectedAgentID = beforePullRequests },
+                                openCloud: showsCloudLink ? {
+                                    if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
+                                } : nil)
                 }
             }
             .padding(.trailing, NookTheme.Spacing.xs)
@@ -198,12 +201,6 @@ struct AgentsTab: View {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 AgentInboxList(items: running, past: earlier,
                                current: current, now: context.date) { viewModel.selectedAgentID = $0 }
-            }
-            if showsCloudLink {
-                SmallGhostButton(title: tr("agents.cloud.open")) {
-                    if let url = URL(string: "https://claude.ai/code") { NSWorkspace.shared.open(url) }
-                }
-                .help(tr("agents.cloud.explain"))
             }
         }
         // The agent works in a chat you had marked as finished: it is not finished after all,
@@ -371,8 +368,8 @@ struct AgentsTab: View {
         return visits.isUnseen(id, finished: finished)
     }
 
-    /// Sessions in Anthropic's cloud (Claude app, claude.ai/code) are not read with the Claude Code login: the link opens
-    /// them where they live, for anyone with a Claude subscription account in Nook.
+    /// Sessions in Anthropic's cloud (Claude app, claude.ai/code) are not read with the Claude Code login: the cloud icon
+    /// in the footer opens them where they live, for anyone with a Claude subscription account in Nook.
     private var showsCloudLink: Bool {
         !app.demoMode && app.profiles.all.contains { $0.kind == .claude && !$0.usesAPIKey && app.isConnected($0) }
     }

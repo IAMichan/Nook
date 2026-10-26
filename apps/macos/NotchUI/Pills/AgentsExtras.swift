@@ -30,6 +30,8 @@ struct PanelFooter: View {
     var vertical = false
     /// Leaving the pull requests page for where you were; nil keeps the icons there too.
     var onBack: (() -> Void)? = nil
+    /// Opens the cloud sessions on claude.ai/code; nil leaves the cloud icon out (only Agents passes it).
+    var openCloud: (() -> Void)? = nil
     @ObservedObject private var updater = AppUpdater.shared
 
     var body: some View {
@@ -58,6 +60,10 @@ struct PanelFooter: View {
                        action: { open(AgentsPage.pullRequests) }) { PullRequestGlyph() }
             FooterIcon(label: tr("agents.footer.usage"), active: selected == AgentsPage.usage,
                        action: { open(AgentsPage.usage) }) { UsageGlyph() }
+            if let openCloud {
+                FooterIcon(label: tr("agents.cloud.open"), hint: tr("agents.cloud.explain"), active: false,
+                           action: openCloud) { ToolGlyph(symbol: "cloud") }
+            }
             if !vertical { Spacer(minLength: 0) }
             UpdateFooterButton {
                 let busy = history.loading || updater.phase == .checking
@@ -79,6 +85,8 @@ struct PanelFooter: View {
 
 private struct FooterIcon<Glyph: View>: View {
     let label: String
+    /// A longer explanation for the tooltip, under the label.
+    var hint: String? = nil
     let active: Bool
     /// Writes the label after the glyph (the back button), instead of only in the tooltip.
     var showsLabel = false
@@ -104,7 +112,7 @@ private struct FooterIcon<Glyph: View>: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(label)
+        .help(hint.map { label + "\n" + $0 } ?? label)
         .accessibilityLabel(label)
     }
 }
