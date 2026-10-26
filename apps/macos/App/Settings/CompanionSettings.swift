@@ -9,6 +9,7 @@ struct CompanionSettingsRows: View {
     @ObservedObject private var notifier = CompanionNotifier.shared
     @ObservedObject private var relay = CompanionRelayClient.shared
     @ObservedObject private var awake = KeepAwake.shared
+    @ObservedObject private var relayPush = RelayPushClient.shared
     @State private var keyProblem = false
     @State private var link: PairingLink?
     @State private var copied = false
@@ -53,7 +54,7 @@ struct CompanionSettingsRows: View {
             Section { awayFromHome } header: { Text(tr("companion.away.title")) }
             Section { pushSection }
             if store.push.enabled {
-                Section { apnsSetup } header: { Text(tr("companion.push.keyTitle")) }
+                Section { pushRoute } header: { Text(tr("companion.push.keyTitle")) }
             }
         }
     }
@@ -94,6 +95,29 @@ struct CompanionSettingsRows: View {
                 Toggle(tr("companion.push.urgent"), isOn: $store.push.quietAllowsUrgent)
             }
         }
+    }
+
+    /// How pushes reach Apple: sealed through the relay (no Apple account needed), or with the user's own APNs key.
+    @ViewBuilder
+    private var pushRoute: some View {
+        Picker(tr("relayPush.route"), selection: $relayPush.route) {
+            Text(tr("relayPush.route.relay")).tag(RelayPushClient.Route.relay)
+            Text(tr("relayPush.route.own")).tag(RelayPushClient.Route.own)
+        }
+        .pickerStyle(.segmented)
+        if relayPush.route == .relay { relaySetup } else { apnsSetup }
+    }
+
+    @ViewBuilder
+    private var relaySetup: some View {
+        SettingNote(tr("relayPush.hint"))
+        if relayPush.relay == nil {
+            SettingNote(tr("relayPush.noRelay"), tone: .warning)
+        }
+        Button(tr("companion.push.test")) { notifier.sendTest() }
+            .disabled(!relayPush.active || !store.devices.contains { $0.pushToken != nil })
+        SettingNote(tr("relayPush.liveActivities"))
+        if let result = notifier.lastResult { SettingNote(result) }
     }
 
     @ViewBuilder

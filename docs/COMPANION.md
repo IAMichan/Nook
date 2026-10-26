@@ -115,3 +115,41 @@ While a session works on the Mac, Nook Companion shows it as a **Live Activity**
 **Turning it off:** *Live Activities* in the menu (`…`) of the Agents tab on the phone. Off ends every activity and sends `off`: the Mac forgets the phone's tokens and sends nothing until it is turned on again. iOS's own switch (Settings › Nook Companion › Live Activities) works too. On the Mac, Live Activities need push notifications set up and on (Settings › iPhone Companion › Push Notifications).
 
 **Privacy:** Live Activity pushes pass through Apple like notifications, and follow the same choice: the session title and folder are only sent when **Include session title** is on. Otherwise a push-started activity shows the agent and its phase; one the app started itself keeps the title it had. Commands, files and answers are never sent.
+
+## Push through Nook's relay
+
+For a Mac without an Apple developer account: **Settings › iPhone Companion › Push Notifications › Send through ›
+Nook's relay**. It is the default when the build carries Nook's relay and you have not set up your own key; **My own
+APNs key** keeps the direct path above.
+
+How it works (end to end sealed):
+
+1. For each paired phone, the Mac seals what the notification says (title, text, category, session and item ids, badge)
+   with `CompanionSeal`, unchanged, using a **push key** derived from that phone's pairing key
+   (`HMAC-SHA256(pairingKey, "nook-companion-push-v1")`, `RelayPush.pushKey`). The collapse id is a keyed hash too.
+2. It posts the phone's device token, its room and the sealed blob to the relay's `POST /v1/push`
+   (`apps/relay/worker/push.js`). The relay limits pushes per room and per device token, logs nothing, signs an APNs
+   request with Nook's own APNs key (Worker secrets) and sends Apple a generic alert ("Nook needs you") with
+   `mutable-content` and the blob under `nook-sealed`.
+3. On the phone, the **Notification Service Extension** (`apps/ios/NookNotifications`) opens the blob with the push key
+   and writes the real title, text, buttons, thread and badge. Without a key that opens it, the notification says
+   "Nook needs you".
+
+The app keeps the push keys (never the pairing keys) in one Keychain item in the app group's access group
+(`group.nl.imdigital.nook.companion`), readable after the first unlock so a push that arrives while the phone is locked
+can still be opened (`PushKeyStore`). They are written when you pair and on every launch, and removed with the
+pairing. Because the text is sealed, it is safe for the relay; it still follows **Include session title**.
+
+**Setup for whoever runs the relay** (Nook's own, or yours): put the APNs key of the team that signs the companion app
+into the Worker as secrets (`APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, optionally `APNS_TOPIC`; see
+[`apps/relay/README.md`](../apps/relay/README.md#push-through-the-relay)). Without them `POST /v1/push` answers 501 and
+the test button reports it. The companion app and its extension need the App Group
+`group.nl.imdigital.nook.companion` enabled on both app ids (`nl.imdigital.nook.companion` and
+`nl.imdigital.nook.companion.notifications`) in *Certificates, Identifiers & Profiles*. Pushes only reach phones running
+a companion app signed by that same team: a self-built companion with another bundle id needs its own key and the
+direct path.
+
+Live Activities still go straight to Apple with your own key. Code: `packages/protocol/Sources/RelayPush.swift` and
+`RelayPushSeal.swift` (tested in `RelayPushTests`, with a vector made outside Swift), `apps/macos/Services/Companion/RelayPushClient.swift`,
+`apps/relay/worker/push.js` (tested with `npm test`), `apps/ios/NookNotifications/NotificationService.swift` and
+`apps/ios/NookCompanion/PushKeyStore.swift`.

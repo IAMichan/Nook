@@ -3058,6 +3058,35 @@
         }
       }
     },
+    "Nook needs you" : {
+      "comment" : "A notification sent through Nook's relay that could not be opened on this phone.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook braucht dich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook te necesita"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook a besoin de vous"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nook heeft je nodig"
+          }
+        }
+      }
+    },
     "Nook on your iPhone" : {
       "localizations" : {
         "de" : {

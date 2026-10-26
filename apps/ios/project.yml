@@ -30,6 +30,7 @@ targets:
         group: Shared from the Mac
     dependencies:
       - target: NookActivity
+      - target: NookNotifications
     info:
       path: NookCompanion/Info.plist
       properties:
@@ -63,6 +64,9 @@ targets:
         # Becomes production in a distribution build. Needs Push Notifications on the app id nl.imdigital.nook.companion.
         aps-environment: development
         com.apple.developer.usernotifications.time-sensitive: true
+        # Shared with NookNotifications: the push keys it opens relay pushes with (PushKeyStore). Needs the App Group
+        # group.nl.imdigital.nook.companion on both app ids.
+        com.apple.security.application-groups: [group.nl.imdigital.nook.companion]
   # The Live Activity (Lock Screen and Dynamic Island) for sessions working on the Mac. The Mac starts, updates and ends
   # it with liveactivity pushes (topic nl.imdigital.nook.companion.push-type.liveactivity); the app does too while open.
   NookActivity:
@@ -96,6 +100,41 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
+  # Opens notifications that came through Nook's relay (docs/COMPANION.md › Push through Nook's relay): the text is
+  # sealed with the pairing's push key, which the app keeps in the shared Keychain (PushKeyStore); falls back to
+  # "Nook needs you".
+  NookNotifications:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NookNotifications
+      - path: NookCompanion/PushKeyStore.swift
+      - path: NookCompanion/Localizable.xcstrings
+      - path: ../../packages/protocol/Sources
+    dependencies:
+      - sdk: UserNotifications.framework
+    info:
+      path: NookNotifications/Info.plist
+      properties:
+        CFBundleName: Nook Notifications
+        CFBundleDisplayName: Nook Companion
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    settings:
+      base:
+        PRODUCT_NAME: NookNotifications
+        PRODUCT_BUNDLE_IDENTIFIER: nl.imdigital.nook.companion.notifications
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+    entitlements:
+      path: NookNotifications/NookNotifications.entitlements
+      properties:
+        com.apple.security.application-groups: [group.nl.imdigital.nook.companion]
 schemes:
   NookCompanion:
     build:

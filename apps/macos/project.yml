@@ -201,6 +201,7 @@ targets:
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
       - path: Core/I18n+Releases.swift
+      - path: Core/I18n+RelayPush.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -315,6 +316,9 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: ../../packages/protocol/Sources/CompanionRoutes.swift
       - path: ../../packages/protocol/Sources/CompanionRelay.swift
+      - path: ../../packages/protocol/Sources/RelayPush.swift
+      - path: ../../packages/protocol/Sources/RelayPushSeal.swift
+      - path: ../../packages/protocol/Sources/CompanionSeal.swift
       - path: Services/Companion/CloudflareRelaySetup.swift
       - path: Services/Companion/KeepAwakePolicy.swift
       - path: Services/Workspace/GitLabAPI.swift

@@ -29,10 +29,14 @@ enum PairingStore {
         let attributes: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                          kSecAttrAccount as String: account, kSecValueData as String: data,
                                          kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+        let saved = SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+        // The Notification Service Extension opens relay pushes with the push key derived from it.
+        if saved { PushKeyStore.remember(pairingKey: link.key) }
+        return saved
     }
 
     static func clear() {
+        if let link = load() { PushKeyStore.forget(pairingKey: link.key) }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(query as CFDictionary)
         clearRoutes()

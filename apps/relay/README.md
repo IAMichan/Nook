@@ -43,10 +43,33 @@ npx wrangler@4 deploy       # prints the address, e.g. https://nook-relay.<you>.
 
 and enter the address in Nook under *I already have a relay*.
 
+## Push through the relay
+
+With Nook's APNs key set as Worker secrets, the relay also delivers notifications for Macs that have no Apple
+developer account of their own (`worker/push.js`, docs/COMPANION.md "Push through Nook's relay"). The Mac posts the
+phone's device token and the notification **sealed with that phone's pairing key**; the relay signs an APNs request
+and passes the blob on unread, with a generic "Nook needs you" as the visible text. The phone's Notification Service
+Extension opens the blob and shows the real title and text. The relay limits pushes per room and per device token, and
+logs nothing.
+
+```sh
+npx wrangler@4 secret put APNS_KEY        # the .p8 from developer.apple.com › Keys (Apple Push Notifications service)
+npx wrangler@4 secret put APNS_KEY_ID     # its key id
+npx wrangler@4 secret put APNS_TEAM_ID    # the team that owns the companion app's bundle id
+npx wrangler@4 secret put APNS_TOPIC      # optional: the companion's bundle id if it is not nl.imdigital.nook.companion
+```
+
+Without them `POST /v1/push` answers 501 and the Mac says so in Settings. The key must belong to the team that signs
+the companion app the phones run (pushes for another bundle id are refused by Apple).
+
+`POST /v1/push` takes `{"room": "<32 hex>", "token": "<hex>", "production": true, "sealed": {"d": "…", "s": "…"},
+"collapse": "<hex>", "urgent": false}` and answers `{"apns": <Apple's status>, "reason": "…"}`, or 400 (bad request),
+413 (too large), 429 (over the limit), 501 (not set up), 502 (Apple unreachable).
+
 ## Develop
 
 ```sh
-npm test                    # the room logic and the message format (node:test)
+npm test                    # the room logic, the message format and the push endpoint (node:test)
 npx wrangler@4 dev          # a local relay at http://localhost:8787 (the Mac accepts http only for localhost)
 ```
 
@@ -54,6 +77,7 @@ npx wrangler@4 dev          # a local relay at http://localhost:8787 (the Mac ac
 |---|---|
 | `GET /v1/rooms/<32 hex>?role=mac` | the Mac's WebSocket; a newer one replaces the older |
 | `GET /v1/rooms/<32 hex>?role=phone` | a phone's WebSocket; closed with 4404 when the Mac is not connected |
+| `POST /v1/push` | a push for a paired phone (opt-in, below) |
 | `GET /health` | `Nook relay` |
 
 Messages on the Mac's socket are `[kind: 1 byte][connection: 4 bytes][payload]` (`worker/mux.js`, and `RelayMux` in

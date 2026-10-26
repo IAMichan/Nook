@@ -35,6 +35,8 @@ EXCLUDE_SOURCES=(
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
   "Services/Updates/Ed25519Verifier.swift"
+  "../../packages/protocol/Sources/CompanionSeal.swift"
+  "../../packages/protocol/Sources/RelayPushSeal.swift"
 )
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(

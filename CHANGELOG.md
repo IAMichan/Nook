@@ -17,6 +17,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - An update that crashes the new build before it has run for a minute is rolled back on the next launch: Nook keeps
   the previous app and a snapshot of `nook.sqlite` until the new build proves healthy, puts both back, and says so
   (`docs/UPDATES.md`, "Rollback").
+- Push notifications for everyone, through the relay: the Mac seals each notification with the phone's pairing key,
+  the relay forwards it to Apple with Nook's APNs key (opt-in Worker secrets, `POST /v1/push`, rate limited, no
+  logging), and a new Notification Service Extension on the iPhone opens it. The own-`.p8` path stays
+  (`docs/COMPANION.md`, "Push through Nook's relay").
 - A short demo video at the top of the README (`docs/assets/nook-demo.mp4`, with a GIF preview), made with the
   `nook-video` skill, which can now render landscape clips (`--size`).
 - Area labels (`area: macos`, `area: tauri`, …) that are added to pull requests automatically, defined in

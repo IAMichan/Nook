@@ -22,6 +22,8 @@ node_modules/
 apps/ios/NookCompanion/Info.plist
 apps/ios/NookCompanion/*.entitlements
 apps/ios/NookActivity/Info.plist
+apps/ios/NookNotifications/Info.plist
+apps/ios/NookNotifications/*.entitlements
 
 # Local code signing identity (written by apps/macos/Config/local-signing.sh)
 apps/macos/Config/Signing.local.xcconfig
