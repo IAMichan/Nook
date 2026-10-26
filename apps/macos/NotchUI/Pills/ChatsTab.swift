@@ -1084,10 +1084,18 @@ private struct ChatsDetail: View {
             composer.reset()
             editing = nil
             reply = ComposerDraftStore.shared.draft(for: Self.draftKey(id)) ?? ""
+            replyFocused = true
         }
         // What you were typing to this chat stays when the notch closes, and comes back when you open the chat again.
+        // An opened chat puts the cursor in the field, after a brief wait for the panel to take the keyboard.
         .onAppear {
             if reply.isEmpty, let saved = ComposerDraftStore.shared.draft(for: Self.draftKey(entry.id)) { reply = saved }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { replyFocused = true }
+        }
+        // The panel can take the keyboard after the chat appeared: the field asks again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            guard note.object is NotchPanel, !replyFocused, zoomed == nil, composer.panel == nil else { return }
+            replyFocused = true
         }
         // A message's text being changed is not an unsent answer.
         .onChange(of: reply) { _, text in
