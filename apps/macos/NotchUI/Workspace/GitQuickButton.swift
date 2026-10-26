@@ -34,7 +34,7 @@ struct GitQuickButton: View {
                     EmptyView()
                 }
                 if let link = workspace.openPullRequests[runID] {
-                    Button(tr("ws.quick.viewPR")) { BrowserStore.show(link) }
+                    Button(tr("ws.quick.viewPR")) { PullRequestViewer.show(link) }
                 }
             }
         }
@@ -74,7 +74,7 @@ struct GitQuickButton: View {
         progress = tr(action.labelKey)
         Task {
             do {
-                // A pull request it made stays put: "View PR" opens it in Nook's browser when you want it.
+                // A pull request it made stays put: "View PR" opens it in the side panel when you want it.
                 let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch {
@@ -92,10 +92,19 @@ extension ToastCenter {
         switch result {
         case .success(let link):
             success(tr(action.doneKey), action: link.map { url in
-                NookToastAction(title: tr("ws.quick.viewPR")) { BrowserStore.show(url) }
+                NookToastAction(title: tr("ws.quick.viewPR")) { PullRequestViewer.show(url) }
             })
         case .failure(let failure):
             error(failure, title: tr("toast.failed", tr(action.labelKey)))
         }
+    }
+}
+
+/// Where "View PR" opens a pull request Nook just made: in the session's side panel when Nook can read it (GitHub
+/// connected), else in Nook's browser.
+@MainActor
+enum PullRequestViewer {
+    static func show(_ url: URL) {
+        if !AppModel.shared.openPullRequestLink(url, beside: true) { BrowserStore.show(url) }
     }
 }
