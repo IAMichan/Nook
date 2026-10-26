@@ -4,8 +4,8 @@ import Foundation
 /// number, author and branch that also takes qualifiers (`label:bug`, `author:ada`, `review:approved`, see
 /// `PullRequestQuery`), and the choices in the Filters dropdown: the state (open by default, closed, merged or all),
 /// which group (for your review, yours, or from the watched organizations and repositories), the author, the labels,
-/// drafts, the review decision, CI, and the repository. Kept across launches (`load` / `save`). Foundation only, so
-/// tests can use it.
+/// drafts, the review decision, CI, the repository, and the repositories you never want to see. Kept across launches
+/// (`load` / `save`). Foundation only, so tests can use it.
 struct PullRequestFilter: Equatable, Codable, Sendable {
     enum State: String, CaseIterable, Identifiable, Codable, Sendable {
         case all, open, closed, merged
@@ -45,11 +45,14 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
     var status: Status = .any
     /// "owner/name", or nil for every repository.
     var repo: String?
+    /// "owner/name" of the repositories left out of the list.
+    var hiddenRepos: [String] = []
     /// The id of the GitHub account to list, or nil for every connected account.
     var account: String?
 
     init(query: String = "", state: State = .open, scope: Scope = .all, author: String? = nil, labels: [String] = [],
-         draft: Draft = .all, review: Review = .all, status: Status = .any, repo: String? = nil, account: String? = nil) {
+         draft: Draft = .all, review: Review = .all, status: Status = .any, repo: String? = nil, hiddenRepos: [String] = [],
+         account: String? = nil) {
         self.query = query
         self.state = state
         self.scope = scope
@@ -59,12 +62,15 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
         self.review = review
         self.status = status
         self.repo = repo
+        self.hiddenRepos = hiddenRepos
         self.account = account
     }
 
     /// How many dropdown choices differ from the default (the search not counted), for the badge on the Filters button.
+    /// The hidden repositories count once, however many there are.
     var activeCount: Int {
-        [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil, account != nil]
+        [state != .open, scope != .all, author != nil, draft != .all, review != .all, status != .any, repo != nil,
+         !hiddenRepos.isEmpty, account != nil]
             .filter { $0 }.count + labels.count
     }
 
@@ -80,6 +86,23 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
     var effectiveStatus: Status { parsed.checks ?? status }
     var effectiveRepo: String? { parsed.repo ?? repo }
 
+    /// Whether `repo` ("owner/name") is hidden, in any case.
+    func hides(_ repo: String) -> Bool {
+        hiddenRepos.contains { $0.lowercased() == repo.lowercased() }
+    }
+
+    /// The same filter with `repo` hidden or shown again. Hiding the one repository chosen also stops choosing it.
+    func togglingHidden(_ repo: String) -> PullRequestFilter {
+        var next = self
+        if hides(repo) {
+            next.hiddenRepos.removeAll { $0.lowercased() == repo.lowercased() }
+        } else {
+            next.hiddenRepos.append(repo)
+            if next.effectiveRepo?.lowercased() == repo.lowercased() { next = next.clearingTyped(["repo"]); next.repo = nil }
+        }
+        return next
+    }
+
     func matches(_ item: PullRequestItem) -> Bool {
         matches(item, parsed: parsed)
     }
@@ -93,6 +116,7 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
         }
         if let author = parsed.author ?? author, item.author.lowercased() != author.lowercased() { return false }
         if let repo = parsed.repo ?? repo, item.repo.lowercased() != repo.lowercased() { return false }
+        if hides(item.repo) || parsed.excludedRepos.contains(where: { $0.lowercased() == item.repo.lowercased() }) { return false }
         switch parsed.draft ?? draft {
         case .all: break
         case .drafts: if !item.draft { return false }
@@ -193,6 +217,7 @@ struct PullRequestFilter: Equatable, Codable, Sendable {
                   review: (try? c.decodeIfPresent(Review.self, forKey: .review)) ?? .all,
                   status: (try? c.decodeIfPresent(Status.self, forKey: .status)) ?? .any,
                   repo: try? c.decodeIfPresent(String.self, forKey: .repo),
+                  hiddenRepos: (try? c.decodeIfPresent([String].self, forKey: .hiddenRepos)) ?? [],
                   account: try? c.decodeIfPresent(String.self, forKey: .account))
     }
 }

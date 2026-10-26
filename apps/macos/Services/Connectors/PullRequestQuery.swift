@@ -3,7 +3,8 @@ import Foundation
 /// The pull request search split into its words and the qualifiers typed in it:
 /// `label:bug` (also `label:bug,ui` for either, `-label:wip` to leave one out, and a scoped label such as `area:ui`
 /// written bare), `author:ada`, `draft:true` or `draft:false`, `review:approved` / `changes-requested` / `required` /
-/// `none`, `checks:passing` / `failing` / `pending` (or `status:`), and Nook's own `repo:owner/name`. A qualifier
+/// `none`, `checks:passing` / `failing` / `pending` (or `status:`), and Nook's own `repo:owner/name` (`-repo:` to
+/// leave a repository out). A qualifier
 /// typed here wins over the same choice in the Filters dropdown. Foundation only, so tests can use it.
 struct PullRequestQuery: Equatable, Sendable {
     /// The words left over, lowercased; every one must appear in the row.
@@ -16,6 +17,7 @@ struct PullRequestQuery: Equatable, Sendable {
     var review: PullRequestFilter.Review?
     var checks: PullRequestFilter.Status?
     var repo: String?
+    var excludedRepos: [String] = []
 
     private static let maxValues = 10
     private static let maxLength = 200
@@ -44,6 +46,8 @@ struct PullRequestQuery: Equatable, Sendable {
                 query.checks = checks(value)
             case "repo" where !negated:
                 query.repo = String(value.prefix(maxLength))
+            case "repo":
+                query.excludedRepos += list(rawValue)
             case "author", "draft", "review", "checks", "status", "repo":
                 query.words.append(token.lowercased())
             default:
@@ -55,6 +59,7 @@ struct PullRequestQuery: Equatable, Sendable {
         }
         query.labels = Array(query.labels.prefix(maxValues))
         query.excludedLabels = Array(query.excludedLabels.prefix(maxValues))
+        query.excludedRepos = Array(query.excludedRepos.prefix(maxValues))
         return query
     }
 
