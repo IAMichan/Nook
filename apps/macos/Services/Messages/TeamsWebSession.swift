@@ -3,30 +3,34 @@ import WebKit
 
 /// Teams the way Nook links Instagram and LinkedIn: you sign in on teams.microsoft.com in a window of Nook's own, as in
 /// your browser, and Nook takes the session token the Teams website itself sends when it reads your chats. No app of
-/// Nook's in Microsoft Entra is needed. The website's sign-in stays in a store of its own on this Mac (not shared with
-/// Safari or Nook's other windows); when the token is about to run out, the website is loaded again out of sight and
-/// renews it by itself. The token is kept in the Keychain and only goes back to Teams' own chat service.
+/// Nook's in Microsoft Entra is needed. Every account you sign in with keeps the website's sign-in in a store of its
+/// own on this Mac (not shared with Safari, Nook's other windows or your other accounts), so you can link as many as
+/// you like; when a token is about to run out, the website is loaded again out of sight in that store and renews it by
+/// itself. The tokens are kept in the Keychain and only go back to Teams' own chat service.
 @MainActor
 final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, NSWindowDelegate {
     static let shared = TeamsWebSession()
 
-    /// The session to read with; nil until you signed in, and again after signing out.
-    @Published private(set) var session: TeamsWebData.Session?
+    /// The accounts to read, in the order you added them; empty until you signed in.
+    @Published private(set) var accounts: [TeamsWebData.Account] = []
     /// The sign-in window is open.
     @Published private(set) var isSigningIn = false
     /// Why the last sign-in did not link Teams, shown until the next one.
     @Published private(set) var problem: String?
 
-    var isSignedIn: Bool { session != nil }
+    var isSignedIn: Bool { !accounts.isEmpty }
 
     private static let start = URL(string: "https://teams.microsoft.com/v2/")!
-    private static let sessionAccount = "chats.teams.web.session"
-    /// The website's own store, kept between launches so it stays signed in and can renew the token.
-    private static let storeID = UUID(uuidString: "4E4F4F4B-5445-414D-5357-454253544F52")!
+    private static let accountsKey = "chats.teams.web.accounts"
+    /// The one session of a version that knew one account, and the store its sign-in is in.
+    private static let legacySessionKey = "chats.teams.web.session"
+    private static let legacyStore = UUID(uuidString: "4E4F4F4B-5445-414D-5357-454253544F52")!
     private static let handler = "nookTeamsToken"
 
     private var window: NSWindow?
     private var web: WKWebView?
+    /// The store the website is open in now.
+    private var store: UUID?
     private var onSignedIn: (() -> Void)?
     /// A renewal out of sight under way, and who waits for it.
     private var renewing: [CheckedContinuation<TeamsWebData.Session?, Never>] = []
@@ -39,16 +43,25 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
 
     override init() {
         super.init()
-        if let json = CloudHelp.secret(Self.sessionAccount)?.data(using: .utf8) {
-            session = try? JSONDecoder().decode(TeamsWebData.Session.self, from: json)
+        if let json = CloudHelp.secret(Self.accountsKey)?.data(using: .utf8),
+           let stored = try? JSONDecoder().decode([TeamsWebData.Account].self, from: json) {
+            accounts = stored
+        } else if let json = CloudHelp.secret(Self.legacySessionKey)?.data(using: .utf8),
+                  let session = try? JSONDecoder().decode(TeamsWebData.Session.self, from: json) {
+            accounts = [TeamsWebData.Account(session: session, store: Self.legacyStore)]
+            save()
+            Keychain.remove(Self.legacySessionKey)
         }
     }
 
-    /// Opens teams.microsoft.com to sign in; once the website reads your chats, its token is kept and the window closes.
-    func signIn(title: String, onSignedIn: @escaping () -> Void) {
+    /// Opens teams.microsoft.com to sign in: again for the account `id`, in its own store, or for one more account in a
+    /// new, empty store. Once the website reads your chats, its token is kept and the window closes.
+    func signIn(_ id: String? = nil, title: String, onSignedIn: @escaping () -> Void) {
+        finishRenewing(nil)
         close()
         self.onSignedIn = onSignedIn
-        let web = makeWebView()
+        let store = accounts.first { $0.id == id }?.store ?? UUID()
+        let web = makeWebView(store: store)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 760),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.title = title
@@ -65,17 +78,25 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         startWatching()
     }
 
-    /// A fresh token from the website, loaded out of sight with the sign-in it kept; nil when it is signed out there
-    /// (only signing in again helps) or did not answer within a minute.
-    func renew() async -> TeamsWebData.Session? {
-        guard session != nil else { return nil }
+    /// A fresh token for an account from the website, loaded out of sight in its store with the sign-in it kept; nil
+    /// when it is signed out there (only signing in again helps) or did not answer within a minute. The website is open
+    /// for one account at a time, so this waits for a sign-in or another account's renewal to end first.
+    func renew(_ id: String) async -> TeamsWebData.Session? {
+        for _ in 0..<90 {
+            guard let store = accounts.first(where: { $0.id == id })?.store else { return nil }
+            if web == nil || self.store == store { break }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        guard let store = accounts.first(where: { $0.id == id })?.store, web == nil || self.store == store else { return nil }
         return await withCheckedContinuation { continuation in
             renewing.append(continuation)
             guard renewing.count == 1 else { return }
-            let web = makeWebView()
-            self.web = web
-            web.load(URLRequest(url: Self.start))
-            startWatching()
+            // Signing in again for this account in the open window renews it as well.
+            if web == nil {
+                let web = makeWebView(store: store)
+                web.load(URLRequest(url: Self.start))
+                startWatching()
+            }
             renewTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
@@ -84,41 +105,46 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         }
     }
 
-    /// Forgets the token and the website's sign-in on this Mac.
-    func signOut() {
-        close()
-        session = nil
-        Keychain.remove(Self.sessionAccount)
-        Task { try? await WKWebsiteDataStore.remove(forIdentifier: Self.storeID) }
+    /// Forgets an account's token and the website's sign-in for it on this Mac.
+    func signOut(_ id: String) {
+        guard let account = accounts.first(where: { $0.id == id }) else { return }
+        if store == account.store {
+            finishRenewing(nil)
+            close()
+        }
+        accounts.removeAll { $0.id == id }
+        save()
+        Self.remove(account.store)
     }
 
     /// The token was refused (a 401): the next read renews it first.
-    func expire() {
-        guard var current = session else { return }
-        current.expires = .distantPast
-        session = current
+    func expire(_ id: String) {
+        guard let index = accounts.firstIndex(where: { $0.id == id }) else { return }
+        accounts[index].session.expires = .distantPast
     }
 
-    /// Your name, once a message of yours says it.
-    func named(_ name: String) {
-        guard var current = session, current.name != name else { return }
-        current.name = name
-        keep(current)
+    /// Your name in an account, once a message of yours says it.
+    func named(_ name: String, in id: String) {
+        guard let index = accounts.firstIndex(where: { $0.id == id }), accounts[index].session.name != name else { return }
+        accounts[index].session.name = name
+        save()
     }
 
     // MARK: The website
 
-    private func makeWebView() -> WKWebView {
+    private func makeWebView(store: UUID) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.storeID)
+        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: store)
         configuration.applicationNameForUserAgent = Self.safariName
         configuration.userContentController.addUserScript(WKUserScript(source: Self.script, injectionTime: .atDocumentStart,
                                                                        forMainFrameOnly: false))
-        configuration.userContentController.add(TokenListener { [weak self] url, header in self?.heard(url: url, header: header) },
-                                                name: Self.handler)
+        configuration.userContentController.add(TokenListener { [weak self] url, header in
+            self?.heard(url: url, header: header, store: store)
+        }, name: Self.handler)
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 980, height: 760), configuration: configuration)
         web.navigationDelegate = self
         self.web = web
+        self.store = store
         return web
     }
 
@@ -129,27 +155,34 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         return "Version/\(version ?? "26.0") Safari/605.1.15"
     }
 
-    private func heard(url: String, header: String) {
+    /// A school or work account that signs in through Google needs the window to call itself Firefox there.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        webView.presentsItself(for: navigationAction, otherwise: nil) ? .cancel : .allow
+    }
+
+    private func heard(url: String, header: String, store: UUID) {
         if url == "tokens" {
             let tokens = TeamsWebData.tokens(in: header)
-            Task { await offer(tokens) }
+            Task {
+                if let found = await offer(tokens) { take(found, store: store) }
+            }
             return
         }
         let found = url == "authz" ? ChatJSON.object(Data(header.utf8)).flatMap { TeamsWebData.session(authz: $0) }
             : TeamsWebData.session(url: url, header: header)
-        if let found { take(found) }
+        if let found { take(found, store: store) }
     }
 
-    private func take(_ found: TeamsWebData.Session) {
-        var kept = found
-        if let name = session?.name, session?.me == found.me { kept.name = name }
-        keep(kept)
+    /// A session the website in `store` gave, while it is still open there.
+    private func take(_ found: TeamsWebData.Session, store: UUID) {
+        guard self.store == store else { return }
+        keep(found, store: store)
         if isSigningIn {
             let done = onSignedIn
             close()
             done?()
         }
-        finishRenewing(kept)
+        finishRenewing(accounts.first { $0.store == store }?.session)
     }
 
     private func startWatching() {
@@ -163,30 +196,30 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
     /// The website's sign-in, found without its requests: the tokens it keeps in its storage and its cookies, each
     /// offered once.
     private func look() {
-        guard let web else { return }
+        guard let web, let store else { return }
         Task {
             var tokens: [String] = []
             if let found = try? await web.evaluateJavaScript(Self.storedTokens) as? [String] { tokens += found }
-            tokens += await Self.cookieTokens()
-            await offer(tokens)
+            tokens += await Self.cookieTokens(store)
+            if let found = await offer(tokens) { take(found, store: store) }
         }
     }
 
     /// A session token is used as it is, once its chat service answers; a token for Teams' chat service goes to Teams'
     /// sign-in service for one. Anything else is passed over.
-    private func offer(_ tokens: [String]) async {
+    private func offer(_ tokens: [String]) async -> TeamsWebData.Session? {
         for token in tokens where !tried.contains(token) {
             let direct = TeamsWebData.isSkypeToken(token)
             guard direct || TeamsWebData.isSpacesToken(token) else { continue }
             tried.insert(token)
             guard let found = await (direct ? Self.locate(token) : Self.authorize(token)) else { continue }
-            take(found)
-            return
+            return found
         }
+        return nil
     }
 
-    private static func cookieTokens() async -> [String] {
-        let cookies = await WKWebsiteDataStore(forIdentifier: storeID).httpCookieStore.allCookies()
+    private static func cookieTokens(_ store: UUID) async -> [String] {
+        let cookies = await WKWebsiteDataStore(forIdentifier: store).httpCookieStore.allCookies()
         return cookies.compactMap { cookie -> String? in
             switch cookie.name.lowercased() {
             case "authtoken": TeamsWebData.bearer(cookie: cookie.value)
@@ -213,23 +246,36 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         return nil
     }
 
-    /// Asks Teams' sign-in service, as the website does, for the session token that goes with a token of yours.
+    /// Asks Teams' sign-in service, as the website does, for the session token that goes with a token of yours; your
+    /// name and address come from that token.
     private static func authorize(_ token: String) async -> TeamsWebData.Session? {
         var request = URLRequest(url: URL(string: "https://teams.microsoft.com/api/authsvc/v1.0/authz")!)
         request.httpMethod = "POST"
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.httpBody = Data()
         guard let (data, response) = try? await ConnectorHTTP.session.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200, let json = ChatJSON.object(data) else { return nil }
-        return TeamsWebData.session(authz: json)
+              (response as? HTTPURLResponse)?.statusCode == 200, let json = ChatJSON.object(data),
+              let session = TeamsWebData.session(authz: json) else { return nil }
+        return TeamsWebData.named(session, by: token)
     }
 
-    private func keep(_ found: TeamsWebData.Session) {
-        session = found
+    private func keep(_ found: TeamsWebData.Session, store: UUID) {
+        let (kept, dropped) = TeamsWebData.keep(found, store: store, in: accounts)
+        accounts = kept
         problem = nil
-        if let data = try? JSONEncoder().encode(found), let json = String(data: data, encoding: .utf8) {
-            Keychain.write(json, account: Self.sessionAccount)
+        save()
+        dropped.forEach(Self.remove)
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(accounts), let json = String(data: data, encoding: .utf8) {
+            Keychain.write(json, account: Self.accountsKey)
         }
+    }
+
+    /// Removes the website's sign-in kept in a store.
+    private static func remove(_ store: UUID) {
+        Task { try? await WKWebsiteDataStore.remove(forIdentifier: store) }
     }
 
     private func finishRenewing(_ found: TeamsWebData.Session?) {
@@ -265,9 +311,11 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         web?.navigationDelegate = nil
         web?.configuration.userContentController.removeScriptMessageHandler(forName: Self.handler)
         web = nil
+        store = nil
     }
 
     /// Closed before Nook took over the sign-in: one more look in the website's cookies, and else why it did not link.
+    /// A new store nobody signed in to is removed again.
     func windowWillClose(_ notification: Notification) {
         window = nil
         isSigningIn = false
@@ -275,14 +323,15 @@ final class TeamsWebSession: NSObject, ObservableObject, WKNavigationDelegate, N
         onSignedIn = nil
         watch?.invalidate()
         watch = nil
+        guard let store else { return }
         if renewing.isEmpty { dropWebView() }
-        let before = session
         Task {
-            await offer(await Self.cookieTokens())
-            if session != before {
+            if let found = await offer(await Self.cookieTokens(store)) {
+                keep(found, store: store)
                 done?()
-            } else if session == nil {
+            } else if !accounts.contains(where: { $0.store == store }) {
                 problem = tr("chats.teams.web.notTaken")
+                Self.remove(store)
             }
         }
     }

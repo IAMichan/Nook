@@ -136,8 +136,8 @@ struct TelegramSettingsRows: View {
     }
 }
 
-/// Settings › Chats › Teams: every account you signed in with a code on Microsoft's own page, and a button to add one
-/// more. Nook signs in as its own app, so signing in is all it takes.
+/// Settings › Chats › Teams: every account you signed in with on teams.microsoft.com (or with a code on Microsoft's own
+/// page), and a button to add one more. Signing in is all it takes.
 struct TeamsSettingsRows: View {
     @ObservedObject var teams: TeamsBridge
     /// Why the last read failed, if it did for every account.
@@ -146,16 +146,17 @@ struct TeamsSettingsRows: View {
     @ObservedObject private var web = TeamsWebSession.shared
 
     var body: some View {
-        if let session = web.session {
-            let title = session.name.isEmpty ? "Teams" : session.name
-            if let why = teams.problems[TeamsBridge.webID] {
+        ForEach(web.accounts) { account in
+            let title = account.label.isEmpty ? "Teams" : account.label
+            let detail = account.session.email.flatMap { $0 == title ? nil : $0 } ?? tr("chats.teams.web.connectedDetail")
+            if let why = teams.problems[TeamsBridge.webID(account.id)] {
                 StatusRow(title: tr("chats.teams.connected", title), detail: why, state: .error) {
-                    Button(tr("chats.teams.signInAgainButton")) { signInOnWeb() }
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut() }
+                    Button(tr("chats.teams.signInAgainButton")) { signInOnWeb(account.id) }
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut(account.id) }
                 }
             } else {
-                StatusRow(title: tr("chats.teams.connected", title), detail: tr("chats.teams.web.connectedDetail"), state: .done) {
-                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut() }
+                StatusRow(title: tr("chats.teams.connected", title), detail: detail, state: .done) {
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", title)) { web.signOut(account.id) }
                 }
             }
         }
@@ -177,15 +178,20 @@ struct TeamsSettingsRows: View {
         if let problem, teams.problems.isEmpty, !teams.accounts.isEmpty {
             StatusRow(title: tr("chats.teams.problem"), detail: problem, state: .error) { EmptyView() }
         }
-        if web.session == nil {
-            if let why = web.problem, !web.isSigningIn {
-                StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
-            }
-            HStack {
+        if let why = web.problem, !web.isSigningIn {
+            StatusRow(title: tr("chats.teams.failed"), detail: why, state: .error) { EmptyView() }
+        }
+        HStack {
+            if web.accounts.isEmpty {
                 SettingLabel(tr("chats.teams.web.signIn"), detail: tr("chats.teams.web.signInDetail"))
                 Spacer()
                 Button(tr("chats.teams.signIn")) { signInOnWeb() }
                     .buttonStyle(.borderedProminent)
+                    .disabled(web.isSigningIn)
+            } else {
+                SettingLabel(tr("chats.teams.addAccount"), detail: tr("chats.teams.web.addAccountDetail"))
+                Spacer()
+                Button(tr("chats.teams.addAccount")) { signInOnWeb() }
                     .disabled(web.isSigningIn)
             }
         }
@@ -197,8 +203,9 @@ struct TeamsSettingsRows: View {
         }
     }
 
-    private func signInOnWeb() {
-        web.signIn(title: tr("chats.link.browser.title", "Teams")) { onSignedIn() }
+    /// Signs in again for an account, or (with no id) adds one in a window of its own.
+    private func signInOnWeb(_ id: String? = nil) {
+        web.signIn(id, title: tr("chats.link.browser.title", "Teams")) { onSignedIn() }
     }
 
     @ViewBuilder

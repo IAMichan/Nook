@@ -92,6 +92,12 @@ final class ChatSignInWindow: NSObject, NSWindowDelegate, WKNavigationDelegate {
         if Self.current === self { Self.current = nil }
     }
 
+    /// Signing in with Google needs the window to call itself Firefox there; elsewhere it keeps the step's own agent.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        guard case .browser(_, _, _, let agent, _, _, _) = step else { return .allow }
+        return webView.presentsItself(for: navigationAction, otherwise: agent.flatMap { $0.isEmpty ? nil : $0 }) ? .cancel : .allow
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { await check() }
     }
