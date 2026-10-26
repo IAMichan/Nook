@@ -12,6 +12,7 @@ struct CompanionSettingsRows: View {
     @State private var keyProblem = false
     @State private var link: PairingLink?
     @State private var copied = false
+    @State private var diagnosticsCopied = false
     /// The Cloudflare token being pasted, and the address of a relay set up some other way.
     @State private var token = ""
     @State private var manualAddress = ""
@@ -46,6 +47,14 @@ struct CompanionSettingsRows: View {
                 } else {
                     Button(tr("companion.pair")) { link = server.pairingLink() }
                         .disabled(!isListening)
+                }
+                // The local connection log, redacted (no addresses, names or keys), for the user to paste where they choose.
+                HStack(spacing: NookTheme.Spacing.md) {
+                    Button(diagnosticsCopied ? tr("companion.diagnostics.copied") : tr("companion.diagnostics.copy")) {
+                        Pasteboard.copy(CompanionDiagnosticsLog.mac.bundle(about: diagnosticsAbout))
+                        diagnosticsCopied = true
+                    }
+                    SettingNote(tr("companion.diagnostics.hint"))
                 }
             }
         } header: {
@@ -160,6 +169,18 @@ struct CompanionSettingsRows: View {
         case .music: return tr("companion.scope.music")
         case .nookChat: return tr("companion.scope.nookChat")
         }
+    }
+
+    /// The header of *Copy diagnostics*: versions and what is set up, nothing that names the user or a device.
+    private var diagnosticsAbout: [String: String] {
+        var about = ["app": CompanionProtocol.appVersion ?? "?", "protocol": String(CompanionProtocol.version),
+                     "phones": String(store.devices.count), "relay": relay.enabled ? relay.mode.rawValue : "off",
+                     "relayStatus": String(describing: relay.status), "server": String(describing: server.state)]
+        for (index, device) in store.devices.enumerated() {
+            about["phone\(index + 1)"] = "app \(device.appVersion ?? "?") · protocol \(device.protocolVersion.map { String($0) } ?? "1") · "
+                + CompanionScopes.names(device.grantedScopes).joined(separator: ",")
+        }
+        return about
     }
 
     /// When the phone was last seen, and which version of the app it runs once it said so.

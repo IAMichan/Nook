@@ -7,6 +7,7 @@ struct DiagnosisSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var result: CompanionDiagnosis.Result?
     @State private var checking = false
+    @State private var copied = false
 
     var body: some View {
         NavigationStack {
@@ -49,6 +50,15 @@ struct DiagnosisSheet: View {
                     Button { Task { await check() } } label: { Label("Check again", systemImage: "arrow.clockwise") }
                         .buttonStyle(ActionButtonStyle())
                         .disabled(checking)
+                    // The local connection log, without addresses, names or keys; nothing is sent anywhere.
+                    Button {
+                        UIPasteboard.general.string = client.diagnosticsBundle()
+                        copied = true
+                        Haptics.success()
+                    } label: { Label(copied ? LocalizedStringKey("Copied") : LocalizedStringKey("Copy diagnostics"), systemImage: copied ? "checkmark" : "doc.on.doc") }
+                        .buttonStyle(ActionButtonStyle())
+                    Text("Diagnostics stay on this iPhone until you paste them somewhere; addresses, names and keys are left out.")
+                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textTertiary)
                 }
                 .padding(Theme.Spacing.xl)
             }

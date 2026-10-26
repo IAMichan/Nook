@@ -1697,6 +1697,34 @@
         }
       }
     },
+    "Copied" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kopiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copié"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gekopieerd"
+          }
+        }
+      }
+    },
     "Copy" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1722,6 +1750,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kopieer"
+          }
+        }
+      }
+    },
+    "Copy diagnostics" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnose kopieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar diagnóstico"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copier le diagnostic"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnose kopiëren"
           }
         }
       }
@@ -1923,6 +1979,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Weiger"
+          }
+        }
+      }
+    },
+    "Diagnostics stay on this iPhone until you paste them somewhere; addresses, names and keys are left out." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Diagnose bleibt auf diesem iPhone, bis du sie irgendwo einfügst; Adressen, Namen und Schlüssel werden weggelassen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El diagnóstico se queda en este iPhone hasta que lo pegues en algún sitio; se omiten direcciones, nombres y claves."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le diagnostic reste sur cet iPhone jusqu’à ce que vous le colliez quelque part ; adresses, noms et clés sont omis."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De diagnose blijft op deze iPhone tot je hem ergens plakt; adressen, namen en sleutels worden weggelaten."
           }
         }
       }

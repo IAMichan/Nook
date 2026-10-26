@@ -98,6 +98,7 @@ final class CompanionServer: ObservableObject {
             }
         case .failed(let error):
             state = .failed(error.localizedDescription)
+            CompanionDiagnosticsLog.mac.record("listener", ["state": "failed", "error": error.localizedDescription])
             listener?.cancel()
             listener = nil
             // A taken port: pick another next time.
@@ -157,6 +158,10 @@ final class CompanionServer: ObservableObject {
         peer.closed = true
         if peer.counted { open = max(0, open - 1) }
         let wasLive = streams.contains { $0 === peer }
+        if wasLive {
+            CompanionDiagnosticsLog.mac.record("streamClosed", ["device": peer.deviceID ?? "", "via": peer.counted ? "direct" : "relay",
+                                                                "quiet": String(Int(Date().timeIntervalSince(peer.lastHeard)))])
+        }
         streams.removeAll { $0 === peer }
         if streams.isEmpty { streamTimer?.invalidate(); streamTimer = nil }
         if wasLive { KeepAwake.shared.update() }
@@ -236,6 +241,7 @@ final class CompanionServer: ObservableObject {
         peer.lastHeard = Date()
         // What this phone may do is decided on the Mac (Settings › Devices); anything else is refused before it runs.
         if !pairing, !CompanionScopes.allows(request.op, granted: scopes(of: claimed)) {
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": "scope", "device": claimed])
             send(.failure(request.id, .notAllowedFromPhone, message: "scope"), key: key, deviceID: claimed, on: connection)
             return
         }
@@ -267,6 +273,8 @@ final class CompanionServer: ObservableObject {
         // The guard lives per device and is changed in place: a repeated id or a burst is refused from here on.
         if let refusal = guards[claimed, default: RequestGuard()].admit(request, now: Date()) {
             if keeps { receipts[claimed]?.cancel(request.id) }
+            CompanionDiagnosticsLog.mac.record("refused", ["op": request.op.rawValue, "error": refusal.rawValue, "device": claimed,
+                                                           "skew": String(Int(Date().timeIntervalSince1970 - request.sent))])
             send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
             return
         }
@@ -277,6 +285,7 @@ final class CompanionServer: ObservableObject {
                 return
             }
             audit("paired", request.text ?? "iPhone")
+            CompanionDiagnosticsLog.mac.record("paired", ["device": claimed, "relay": peer.counted ? "no" : "yes"])
         } else {
             store.touch(claimed)
         }
@@ -311,6 +320,8 @@ final class CompanionServer: ObservableObject {
         peer.key = key
         peer.streamID = request.id
         peer.seq = 0
+        CompanionDiagnosticsLog.mac.record("subscribed", ["device": deviceID, "via": peer.counted ? "direct" : "relay",
+                                                          "protocol": request.protocolVersion.map { String($0) } ?? "1"])
         let sessions = digests(app)
         peer.sent = sessions
         if !streams.contains(where: { $0 === peer }) { streams.append(peer) }
@@ -544,6 +555,11 @@ final class CompanionServer: ObservableObject {
                                  actions: Self.actions(run, now: now).map(\.rawValue))
         }
     }
+}
+
+extension CompanionDiagnosticsLog {
+    /// The Mac's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from Settings › Devices.
+    static let mac = CompanionDiagnosticsLog(url: NookPaths.supportDirectory.appendingPathComponent("companion-diagnostics.ndjson"))
 }
 
 /// One connection from a phone (directly, or through the relay), and what the Mac knows about it once the phone

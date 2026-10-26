@@ -190,6 +190,7 @@ final class CompanionClient: ObservableObject {
     /// Makes another paired Mac the active one: the live connection moves there.
     func switchMac(to id: String) {
         guard id != pairings.active?.id, pairings.contains(id) else { return }
+        CompanionDiagnosticsLog.phone.record("switchMac", ["macs": String(pairings.macs.count)])
         stopConnection()
         Task { await LiveActivities.shared.endAll() }
         cacheActiveSessions()
@@ -279,6 +280,7 @@ final class CompanionClient: ObservableObject {
         guard let channel else { return }
         switch wakeup {
         case .reconnect:
+            CompanionDiagnosticsLog.phone.record("wakeup", ["action": "reconnect"])
             replacing = true
             channel.close()
         case .probe:
@@ -330,6 +332,7 @@ final class CompanionClient: ObservableObject {
         let previous = pathSignature
         pathSignature = online ? signature : nil
         guard online, previous != signature, previous != nil || phase != .connected else { return }
+        CompanionDiagnosticsLog.phone.record("network", ["changed": previous == nil ? "online" : "other"])
         wakeUp(resetBackoff: true)
         if let channel {
             Task {
@@ -355,6 +358,8 @@ final class CompanionClient: ObservableObject {
             guard let picked = await RouteProbe.pick(attemptOrder(), key: link.key, makeRequest: { CompanionRequest.versioned(.list) }) else {
                 if Task.isCancelled { return }
                 // Nothing answered: the Mac may listen on another port now; Bonjour finds it on the local network.
+                CompanionDiagnosticsLog.phone.record("unreachable", ["routes": attemptOrder().map(\.logKind).joined(separator: ","),
+                                                                     "failures": String(failures)])
                 if await relocate() { continue }
                 failures += 1
                 phase = .offline(CompanionClientError.timeout.localizedDescription)
@@ -365,6 +370,9 @@ final class CompanionClient: ObservableObject {
             if let preferred = preferredRoute, preferred.hostKey != picked.route.hostKey { cooldowns.hold(preferred, now: Date()) }
             preferredRoute = nil
             lastRefusal = picked.answer.ok ? nil : picked.answer.error
+            CompanionDiagnosticsLog.phone.record(picked.answer.ok ? "route" : "refused",
+                                                 ["route": picked.route.logKind, "error": picked.answer.error?.rawValue ?? "",
+                                                  "failures": String(failures)])
             guard picked.answer.ok else {
                 failures += 1
                 phase = .offline(refusalText(picked.answer.error))
@@ -414,6 +422,8 @@ final class CompanionClient: ObservableObject {
             Task { await afterConnecting() }
             await watch(channel)
             if self.channel === channel { self.channel = nil }
+            CompanionDiagnosticsLog.phone.record("closed", ["route": route.logKind, "up": String(Int(Date().timeIntervalSince(since))),
+                                                            "replacing": replacing ? "yes" : "no"])
             if Task.isCancelled { return }
             if Date().timeIntervalSince(since) >= RetryBackoff.stableAfter { failures = 0 }
             if !replacing {
@@ -423,6 +433,7 @@ final class CompanionClient: ObservableObject {
         } catch {
             channel.close()
             if self.channel === channel { self.channel = nil }
+            CompanionDiagnosticsLog.phone.record("channelFailed", ["route": route.logKind, "error": error.localizedDescription])
             failures += 1
             if !Task.isCancelled { phase = .offline(error.localizedDescription) }
         }
@@ -495,6 +506,7 @@ final class CompanionClient: ObservableObject {
             _ = try await channel.request(CompanionRequest(op: .ping), timeout: CompanionTiming.probeTimeout)
         } catch {
             guard self.channel === channel else { return }
+            CompanionDiagnosticsLog.phone.record("probeFailed", ["route": channel.route.logKind, "error": error.localizedDescription])
             replacing = true
             channel.close()
         }
@@ -521,6 +533,7 @@ final class CompanionClient: ObservableObject {
         }
         guard let first = answered.firstIndex(of: true), self.channel === channel else { return }
         preferredRoute = better[first]
+        CompanionDiagnosticsLog.phone.record("betterRoute", ["from": channel.route.logKind, "to": better[first].logKind])
         replacing = true
         channel.close()
     }
@@ -796,7 +809,22 @@ final class CompanionClient: ObservableObject {
             return results
         }
         let probes = zip(checked, outcomes).map { CompanionDiagnosis.Probe(route: $0.0, outcome: $0.1) }
-        return CompanionDiagnosis.diagnose(.init(online: isOnline, probes: probes, compatibility: compatibility, lastError: lastRefusal))
+        let result = CompanionDiagnosis.diagnose(.init(online: isOnline, probes: probes, compatibility: compatibility, lastError: lastRefusal))
+        var fields = ["cause": result.cause.rawValue]
+        for (index, probe) in probes.enumerated() { fields["\(probe.route.logKind).\(index)"] = String(describing: probe.outcome) }
+        CompanionDiagnosticsLog.phone.record("diagnosis", fields)
+        return result
+    }
+
+    /// What "Copy diagnostics" puts on the clipboard: versions, what is set up, and the redacted log. Nothing is sent.
+    func diagnosticsBundle() -> String {
+        CompanionDiagnosticsLog.phone.bundle(about: [
+            "app": CompanionProtocol.appVersion ?? "?", "protocol": String(CompanionProtocol.version),
+            "macApp": macAppVersion ?? "?", "macs": String(pairings.macs.count),
+            "routes": routes.map(\.logKind).joined(separator: ","), "features": features.sorted().joined(separator: ","),
+            "compatibility": String(describing: compatibility), "phase": String(describing: phase),
+            "scopes": scopes.map { $0.sorted().joined(separator: ",") } ?? "all",
+        ])
     }
 
     // MARK: Versions
@@ -962,6 +990,17 @@ final class CompanionClient: ObservableObject {
         guard response.id == req.id else { throw CompanionClientError.badRequest }
         return response
     }
+}
+
+extension CompanionDiagnosticsLog {
+    /// The phone's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from "Why can't I connect?".
+    static let phone = CompanionDiagnosticsLog(url: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("companion-diagnostics.ndjson"))
+}
+
+extension CompanionRoute {
+    /// The kind of route for the diagnostics log: never its address.
+    var logKind: String { isRelay ? "relay" : kind.rawValue }
 }
 
 /// Messages that wait for a Mac, one file per Mac (`name`), of the app, that only opens while the phone is unlocked.

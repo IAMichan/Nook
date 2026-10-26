@@ -29,6 +29,9 @@ let companionTranslations: [AppLanguage: [String: String]] = [
         "companion.scope.chats": "Chats lezen en beantwoorden",
         "companion.scope.music": "Muziek bedienen",
         "companion.scope.nookChat": "Met Nook chatten",
+        "companion.diagnostics.copy": "Diagnose kopiëren",
+        "companion.diagnostics.copied": "Gekopieerd",
+        "companion.diagnostics.hint": "Het verbindingslogboek van deze Mac, zonder adressen, namen of sleutels. Er wordt niets verstuurd: plak het waar je wilt.",
     ],
     .en: [
         "companion.device.version": "app %@",
@@ -55,6 +58,9 @@ let companionTranslations: [AppLanguage: [String: String]] = [
         "companion.scope.chats": "Read and answer chats",
         "companion.scope.music": "Control music",
         "companion.scope.nookChat": "Chat with Nook",
+        "companion.diagnostics.copy": "Copy diagnostics",
+        "companion.diagnostics.copied": "Copied",
+        "companion.diagnostics.hint": "This Mac's connection log, without addresses, names or keys. Nothing is sent: paste it where you choose.",
     ],
     .de: [
         "companion.device.version": "App %@",
@@ -81,6 +87,9 @@ let companionTranslations: [AppLanguage: [String: String]] = [
         "companion.scope.chats": "Chats lesen und beantworten",
         "companion.scope.music": "Musik steuern",
         "companion.scope.nookChat": "Mit Nook chatten",
+        "companion.diagnostics.copy": "Diagnose kopieren",
+        "companion.diagnostics.copied": "Kopiert",
+        "companion.diagnostics.hint": "Das Verbindungsprotokoll dieses Macs, ohne Adressen, Namen oder Schlüssel. Es wird nichts gesendet: Füge es ein, wo du willst.",
     ],
     .fr: [
         "companion.device.version": "app %@",
@@ -107,6 +116,9 @@ let companionTranslations: [AppLanguage: [String: String]] = [
         "companion.scope.chats": "Lire les discussions et y répondre",
         "companion.scope.music": "Contrôler la musique",
         "companion.scope.nookChat": "Discuter avec Nook",
+        "companion.diagnostics.copy": "Copier le diagnostic",
+        "companion.diagnostics.copied": "Copié",
+        "companion.diagnostics.hint": "Le journal de connexion de ce Mac, sans adresses, noms ni clés. Rien n’est envoyé : collez-le où vous voulez.",
     ],
     .es: [
         "companion.device.version": "app %@",
@@ -133,5 +145,8 @@ let companionTranslations: [AppLanguage: [String: String]] = [
         "companion.scope.chats": "Leer y responder chats",
         "companion.scope.music": "Controlar la música",
         "companion.scope.nookChat": "Chatear con Nook",
+        "companion.diagnostics.copy": "Copiar diagnóstico",
+        "companion.diagnostics.copied": "Copiado",
+        "companion.diagnostics.hint": "El registro de conexión de este Mac, sin direcciones, nombres ni claves. No se envía nada: pégalo donde quieras.",
     ],
 ]

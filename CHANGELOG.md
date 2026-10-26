@@ -22,6 +22,10 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 - Agent transcripts read more like Code's: the thought behind the running step shows above it, a message sent while
   the agent worked splits its turn's fold ("Continued for 20s"), a stopped turn stays open ("You stopped after 12s"),
   compactions, API errors and usage limits stay in sight, and a command opens to its output.
+- iPhone companion: repeated commands are carried out once (an LRU receipt store), protocol and app versions with
+  "Update Nook on your Mac" / "Update the app" banners, "Why can't I connect?" on the phone and *Test relay* on the Mac,
+  per-phone scopes chosen at pairing, one phone paired with several Macs, a local redacted *Copy diagnostics* log, and
+  shared golden protocol fixtures checked from Swift, Rust and the relay.
 
 ### Fixed
 

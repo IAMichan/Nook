@@ -107,6 +107,7 @@ final class CompanionRelayClient: ObservableObject {
     /// Opens every room again now (after sleep, on another network).
     func reconnect() {
         guard !rooms.isEmpty else { return }
+        CompanionDiagnosticsLog.mac.record("relayReconnect", ["rooms": String(rooms.count)])
         closeAll()
         apply()
     }
@@ -220,6 +221,7 @@ final class CompanionRelayClient: ObservableObject {
         Task {
             let outcome = await Self.probe(relay: relay, key: device.key)
             testResult = CompanionDiagnosis.diagnose(.init(online: true, probes: [.init(route: .viaRelay(relay), outcome: outcome)]))
+            CompanionDiagnosticsLog.mac.record("relayTest", ["outcome": String(describing: outcome), "cause": testResult?.cause.rawValue ?? ""])
             testing = false
         }
     }
@@ -372,13 +374,19 @@ final class RelayRoom {
                     if !connected {
                         connected = true
                         lastError = nil
+                        CompanionDiagnosticsLog.mac.record("relayRoom", ["state": "connected", "after": String(failures), "relay": relay])
                         failures = 0
                         onChange()
                     }
                     if case .data(let data) = message { handle(data) }
                 }
             } catch {
-                if !Task.isCancelled { lastError = error.localizedDescription }
+                if !Task.isCancelled {
+                    lastError = error.localizedDescription
+                    CompanionDiagnosticsLog.mac.record("relayRoom", ["state": "closed", "error": error.localizedDescription,
+                                                                     "code": String(task.closeCode.rawValue),
+                                                                     "up": String(Int(Date().timeIntervalSince(since)))])
+                }
             }
             keepAlive.cancel()
             task.cancel(with: .goingAway, reason: nil)
