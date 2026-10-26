@@ -179,7 +179,9 @@ final class WhatsAppLink: ObservableObject {
     }
     /// What each chat counted unread when Nook last ran (see `WAUnreadCarry`): it shows until the chat is read or
     /// answered in, so a restart does not make every chat read.
-    private var carriedUnread = WhatsAppSettings.unreadCarry
+    private var carriedUnread = WhatsAppSettings.unreadCarry.filter {
+        Date().timeIntervalSince($0.value.last) < ChatReadMarks.maxAge
+    }
     /// What the next launch starts from, as last written.
     private var keptUnread: [String: WAUnreadCarry]?
     private static let readInNookKey = "whatsappReadInNook"
@@ -899,6 +901,10 @@ final class WhatsAppLink: ObservableObject {
         if carried(key) > 0 { return true }
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
+            // OpenWA counts unread itself: a chat it says is read, as of this message or later, is read there.
+            if WhatsAppSettings.gateway == .openwa, let known = known(key), known.unread == 0, known.last >= last.date {
+                return false
+            }
             return !last.fromMe && last.date > readThere
         }
         guard let known = known(key) else { return false }
@@ -952,8 +958,11 @@ final class WhatsAppLink: ObservableObject {
 
     /// Unread messages in the chats the pill shows, also those still unread from before a restart.
     var visibleUnread: Int {
-        inbox.visibleUnread(filters: filters) + carriedUnread.keys.reduce(0) { total, key in
-            filters.ignored.contains(key) || filters.isQuiet(key) ? total : total + carried(key)
+        let visible = inbox.visible(filters: filters)
+        let shown = Set(visible.map(\.id))
+        return visible.reduce(0) { $0 + $1.unread } + carriedUnread.keys.reduce(0) { total, key in
+            // The same chats the pill lists: a quiet group that mentioned you counts too.
+            shown.contains(key) || (!filters.ignored.contains(key) && !filters.isQuiet(key)) ? total + carried(key) : total
         }
     }
 
