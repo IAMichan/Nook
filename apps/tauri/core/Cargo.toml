@@ -21,24 +21,24 @@ rusqlite.workspace = true
 dirs.workspace = true
 log.workspace = true
 # Companion: verzegeling zoals CryptoKit op de Mac (HKDF-SHA256 + ChaCha20-Poly1305).
-chacha20poly1305 = "0.10"
-hkdf = "0.12"
-sha2 = "0.10"
-base64 = "0.22"
+chacha20poly1305 = "0.11"
+hkdf = "0.13"
+sha2 = "0.11"
+base64 = "0.23"
 # Ondertekening (ES256) van het APNs-token met je eigen .p8-sleutel.
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8", "pem"] }
 chrono-tz = "0.10"
-hmac = "0.12"
-rand = "0.8"
+hmac = "0.13"
+rand = "0.10"
 url = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 percent-encoding = "2"
-fancy-regex = "0.14"
+fancy-regex = "0.19"
 unicode-normalization = "0.1"
 quick-xml = "0.42"
 pdf-extract = "0.12"
 iana-time-zone = "0.1"
-sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

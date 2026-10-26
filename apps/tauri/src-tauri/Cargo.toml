@@ -31,18 +31,18 @@ gethostname = "1"
 if-addrs = "0.15"
 regex.workspace = true
 tauri-plugin-notification = "2"
-base64 = "0.22"
+base64 = "0.23"
 percent-encoding = "2"
 dirs.workspace = true
 reqwest.workspace = true
-fancy-regex = "0.14"
+fancy-regex = "0.19"
 url = "2"
 iana-time-zone = "0.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
-cpal = "0.15"
+cpal = "0.18"
 arboard = "3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tauri-plugin-dialog = "2"
@@ -53,7 +53,7 @@ tauri-plugin-barcode-scanner = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
-windows-collections = "0.3"
+windows-collections = "0.100"
 windows = { version = "0.62", features = [
   "Foundation",
   "Foundation_Collections",
@@ -102,8 +102,8 @@ windows-sys = { version = "0.61", features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
-zbus = "5"
-x11rb = { version = "0.13", features = ["screensaver", "xtest"] }
+zbus = "6"
+x11rb = { version = "0.14", features = ["screensaver", "xtest"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
