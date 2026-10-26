@@ -334,7 +334,8 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
     var poll: ChatPoll? = nil
     /// Your own message: how far it got (sent, delivered, read), as far as its app says. Nil for theirs.
     var receipt: ChatReceipt? = nil
-    /// Your own message in a group: who has it and who read it, when the app says per person; nil when it does not.
+    /// Your own message: who has it and who read it (and when), when the app says per person; nil when it does not. In a
+    /// private chat that is the other person, whose name the chat already has: it may be left empty.
     var readers: [ChatReader]? = nil
     /// The emoji on it, the most used first, when its app says; nil when it does not.
     var reactions: [InboxReaction]? = nil
@@ -435,6 +436,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     }
     /// Someone else than the chat itself wrote in it, or more than one other person is in it: a group.
     var isGroup: Bool { (members?.count ?? 0) > 1 || messages.contains { !$0.sender.isEmpty } }
+    /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people.
+    var isPrivate: Bool { (members?.count ?? 0) <= 1 && !isGroup && messages.contains { !$0.isMine } }
 }
 
 /// Where a chat stands, the same for every chat app: something new, read in Nook while the app itself still shows it
@@ -656,9 +659,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
     }
 
     /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people.
-    private static func isPrivate(_ thread: InboxThread) -> Bool {
-        (thread.members?.count ?? 0) <= 1 && !thread.isGroup && thread.messages.contains { !$0.isMine }
-    }
+    private static func isPrivate(_ thread: InboxThread) -> Bool { thread.isPrivate }
 
     /// Puts a group's messages that landed in someone's chat back in the group: in a chat without a list of people, a
     /// message "written by" a group Nook knows is that group's, by the person the chat is named after. A chat left

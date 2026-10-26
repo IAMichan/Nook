@@ -28,6 +28,20 @@ func NewHub() *Hub { return &Hub{clients: make(map[*client]struct{})} }
 // Changed is called by the store for every change; a burst on one chat goes out once per short moment.
 func (h *Hub) Changed(kind string, room id.RoomID) {
 	message, _ := json.Marshal(map[string]any{"type": kind, "chatID": string(room)})
+	h.send(message)
+}
+
+// Typing tells Nook that someone in a chat is typing ("text"), recording ("recording") or sending a file ("uploading"),
+// for as long as `timeout` says; a timeout of 0 says they stopped. Nothing is stored: it is only for the moment.
+func (h *Hub) Typing(room id.RoomID, user id.UserID, name, kind string, timeout time.Duration) {
+	message, _ := json.Marshal(map[string]any{
+		"type": "typing", "chatID": string(room), "userID": string(user), "name": name, "kind": kind,
+		"timeoutMs": timeout.Milliseconds(),
+	})
+	h.send(message)
+}
+
+func (h *Hub) send(message []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for c := range h.clients {

@@ -210,6 +210,7 @@ final class MessagesBridge: ChatHistoryBridge {
                 let receipt = Self.receipt(row)
                 guard receipt != known.message.receipt else { continue }
                 known.message.receipt = receipt
+                known.message.readers = Self.readers(row)
                 mine[id] = known
                 messages[known.chat, default: []].append(known.message)
             }
@@ -255,7 +256,10 @@ final class MessagesBridge: ChatHistoryBridge {
         var inbox = InboxMessage(
             id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
             text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
-        if message.fromMe { inbox.receipt = Self.receipt(row) }
+        if message.fromMe {
+            inbox.receipt = Self.receipt(row)
+            inbox.readers = Self.readers(row)
+        }
         inbox.reactions = extras.reactions[AppData.string(row["guid"])]
         let origin = AppData.string(row["origin"])
         if !origin.isEmpty, origin != AppData.string(row["guid"]) { inbox.quote = extras.quotes[origin] }
@@ -510,6 +514,14 @@ final class MessagesBridge: ChatHistoryBridge {
                               delivered: (AppData.number(row["delivered"]) ?? 0) != 0,
                               read: (AppData.number(row["readat"]) ?? 0) > 0,
                               failed: (AppData.number(row["error"]) ?? 0) != 0)
+    }
+
+    /// When they read your message, from its row (`readat`), for the message's info in a private chat: one reader
+    /// without a name, as the chat already has it. Nil while it is not read (or they do not share read receipts).
+    private static func readers(_ row: [String: Any]) -> [ChatReader]? {
+        let read = AppData.number(row["readat"]) ?? 0
+        guard read > 0 else { return nil }
+        return [ChatReader(name: "", receipt: .read, date: AppData.appleDate(read))]
     }
 
     /// The people of the group chats not asked yet, by their name in Contacts (else their number or address).
@@ -907,6 +919,17 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             self.onChange()
         }
         live.onLive = { [weak self] live in if self?.isLive != live { self?.isLive = live } }
+        // Who types where: the chat as the Chats tab knows it, by its app and its name; in a private chat without a name.
+        live.onTyping = { [weak self] id, person, name, kind, seconds in
+            guard let chat = self?.chats[id] else { return }
+            let key = ChatInbox.key(app: chat.app, chat: chat.title)
+            if seconds > 0 {
+                ChatTypingCenter.shared.typing(chat: key, person: person, name: chat.isGroup ? name : "", kind: kind,
+                                               seconds: min(seconds, ChatTypingState.hold))
+            } else {
+                ChatTypingCenter.shared.stopped(chat: key, person: person)
+            }
+        }
         // What changed while the line was down is not told: every chat is read again.
         live.onDrop = { [weak self] in
             self?.seen = [:]

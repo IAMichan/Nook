@@ -15,9 +15,17 @@ extension ChatBubble {
     /// text, found among all of the chat's messages.
     static func bubbles(_ thread: InboxThread, last: Int? = nil, time: (Date) -> String) -> [ChatBubble] {
         let byID = Dictionary(thread.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let shown = last.map { Array(thread.messages.suffix($0)) } ?? thread.messages
+        // Every message of yours has its ticks, also the older ones its app says nothing of.
+        let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) })
+        let all = zip(thread.messages, receipts).map { original, receipt in
+            var message = original
+            message.receipt = receipt
+            return message
+        }
+        let shown = last.map { Array(all.suffix($0)) } ?? all
         return shown.map { message in
-            var bubble = ChatBubble(message, time: time(message.date), members: thread.members ?? [])
+            var bubble = ChatBubble(message, time: time(message.date), members: thread.members ?? [],
+                                    person: thread.isPrivate ? thread.name : nil)
             bubble.quote = message.quote.flatMap { quote(of: $0, in: byID, chat: thread.name) }
             return bubble
         }
@@ -37,15 +45,18 @@ extension ChatBubble {
 
     /// A message of any chat app as a bubble: its text, and its file as the chat shows it. While the file is not on this
     /// Mac the bubble names it (a button that opens the chat's app); once it is, it shows as itself.
-    /// `members`: the group's other people, so your message's info also lists who does not have it yet.
-    init(_ message: InboxMessage, time: String, members: [String] = []) {
+    /// `members`: the group's other people, so your message's info also lists who does not have it yet. `person`: the
+    /// other person of a private chat, whom your message's info names.
+    init(_ message: InboxMessage, time: String, members: [String] = [], person: String? = nil) {
         self.init(id: message.id, text: message.text, time: time, date: message.date, sender: message.sender,
                   fromMe: message.isMine)
         poll = message.poll
         reactions = (message.reactions ?? []).map { BubbleReaction(emoji: $0.emoji, count: $0.count, mine: $0.mine) }
         if message.isMine {
             ticks = message.receipt.map(BubbleTicks.init)
-            if let readers = message.readers, ticks != nil {
+            if let person {
+                self.readers = ChatReceipts.person(person, receipt: message.receipt, date: message.readers?.first?.date)
+            } else if let readers = message.readers, ticks != nil {
                 self.readers = ChatReceipts.everyone(readers, members: members)
             }
         }

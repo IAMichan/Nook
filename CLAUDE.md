@@ -17,10 +17,13 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
    - Reuse the shared components in [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) and follow its checklist; a pattern used a third time becomes a component there.
    - The notch, the main window, and sheets share `PanelView`; Settings is the only configuration surface. Do not build a second layout.
    - Run `./scripts/ui-lint.sh` after a UI change. `UIConsistencyTests` enforces the same rules in the test suite; when a file must draw its own colors, add it to the allow-list in both the test and the script with a reason.
-4. **Verification:**
+4. **Integration parity (one integration changed = all changed):**
+   - A feature or fix for one integration goes to every integration of the same kind in the same change. This holds for chat apps (WhatsApp, Messages, Telegram, Slack, Teams, Signal, Instagram, Messenger…), coding agents (Claude Code, Codex, Gemini, Cursor…), connectors, AI providers, WhatsApp gateways, and the platform apps. It also holds when the user names only one of them.
+   - Build it in the family's shared type or view. Give each member only the translation from its app's data. Leave a member out only when its app does not say it, and record that in [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) and in your summary.
+5. **Verification:**
    - Run `./scripts/core-tests.sh` (which includes `I18nCoverageTests` and `UIConsistencyTests`) before creating a commit or pull request.
    - Run `./scripts/ui-lint.sh` whenever `apps/macos/NotchUI` or `apps/macos/App` changed.
    - If you add or remove files in `apps/macos` or `apps/ios`, update `project.yml` if needed and regenerate the project with `xcodegen`.
-5. **Show what you make in the side panel:**
+6. **Show what you make in the side panel:**
    - Write images, rendered pages, PDFs, and drafts meant for the user to `.scratch/` in the repository (git-ignored), never to `/tmp` or `/private/tmp`, because the side panel only opens files inside the working directory.
    - Send them with `SendUserFile` (`display: "render"` for images, HTML, and PDFs) as soon as they are ready, so they open in the side panel without the user having to look for them. See section 5 of [AGENTS.md](AGENTS.md).

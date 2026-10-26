@@ -31,6 +31,8 @@ struct ChatTranscript: View {
     /// Fetching the messages before the oldest shown; true when some came. Nil where the chat cannot load older ones:
     /// no button at its top.
     var onLoadOlder: (() async -> Bool)? = nil
+    /// Who is typing in the chat now ("Jan is typing…"), shown under its last message; nil while no one does.
+    var typing: String? = nil
     @State private var loadingOlder = false
     /// The pointer or fingers moved the chat: only then does reaching the top load older messages, not the first layout.
     @State private var scrolledByUser = false
@@ -50,7 +52,8 @@ struct ChatTranscript: View {
 
     private var scroller: some View {
         ScrollViewReader { proxy in
-            ScrollView(showsIndicators: true) {
+            // As a chat app's, the chat scrolls without a bar beside it.
+            ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     if onLoadOlder != nil {
                         loadOlderButton { loadOlder(proxy) }
@@ -87,6 +90,11 @@ struct ChatTranscript: View {
                     jump.disablesAnimations = true
                     withTransaction(jump) { proxy.scrollTo(last, anchor: .bottom) }
                 }
+            }
+            // Someone starts typing: their bubble comes into view under the last message.
+            .onChange(of: typing != nil) { _, shown in
+                guard shown else { return }
+                withAnimation(NookTheme.scroll) { proxy.scrollTo(ChatTypingBubble.id, anchor: .bottom) }
             }
             // Another chat starts at its newest message again: reaching its top counts only once you scroll there.
             .onChange(of: contact) {
@@ -180,7 +188,14 @@ struct ChatTranscript: View {
                     }
                 }
             }
+            if let typing {
+                ChatTypingBubble(text: typing)
+                    .padding(.top, rows.isEmpty ? 0 : NookTheme.Spacing.md)
+                    .id(ChatTypingBubble.id)
+                    .transition(.opacity)
+            }
         }
+        .animation(NookTheme.reveal, value: typing)
         .frame(maxWidth: .infinity)
     }
 
@@ -420,6 +435,50 @@ private struct ChatBubbleView: View, Equatable {
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
                                       style: .continuous)
+    }
+}
+
+/// Someone typing, under the chat's last message as WhatsApp shows it: three dots that come and go, and who it is.
+struct ChatTypingBubble: View {
+    static let id = "\u{1}typing"
+    let text: String
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            ChatTypingDots()
+            Text(text)
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, NookTheme.Spacing.lg)
+        .padding(.vertical, NookTheme.Spacing.md)
+        .background(UnevenRoundedRectangle(topLeadingRadius: NookTheme.Radius.chip, bottomLeadingRadius: NookTheme.Radius.sheet,
+                                           bottomTrailingRadius: NookTheme.Radius.sheet, topTrailingRadius: NookTheme.Radius.sheet,
+                                           style: .continuous)
+            .fill(NookTheme.smoke))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+}
+
+/// Three dots that light up one after the other while someone types.
+struct ChatTypingDots: View {
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.3)) { context in
+            let step = Int(context.date.timeIntervalSinceReferenceDate / 0.3) % 3
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                ForEach(0..<3, id: \.self) { dot in
+                    Circle()
+                        .fill(NookTheme.textSecondary)
+                        .frame(width: 5, height: 5)
+                        .opacity(dot == step ? 1 : 0.35)
+                }
+            }
+            .animation(NookTheme.hover, value: step)
+        }
+        .accessibilityHidden(true)
     }
 }
 

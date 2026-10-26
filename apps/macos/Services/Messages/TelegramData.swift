@@ -118,6 +118,23 @@ enum TelegramData {
         }
     }
 
+    /// `updateChatAction`: who in which chat types, records or sends a file (`chatActionTyping`,
+    /// `chatActionRecordingVoiceNote`, `chatActionUploadingPhoto`…), or stopped (`chatActionCancel`, kind nil). Nil for
+    /// an action that is not someone's (a chat as sender), or one Nook shows nothing for (choosing a sticker, watching
+    /// emoji).
+    static func chatAction(_ object: [String: Any]) -> (chat: Int64, user: Int64, kind: ChatTypist.Kind?)? {
+        guard let chat = int64(object["chat_id"]), let sender = object["sender_id"] as? [String: Any],
+              sender["@type"] as? String == "messageSenderUser", let user = int64(sender["user_id"]),
+              let action = (object["action"] as? [String: Any])?["@type"] as? String else { return nil }
+        switch action {
+        case "chatActionCancel": return (chat, user, nil)
+        case "chatActionTyping": return (chat, user, .text)
+        case "chatActionRecordingVoiceNote", "chatActionRecordingVideo", "chatActionRecordingVideoNote": return (chat, user, .recording)
+        case _ where action.hasPrefix("chatActionUploading"): return (chat, user, .uploading)
+        default: return nil
+        }
+    }
+
     /// Your message's ticks: a clock while it goes out, a red mark when it could not, else two once the chat says it was
     /// read up to it.
     static func receipt(_ object: [String: Any], readOutbox: Int64) -> ChatReceipt? {

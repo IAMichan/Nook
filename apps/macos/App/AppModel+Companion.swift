@@ -156,7 +156,12 @@ extension AppModel {
         let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var names = WAMemberIndex(conversation)
-        return conversation.messages.suffix(WAInbox.keep).map { message in
+        // Every message of yours has its ticks, also the older ones the gateway's history says nothing of.
+        let shown = Array(conversation.messages.suffix(WAInbox.keep))
+        let receipts = ChatReceipts.filled(shown.map { ($0.fromMe, $0.receipt) })
+        return zip(shown, receipts).map { original, receipt in
+            var message = original
+            message.receipt = receipt
             let file = Self.whatsAppFileLabel(message.media)
             var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
                                     time: time.string(from: message.date), date: message.date,
@@ -326,12 +331,16 @@ extension AppModel {
         BubbleTicks(receipt)
     }
 
-    /// Your own message in a group: every member with how far it got with them, by the names the group knows them by.
-    /// Empty for theirs, in a private chat, and while no member answered and the members are not known either.
+    /// Your own message: in a group every member with how far it got with them, by the names the group knows them by;
+    /// in a private chat the other person, once it reached them, with when it did. Empty for theirs, and in a group
+    /// while no member answered and the members are not known either.
     static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation,
                                 names: inout WAMemberIndex) -> [ChatReader] {
-        guard message.fromMe, message.receipt != nil, conversation.isGroup,
-              !message.readers.isEmpty || conversation.members != nil else { return [] }
+        guard message.fromMe, message.receipt != nil else { return [] }
+        if WAJID.kind(conversation.id) == .person {
+            return ChatReceipts.person(conversation.name, receipt: message.receipt, date: message.readers.values.first?.date)
+        }
+        guard conversation.isGroup, !message.readers.isEmpty || conversation.members != nil else { return [] }
         let named = message.readers.map { id, reader in
             ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date)
         }

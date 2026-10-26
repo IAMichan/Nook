@@ -300,6 +300,17 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
             }
         case "messageViewers", "users":
             if let extra = object["@extra"] as? String, extra.hasPrefix("viewers:") { viewed(TelegramData.viewers(object), extra: extra) }
+        case "updateChatAction":
+            // Telegram repeats an action every few seconds while it lasts, and lets it go after six without a word.
+            if let action = TelegramData.chatAction(object), action.user != meID, let chat = chats[action.chat], !chat.title.isEmpty {
+                let key = ChatInbox.key(app: app, chat: chat.title)
+                if let kind = action.kind {
+                    ChatTypingCenter.shared.typing(chat: key, person: String(action.user),
+                                                   name: chat.isGroup ? users[action.user] ?? "" : "", kind: kind, seconds: 6)
+                } else {
+                    ChatTypingCenter.shared.stopped(chat: key, person: String(action.user))
+                }
+            }
         case "updateChatReadInbox":
             if let id = TelegramData.int64(object["chat_id"]) {
                 chats[id]?.unread = Int(TelegramData.int64(object["unread_count"]) ?? 0)
@@ -338,6 +349,11 @@ final class TelegramBridge: ObservableObject, ChatHistoryBridge {
                !TelegramData.isPending(message) {
                 add([message], to: id)
                 shown.insert(id)
+                // Their message is here: they stopped typing it.
+                if let user = TelegramData.int64((message["sender_id"] as? [String: Any])?["user_id"]),
+                   let title = chats[id]?.title, !title.isEmpty {
+                    ChatTypingCenter.shared.stopped(chat: ChatInbox.key(app: app, chat: title), person: String(user))
+                }
             }
         case "updateMessageSendSucceeded":
             if let message = object["message"] as? [String: Any], let id = TelegramData.int64(message["chat_id"]) {

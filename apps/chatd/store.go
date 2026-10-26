@@ -21,6 +21,8 @@ type Store struct {
 	mediaDir string
 	// changed tells the live line which chat changed ("chat.upserted", "message.upserted", "message.deleted").
 	changed func(kind string, room id.RoomID)
+	// typing tells the live line that someone is typing in a chat (see Hub.Typing).
+	typing func(room id.RoomID, user id.UserID, name, kind string, timeout time.Duration)
 }
 
 const storeSchema = `

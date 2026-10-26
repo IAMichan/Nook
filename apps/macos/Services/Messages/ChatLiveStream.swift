@@ -1,13 +1,16 @@
 import Foundation
 
 /// A live line to Nook's chat helper that `ChatServiceBridge` reads (its `/v1/ws` socket on this Mac): it says which chat
-/// changed the moment it does, so the bridge reads that chat now instead of at its next turn. It says nothing more; what changed
-/// is read the usual way. Delivery is at most once and nothing is replayed after a drop, so `onDrop` reads everything
+/// changed the moment it does, so the bridge reads that chat now instead of at its next turn, and who is typing where. What
+/// changed is read the usual way. Delivery is at most once and nothing is replayed after a drop, so `onDrop` reads everything
 /// again once.
 @MainActor
 final class ChatLiveStream {
     /// A chat (by its id there) has something new: a message, an edit, an emoji, a deletion, a read.
     var onChange: (String) -> Void = { _ in }
+    /// Someone is typing in a chat (by its id there), or stopped (`seconds` 0).
+    var onTyping: (_ chat: String, _ person: String, _ name: String, _ kind: ChatTypist.Kind, _ seconds: TimeInterval) -> Void
+        = { _, _, _, _, _ in }
     /// The line went down: what changed meanwhile is not told.
     var onDrop: () -> Void = {}
     /// The line came up or went down.
@@ -108,6 +111,8 @@ final class ChatLiveStream {
             isLive = true
         case .changed(let chat):
             onChange(chat)
+        case .typing(let chat, let person, let name, let kind, let seconds):
+            onTyping(chat, person, name, kind, seconds)
         case .other:
             break
         }

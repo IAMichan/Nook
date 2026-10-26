@@ -439,6 +439,40 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(WAGOWARelease.isOlder("9.6", than: "9.6.1"))
     }
 
+    func testGOWASaysWhoIsTyping() {
+        let typing = Data(#"{"event":"chat_presence","payload":{"from":"31611111111@s.whatsapp.net","sender_display_name":"Jan","chat_id":"120363000000000001@g.us","state":"composing","media":"audio","is_group":true}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: typing),
+                       .typing(chat: "120363000000000001@g.us", people: [
+                           WATyping(from: "31611111111@s.whatsapp.net", name: "Jan", active: true, recording: true)]))
+        let paused = Data(#"{"event":"chat_presence","payload":{"from":"31611111111@s.whatsapp.net","chat_id":"31611111111@s.whatsapp.net","state":"paused","media":""}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: paused),
+                       .typing(chat: "31611111111@s.whatsapp.net", people: [
+                           WATyping(from: "31611111111@s.whatsapp.net", active: false)]))
+    }
+
+    func testOpenWASaysWhoIsTypingAndWhoReadIt() {
+        let presence = Data(#"{"event":"presence.update","data":{"sessionId":"s","chatId":"120363000000000001@g.us","participants":[{"id":"31611111111@c.us","state":"recording"},{"id":"31622222222@c.us","state":"available"}]}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: presence),
+                       .typing(chat: "120363000000000001@g.us", people: [
+                           WATyping(from: "31611111111@c.us", active: true, recording: true),
+                           WATyping(from: "31622222222@c.us", active: false)]))
+        let receipt = Data(#"{"event":"message.receipt","data":{"id":"r1","messageId":"M1","chatId":"120363000000000001@g.us","participant":"31611111111@c.us","status":"read","timestamp":1786000000}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: receipt),
+                       .memberReceipt(ids: ["M1"], chat: "120363000000000001@g.us", member: "31611111111@c.us", status: .read))
+    }
+
+    func testAPrivateChatsReceiptKeepsWhenItWasRead() {
+        var inbox = WAInbox()
+        let chat = "31611111111@s.whatsapp.net"
+        let read = Date(timeIntervalSince1970: 1_000)
+        inbox.add(WAMessage(id: "M1", chat: chat, sender: "me", senderName: "", text: "hoi", date: Date(timeIntervalSince1970: 900),
+                            fromMe: true), filters: WAFilters())
+        XCTAssertEqual(inbox.applyReceipt(.read, ids: ["M1"], chat: chat, at: read), chat)
+        let message = inbox.conversations[chat]?.messages.first
+        XCTAssertEqual(message?.receipt, .read)
+        XCTAssertEqual(message?.readers[chat]?.date, read)
+    }
+
     func testAnEditedPollIsNoNewPoll() {
         let body = Data(#"{"event":"message","payload":{"id":"E1","chat_id":"120363000000000001@g.us","body":"Poll edited: Lunch?","poll":{"type":"edit","poll_id":"P1","question":"Lunch?","options":[{"name":"Pizza"}]}}}"#.utf8)
         XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: body), .ignored)

@@ -58,12 +58,40 @@ enum ChatReceipts {
         return current.advanced(to: lowest)
     }
 
+    /// Your messages' ticks as a chat shows them, oldest first, given whether each message is yours and what its app
+    /// says of it. An older message of yours often comes without a word on it (a chat's history keeps none): it is in the
+    /// chat, so it has at least one tick, and it got as far as a later one of yours did, since reading a chat reads what
+    /// came before. A clock or a red mark stays as it is; their messages have none (nil).
+    static func filled(_ messages: [(mine: Bool, receipt: ChatReceipt?)]) -> [ChatReceipt?] {
+        var later: ChatReceipt?
+        var out = [ChatReceipt?](repeating: nil, count: messages.count)
+        for index in messages.indices.reversed() {
+            let message = messages[index]
+            guard message.mine else { continue }
+            var receipt = message.receipt ?? .sent
+            if receipt >= .sent, let later, later > receipt { receipt = later }
+            if receipt >= .sent { later = max(later ?? receipt, receipt) }
+            out[index] = receipt
+        }
+        return out
+    }
+
+    /// The other person of a private chat and how far your message got with them, for the message's info as a group's
+    /// has it: who read it, and when the app says. Empty while it only went out (nothing to tell yet, and all an app
+    /// without receipts such as Slack ever says), when it failed, or without a name.
+    static func person(_ name: String, receipt: ChatReceipt?, date: Date?) -> [ChatReader] {
+        guard let receipt, receipt >= .delivered, !name.isEmpty else { return [] }
+        return [ChatReader(name: name, receipt: receipt, date: date)]
+    }
+
     /// Everyone in the group with how far the message got with them, as the message's info lists them: who read it
     /// (the first to read on top), who has it, and the members who answered nothing yet (as `sent`). `members` are the
     /// names of the others in the group; a reader who is not among them (they left since) still shows.
     static func everyone(_ readers: [ChatReader], members: [String]) -> [ChatReader] {
-        var seen = Set(readers.map { $0.name.lowercased() })
-        var all = readers
+        // A reader without a name only says when a private chat's person read it: in a group there is no one to show.
+        let named = readers.filter { !$0.name.isEmpty }
+        var seen = Set(named.map { $0.name.lowercased() })
+        var all = named
         for member in members where !member.isEmpty && seen.insert(member.lowercased()).inserted {
             all.append(ChatReader(name: member, receipt: .sent))
         }
