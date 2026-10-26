@@ -55,7 +55,7 @@ tauri-plugin-barcode-scanner = "2"
 keyring = { version = "3", features = ["windows-native"] }
 # Must share windows-core with the `windows` crate below: 0.100 is built on windows-core 0.100, and there is no
 # `windows` 0.100 yet (cpal also pins `windows` 0.62). Move both together.
-windows-collections = "0.3"
+windows-collections = "0.100"
 windows = { version = "0.62", features = [
   "Foundation",
   "Foundation_Collections",
