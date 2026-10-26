@@ -235,7 +235,11 @@ struct SessionWorkbench<Conversation: View>: View {
     let directory: String
     /// A session Nook runs: its changes open in its own review, with comments for the agent.
     var runID: UUID? = nil
+    /// Whether the session panel docks on the right when the window has room; the session views that have a branch button.
+    var dockSessionPanel = false
+    var agentWorking = false
     @ViewBuilder var conversation: (AnyView) -> Conversation
+    @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
@@ -264,6 +268,8 @@ struct SessionWorkbench<Conversation: View>: View {
         let side = shown(.side)
         let bottom = shown(.bottom)
         let outputsShown = side == .outputs || bottom == .outputs
+        let docked = dockSessionPanel && !directory.isEmpty
+            && totalWidth - (side != .conversation ? toolWidth + PanelSplit.handle : 0) >= PanelLayout.sessionPanelRoom
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
@@ -272,6 +278,7 @@ struct SessionWorkbench<Conversation: View>: View {
                     .environment(\.pullRequestLinksBeside, true)
                     // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
                     .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput))
+                    .environment(\.sessionPanelDocked, docked)
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
@@ -286,6 +293,15 @@ struct SessionWorkbench<Conversation: View>: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
+            if docked {
+                DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
+                    if let runID { workspace.markReviewed(runID) }
+                    viewModel.sessionTool = .changes
+                }
+                .id(directory)
+                .frame(width: PanelLayout.sessionPanel)
+                .padding(.leading, NookTheme.Spacing.sm)
+            }
             if side != .conversation {
                 panel(.side, tool: side)
                     .padding(.leading, NookTheme.Spacing.sm)

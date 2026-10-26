@@ -154,6 +154,9 @@ struct FolderGitButton: View {
     /// Called after a push or branch switch, so a session Nook runs can refresh its own view of git.
     var onChange: (() -> Void)? = nil
     @State private var open = false
+    /// With room beside the conversation the session panel stays open on the right (`DockedSessionPanel`); this
+    /// button, which opens it as a popover, steps aside.
+    @Environment(\.sessionPanelDocked) private var docked
 
     init(directory: String, runID: UUID? = nil, agentWorking: Bool, showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
         _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
@@ -165,7 +168,7 @@ struct FolderGitButton: View {
 
     var body: some View {
         Group {
-            if !model.directory.isEmpty {
+            if !model.directory.isEmpty, !docked {
                 HStack(spacing: 0) {
                     Button { open.toggle() } label: {
                         if model.isRepository {
@@ -201,8 +204,8 @@ struct FolderGitButton: View {
                 .fixedSize()
             }
         }
-        .task(id: model.directory) {
-            while !Task.isCancelled {
+        .task(id: "\(model.directory)|\(docked)") {
+            while !Task.isCancelled, !docked {
                 await model.refresh()
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
             }
@@ -229,6 +232,44 @@ struct FolderGitButton: View {
         .padding(.horizontal, 7)
         .frame(height: ToolbarGroup.itemHeight)
         .contentShape(Rectangle())
+    }
+}
+
+extension EnvironmentValues {
+    /// The session panel is docked beside the conversation, so the header's branch button is not needed.
+    @Entry var sessionPanelDocked = false
+}
+
+/// The session panel as a column beside the conversation, for a window with room for it. It is the same panel the
+/// branch button opens as a popover when the window is narrower.
+struct DockedSessionPanel: View {
+    @EnvironmentObject private var workspace: WorkspaceManager
+    @StateObject private var model: FolderGitModel
+    let runID: UUID?
+    let agentWorking: Bool
+    let showChanges: () -> Void
+
+    init(directory: String, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        self.runID = runID
+        self.agentWorking = agentWorking
+        self.showChanges = showChanges
+    }
+
+    var body: some View {
+        ScrollView {
+            SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) {}
+        }
+        .scrollIndicators(.never)
+        .task(id: model.directory) {
+            while !Task.isCancelled {
+                await model.refresh()
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+            }
+        }
+        .onChange(of: model.working) { _, working in
+            if !working, let runID { workspace.refreshGit(runID) }
+        }
     }
 }
 

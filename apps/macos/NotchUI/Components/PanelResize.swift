@@ -60,6 +60,10 @@ enum PanelLayout {
     static let console: Double = 400
     /// The side panel with a session's terminal, browser or changes.
     static let tool: Double = 460
+    /// The session panel (machine, scripts, branch, changes) docked beside a session, and the room the rest of the
+    /// window needs before it docks; under that it is the branch button's popover.
+    static let sessionPanel: CGFloat = 300
+    static let sessionPanelRoom: Double = 1100
     /// An artifact beside the app that made it (a Claude artifact next to Claude).
     static let artifact: Double = 420
     /// The chat list on the left of the Chats tab.
