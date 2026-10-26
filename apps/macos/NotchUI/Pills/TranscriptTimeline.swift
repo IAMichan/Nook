@@ -111,7 +111,7 @@ struct TranscriptConversation: View {
                     .containerRelativeFrame(.horizontal, alignment: .leading)
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom)
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.1) { ids in onScreen.ids = Set(ids) }
@@ -182,6 +182,9 @@ struct TranscriptConversation: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
+        // would hand the panels more room than there is and push everything off both sides.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
