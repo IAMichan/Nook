@@ -135,6 +135,8 @@ final class WorkspaceManager: ObservableObject {
     @Published var agentModels: [RunProvider: [AgentModel]] = [:]
     /// The open pull request of a session's branch, when GitHub says there is one (for the git button).
     @Published var openPullRequests: [UUID: URL] = [:]
+    /// The same for sessions Nook only sees, by repository root.
+    var folderPullRequests: [String: URL] = [:]
     /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
     /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
     var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?

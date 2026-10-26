@@ -263,7 +263,7 @@ enum AgentTranscript {
                         finish(step: callID, failed: failed, error: failed ? errorLine(result) : nil, output: result,
                                at: when, in: &messages)
                     }
-                    let text = text(message["content"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let text = typedText(message["content"])
                     if isInterruption(text), !messages.isEmpty {
                         messages[messages.count - 1].interrupted = true
                         continue
@@ -645,6 +645,16 @@ enum AgentTranscript {
         return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
     }
 
+    /// What you typed in a user line: the agent's own blocks in front of it (the Claude desktop app opens a chat with
+    /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.
+    private static func typedText(_ content: Any?) -> String {
+        if let blocks = content as? [[String: Any]] {
+            return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        return InjectedPrompt.typed(text(content))
+    }
+
     /// Why a step failed, from the tool's result: its first line with words in it, without Claude Code's
     /// `<tool_use_error>` wrapper. Nil when the result says nothing.
     static func errorLine(_ result: String) -> String? {
@@ -700,6 +710,23 @@ enum InjectedPrompt {
     private static let block = try? NSRegularExpression(pattern: #"<([A-Za-z][\w]*[-_][\w-]*)\b[^>]*>[\s\S]*?</\1>"#)
     /// Any tag left over, also one cut off at the end.
     private static let tag = try? NSRegularExpression(pattern: #"</?[A-Za-z][\w:-]*\b[^>]*>?"#)
+
+    /// An injected block of the agent's own at the start of a message.
+    private static let leading = try? NSRegularExpression(
+        pattern: #"^\s*<(system-reminder|environment_context|user_instructions|user-memory|[A-Za-z]\w*-[\w-]*)\b[^>]*>[\s\S]*?</\1>\s*"#)
+
+    /// The message without the injected blocks in front of it; the message itself when it has none or is nothing but
+    /// injected text (which `isInjected` then rejects).
+    static func typed(_ text: String) -> String {
+        var rest = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let leading, let match = leading.firstMatch(in: rest, range: NSRange(rest.startIndex..<rest.endIndex, in: rest)),
+              let range = Range(match.range, in: rest) {
+            let remainder = String(rest[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !remainder.isEmpty else { return rest }
+            rest = remainder
+        }
+        return rest
+    }
 
     static func isInjected(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

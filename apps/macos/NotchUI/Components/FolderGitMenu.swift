@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Git as seen from the folder a session works in, for any session: one Nook runs, one in a terminal, or an earlier
-/// one. Reads the branch, the changes and what is not pushed yet, and switches branches or pushes on request.
+/// one. Reads the branch, the changes and what is not pushed yet, and and switches branches on request.
 @MainActor
 final class FolderGitModel: ObservableObject {
     @Published private(set) var status: GitStatus?
@@ -47,12 +47,6 @@ final class FolderGitModel: ObservableObject {
     var files: [GitFileChange] { status?.files ?? [] }
     var added: Int { changes.compactMap(\.added).reduce(0, +) }
     var removed: Int { changes.compactMap(\.removed).reduce(0, +) }
-
-    /// A branch that has commits the remote does not have yet, or no upstream at all.
-    var canPush: Bool {
-        guard let status, status.branch != nil, !status.detached, !remotes.isEmpty, !working else { return false }
-        return status.upstream == nil || status.ahead > 0
-    }
 
     func refresh() async {
         if git == nil { git = await Task.detached(priority: .utility) { GitService.shared }.value }
@@ -101,14 +95,6 @@ final class FolderGitModel: ObservableObject {
         guard let git, let root, !working, branch != status?.branch else { return }
         perform(done: tr("ws.git.checkedOut", branch), failed: tr("ws.git.checkoutFailed", branch)) {
             try git.checkout(root, branch: branch)
-        }
-    }
-
-    func push() {
-        guard let git, let root, canPush, let branch = status?.branch else { return }
-        let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-        perform(done: tr("ws.quick.done.push"), failed: tr("toast.failed", tr("ws.quick.push"))) {
-            try git.push(root, remote: remote, branch: branch)
         }
     }
 
