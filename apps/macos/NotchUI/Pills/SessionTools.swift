@@ -521,19 +521,26 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
-                        // Back to the list to pick another, as the + of the tab does.
-                        subheader {
-                            HStack(spacing: NookTheme.Spacing.xs) {
-                                ToolbarIconButton("chevron.left", tr("agents.pr.back"), showPullRequestList)
-                                Text(tr("agents.pr.back")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-                                Spacer(minLength: 0)
+                        // One column, so the back button keeps its own height and the pull request takes the rest.
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Back to the list to pick another, as the + of the tab does.
+                            Button(action: showPullRequestList) {
+                                HStack(spacing: NookTheme.Spacing.xs) {
+                                    Image(systemName: "chevron.left").font(NookTheme.font(9.5, .semibold))
+                                    Text(tr("agents.pr.back")).font(NookTheme.TextStyle.detail)
+                                }
+                                .foregroundStyle(NookTheme.textTertiary)
+                                .padding(.horizontal, NookTheme.Spacing.sm)
+                                .frame(height: 24)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, NookTheme.Spacing.sm)
+                            .buttonStyle(.plain)
+                            .help(tr("agents.pr.back"))
+                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                            })
+                                .id(pullRequest.account + " " + pullRequest.item.id)
                         }
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
-                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        })
-                            .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
