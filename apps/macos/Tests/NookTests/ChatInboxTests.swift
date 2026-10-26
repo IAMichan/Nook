@@ -1391,6 +1391,28 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
     }
 
+    func testAnOlderMessageIsReadByWhoReadALaterOne() {
+        let anna = { (receipt: ChatReceipt, date: Date?) in ChatReader(name: "Anna", receipt: receipt, date: date) }
+        let bo = { (receipt: ChatReceipt) in ChatReader(name: "Bo", receipt: receipt) }
+        let filled = ChatReceipts.filledReaders([
+            [anna(.sent, nil), bo(.sent)],
+            [],
+            [anna(.delivered, now), bo(.sent)],
+            [anna(.read, now), bo(.delivered)],
+        ])
+        XCTAssertEqual(filled[0], [anna(.read, nil), bo(.delivered)], "without a time of its own: when is not known")
+        XCTAssertEqual(filled[1], [])
+        XCTAssertEqual(filled[2], [anna(.read, nil), bo(.delivered)])
+        XCTAssertEqual(filled[3], [anna(.read, now), bo(.delivered)], "the newest keeps what its app said")
+        XCTAssertEqual(ChatReceipts.overall(of: filled[0]), .delivered)
+        XCTAssertNil(ChatReceipts.overall(of: []))
+
+        // In a private chat, their message after yours says yours reached them; in a group it says nothing of the rest.
+        XCTAssertEqual(ChatReceipts.filled([(true, nil), (false, nil)], private: true), [.delivered, nil])
+        XCTAssertEqual(ChatReceipts.filled([(true, nil), (false, nil)]), [.sent, nil])
+        XCTAssertEqual(ChatReceipts.filled([(false, nil), (true, nil)], private: true), [nil, .sent])
+    }
+
     func testWhoIsTyping() {
         var state = ChatTypingState()
         let soon = now.addingTimeInterval(5)

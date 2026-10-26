@@ -61,19 +61,50 @@ enum ChatReceipts {
     /// Your messages' ticks as a chat shows them, oldest first, given whether each message is yours and what its app
     /// says of it. An older message of yours often comes without a word on it (a chat's history keeps none): it is in the
     /// chat, so it has at least one tick, and it got as far as a later one of yours did, since reading a chat reads what
-    /// came before. A clock or a red mark stays as it is; their messages have none (nil).
-    static func filled(_ messages: [(mine: Bool, receipt: ChatReceipt?)]) -> [ChatReceipt?] {
+    /// came before. In a private chat (`private`), a message they wrote after yours says it reached them. A clock or a
+    /// red mark stays as it is; their messages have none (nil).
+    static func filled(_ messages: [(mine: Bool, receipt: ChatReceipt?)], private: Bool = false) -> [ChatReceipt?] {
         var later: ChatReceipt?
+        var theirsLater = false
         var out = [ChatReceipt?](repeating: nil, count: messages.count)
         for index in messages.indices.reversed() {
             let message = messages[index]
-            guard message.mine else { continue }
+            guard message.mine else {
+                theirsLater = true
+                continue
+            }
             var receipt = message.receipt ?? .sent
             if receipt >= .sent, let later, later > receipt { receipt = later }
+            if receipt == .sent, `private`, theirsLater { receipt = .delivered }
             if receipt >= .sent { later = max(later ?? receipt, receipt) }
             out[index] = receipt
         }
         return out
+    }
+
+    /// Every message's info with what a later one says, oldest first (one list per message, empty for theirs): someone
+    /// who has or read a later message of yours has the earlier ones too, since reading a chat reads what came before.
+    /// A step that comes from a later message has no time of its own (when they read the earlier one is not known).
+    static func filledReaders(_ lists: [[ChatReader]]) -> [[ChatReader]] {
+        var later: [String: ChatReceipt] = [:]
+        var out = lists
+        for index in lists.indices.reversed() {
+            out[index] = lists[index].map { reader in
+                guard !reader.name.isEmpty, reader.receipt >= .sent, let step = later[reader.name], step > reader.receipt else {
+                    return reader
+                }
+                return ChatReader(name: reader.name, receipt: step, date: nil)
+            }
+            for reader in out[index] where !reader.name.isEmpty && reader.receipt >= .delivered {
+                later[reader.name] = max(later[reader.name] ?? reader.receipt, reader.receipt)
+            }
+        }
+        return out
+    }
+
+    /// A message's own ticks from everyone in its info: as far as the one it got least far with; nil for no one.
+    static func overall(of readers: [ChatReader]) -> ChatReceipt? {
+        readers.map(\.receipt).min()
     }
 
     /// The other person of a private chat and how far your message got with them, for the message's info as a group's

@@ -16,18 +16,29 @@ extension ChatBubble {
     static func bubbles(_ thread: InboxThread, last: Int? = nil, time: (Date) -> String) -> [ChatBubble] {
         let byID = Dictionary(thread.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         // Every message of yours has its ticks, also the older ones its app says nothing of.
-        let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) })
+        let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
         let all = zip(thread.messages, receipts).map { original, receipt in
             var message = original
             message.receipt = receipt
             return message
         }
         let shown = last.map { Array(all.suffix($0)) } ?? all
-        return shown.map { message in
+        var bubbles = shown.map { message in
             var bubble = ChatBubble(message, time: time(message.date), members: thread.members ?? [],
                                     person: thread.isPrivate ? thread.name : nil)
             bubble.quote = message.quote.flatMap { quote(of: $0, in: byID, chat: thread.name) }
             return bubble
+        }
+        fillReaders(&bubbles)
+        return bubbles
+    }
+
+    /// Your messages' info with what later ones say: who read a later message read the earlier ones too
+    /// (`ChatReceipts.filledReaders`). The same for every chat app, WhatsApp's bubbles included.
+    static func fillReaders(_ bubbles: inout [ChatBubble]) {
+        let filled = ChatReceipts.filledReaders(bubbles.map { $0.fromMe ? $0.readers : [] })
+        for index in bubbles.indices where bubbles[index].fromMe && filled[index] != bubbles[index].readers {
+            bubbles[index].readers = filled[index]
         }
     }
 

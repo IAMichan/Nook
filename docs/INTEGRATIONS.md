@@ -47,6 +47,13 @@ Code, it still applies to every coding agent. Mention any member you could not d
 | When they read it, in a private chat | ✓ (receipt arrival) | ✓ (receipt arrival) | ✓ (`date_read`) | – (only "read up to") | ✓ (`seen` time) | – | – |
 | Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) |
 | Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ |
+| Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – |
+
+Every app also gets what is certain from later messages (`ChatReceipts.filled` and `filledReaders`). Someone who read
+a later message of yours read the earlier ones too. In a private chat, their message after yours means yours reached
+them. Neither WhatsApp gateway keeps receipts. So a message whose receipts came while Nook was not running (or before
+it was linked) shows only what those rules prove.
 
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
 WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.

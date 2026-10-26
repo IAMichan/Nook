@@ -284,6 +284,7 @@ func (in *intent) MarkRead(ctx context.Context, roomID id.RoomID, eventID id.Eve
 		in.m.store.MarkRead(roomID, at)
 	} else {
 		in.m.store.MarkOthersRead(roomID, at)
+		in.m.store.MarkUserRead(roomID, in.user, at, ts.UnixMilli())
 	}
 	return nil
 }

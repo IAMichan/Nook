@@ -70,6 +70,13 @@ CREATE TABLE IF NOT EXISTS timeline (
 	status_text TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS timeline_room_ts ON timeline (room, ts);
+CREATE TABLE IF NOT EXISTS receipt (
+	room TEXT NOT NULL,
+	user TEXT NOT NULL,
+	upto INTEGER NOT NULL,
+	at INTEGER NOT NULL,
+	PRIMARY KEY (room, user, upto)
+);
 CREATE INDEX IF NOT EXISTS timeline_target ON timeline (target);
 CREATE TABLE IF NOT EXISTS media (
 	id TEXT PRIMARY KEY,
@@ -141,6 +148,54 @@ func (s *Store) RoomColumn(room id.RoomID, column string) string {
 func (s *Store) MarkOthersRead(room id.RoomID, ts int64) {
 	_, _ = s.db.Exec(`UPDATE room SET others_read_ts=MAX(others_read_ts, ?) WHERE id=?`, ts, room)
 	s.changed("chat.upserted", room)
+}
+
+// MarkUserRead keeps that one person read the chat up to `upto` at `at`: who read which of your messages, and when, also
+// after a restart. Each read is kept (a few per person and chat), so an older message keeps the time it was first read.
+func (s *Store) MarkUserRead(room id.RoomID, user id.UserID, upto, at int64) {
+	_, _ = s.db.Exec(`INSERT INTO receipt (room, user, upto, at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (room, user, upto) DO UPDATE SET at=MIN(at, excluded.at)`, room, user, upto, at)
+	// The newest 50 reads per person and chat are enough to date every message Nook shows.
+	_, _ = s.db.Exec(`DELETE FROM receipt WHERE room=? AND user=? AND upto NOT IN
+		(SELECT upto FROM receipt WHERE room=? AND user=? ORDER BY upto DESC LIMIT 50)`, room, user, room, user)
+}
+
+// Read is one person's read of a chat: up to `Upto` (a message's time), at `At`.
+type Read struct {
+	User id.UserID
+	Upto int64
+	At   int64
+}
+
+// Reads are every kept read of a chat, oldest first.
+func (s *Store) Reads(room id.RoomID) []Read {
+	rows, err := s.db.Query(`SELECT user, upto, at FROM receipt WHERE room=? ORDER BY upto`, room)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var reads []Read
+	for rows.Next() {
+		var read Read
+		if rows.Scan(&read.User, &read.Upto, &read.At) == nil {
+			reads = append(reads, read)
+		}
+	}
+	return reads
+}
+
+// ReadBy says who read a message of `ts`, and when they first did: the earliest of their reads that reaches it.
+func ReadBy(reads []Read, ts int64) map[id.UserID]int64 {
+	out := map[id.UserID]int64{}
+	for _, read := range reads {
+		if read.Upto < ts {
+			continue
+		}
+		if first, ok := out[read.User]; !ok || read.At < first {
+			out[read.User] = read.At
+		}
+	}
+	return out
 }
 
 // MarkRead marks the chat read up to ts and takes away a "marked unread".

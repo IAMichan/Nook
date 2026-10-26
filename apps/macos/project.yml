@@ -407,6 +407,7 @@ targets:
       - path: Brain/Weather.swift
       - path: Brain/ChatImage.swift
       - path: Services/WhatsApp/WhatsAppGateway.swift
+      - path: Services/WhatsApp/WhatsAppNames.swift
       - path: Services/Flow/FlowLogic.swift
       - path: Services/DoubleTap/DoubleTapLogic.swift
       - path: Services/DoubleTap/DoubleTapEditLogic.swift
