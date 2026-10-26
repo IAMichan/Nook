@@ -261,6 +261,8 @@ struct CompanionResponse: Codable, Equatable, Sendable {
     /// The chats of the Chats tab, newest first, and the messages of the one asked for (oldest first).
     var inbox: [InboxChatDigest]?
     var inboxLines: [InboxLine]?
+    /// Who is typing in the chat of `inboxLines`, with them; nil from a Mac that does not say.
+    var inboxTyping: [InboxTypist]?
     /// Where the Mac can be reached now (`CompanionFeature.routes`), with `hello`, `list` and `subscribe`.
     var endpoints: [CompanionEndpoint]?
     /// The relay the Mac is connected to (`CompanionFeature.relay`), "" when it uses none; with `endpoints`.
@@ -381,6 +383,24 @@ struct InboxChatDigest: Codable, Equatable, Identifiable, Sendable {
     var ticks: String?
     /// Read in Nook but still unread in the app itself (WhatsApp): "Mark as read" can still tell the app.
     var waitsInApp: Bool
+    /// Who is typing in it now, the first to start first; nil from a Mac that does not say.
+    var typing: [InboxTypist]? = nil
+}
+
+/// Someone typing in a chat, as the Mac's `ChatTypist`.
+struct InboxTypist: Codable, Equatable, Sendable {
+    /// Their name in a group; empty in a private chat, whose name already says who.
+    var name: String
+    /// "text", "recording" or "uploading".
+    var kind: String
+}
+
+/// One person and how far your message got with them, as the Mac's `ChatReader`: "sent" (not yet), "delivered" or
+/// "read", and when, where the app says.
+struct InboxReader: Codable, Equatable, Sendable {
+    var name: String
+    var receipt: String
+    var date: Double?
 }
 
 /// One message of a chat in the Chats tab, oldest first.
@@ -400,6 +420,9 @@ struct InboxLine: Codable, Equatable, Identifiable, Sendable {
     var quoteText: String?
     /// The emoji on it, the most used first ("👍 2").
     var reactions: [String]
+    /// Your own message: who has it and who read it (in a private chat the other person), as the message's info on the
+    /// Mac lists them; nil when the app says nothing per person, or from a Mac that does not send it.
+    var readers: [InboxReader]? = nil
 }
 
 /// Nook's home on the phone, as the notch shows it on the Mac.

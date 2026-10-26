@@ -48,6 +48,8 @@ final class CompanionClient: ObservableObject {
     /// The Mac's Chats tab: every chat app in one inbox, and the messages of each chat that was opened, by chat id.
     @Published private(set) var inbox: [InboxChatDigest] = []
     @Published private(set) var inboxLines: [String: [InboxLine]] = [:]
+    /// Who is typing in each chat that was opened, by chat id, as the Mac last said.
+    @Published private(set) var inboxTyping: [String: [InboxTypist]] = [:]
     /// Unread messages in every chat, for the badge on the Chats tab.
     var inboxUnread: Int { inbox.reduce(0) { $0 + $1.unread } }
     /// Why the inbox may be empty: "chatsoff" (nothing is collected on the Mac) or "chatsaccess" (macOS does not let
@@ -230,6 +232,7 @@ final class CompanionClient: ObservableObject {
         usage = nil
         inbox = []
         inboxLines = [:]
+        inboxTyping = [:]
         inboxStatus = nil
         compatibility = .ok
         macAppVersion = nil
@@ -946,6 +949,11 @@ final class CompanionClient: ObservableObject {
             if response.message != inboxStatus { inboxStatus = response.message }
         }
         if let lines = response.inboxLines, let chat = req.item, inboxLines[chat] != lines { inboxLines[chat] = lines }
+        // A Mac that says nothing of typing leaves it empty, never standing from an earlier answer.
+        if response.inboxLines != nil, let chat = req.item {
+            let typing = response.inboxTyping ?? []
+            if inboxTyping[chat] ?? [] != typing { inboxTyping[chat] = typing }
+        }
     }
 
 

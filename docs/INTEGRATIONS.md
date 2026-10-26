@@ -51,9 +51,13 @@ Code, it still applies to every coding agent. Mention any member you could not d
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
 WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.
 
+## Platforms and chats
+
+The iPhone companion is the only other app with the Chats tab. It gets the same things as the Mac over the companion
+protocol. The filled-in ticks come in each `InboxLine.ticks`. Who read it comes in `InboxLine.readers` and opens from
+the ticks. Who is typing comes in `InboxChatDigest.typing` for the list and `CompanionResponse.inboxTyping` for the
+open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one gets one, it reads these same fields.
+
 ## Open gaps
 
-Work that the rule above still asks for. Pick it up with the next change in that area.
-
-- **iPhone companion (and the other platform apps):** who read it, who is typing, and the filled-in ticks show on the
-  Mac only. The companion protocol (`packages/protocol`, `CompanionServer+Chats.swift`) does not carry them yet.
+None right now. Add an item here when a change cannot reach every member yet.
