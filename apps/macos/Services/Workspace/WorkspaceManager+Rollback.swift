@@ -70,7 +70,8 @@ extension WorkspaceManager {
         if !trimmed.removedRefs.isEmpty, let git = sessionGit(for: run) {
             let directory = run.workingDirectory
             let refs = trimmed.removedRefs
-            Task.detached(priority: .utility) { git.removeCheckpointRefs(directory, refs: refs) }
+            let key = folderKey(run)
+            Task { _ = try? await FolderLease.shared.run(key) { git.removeCheckpointRefs(directory, refs: refs) } }
         }
         let follows = plan != .unavailable
         if case .fresh = plan {

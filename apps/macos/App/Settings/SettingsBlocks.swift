@@ -510,6 +510,18 @@ struct WorkspaceSettingsSection: View {
                 Text(tr("settings.ws.days", 90)).tag(90)
             }
         }
+        // Worktrees that remove themselves; one in use or with uncommitted changes always stays.
+        Section {
+            Toggle(tr("settings.ws.worktreeCleanupMerged"), isOn: $ws.worktreeCleanupOnMerge)
+            Picker(tr("settings.ws.worktreeCleanupSettled"), selection: $ws.worktreeCleanupDays) {
+                Text(tr("settings.ws.never")).tag(0)
+                Text(tr("settings.ws.days", 3)).tag(3)
+                Text(tr("settings.ws.days", 7)).tag(7)
+                Text(tr("settings.ws.days", 30)).tag(30)
+            }
+        } footer: {
+            Text(tr("settings.ws.worktreeCleanup.footer"))
+        }
     }
 
     /// The workspace bridge: whether agents may use Nook's terminal, browser and pull requests, and linking it to agents

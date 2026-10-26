@@ -234,6 +234,10 @@ final class WorkspaceManager: ObservableObject {
     var stopCoordinators: [UUID: StopCoordinator] = [:]
     /// A message that steers an agent without native steering: it goes out once the interrupted turn has ended.
     var restartSteers: [UUID: String] = [:]
+    /// When the worktree cleanup rules last looked (see WorkspaceManager+WorktreeCleanup).
+    var worktreeCleanupAt: Date?
+    /// Writes an entry to the audit log (tool, arguments, result); configured by AppModel.
+    var onAudit: ((String, String, String) -> Void)?
     var sessionApprovals: [UUID: SessionApprovals] = [:]
     var backgroundRoster: [UUID: BackgroundRoster] = [:]
 
@@ -288,6 +292,7 @@ final class WorkspaceManager: ObservableObject {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
                 guard let self else { return }
                 self.checkPullRequestWatches()
+                self.applyWorktreeCleanup()
             }
         }
         Task.detached(priority: .utility) {
@@ -300,7 +305,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// The saved sessions have been read. Until then the session list is never written, so it cannot be replaced.
-    private var runsLoaded = false
+    private(set) var runsLoaded = false
 
     private func finishLoadingRuns(_ loaded: [WorkspaceRun]) {
         var loaded = loaded
@@ -772,10 +777,12 @@ final class WorkspaceManager: ObservableObject {
         let date = Date()
         // Where the agent's conversation stood: going back here rolls it back too.
         let mark = conversationMark(run)
+        let key = folderKey(run)
         checkpointing.insert(id)
-        Task.detached(priority: .utility) { [weak self] in
-            let made = (try? git.checkpoint(directory, ref: ref)) != nil
-            await self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date, conversation: mark) : nil)
+        Task { [weak self] in
+            // Never while a restore or removal of the same folder runs (FolderLease).
+            let made = (try? await FolderLease.shared.run(key) { try git.checkpoint(directory, ref: ref) }) != nil
+            self?.recordCheckpoint(id, made ? RunCheckpoint(ref: ref, date: date, conversation: mark) : nil)
         }
     }
 
@@ -808,7 +815,7 @@ final class WorkspaceManager: ObservableObject {
             throw StartError.git(tr("ws.revert.unavailable"))
         }
         let directory = run.workingDirectory
-        try await Task.detached(priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }.value
+        try await FolderLease.shared.run(folderKey(run), priority: .userInitiated) { try git.restore(directory, to: checkpoint.ref) }
         let conversation = rollBackConversation(id, to: checkpoint, index: index)
         append(id, RunEvent(kind: .system, text: tr(conversation ? "ws.revert.doneConversation" : "ws.revert.done")))
         refreshGit(id)
@@ -1792,7 +1799,9 @@ final class WorkspaceManager: ObservableObject {
         guard processes[id] == nil, !run.status.isActive else { throw StartError.git(tr("ws.error.busy")) }
         let others = runs.filter { $0.id != id && $0.status.isActive && $0.workingDirectory == worktree }
         guard others.isEmpty else { throw StartError.git(tr("ws.error.busy")) }
-        try await Task.detached(priority: .userInitiated) { try git.removeWorktree(repo: repo, path: worktree, force: force) }.value
+        try await FolderLease.shared.run(FolderLease.key(worktree, machine: run.remote?.machineID), priority: .userInitiated) {
+            try git.removeWorktree(repo: repo, path: worktree, force: force)
+        }
         append(id, RunEvent(kind: .system, text: tr("ws.event.worktreeRemoved", AgentPathFormat.tilde(worktree))))
         update(id) { $0.statusDetail = "worktreeRemoved" }
         self.git[id] = nil
@@ -1881,7 +1890,9 @@ final class WorkspaceManager: ObservableObject {
         guard !runs.contains(where: { $0.status.isActive && WorkspacePathPolicy.normalize($0.workingDirectory) == target }) else {
             throw StartError.git(tr("ws.error.busy"))
         }
-        try await Task.detached(priority: .userInitiated) { try git.removeWorktree(repo: repo, path: path, force: force) }.value
+        try await FolderLease.shared.run(FolderLease.key(path), priority: .userInitiated) {
+            try git.removeWorktree(repo: repo, path: path, force: force)
+        }
         for run in runs where WorkspacePathPolicy.normalize(run.workingDirectory) == target {
             append(run.id, RunEvent(kind: .system, text: tr("ws.event.worktreeRemoved", AgentPathFormat.tilde(path))))
             update(run.id) { $0.statusDetail = "worktreeRemoved" }
