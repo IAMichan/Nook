@@ -524,18 +524,9 @@ private struct SessionToolPanel: View {
                         // One column, so the back button keeps its own height and the pull request takes the rest.
                         VStack(alignment: .leading, spacing: 0) {
                             // Back to the list to pick another, as the + of the tab does.
-                            Button(action: showPullRequestList) {
-                                HStack(spacing: NookTheme.Spacing.xs) {
-                                    Image(systemName: "chevron.left").font(NookTheme.font(9.5, .semibold))
-                                    Text(tr("agents.pr.back")).font(NookTheme.TextStyle.detail)
-                                }
-                                .foregroundStyle(NookTheme.textTertiary)
-                                .padding(.horizontal, NookTheme.Spacing.sm)
-                                .frame(height: 24)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(tr("agents.pr.back"))
+                            NookGhostButton(title: tr("agents.pr.back"), symbol: "chevron.left", compact: true, height: 26,
+                                            action: showPullRequestList)
+                                .help(tr("agents.pr.back"))
                             PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
                                 updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
                             })
