@@ -71,7 +71,11 @@ struct AgentsTab: View {
                     .id(session.id)
                 case .past(let session):
                     SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
-                        AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                        // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
+                        // pull request status as one started here. The read-only view is for the rest.
+                        ImportedSession(session: session) {
+                            AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                        }
                     }
                     .id("past:" + session.id)
                 case .run(let id):
@@ -728,5 +732,27 @@ enum WorkspaceRunsSection {
             .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
         return Array(list.prefix(12))
+    }
+}
+
+/// Takes over an earlier conversation as a Nook session the moment it opens, so it works and looks like a session
+/// started in Nook. While that runs, or when it cannot (`fallback`), the read-only view shows.
+struct ImportedSession<Fallback: View>: View {
+    @EnvironmentObject private var app: AppModel
+    let session: PastSession
+    @ViewBuilder let fallback: () -> Fallback
+    @State private var failed = false
+
+    var body: some View {
+        if failed || !app.canContinueInNook(session) {
+            fallback()
+        } else {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .task(id: session.id) {
+                    do { _ = try await app.continueInNook(session) } catch { failed = true }
+                }
+        }
     }
 }
