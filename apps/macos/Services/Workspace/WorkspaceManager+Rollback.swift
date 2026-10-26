@@ -32,6 +32,24 @@ extension WorkspaceManager {
         }
     }
 
+    /// The conversation went on outside Nook under `session` (a resumed terminal chat): the next turn resumes that one,
+    /// and the messages written there that this session does not show yet are added.
+    func followContinuation(_ id: UUID, from previous: String, to session: String, messages: [AgentChatMessage]) {
+        guard let run = run(id), !run.status.isActive, run.providerSessionID == previous else { return }
+        loadTimeline(id)
+        let known = Set((events[id] ?? []).filter { $0.kind == .user || $0.kind == .assistant }
+            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) })
+        rememberEarlierSession(id, replacedBy: session)
+        update(id) { $0.providerSessionID = session }
+        noteConversationSession(id, session, keepsHistory: true)
+        for message in messages where message.kind == .user || message.kind == .assistant {
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !known.contains(text) else { continue }
+            let kind: RunEvent.Kind = message.kind == .user ? .user : .assistant
+            append(id, RunEvent(kind: kind, text: text, state: kind == .assistant ? .done : nil))
+        }
+    }
+
     func noteConversationTurn(_ id: UUID, turnID: String? = nil) {
         update(id) { run in
             var log = run.conversation ?? ConversationLog(session: run.providerSessionID, provider: run.provider)

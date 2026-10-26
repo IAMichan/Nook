@@ -168,4 +168,24 @@ extension AppModel {
         let earlier = external.filter { $0.section == .earlier }.prefix(limitEarlier)
         return current + earlier
     }
+
+    /// A conversation Nook runs that was continued in the terminal (`claude --resume` writes a new transcript under a new
+    /// session id): the Nook session moves on to that id and shows what was said there. Without it the continuation
+    /// appeared as a second chat and Nook's next turn resumed the older conversation, losing the terminal's messages.
+    func followTerminalContinuations() {
+        for run in workspace.runs where !run.archived && !run.status.isActive {
+            guard let current = run.providerSessionID, !current.isEmpty else { continue }
+            let agent = run.provider.displayName
+            guard let past = history.sessions.first(where: {
+                $0.agent.name == agent && $0.sessionID != current && !$0.path.isEmpty && $0.earlierIDs.contains(current)
+            }) else { continue }
+            let id = run.id
+            let path = past.path
+            let newSession = past.sessionID
+            Task { [weak self] in
+                let messages = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
+                self?.workspace.followContinuation(id, from: current, to: newSession, messages: messages)
+            }
+        }
+    }
 }
