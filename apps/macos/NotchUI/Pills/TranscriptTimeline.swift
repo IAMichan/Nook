@@ -499,7 +499,7 @@ private final class TranscriptDerived {
 }
 
 /// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
-/// the message is, a click scrolls to it, and hovering shows what you wrote.
+/// the message is, a click scrolls to it, and hovering shows the prompt you wrote.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
     let onSelect: (PromptMark) -> Void
@@ -522,7 +522,7 @@ struct TranscriptPromptRail: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(Self.summary(mark.text))
+                .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
                 .onHover { inside in
                     if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
                 }
@@ -533,11 +533,27 @@ struct TranscriptPromptRail: View {
         .animation(NookTheme.hover, value: hovered)
     }
 
-    /// The first line of a message, without the pictures sent along, short enough for a tooltip.
-    private static func summary(_ text: String) -> String {
+    /// What you wrote, without the pictures sent along, cut when it is too long for a card.
+    private static func prompt(_ text: String) -> String {
         let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let line = words.split(separator: "\n").first.map(String.init) ?? words
-        return line.count > 80 ? String(line.prefix(79)) + "…" : line
+        return words.count > 600 ? String(words.prefix(599)) + "…" : words
+    }
+}
+
+/// The prompt behind a mark on the rail, in a card beside it.
+private struct PromptCard: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
+            .lineLimit(12)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(NookTheme.Spacing.lg)
+            .frame(width: 300, alignment: .leading)
+            .background(DropdownStyle.panel)
     }
 }
 
