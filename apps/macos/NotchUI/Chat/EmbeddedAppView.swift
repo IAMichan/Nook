@@ -29,6 +29,12 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var sideLoading = false
     @Published private(set) var sideTitle = ""
 
+    /// The artifact open in an agent session's side panel: its own web view on the owning app's sign-in, so it needs
+    /// no app beside the chat.
+    @Published private(set) var artifactView: WKWebView?
+    @Published private(set) var artifactLoading = false
+    @Published private(set) var artifactTitle = ""
+
     /// The side panel of the open app, if it has one.
     var side: WKWebView? { current.flatMap { sides[$0.id] } }
 
@@ -62,6 +68,36 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         let view = sides[app.id] ?? makeSideView(configuration: main.configuration)
         sides[app.id] = view
         view.load(URLRequest(url: url))
+    }
+
+    /// Loads `url` (an artifact of `owner`) in the session's side panel, signed in with that app.
+    func openArtifact(_ url: URL, of owner: EmbeddedApp) {
+        let view: WKWebView
+        if let existing = artifactView {
+            view = existing
+        } else {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = Self.dataStore(for: owner)
+            configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+            view = makeSideView(configuration: configuration)
+            artifactView = view
+        }
+        artifactTitle = ""
+        view.load(URLRequest(url: url))
+    }
+
+    /// Puts the session's artifact away.
+    func closeArtifact() {
+        artifactView?.stopLoading()
+        artifactView = nil
+        artifactLoading = false
+        artifactTitle = ""
+    }
+
+    /// The session's artifact in the user's own browser.
+    func openArtifactInDefaultBrowser() {
+        guard let url = artifactView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     /// Puts the side panel away; the app stays open.
@@ -262,6 +298,10 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     private func refresh(_ webView: WKWebView, loading: Bool) {
+        if webView === artifactView {
+            artifactLoading = loading
+            artifactTitle = webView.title ?? ""
+        }
         if webView === side {
             sideLoading = loading
             sideTitle = webView.title ?? ""
@@ -423,6 +463,39 @@ private struct EmbeddedArtifactPanel: View {
             WebViewHost(webView: webView)
         }
         .background(NookTheme.field)
+    }
+}
+
+/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the page, with a bar for its
+/// title and the user's own browser. It shares the sign-in of the app that made it.
+struct SessionArtifactPanel: View {
+    @ObservedObject private var store = EmbeddedAppStore.shared
+
+    var body: some View {
+        if let webView = store.artifactView {
+            VStack(spacing: 0) {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(store.artifactTitle.isEmpty ? tr("embedded.artifact") : store.artifactTitle)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if store.artifactLoading { ProgressView().controlSize(.small) }
+                    Spacer(minLength: NookTheme.Spacing.xs)
+                    NookIconButton(systemName: "arrow.up.forward.app", label: tr("browser.openExternal"), size: 26) {
+                        store.openArtifactInDefaultBrowser()
+                    }
+                    .help(tr("browser.openExternal"))
+                }
+                .padding(.horizontal, NookTheme.Spacing.xs)
+                .frame(height: 32)
+                NookDivider()
+                WebViewHost(webView: webView)
+            }
+            .background(NookTheme.field)
+        } else {
+            Color.clear
+        }
     }
 }
 

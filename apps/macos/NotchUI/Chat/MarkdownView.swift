@@ -152,7 +152,7 @@ extension EnvironmentValues {
         set { self[FileLinkBaseKey.self] = newValue }
     }
 
-    /// In an agent's conversation: a pull request link opens in the session's side panel, not on the Pull requests page.
+    /// In an agent's conversation: a pull request or artifact link opens in the session's side panel, not on the Pull requests page.
     var pullRequestLinksBeside: Bool {
         get { self[PullRequestLinksBesideKey.self] }
         set { self[PullRequestLinksBesideKey.self] = newValue }
@@ -210,6 +210,10 @@ struct MarkdownView: View {
             guard MarkdownBlock.isSafeLink(url) else { return .discarded }
             // A pull request opens in Nook: beside the session, or on the Pull requests page.
             if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
+            // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
+            if pullRequestLinksBeside {
+                return MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) ? .handled : .systemAction
+            }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
             Task { @MainActor in AppModel.shared.openArtifact(url) }
