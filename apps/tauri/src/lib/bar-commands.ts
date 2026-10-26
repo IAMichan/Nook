@@ -122,6 +122,12 @@ export const barCommands: BarCommand[] = [
     description: ["Trek aan de linker-, rechter- of onderrand, of een onderhoek. Het gesloten Nook heeft een vaste maat.", "Pull the left, right or bottom edge, or a bottom corner. The closed Nook has a fixed size."],
   },
   {
+    id: "history",
+    title: ["Chatgeschiedenis", "Chat history"],
+    how: ["Nook-tab, rechterkolom: Geschiedenis", "Nook tab, right column: History"],
+    description: ["Al je gesprekken met zoeken, vastgezet en recent. Ga met de muis over een gesprek om het vast te zetten, te kopiëren, te archiveren of te verwijderen.", "All your chats with search, pinned and recent. Hover a chat to pin, copy, archive or delete it."],
+  },
+  {
     id: "language",
     title: ["Taal wisselen", "Switch language"],
     how: ["De NL/EN-knop in de kop", "The NL / EN button in the header"],
