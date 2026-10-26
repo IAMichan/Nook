@@ -58,6 +58,20 @@ final class FinishedSessionsTests: XCTestCase {
         XCTAssertFalse(store.contains(key), "a new turn reopens it")
     }
 
+    /// The list was not on screen when the hanging turn ended, so it never saw the session idle: the next turn starts
+    /// (`launchTurn`, a hook's prompt) and reopens it there, or the chat would work under "Settled" and land back in it.
+    func testNewTurnReopensAChatTheListSawBusyThroughout() {
+        let store = FinishedSessions.shared
+        store.mark(key, busy: true)
+        store.reconcile(busy: [key])
+        store.reopen(key)
+        XCTAssertFalse(store.contains(key))
+        XCTAssertFalse(store.isMarkedWhileBusy(key))
+        store.reconcile(busy: [key])
+        store.reconcile(busy: [])
+        XCTAssertFalse(store.isFinished(key: key, idle: true, lastActive: Date()), "the turn ended: open, not back in Settled")
+    }
+
     func testIdleMarkReopensWhenTheAgentWorksAgain() {
         let store = FinishedSessions.shared
         store.mark(key)

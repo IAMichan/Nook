@@ -1001,6 +1001,8 @@ final class WorkspaceManager: ObservableObject {
 
     func launchTurn(_ id: UUID, prompt: String, executable: String, showPrompt: Bool = true) {
         guard processes[id] == nil else { return }
+        // A new turn brings a chat you settled back, also when the Agents list is not on screen to see it work.
+        if let run = run(id) { FinishedSessions.shared.reopen(FinishedSessions.key(run: run)) }
         // A new turn ends any wait for a usage limit (yours or the automatic one).
         clearUsageLimit(id)
         // A task list that was all done belongs to the previous work; one still open stays until the agent updates it.
