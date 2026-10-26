@@ -174,15 +174,18 @@ extension AppModel {
     private func askInNotch(_ request: String) {
         let conversation = chat.startNew()
         NotchFollow.shared.conversations.insert(conversation)
-        guard let app = DoubleTap.shared.takeAskedIn(), !settings.privateSources.contains(SourceCatalog.screen) else {
+        guard let app = DoubleTap.shared.takeAskedIn(), settings.screenWorkAllowed else {
             handleUserText(request, reveal: false)
             followInNotch()
             return
         }
+        // The window goes with the question, so the question is screen work: on the screen brain when one keeps the screen
+        // on this Mac. The chat's own task inherits the choice from here.
+        let worker = settings.screenWorker
         let looking = Task { @MainActor [weak self] in
             let note = await self?.attachFrontWindow(app) ?? ""
             guard let self, !Task.isCancelled else { return }
-            self.handleUserText(request, reveal: false, note: note)
+            await ScreenBrain.$routed.withValue(worker) { self.handleUserText(request, reveal: false, note: note) }
             self.followInNotch()
         }
         viewModel.showWork(tr("doubletap.step.looking", app.localizedName ?? "")) { [weak self] in
@@ -268,6 +271,10 @@ extension AppModel {
     func takeOver(_ task: String, messageID: UUID? = nil) async throws -> String {
         let task = task.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !task.isEmpty else { throw NookError(tr("takeover.noTask")) }
+        // Taking over reads the screen at every step: on the screen brain when one keeps the screen on this Mac.
+        if ScreenBrain.routed == nil, let worker = settings.screenWorker {
+            return try await ScreenBrain.$routed.withValue(worker) { try await takeOver(task, messageID: messageID) }
+        }
         let state = TakeoverState.shared
         guard !state.isRunning else { throw NookError(tr("takeover.busy")) }
         state.isRunning = true

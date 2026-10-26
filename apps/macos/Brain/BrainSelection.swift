@@ -54,3 +54,40 @@ struct BrainSelection: Equatable {
         return !choseExternal
     }
 }
+
+/// Screen work on this Mac while an external brain answers the rest (Settings › Brain › Screen work).
+///
+/// With Claude (or another external AI) as the brain and the screen kept on this Mac, everything that reads the screen
+/// would otherwise stop: thinking along, looking at the screen, Double Tap, taking over a task, and questions about what is
+/// on screen. With a screen brain picked, that work runs on a model on this Mac instead, so screen text never leaves it,
+/// while every other question still goes to the stronger external brain.
+enum ScreenBrain {
+    /// The brain a run uses instead of the chosen one: set for screen work (`AppModel.onScreenBrain`), read by
+    /// `AppSettings.selection`, so every step of that run (context, tools, privacy filter, model) follows it.
+    @TaskLocal static var routed: BrainSelection?
+
+    /// The stored choice: "" for none, otherwise the runtime and the model ("mlx:<id>", "ollama:<model>", "lmstudio:<model>").
+    static func parse(_ stored: String) -> BrainSelection? {
+        guard let colon = stored.firstIndex(of: ":") else { return nil }
+        let model = String(stored[stored.index(after: colon)...])
+        guard !model.isEmpty else { return nil }
+        switch stored[..<colon] {
+        case "mlx": return BrainSelection(runtime: .mlx, provider: .claude, model: model)
+        case "ollama": return BrainSelection(runtime: .ollama, provider: .ollama, model: model)
+        case "lmstudio": return BrainSelection(runtime: .lmstudio, provider: .lmstudio, model: model)
+        default: return nil
+        }
+    }
+
+    /// The value `parse` reads back; "" for a brain that is not on this Mac, which never does screen work.
+    static func stored(_ selection: BrainSelection) -> String {
+        selection.isLocal ? "\(selection.runtime.rawValue):\(selection.model)" : ""
+    }
+
+    /// The brain that does the screen work: only while the chosen brain is external and the screen is kept on this Mac.
+    /// Nil otherwise: a brain on this Mac already does everything, and a screen the external brain may read needs no other.
+    static func worker(chosen: BrainSelection, screenPrivate: Bool, stored: String) -> BrainSelection? {
+        guard !chosen.isLocal, screenPrivate else { return nil }
+        return parse(stored)
+    }
+}

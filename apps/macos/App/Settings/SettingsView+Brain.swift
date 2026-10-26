@@ -109,6 +109,7 @@ extension SettingsView {
                     .help(brainExplanation)
                     providerFields
                 }
+                ScreenBrainSection(settings: settings)
             }
 
             if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }

@@ -365,7 +365,8 @@ final class BrainService {
                                                         prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
                                                         allowWebSearch: webAllowed)
         case .ollama:
-            conversation = OllamaConversation(model: settings.activeProviderModel, system: system,
+            // `selection`, not the provider's stored model: on the screen brain this is the model picked for screen work.
+            conversation = OllamaConversation(model: selection.model, system: system,
                                               history: [], prompt: fittedHistory + prompt, images: images, profile: profile)
         case .claude:
             guard let key = settings.apiKey, !key.isEmpty else { throw NookError("No API key configured. Add one in Settings › Brain.") }
@@ -378,12 +379,13 @@ final class BrainService {
                 }
             )
         default:
-            let provider = settings.provider
-            if provider.needsKey, (settings.providerKey ?? "").isEmpty {
+            let provider = selection.provider
+            let key = settings.key(for: provider)
+            if provider.needsKey, (key ?? "").isEmpty {
                 throw NookError("No API key set for \(provider.title). Add one in Settings › Brain.")
             }
             conversation = OpenAIConversation(
-                provider: provider, model: settings.activeProviderModel, key: settings.providerKey, system: system,
+                provider: provider, model: selection.model, key: key, system: system,
                 history: profile.isSmall ? [] : history, prompt: profile.isSmall ? fittedHistory + prompt : prompt,
                 images: images, maxTokens: profile.isSmall ? profile.maxOutputTokens : nil
             )

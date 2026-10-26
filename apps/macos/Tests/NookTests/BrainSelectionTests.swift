@@ -43,3 +43,36 @@ final class BrainSelectionTests: XCTestCase {
         XCTAssertFalse(selection.storedValues.provider.isLocalServer)
     }
 }
+
+/// Screen work stays on this Mac while an external brain answers everything else.
+final class ScreenBrainTests: XCTestCase {
+    private let claude = BrainSelection(runtime: .external, provider: .claude, model: "claude-opus-5-5")
+
+    func testStoredChoiceRoundTrips() {
+        for selection in [BrainSelection(runtime: .mlx, provider: .claude, model: "mlx-community/Qwen3-8B-4bit"),
+                          BrainSelection(runtime: .ollama, provider: .ollama, model: "qwen3:8b"),
+                          BrainSelection(runtime: .lmstudio, provider: .lmstudio, model: "google/gemma-3-12b")] {
+            XCTAssertEqual(ScreenBrain.parse(ScreenBrain.stored(selection)), selection)
+        }
+    }
+
+    func testOnlyALocalBrainCanBeStored() {
+        XCTAssertEqual(ScreenBrain.stored(claude), "")
+        XCTAssertNil(ScreenBrain.parse(""))
+        XCTAssertNil(ScreenBrain.parse("ollama:"))
+        XCTAssertNil(ScreenBrain.parse("external:claude-opus-5-5"))
+        XCTAssertNil(ScreenBrain.parse("claude"))
+    }
+
+    func testScreenWorkMovesOnlyWhenTheScreenIsKeptOnThisMac() {
+        let stored = "ollama:qwen3:8b"
+        XCTAssertEqual(ScreenBrain.worker(chosen: claude, screenPrivate: true, stored: stored)?.model, "qwen3:8b")
+        // The external brain may read the screen: it does the screen work itself.
+        XCTAssertNil(ScreenBrain.worker(chosen: claude, screenPrivate: false, stored: stored))
+        // No screen brain picked: screen work stays off, as before.
+        XCTAssertNil(ScreenBrain.worker(chosen: claude, screenPrivate: true, stored: ""))
+        // A brain on this Mac already does everything.
+        let local = BrainSelection(runtime: .mlx, provider: .claude, model: "m")
+        XCTAssertNil(ScreenBrain.worker(chosen: local, screenPrivate: true, stored: stored))
+    }
+}

@@ -117,6 +117,15 @@ Every notice Nook gives by himself goes through one decision, so a notice from a
 
 `AppSettings.localOnlySources` tracks sources that external cloud providers are never allowed to see (**Settings › Privacy and access › Only on this Mac**). Whenever an external brain is active (`AppSettings.privateSources`), those sources are stripped from the scope via `SourceScope.keepingLocal` at the start of `prepareRun` and `answer`. Their context, tools, and search queries are completely excluded, and prior turns that used a local-only source are omitted from conversation history (`NookChat.withoutPrivate`). With a local brain (built-in MLX, Ollama, LM Studio), all enabled sources remain available.
 
+### Screen Work on This Mac
+
+With an external brain and the screen kept on this Mac, everything that reads the screen would stop. **Settings › Brain › Screen work** (`ScreenBrainSection`) picks who reads it instead: the external brain itself (the screen leaves the *Only on this Mac* list), no one (screen work stays off), or a model on this Mac: the built-in model, Apple Intelligence, or a model Ollama or LM Studio serves (`AppSettings.screenBrain`, parsed by `ScreenBrain.parse`). With such a screen brain, `AppSettings.screenWorker` routes this work to it through the task-local `ScreenBrain.routed`, which `AppSettings.selection` returns for the whole run (model, profile, privacy filter, private sources):
+
+- Think Along and Screen Peek (`AppModel.onScreenBrain`), Double Tap (filling, writing, editing, and a question asked with the window in front), and taking over a task.
+- A chat question about the screen (`refersToScreen`), or a follow-up on an answer that read it; the reply says which model on this Mac answered (`screenBrain.answered`).
+
+Every other question still goes to the external brain, and answers that read the screen stay out of its history (`NookChat.withoutPrivate`). Autocomplete always runs on this Mac and is not affected. Tested in `ScreenBrainTests`.
+
 ### Privacy Level & Apps Nook Never Reads
 
 `AppSettings.privacyLevel` (**Settings › Privacy and access › Privacy level**) sets how tightly Nook filters what it gathers before it goes to an external brain. `AppSettings.shielded` applies `PrivacyFilter` (`Core/PrivacyLevel.swift`, tested in `PrivacyFilterTests`) to the context and screen text in `BrainService.run`, to evidence documents, and to every read-tool result in `ToolRunner.shield`. What the user types is never changed, and with a brain on this Mac nothing is filtered because nothing leaves it.
