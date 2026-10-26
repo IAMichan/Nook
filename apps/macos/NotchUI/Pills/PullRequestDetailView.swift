@@ -759,6 +759,7 @@ struct PullRequestDetailView: View {
         let hidden = total - PullRequestConversation.commentCount(
             PullRequestConversation.filtered(conversation, bots: showBotComments, finished: showFinishedComments))
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            if let readiness = PullRequestReadiness(detail) { readinessCard(readiness, detail: detail) }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 metaRow(symbol: "person.2", title: tr("agents.pr.status.reviewers")) { reviewers(detail) }
                 if !detail.labels.isEmpty {
@@ -808,6 +809,116 @@ struct PullRequestDetailView: View {
                     orderButton(newestFirst: $commentsNewestFirst)
                 }
             }
+        }
+    }
+
+    // MARK: Readiness
+
+    /// Where the pull request stands, first thing on the Summary: the verdict ("Ready to merge", "Not ready yet", "Needs
+    /// changes"), then one line per thing GitHub weighs, each with its mark in the state's color. A line with something
+    /// to look at or do takes you there: the checks unfold, the reviews open the timeline, a branch behind updates.
+    private func readinessCard(_ readiness: PullRequestReadiness, detail: PullRequestDetail) -> some View {
+        let verdict: (symbol: String, color: Color, title: String) = switch readiness.verdict {
+        case .ready: ("checkmark.circle.fill", NookTheme.mint, tr("agents.pr.ready.verdict.ready"))
+        case .waiting: ("clock.fill", NookTheme.amber, tr("agents.pr.ready.verdict.waiting"))
+        case .blocked: ("exclamationmark.circle.fill", NookTheme.coral, tr("agents.pr.ready.verdict.blocked"))
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: verdict.symbol).font(NookTheme.font(14, .semibold)).foregroundStyle(verdict.color)
+                Text(verdict.title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            NookDivider()
+            ForEach(Array(readiness.items.enumerated()), id: \.offset) { _, item in
+                readinessRow(item, detail: detail)
+            }
+        }
+        .padding(.bottom, NookTheme.Spacing.xs)
+        .panelCard()
+    }
+
+    @ViewBuilder
+    private func readinessRow(_ item: PullRequestReadiness.Item, detail: PullRequestDetail) -> some View {
+        let line = HStack(spacing: NookTheme.Spacing.md) {
+            readinessMark(item.tone).frame(width: 16)
+            Text(readinessText(item))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(item.tone == .neutral ? NookTheme.textSecondary : NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if let hint = readinessHint(item) {
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    Text(hint)
+                    Image(systemName: "chevron.right").font(NookTheme.font(8.5, .bold))
+                }
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        if let action = readinessAction(item, detail: detail) {
+            HoverRow(action: action) { line }
+        } else {
+            line
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+        }
+    }
+
+    private func readinessMark(_ tone: PullRequestReadiness.Tone) -> some View {
+        let look: (symbol: String, color: Color) = switch tone {
+        case .good: ("checkmark", NookTheme.mint)
+        case .waiting: ("circle.dotted", NookTheme.amber)
+        case .blocking: ("xmark", NookTheme.coral)
+        case .neutral: ("minus", NookTheme.textTertiary)
+        }
+        return Image(systemName: look.symbol).font(NookTheme.font(11, .bold)).foregroundStyle(look.color)
+    }
+
+    private func readinessText(_ item: PullRequestReadiness.Item) -> String {
+        let names: ([String]) -> String = { $0.map { "@" + $0 }.joined(separator: ", ") }
+        return switch item {
+        case .draft: tr("agents.pr.ready.draft")
+        case .conflicts(let base): tr("agents.pr.ready.conflicts", base)
+        case .noConflicts(let base): tr("agents.pr.ready.noConflicts", base)
+        case .behind(let base): tr("agents.pr.ready.behind", base)
+        case .checksFailing(let failing, let total): tr("agents.pr.ready.checksFailing", failing, total)
+        case .checksRunning(let running, let total): tr("agents.pr.ready.checksRunning", running, total)
+        case .checksPassed(let total): tr("agents.pr.ready.checksPassed", total)
+        case .noChecks: tr("agents.pr.ready.noChecks")
+        case .changesRequested(let by): tr("agents.pr.ready.changesRequested", names(by))
+        case .approved(let by): tr("agents.pr.ready.approved", names(by))
+        case .reviewRequested(let from): tr("agents.pr.ready.reviewRequested", names(from))
+        case .noReviews: tr("agents.pr.ready.noReviews")
+        }
+    }
+
+    /// The few words at the end of a line you can click: what the click does.
+    private func readinessHint(_ item: PullRequestReadiness.Item) -> String? {
+        switch item {
+        case .checksFailing, .checksRunning: tr("agents.pr.ready.showChecks")
+        case .changesRequested: tr("agents.pr.ready.showReviews")
+        case .behind: tr("agents.pr.action.updateBranch")
+        default: nil
+        }
+    }
+
+    private func readinessAction(_ item: PullRequestReadiness.Item, detail: PullRequestDetail) -> (() -> Void)? {
+        switch item {
+        case .checksFailing, .checksRunning:
+            return { withAnimation(NookTheme.reveal) { checksOpen = true } }
+        case .changesRequested:
+            return { switchTo(.timeline) }
+        case .behind where detail.canPush != false:
+            return {
+                actions.close()
+                actions.pending = .updateBranch(headSHA: detail.headSHA)
+            }
+        default:
+            return nil
         }
     }
 
@@ -1013,9 +1124,17 @@ struct PullRequestDetailView: View {
             if detail.checks.isEmpty {
                 ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
-                ForEach(Array(detail.checks.enumerated()), id: \.offset) { _, check in checkRow(check) }
+                // The ones that need you first: failing, then running, then passed, skipped last.
+                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check) }
             }
         }
+    }
+
+    private func sortedChecks(_ checks: [PullRequestCheck]) -> [PullRequestCheck] {
+        let rank: [PullRequestCheck.Outcome: Int] = [.failing: 0, .pending: 1, .passing: 2, .skipped: 3]
+        return checks.enumerated()
+            .sorted { (rank[$0.element.outcome] ?? 4, $0.offset) < (rank[$1.element.outcome] ?? 4, $1.offset) }
+            .map(\.element)
     }
 
     private func checkRow(_ check: PullRequestCheck) -> some View {
