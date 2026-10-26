@@ -81,9 +81,13 @@ enum PlanPreview {
 enum ContextMeter {
     enum Level: Equatable, Sendable { case normal, warning, critical }
 
+    /// Amber above 80 %, coral above 90 %.
     static func level(_ fraction: Double) -> Level {
-        fraction > 0.9 ? .critical : fraction >= 0.75 ? .warning : .normal
+        fraction > 0.9 ? .critical : fraction > 0.8 ? .warning : .normal
     }
+
+    /// Past the warning line the meter suggests summarizing the conversation (`/compact`) before the window runs out.
+    static func suggestsCompact(_ fraction: Double) -> Bool { level(fraction) != .normal }
 
     static func percentText(_ fraction: Double) -> String {
         let pct = min(max(fraction, 0), 1) * 100

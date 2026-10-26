@@ -425,8 +425,8 @@ struct ComposerMic: View {
     }
 }
 
-/// How full the agent's context window is: a small ring that starts at the top and turns coral above 90 %.
-/// Hover says how much; a button asks the agent to summarize when it can.
+/// How full the agent's context window is: a small ring that starts at the top, amber above 80 % and coral above 90 %.
+/// Hover says how much, and once it fills up suggests `/compact`; a button asks the agent to summarize when it can.
 struct ComposerContextRing: View {
     let used: Int
     let window: Int
@@ -434,6 +434,13 @@ struct ComposerContextRing: View {
     @State private var open = false
 
     private var fraction: Double { window > 0 ? min(1, Double(used) / Double(window)) : 0 }
+
+    /// "Context window 84% · 168k/200k", and past the warning line the suggestion to summarize.
+    private var help: String {
+        let base = tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window))
+        guard ContextMeter.suggestsCompact(fraction), onCompact != nil else { return base }
+        return base + "\n" + tr("compose.context.nearlyFull")
+    }
 
     var body: some View {
         let level = ContextMeter.level(fraction)
@@ -450,14 +457,19 @@ struct ComposerContextRing: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
-        .accessibilityLabel(tr("compose.context.help", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
+        .help(help)
+        .accessibilityLabel(help)
         .popover(isPresented: $open, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(tr("compose.context.title")).font(NookTheme.TextStyle.strong)
                 ProgressView(value: fraction).tint(tint)
                 Text(tr("compose.context.detail", ContextMeter.percentText(fraction), ContextMeter.tokensText(used: used, window: window)))
                     .font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
+                if ContextMeter.suggestsCompact(fraction), onCompact != nil {
+                    Text(tr("compose.context.nearlyFull"))
+                        .font(NookTheme.TextStyle.detail).foregroundStyle(tint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let onCompact {
                     Button(tr("compose.context.compact")) { open = false; onCompact() }
                 } else {
