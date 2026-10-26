@@ -926,8 +926,11 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
 
 /// Your Slack direct messages and group messages, with their history, through Slack's Web API: with the sign-in of
 /// Slack's website after you signed in on slack.com (`SlackWebSession`), or with a user token you set in Settings ›
-/// Chats (kept in the Keychain; read-only scopes are enough: im:history, mpim:history, im:read, mpim:read, users:read
-/// and files:read). Only Slack is asked, and only for your own conversations.
+/// Chats (kept in the Keychain; reading needs im:history, mpim:history, im:read, mpim:read, users:read and files:read).
+/// Only Slack is asked, and only for your own conversations. After your own click it also writes there, as Slack's own
+/// app does: text and files, answers in a thread, emoji, your messages' edits and deletions, and marking a
+/// conversation read. A pasted token needs chat:write, reactions:write, files:write, im:write and mpim:write for that;
+/// without one, Slack's refusal names the scope it misses.
 @MainActor
 final class SlackBridge: ChatHistoryBridge {
     let app = "slack"
@@ -973,6 +976,11 @@ final class SlackBridge: ChatHistoryBridge {
     /// The people of each group conversation, by name, asked once.
     private var people: [String: [String]] = [:]
     private var turn = 0
+    /// Conversations changed from Nook, to read at once, with the messages (their `ts`) to read again: one you edited or
+    /// put an emoji on, which a read of only the newer messages would not bring back.
+    private var stale: [String: Set<String>] = [:]
+    /// Your messages deleted from Nook, per conversation (their id in Nook), for the next read to drop from the chat.
+    private var gone: [String: [String]] = [:]
 
     var isReady: Bool { Self.auth != nil }
 
@@ -988,6 +996,8 @@ final class SlackBridge: ChatHistoryBridge {
         newest = [:]
         active = [:]
         people = [:]
+        stale = [:]
+        gone = [:]
         isWorking = false
     }
 
@@ -1012,8 +1022,18 @@ final class SlackBridge: ChatHistoryBridge {
                 var parameters = ["channel": conversation.id, "limit": String(Self.firstHistory)]
                 if let ts = newest[conversation.id] { parameters["oldest"] = ts }
                 let json = try await call("conversations.history", parameters, auth: auth)
-                let read = SlackData.messages(json, conversation: conversation, users: users, me: me)
-                let messages = await withFiles(read, auth: auth)
+                var read = SlackData.messages(json, conversation: conversation, users: users, me: me)
+                for ts in stale[conversation.id] ?? [] {
+                    let again = try await call("conversations.history", [
+                        "channel": conversation.id, "oldest": ts, "latest": ts, "inclusive": "true", "limit": "1",
+                    ], auth: auth)
+                    for message in SlackData.messages(again, conversation: conversation, users: users, me: me)
+                    where !read.contains(where: { $0.id == message.id }) {
+                        read.append(message)
+                    }
+                }
+                stale[conversation.id] = nil
+                let messages = await withFiles(read.sorted { $0.date < $1.date }, auth: auth)
                 if let last = (json["messages"] as? [[String: Any]])?.compactMap({ $0["ts"] as? String })
                     .max(by: { (Double($0) ?? 0) < (Double($1) ?? 0) }) {
                     newest[conversation.id] = last
@@ -1021,7 +1041,8 @@ final class SlackBridge: ChatHistoryBridge {
                 } else if newest[conversation.id] == nil {
                     newest[conversation.id] = "0"
                 }
-                guard !messages.isEmpty else { continue }
+                let deleted = gone.removeValue(forKey: conversation.id) ?? []
+                guard !messages.isEmpty || !deleted.isEmpty else { continue }
                 let picture = await avatar(of: conversation.user)
                 if conversation.isGroup, people[conversation.id] == nil {
                     // One refused list (a missing scope) leaves the group without its people, not without its messages.
@@ -1030,7 +1051,8 @@ final class SlackBridge: ChatHistoryBridge {
                 }
                 let members = people[conversation.id] ?? []
                 chats.append(BridgedChat(app: app, name: SlackData.chatName(conversation, users: users, me: me),
-                                         messages: messages, unread: nil, avatar: picture, members: members.isEmpty ? nil : members))
+                                         messages: messages, unread: nil, avatar: picture, members: members.isEmpty ? nil : members,
+                                         deleted: deleted))
             }
             isWorking = true
             return chats
@@ -1108,12 +1130,15 @@ final class SlackBridge: ChatHistoryBridge {
         return result
     }
 
-    /// The conversations to read now: never read ones and the busiest, then a few others in turn.
+    /// The conversations to read now: the ones changed from Nook, never read ones and the busiest, then a few others
+    /// in turn.
     private func pick() -> [SlackData.Conversation] {
         let ordered = conversations.sorted { (active[$0.id] ?? 0) > (active[$1.id] ?? 0) }
-        let unread = ordered.filter { newest[$0.id] == nil }
-        let busy = ordered.filter { newest[$0.id] != nil }
-        var picked = Array(unread.prefix(Self.perRead))
+        let changed = ordered.filter { stale[$0.id] != nil || gone[$0.id] != nil }
+        let others = ordered.filter { stale[$0.id] == nil && gone[$0.id] == nil }
+        let unread = others.filter { newest[$0.id] == nil }
+        let busy = others.filter { newest[$0.id] != nil }
+        var picked = Array((changed + unread).prefix(Self.perRead))
         let room = Self.perRead - picked.count
         guard room > 0 else { return picked }
         picked += busy.prefix(max(0, room - Self.rotating))
@@ -1152,13 +1177,153 @@ final class SlackBridge: ChatHistoryBridge {
         var components = URLComponents(string: "https://slack.com/api/" + method)!
         components.queryItems = parameters.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         guard let url = components.url else { throw NookError("Slack: \(method)") }
+        return try await answer(Self.request(url, auth: auth))
+    }
+
+    /// A change through Slack's Web API (chat.postMessage, reactions.add…), its fields sent as a form, as Slack's own
+    /// clients do. A refusal in `ignoring` ("already_reacted") means it is so already, and counts as done.
+    private func post(_ method: String, _ fields: [String: String], auth: SlackData.Auth,
+                      ignoring: Set<String> = []) async throws -> [String: Any] {
+        guard let url = URL(string: "https://slack.com/api/" + method) else { throw NookError("Slack: \(method)") }
         var request = Self.request(url, auth: auth)
+        request.httpMethod = "POST"
+        request.httpBody = SlackData.form(fields)
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        return try await answer(request, ignoring: ignoring)
+    }
+
+    /// Slack's answer to a request: its JSON, or an error that says why not (too many requests, or Slack's own reason,
+    /// such as the scope a pasted token misses).
+    private func answer(_ request: URLRequest, ignoring: Set<String> = []) async throws -> [String: Any] {
+        var request = request
         request.setValue("Nook", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await ConnectorHTTP.session.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 429 { throw NookError(tr("chats.slack.rateLimited")) }
+        if code == 429 { throw NookError(tr("chats.slack.rateLimited"), kind: .rateLimited) }
         guard (200..<300).contains(code), let json = ChatJSON.object(data) else { throw NookError("Slack: HTTP \(code)") }
-        if let error = SlackData.error(json) { throw NookError(tr("chats.slack.refused", error)) }
+        if let error = SlackData.error(json), !ignoring.contains((json["error"] as? String) ?? "") {
+            throw NookError(tr("chats.slack.refused", error))
+        }
         return json
+    }
+
+    // MARK: Writing
+
+    /// Whether Nook can write in the chat it shows as `name`: one of the conversations it reads from Slack.
+    func canSend(name: String) -> Bool { isReady && conversation(name) != nil }
+
+    /// What can go besides text: every kind of file (Slack keeps each as a file), and a place or a contact card as
+    /// text. Slack has no polls of its own.
+    var sends: Set<ChatOutgoing.Kind> { ChatOutgoing.Kind.noPolls }
+
+    /// Sends what you typed to the chat Nook shows as `name`; as an answer to `replyTo` (a message's id in Nook) it goes
+    /// in that message's thread and to the conversation too, so it shows there as an answer. The chat shows it at the
+    /// next read, which comes at once.
+    func send(text: String, to name: String, replyTo: String? = nil) async throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        let (auth, conversation) = try target(name)
+        let thread = replyTo.flatMap { thread(answering: $0, in: conversation, name: name) }
+        _ = try await post("chat.postMessage", SlackData.postFields(channel: conversation.id, text: body, thread: thread), auth: auth)
+        changed(conversation)
+    }
+
+    /// Sends a file (with its caption) as Slack's own app does: Slack gives an address for its bytes, they go there,
+    /// and Slack then shares it in the conversation (in the thread of `replyTo` when it answers a message). A place or
+    /// a contact card goes as text; a poll cannot go.
+    func send(_ outgoing: ChatOutgoing, to name: String, replyTo: String? = nil) async throws {
+        let file: ChatAttachment
+        switch outgoing {
+        case .file(let attachment): file = attachment
+        case .poll: throw NookError(tr("chat.compose.unsupported"))
+        case .location, .contact:
+            try await send(text: outgoing.text, to: name, replyTo: replyTo)
+            return
+        }
+        guard !file.tooLarge, let data = try? Data(contentsOf: file.url, options: .mappedIfSafe) else {
+            throw NookError(tr("chat.compose.tooLarge", file.name))
+        }
+        let (auth, conversation) = try target(name)
+        let thread = replyTo.flatMap { thread(answering: $0, in: conversation, name: name) }
+        let ticket = try await post("files.getUploadURLExternal", ["filename": file.name, "length": String(data.count)], auth: auth)
+        guard let upload = SlackData.uploadTarget(ticket) else { throw NookError(tr("chat.compose.notSent")) }
+        var request = Self.request(upload.url, auth: auth)
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.setValue(file.mimeType, forHTTPHeaderField: "Content-Type")
+        request.setValue("Nook", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 120
+        let (_, response) = try await ConnectorHTTP.session.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 429 { throw NookError(tr("chats.slack.rateLimited"), kind: .rateLimited) }
+        guard (200..<300).contains(code) else { throw NookError(tr("chats.slack.refused", "HTTP \(code)")) }
+        _ = try await post("files.completeUploadExternal", SlackData.completeFields(
+            channel: conversation.id, file: upload.file, title: file.name, caption: file.caption, thread: thread), auth: auth)
+        changed(conversation)
+    }
+
+    /// Puts your emoji on a message (its id in Nook) of the chat Nook shows as `name`, or takes it back when it is
+    /// yours already (`mine`). Slack names its emoji; one Nook knows no name of cannot go.
+    func react(_ emoji: String, to message: String, in name: String, mine: Bool) async throws {
+        let (auth, conversation) = try target(name)
+        guard let ts = SlackData.ts(of: message, conversation: conversation.id),
+              let shortcode = SlackData.shortcode(emoji: emoji) else { throw NookError(tr("chat.compose.unsupported")) }
+        let fields = ["channel": conversation.id, "timestamp": ts, "name": shortcode]
+        if mine {
+            _ = try await post("reactions.remove", fields, auth: auth, ignoring: ["no_reaction"])
+        } else {
+            _ = try await post("reactions.add", fields, auth: auth, ignoring: ["already_reacted"])
+        }
+        changed(conversation, ts: ts)
+    }
+
+    /// Changes the text of your message (its id in Nook) for everyone.
+    func edit(_ message: String, in name: String, to text: String) async throws {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
+        let (auth, conversation) = try target(name)
+        guard let ts = SlackData.ts(of: message, conversation: conversation.id) else { throw NookError(tr("chat.compose.unsupported")) }
+        _ = try await post("chat.update", ["channel": conversation.id, "ts": ts, "text": SlackData.escape(body)], auth: auth)
+        changed(conversation, ts: ts)
+    }
+
+    /// Deletes your message (its id in Nook) for everyone; the next read drops it from the chat.
+    func delete(_ message: String, in name: String) async throws {
+        let (auth, conversation) = try target(name)
+        guard let ts = SlackData.ts(of: message, conversation: conversation.id) else { throw NookError(tr("chat.compose.unsupported")) }
+        // Deleted already (in Slack itself) is what was asked.
+        _ = try await post("chat.delete", ["channel": conversation.id, "ts": ts], auth: auth, ignoring: ["message_not_found"])
+        gone[conversation.id, default: []].append(message)
+        changed(conversation)
+    }
+
+    /// Tells Slack you read the chat Nook shows as `name`, up to its newest message, so Slack no longer shows it unread.
+    func markRead(name: String) async throws {
+        let (auth, conversation) = try target(name)
+        let latest = try await call("conversations.history", ["channel": conversation.id, "limit": "1"], auth: auth)
+        guard let ts = SlackData.newestTS(latest) else { return }
+        _ = try await post("conversations.mark", ["channel": conversation.id, "ts": ts], auth: auth)
+    }
+
+    /// What Slack is asked with, and the conversation behind the chat Nook shows as `name`.
+    private func target(_ name: String) throws -> (SlackData.Auth, SlackData.Conversation) {
+        guard let auth = Self.auth, let conversation = conversation(name) else { throw NookError(tr("chat.action.failed")) }
+        return (auth, conversation)
+    }
+
+    /// The thread an answer to `id` (a message's id in Nook) goes in: the thread's first message's `ts`. Slack's threads
+    /// are one level deep, so an answer to an answer goes in the same thread. Nil for a message Slack did not bring
+    /// (one only its notification showed): the text then goes as a message of its own.
+    private func thread(answering id: String, in conversation: SlackData.Conversation, name: String) -> String? {
+        guard let ts = SlackData.ts(of: id, conversation: conversation.id) else { return nil }
+        let answered = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
+        return answered?.quote?.id.flatMap { SlackData.ts(of: $0, conversation: conversation.id) } ?? ts
+    }
+
+    /// After a change from Nook: the conversation is read at once, with the message `ts` (one you changed) read again.
+    private func changed(_ conversation: SlackData.Conversation, ts: String? = nil) {
+        stale[conversation.id, default: []].formUnion(ts.map { [$0] } ?? [])
+        active[conversation.id] = max(active[conversation.id] ?? 0, Date().timeIntervalSince1970)
+        ChatCaptureService.shared.readSoon(app)
     }
 }
