@@ -307,6 +307,7 @@ targets:
       - path: Services/Workspace/WebhookHTTP.swift
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/Keybindings.swift
+      - path: Services/Workspace/ClosedTabs.swift
       - path: ../../packages/protocol/Sources/PromptLink.swift
       - path: Services/Workspace/PriceTable.swift
       - path: Services/Workspace/UsageLedger.swift

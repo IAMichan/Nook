@@ -22,6 +22,8 @@ struct PullRequestsPanel: View {
     /// The pull requests opened as tabs, and the one shown; nil shows the list alone (the tabs wait for the next click).
     @State private var tabs: [OpenPullRequest] = []
     @State private var activeTab: String?
+    /// Tabs you closed, for ⇧⌘T (`panel.reopenClosed`).
+    @State private var closed = ClosedTabs<OpenPullRequest>()
     private var active: OpenPullRequest? { tabs.first { $0.id == activeTab } }
     /// Search and filters; kept while a pull request is open, so going back shows the same list, and across launches.
     @State private var filter = PullRequestFilter.load()
@@ -70,6 +72,12 @@ struct PullRequestsPanel: View {
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
         .onReceive(app.viewModel.$pullRequestToOpen) { take($0) }
+        // ⇧⌘T: the pull request tab closed last opens again; the key goes on when there is none.
+        .keyCommands(["panel.reopenClosed": {
+            guard let tab = closed.reopen(skipping: { tab in tabs.contains { $0.id == tab.id } }) else { return false }
+            open(tab.account, tab.item)
+            return true
+        }])
         .onChange(of: filter) { _, filter in filter.save() }
     }
 
@@ -97,6 +105,7 @@ struct PullRequestsPanel: View {
 
     /// Closes tabs; when the shown one goes, its neighbour on the right (else the left) is shown.
     private func closeTabs(_ ids: Set<String>) {
+        closed.push(tabs.filter { ids.contains($0.id) })
         let index = tabs.firstIndex { $0.id == activeTab }
         tabs.removeAll { ids.contains($0.id) }
         guard let current = activeTab, ids.contains(current) else { return }

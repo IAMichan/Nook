@@ -168,6 +168,15 @@ struct ToolbarGroupDivider: View {
     }
 }
 
+/// A tab closed in a session's side or bottom panel, with what it showed, so ⇧⌘T can bring it back where it was.
+struct ClosedSessionTab {
+    let tool: SessionTool
+    /// It was in the bottom panel, not the side panel.
+    let bottom: Bool
+    /// The pull request a Pull request tab showed.
+    let pullRequest: PullRequestOpenRequest?
+}
+
 /// Where a tool panel sits next to the conversation: what it shows and which tabs it has open in the view model.
 private struct SessionPanelSlot {
     let tool: ReferenceWritableKeyPath<NotchViewModel, SessionTool>
@@ -249,6 +258,21 @@ struct SessionWorkbench<Conversation: View>: View {
         .onChange(of: bottom) { _, next in
             if SessionTool.panelTools.contains(next) { lastBottomTool = next.rawValue }
         }
+        // ⇧⌘T: the tab closed last comes back, in the panel it was in; the key goes on when there is none.
+        .keyCommands(["panel.reopenClosed": reopenClosed])
+    }
+
+    /// Opens the most recently closed tab again (with its pull request), skipping tools that are open again or that
+    /// this session cannot use.
+    private func reopenClosed() -> Bool {
+        let open = tabs(.side) + tabs(.bottom)
+        guard let tab = viewModel.closedSessionTabs.reopen(skipping: { open.contains($0.tool) || !$0.tool.available(in: directory) })
+        else { return false }
+        withAnimation(NookTheme.swap) {
+            if tab.tool == .pullRequest { viewModel.sidePullRequest = tab.pullRequest }
+            viewModel[keyPath: (tab.bottom ? SessionPanelSlot.bottom : SessionPanelSlot.side).tool] = tab.tool
+        }
+        return true
     }
 
     /// Dragging the line above the bottom panel up makes it taller.
@@ -271,6 +295,8 @@ struct SessionWorkbench<Conversation: View>: View {
         let visible = tabs(slot)
         guard let index = visible.firstIndex(of: item) else { return }
         let rest = visible.filter { $0 != item }
+        viewModel.closedSessionTabs.push(ClosedSessionTab(tool: item, bottom: slot.tool == \NotchViewModel.bottomTool,
+                                                          pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
             if item == .pullRequest { viewModel.sidePullRequest = nil }

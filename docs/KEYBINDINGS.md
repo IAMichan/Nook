@@ -37,6 +37,7 @@ shows what your file could not use, and the keys that claim the same chord.
 | ⇧⌘K | `commandPalette.toggle` | `!terminalFocus` | The agents' command palette |
 | ⌘N | `session.new` | `!terminalFocus` | A new Nook chat in the Nook list, a new agent session elsewhere in the main window |
 | ⌘Z | `session.undo` | `!terminalFocus && !editableFocus` | Undo the last change to the agents' list (pin, settle…); in a text field ⌘Z undoes typing |
+| ⇧⌘T | `panel.reopenClosed` | `!terminalFocus` | Reopen the tab closed last: a session's side or bottom panel tab (in the panel it was in, a pull request tab with its pull request), or a tab on the Pull requests page |
 | ⇧⌘[ / ⇧⌘] | `session.previous` / `session.next` | | Not available yet |
 | ⌘D | `diff.toggle` | `!terminalFocus` | Not available yet |
 | ⇧⌘M | `modelPicker.toggle` | `!terminalFocus` | Not available yet |

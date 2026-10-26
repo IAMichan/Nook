@@ -46,6 +46,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "keys.command.session.pin": "Sessie vastzetten",
         "keys.command.session.undo": "Laatste lijstactie ongedaan maken",
         "keys.command.session.interrupt": "Beurt onderbreken",
+        "keys.command.panel.reopenClosed": "Gesloten tabblad heropenen",
     ],
     .en: [
         "keys.title": "Panel keys",
@@ -89,6 +90,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "keys.command.session.pin": "Pin session",
         "keys.command.session.undo": "Undo the last list action",
         "keys.command.session.interrupt": "Interrupt the turn",
+        "keys.command.panel.reopenClosed": "Reopen closed tab",
     ],
     .de: [
         "keys.title": "Panel-Tasten",
@@ -132,6 +134,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "keys.command.session.pin": "Sitzung anheften",
         "keys.command.session.undo": "Letzte Listenaktion rückgängig machen",
         "keys.command.session.interrupt": "Zug unterbrechen",
+        "keys.command.panel.reopenClosed": "Geschlossenen Tab wieder öffnen",
     ],
     .fr: [
         "keys.title": "Touches du panneau",
@@ -175,6 +178,7 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "keys.command.session.pin": "Épingler la session",
         "keys.command.session.undo": "Annuler la dernière action de liste",
         "keys.command.session.interrupt": "Interrompre le tour",
+        "keys.command.panel.reopenClosed": "Rouvrir l'onglet fermé",
     ],
     .es: [
         "keys.title": "Teclas del panel",
@@ -218,5 +222,6 @@ let keybindingTranslations: [AppLanguage: [String: String]] = [
         "keys.command.session.pin": "Fijar sesión",
         "keys.command.session.undo": "Deshacer la última acción de la lista",
         "keys.command.session.interrupt": "Interrumpir el turno",
+        "keys.command.panel.reopenClosed": "Reabrir la pestaña cerrada",
     ],
 ]
