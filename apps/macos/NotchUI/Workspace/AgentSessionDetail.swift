@@ -178,7 +178,7 @@ struct AgentSessionDetail: View {
             } else {
                 errorLine
                 VStack(spacing: 0) {
-                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session)?.branch ?? "", reply: shown.lastReply))
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: shown.lastReply))
                     liveComposer(shown).zIndex(1)
                 }
             }
@@ -588,7 +588,7 @@ struct AgentSessionDetail: View {
 
             errorLine
             VStack(spacing: 0) {
-            pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch, reply: session.lastReply))
+            pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
             SessionComposer(
                 text: $draft,
                 prompt: canContinue ? tr("agents.reply.resume")
