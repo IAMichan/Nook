@@ -94,6 +94,9 @@ a { color: var(--iris); }
 
 @keyframes pulse { 50% { opacity: 0.35; } }
 
+/* Error and warning messages can be selected and copied by dragging over them. */
+.err, .warn, .error:not(.orb) { user-select: text; cursor: text; }
+
 .markdown { user-select: text; line-height: 1.5; }
 .markdown p { margin: 0 0 8px; }
 .markdown p:last-child { margin-bottom: 0; }
