@@ -286,7 +286,6 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.from": "Vanaf %@",
         "agents.panel.switchBranch": "Wissel van branch",
         "agents.panel.copyBranch": "Kopieer branchnaam",
-        "agents.panel.commitNookOnly": "Niets te pushen. Committen vanuit dit paneel kan bij sessies die Nook zelf draait.",
         "agents.panel.changes": "Wijzigingen",
     ],
     .en: [
@@ -570,7 +569,6 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.from": "From %@",
         "agents.panel.switchBranch": "Switch branch",
         "agents.panel.copyBranch": "Copy branch name",
-        "agents.panel.commitNookOnly": "Nothing to push. Committing from this panel works for sessions Nook runs itself.",
         "agents.panel.changes": "Changes",
     ],
     .de: [
@@ -854,7 +852,6 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.from": "Von %@",
         "agents.panel.switchBranch": "Branch wechseln",
         "agents.panel.copyBranch": "Branch-Namen kopieren",
-        "agents.panel.commitNookOnly": "Nichts zu pushen. Committen aus diesem Panel geht bei Sitzungen, die Nook selbst ausführt.",
         "agents.panel.changes": "Änderungen",
     ],
     .fr: [
@@ -1138,7 +1135,6 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.from": "Depuis %@",
         "agents.panel.switchBranch": "Changer de branche",
         "agents.panel.copyBranch": "Copier le nom de la branche",
-        "agents.panel.commitNookOnly": "Rien à pousser. Le commit depuis ce panneau fonctionne pour les sessions que Nook exécute lui-même.",
         "agents.panel.changes": "Modifications",
     ],
     .es: [
@@ -1422,7 +1418,6 @@ let agentWorkTranslations: [AppLanguage: [String: String]] = [
         "agents.panel.from": "Desde %@",
         "agents.panel.switchBranch": "Cambiar de rama",
         "agents.panel.copyBranch": "Copiar nombre de la rama",
-        "agents.panel.commitNookOnly": "Nada que subir. Hacer commit desde este panel funciona en sesiones que Nook ejecuta él mismo.",
         "agents.panel.changes": "Cambios",
     ],
 ]

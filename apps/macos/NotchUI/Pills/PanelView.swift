@@ -383,7 +383,7 @@ struct NotchSheetView: View {
         switch sheet {
         case .details(let id), .changes(let id, _), .commit(let id), .pullRequest(let id):
             return app.workspace.run(id)?.title
-        case .folderChanges(let path):
+        case .folderChanges(let path), .folderCommit(let path), .folderPullRequest(let path):
             return AgentPathFormat.tilde(path)
         }
     }
@@ -401,6 +401,10 @@ struct NotchSheetView: View {
             PullRequestSheet(runID: id, onClose: close)
         case .folderChanges(let path):
             FolderChangesSheet(directory: path).id(path)
+        case .folderCommit(let path):
+            CommitSheet(folder: path, onClose: close).id(path)
+        case .folderPullRequest(let path):
+            PullRequestSheet(folder: path, onClose: close).id(path)
         }
     }
 }

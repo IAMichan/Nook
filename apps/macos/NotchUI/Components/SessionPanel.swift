@@ -130,6 +130,11 @@ struct SessionPanel: View {
             guard let runID, progress == nil else { return }
             quick = await workspace.quickGitState(runID)
         }
+        // A session Nook only sees: looked at again whenever its folder's git status changes.
+        .task(id: runID == nil ? model.status : nil) {
+            guard runID == nil, progress == nil else { return }
+            await readFolderState()
+        }
     }
 
     // MARK: Machine and folder
@@ -287,21 +292,10 @@ struct SessionPanel: View {
 
     // MARK: Commit, push, pull request
 
-    @ViewBuilder
+    /// The same button for every session: one Nook runs goes through its workspace, one it only sees (started in a
+    /// terminal or the Claude desktop app) through its folder.
     private var commitRow: some View {
-        if let runID {
-            runCommitRow(runID)
-        } else {
-            // A session Nook only sees: pushing is all it does here; committing is left to the agent or you.
-            PanelRow(icon: symbol("arrow.up.circle"),
-                     title: model.status.map { $0.ahead > 0 ? tr("agents.git.pushAhead", $0.ahead) : tr("agents.git.push") } ?? tr("agents.git.push"),
-                     disabledReason: model.canPush ? nil : tr("agents.panel.commitNookOnly"),
-                     action: { model.push() })
-        }
-    }
-
-    private func runCommitRow(_ runID: UUID) -> some View {
-        let active = run?.status.isActive == true
+        let active = runID == nil ? agentWorking : run?.status.isActive == true
         let resolved: (action: GitQuickAction?, reason: String?)
         switch quick.map(GitQuickResolver.resolve) {
         case .success(let found)?: resolved = (found, nil)
@@ -310,7 +304,7 @@ struct SessionPanel: View {
         }
         let action = resolved.action
         let reason = active ? tr("ws.error.busy") : resolved.reason
-        let files = workspace.git[runID]?.status?.files ?? model.files
+        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
         let behind = (quick?.behind ?? 0) > 0
         return PanelRow(icon: progress != nil ? AnyView(ProgressView().controlSize(.mini)) : symbol(action.map(Self.actionSymbol) ?? "checkmark.circle"),
                         title: progress ?? action.map { tr($0.labelKey) } ?? tr("ws.quick.commit"),
@@ -318,15 +312,30 @@ struct SessionPanel: View {
                         disabledReason: progress ?? (action == nil || active ? reason : nil),
                         action: { if let action { start(action) } },
                         menu: AnyView(Group {
-                            Button(tr("ws.git.commit")) { done { app.viewModel.open(.commit(runID)) } }
+                            Button(tr("ws.git.commit")) { open(commit: true) }
                                 .disabled(files.isEmpty || active)
-                            Button(tr("ws.git.push")) { push(runID) }
+                            Button(tr("ws.git.push")) { push() }
                                 .disabled(active || progress != nil || model.status?.detached == true)
-                            Button(tr("ws.git.pullRequest")) { done { app.viewModel.open(.pullRequest(runID)) } }
+                            Button(tr("ws.git.pullRequest")) { open(commit: false) }
                                 .disabled(active)
                             Button(tr("ws.quick.pull")) { perform(.pull) }
                                 .disabled(active || progress != nil || !behind)
                         }))
+    }
+
+    /// The commit or pull request sheet: of the session Nook runs, else of the repository it works in.
+    private func open(commit: Bool) {
+        if let runID {
+            done { app.viewModel.open(commit ? .commit(runID) : .pullRequest(runID)) }
+        } else if let root = model.root {
+            done { app.viewModel.open(commit ? .folderCommit(root) : .folderPullRequest(root)) }
+        }
+    }
+
+    /// The button's state for a session Nook only sees, read in its repository root.
+    private func readFolderState() async {
+        guard let root = model.root, let status = model.status else { quick = nil; return }
+        quick = await workspace.quickGitState(folder: root, status: status)
     }
 
     private static func actionSymbol(_ action: GitQuickAction) -> String {
@@ -343,24 +352,29 @@ struct SessionPanel: View {
     }
 
     private func perform(_ action: GitQuickAction) {
-        guard let runID else { return }
+        let root = model.root
+        guard runID != nil || root != nil else { return }
         confirmDefault = nil
         progress = tr(action.labelKey)
         Task {
             do {
                 // A pull request it made stays put in the tray above the composer.
-                let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                let link: URL?
+                if let runID {
+                    link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                } else {
+                    link = try await workspace.performQuickGit(folder: root ?? directory, action, progress: { progress = $0 })
+                }
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch let failure {
                 ToastCenter.shared.gitQuick(action, result: .failure(failure))
             }
-            progress = nil
-            quick = await workspace.quickGitState(runID)
-            await model.refresh()
+            await finish()
         }
     }
 
-    private func push(_ runID: UUID) {
+    private func push() {
+        guard let runID else { return perform(.push) }
         progress = tr("ws.quick.pushing")
         Task {
             do {
@@ -369,10 +383,15 @@ struct SessionPanel: View {
             } catch let failure {
                 ToastCenter.shared.gitQuick(.push, result: .failure(failure))
             }
-            progress = nil
-            quick = await workspace.quickGitState(runID)
-            await model.refresh()
+            await finish()
         }
+    }
+
+    /// After an action: read git again, for the button and the rest of the panel.
+    private func finish() async {
+        progress = nil
+        await model.refresh()
+        if let runID { quick = await workspace.quickGitState(runID) } else { await readFolderState() }
     }
 
     /// Pushing to the default branch asks first, right here in the panel.

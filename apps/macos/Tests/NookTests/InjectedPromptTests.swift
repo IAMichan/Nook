@@ -48,4 +48,10 @@ final class InjectedPromptTests: XCTestCase {
         XCTAssertEqual(modelRequest["subtype"] as? String, "set_model")
         XCTAssertNil(modelRequest["model"])
     }
+
+    func testTypedDropsLeadingInjectedBlocks() {
+        XCTAssertEqual(InjectedPrompt.typed("<system-reminder>ctx</system-reminder>\n<system-reminder>more</system-reminder>\nFix the bug"), "Fix the bug")
+        XCTAssertEqual(InjectedPrompt.typed("Fix the bug"), "Fix the bug")
+        XCTAssertTrue(InjectedPrompt.isInjected(InjectedPrompt.typed("<system-reminder>only</system-reminder>")))
+    }
 }
