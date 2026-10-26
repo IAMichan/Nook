@@ -51,6 +51,9 @@ struct PullRequestDetailView: View {
     /// The Summary's sections that fold, open at first: the description and comments, the checks folded.
     @State private var descriptionOpen = true
     @State private var checksOpen = false
+    /// A place on the open tab's page to scroll to, set by a click that points at it (the checks); a fresh request
+    /// each time, so a second click scrolls back to it too.
+    @State private var scrollRequest: PageScrollRequest?
     @State private var commentsOpen = true
     @AppStorage("agents.pr.commentsNewest") private var commentsNewestFirst = false
     /// Comments by bots (CI reports, coverage, previews), resolved threads and dismissed reviews are left out of the
@@ -512,7 +515,7 @@ struct PullRequestDetailView: View {
         case .summary:
             // The checks in one line; a click unfolds them.
             Button {
-                withAnimation(NookTheme.reveal) { checksOpen = true }
+                revealChecks()
             } label: {
                 checksSummary(detail)
             }
@@ -716,13 +719,23 @@ struct PullRequestDetailView: View {
 
     /// A tab's content, scrolling under the top. Scrolled well past the title (and with enough below to keep it
     /// scrolled), the top folds; back at the start it unfolds.
+    /// A click that points somewhere on the page (see `scrollRequest`) scrolls there once the section has unfolded.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        ScrollView(showsIndicators: false) {
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, NookTheme.Spacing.md)
-                // Room for the round write button over the end of the page.
-                .padding(.bottom, NookTheme.Spacing.xxxl + NookTheme.Spacing.xxl)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, NookTheme.Spacing.md)
+                    // Room for the round write button over the end of the page.
+                    .padding(.bottom, NookTheme.Spacing.xxxl + NookTheme.Spacing.xxl)
+            }
+            .onChange(of: scrollRequest) { _, request in
+                guard let request else { return }
+                // On the next turn, so the section that just unfolded is laid out before the page moves to it.
+                DispatchQueue.main.async {
+                    withAnimation(NookTheme.reveal) { proxy.scrollTo(request.target, anchor: .top) }
+                }
+            }
         }
         .frame(maxHeight: .infinity)
         .onScrollGeometryChange(for: PageScroll.self) { geometry in
@@ -793,6 +806,7 @@ struct PullRequestDetailView: View {
             } accessory: {
                 checksSummary(detail).font(NookTheme.TextStyle.detail)
             }
+            .id(PageScrollRequest.checks)
 
             SummarySection(title: tr("agents.pr.comments", detail.activityLoaded ? total : (detail.commentCount ?? 0)),
                            open: $commentsOpen) {
@@ -912,7 +926,7 @@ struct PullRequestDetailView: View {
     private func readinessAction(_ item: PullRequestReadiness.Item, detail: PullRequestDetail) -> (() -> Void)? {
         switch item {
         case .checksFailing, .checksRunning:
-            return { withAnimation(NookTheme.reveal) { checksOpen = true } }
+            return { revealChecks() }
         case .changesRequested:
             return { switchTo(.timeline) }
         case .behind where detail.canPush != false:
@@ -974,6 +988,12 @@ struct PullRequestDetailView: View {
             .padding(2)
             .overlay(Circle().strokeBorder(ring, lineWidth: 1.5))
             .help(help)
+    }
+
+    /// Unfolds the checks and scrolls the Summary down to them: they sit under the description, often out of sight.
+    private func revealChecks() {
+        withAnimation(NookTheme.reveal) { checksOpen = true }
+        scrollRequest = PageScrollRequest(target: PageScrollRequest.checks)
     }
 
     private func switchTo(_ value: Tab) {
@@ -1511,6 +1531,13 @@ private struct SummarySection<Content: View, Accessory: View>: View {
             if open { content() }
         }
     }
+}
+
+/// A place on a tab's page to scroll to; each request is new, so asking for the same place twice still scrolls.
+private struct PageScrollRequest: Equatable {
+    static let checks = "pr.summary.checks"
+    let target: String
+    let token = UUID()
 }
 
 /// Where a tab's page is scrolled, and how much taller its content is than the room it has.
