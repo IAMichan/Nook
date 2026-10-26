@@ -53,7 +53,9 @@ struct ChatMessageView: View, Equatable {
                 MailDraftView(
                     draft: mail,
                     onSend: { app.sendMail($0) },
-                    onOpen: { app.openMail($0) }
+                    onOpen: { app.openMail($0) },
+                    onDismiss: { app.dismissMail($0) },
+                    onReopen: { app.reopenMail($0) }
                 )
                 .id(mail.id)
             }

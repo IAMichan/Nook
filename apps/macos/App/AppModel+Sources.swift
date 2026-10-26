@@ -97,6 +97,15 @@ extension AppModel {
         }
     }
 
+    /// Closes a draft you are not going to send (keeping your edits), or brings a closed one back.
+    func dismissMail(_ draft: MailDraft) {
+        chat.updateMail(draft.id) { $0 = draft; $0.state = .dismissed }
+    }
+
+    func reopenMail(_ draft: MailDraft) {
+        chat.updateMail(draft.id) { $0.state = .draft }
+    }
+
     /// Text from all visible windows: from live cache if enabled, or read on-demand.
     func screenSnapshot() async throws -> ScreenSnapshot {
         let local = settings.brainProfile.isSmall

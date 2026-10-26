@@ -2,7 +2,8 @@ import Foundation
 
 /// An email drafted by Nook. Can be edited in chat and sent with one click.
 struct MailDraft: Identifiable, Equatable {
-    enum State: Equatable { case draft, sending, sent, opened, failed(String) }
+    /// `dismissed`: closed in chat without sending; folds to one line and can be reopened.
+    enum State: Equatable { case draft, sending, sent, opened, dismissed, failed(String) }
 
     let id = UUID()
     var to: String
@@ -75,6 +76,7 @@ struct ChatMessage: Identifiable {
             switch mail.state {
             case .sent: state = "sent"
             case .opened: state = "opened in Mail"
+            case .dismissed: state = "closed by the user without sending"
             default: state = "not yet sent"
             }
             parts.append("[draft email to \(mail.to.isEmpty ? "?" : mail.to), subject \"\(mail.subject)\", \(state)]")
@@ -825,13 +827,19 @@ private struct StoredMail: Codable {
         switch mail.state {
         case .sent: state = "sent"
         case .opened: state = "opened"
+        case .dismissed: state = "dismissed"
         default: state = "draft"
         }
     }
 
     func restored() -> MailDraft {
         var mail = MailDraft(to: to, cc: cc, subject: subject, body: body)
-        mail.state = state == "sent" ? .sent : (state == "opened" ? .opened : .draft)
+        switch state {
+        case "sent": mail.state = .sent
+        case "opened": mail.state = .opened
+        case "dismissed": mail.state = .dismissed
+        default: mail.state = .draft
+        }
         return mail
     }
 }
