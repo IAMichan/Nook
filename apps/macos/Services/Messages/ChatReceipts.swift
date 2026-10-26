@@ -89,7 +89,11 @@ enum ChatReceipts {
     /// A step that comes from a later message has no time of its own (when they read the earlier one is not known).
     /// People are told apart by their `key`. Someone known by name only is matched by that name, as long as one person
     /// alone goes by it: two members called "Jan" never pass each other's reads on.
-    static func filledReaders(_ lists: [[ChatReader]]) -> [[ChatReader]] {
+    /// `speakers` (one per message, same length as `lists`) names who wrote a message that is not yours and when: someone
+    /// who wrote a message after yours has seen it, so they read it no later than that, even when the app sent no read
+    /// receipt for them.
+    static func filledReaders(_ lists: [[ChatReader]], speakers: [(name: String, date: Date?)?]? = nil) -> [[ChatReader]] {
+        var spoken: [String: Date?] = [:]
         var later: [String: ChatReceipt] = [:]
         var byName: [String: Set<String>] = [:]
         func identityOf(_ reader: ChatReader) -> String? {
@@ -103,7 +107,14 @@ enum ChatReceipts {
         }
         var out = lists
         for index in lists.indices.reversed() {
+            if let speaker = speakers?[index] {
+                let name = speaker.name.trimmingCharacters(in: .whitespaces).lowercased()
+                if !name.isEmpty { spoken[name] = speaker.date }
+            }
             out[index] = lists[index].map { reader in
+                if reader.receipt < .read, let when = spoken[reader.name.lowercased()] {
+                    return ChatReader(name: reader.name, receipt: .read, date: when, key: reader.key)
+                }
                 guard reader.receipt >= .sent, let step = laterStep(reader), step > reader.receipt else { return reader }
                 return ChatReader(name: reader.name, receipt: step, date: nil, key: reader.key)
             }

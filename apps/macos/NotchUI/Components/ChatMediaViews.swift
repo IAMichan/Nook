@@ -36,7 +36,8 @@ extension ChatBubble {
     /// Your messages' info with what later ones say: who read a later message read the earlier ones too
     /// (`ChatReceipts.filledReaders`). The same for every chat app, WhatsApp's bubbles included.
     static func fillReaders(_ bubbles: inout [ChatBubble]) {
-        let filled = ChatReceipts.filledReaders(bubbles.map { $0.fromMe ? $0.readers : [] })
+        let filled = ChatReceipts.filledReaders(bubbles.map { $0.fromMe ? $0.readers : [] },
+                                                  speakers: bubbles.map { $0.fromMe ? nil : ($0.sender, $0.date) })
         for index in bubbles.indices where bubbles[index].fromMe && filled[index] != bubbles[index].readers {
             bubbles[index].readers = filled[index]
         }
