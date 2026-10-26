@@ -71,6 +71,23 @@ final class ModelComparisonTests: XCTestCase {
         XCTAssertNil(M.retrySelection(after: clean))
     }
 
+    func testForkedFromAndItsLabel() throws {
+        let parent = UUID()
+        var run = TestData.run(status: .completed)
+        XCTAssertNil(run.forkedFrom)
+        run.lineage = RunLineage(kind: .fork, parentID: parent, atEvent: 4)
+        XCTAssertEqual(run.forkedFrom, parent)
+        XCTAssertEqual(run.lineage?.labelKey, "lineage.forkedFrom")
+        XCTAssertEqual(run.lineage?.symbol, "arrow.triangle.branch")
+        XCTAssertEqual(RunLineage(kind: .comparison, parentID: parent, atEvent: 0).labelKey, "lineage.samePromptAs")
+        // A session stored before lineage existed loads without one.
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(run)) as? [String: Any])
+        object["lineage"] = nil
+        XCTAssertNil(try JSONDecoder().decode(WorkspaceRun.self, from: JSONSerialization.data(withJSONObject: object)).forkedFrom)
+        let stored = try JSONDecoder().decode(WorkspaceRun.self, from: JSONEncoder().encode(run))
+        XCTAssertEqual(stored.forkedFrom, parent)
+    }
+
     func testOldLineageStillDecodes() throws {
         let data = Data(#"{"kind":"fork","parentID":"8D5C2F4E-4A0B-4C68-9D41-2B7E7A1D3F10","atEvent":3}"#.utf8)
         XCTAssertEqual(try JSONDecoder().decode(RunLineage.self, from: data).kind, .fork)

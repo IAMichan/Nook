@@ -117,6 +117,17 @@ struct RunLineage: Codable, Equatable, Sendable {
     var parentID: UUID
     /// How much of the parent's timeline the fork starts from.
     var atEvent: Int
+
+    /// The line in the session's header that leads to the parent ("Forked from %@", "Same prompt as %@").
+    var labelKey: String { kind == .fork ? "lineage.forkedFrom" : "lineage.samePromptAs" }
+    /// The mark of such a session in the Agents list and its header.
+    var symbol: String { kind == .fork ? "arrow.triangle.branch" : "square.stack.3d.up" }
+}
+
+extension WorkspaceRun {
+    /// The session this one was forked from (/fork) or started next to (a model comparison); nil for one of its own.
+    /// Stored as `lineage`, which older sessions simply do not have.
+    var forkedFrom: UUID? { lineage?.parentID }
 }
 
 /// One agent with one account is one instance: its conversation is its own.

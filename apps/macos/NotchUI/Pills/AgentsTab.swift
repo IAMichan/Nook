@@ -293,7 +293,8 @@ struct AgentsTab: View {
             accountName: accountName(app.profile(for: run)),
             // A session Nook delegated to or forked from another one, or a later model of a comparison.
             parentID: (run.delegation?.parentID ?? run.lineage?.parentID).map { "run:" + $0.uuidString },
-            comparison: app.workspace.runs.filter { $0.lineage?.kind == .comparison && $0.lineage?.parentID == run.id }.count
+            comparison: app.workspace.runs.filter { $0.lineage?.kind == .comparison && $0.lineage?.parentID == run.id }.count,
+            forked: run.lineage?.kind == .fork
         )
     }
 
@@ -418,6 +419,8 @@ struct AgentListItem: Identifiable {
     var spawnedTasks: [String] = []
     /// The first session of a model comparison: how many other models got the same prompt (they sit under it).
     var comparison = 0
+    /// Forked from another session (/fork): a branch mark before its name.
+    var forked = false
 
     /// Busy or waiting for you: it cannot be marked as finished yet.
     var isBusy: Bool { status == .working || status == .waiting || status == .input }
@@ -426,7 +429,8 @@ struct AgentListItem: Identifiable {
         AgentListItem(id: id, folder: folder, title: title, branch: branch, agent: agent, account: account, status: .finished,
                       started: started, path: path, finishKey: finishKey,
                       machine: machine, model: model, accountName: accountName,
-                      parentID: parentID, firstPrompt: firstPrompt, spawnedTasks: spawnedTasks, comparison: comparison)
+                      parentID: parentID, firstPrompt: firstPrompt, spawnedTasks: spawnedTasks, comparison: comparison,
+                      forked: forked)
     }
 }
 
@@ -501,6 +505,13 @@ struct AgentListRow: View {
             HStack(spacing: NookTheme.Spacing.sm) {
                 if pinned {
                     Image(systemName: "pin.fill").font(NookTheme.font(9)).foregroundStyle(NookTheme.textTertiary)
+                }
+                if item.forked {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(NookTheme.font(10))
+                        .foregroundStyle(NookTheme.textTertiary)
+                        .help(tr("lineage.forked"))
+                        .accessibilityLabel(tr("lineage.forked"))
                 }
                 if item.comparison > 0 {
                     Image(systemName: "square.stack.3d.up")

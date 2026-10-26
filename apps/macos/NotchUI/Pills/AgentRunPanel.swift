@@ -259,6 +259,7 @@ struct AgentRunPanel: View {
                     }
                     .help(tr("ws.title.renameHelp"))
             }
+            if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
             Spacer(minLength: 8)
             ResourceUsageBadge(workspace: workspace, runID: runID)
             outputsButton(run, outputs)
