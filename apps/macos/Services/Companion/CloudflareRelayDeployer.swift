@@ -35,7 +35,9 @@ enum CloudflareRelayDeployer {
         await progress(.account)
         let accounts = ((try await client.call("GET", "/accounts?per_page=50")) as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
         let account: String
-        if let preferred, accounts.contains(preferred) {
+        if let preferred {
+            // An update goes to the account the relay was set up on, or nowhere.
+            guard accounts.contains(preferred) else { throw Failure(message: tr("companion.relay.setup.noAccount")) }
             account = preferred
         } else if accounts.count == 1 {
             account = accounts[0]
