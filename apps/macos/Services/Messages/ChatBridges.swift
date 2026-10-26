@@ -36,14 +36,19 @@ enum ChatHistory {
 
 // MARK: Messages
 
-/// iMessage and sms from Messages' own database (`~/Library/Messages/chat.db`), read-only and only on this Mac. Needs
-/// Full Disk Access, as collecting notifications does. The first read brings the newest chats with their history;
-/// after that only the messages that came in since, and every chat's unread count as Messages keeps it.
+/// iMessage and sms from Messages' own database (`~/Library/Messages/chat.db`), only on this Mac. Needs Full Disk
+/// Access, as collecting notifications does. The first read brings the newest chats with their history, their answers
+/// and tapbacks; after that only the messages and tapbacks that came in since, and every chat's unread count as Messages
+/// keeps it. Sending goes through the Messages app itself (AppleScript, with your permission under Automation): text,
+/// files, and a place or a contact as text. Messages lets no other app answer, react, edit or delete.
 @MainActor
 final class MessagesBridge: ChatHistoryBridge {
     let app = "messages"
     let interval: TimeInterval = 5
     private(set) var isWorking = false
+    /// What goes besides text: every file as itself (a sticker as its picture, a voice message as an audio file), a
+    /// place or a contact as text. Messages has no polls another app can send.
+    let sends = ChatOutgoing.Kind.noPolls
 
     /// Chats and messages per chat on the first read.
     private static let chats = 30
@@ -62,10 +67,31 @@ final class MessagesBridge: ChatHistoryBridge {
     /// Your own newest messages by row, with their chat: their ticks are read again each time, as they move.
     private var mine: [Int64: (chat: String, message: InboxMessage)] = [:]
     private static let tracked = 200
+    /// Every chat's own id in Messages (`chat.guid`, "iMessage;-;+31…") by its id in the database, to send to it, and
+    /// when it last had a message, so a person with an iMessage and an sms chat gets the newest one.
+    private var guids: [String: String] = [:]
+    private var active: [String: Date] = [:]
+    /// The newest messages read so far by their guid in Messages, with their row and chat: a tapback that comes in
+    /// later shows on them.
+    private var seen: [String: (row: Int64, chat: String, message: InboxMessage)] = [:]
+    private static let remembered = 1_000
+    /// The newest row looked at for tapbacks on messages read earlier.
+    private var lastTapback: Int64?
+    /// Whether the database has `associated_message_emoji` (a tapback with any emoji); an older one does not.
+    private var customTapbacks = true
 
     var isReady: Bool { FileManager.default.fileExists(atPath: path) }
 
     func canLoadOlder(name: String) -> Bool { isReady && !chatIDs(name).isEmpty }
+
+    func canSend(name: String) -> Bool { isReady && !chatGUIDs(name).isEmpty }
+
+    /// Messages' own ids of the chats of `name`, the one with the newest message first.
+    private func chatGUIDs(_ name: String) -> [String] {
+        chatIDs(name).map(String.init)
+            .sorted { (active[$0] ?? .distantPast) > (active[$1] ?? .distantPast) }
+            .compactMap { guids[$0] }
+    }
 
     /// The chats of `name` in the database: an iMessage and an sms conversation with one person are one chat in Nook.
     private func chatIDs(_ name: String) -> [Int] {
@@ -89,20 +115,15 @@ final class MessagesBridge: ChatHistoryBridge {
         """)
         let batch = Array(rows.prefix(ChatHistory.step))
         let files = try await attachments(batch)
+        let extras = try await extras(batch, contacts: contacts)
         var messages: [InboxMessage] = []
         for row in batch {
             let id = NotificationRecord.integer(row["id"]) ?? 0
-            let media = files[id]
-            var readable = row
-            if media != nil, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
-            guard let message = AppData.messages([readable], names: contacts).first else { continue }
-            let group = (AppData.number(row["grp"]) ?? 0) != 0
-            var inbox = InboxMessage(
-                id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
-                text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
-            if message.fromMe { inbox.receipt = Self.receipt(row) }
-            messages.append(inbox)
+            guard let built = build(row, media: files[id], extras: extras, contacts: contacts) else { continue }
+            remember(row, chat: built.message.chat, message: built.inbox)
+            messages.append(built.inbox)
         }
+        trimSeen()
         let more = rows.count > ChatHistory.step
         // A batch of nothing to show (only empty rows) is not the start: the next one goes on from its oldest row.
         if messages.isEmpty, more, let oldest = batch.last.map({ AppData.appleDate(AppData.number($0["date"]) ?? 0) }), oldest < before {
@@ -135,32 +156,45 @@ final class MessagesBridge: ChatHistoryBridge {
         }
         var messages: [String: [InboxMessage]] = [:]
         var newest = lastRow ?? 0
+        let tapped = try await tapped()
         let unnamed = try await groupNames(rows, contacts: contacts)
         let files = try await attachments(rows)
+        let extras = try await extras(rows, contacts: contacts)
         for row in rows {
             let id = NotificationRecord.integer(row["id"]) ?? 0
             newest = max(newest, id)
-            let media = files[id]
-            // A photo without a caption has no text to read: it is read as one with a placeholder, then left without.
-            var readable = row
-            if media != nil, AppData.messages([row], names: contacts).isEmpty { readable["text"] = Self.placeholder }
-            guard let message = AppData.messages([readable], names: contacts).first else { continue }
+            guard let built = build(row, media: files[id], extras: extras, contacts: contacts) else { continue }
+            let message = built.message
+            let inbox = built.inbox
             let chat = message.chat
             names[chat] = unnamed[chat] ?? names[chat] ?? message.chatName
-            let group = (AppData.number(row["grp"]) ?? 0) != 0
-            if group { groups.insert(chat) }
-            var inbox = InboxMessage(
-                id: "imessage-\(id)", sender: message.fromMe || !group ? "" : message.sender,
-                text: message.text == Self.placeholder ? "" : message.text, date: message.date, fromMe: message.fromMe, media: media)
+            if (AppData.number(row["grp"]) ?? 0) != 0 { groups.insert(chat) }
+            active[chat] = max(active[chat] ?? .distantPast, message.date)
+            remember(row, chat: chat, message: inbox)
             if message.fromMe {
-                inbox.receipt = Self.receipt(row)
-                mine[id] = (chat, inbox)
+                // Only its ticks are brought again from here: its tapbacks come with `tapped`.
+                var tracked = inbox
+                tracked.reactions = nil
+                mine[id] = (chat, tracked)
             }
             messages[chat, default: []].append(inbox)
         }
         if mine.count > Self.tracked {
             for id in mine.keys.sorted().dropLast(Self.tracked) { mine[id] = nil }
         }
+        // Tapbacks put on (or taken off) messages read earlier: the chat shows their emoji now.
+        let retapped = tapped.subtracting(rows.map { AppData.string($0["guid"]) })
+        if !retapped.isEmpty {
+            let first = retapped.compactMap { seen[$0]?.row }.min() ?? 0
+            let updated = try await reactions(on: retapped, after: first)
+            for guid in retapped.sorted() {
+                guard var known = seen[guid] else { continue }
+                known.message.reactions = updated[guid] ?? []
+                seen[guid] = known
+                messages[known.chat, default: []].append(known.message)
+            }
+        }
+        trimSeen()
         // Your earlier messages whose ticks moved since (delivered, read): the chat shows them now.
         let fresh = Set(rows.compactMap { NotificationRecord.integer($0["id"]) })
         let earlier = mine.keys.filter { !fresh.contains($0) }
@@ -1223,7 +1257,7 @@ final class SlackBridge: ChatHistoryBridge {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw NookError(tr("whatsapp.reply.empty")) }
         let (auth, conversation) = try target(name)
-        let thread = replyTo.flatMap { thread(answering: $0, in: conversation, name: name) }
+        let thread = replyTo.flatMap { threadTS(answering: $0, in: conversation, name: name) }
         _ = try await post("chat.postMessage", SlackData.postFields(channel: conversation.id, text: body, thread: thread), auth: auth)
         changed(conversation)
     }
@@ -1244,7 +1278,7 @@ final class SlackBridge: ChatHistoryBridge {
             throw NookError(tr("chat.compose.tooLarge", file.name))
         }
         let (auth, conversation) = try target(name)
-        let thread = replyTo.flatMap { thread(answering: $0, in: conversation, name: name) }
+        let thread = replyTo.flatMap { threadTS(answering: $0, in: conversation, name: name) }
         let ticket = try await post("files.getUploadURLExternal", ["filename": file.name, "length": String(data.count)], auth: auth)
         guard let upload = SlackData.uploadTarget(ticket) else { throw NookError(tr("chat.compose.notSent")) }
         var request = Self.request(upload.url, auth: auth)
@@ -1314,7 +1348,7 @@ final class SlackBridge: ChatHistoryBridge {
     /// The thread an answer to `id` (a message's id in Nook) goes in: the thread's first message's `ts`. Slack's threads
     /// are one level deep, so an answer to an answer goes in the same thread. Nil for a message Slack did not bring
     /// (one only its notification showed): the text then goes as a message of its own.
-    private func thread(answering id: String, in conversation: SlackData.Conversation, name: String) -> String? {
+    private func threadTS(answering id: String, in conversation: SlackData.Conversation, name: String) -> String? {
         guard let ts = SlackData.ts(of: id, conversation: conversation.id) else { return nil }
         let answered = ChatCaptureService.shared.inbox.threads[ChatInbox.key(app: app, chat: name)]?.messages.first { $0.id == id }
         return answered?.quote?.id.flatMap { SlackData.ts(of: $0, conversation: conversation.id) } ?? ts

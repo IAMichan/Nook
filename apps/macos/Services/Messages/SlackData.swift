@@ -313,7 +313,7 @@ enum SlackData {
     /// when it answers a message), with your caption as its message.
     static func completeFields(channel: String, file: String, title: String, caption: String, thread: String?) -> [String: String] {
         let files = [["id": file, "title": title]]
-        let json = (try? JSONSerialization.data(withJSONObject: files)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let json = (try? JSONSerialization.data(withJSONObject: files, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         var fields = ["files": json, "channel_id": channel]
         let comment = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         if !comment.isEmpty { fields["initial_comment"] = escape(comment) }
