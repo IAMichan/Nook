@@ -499,11 +499,13 @@ private final class TranscriptDerived {
 }
 
 /// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
-/// the message is, a click scrolls to it, and hovering shows the prompt you wrote.
+/// the message is, a click scrolls to it, and hovering shows the prompt you wrote. The rail itself only shows while the pointer is over it.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
     let onSelect: (PromptMark) -> Void
     @State private var hovered: String?
+    /// The pointer is over the rail: only then it shows, with a background so the marks stand out over the text.
+    @State private var overRail = false
 
     private static let width: CGFloat = 28
     /// The height each mark can be clicked over.
@@ -530,7 +532,16 @@ struct TranscriptPromptRail: View {
             }
         }
         .frame(width: Self.width)
+        .background(
+            RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                .fill(DropdownStyle.panel)
+                .opacity(overRail ? 0.92 : 0)
+        )
+        .opacity(overRail ? 1 : 0)
+        .contentShape(Rectangle())
+        .onHover { overRail = $0 }
         .animation(NookTheme.hover, value: hovered)
+        .animation(NookTheme.hover, value: overRail)
     }
 
     /// What you wrote, without the pictures sent along, cut when it is too long for a card.
