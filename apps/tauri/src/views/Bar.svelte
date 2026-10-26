@@ -2,6 +2,7 @@
   // De balk bovenaan het scherm: in rust een pil met Nook, open een paneel met de tabs Nook, Agents en Werkruimte.
   import { untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
   import { api, events } from "../lib/api";
   import { nook } from "../lib/state.svelte";
   import Chat from "../components/Chat.svelte";
@@ -16,8 +17,9 @@
   import { play } from "../lib/sounds";
   import { agents } from "../lib/agents.svelte";
   import { quiet } from "../lib/quiet.svelte";
+  import { barDraft } from "../lib/draft.svelte";
+  import { heard } from "../components/Orb.svelte";
   import AgentAlerts from "./agents/AgentAlerts.svelte";
-  import AgentDots from "./agents/AgentDots.svelte";
   import NoticeMark from "../components/NoticeMark.svelte";
   import NoticeOk from "../components/NoticeOk.svelte";
   import { compactNotice, Countdown, noticeTone } from "../lib/notice";
@@ -30,6 +32,7 @@
   let pinnedOpen = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let inside = $state(false);
+  let openedAt = 0;
   // Agent notices: a compact one widens the closed bar (`strip`); a detailed one opens the panel. `noticeLeft` is what
   // is left of its countdown, for the ring on OK.
   let strip = $state(false);
@@ -46,6 +49,8 @@
     if (!expanded) {
       strip = false;
       expanded = true;
+      // Resizing and focusing the window can fire a blur of its own; that must not close the panel that is opening.
+      openedAt = Date.now();
       await api.barExpand(true);
       // Het aanbod naast de balk zou het paneel bedekken; het staat ook in Vandaag.
       services.asideHide();
@@ -122,15 +127,114 @@
   function leave() {
     inside = false;
     // A notice closes the bar itself, once its countdown has run out with the pointer off the bar.
-    if (pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
+    if (resizing || pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
     // Both the pointer and a notice that ran out call this; a second timer must not orphan the first.
     clearTimeout(closeTimer);
     closeTimer = setTimeout(close, 450);
   }
 
+  // The closed bar only opens on a click; it then stays open until Esc, a click elsewhere or the window loses focus.
+  async function openByClick() {
+    pinnedOpen = true;
+    await open();
+  }
+
+  // A file dragged onto the closed round Nook: he looks up while it hovers, swallows it on the drop, and then the panel
+  // opens with the file in the field. (The bar's webview has the native drag-drop handler off, so these are web events.)
+  let dropping = $state(false);
+  let swallowed = $state(false);
+  let dragDepth = 0;
+  const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
+
+  function dragEnter(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    dropping = true;
+  }
+
+  function dragOver(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function dragLeave() {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) dropping = false;
+  }
+
+  async function drop(e: DragEvent) {
+    e.preventDefault();
+    dragDepth = 0;
+    dropping = false;
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    swallowed = true;
+    heard();
+    const reading = barDraft.addFiles(files);
+    await new Promise((r) => setTimeout(r, 520));
+    swallowed = false;
+    await openByClick();
+    await reading;
+  }
+
   function select(t: Tab) {
     tab = t;
     localStorage.setItem("bar.tab", t);
+  }
+
+  // The window has no frame, so its own resize border is a hairline: the open panel carries its own grips on the edges
+  // and corners (the top edge is where the bar hangs, so it has none).
+  const grips = ["left", "right", "bottom", "bottom-left", "bottom-right"] as const;
+
+  // The panel resizes itself: a grip captures the pointer and sets the window's size while it moves. (The system's own
+  // resize drag takes the focus and mouse from the page, so the panel closed under the user's hand and left the round
+  // Nook stretched over the whole window.) `resizing` also keeps a stray blur from closing the panel meanwhile.
+  let resizing = $state(false);
+  const MIN = { w: 480, h: 320 };
+
+  function resize(e: PointerEvent, grip: (typeof grips)[number]) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    resizing = true;
+    const start = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight, left: window.screenX, top: window.screenY };
+    const win = getCurrentWindow();
+    let frame = 0;
+    let next: { w: number; h: number; left: number } | null = null;
+
+    const apply = async () => {
+      frame = 0;
+      if (!next) return;
+      const { w, h, left } = next;
+      next = null;
+      await win.setSize(new LogicalSize(w, h));
+      if (grip.includes("left")) await win.setPosition(new LogicalPosition(left, start.top));
+    };
+    const move = (m: PointerEvent) => {
+      const dx = m.screenX - start.x;
+      const dy = m.screenY - start.y;
+      let w = start.w;
+      let h = start.h;
+      if (grip.includes("right")) w = start.w + dx;
+      if (grip.includes("left")) w = start.w - dx;
+      if (grip.includes("bottom")) h = start.h + dy;
+      w = Math.max(MIN.w, w);
+      h = Math.max(MIN.h, h);
+      next = { w, h, left: start.left + (start.w - w) };
+      if (!frame) frame = requestAnimationFrame(apply);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      setTimeout(() => (resizing = false), 300);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
   }
 
   async function drag(e: MouseEvent) {
@@ -223,9 +327,9 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !nook.busy && !agents.pending && !whatsapp.chat && close()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && escape()} onblur={() => !barDraft.picking && !resizing && Date.now() - openedAt > 600 && close()} onfocus={() => setTimeout(() => (barDraft.picking = false), 300)} />
 
-<div class="bar" class:expanded class:floating role="region" onmouseenter={() => { inside = true; if (!strip) open(); }} onmouseleave={leave}>
+<div class="bar" class:expanded class:floating role="region" onmouseenter={() => (inside = true)} onmouseleave={leave}>
   {#if !expanded && strip && agents.attention}
     {@const card = agents.attention}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -240,11 +344,25 @@
     </div>
   {:else if !expanded}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="pill" onmousedown={drag}>
-      <Orb size={20} {mood} />
-      {#if nook.working}<span class="dot working"></span>{/if}
-      {#if nook.waiting}<span class="dot waiting"></span>{/if}
-      <AgentDots onhover={() => open("agents")} />
+    <div
+      class="pill round"
+      class:dropping
+      class:swallowed
+      role="button"
+      tabindex="0"
+      title={barDraft.files ? "Open Nook (files waiting)" : "Open Nook, or drop a file on me"}
+      onmousedown={drag}
+      onclick={openByClick}
+      onkeydown={(e) => (e.key === "Enter" || e.key === " ") && openByClick()}
+      ondragenter={dragEnter}
+      ondragover={dragOver}
+      ondragleave={dragLeave}
+      ondrop={drop}
+    >
+      <span class="orbwrap"><Orb size={26} mood={dropping ? "seen" : mood} /></span>
+      {#if barDraft.files}<span class="badge">{barDraft.files}</span>{/if}
+      {#if nook.working}<span class="dot working corner"></span>{/if}
+      {#if nook.waiting}<span class="dot waiting corner"></span>{/if}
     </div>
   {:else}
     <div class="panel">
@@ -287,6 +405,10 @@
           <Workspace compact />
         {/if}
       </div>
+      {#each grips as g (g)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="grip {g}" onpointerdown={(e) => resize(e, g)}></div>
+      {/each}
     </div>
   {/if}
 </div>
@@ -305,6 +427,72 @@
     cursor: default;
   }
   .floating .pill { border-radius: 999px; cursor: grab; }
+  /* The closed bar is a small round Nook with a thick black rim, so it stays out of the way of the browser's tabs. */
+  .pill.round {
+    position: relative;
+    box-sizing: border-box;
+    border: 3px solid #000;
+    border-radius: 50%;
+    gap: 0;
+    overflow: hidden;
+    cursor: pointer;
+    transition: box-shadow 0.25s ease;
+  }
+  .pill.round:hover { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--paper) 35%, transparent); }
+  .pill.round:active .orbwrap { transform: scale(0.88); }
+  .orbwrap { display: flex; transition: transform 0.15s ease; }
+  /* Hovering the closed bar: a small hop, as if Nook noticed you. */
+  .pill.round:hover .orbwrap { animation: hop 0.7s cubic-bezier(0.3, 1.5, 0.5, 1); }
+  @keyframes hop {
+    0% { transform: translateY(0) scale(1); }
+    30% { transform: translateY(-4px) scale(1.18); }
+    60% { transform: translateY(1px) scale(0.94); }
+    100% { transform: translateY(0) scale(1.06); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pill.round:hover .orbwrap { animation: none; } }
+  /* A file over Nook: the rim lights up, a dashed ring turns around him and he leans in. */
+  .pill.round.dropping { box-shadow: 0 0 0 3px var(--iris), 0 0 18px color-mix(in srgb, var(--iris) 60%, transparent); }
+  .pill.round.dropping::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    border: 2px dashed var(--iris);
+    animation: spin 2.4s linear infinite;
+    pointer-events: none;
+  }
+  .pill.round.dropping .orbwrap { transform: scale(1.22) translateY(-1px); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* The drop: a gulp (squash, then a happy bounce). */
+  .pill.round.swallowed .orbwrap { animation: gulp 0.52s cubic-bezier(0.3, 1.4, 0.5, 1); }
+  @keyframes gulp {
+    0% { transform: scale(1.22); }
+    35% { transform: scale(0.7, 1.15); }
+    65% { transform: scale(1.18, 0.86); }
+    100% { transform: scale(1); }
+  }
+  /* How many files are waiting in the field of the closed bar. */
+  .badge {
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--iris);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pill.round.dropping::after, .pill.round.swallowed .orbwrap { animation: none; }
+  }
+  .dot.corner { position: absolute; top: 3px; right: 3px; }
   /* A compact notice in the bar's own row: mark and message on the left, View and the countdown OK on the right. */
   .pill.strip { justify-content: flex-start; gap: 8px; padding: 0 4px 0 14px; }
   .strip .message { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -320,7 +508,16 @@
     overflow: hidden;
     animation: drop 0.32s cubic-bezier(0.2, 1.2, 0.4, 1);
     transform-origin: top center;
+    position: relative;
   }
+  .grip { position: absolute; z-index: 5; touch-action: none; }
+  .grip.left, .grip.right { top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
+  .grip.left { left: 0; }
+  .grip.right { right: 0; }
+  .grip.bottom { left: 12px; right: 12px; bottom: 0; height: 8px; cursor: ns-resize; }
+  .grip.bottom-left, .grip.bottom-right { bottom: 0; width: 16px; height: 16px; }
+  .grip.bottom-left { left: 0; cursor: nesw-resize; }
+  .grip.bottom-right { right: 0; cursor: nwse-resize; }
   .floating .panel { border-radius: 22px; }
   @keyframes drop { from { transform: scaleY(0.7); opacity: 0; } }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 12px 6px; }
