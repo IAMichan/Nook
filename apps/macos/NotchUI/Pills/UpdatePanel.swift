@@ -310,7 +310,12 @@ struct UpdatePanel: View {
                     updater.dismissFailure()
                     close()
                 }
-                if updater.hasUpdate {
+                if failure.reason == .notRestarted {
+                    // The new build is already in place: trying again only needs the restart, not a new build.
+                    SmallGhostButton(title: tr("update.forceRestart")) { updater.forceRestart() }
+                    SmallPrimaryButton(title: tr("update.tryAgain"), systemName: "arrow.clockwise") { updater.restart() }
+                        .keyboardShortcut(.defaultAction)
+                } else if updater.hasUpdate {
                     SmallPrimaryButton(title: tr("update.tryAgain"), systemName: "arrow.clockwise") {
                         updater.dismissFailure()
                     }

@@ -468,9 +468,52 @@ final class AppUpdater: ObservableObject {
     /// Set while Nook quits to restart into a new build: you already chose to, so quitting does not ask again.
     private(set) var restarting = false
 
+    /// How long Nook may take to quit for a restart before the panel says it did not, so you can try again or force it.
+    /// Well within the minute the relaunch waits for this process (`Relaunch`).
+    private static let restartGrace: TimeInterval = 15
+    /// How long Nook's own saving at quit may take during a restart before the process ends anyway.
+    nonisolated static let quitDeadline: TimeInterval = 30
+
     /// Quits and opens the app again from where it runs, which now holds the new build.
     func restart() {
         phase = .installing(.restart)
+        guard startRelaunch() else { return }
+        restarting = true
+        NSApp.terminate(nil)
+        // Still here: something stopped the quit. Say so instead of spinning on "Restarting Nook" for good.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.restartGrace))
+            guard let self, self.phase == .installing(.restart) else { return }
+            self.restarting = false
+            self.phase = .failed(UpdateFailure(step: .restart, reason: .notRestarted, errors: [], logPath: nil))
+        }
+    }
+
+    /// Restarts without waiting for a normal quit: stops the sessions Nook runs (as a quit does) and ends the process,
+    /// after which the relaunch opens the new build.
+    func forceRestart() {
+        phase = .installing(.restart)
+        guard startRelaunch() else { return }
+        restarting = true
+        Self.endProcess(after: 10)
+        AppModel.shared.workspace.shutdown()
+        UpdateTrialRunner.cleanExit()
+        fflush(nil)
+        _exit(0)
+    }
+
+    /// Ends the process from another thread once `seconds` have passed, in case the main thread is stuck while Nook
+    /// quits for a restart. `_exit` skips the C++ static destructors, like `AppDelegate` does at a normal quit.
+    nonisolated static func endProcess(after seconds: TimeInterval) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + seconds) {
+            fflush(nil)
+            _exit(0)
+        }
+    }
+
+    /// Starts the shell loop that opens the app again once this process is gone. False (and a failure shown) if it
+    /// could not start.
+    private func startRelaunch() -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         // With an update on trial, the relaunch also takes the database snapshot a rollback would put back.
@@ -481,12 +524,11 @@ final class AppUpdater: ObservableObject {
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
+            return true
         } catch {
             phase = .failed(UpdateFailure(step: .restart, reason: .other(error.localizedDescription), errors: [], logPath: nil))
-            return
+            return false
         }
-        restarting = true
-        NSApp.terminate(nil)
     }
 
     /// Opens the project in Xcode and runs it there: Xcode builds the updated checkout, stops this process and starts the
@@ -815,6 +857,8 @@ struct UpdateFailure: Error, Equatable, Sendable {
         case badBundle(String)
         /// The new build crashed before it proved healthy; this one and its database were put back.
         case rolledBack(String)
+        /// The new build is in place, but Nook did not quit to start it (something stopped or held up the quit).
+        case notRestarted
         case other(String)
     }
 
