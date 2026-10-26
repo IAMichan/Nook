@@ -25,6 +25,8 @@ final class CompanionServer: ObservableObject {
     private weak var app: AppModel?
     private var guards: [String: RequestGuard] = [:]
     private var receipts: [String: CommandReceipts] = [:]
+    /// Repeats of a request that is still being carried out, by device and request id: they get its answer.
+    private var running: [String: [CheckedContinuation<CompanionResponse, Never>]] = [:]
     private var open = 0
     private static let maxConnections = 8
     private let queue = DispatchQueue(label: "nook.companion.server")
@@ -230,15 +232,34 @@ final class CompanionServer: ObservableObject {
             return
         }
         peer.lastHeard = Date()
-        // A repeat of a request that already changed something (its answer got lost, or it waited in the phone's
-        // outbox): the answer it got, without doing it again.
-        if !pairing, CommandReceipts.keeps(request.op), let earlier = receipts[claimed]?.response(for: request.id) {
-            let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date())
-            send(refusal.map { CompanionResponse.failure(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
-            return
+        let keeps = !pairing && CommandReceipts.keeps(request.op)
+        if keeps {
+            // A repeat of a request that changes something (its answer got lost, or it waited in the phone's outbox):
+            // the answer it got, without doing it again; while the first is still being carried out, its answer once
+            // it is there.
+            switch receipts[claimed, default: CommandReceipts()].begin(request.id, now: Date()) {
+            case .answered(let earlier):
+                let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date())
+                send(refusal.map { CompanionResponse.failure(request.id, $0) } ?? earlier, key: key, deviceID: claimed, on: connection)
+                return
+            case .running:
+                if let refusal = guards[claimed, default: RequestGuard()].admitRetry(request, now: Date()) {
+                    send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
+                    return
+                }
+                let slot = claimed + "|" + request.id
+                let earlier = await withCheckedContinuation { continuation in
+                    running[slot, default: []].append(continuation)
+                }
+                send(earlier, key: key, deviceID: claimed, on: connection)
+                return
+            case .new:
+                break
+            }
         }
         // The guard lives per device and is changed in place: a repeated id or a burst is refused from here on.
         if let refusal = guards[claimed, default: RequestGuard()].admit(request, now: Date()) {
+            if keeps { receipts[claimed]?.cancel(request.id) }
             send(.failure(request.id, refusal), key: key, deviceID: claimed, on: connection)
             return
         }
@@ -257,13 +278,12 @@ final class CompanionServer: ObservableObject {
             return
         }
         let response = await handle(request, deviceID: claimed)
-        if CommandReceipts.keeps(request.op) {
-            if CommandReceipts.settles(response) {
-                receipts[claimed, default: CommandReceipts()].record(request.id, response)
-            } else {
-                // Failed in passing: the phone may send the same id again (its outbox does), and it must get through.
-                guards[claimed]?.forget(request)
-            }
+        if keeps {
+            receipts[claimed, default: CommandReceipts()].finish(request.id, response, now: Date())
+            // Failed in passing: the phone may send the same id again (its outbox does), and it must get through.
+            if !CommandReceipts.settles(response) { guards[claimed]?.forget(request) }
+            // Repeats that came while it ran get the same answer.
+            for waiter in running.removeValue(forKey: claimed + "|" + request.id) ?? [] { waiter.resume(returning: response) }
         }
         send(response, key: key, deviceID: claimed, on: connection)
     }
