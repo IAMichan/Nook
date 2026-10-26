@@ -105,10 +105,13 @@ extension ChatsEntry {
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
 
-    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?").
+    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"). A photo, video or
+    /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
     @MainActor
     static func line(_ message: WAMessage, group: Bool) -> String {
-        let text = AppModel.whatsAppFileLabel(message.media) ?? ChatFormat.plain(AppModel.whatsAppText(message))
+        let caption = ChatFormat.plain(message.text)
+        let file = AppModel.whatsAppFileLabel(message.media)
+        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
         let who = message.fromMe ? tr("chat.you") : (group ? message.senderName : "")
         return who.isEmpty ? text : "\(who): \(text)"
     }
@@ -855,6 +858,10 @@ private struct ChatsRow: View {
                     .allowsHitTesting(hovering)
                     .accessibilityHidden(true)
             }
+        }
+        .onAppear {
+            // A chat on the phone with no message here yet: its newest one is fetched for the line under its name.
+            if entry.preview.isEmpty, case .whatsApp(let jid) = entry.origin { WhatsAppLink.shared.loadLine(jid) }
         }
         .onHover { inside in
             hovering = inside

@@ -241,6 +241,10 @@ final class WhatsAppLink: ObservableObject {
     private var historyFetched: [String: Date] = [:]
     /// When each group's members were last asked of the gateway.
     private var membersLoaded: [String: Date] = [:]
+    /// Chats whose newest messages were asked for their line in the Chats tab, and the ones still waiting their turn.
+    private var linesAsked: Set<String> = []
+    private var linesWaiting: [String] = []
+    private var linesLoading = false
     /// Files the notch card shows (photos, videos, documents), by message id, oldest first in `previewOrder`.
     private var previews: [String: WAPreview] = [:] {
         didSet { previewRevision &+= 1 }
@@ -317,6 +321,8 @@ final class WhatsAppLink: ObservableObject {
         generation += 1
         historyFetched = [:]
         membersLoaded = [:]
+        linesAsked = []
+        linesWaiting = []
         previews = [:]
         previewOrder = []
         previewsLoading = []
@@ -765,6 +771,28 @@ final class WhatsAppLink: ObservableObject {
         }
         return inbox.conversations[key]?.messages != before
     }
+
+    /// A chat on the phone that wrote nothing since Nook was linked has no messages here, so its row in the Chats tab
+    /// has no line: its newest few are asked of the gateway once, when the row comes into view, one chat at a time.
+    func loadLine(_ chat: String) {
+        let key = WAJID.normalized(chat)
+        guard isConnected, inbox.conversations[key] == nil, linesAsked.insert(key).inserted else { return }
+        linesWaiting.append(key)
+        guard !linesLoading else { return }
+        linesLoading = true
+        let gen = generation
+        Task {
+            while gen == generation, !linesWaiting.isEmpty {
+                let next = linesWaiting.removeFirst()
+                guard inbox.conversations[next] == nil else { continue }
+                _ = try? await fetchHistory(next, limit: Self.lineFetch)
+            }
+            linesLoading = false
+        }
+    }
+
+    /// How many messages a row's line is looked for in: a few, as the newest can be a reaction or a vote that shows nothing.
+    static let lineFetch = 5
 
     /// A group's members, asked of the gateway when the chat opens (again after ten minutes, for who joined or left),
     /// so its info lists them and your messages' ticks wait for all of them. True when the conversation changed.
