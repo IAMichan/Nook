@@ -1,6 +1,6 @@
 # Nook's relay for the iPhone companion. Deploy it once with your own Cloudflare account (README.md).
 name = "nook-relay"
-main = "src/index.js"
+main = "worker/index.js"
 compatibility_date = "2025-06-01"
 
 [[durable_objects.bindings]]

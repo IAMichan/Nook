@@ -125,6 +125,7 @@ jobs:
             -derivedDataPath "$DERIVED_DATA" -skipMacroValidation -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO SWIFT_COMPILATION_MODE=singlefile \
             MARKETING_VERSION="${{ steps.version.outputs.marketing }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            NOOK_RELAY_URL="${{ vars.NOOK_RELAY_URL }}" \
             2>&1 | tee build.log
       - name: Save Swift package build cache
         if: steps.cache.outputs.cache-hit != 'true'

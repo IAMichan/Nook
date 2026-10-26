@@ -16,22 +16,32 @@ It is a [Cloudflare Worker](https://developers.cloudflare.com/workers/) with one
 [Durable Object](https://developers.cloudflare.com/durable-objects/) per room. An idle connection costs nothing: the
 keep-alive is answered without waking the room. Personal use fits in Cloudflare's free plan.
 
-## Deploy (once)
+## Turning it on
 
-You need a free Cloudflare account and Node.js.
+In Nook on the Mac: **Settings › Devices › Away from home › Reach this Mac away from home**.
+
+- **Nook's relay** (the default when the build carries one): nothing else to do.
+- **Your own relay** on a free Cloudflare account, without a command line: click **Open Cloudflare**, sign in (or
+  create an account), create the token that is filled in for you, paste it in Nook and click **Set up**. Nook uploads
+  this relay (it ships inside the app), turns on its `workers.dev` address and switches to it, and updates it when a
+  new Nook version brings new relay code.
+
+Phones that are already paired pick up the relay the next time they connect at home; a new pairing code carries it.
+To stop, turn the switch off. To remove your own relay, delete the `nook-relay` Worker in the Cloudflare dashboard.
+
+## Deploying it yourself
+
+Nook's own relay is deployed by `.github/workflows/relay-deploy.yml` (repository secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`; then set the repository variable `NOOK_RELAY_URL` to the address it prints, and release builds
+carry it). By hand:
 
 ```sh
 cd apps/relay
-npx wrangler@4 login        # opens the browser to sign in to Cloudflare
+npx wrangler@4 login
 npx wrangler@4 deploy       # prints the address, e.g. https://nook-relay.<you>.workers.dev
 ```
 
-Then on the Mac: **Settings › Devices › iPhone Companion**, turn on **Reach this Mac away from home** and paste the
-address. Phones that are already paired pick up the relay the next time they connect at home; a new pairing code
-carries it too.
-
-To stop using it, turn the switch off on the Mac. To remove it, delete the `nook-relay` Worker in the Cloudflare
-dashboard.
+and enter the address in Nook under *I already have a relay*.
 
 ## Develop
 
@@ -46,6 +56,6 @@ npx wrangler@4 dev          # a local relay at http://localhost:8787 (the Mac ac
 | `GET /v1/rooms/<32 hex>?role=phone` | a phone's WebSocket; closed with 4404 when the Mac is not connected |
 | `GET /health` | `Nook relay` |
 
-Messages on the Mac's socket are `[kind: 1 byte][connection: 4 bytes][payload]` (`src/mux.js`, and `RelayMux` in
+Messages on the Mac's socket are `[kind: 1 byte][connection: 4 bytes][payload]` (`worker/mux.js`, and `RelayMux` in
 `packages/protocol/Sources/CompanionRelay.swift`): `1` a phone connected, `2` bytes for or from that connection, `3`
 it closed. A phone's own socket carries the payload alone. A room holds 8 phone connections at most.

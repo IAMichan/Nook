@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CLOSE, DATA, OPEN, decode, encode, isRoom } from "../src/mux.js";
+import { CLOSE, DATA, OPEN, decode, encode, isRoom } from "../worker/mux.js";
 
 test("encodes as the Mac does", () => {
   // The same bytes CompanionRelayTests.testMuxRoundTrip expects.

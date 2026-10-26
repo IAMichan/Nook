@@ -61,3 +61,41 @@ final class CompanionRelayTests: XCTestCase {
         XCTAssertEqual(merged.map(\.host), ["mac.local", "10.0.0.2", "relay.example.com"])
     }
 }
+
+final class CloudflareRelaySetupTests: XCTestCase {
+    func testMetadataCarriesTheMigrationOnlyTheFirstTime() throws {
+        let first = try XCTUnwrap(JSONSerialization.jsonObject(with: CloudflareRelaySetup.metadata(withMigration: true)) as? [String: Any])
+        XCTAssertEqual(first["main_module"] as? String, "index.js")
+        let binding = try XCTUnwrap((first["bindings"] as? [[String: Any]])?.first)
+        XCTAssertEqual(binding["name"] as? String, "ROOMS")
+        XCTAssertEqual(binding["class_name"] as? String, "Room")
+        XCTAssertEqual((first["migrations"] as? [String: Any])?["new_tag"] as? String, "v1")
+        let update = try XCTUnwrap(JSONSerialization.jsonObject(with: CloudflareRelaySetup.metadata(withMigration: false)) as? [String: Any])
+        XCTAssertNil(update["migrations"])
+    }
+
+    func testMultipartHasTheSettingsAndEveryModule() {
+        let body = CloudflareRelaySetup.multipart(metadata: Data("{}".utf8),
+                                                  modules: [("index.js", Data("a".utf8)), ("mux.js", Data("b".utf8))], boundary: "B")
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.hasPrefix("--B\r\nContent-Disposition: form-data; name=\"metadata\"\r\nContent-Type: application/json\r\n\r\n{}\r\n"))
+        XCTAssertTrue(text.contains("name=\"index.js\"; filename=\"index.js\"\r\nContent-Type: application/javascript+module\r\n\r\na\r\n"))
+        XCTAssertTrue(text.contains("name=\"mux.js\""))
+        XCTAssertTrue(text.hasSuffix("--B--\r\n"))
+    }
+
+    func testTokenPageAndAddress() {
+        let page = CloudflareRelaySetup.tokenPage.absoluteString
+        XCTAssertTrue(page.hasPrefix("https://dash.cloudflare.com/profile/api-tokens?"))
+        XCTAssertTrue(page.contains("workers_scripts"))
+        XCTAssertEqual(CloudflareRelaySetup.address(subdomain: "me"), "https://nook-relay.me.workers.dev")
+        XCTAssertNotNil(CompanionRelay.normalize(CloudflareRelaySetup.address(subdomain: CloudflareRelaySetup.newSubdomain())))
+    }
+
+    func testVersionFollowsTheCode() {
+        let a = CloudflareRelaySetup.version(of: [("index.js", Data("one".utf8))])
+        XCTAssertEqual(a, CloudflareRelaySetup.version(of: [("index.js", Data("one".utf8))]))
+        XCTAssertNotEqual(a, CloudflareRelaySetup.version(of: [("index.js", Data("two".utf8))]))
+        XCTAssertEqual(a.count, 16)
+    }
+}

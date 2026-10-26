@@ -10,6 +10,7 @@ can tell us something new.
 | `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol` |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |
+| `relay-deploy.yml` | ubuntu, on `main` or by hand | `apps/relay`: deploys Nook's relay to Cloudflare when its secrets are set |
 | `tauri.yml` | ubuntu + Windows checks; Windows installers on PRs; Linux installers and APK on `main` or manual runs | `apps/tauri` |
 | `cancel-stale-runs.yml` | ubuntu, by hand | cancels runs of pull requests that are already closed |
 | `labeler.yml` | ubuntu, seconds | adds area labels to every pull request from the paths it changes (`.github/labeler.yml`) |

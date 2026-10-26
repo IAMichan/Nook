@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CLOSE, DATA, OPEN, decode } from "../src/mux.js";
-import { MAC_OFFLINE, MAX_PHONE_CONNECTIONS, REPLACED, ROOM_FULL, RoomLogic } from "../src/room.js";
+import { CLOSE, DATA, OPEN, decode } from "../worker/mux.js";
+import { MAC_OFFLINE, MAX_PHONE_CONNECTIONS, REPLACED, ROOM_FULL, RoomLogic } from "../worker/room.js";
 
 class FakeSocket {
   constructor() {

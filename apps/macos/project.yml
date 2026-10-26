@@ -53,6 +53,11 @@ targets:
       - path: Brain
       # Shared with the iOS companion (apps/ios): protocol, sealing, hashing.
       - path: ../../packages/protocol/Sources
+      # The companion relay's code (apps/relay), which Settings deploys to the user's own Cloudflare account
+      # (CloudflareRelayDeployer); in the app as Resources/worker.
+      - path: ../relay/worker
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MLXSwiftLM
         product: MLXLLM
@@ -92,6 +97,9 @@ targets:
         NookTelegramAPIID: "$(NOOK_TELEGRAM_API_ID)"
         NookTelegramAPIHash: "$(NOOK_TELEGRAM_API_HASH)"
         NookTeamsClientID: "$(NOOK_TEAMS_CLIENT_ID)"
+        # Nook's own relay for the iPhone companion away from home (apps/relay, deployed by relay-deploy.yml): set the
+        # build setting NOOK_RELAY_URL; while it is empty, Settings offers only a relay on the user's own account.
+        NookRelayURL: "$(NOOK_RELAY_URL)"
         CFBundleURLTypes:
           - CFBundleURLName: app.nook.link
             CFBundleURLSchemes: [nook]
@@ -301,6 +309,7 @@ targets:
       - path: ../../packages/protocol/Sources/CompanionLiveActivity.swift
       - path: ../../packages/protocol/Sources/CompanionRoutes.swift
       - path: ../../packages/protocol/Sources/CompanionRelay.swift
+      - path: Services/Companion/CloudflareRelaySetup.swift
       - path: Services/Workspace/GitLabAPI.swift
       - path: Services/Workspace/PullRequestLinks.swift
       - path: Services/Workspace/ScheduledTasks.swift

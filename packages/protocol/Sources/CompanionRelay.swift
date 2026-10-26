@@ -48,7 +48,7 @@ enum CompanionRelay {
 
 /// How the relay and the Mac share the Mac's one WebSocket among the phone's connections: every message is
 /// `[kind: 1 byte][connection: 4 bytes, big-endian][payload]`. A phone's own WebSocket carries the payload alone.
-/// The relay (apps/relay/src/mux.js) speaks the same.
+/// The relay (apps/relay/worker/mux.js) speaks the same.
 enum RelayMux {
     enum Kind: UInt8, Sendable {
         /// A phone connected (relay to Mac).
