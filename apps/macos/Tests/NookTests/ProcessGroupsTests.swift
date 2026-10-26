@@ -203,8 +203,9 @@ final class ProcessGroupsTests: XCTestCase {
     func testStopEscalatesToTheWholeGroup() throws {
         let scheduler = ManualProcessScheduler()
         let spec = LaunchSpec(executable: "/bin/sh",
-                              // Background jobs of a non-interactive shell ignore SIGINT: only SIGTERM ends the sleep.
-                              arguments: ["-c", "sleep 30 & echo started; wait"],
+                              // The shell and its background sleep ignore SIGINT, so only SIGTERM ends them: without the
+                              // trap the shell sometimes left on SIGINT, and its exit came in before the SIGTERM.
+                              arguments: ["-c", "trap '' INT; sleep 30 & echo started; wait"],
                               extraEnvironment: [:], workingDirectory: "/", initialInput: [], keepsInputOpen: false)
         let process = AgentProcess(spec: spec, scheduler: scheduler)
         let started = expectation(description: "started")
