@@ -137,12 +137,14 @@ extension WorkspaceManager {
         }
     }
 
-    /// Steers the running turn with a new message: `turn/steer` for Codex, a `priority: "now"` message for Claude Code.
+    /// Steers the running turn with a new message: `turn/steer` for Codex, a `priority: "now"` message for Claude Code, and
+    /// for an agent without native steering an interrupt followed by the message as the next prompt (see `SteerRoute`).
     /// False when the session cannot be steered right now.
     @discardableResult
     func steer(_ id: UUID, text: String) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSteer(id) else { return false }
+        if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean) }
         if let process = processes[id], run(id)?.provider == .claude {
             append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
             turns[id]?.steered = true
@@ -158,15 +160,40 @@ extension WorkspaceManager {
         return true
     }
 
-    /// A running turn that can take a new message right away: Codex on app-server, or Claude Code on its live process
-    /// (not while it waits for an answer to its question, or once it is being stopped).
+    /// A running turn that can take a new message right away: Codex on app-server, Claude Code on its live process (not while
+    /// it waits for an answer to its question), or an agent that is steered by interrupting it; never once it is being stopped.
     func canSteer(_ id: UUID) -> Bool {
-        guard let run = run(id), run.status.isActive, turns[id]?.stopping != true, turns[id]?.finished != true else { return false }
-        if run.provider == .claude {
-            return processes[id]?.isRunning == true && questions[id] == nil
+        steerRoute(id) != .unavailable
+    }
+
+    func steerRoute(_ id: UUID) -> SteerRoute {
+        guard let run = run(id) else { return .unavailable }
+        let nativeReady = run.provider == .claude
+            ? processes[id]?.isRunning == true && questions[id] == nil
+            : codexServers[id]?.turnID != nil
+        return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive,
+                                 ending: turns[id]?.stopping == true || turns[id]?.finished == true,
+                                 waitingOnYou: run.status == .waitingApproval || !(questions[id] ?? []).isEmpty)
+    }
+
+    /// Steering an agent that cannot take a message into its turn: the turn is interrupted and the message goes out as the
+    /// next prompt as soon as the turn has ended (see `deliverRestartSteer`).
+    private func steerByRestart(_ id: UUID, text: String) -> Bool {
+        append(id, RunEvent(kind: .user, text: ContextRefs.visible(text)))
+        append(id, RunEvent(kind: .system, text: tr("ws.steer.restart")))
+        restartSteers[id] = text
+        stop(id)
+        return true
+    }
+
+    /// The interrupted turn has ended: its steering message goes out now (or first in the queue when it cannot).
+    func deliverRestartSteer(_ id: UUID) {
+        guard restartSteers[id] != nil else { return }
+        // After the path that ended the turn has finished its own bookkeeping (the process slot, the snapshot).
+        Task { @MainActor [weak self] in
+            guard let self, let text = self.restartSteers.removeValue(forKey: id) else { return }
+            if !self.sendHidden(id, text: text) { self.requeueFirst(id, text: text) }
         }
-        guard let client = codexServers[id] else { return false }
-        return client.turnID != nil
     }
 
     /// Stops the running turn politely (`turn/interrupt`). False when this is not a Codex app-server session.

@@ -67,6 +67,7 @@ extension WorkspaceManager {
         append(id, RunEvent(kind: .system, text: tr("ws.event.stopForced")))
         holdQueue(id)
         stopCoordinators[id] = nil
+        deliverRestartSteer(id)
     }
 
     /// A turn ended: nothing may stay "running" (a command that never reported back, a streaming message, an approval

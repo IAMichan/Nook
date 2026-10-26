@@ -118,7 +118,8 @@ enum RestartContinuation {
     /// cut off), or one stopped by a usage limit, which has its own resume.
     static func shouldContinue(_ run: WorkspaceRun, enabled: Bool, hasPendingQuestion: Bool = false, settled: Bool = false,
                                now: Date = Date()) -> Bool {
-        guard enabled, !run.archived, !settled, !hasPendingQuestion, run.interruptedWhileWaiting != true else { return false }
+        guard enabled, !run.archived, !settled, !hasPendingQuestion else { return false }
+        if run.interruptedWhileWaiting == true, !run.provider.capabilities.pendingRequestsSurviveRestart { return false }
         if let until = run.snoozedUntil, until > now { return false }
         guard now.timeIntervalSince(run.updatedAt) <= maxAge else { return false }
         guard run.status == .stopped, run.statusDetail == "interrupted" else { return false }

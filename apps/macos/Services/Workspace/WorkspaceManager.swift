@@ -232,6 +232,8 @@ final class WorkspaceManager: ObservableObject {
     /// Stop in progress per session (see WorkspaceManager+Stop), the approvals you gave "for this session" (Codex only
     /// remembers the exact command, so Nook keeps its own), and the background work an agent still has running.
     var stopCoordinators: [UUID: StopCoordinator] = [:]
+    /// A message that steers an agent without native steering: it goes out once the interrupted turn has ended.
+    var restartSteers: [UUID: String] = [:]
     var sessionApprovals: [UUID: SessionApprovals] = [:]
     var backgroundRoster: [UUID: BackgroundRoster] = [:]
 
@@ -757,6 +759,7 @@ final class WorkspaceManager: ObservableObject {
         onTurnFinished?(run)
         deliverDelegatedResult(id)
         captureCheckpoint(id)
+        deliverRestartSteer(id)
     }
 
     /// A snapshot after each turn, for every session in a repository: it shows what each turn changed. Putting files back
@@ -875,6 +878,14 @@ final class WorkspaceManager: ObservableObject {
         let draft = queue.endEdit(save: save, text: text)
         store(queue, for: id)
         return draft
+    }
+
+    /// Puts a message first in the queue and lets the queue go on: a message of yours that could not go out right away.
+    func requeueFirst(_ id: UUID, text: String) {
+        var queue = queued[id] ?? MessageQueue()
+        queue.requeueFirst(text)
+        queue.resume()
+        queued[id] = queue
     }
 
     /// After a failure, a stop or a restart nothing goes out on top of the problem; you resume the queue yourself.
@@ -1414,6 +1425,7 @@ final class WorkspaceManager: ObservableObject {
         if state.stopping {
             update(id) { $0.move(to: .stopped) }
             append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+            deliverRestartSteer(id)
         } else {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }

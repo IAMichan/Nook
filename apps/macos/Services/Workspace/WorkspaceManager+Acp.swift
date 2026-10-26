@@ -448,6 +448,7 @@ extension WorkspaceManager {
         if state.stopping {
             update(id) { $0.move(to: .stopped) }
             append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+            deliverRestartSteer(id)
         } else {
             let detail = WorkspaceManager.cleanError(stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
