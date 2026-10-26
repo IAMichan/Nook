@@ -49,6 +49,7 @@ pub fn run() {
             brain::setup(app.handle());
             agents::setup(app.handle());
             workspace::setup(app.handle());
+            services::start(app.handle());
             #[cfg(desktop)]
             {
                 platform::desktop::setup(app.handle())?;

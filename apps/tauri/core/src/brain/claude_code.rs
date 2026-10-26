@@ -34,7 +34,11 @@ fn candidates() -> Vec<PathBuf> {
     ];
     if cfg!(windows) {
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            list.insert(0, PathBuf::from(appdata).join("npm").join("claude.cmd"));
+            let npm = PathBuf::from(appdata).join("npm");
+            list.insert(0, npm.join("claude.cmd"));
+            // A `.cmd` shim rejects arguments with quotes or newlines ("batch file arguments are invalid"); the
+            // real binary of the npm package does not.
+            list.insert(0, npm.join("node_modules/@anthropic-ai/claude-code/bin/claude.exe"));
         }
         list.insert(0, home.join(".local").join("bin").join("claude.exe"));
         list.insert(0, home.join(".claude").join("local").join("claude.exe"));

@@ -100,6 +100,11 @@ pub fn setup(app: &AppHandle) {
     });
     energy::start(app);
     autocomplete::setup(app, text_input);
+}
+
+/// Start the windows and background services. This runs after every state is managed: on Windows, building a
+/// webview pumps the event loop, so a page that is already loaded can call a command before `setup` has finished.
+pub fn start(app: &AppHandle) {
     #[cfg(desktop)]
     {
         windows::create(app);
