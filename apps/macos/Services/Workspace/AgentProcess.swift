@@ -187,16 +187,18 @@ enum AgentCommand {
 }
 
 /// A single running agent process. Delivers stdout lines one by one on a dedicated queue.
+/// It runs in a process group of its own (see `SpawnedProcess`), so stopping it also stops what it started.
 /// Termination is always safe: graceful first (SIGINT), then forced after a few seconds.
 final class AgentProcess: @unchecked Sendable {
     let spec: LaunchSpec
-    private let process = Process()
-    private var input: FileHandle?
+    private let process = SpawnedProcess()
+    private let scheduler: ProcessScheduler
     private let queue = DispatchQueue(label: "nook.agent-process")
     private var buffer = Data()
     private var stderrTail = Data()
     private let lock = NSLock()
     private var finished = false
+    private var stopping = false
 
     /// Every complete line from stdout.
     var onLine: (@Sendable (String) -> Void)?
@@ -205,79 +207,57 @@ final class AgentProcess: @unchecked Sendable {
     /// The process has exited: exit code and the last lines of stderr.
     var onExit: (@Sendable (Int32, String) -> Void)?
 
-    init(spec: LaunchSpec) {
+    init(spec: LaunchSpec, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
         self.spec = spec
+        self.scheduler = scheduler
     }
 
-    var pid: Int32 { process.processIdentifier }
+    var pid: Int32 { process.pid }
     var isRunning: Bool { process.isRunning }
 
     func start(baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) throws {
-        process.executableURL = URL(fileURLWithPath: spec.executable)
-        process.arguments = spec.arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: spec.workingDirectory, isDirectory: true)
         var environment = AgentCommand.environment(base: baseEnvironment, executable: spec.executable, extra: spec.extraEnvironment)
         for key in spec.removedEnvironment where spec.extraEnvironment[key] == nil { environment[key] = nil }
-        process.environment = environment
-
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        if spec.keepsInputOpen {
-            let pipe = Pipe()
-            process.standardInput = pipe
-            input = pipe.fileHandleForWriting
-        } else {
-            process.standardInput = FileHandle.nullDevice
-        }
-
-        out.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
+        let options = SpawnedProcess.Options(executable: spec.executable, arguments: spec.arguments, environment: environment,
+                                             workingDirectory: spec.workingDirectory, keepsInputOpen: spec.keepsInputOpen)
+        // SIGPIPE would terminate Nook if the agent exits while writing.
+        signal(SIGPIPE, SIG_IGN)
+        try process.start(options, onStdout: { [weak self] data in
             guard let self else { return }
             if data.isEmpty {
-                handle.readabilityHandler = nil
                 self.queue.async { self.flushRemainder() }
             } else {
                 self.queue.async { self.consume(data) }
             }
-        }
-        err.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard let self else { return }
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-            } else {
-                self.queue.async {
-                    self.stderrTail.append(data)
-                    if self.stderrTail.count > 8_192 { self.stderrTail = self.stderrTail.suffix(8_192) }
-                }
+        }, onStderr: { [weak self] data in
+            guard let self, !data.isEmpty else { return }
+            self.queue.async {
+                self.stderrTail.append(data)
+                if self.stderrTail.count > 8_192 { self.stderrTail = self.stderrTail.suffix(8_192) }
             }
-        }
-        process.terminationHandler = { [weak self] process in
+        }, onExit: { [weak self] status in
             guard let self else { return }
             // Wait briefly so remaining stdout lines are processed first.
-            self.queue.asyncAfter(deadline: .now() + 0.3) {
-                self.flushRemainder()
-                let tail = String(decoding: self.stderrTail, as: UTF8.self)
-                self.markFinished()
-                self.onExit?(process.terminationStatus, tail)
+            self.scheduler.schedule(after: 0.3) {
+                self.queue.async {
+                    self.flushRemainder()
+                    let tail = String(decoding: self.stderrTail, as: UTF8.self)
+                    self.markFinished()
+                    self.onExit?(status, tail)
+                }
             }
-        }
-        // SIGPIPE would terminate Nook if the agent exits while writing.
-        signal(SIGPIPE, SIG_IGN)
-        try process.run()
+        })
         for line in spec.initialInput { send(line) }
     }
 
     /// Writes a line to stdin (a message, an answer to a permission prompt).
     func send(_ line: String) {
         lock.lock()
-        let handle = finished ? nil : input
+        let done = finished
         lock.unlock()
-        guard let handle, let data = line.data(using: .utf8) else { return }
+        guard !done, let data = line.data(using: .utf8) else { return }
         do {
-            try handle.write(contentsOf: data)
+            try process.write(data)
         } catch {
             // The process has already exited; termination is reported via onExit.
         }
@@ -285,33 +265,35 @@ final class AgentProcess: @unchecked Sendable {
 
     /// Closes stdin: the agent wraps up and exits.
     func closeInput() {
-        lock.lock()
-        let handle = input
-        input = nil
-        lock.unlock()
-        try? handle?.close()
+        process.closeInput()
     }
 
-    /// Graceful stop: SIGINT, then forced after `grace` seconds if still running.
+    /// Graceful stop of the agent and everything in its group: SIGINT, SIGTERM after `grace` seconds, SIGKILL four
+    /// seconds later. The group is signalled even when the agent itself already exited, so what it started goes too.
     func stop(grace: TimeInterval = 4) {
-        guard process.isRunning else { return }
-        process.interrupt()
+        lock.lock()
+        let first = !stopping
+        stopping = true
+        lock.unlock()
+        guard first, process.isRunning else { return }
+        // An exited leader stays unreaped until the last signal, so its group id cannot be given to another program.
+        process.hold()
+        process.signalGroup(SIGINT)
         let process = process
-        DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
-            if process.isRunning { process.terminate() }
+        scheduler.schedule(after: grace) {
+            process.signalGroup(SIGTERM)
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + grace + 4) {
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        scheduler.schedule(after: grace + 4) {
+            process.signalGroup(SIGKILL)
+            process.release()
         }
     }
 
     private func markFinished() {
         lock.lock()
         finished = true
-        let handle = input
-        input = nil
         lock.unlock()
-        try? handle?.close()
+        process.closeInput()
     }
 
     private func consume(_ data: Data) {

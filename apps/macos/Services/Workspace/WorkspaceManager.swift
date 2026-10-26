@@ -273,6 +273,8 @@ final class WorkspaceManager: ObservableObject {
 
     init(store: RunStore = RunStore(directory: NookPaths.supportDirectory.appendingPathComponent("workspace", isDirectory: true))) {
         self.store = store
+        // Agents' process groups are written down; the ones a crashed Nook left behind are stopped.
+        ProcessGroupLedger.install()
         agentModels = AgentModelStore(url: Self.modelStoreURL).load()
         modelManifest = ModelManifest.preferred(bundled: .bundled(), cached: ModelManifestStore(url: Self.manifestStoreURL).load())
         // The session list can be long: read it off the main thread so launching Nook does not wait for it.
