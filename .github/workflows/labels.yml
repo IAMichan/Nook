@@ -1,0 +1,38 @@
+name: Labels
+
+# Creates or updates the repository's labels from .github/labels.yml, so the label set lives in git and is reviewed
+# like any other change. Labels that are not in the file are left alone. Runs on ubuntu only, when the file changes on
+# main, or by hand.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/labels.yml', '.github/workflows/labels.yml']
+  workflow_dispatch:
+
+permissions:
+  issues: write # labels belong to the issues API
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/labels.yml
+          sparse-checkout-cone-mode: false
+      - name: Create or update the labels
+        run: |
+          yq -o=json '.[]' .github/labels.yml | jq -c '.' | while read -r label; do
+            name="$(jq -r '.name' <<<"$label")"
+            echo "Label: $name"
+            gh label create "$name" --force --color "$(jq -r '.color' <<<"$label")" \
+              --description "$(jq -r '.description // ""' <<<"$label")"
+          done
