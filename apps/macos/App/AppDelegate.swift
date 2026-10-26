@@ -58,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let confirmQuitKey = "nook.quit.confirmWorking"
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Restarting into an update: if saving below hangs, end anyway so the relaunch can open the new build.
+        if AppUpdater.shared.restarting { AppUpdater.endProcess(after: AppUpdater.quitDeadline) }
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
         UpdateTrialRunner.cleanExit()
