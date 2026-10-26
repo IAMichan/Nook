@@ -103,8 +103,9 @@ struct EnergyPlan: Equatable {
     /// of that on battery, where every frame is a GPU copy and a composite.
     var mirrorFrameRate: Int { pace == .full ? 60 : 30 }
 
-    /// Frames per second of Nook in the closed notch while he thinks along without the pointer on him.
-    var idleOrbFrameRate: Double { pace == .full ? 12 : 8 }
+    /// Frames per second of Nook in the closed notch while he thinks along without the pointer on him. Half the ambient
+    /// rate, so on the shared animation clock (`NookFrames`) each of his frames falls on one of the ring's.
+    var idleOrbFrameRate: Double { pace == .full ? 15 : 7.5 }
 
     /// Frames per second of motion you are looking at and steering: Nook following the pointer, the ring in the open
     /// panel, a shimmer on the step that runs. As smooth as the display at full speed; half of that on battery.
@@ -113,6 +114,15 @@ struct EnergyPlan: Equatable {
     /// Frames per second of small loops that run in the closed notch for as long as something plays or works (the
     /// equalizer, the light sweeping through the task ring): fluid enough to read as motion, a fraction of the redraws.
     var ambientFrameRate: Double { pace == .full ? 30 : 15 }
+
+    /// Frames per second of the animations that run on their own (Nook, his ring, the equalizer, working dots) on a
+    /// screen or in a window the pointer is not on: half the ambient rate, so they stay on the shared clock.
+    var unattendedFrameRate: Double { ambientFrameRate / 2 }
+
+    /// `fps` where the pointer is (`attended`), at most `unattendedFrameRate` elsewhere.
+    func frameRate(_ fps: Double, attended: Bool) -> Double {
+        attended ? fps : min(fps, unattendedFrameRate)
+    }
 
     /// The first reason, for a short status line; nil at full speed.
     var mainReason: EnergyReason? { reasons.first }

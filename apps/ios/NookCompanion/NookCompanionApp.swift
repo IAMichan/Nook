@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Notifications.registerCategories()
+        Theme.applyBarAppearance()
         Task { @MainActor in LiveActivities.shared.start() }
         return true
     }

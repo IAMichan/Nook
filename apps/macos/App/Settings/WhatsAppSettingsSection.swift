@@ -37,14 +37,14 @@ struct WhatsAppLinkSection: View {
                 }
 
                 if link.link == .needsQR, let data = link.qrPNG, let image = NSImage(data: data) {
-                    HStack(alignment: .top, spacing: 16) {
+                    HStack(alignment: .top, spacing: NookTheme.Spacing.xl) {
                         QRCodeView(image: image, side: 160, label: tr("chats.link.qr"))
                         Text(tr("whatsapp.settings.scan"))
                             .font(NookTheme.TextStyle.body)
                             .foregroundStyle(NookTheme.textStrong)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, NookTheme.Spacing.xs)
                 }
 
                 DisclosureGroup(tr("whatsapp.settings.advanced")) {

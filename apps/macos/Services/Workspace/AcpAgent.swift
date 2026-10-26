@@ -232,9 +232,26 @@ enum AcpMapper {
         for location in (raw["locations"] as? [[String: Any]]) ?? [] {
             if let path = location["path"] as? String, !paths.contains(path), (raw["kind"] as? String) == "edit" { paths.append(path) }
         }
+        // Some agents (Antigravity) put a failed call's reason only in rawOutput: without it the call fails without a word.
+        if output.isEmpty, let rawOutput = raw["rawOutput"].flatMap(Self.rawOutput) { output.append(rawOutput) }
         return AcpToolCall(id: (raw["toolCallId"] as? String) ?? UUID().uuidString, title: (raw["title"] as? String) ?? "",
                            kind: (raw["kind"] as? String) ?? "", status: raw["status"] as? String,
                            input: raw["rawInput"].map { JSONBox($0) }, output: output.joined(separator: "\n"), paths: paths)
+    }
+
+    /// rawOutput as text: a string as is, an object's error or output field, otherwise the object as JSON.
+    static func rawOutput(_ value: Any) -> String? {
+        if let text = value as? String { return text.isEmpty ? nil : text }
+        if let object = value as? [String: Any] {
+            for key in ["error", "message", "output", "stderr", "result"] {
+                if let text = object[key] as? String, !text.isEmpty { return text }
+                if let nested = object[key] as? [String: Any], let text = nested["message"] as? String, !text.isEmpty { return text }
+            }
+            if object.isEmpty { return nil }
+        }
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 
     private static func text(_ block: Any?) -> String? {

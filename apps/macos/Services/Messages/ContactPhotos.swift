@@ -31,7 +31,8 @@ final class ContactPhotos: ObservableObject {
 
     /// Reads the photos when there are none yet or they are old; does nothing without access.
     func refresh() {
-        access = CNContactStore.authorizationStatus(for: .contacts)
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        if access != status { access = status }
         guard access == .authorized, !loading else { return }
         if let loadedAt, Date().timeIntervalSince(loadedAt) < Self.maxAge { return }
         loading = true

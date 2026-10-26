@@ -29,8 +29,11 @@ struct MusicLyricsView: View {
             if found.instrumental {
                 MusicPlaceholder(symbol: "pianokeys", title: tr("music.lyrics.instrumental"))
             } else if found.isSynced {
-                TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                // Paused, the position stands still: so does the timeline. Each tick only redraws the lyrics when the
+                // current line changed (`SyncedLyrics` is equatable).
+                TimelineView(.animation(minimumInterval: 0.25, paused: !info.isPlaying)) { context in
                     SyncedLyrics(lines: found.lines, active: found.activeIndex(at: info.estimatedPosition(at: context.date) + 0.2), onSeek: onSeek)
+                        .equatable()
                 }
             } else {
                 PlainLyrics(lines: found.lines)
@@ -48,10 +51,15 @@ struct MusicLyricsView: View {
 
 /// Synced lyrics, centred over the full width: the current line larger and bright, held a little above the middle;
 /// click a line to jump there.
-private struct SyncedLyrics: View {
+private struct SyncedLyrics: View, Equatable {
     let lines: [LyricLine]
     let active: Int?
     let onSeek: (Double) -> Void
+
+    /// The seek action is the same for every tick of the timeline; only the lines and the current one change what shows.
+    static func == (lhs: SyncedLyrics, rhs: SyncedLyrics) -> Bool {
+        lhs.active == rhs.active && lhs.lines == rhs.lines
+    }
 
     var body: some View {
         ScrollViewReader { proxy in

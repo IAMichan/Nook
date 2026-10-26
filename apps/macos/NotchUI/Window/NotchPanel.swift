@@ -120,6 +120,8 @@ final class CharacterPaletteWatch {
         timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
             MainActor.assumeIsolated { CharacterPaletteWatch.shared.check() }
         }
+        // Runs for as long as you type in the notch: a little slack lets macOS bundle its wake-ups with others.
+        timer?.tolerance = 0.1
     }
 
     private func check() {
@@ -136,6 +138,7 @@ final class CharacterPaletteWatch {
         if !notches.contains(where: \.isKeyWindow) {
             timer?.invalidate()
             timer = nil
+            Self.pickerProcesses = [:]
         }
     }
 
@@ -149,8 +152,7 @@ final class CharacterPaletteWatch {
             guard let pid = window[kCGWindowOwnerPID as String] as? pid_t,
                   let layer = window[kCGWindowLayer as String] as? Int else { continue }
             let owner = window[kCGWindowOwnerName as String] as? String ?? ""
-            guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == bundleID || owner == "CharacterPalette"
-            else { continue }
+            guard owner == "CharacterPalette" || isPicker(pid) else { continue }
             let alpha = window[kCGWindowAlpha as String] as? Double ?? 1
             guard alpha > 0, let bounds = window[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
@@ -158,6 +160,18 @@ final class CharacterPaletteWatch {
             return layer
         }
         return nil
+    }
+
+    /// Whether each process seen on screen is the picker's, while the watch runs. Every on-screen window is checked a few
+    /// times a second as you type; looking its process up in Launch Services every time adds up. Forgotten when the
+    /// watch stops, so a process number used again later is looked up afresh.
+    private static var pickerProcesses: [pid_t: Bool] = [:]
+
+    private static func isPicker(_ pid: pid_t) -> Bool {
+        if let known = pickerProcesses[pid] { return known }
+        let picker = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == bundleID
+        pickerProcesses[pid] = picker
+        return picker
     }
 
     /// Smaller than the picker can be: anything below this is a helper window, not Emoji & Symbols.

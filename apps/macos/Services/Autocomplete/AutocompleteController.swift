@@ -1,14 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
-
-/// The key tap's callback. At file level: a C function pointer may not carry the controller's main-actor isolation. The tap
-/// runs on the main run loop, so the controller is entered on the main thread.
-private let autocompleteTapCallback: CGEventTapCallBack = { _, type, event, refcon in
-    guard let refcon else { return Unmanaged.passUnretained(event) }
-    let controller = Unmanaged<AutocompleteController>.fromOpaque(refcon).takeUnretainedValue()
-    let swallow = MainActor.assumeIsolated { controller.handle(type: type, event: event) }
-    return swallow ? nil : Unmanaged.passUnretained(event)
-}
+import Combine
 
 /// Autocomplete anywhere: while you type in any app, a model on this Mac suggests how the sentence goes on, as grey text at
 /// the cursor. Tab takes the next word, ⇧Tab all of it; typing what was suggested keeps the rest; any other key sends it
@@ -40,8 +32,8 @@ final class AutocompleteController: ObservableObject {
     @Published private(set) var seenApps: [String: String] = [:]
     @Published private(set) var lastSite: String?
 
-    /// What Nook's memory knows about the user (set by AppModel).
-    var facts: () -> [String] = { [] }
+    /// What Nook's memory knows about the user that matters for what is on screen and being written (set by AppModel).
+    var facts: (_ context: String) -> [String] = { _ in [] }
     /// The text Nook already read in the front window of this app (set by AppModel).
     var screenText: (_ bundleID: String) -> String? = { _ in nil }
 
@@ -88,24 +80,23 @@ final class AutocompleteController: ObservableObject {
     }
 
     /// Emoji per row in the picker: 1 to 9 pick from the row with the selection.
-    private static let emojiColumns = 9
-    /// A click that took an emoji: its mouse up does not reach the app either.
-    private var swallowMouseUp = false
+    private static let emojiColumns = CompletionKeyGate.emojiColumns
 
     private let store = AutocompleteStore.shared
     private let overlay = GhostOverlay()
     private let builder = PromptBuilder()
-    /// Accessibility answers can take tens of milliseconds; the key tap is on the main thread, so reading happens here.
+    /// Accessibility answers can take tens of milliseconds: reading happens here, not on the main thread.
     private let readQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.read", qos: .userInteractive)
     /// Goes up with everything the user does; results of older reads are dropped.
-    private var readToken = 0
+    private var readToken = 0 { didSet { publishTapState() } }
 
-    private var proposal: Proposal?
+    /// What is on screen. A change to this or to the other state the key tap decides by (see `tapGate`) goes to the tap at once.
+    private var proposal: Proposal? { didSet { publishTapState() } }
     /// The model request for the text in the field now (`token` is `readToken` when it started).
-    private var asking: (token: Int, done: Bool, eager: Bool)?
+    private var asking: (token: Int, done: Bool, eager: Bool)? { didSet { publishTapState() } }
     /// An accept key pressed while a suggestion was on its way: held until it shows, and passed on to the app when none
     /// comes (see `holdAcceptKey`).
-    private var heldKey: (token: Int, key: Key)?
+    private var heldKey: (token: Int, key: Key)? { didSet { publishTapState() } }
     private var holdWork: DispatchWorkItem?
     /// The longest an accept key waits for a suggestion before it goes to the app after all.
     private let holdSeconds: TimeInterval = 1.5
@@ -143,8 +134,8 @@ final class AutocompleteController: ObservableObject {
     /// about what is being written.
     private var clipboardSeen: (count: Int, date: Date)?
     private let windowQueue = DispatchQueue(label: "nl.imdigital.nook.autocomplete.window", qos: .utility)
-    private var alternatives: [String]?
-    private var refreshWork: DispatchWorkItem?
+    private var alternatives: [String]? { didSet { publishTapState() } }
+    private var refreshWork: DispatchWorkItem? { didSet { publishTapState() } }
     private var warmWork: DispatchWorkItem?
     private var selectionWork: DispatchWorkItem?
     private var pendingSample: (app: String, text: String)?
@@ -165,8 +156,10 @@ final class AutocompleteController: ObservableObject {
         return union
     }
 
-    private var tap: CFMachPort?
-    private var tapSource: CFRunLoopSource?
+    private var keyTap: AutocompleteKeyTap?
+    /// Key window changes (whether keys typed in Nook are its own) and settings or pauses, for the key tap's state.
+    private var tapStateObservers: [NSObjectProtocol] = []
+    private var storeObserver: AnyCancellable?
     private var appObserver: NSObjectProtocol?
     private var wakeObservers: [NSObjectProtocol] = []
     private var pressure: DispatchSourceMemoryPressure?
@@ -189,8 +182,14 @@ final class AutocompleteController: ObservableObject {
     private static let contextSeconds: TimeInterval = 180
     /// The clipboard goes into the prompt only this long after it was copied.
     private static let clipboardSeconds: TimeInterval = 5 * 60
-    /// The model leaves memory after this long without a suggestion.
-    private static let idleSeconds: UInt64 = 15 * 60
+    /// The model leaves memory after this long without a suggestion: a model of several GB held for a quarter of an hour
+    /// after the last key slowed down the rest of the Mac.
+    private static let idleSeconds: UInt64 = 5 * 60
+    /// At launch the model loads only after this long, not in the middle of everything else that starts then. A key
+    /// before that still loads it at once.
+    private static let launchDelay: UInt64 = 45
+    /// Set on the first `refresh`, which is at launch.
+    private static let launched = Date()
 
     private var prefs: CompletionPreferences { store.prefs }
 
@@ -236,7 +235,10 @@ final class AutocompleteController: ObservableObject {
             }
             guard let model else { state = .noModel; return }
             state = .ready
-            // Load it now, so the first suggestion does not wait.
+            // Load it now, so the first suggestion does not wait; at launch after `launchDelay`.
+            let wait = Double(Self.launchDelay) - Date().timeIntervalSince(Self.launched)
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard prefs.enabled, activeModel?.identity == model.identity else { return }
             if completer == nil, await loadedCompleter(for: model) != nil { scheduleUnload() }
             if case .brain(let id, _) = model { EmbeddedModel.shared.preloadForAutocomplete(id) }
         }
@@ -275,27 +277,34 @@ final class AutocompleteController: ObservableObject {
         }
     }
 
-    /// An active tap (not only a listener): the accept keys must not reach the app as an ordinary Tab.
+    /// The key tap runs on a thread of its own (see `AutocompleteKeyTap`): it decides from `tapGate` and hands the events here.
     private func start() -> Bool {
-        guard tap == nil else { return true }
-        let mask: CGEventMask = 1 << CGEventType.keyDown.rawValue | 1 << CGEventType.leftMouseDown.rawValue
-            | 1 << CGEventType.rightMouseDown.rawValue | 1 << CGEventType.leftMouseUp.rawValue
-        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask,
-                                           callback: autocompleteTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: port, enable: true)
-        tap = port
-        tapSource = source
+        guard keyTap == nil else { return true }
+        let newTap = AutocompleteKeyTap { [weak self] tap, event in
+            MainActor.assumeIsolated { self?.tapped(event, from: tap) }
+        }
+        guard newTap.start() else { return false }
+        keyTap = newTap
+        publishTapState()
+        let center = NotificationCenter.default
+        tapStateObservers = [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification].map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.publishTapState() }
+            }
+        }
+        // Fires before the change: publish once it is made.
+        storeObserver = store.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.publishTapState() } }
+        }
 
         appObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.appChanged(app) }
         }
         // After sleep the GPU has let the model's buffers go: read the field's prompt in again before the first key.
-        let center = NSWorkspace.shared.notificationCenter
+        let workspace = NSWorkspace.shared.notificationCenter
         wakeObservers = [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification].map { name in
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.scheduleWarm(after: 1) }
             }
         }
@@ -313,26 +322,28 @@ final class AutocompleteController: ObservableObject {
     private func stop() {
         dismiss()
         commitSample()
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
-        if let tap { CFMachPortInvalidate(tap) }
+        keyTap?.stop()
+        tapStateObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        tapStateObservers = []
+        storeObserver = nil
         if let appObserver { NSWorkspace.shared.notificationCenter.removeObserver(appObserver) }
         wakeObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         wakeObservers = []
         pressure?.cancel()
         fieldObserver.stop()
-        tap = nil
-        tapSource = nil
+        keyTap = nil
         appObserver = nil
         pressure = nil
         unload()
     }
 
     private func appChanged(_ app: NSRunningApplication?) {
-        if let app { readQueue.async { AutocompleteField.wake(app) } }
-        fieldObserver.watch(app?.processIdentifier)
+        let own = app?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        if let app, !own { readQueue.async { AutocompleteField.wake(app) } }
+        // Nook's own fields are read through AppKit (see `AutocompleteField.readOwn`), not watched through accessibility.
+        fieldObserver.watch(own ? nil : app?.processIdentifier)
         store.offUntilSwitch = nil
-        lastSite = nil
+        if lastSite != nil { lastSite = nil }
         fieldContext = nil
         windowText = nil
         upcoming = nil
@@ -345,17 +356,31 @@ final class AutocompleteController: ObservableObject {
 
     // MARK: State
 
-    private var frontApp: NSRunningApplication? { NSWorkspace.shared.frontmostApplication }
+    /// The app the keys go to. A Nook panel can take keys without making Nook the front app (the notch): then it is Nook.
+    private var frontApp: NSRunningApplication? {
+        NSApp.keyWindow != nil ? NSRunningApplication.current : NSWorkspace.shared.frontmostApplication
+    }
     private var ownAppInFront: Bool { frontApp?.processIdentifier == ProcessInfo.processInfo.processIdentifier }
+
+    /// A key recorder in Settings is waiting for keys: they are all its own, none goes to autocomplete.
+    var recordingKeys = 0 { didSet { publishTapState() } }
+
+    /// In Nook itself, only while a text view to write in has the focus (see `AutocompleteField.ownTextView`): every other key
+    /// (a shortcut, a key recorder) stays Nook's.
+    private var ownFieldFocused: Bool { recordingKeys == 0 && AutocompleteField.ownTextView() != nil }
 
     /// Read by `EnergyMonitor` for the whole app, so this is a cached value and not a trip to IOKit per keystroke.
     private var onBattery: Bool { EnergyMonitor.shared.signals.onBattery }
 
     private func isActive(in app: NSRunningApplication?) -> Bool {
-        guard let app, !ownAppInFront, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
+        guard let app, !IsSecureEventInputEnabled(), activeModel != nil else { return false }
         let bundleID = app.bundleIdentifier
-        // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
-        if let bundleID, ScreenReader.excludedBundles.contains(bundleID) { return false }
+        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            guard ownFieldFocused else { return false }
+        } else if let bundleID, ScreenReader.excludedBundles.contains(bundleID) {
+            // An app Nook never reads (a password manager, or one picked in Settings › Privacy) gets no suggestions either.
+            return false
+        }
         return prefs.isEnabled(inApp: bundleID) && !store.isPaused(app: bundleID) && !(prefs.pauseOnBattery && onBattery)
     }
 
@@ -386,66 +411,96 @@ final class AutocompleteController: ObservableObject {
         var flags: CGEventFlags
         var characters: String
 
-        var modifiers: Int {
-            var result = 0
-            if flags.contains(.maskCommand) { result |= CompletionShortcut.command }
-            if flags.contains(.maskAlternate) { result |= CompletionShortcut.option }
-            if flags.contains(.maskControl) { result |= CompletionShortcut.control }
-            if flags.contains(.maskShift) { result |= CompletionShortcut.shift }
-            return result
-        }
+        var modifiers: Int { AutocompleteKeyTap.modifiers(flags) }
+        var press: CompletionKeyPress { CompletionKeyPress(code: code, modifiers: modifiers, characters: characters) }
 
-        func matches(_ shortcut: CompletionShortcut?) -> Bool { shortcut?.matches(keyCode: code, modifiers: modifiers) ?? false }
+        func matches(_ shortcut: CompletionShortcut?) -> Bool { press.matches(shortcut) }
     }
 
-    /// True swallows the event.
-    fileprivate func handle(type: CGEventType, event: CGEvent) -> Bool {
-        switch type {
-        case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            return false
-        case .leftMouseDown, .rightMouseDown:
-            if type == .leftMouseDown, case .emoji(let picker) = proposal,
-               let index = overlay.emojiIndex(at: NSEvent.mouseLocation), picker.choices.indices.contains(index) {
-                take(index, from: picker)
-                swallowMouseUp = true
-                return true
+    /// What the key tap needs to decide on its own thread whether a key or click must not reach the app: the state `handle(_:)`
+    /// decides by. Kept up to date in the tap with every change (see `publishTapState`).
+    private func tapGate() -> CompletionKeyGate {
+        let app = frontApp
+        let bundleID = app?.bundleIdentifier
+        var gate = CompletionKeyGate()
+        gate.keysStayWithNook = ownAppInFront && !ownFieldFocused
+        gate.active = isActive(in: app)
+        gate.appKnown = bundleID != nil
+        gate.leaveTab = prefs.app(bundleID).leaveTab
+        gate.acceptWord = prefs.acceptWord
+        gate.acceptAll = prefs.acceptAll
+        gate.toggleAll = prefs.toggleAll
+        gate.toggleApp = prefs.toggleApp
+        gate.alternatives = prefs.wordAlternatives ? prefs.alternatives : nil
+        gate.canHold = canHoldAcceptKey
+        gate.holding = heldKey != nil
+        if let alternatives {
+            gate.showing = .alternatives(count: alternatives.count)
+        } else {
+            switch proposal {
+            case nil: gate.showing = .nothing
+            case .completion: gate.showing = .completion
+            case .replacement: gate.showing = .replacement
+            case .emoji(let picker): gate.showing = .emoji(nameLength: picker.query.count, cells: overlay.emojiCells())
+            }
+        }
+        return gate
+    }
+
+    private func publishTapState() {
+        keyTap?.publish(tapGate())
+    }
+
+    /// An event from the key tap, on the main thread, after the tap already let it through or kept it from the app.
+    private func tapped(_ event: AutocompleteKeyTap.Event, from tap: AutocompleteKeyTap) {
+        switch event {
+        case .key(let press, let flags, let swallowed, let copy):
+            tappedKey(Key(code: press.code, flags: flags, characters: press.characters), swallowed: swallowed, copy: copy)
+            tap.resolved(swallowed: swallowed, gate: tapGate())
+        case .mouseDown(let emoji):
+            if let emoji, case .emoji(let picker) = proposal, picker.choices.indices.contains(emoji) {
+                take(emoji, from: picker)
+                return
             }
             // The click may move the cursor: the text before it is no longer known.
             lastRead = nil
             dismiss()
-            return false
-        case .leftMouseUp:
-            if swallowMouseUp { swallowMouseUp = false; return true }
+        case .mouseUp:
             scheduleSelectionCheck()
             // Perhaps another field: read its context into the model before the first key.
             scheduleWarm(after: 0.3)
-            return false
-        case .keyDown:
-            // What Nook types itself. Some apps lose the mark, so also check who sent it.
-            if event.getIntegerValueField(.eventSourceUserData) == AutocompleteTyper.marker
-                || event.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid()) { return false }
-            // Another key while an accept key waits: the user went on, so the held key goes first, then this one.
-            if heldKey != nil, let copy = event.copy() {
-                releaseHeldKey(force: true)
-                copy.setIntegerValueField(.eventSourceUserData, value: AutocompleteTyper.marker)
-                copy.post(tap: .cgSessionEventTap)
-                return true
-            }
-            var length = 0
-            var buffer = [UniChar](repeating: 0, count: 8)
-            event.keyboardGetUnicodeString(maxStringLength: buffer.count, actualStringLength: &length, unicodeString: &buffer)
-            let key = Key(code: Int(event.getIntegerValueField(.keyboardEventKeycode)), flags: event.flags,
-                          characters: String(utf16CodeUnits: buffer, count: length))
-            return handle(key)
-        default:
-            return false
+            // A click in Nook may have moved the focus to or from one of its text views.
+            if ownAppInFront { DispatchQueue.main.async { MainActor.assumeIsolated { self.publishTapState() } } }
+        }
+    }
+
+    /// A key the tap let through (`swallowed` false) or kept from the app. The tap decided from the state of a moment ago;
+    /// when this one says otherwise (keys typed faster than the main thread handled them), a key kept back goes on to the app
+    /// now (`copy`), and a key let through is taken as typed.
+    private func tappedKey(_ key: Key, swallowed: Bool, copy: CGEvent?) {
+        // Another key while an accept key waits: the user went on, so the held key goes first, then this one.
+        if heldKey != nil {
+            releaseHeldKey(force: true)
+            if swallowed { copy?.post(tap: .cgSessionEventTap) }
+            return
+        }
+        let wanted = tapGate().swallows(key.press)
+        if swallowed, !wanted {
+            copy?.post(tap: .cgSessionEventTap)
+            _ = handle(key)
+        } else if !swallowed, wanted {
+            // In the app already, while something here was waiting for it (a suggestion that just showed): too late to take it.
+            dismiss()
+            if let app = frontApp, isActive(in: app) { scheduleRefresh() }
+        } else if !handle(key), swallowed {
+            // Not expected: `CompletionKeyGate.swallows` mirrors `handle(_:)`. The key must not get lost.
+            copy?.post(tap: .cgSessionEventTap)
         }
     }
 
     private func handle(_ key: Key) -> Bool {
-        // The shortcut recorder in Settings must see every key.
-        if ownAppInFront { return false }
+        // In Nook only while writing in one of its text views: the shortcut recorders in Settings must see every key.
+        if ownAppInFront, !ownFieldFocused { dismiss(); return false }
         let app = frontApp
         let bundleID = app?.bundleIdentifier
 
@@ -633,7 +688,7 @@ final class AutocompleteController: ObservableObject {
     /// running, or the model is writing. When the model answered nothing for this text, asks once more with a lower bar (the
     /// user asked for a word). False when nothing is coming: the key then does what it always does in the app.
     private func holdAcceptKey(_ key: Key) -> Bool {
-        guard heldKey == nil else { return false }
+        guard canHoldAcceptKey else { return false }
         let token = readToken
         if let work = refreshWork, !work.isCancelled {
             hold(key, token: token)
@@ -650,6 +705,14 @@ final class AutocompleteController: ObservableObject {
         hold(key, token: token)
         refreshProposal(eager: true)
         return true
+    }
+
+    /// An accept key pressed now would be held (see `holdAcceptKey`): what the key tap needs to know beforehand.
+    private var canHoldAcceptKey: Bool {
+        guard heldKey == nil else { return false }
+        if let work = refreshWork, !work.isCancelled { return true }
+        guard let asking, asking.token == readToken else { return false }
+        return !asking.done || !asking.eager
     }
 
     private func hold(_ key: Key, token: Int) {
@@ -734,6 +797,18 @@ final class AutocompleteController: ObservableObject {
         let screens = NSScreen.screens.map(\.frame)
         let pid = app.processIdentifier
         let checkCode = CompletionPreferences.proseOnly.contains(app.bundleIdentifier ?? "")
+        if pid == ProcessInfo.processInfo.processIdentifier {
+            // Nook itself: AppKit answers on the main thread, after the key just typed has been handled.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard token == self.readToken else { return }
+                    let snapshot = AutocompleteField.readOwn()
+                    self.lastRead = snapshot.map { (pid, $0) }
+                    done(snapshot)
+                }
+            }
+            return
+        }
         readQueue.async {
             let snapshot = AutocompleteField.read(screenHeight: height, screens: screens, checkCode: checkCode)
             // Chromium and Electron build their tree on request: ask again so the next key finds the field.
@@ -894,6 +969,9 @@ final class AutocompleteController: ObservableObject {
     /// Reads the prompt for the focused field into the model ahead of the next key. The context before the typed text
     /// (memory, screen, samples) is most of the prompt; when it is new (another app or field, a message sent, the window's
     /// text just read) the model would otherwise read all of it on that key, which on a larger model takes seconds.
+    private var lastWarm: (pid: pid_t, date: Date)?
+    private static let warmGap: TimeInterval = 3
+
     private func scheduleWarm(after seconds: TimeInterval) {
         warmWork?.cancel()
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.warmFocusedField() } }
@@ -903,6 +981,10 @@ final class AutocompleteController: ObservableObject {
 
     private func warmFocusedField() {
         guard completer != nil, let app = frontApp, isActive(in: app) else { return }
+        // Every click warms: a few clicks in a row in the same app read the field (and run the model) once.
+        let now = Date()
+        if let last = lastWarm, last.pid == app.processIdentifier, now.timeIntervalSince(last.date) < Self.warmGap { return }
+        lastWarm = (app.processIdentifier, now)
         read(in: app) { [weak self] snapshot in
             guard let self, let snapshot, !snapshot.hasSelection, self.prefs.isEnabled(onSite: snapshot.site), !self.skipsCode(snapshot, in: app),
                   let completer = self.completer else { return }
@@ -912,7 +994,8 @@ final class AutocompleteController: ObservableObject {
 
     /// - Parameter continuing: right after a whole suggestion was taken (see `CompletionOptions.continuing()`).
     private func propose(for snapshot: AutocompleteFieldSnapshot, in app: NSRunningApplication, continuing: Bool = false) {
-        lastSite = snapshot.site
+        // Runs for every keystroke: publish only a new site, so Settings does not redraw while you type.
+        if lastSite != snapshot.site { lastSite = snapshot.site }
         guard prefs.isEnabled(onSite: snapshot.site), !skipsCode(snapshot, in: app) else { return }
         record(snapshot, app: app.bundleIdentifier)
         if snapshot.hasSelection { return }
@@ -1098,14 +1181,14 @@ final class AutocompleteController: ObservableObject {
         }
         var input = CompletionContext(before: "")
         input.instructions = prefs.instructions(app: bundleID, site: snapshot.site)
-        if prefs.memoryContext { input.facts = Array(facts().prefix(8)) }
         if prefs.windowContext {
             input.appName = app.localizedName
             input.windowTitle = snapshot.windowTitle
             input.fieldHint = snapshot.placeholder
             input.site = snapshot.site
         }
-        if prefs.screenContext, let bundleID {
+        // Nook never reads its own windows (see `ScreenReader.excludedBundles`).
+        if prefs.screenContext, let bundleID, app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             // Leave out the field's own text: it is already the body of the prompt.
             let own = snapshot.before + snapshot.after
             // The pane around the field first (the conversation, the mail being answered): it is what the text replies to.
@@ -1128,8 +1211,13 @@ final class AutocompleteController: ObservableObject {
             let concealed = board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) ?? false
             if recent, !concealed { input.clipboard = board.string(forType: .string).map { CompletionPrivacy.sanitize($0) } }
         }
+        // Memories and earlier writing are picked for what this field is about (the conversation, the mail, the page) rather
+        // than the newest or strongest overall: unrelated ones pull the model toward other people and other subjects.
+        let topic = input.topic(before: snapshot.before + snapshot.after, windowTitle: snapshot.windowTitle, site: snapshot.site,
+                                fieldHint: snapshot.placeholder)
+        if prefs.memoryContext { input.facts = facts(topic) }
         if prefs.learn, prefs.personalStrength > 0, let bundleID {
-            input.samples = store.samples.relevant(for: bundleID, limit: 2)
+            input.samples = store.samples.relevant(for: bundleID, about: topic, excluding: snapshot.before + snapshot.after, limit: 2)
             input.phrases = frequentPhrases
         }
         fieldContext = (key, Date(), input)
@@ -1250,6 +1338,8 @@ final class AutocompleteController: ObservableObject {
         let name = ":\(picker.choices[picker.selected].shortcodes[0]):"
         overlay.showEmojiPicker(emoji, selected: picker.selected, columns: Self.emojiColumns, name: name,
                                 hint: "1–9  ←→↑↓  " + prefs.acceptWord.label + " ↩", below: picker.anchor)
+        // Where the emoji are now, for clicks.
+        publishTapState()
     }
 
     private func card(_ text: String) -> NSAttributedString {
@@ -1372,7 +1462,7 @@ final class AutocompleteController: ObservableObject {
         guard let model = activeModel else { return nil }
         var input = CompletionContext(before: before)
         input.instructions = prefs.instructions(app: nil, site: nil)
-        if prefs.memoryContext { input.facts = Array(facts().prefix(8)) }
+        if prefs.memoryContext { input.facts = facts(input.topic(before: before)) }
         let prompt = builder.build(input)
         var options = CompletionOptions(maxWords: prefs.maxWords, eagerness: prefs.eagerness)
         if continuing { options = options.continuing() }

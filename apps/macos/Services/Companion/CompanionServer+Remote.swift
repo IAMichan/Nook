@@ -111,11 +111,19 @@ extension CompanionServer {
 
     // MARK: A session's conversation
 
-    func timeline(_ request: CompanionRequest, workspace: WorkspaceManager) -> CompanionResponse {
+    /// A session's conversation: a Workspace session's timeline (read back from disk when it was released or never
+    /// opened), or the transcript of an agent outside Nook (`CompanionAgents.timeline`).
+    func timeline(_ request: CompanionRequest, app: AppModel) async -> CompanionResponse {
+        if let session = request.session, CompanionAgents.handles(session) {
+            guard let entries = await CompanionAgents.timeline(app, session: session) else { return .failure(request.id, .unknownSession) }
+            return CompanionResponse(id: request.id, ok: true, timeline: CompanionPolicy.newestFitting(entries))
+        }
+        let workspace = app.workspace
         guard let runID = request.session.flatMap(UUID.init(uuidString:)), workspace.run(runID) != nil else {
             return .failure(request.id, .unknownSession)
         }
-        let entries = workspace.timeline(runID).suffix(120).compactMap(Self.entry)
+        workspace.loadTimeline(runID)
+        let entries = workspace.timeline(runID).suffix(160).compactMap(Self.entry)
         return CompanionResponse(id: request.id, ok: true, timeline: CompanionPolicy.newestFitting(entries))
     }
 
@@ -140,6 +148,49 @@ extension CompanionServer {
         guard !clipped.isEmpty else { return nil }
         return TimelineEntry(id: event.id.uuidString, kind: kind, text: clipped, detail: detail.map { CompanionPolicy.clip($0, limit: 120) },
                              date: event.date.timeIntervalSince1970, failed: event.state == .failed)
+    }
+
+    // MARK: Managing a session
+
+    /// What the phone may do to a Workspace session, as the Agents list on the Mac offers it: rename it, archive it once
+    /// it rests, and snooze it (or wake it).
+    static func actions(_ run: WorkspaceRun, now: Date) -> [SessionAction] {
+        var actions: [SessionAction] = [.rename]
+        if !run.status.isActive { actions.append(.archive) }
+        if let until = run.snoozedUntil, until > now {
+            actions.append(.unsnooze)
+        } else {
+            actions += [.snoozeHour, .snoozeEvening, .snoozeTomorrow]
+        }
+        return actions
+    }
+
+    func manage(_ request: CompanionRequest, app: AppModel) -> CompanionResponse {
+        guard let session = request.session, let action = request.item.flatMap(SessionAction.init(rawValue:)) else {
+            return .failure(request.id, .badRequest)
+        }
+        if CompanionAgents.handles(session) {
+            guard action == .end else { return .failure(request.id, .notAllowedFromPhone) }
+            if let error = CompanionAgents.end(app, session: session) { return .failure(request.id, error) }
+            audit("end", session)
+            return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
+        }
+        let workspace = app.workspace
+        guard let runID = UUID(uuidString: session), let run = workspace.run(runID) else { return .failure(request.id, .unknownSession) }
+        guard Self.actions(run, now: Date()).contains(action) else { return .failure(request.id, .notAllowedFromPhone) }
+        switch action {
+        case .rename:
+            guard let title = CompanionPolicy.cleanMessage(request.text ?? "") else { return .failure(request.id, .badRequest) }
+            workspace.rename(runID, to: title)
+        case .archive: workspace.setArchived(runID, true)
+        case .snoozeHour: workspace.snooze(runID, .hour)
+        case .snoozeEvening: workspace.snooze(runID, .evening)
+        case .snoozeTomorrow: workspace.snooze(runID, .tomorrow)
+        case .unsnooze: workspace.unsnooze(runID)
+        case .end: return .failure(request.id, .notAllowedFromPhone)
+        }
+        audit(action.rawValue, run.title)
+        return CompanionResponse(id: request.id, ok: true, sessions: digests(app))
     }
 
     // MARK: Nook's own chats

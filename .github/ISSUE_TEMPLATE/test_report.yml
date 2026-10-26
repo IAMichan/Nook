@@ -1,0 +1,48 @@
+name: Platform Test Report
+description: Tried Nook on Windows, Linux, Android, or another setup? Tell us what worked and what didn't
+labels: [testing]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! The Windows build has never run on a real Windows PC and the Android APK has only been built in CI, so every report helps. See [docs/TAURI.md](https://github.com/IAMichan/nook/blob/main/docs/TAURI.md) for what is expected to work. Please file separate bug reports for anything you want fixed.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - Android
+        - macOS
+        - iPhone (Nook Companion)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version, device, and (on Linux) X11 or Wayland
+      placeholder: Windows 11 23H2, Surface Laptop 5
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nook version, commit, or CI run you installed
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked
+      placeholder: Installer, bar at the top of the screen, Alt+Ctrl+Space, chat with Ollama, …
+  - type: textarea
+    id: broken
+    attributes:
+      label: What didn't work
+      description: What you tried, what you expected, and what happened. Please omit any API keys or personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error messages or logs
+      render: text

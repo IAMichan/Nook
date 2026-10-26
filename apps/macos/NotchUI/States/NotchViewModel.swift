@@ -6,6 +6,10 @@ import AppKit
 final class NotchViewModel: ObservableObject {
     @Published private(set) var state: NotchState = .idle
     @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
+    /// The window the notch is drawn in: room for the largest state, but never more than its screen
+    /// (`NotchController.canvas(for:)`); a copy on another screen only rests, so its window is smaller
+    /// (`NotchController.mirrorSize`).
+    @Published var canvas: CGSize = NotchController.panelSize
     @Published private(set) var pointerInside = false
     /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
     @Published private(set) var panelNotice: PanelNotice?
@@ -120,6 +124,8 @@ final class NotchViewModel: ObservableObject {
     @Published private(set) var doneTone: DoneTone = .done
     /// An agent notice in compact size: it stays in the notch's own row instead of a strip under it.
     @Published private(set) var doneInline = false
+    /// A click on the step of a task opens the panel, which lists all its steps (Double Tap's `DoubleTapRunBar`).
+    @Published private(set) var workOpensPanel = false
     /// The strip's own button does something (View, Open, Stop); without one the strip only has its OK.
     var doneHasAction: Bool { doneButtonAction != nil }
     /// New for every strip under the notch (a result, a suggestion, a moment), so its countdown starts over.
@@ -217,7 +223,16 @@ final class NotchViewModel: ObservableObject {
     private var pending: [NookCard] = []
 
     var geometry: NotchGeometry = .placeholder {
-        didSet { size = layoutSize(for: state) }
+        didSet {
+            // Set again whenever the screens are looked at: only a change redraws the notch. The views read the
+            // geometry itself too (floating, the notch's height), so a new one redraws even when the size stays.
+            let fitted = layoutSize(for: state)
+            if fitted != size {
+                size = fitted
+            } else if geometry != oldValue {
+                objectWillChange.send()
+            }
+        }
     }
 
     /// Opens the panel when hovering over the notch for 0.4 seconds.
@@ -458,6 +473,7 @@ final class NotchViewModel: ObservableObject {
     /// notice that stays in the notch's own row when compact.
     func finish(_ message: String, button: String = tr("button.close"), tone: DoneTone = .done, inline: Bool = false,
                 seconds: TimeInterval = NotchViewModel.doneSeconds, action: (() -> Void)? = nil) {
+        workOpensPanel = false
         doneButtonTitle = button
         doneButtonAction = action
         doneTone = tone
@@ -483,11 +499,13 @@ final class NotchViewModel: ObservableObject {
 
     /// A task Nook works on by itself (`AppModel+Takeover`): its current step in the slim strip under the notch, with
     /// Stop, until `endWork`. Never over a card, a question or the open panel; the next step shows again once they close.
-    func showWork(_ line: String, stop: @escaping () -> Void) {
+    /// `opensPanel`: a click on the step opens the panel, where the task lists every step it took.
+    func showWork(_ line: String, opensPanel: Bool = false, stop: @escaping () -> Void) {
         switch state {
         case .idle, .music, .track, .done, .nudge, .moment: break
         default: return
         }
+        workOpensPanel = opensPanel
         doneButtonTitle = tr("takeover.stop")
         doneButtonAction = stop
         doneTone = .waiting
@@ -502,6 +520,7 @@ final class NotchViewModel: ObservableObject {
     /// The task is over: the strip goes (a card or the panel that is open stays).
     func endWork() {
         doneButtonAction = nil
+        workOpensPanel = false
         if case .done = state { show(.idle) }
     }
 
@@ -772,18 +791,18 @@ final class NotchViewModel: ObservableObject {
         let big = AppSettings.shared.panelLarge
         if sheet != nil {
             // A task in the notch gets room to breathe, whatever the size setting.
-            return CGSize(width: 1040, height: min(chrome + 640, NotchController.panelSize.height))
+            return CGSize(width: 1040, height: min(chrome + 640, canvas.height))
         }
         switch tab {
         case .nook where chatSideOpen, .chat where chatSideOpen:
-            return CGSize(width: 1240, height: min(chrome + 680, NotchController.panelSize.height))
-        case .nook: return CGSize(width: 780, height: min(chrome + 440, NotchController.panelSize.height))
-        case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), NotchController.panelSize.height))
+            return CGSize(width: 1240, height: min(chrome + 680, canvas.height))
+        case .nook: return CGSize(width: 780, height: min(chrome + 440, canvas.height))
+        case .chat: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 640 : 440), canvas.height))
         case .agents where workbenchOpen:
-            return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), NotchController.panelSize.height))
-        case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), NotchController.panelSize.height))
-        case .inbox: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 460), NotchController.panelSize.height))
-        case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), NotchController.panelSize.height))
+            return CGSize(width: big ? 1180 : 1000, height: min(chrome + (big ? 660 : 480), canvas.height))
+        case .agents: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 440), canvas.height))
+        case .inbox: return CGSize(width: big ? 1120 : 860, height: min(chrome + (big ? 620 : 460), canvas.height))
+        case .music: return CGSize(width: big ? 940 : 800, height: min(chrome + (big ? 470 : 380), canvas.height))
         case .shelf: return CGSize(width: 640, height: chrome + 180)
         case .connect: return CGSize(width: 820, height: chrome + 330)
         }
@@ -813,7 +832,7 @@ final class NotchViewModel: ObservableObject {
     private var panelMaximum: CGSize {
         let screen = geometry.screenFrame.size
         let width = NotchController.panelSize.width - 40
-        let height = NotchController.panelSize.height
+        let height = canvas.height
         return CGSize(width: screen.width > 0 ? min(width, screen.width - 40) : width,
                       height: screen.height > 0 ? min(height, screen.height - 40) : height)
     }
@@ -837,8 +856,9 @@ final class NotchViewModel: ObservableObject {
         let extra = NotchResize.clamped(NotchResize.dragged(edge, from: start, translation: translation),
                                         base: base, maximum: panelMaximum)
         if card { cardExtra = extra } else { panelExtra = extra }
-        // Follows the pointer: no animation.
-        size = layoutSize(for: state)
+        // Follows the pointer: no animation. Held against a limit, the size stays put and the notch need not redraw.
+        let fitted = layoutSize(for: state)
+        if fitted != size { size = fitted }
     }
 
     func endResize() {

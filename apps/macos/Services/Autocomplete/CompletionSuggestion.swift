@@ -189,6 +189,24 @@ struct CompletionContext {
     /// The text of the window around the field (Nook's screen reading).
     var screenText: String?
     var clipboard: String?
+
+    /// What the writing is about, to pick the memories and earlier writing that fit it: where it is written, the newest text on
+    /// screen around the field (what it answers) and the text so far. Read whatever the window settings allow; `windowTitle`,
+    /// `site` and `fieldHint` only fill in what this context left out.
+    func topic(before: String, windowTitle: String? = nil, site: String? = nil, fieldHint: String? = nil) -> String {
+        var parts: [String] = []
+        for part in [self.windowTitle ?? windowTitle, self.site ?? site, self.fieldHint ?? fieldHint] {
+            if let part, !part.isEmpty { parts.append(part) }
+        }
+        if let screenText, !screenText.isEmpty { parts.append(String(screenText.suffix(Self.topicScreenLength))) }
+        let text = before.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { parts.append(String(text.suffix(Self.topicTextLength))) }
+        return parts.joined(separator: "\n")
+    }
+
+    /// The end of the screen text and of the text so far that `topic` reads: the newest messages, the sentence being written.
+    static let topicScreenLength = 1_200
+    static let topicTextLength = 600
 }
 
 /// Which field a prompt's context belongs to: while it stays the same, the context is kept and the model's cache reused.

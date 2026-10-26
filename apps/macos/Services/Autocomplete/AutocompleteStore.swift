@@ -90,9 +90,11 @@ final class AutocompleteStore: ObservableObject {
     /// Returns true when the samples changed.
     @discardableResult
     func addSample(_ text: String, app: String) -> Bool {
-        let before = samples
-        samples.add(CompletionPrivacy.sanitize(text), app: app)
-        guard samples != before else { return false }
+        // Added to a copy: a sample that changes nothing then leaves the published value (and its observers) alone.
+        var next = samples
+        next.add(CompletionPrivacy.sanitize(text), app: app)
+        guard next != samples else { return false }
+        samples = next
         save(samples, "samples.json")
         return true
     }

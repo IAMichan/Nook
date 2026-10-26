@@ -146,6 +146,9 @@ struct DeliveryLog: Codable, Equatable, Sendable {
         if ids.count > capacity { ids.removeFirst(ids.count - capacity) }
         return true
     }
+
+    /// Forgets `id`, so the same delivery is taken again (its first try failed in passing).
+    mutating func forget(_ id: String) { ids.removeAll { $0 == id } }
 }
 
 /// At most `limit` accepted deliveries per window (default: 60 per minute per task, also behind the relay because the

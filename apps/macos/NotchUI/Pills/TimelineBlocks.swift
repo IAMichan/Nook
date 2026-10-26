@@ -206,8 +206,6 @@ struct QueuedMessagesStrip: View {
     /// neither can happen right now.
     var sendNow: ((UUID) -> Void)? = nil
     @State private var collapsed = false
-    /// A message's buttons show while the pointer is on it (or it is open in the box).
-    @State private var hovered: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
@@ -257,10 +255,8 @@ struct QueuedMessagesStrip: View {
                 if let sendNow { iconButton("paperplane.fill", tr("compose.queue.sendNow"), enabled: !isEditing) { sendNow(message.id) } }
                 iconButton("xmark", tr("compose.queue.remove"), enabled: true) { remove(message.id) }
             }
-            .opacity(hovered == message.id || isEditing ? 1 : 0)
         }
         .contentShape(Rectangle())
-        .onHover { inside in withAnimation(NookTheme.hover) { hovered = inside ? message.id : (hovered == message.id ? nil : hovered) } }
         .font(NookTheme.TextStyle.detail)
         .foregroundStyle(isEditing ? NookTheme.paper : NookTheme.textSecondary)
         .padding(.horizontal, NookTheme.Spacing.md)

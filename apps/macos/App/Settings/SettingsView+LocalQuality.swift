@@ -34,7 +34,7 @@ struct LocalQualitySection: View {
             if !runner.results.isEmpty {
                 DisclosureGroup(tr("settings.quality.details"), isExpanded: $showDetails) {
                     ForEach(runner.results) { result in
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                             Label(result.question, systemImage: result.verdict.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .foregroundStyle(result.verdict.passed ? NookTheme.mint : NookTheme.coral)
                             Text(result.answer).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).lineLimit(3).textSelection(.enabled)
@@ -47,7 +47,7 @@ struct LocalQualitySection: View {
                 }
             }
             if !runner.history.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(tr("settings.quality.history")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary)
                     ForEach(runner.history, id: \.self) { Text($0).font(NookTheme.TextStyle.detail.monospacedDigit()) }
                 }

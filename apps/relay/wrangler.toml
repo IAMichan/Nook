@@ -1,0 +1,12 @@
+# Nook's relay for the iPhone companion. Deploy it once with your own Cloudflare account (README.md).
+name = "nook-relay"
+main = "worker/index.js"
+compatibility_date = "2025-06-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

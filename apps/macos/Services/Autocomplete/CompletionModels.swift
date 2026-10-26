@@ -92,15 +92,20 @@ enum CompletionModelLocator {
                                    info: info, source: source)
     }
 
-    /// Every `.gguf` file under `root` (not the vision projectors that sit next to some models), a few levels deep.
-    static func ggufFiles(in root: URL, maxDepth: Int = 6, limit: Int = 200) -> [URL] {
+    /// Every `.gguf` file under `root` (not the vision projectors that sit next to some models), a few levels deep. At most
+    /// `visitLimit` entries are looked at: Application Support and Caches can hold hundreds of thousands of files, and
+    /// walking them all at every launch kept the disk busy for nothing.
+    static func ggufFiles(in root: URL, maxDepth: Int = 6, limit: Int = 200, visitLimit: Int = 40_000) -> [URL] {
         let manager = FileManager.default
         var isDirectory: ObjCBool = false
         guard manager.fileExists(atPath: root.path, isDirectory: &isDirectory) else { return [] }
         if !isDirectory.boolValue { return isModelFile(root) ? [root] : [] }
         guard let walker = manager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsPackageDescendants, .skipsHiddenFiles]) else { return [] }
         var found: [URL] = []
+        var visited = 0
         for case let url as URL in walker {
+            visited += 1
+            if visited > visitLimit { break }
             if walker.level > maxDepth { walker.skipDescendants(); continue }
             if isModelFile(url) { found.append(url) }
             if found.count >= limit { break }

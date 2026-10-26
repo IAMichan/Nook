@@ -296,10 +296,10 @@ extension WorkspaceBridge {
     private static let nothingOpen = "Nothing is open in Nook's browser. Open a page with browser_open first."
 
     func browserSnapshot(_ arguments: [String: Any]) async throws -> BridgeRPC.ToolResult {
-        // Looking must not start the browser.
-        guard let browser = BrowserStore.existing, browser.webView.url != nil else { return .error(Self.nothingOpen) }
+        // Looking must not start the browser; a page put away out of sight comes back first.
+        guard let browser = BrowserStore.existing, browser.pageURL != nil else { return .error(Self.nothingOpen) }
         let limit = min(400, max(1, BridgeArgs.int(arguments["limit"]) ?? 150))
-        let object = BridgeBrowserScript.result(try await browser.webView.evaluateJavaScript(BridgeBrowserScript.snapshot(limit: limit)))
+        let object = BridgeBrowserScript.result(try await browser.evaluate(BridgeBrowserScript.snapshot(limit: limit)))
         let lines = (object["lines"] as? [String]) ?? []
         var text = "# \((object["title"] as? String) ?? "")\nURL: \((object["url"] as? String) ?? "")\n\n"
         text += lines.isEmpty ? "(nothing to interact with)" : lines.joined(separator: "\n")
@@ -308,7 +308,7 @@ extension WorkspaceBridge {
     }
 
     func browserInteract(_ tool: BridgeTool, _ arguments: [String: Any], _ caller: BridgeCaller, _ context: Context) async throws -> BridgeRPC.ToolResult {
-        guard let browser = BrowserStore.existing, let page = browser.webView.url else { return .error(Self.nothingOpen) }
+        guard let browser = BrowserStore.existing, let page = browser.pageURL else { return .error(Self.nothingOpen) }
         let target: BridgeBrowserScript.Target
         switch BridgeBrowserScript.target(arguments) {
         case .failure(let error): return .error(error.message)
@@ -339,7 +339,7 @@ extension WorkspaceBridge {
         let script = tool == .browserClick ? BridgeBrowserScript.click(target)
             : BridgeBrowserScript.type(target, value: value, append: BridgeArgs.bool(arguments["append"]) ?? false,
                                        submit: BridgeArgs.bool(arguments["submit"]) ?? false)
-        let object = BridgeBrowserScript.result(try await browser.webView.evaluateJavaScript(script))
+        let object = BridgeBrowserScript.result(try await browser.evaluate(script))
         markUnseen(caller.directory, SessionTool.browser.rawValue)
         // Only where and on what: typed text can be private and never goes into the audit log.
         guard (object["ok"] as? Bool) == true else {
@@ -358,7 +358,7 @@ extension WorkspaceBridge {
         let text = BridgeArgs.string(arguments["text"])
         let selector = BridgeArgs.string(arguments["selector"])
         guard text != nil || selector != nil else { return .error("Give the text or selector to wait for.") }
-        guard let browser = BrowserStore.existing, browser.webView.url != nil else { return .error(Self.nothingOpen) }
+        guard let browser = BrowserStore.existing, browser.pageURL != nil else { return .error(Self.nothingOpen) }
         let gone = BridgeArgs.bool(arguments["gone"]) ?? false
         let timeout = min(30, max(1, BridgeArgs.int(arguments["timeout_seconds"]) ?? 10))
         let script = BridgeBrowserScript.condition(text: text, selector: selector, gone: gone)
@@ -366,7 +366,7 @@ extension WorkspaceBridge {
         let deadline = Date().addingTimeInterval(TimeInterval(timeout))
         while true {
             // A page that is still loading cannot answer yet.
-            if !browser.webView.isLoading, let value = try? await browser.webView.evaluateJavaScript(script) {
+            if !browser.webView.isLoading, let value = try? await browser.evaluate(script) {
                 let object = BridgeBrowserScript.result(value)
                 if let error = object["error"] as? String { return .error(error) }
                 if (object["met"] as? Bool) == true {

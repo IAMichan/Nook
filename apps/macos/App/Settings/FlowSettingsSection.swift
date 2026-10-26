@@ -91,14 +91,14 @@ struct ParakeetSettingsSection: View {
                 case .missing:
                     Button(tr("parakeet.download")) { parakeet.download() }
                 case .downloading(let fraction):
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
                         ProgressView(value: fraction).frame(width: 110)
                         Text(tr("parakeet.downloading", Int(fraction * 100))).font(NookTheme.TextStyle.detail.monospacedDigit()).foregroundStyle(NookTheme.textSecondary)
                     }
                 case .ready:
-                    Button(tr("parakeet.remove"), role: .destructive) { parakeet.remove() }
+                    ConfirmedButton(tr("parakeet.remove"), question: tr("confirm.remove", "Parakeet")) { parakeet.remove() }
                 case .failed(let why):
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xxs) {
                         Button(tr("parakeet.download")) { parakeet.download() }
                         SettingNote(why, tone: .warning).lineLimit(2)
                     }

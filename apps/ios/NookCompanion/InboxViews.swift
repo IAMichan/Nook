@@ -23,52 +23,61 @@ struct InboxListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                if !client.can(CompanionFeature.inbox) {
-                    EmptyState(symbol: "arrow.down.circle", title: "Update Nook on your Mac",
-                               message: "Update Nook on your Mac to read and answer your chats from your phone.") {}
-                } else {
-                    if client.inboxStatus == "chatsaccess" {
-                        Banner(text: String(localized: "Nook cannot read the notifications on your Mac: give it Full Disk Access in System Settings."),
-                               symbol: "lock")
-                    }
-                    if client.inbox.isEmpty {
-                        if client.phase == .connected {
-                            if client.inboxStatus == "chatsoff" {
-                                EmptyState(symbol: "bubble.left.and.bubble.right", title: "Chats are off on your Mac",
-                                           message: "Link WhatsApp or turn on Chats in Nook › Settings › Chats to see every chat here.") {}
-                            } else {
-                                EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet",
-                                           message: "New messages from WhatsApp and your other chat apps on your Mac show up here.") {}
-                            }
-                        }
+            LazyVStack(alignment: .leading, spacing: 0) {
+                PanelHeader("Chats", count: client.inbox.filter { $0.unread > 0 }.count)
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    ConnectionLine()
+                    if !client.can(CompanionFeature.inbox) {
+                        EmptyState(symbol: "arrow.down.circle", title: "Update Nook on your Mac",
+                                   message: "Update Nook on your Mac to read and answer your chats from your phone.") {}
                     } else {
-                        Picker("Show", selection: $unreadOnly) {
-                            Text("All").tag(false)
-                            Text("Unread").tag(true)
+                        if client.inboxStatus == "chatsaccess" {
+                            Banner(text: String(localized: "Nook cannot read the notifications on your Mac: give it Full Disk Access in System Settings."),
+                                   symbol: "lock")
                         }
-                        .pickerStyle(.segmented)
-                        if shown.isEmpty {
-                            Group {
-                                if unreadOnly { Text("Nothing unread.") } else { Text("No chat matches.") }
+                        if client.inbox.isEmpty {
+                            if client.phase == .connected {
+                                if client.inboxStatus == "chatsoff" {
+                                    EmptyState(symbol: "bubble.left.and.bubble.right", title: "Chats are off on your Mac",
+                                               message: "Link WhatsApp or turn on Chats in Nook › Settings › Chats to see every chat here.") {}
+                                } else {
+                                    EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet",
+                                               message: "New messages from WhatsApp and your other chat apps on your Mac show up here.") {}
+                                }
                             }
-                            .font(.callout).foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xl)
-                        }
-                        ForEach(shown) { chat in
-                            NavigationLink(value: chat.id) { InboxRow(chat: chat) }
-                                .buttonStyle(.plain)
-                                .contextMenu { markButton(chat) }
+                        } else {
+                            NookSearchField(prompt: "Search chats", text: $query)
+                            HStack(spacing: Theme.Spacing.md) {
+                                FilterChip(title: "All", selected: !unreadOnly) { unreadOnly = false }
+                                FilterChip(title: "Unread", count: client.inbox.filter { $0.unread > 0 }.count, selected: unreadOnly) { unreadOnly = true }
+                            }
+                            if shown.isEmpty {
+                                Group {
+                                    if unreadOnly { Text("Nothing unread.") } else { Text("No chat matches.") }
+                                }
+                                .font(Theme.TextStyle.body).foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.md)
+                VStack(spacing: 0) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, chat in
+                        if index > 0 { RowSeparator(inset: Theme.Spacing.lg + 40 + Theme.Spacing.lg).padding(.trailing, Theme.Spacing.lg) }
+                        NavigationLink(value: chat.id) { InboxRow(chat: chat) }
+                            .buttonStyle(RowPress())
+                            .contextMenu { markButton(chat) }
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.md)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.xxl)
         }
-        .searchable(text: $query, prompt: Text("Search chats"))
+        .scrollDismissesKeyboard(.immediately)
         .refreshable { await client.loadInbox() }
-        .navigationTitle("Chats")
+        .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: String.self) { InboxChatView(chatID: $0) }
         .screen()
         // The app's polling keeps the list current from here on (and the badge on the tab).
@@ -90,39 +99,37 @@ struct InboxRow: View {
     let chat: InboxChatDigest
 
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+        HStack(alignment: .top, spacing: Theme.Spacing.lg) {
             InboxAvatar(name: chat.name, app: chat.app)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(chat.name).font(.headline).foregroundStyle(Theme.text).lineLimit(1)
-                    Spacer(minLength: Theme.Spacing.sm)
+                    Text(chat.name).font(Theme.TextStyle.strong).foregroundStyle(Theme.text).lineLimit(1)
+                    Spacer(minLength: Theme.Spacing.md)
                     Text(Date(timeIntervalSince1970: chat.last), format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                        .font(.caption2).foregroundStyle(chat.unread > 0 ? Theme.iris : Theme.textTertiary)
+                        .font(Theme.TextStyle.caption).foregroundStyle(chat.unread > 0 ? Theme.textSecondary : Theme.textTertiary)
+                        .lineLimit(1)
                 }
-                HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                    HStack(spacing: 4) {
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
                         if let ticks = chat.ticks { TicksMark(ticks: ticks) }
                         Text(chat.preview.isEmpty ? chat.appName : chat.preview)
-                            .font(.subheadline).foregroundStyle(chat.unread > 0 ? Theme.text : Theme.textSecondary).lineLimit(2)
+                            .font(Theme.TextStyle.detail).foregroundStyle(chat.unread > 0 ? Theme.textStrong : Theme.textSecondary).lineLimit(2)
                     }
                     Spacer(minLength: 0)
-                    if chat.unread > 0 {
-                        Text(chat.unread, format: .number)
-                            .font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Theme.iris, in: Capsule())
-                            .accessibilityLabel(Text("\(chat.unread) unread"))
-                    }
+                    CountBadge(count: chat.unread)
+                        .accessibilityLabel(Text("\(chat.unread) unread"))
                 }
-                Text(chat.appName).font(.caption2.weight(.medium)).foregroundStyle(Theme.textTertiary)
+                Text(chat.appName).font(Theme.TextStyle.caption).foregroundStyle(Theme.textTertiary)
             }
         }
-        .card(padding: Theme.Spacing.md)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.lg)
         .contentShape(Rectangle())
     }
 }
 
-/// A chat's initials on its app's color, with the app's mark in the corner.
+/// A chat's initials on a quiet grey, with its app's mark in the app's own color in the corner: the color lives in the
+/// logo only, as on the Mac.
 struct InboxAvatar: View {
     let name: String
     let app: String
@@ -137,15 +144,15 @@ struct InboxAvatar: View {
     var body: some View {
         let style = Self.style(app)
         Text(initials)
-            .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
-            .foregroundStyle(style.color)
+            .font(Theme.rounded(size * 0.36, .semibold))
+            .foregroundStyle(Theme.textStrong)
             .frame(width: size, height: size)
-            .background(style.color.opacity(0.16), in: Circle())
+            .background(Theme.raised, in: Circle())
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: style.symbol)
-                    .font(.system(size: size * 0.22, weight: .bold))
+                    .font(Theme.font(size * 0.2, .bold))
                     .foregroundStyle(.white)
-                    .frame(width: size * 0.42, height: size * 0.42)
+                    .frame(width: size * 0.4, height: size * 0.4)
                     .background(style.color, in: Circle())
                     .overlay(Circle().strokeBorder(Theme.surface, lineWidth: 2))
                     .offset(x: 3, y: 3)
@@ -166,7 +173,7 @@ struct InboxAvatar: View {
         case "discord": return ("gamecontroller.fill", Color(hex: 0x5865F2))
         case "teams": return ("person.3.fill", Color(hex: 0x6264A7))
         case "linkedin": return ("briefcase.fill", Color(hex: 0x0A66C2))
-        default: return ("bubble.left.and.bubble.right.fill", Theme.iris)
+        default: return ("bubble.left.and.bubble.right.fill", Theme.textSecondary)
         }
     }
 }
@@ -181,11 +188,11 @@ struct TicksMark: View {
             case "pending": Image(systemName: "clock").foregroundStyle(Theme.textTertiary)
             case "sent": Image(systemName: "checkmark").foregroundStyle(Theme.textTertiary)
             case "delivered": Image(systemName: "checkmark.circle").foregroundStyle(Theme.textTertiary)
-            case "read": Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.iris)
+            case "read": Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.blue)
             default: Image(systemName: "exclamationmark.circle").foregroundStyle(Theme.coral)
             }
         }
-        .font(.caption2.weight(.semibold))
+        .font(Theme.font(11, .semibold))
         .accessibilityLabel(Self.label(ticks))
     }
 
@@ -217,9 +224,9 @@ struct InboxChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     if lines.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xl)
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.xxl)
                     }
                     ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                         let previous = index > 0 ? lines[index - 1] : nil
@@ -236,17 +243,17 @@ struct InboxChatView: View {
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.lg)
             }
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: lines.last?.id) { _, _ in withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
             .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
         }
         .safeAreaInset(edge: .bottom) { footer }
-        .navigationTitle(chat?.name ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) { SheetTitle(title: chat?.name ?? "", subtitle: chat?.appName) }
             if let chat {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -266,7 +273,7 @@ struct InboxChatView: View {
                             }
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                     }
                     .accessibilityLabel("More")
                 }
@@ -283,47 +290,53 @@ struct InboxChatView: View {
 
     private static let bottom = "bottom"
 
-    /// A WhatsApp chat gets the field to answer; any other says where to answer it.
+    /// A WhatsApp chat gets the Mac's composer to answer, with the message it answers in a tray above it; any other
+    /// chat says where to answer it.
     @ViewBuilder
     private var footer: some View {
         if chat?.canSend == true {
-            VStack(spacing: 0) {
-                if let replyingTo {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Rectangle().fill(Theme.iris).frame(width: 3)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(replyingTo.fromMe ? String(localized: "You") : (replyingTo.sender.isEmpty ? chat?.name ?? "" : replyingTo.sender))
-                                .font(.caption.weight(.semibold)).foregroundStyle(Theme.iris)
-                            Text(replyingTo.text.isEmpty ? (replyingTo.attachment ?? "") : replyingTo.text)
-                                .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
+            ComposerDock {
+                VStack(spacing: 0) {
+                    if let replyingTo {
+                        ComposerTray(edge: .top) {
+                            HStack(spacing: Theme.Spacing.md) {
+                                Capsule().fill(replyingTo.fromMe ? Theme.mint : Theme.blue).frame(width: 3)
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                    Text(replyingTo.fromMe ? String(localized: "You") : (replyingTo.sender.isEmpty ? chat?.name ?? "" : replyingTo.sender))
+                                        .font(Theme.TextStyle.label).foregroundStyle(replyingTo.fromMe ? Theme.mint : Theme.blue)
+                                    Text(replyingTo.text.isEmpty ? (replyingTo.attachment ?? "") : replyingTo.text)
+                                        .font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                                }
+                                Spacer(minLength: 0)
+                                Button { withAnimation(Theme.reveal) { self.replyingTo = nil } } label: {
+                                    Image(systemName: "xmark").font(Theme.font(11, .bold)).foregroundStyle(Theme.textTertiary)
+                                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                                }
+                                .accessibilityLabel("Cancel reply")
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer(minLength: 0)
-                        Button { withAnimation { self.replyingTo = nil } } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textTertiary)
-                        }
-                        .accessibilityLabel("Cancel reply")
+                        .transition(.opacity.combined(with: .offset(y: 8)))
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.surface)
+                    SessionComposer(text: $text, prompt: "Message", sending: sending) {
+                        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        text = ""
+                        send(message)
+                    }
+                    .zIndex(1)
                 }
-                ComposerBar(placeholder: "Message", text: $text, busy: sending) { message in send(message) }
-                    .disabled(sending)
             }
         } else if let chat {
-            Label {
-                Text("Nook can only read this chat. Answer it in \(chat.appName).")
-            } icon: {
-                Image(systemName: "info.circle")
+            ComposerDock {
+                Label {
+                    Text("Nook can only read this chat. Answer it in \(chat.appName).")
+                } icon: {
+                    Image(systemName: "info.circle")
+                }
+                .font(Theme.TextStyle.detail)
+                .foregroundStyle(Theme.textSecondary)
+                .card(padding: Theme.Spacing.lg)
             }
-            .font(.footnote)
-            .foregroundStyle(Theme.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.md)
-            .background(Theme.canvas.opacity(0.96))
-            .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
         }
     }
 
@@ -356,16 +369,15 @@ private struct DayLine: View {
 
     var body: some View {
         Text(date, format: .dateTime.weekday(.wide).day().month())
-            .font(.caption2.weight(.semibold))
+            .font(Theme.TextStyle.caption)
             .foregroundStyle(Theme.textTertiary)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Theme.raised, in: Capsule())
             .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.vertical, Theme.Spacing.lg)
     }
 }
 
-/// A message: yours in an iris bubble on the right, theirs on the left with who wrote it in a group.
+/// A message, as the Mac's `ChatTranscript`: yours on a faint mint on the right, theirs on grey on the left with who
+/// wrote it in a group.
 struct InboxBubble: View {
     let line: InboxLine
     let showsSender: Bool
@@ -373,56 +385,54 @@ struct InboxBubble: View {
     var body: some View {
         HStack {
             if line.fromMe { Spacer(minLength: 48) }
-            VStack(alignment: line.fromMe ? .trailing : .leading, spacing: 4) {
-                VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: line.fromMe ? .trailing : .leading, spacing: Theme.Spacing.xs) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     if showsSender, !line.fromMe, !line.sender.isEmpty {
-                        Text(line.sender).font(.caption.weight(.semibold)).foregroundStyle(Theme.mint)
+                        Text(line.sender).font(Theme.TextStyle.label).foregroundStyle(Theme.blue)
                     }
                     if let quote = line.quoteText, !quote.isEmpty {
-                        VStack(alignment: .leading, spacing: 2) {
-                            if let sender = line.quoteSender, !sender.isEmpty {
-                                Text(sender).font(.caption2.weight(.semibold))
+                        let tint = line.fromMe ? Theme.mint : Theme.blue
+                        HStack(spacing: Theme.Spacing.md) {
+                            Capsule().fill(tint).frame(width: 3)
+                            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                if let sender = line.quoteSender, !sender.isEmpty {
+                                    Text(sender).font(Theme.TextStyle.label).foregroundStyle(tint)
+                                }
+                                Text(quote).font(Theme.TextStyle.detail).foregroundStyle(Theme.textSecondary).lineLimit(3)
                             }
-                            Text(quote).font(.caption).lineLimit(3)
                         }
-                        .foregroundStyle(line.fromMe ? .white.opacity(0.85) : Theme.textSecondary)
-                        .padding(.horizontal, 8).padding(.vertical, 6)
-                        .background((line.fromMe ? Color.white : Theme.iris).opacity(0.14),
-                                    in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(Theme.Spacing.md)
+                        .background(Theme.canvas.opacity(0.35), in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
                     }
                     if let attachment = line.attachment {
                         Label(attachment, systemImage: "paperclip")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(line.fromMe ? .white : Theme.iris)
+                            .font(Theme.TextStyle.label)
+                            .foregroundStyle(Theme.textStrong)
                     }
                     if !line.text.isEmpty {
                         Text(verbatim: line.text)
-                            .font(.body)
-                            .foregroundStyle(line.fromMe ? .white : Theme.text)
+                            .font(Theme.TextStyle.body)
+                            .foregroundStyle(Theme.text)
                             .textSelection(.enabled)
                     }
-                    HStack(spacing: 4) {
+                    HStack(spacing: Theme.Spacing.xs) {
                         Text(Date(timeIntervalSince1970: line.date), format: .dateTime.hour().minute())
                         if let ticks = line.ticks { TicksMark(ticks: ticks) }
                     }
-                    .font(.caption2)
-                    .foregroundStyle(line.fromMe ? .white.opacity(0.75) : Theme.textTertiary)
+                    .font(Theme.TextStyle.caption)
+                    .foregroundStyle(Theme.textTertiary)
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(line.fromMe ? Theme.iris : Theme.surface,
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(line.fromMe ? Theme.mint.opacity(0.13) : Theme.raised,
                             in: RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous))
-                .overlay {
-                    if !line.fromMe {
-                        RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous).strokeBorder(Theme.hairline)
-                    }
-                }
                 if !line.reactions.isEmpty {
                     Text(line.reactions.joined(separator: "  "))
-                        .font(.caption)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Theme.raised, in: Capsule())
+                        .font(Theme.TextStyle.caption)
+                        .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.surface, in: Capsule())
                 }
             }
             if !line.fromMe { Spacer(minLength: 48) }

@@ -6,6 +6,8 @@ struct AntigravitySetupRow: View {
     @ObservedObject private var installer = AntigravityInstaller.shared
     /// In Settings: also the way back (remove), and a quieter look.
     var inSettings = false
+    /// Removing asks first: the release has to be downloaded again to use Antigravity.
+    @State private var confirmRemove = false
 
     var body: some View {
         let installed = installer.installed != nil
@@ -27,7 +29,12 @@ struct AntigravitySetupRow: View {
                     if !installed {
                         SmallGhostButton(title: tr("ws.antigravity.install")) { installer.install() }
                     } else if inSettings {
-                        SmallGhostButton(title: tr("ws.antigravity.remove")) { installer.uninstall() }
+                        SmallGhostButton(title: tr("ws.antigravity.remove")) { confirmRemove = true }
+                            .confirmationDialog(tr("confirm.remove", "Antigravity"), isPresented: $confirmRemove,
+                                                titleVisibility: .visible) {
+                                Button(tr("ws.antigravity.remove"), role: .destructive) { installer.uninstall() }
+                                Button(tr("button.cancel"), role: .cancel) {}
+                            }
                     }
                 }
             }

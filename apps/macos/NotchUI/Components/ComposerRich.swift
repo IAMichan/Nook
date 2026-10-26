@@ -226,7 +226,7 @@ final class ComposerModel: ObservableObject {
     private func commandDetail(_ command: ComposerCommand) -> String? { tr(AgentCommands.descriptionKey(for: command)) }
 
     private func pullRequestRow(repo: String, number: Int, title: String?) -> ComposerSuggestion {
-        ComposerSuggestion(id: "pr:\(number)", title: "#\(number)" + (title.map { " " + $0 } ?? ""), detail: repo, symbol: "arrow.triangle.pull",
+        ComposerSuggestion(id: "pr:\(number)", title: "#\(number)" + (title.map { " " + $0 } ?? ""), detail: repo, symbol: PullRequestIcon.generic,
                            payload: .ref(ContextRef(kind: .pullRequest, id: "\(repo)#\(number)", label: "\(number)")))
     }
 
@@ -314,7 +314,7 @@ struct ComposerSuggestionList: View {
             ForEach(Array(model.suggestions.enumerated()), id: \.element.id) { index, row in
                 Button { accept(row) } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: row.symbol)
+                        NookSymbol(row.symbol, size: 12)
                             .font(NookTheme.font(11, .medium))
                             .foregroundStyle(index == model.selection ? tint : NookTheme.textTertiary)
                             .frame(width: 16)

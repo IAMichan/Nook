@@ -12,6 +12,7 @@ require (
 	go.mau.fi/mautrix-slack v0.2610.0
 	go.mau.fi/mautrix-telegram v0.2610.0
 	go.mau.fi/mautrix-twitter v0.2609.0
+	go.mau.fi/mautrix-whatsapp v0.2610.0
 	go.mau.fi/util v0.11.0
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mautrix v0.32.0
@@ -51,6 +52,7 @@ require (
 	github.com/icholy/digest v1.2.0 // indirect
 	github.com/imroc/req/v3 v3.56.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/lib/pq v1.12.3 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
@@ -74,7 +76,7 @@ require (
 	github.com/yuin/goldmark v1.8.6 // indirect
 	go.mau.fi/libsignal v0.2.2 // indirect
 	go.mau.fi/webp v0.3.0 // indirect
-	go.mau.fi/whatsmeow v0.0.0-20261014094007-f16f9ca30d6a // indirect
+	go.mau.fi/whatsmeow v0.0.0-20261016130820-0b0a1cdac3e2 // indirect
 	go.mau.fi/zeroconfig v0.2.0 // indirect
 	go.mau.fi/zerozap v0.1.2 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect

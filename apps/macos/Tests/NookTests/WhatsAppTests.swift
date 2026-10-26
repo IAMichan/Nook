@@ -9,6 +9,30 @@ final class WhatsAppTests: XCTestCase {
                   date: Date(timeIntervalSince1970: 1_800_000_000 + at), fromMe: fromMe, mentionsMe: mention)
     }
 
+    func testAMessageWithNothingToShowIsNoBubble() {
+        var inbox = WAInbox()
+        let group = "120363000000000001@g.us"
+        XCTAssertEqual(inbox.add(message("1", chat: group, text: "\u{200B}"), filters: WAFilters()), .ignored)
+        XCTAssertNil(inbox.conversations[group], "a reaction passed on as a message makes no chat and no bubble")
+        var photo = message("2", chat: group, text: "")
+        photo.media = .image
+        XCTAssertNotEqual(inbox.add(photo, filters: WAFilters()), .ignored, "a photo without a caption is a message")
+        XCTAssertEqual(inbox.conversations[group]?.messages.map(\.id), ["2"])
+    }
+
+    func testAGOWAReactionSentAsAMessageGoesOnItsMessage() {
+        let nested = Data(#"{"event":"message","payload":{"id":"R1","chat_id":"120363000000000001@g.us","from":"31633333333@s.whatsapp.net","is_from_me":false,"body":"","reaction":{"message":"🙏","id":"POST1"}}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: nested),
+                       .reaction(chat: "120363000000000001@g.us", message: "POST1", emoji: "🙏",
+                                 sender: "31633333333@s.whatsapp.net", fromMe: false))
+        let flat = Data(#"{"event":"message","payload":{"id":"R2","chat_id":"120363000000000001@g.us","from":"31633333333@s.whatsapp.net","reaction":"❤️","reacted_message_id":"POST1"}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .gowa, body: flat),
+                       .reaction(chat: "120363000000000001@g.us", message: "POST1", emoji: "❤️",
+                                 sender: "31633333333@s.whatsapp.net", fromMe: false))
+        let openwa = Data(#"{"event":"message.received","data":{"id":"R3","chatId":"120363000000000001@g.us","type":"reaction","body":""}}"#.utf8)
+        XCTAssertEqual(WAWebhook.parse(kind: .openwa, body: openwa), .ignored)
+    }
+
     func testInboxGroupsByChatAndCountsUnread() {
         var inbox = WAInbox()
         let filters = WAFilters()
@@ -25,6 +49,36 @@ final class WhatsAppTests: XCTestCase {
         // Answering from the phone reads the chat.
         XCTAssertEqual(inbox.add(message("5", chat: "31600000002@s.whatsapp.net", at: 10, fromMe: true), filters: filters), .quiet)
         XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.unread, 0)
+    }
+
+    /// A restart loads history that counts nothing as new: what was unread when Nook quit is carried over until read.
+    func testUnreadIsCarriedAcrossARestartUntilRead() {
+        let chat = "31600000001@s.whatsapp.net"
+        let now = Date(timeIntervalSince1970: 1_800_000_100)
+        var before = WAInbox()
+        before.add(message("1", chat: chat, at: 1), filters: WAFilters())
+        before.add(message("2", chat: chat, at: 2), filters: WAFilters())
+        let saved = WAUnreadCarry.kept(carried: [:], inbox: before, readSince: { _ in nil }, now: now)
+        XCTAssertEqual(saved[chat], WAUnreadCarry(count: 2, last: Date(timeIntervalSince1970: 1_800_000_002)))
+
+        // Next launch: the same messages come back as history, one new message arrives live.
+        var after = WAInbox()
+        after.add(message("1", chat: chat, at: 1), filters: WAFilters(), history: true)
+        after.add(message("2", chat: chat, at: 2), filters: WAFilters(), history: true)
+        after.add(message("3", chat: chat, at: 3), filters: WAFilters())
+        let next = WAUnreadCarry.kept(carried: saved, inbox: after, readSince: { _ in nil }, now: now)
+        XCTAssertEqual(next[chat]?.count, 3)
+        XCTAssertEqual(next[chat]?.last, Date(timeIntervalSince1970: 1_800_000_003))
+
+        // Read (or answered in) after the newest counted message: the carry ends; read before it, it holds.
+        XCTAssertFalse(saved[chat]!.holds(readSince: Date(timeIntervalSince1970: 1_800_000_002)))
+        XCTAssertTrue(saved[chat]!.holds(readSince: Date(timeIntervalSince1970: 1_800_000_001)))
+        let read = WAUnreadCarry.kept(carried: saved, inbox: WAInbox(), readSince: { _ in now }, now: now)
+        XCTAssertNil(read[chat])
+        // A carry left alone for months is forgotten.
+        let stale = WAUnreadCarry.kept(carried: saved, inbox: WAInbox(), readSince: { _ in nil },
+                                       now: now.addingTimeInterval(ChatReadMarks.maxAge))
+        XCTAssertNil(stale[chat])
     }
 
     /// "@open chat Jan" in the Mac app: a person's chat opens by their number; a group or a hidden id has no such link.
@@ -109,6 +163,21 @@ final class WhatsAppTests: XCTestCase {
 
         inbox.markOldestReached(chat)
         XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, false)
+    }
+
+    func testAChatShortOfItsCapacityCanStillLoadOlder() {
+        var inbox = WAInbox()
+        let chat = "1@s.whatsapp.net"
+        for index in 0..<WAInbox.keep { inbox.add(message("m\(index)", chat: chat, at: Double(index + 1)), filters: WAFilters()) }
+        // A load that brought fewer than it made room for (blanks and votes show nothing) is not the chat's start.
+        XCTAssertEqual(inbox.growCapacity(chat), WAInbox.keep + WAInbox.olderStep)
+        XCTAssertEqual(inbox.conversations[chat]?.canLoadOlder, true)
+    }
+
+    func testGOWAMessagePagesCountEveryEntry() {
+        let page = Data(#"{"results":{"data":[{"id":"a","chat_jid":"1@s.whatsapp.net","content":"hi"},{"id":"b"}]}}"#.utf8)
+        XCTAssertEqual(WAGOWA.messageCount(page), 2, "the offset moves by what the page held, not by what Nook keeps")
+        XCTAssertEqual(WAGOWA.messageCount(Data("{}".utf8)), 0)
     }
 
     func testAGroupKnownOnlyByItsIdIsAskedItsName() {
@@ -197,7 +266,8 @@ final class WhatsAppTests: XCTestCase {
         let shown = inbox.conversations[group]?.messages
         XCTAssertEqual(shown?.map(\.id), ["P1"], "a vote is no message of its own")
         XCTAssertEqual(shown?.first?.poll?.chatPoll.options, [
-            ChatPoll.Option(text: "Pizza", votes: 0, chosen: false), ChatPoll.Option(text: "Sushi", votes: 2, chosen: true)
+            ChatPoll.Option(text: "Pizza", votes: 0, chosen: false, voters: []),
+            ChatPoll.Option(text: "Sushi", votes: 2, chosen: true, voters: [tr("chat.poll.you"), WAJID.displayNumber("316@s.whatsapp.net")])
         ])
         var cleared = message("V3", chat: group, from: "316@s.whatsapp.net", text: "")
         cleared.pollVote = WAPollVote(poll: "P1", choice: [])
@@ -208,6 +278,97 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertFalse(WAPollData.isVoteText("Poll: Lunch?"))
         XCTAssertEqual(WAPollData.openwa(["name": "Q", "options": ["a", "b"], "allowMultipleAnswers": true]),
                        WAPoll(question: "Q", options: ["a", "b"], multiple: true))
+    }
+
+    func testPollVotesAreKeptAcrossARestart() throws {
+        let group = "120363000000000001@g.us"
+        let lunch = WAPoll(question: "Lunch?", options: ["Pizza", "Sushi"])
+        var poll = message("P1", chat: group, text: "")
+        poll.poll = lunch
+        var before = WAInbox()
+        // Seen live: every vote from here on passes through Nook.
+        before.add(poll, filters: WAFilters())
+        var vote = message("V1", chat: group, from: "316@s.whatsapp.net", text: "")
+        vote.pollVote = WAPollVote(poll: "P1", choice: ["Pizza"])
+        before.add(vote, filters: WAFilters())
+        before.applyVote(WAPollVote(poll: "P1", choice: ["Sushi"]), chat: group, voter: WAPoll.me)
+        XCTAssertEqual(before.pollLedger["P1"]?.complete, true)
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("nook-poll-votes-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        WAPollStore.save(before.pollLedger, to: file)
+        let loaded = WAPollStore.load(from: file)
+        XCTAssertEqual(loaded, before.pollLedger.pruned())
+
+        // After the restart the poll comes back from GOWA's own database, which keeps no votes.
+        var after = WAInbox(polls: loaded)
+        var stored = poll
+        stored.poll?.counted = false
+        after.add(stored, filters: WAFilters(), history: true)
+        let shown = try XCTUnwrap(after.conversations[group]?.messages.first?.poll?.chatPoll)
+        XCTAssertTrue(shown.counted, "seen live before the restart: its counts are complete")
+        XCTAssertEqual(shown.options.map(\.votes), [1, 1])
+        XCTAssertEqual(shown.chosen, ["Sushi"])
+
+        // An empty ledger leaves no file behind (WhatsApp turned off).
+        after.clear()
+        XCTAssertTrue(after.pollLedger.isEmpty)
+        WAPollStore.save(after.pollLedger, to: file)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testAVoteOnAPollNookDoesNotShowYetIsKeptForIt() throws {
+        let group = "120363000000000001@g.us"
+        var inbox = WAInbox()
+        XCTAssertNil(inbox.applyVote(WAPollVote(poll: "P2", choice: ["Ja"]), chat: group, voter: "316@s.whatsapp.net"))
+        var poll = message("P2", chat: group, text: "")
+        poll.poll = WAPoll(question: "Mee?", options: ["Ja", "Nee"])
+        inbox.add(poll, filters: WAFilters(), history: true)
+        let shown = try XCTUnwrap(inbox.conversations[group]?.messages.first?.poll?.chatPoll)
+        XCTAssertFalse(shown.counted, "from history: votes from before may be missing")
+        XCTAssertTrue(shown.partial, "the vote Nook saw still shows")
+        XCTAssertEqual(shown.options.map(\.votes), [1, 0])
+
+        // Without any known vote such a poll shows no counts, as before.
+        var empty = message("P3", chat: group, text: "")
+        empty.poll = WAPoll(question: "Waar?", options: ["Hier"])
+        inbox.add(empty, filters: WAFilters(), history: true)
+        let quiet = try XCTUnwrap(inbox.conversations[group]?.messages.first { $0.id == "P3" }?.poll?.chatPoll)
+        XCTAssertFalse(quiet.counted)
+        XCTAssertFalse(quiet.partial)
+    }
+
+    func testOldPollVotesAreForgotten() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var ledger = WAPollLedger()
+        ledger.record(WAPollVote(poll: "old", choice: ["a"]), voter: "1", at: now.addingTimeInterval(-WAPollLedger.maxAge - 1))
+        for index in 0..<(WAPollLedger.limit + 5) {
+            ledger.record(WAPollVote(poll: "P\(index)", choice: ["a"]), voter: "1", at: now.addingTimeInterval(-Double(index)))
+        }
+        let pruned = ledger.pruned(now: now)
+        XCTAssertNil(pruned["old"])
+        XCTAssertEqual(pruned.polls.count, WAPollLedger.limit)
+        XCTAssertNotNil(pruned["P0"], "the most recently touched stay")
+        XCTAssertNil(pruned["P\(WAPollLedger.limit)"])
+    }
+
+    func testPollVotersAreNamedAsTheGroupKnowsThem() {
+        let group = "120363000000000001@g.us"
+        var conversation = WAConversation(id: group, name: "Club", isGroup: true, lastActivity: Date())
+        conversation.members = [WAMember(ids: ["123@lid", "31600000001@s.whatsapp.net"], name: "Anna")]
+        var written = message("M1", chat: group, from: "31600000002@s.whatsapp.net", name: "Bram")
+        written.chat = group
+        conversation.messages = [written]
+        var poll = WAPoll(question: "Lunch?", options: ["Pizza", "Sushi"])
+        poll.votes = ["123@lid": ["Pizza"], "31600000002@s.whatsapp.net": ["Pizza", "Sushi"], WAPoll.me: ["Sushi"],
+                      "31699999999@s.whatsapp.net": ["Sushi"]]
+        var names = WAMemberIndex(conversation)
+        let shown = poll.chatPoll { names.name($0) }
+        XCTAssertEqual(shown.options[0].voters, ["Anna", "Bram"], "by the name the gateway gives, else the one they wrote under")
+        XCTAssertEqual(shown.options[1].voters, [tr("chat.poll.you"), "Bram", WAJID.displayNumber("31699999999@s.whatsapp.net")],
+                       "you first, someone unknown by their number")
+        XCTAssertEqual(shown.options.map(\.votes), [2, 3])
+        XCTAssertTrue(shown.namesVoters)
     }
 
     func testAnOpenedChatFetchesItsMessagesAgainNotOnlyOnce() {
@@ -495,6 +656,46 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(conversation.memberName("123@lid"), "Anna")
         XCTAssertEqual(conversation.memberName("31600000002@s.whatsapp.net"), "Jan", "the name they wrote under")
         XCTAssertEqual(conversation.memberNames, ["Anna", "Jan"])
+    }
+
+    /// The member index gives the same names as matching every id one by one, which it replaced for speed.
+    func testMemberIndexNamesLikeMatchingEveryId() {
+        func written(_ sender: String, _ name: String, fromMe: Bool = false) -> WAMessage {
+            WAMessage(id: UUID().uuidString, chat: "1@g.us", sender: sender, senderName: name, text: "hi",
+                      media: .none, date: Date(), fromMe: fromMe)
+        }
+        var conversation = WAConversation(id: "1@g.us", name: "Groep", isGroup: true, lastActivity: Date())
+        conversation.members = [
+            WAMember(ids: ["31600000001@s.whatsapp.net", "123@lid"], name: "Anna"),
+            WAMember(ids: ["31600000002@s.whatsapp.net"], name: ""),
+            // Matches Jan's number too, but comes second: Jan's own (empty) entry wins and his written name is used.
+            WAMember(ids: ["31600000002@c.us"], name: "Not Jan"),
+            WAMember(ids: ["@beeper-user:beeper.com"], name: ""),
+            WAMember(ids: ["31600000004:12@s.whatsapp.net"], name: ""),
+        ]
+        conversation.messages = [
+            written("31600000002@s.whatsapp.net", "Jan old"),
+            written("31600000002@c.us", "Jan"),
+            written("@beeper-user:beeper.com", "Bee"),
+            written("31600000004@s.whatsapp.net", ""),
+            written("31600000005@s.whatsapp.net", "Mine", fromMe: true),
+        ]
+        // The rules as they were: the first member that matches, else the newest name written under the id, else the number.
+        func expected(_ id: String) -> String {
+            if let member = conversation.members?.first(where: { $0.matches(id) }), !member.name.isEmpty { return member.name }
+            if let message = conversation.messages.last(where: {
+                !$0.fromMe && WAJID.sameReactor($0.sender, id) && !$0.senderName.isEmpty
+            }) { return message.senderName }
+            return WAJID.displayNumber(id)
+        }
+        let ids = ["123@lid", "31600000001@c.us", "31600000002@s.whatsapp.net", "31600000002", "@beeper-user:beeper.com",
+                   "31600000004@s.whatsapp.net", "31600000005@s.whatsapp.net", "999@lid", ""]
+        var index = WAMemberIndex(conversation)
+        for id in ids {
+            XCTAssertEqual(index.name(id), expected(id), id)
+        }
+        XCTAssertEqual(conversation.memberNames, conversation.members!.map { $0.name.isEmpty ? expected($0.ids[0]) : $0.name })
+        XCTAssertEqual(conversation.memberName("31600000002@s.whatsapp.net"), "Jan", "the newest name they wrote under")
     }
 
     func testGatewaysListAGroupsMembers() {

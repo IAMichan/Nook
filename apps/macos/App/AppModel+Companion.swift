@@ -155,6 +155,7 @@ extension AppModel {
         let link = WhatsAppLink.shared
         let time = whatsAppBubbleTime
         let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var names = WAMemberIndex(conversation)
         return conversation.messages.suffix(WAInbox.keep).map { message in
             let file = Self.whatsAppFileLabel(message.media)
             var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
@@ -162,9 +163,11 @@ extension AppModel {
                                     sender: conversation.isGroup && !message.fromMe ? message.senderName : "",
                                     fromMe: message.fromMe, attachment: file,
                                     ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
-            bubble.readers = Self.whatsAppReaders(message, in: conversation)
+            bubble.readers = Self.whatsAppReaders(message, in: conversation, names: &names)
             bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation)
-            bubble.poll = message.poll?.chatPoll
+            bubble.poll = message.poll?.chatPoll { voter in
+                conversation.isGroup ? names.name(voter) : conversation.name
+            }
             bubble.reactions = Self.bubbleReactions(message.reactions)
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image
@@ -325,13 +328,14 @@ extension AppModel {
 
     /// Your own message in a group: every member with how far it got with them, by the names the group knows them by.
     /// Empty for theirs, in a private chat, and while no member answered and the members are not known either.
-    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation) -> [ChatReader] {
+    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation,
+                                names: inout WAMemberIndex) -> [ChatReader] {
         guard message.fromMe, message.receipt != nil, conversation.isGroup,
               !message.readers.isEmpty || conversation.members != nil else { return [] }
         let named = message.readers.map { id, reader in
-            ChatReader(name: conversation.memberName(id), receipt: reader.receipt, date: reader.date)
+            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date)
         }
-        return ChatReceipts.everyone(named, members: conversation.memberNames)
+        return ChatReceipts.everyone(named, members: names.all)
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
@@ -368,10 +372,9 @@ extension AppModel {
     /// Autocomplete anywhere, with what only Nook knows: your memory and the text it already reads on screen.
     func startAutocomplete() {
         let autocomplete = AutocompleteController.shared
-        autocomplete.facts = { [weak self] in
+        autocomplete.facts = { [weak self] context in
             guard let self, self.settings.useMemory else { return [] }
-            return self.memory.items.filter { $0.kind != .lesson && $0.tool == nil }
-                .sorted { $0.strength > $1.strength }.prefix(8).map(\.text)
+            return self.memory.book.forCompletion(context).map(\.text)
         }
         autocomplete.screenText = { [weak self] bundleID in
             let windows = self?.screenContext.windows.filter { $0.bundleID == bundleID } ?? []
@@ -411,9 +414,16 @@ extension AppModel {
         }
         doubleTap.record = { [weak self] args, result in self?.store.audit(tool: "doubletap_edit", args: args, result: result) }
         doubleTap.present = { [weak self] outcome in self?.presentDoubleTap(outcome) }
-        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type.
+        // Each step shows in the notch, with Stop: what Nook reads, what it thinks about, what it is about to type. A click
+        // on it opens the notch, which lists every step and, once done, what Nook typed (`DoubleTapRunBar`).
         doubleTap.onStep = { [weak self] line in
-            self?.viewModel.showWork(line) { DoubleTap.shared.stop() }
+            self?.viewModel.showWork(line, opensPanel: true) { DoubleTap.shared.stop() }
+        }
+        doubleTap.showSteps = { [weak self] in
+            // An open panel already shows the steps under its tabs.
+            guard let self else { return }
+            if case .panel = self.viewModel.state { return }
+            self.viewModel.openPanel()
         }
         doubleTap.onStepsEnd = { [weak self] last in
             // Only the step line goes: a result shown in its place since (a toast, a card) stays.

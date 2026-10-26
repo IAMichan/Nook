@@ -173,7 +173,8 @@ final class DoubleTapTests: XCTestCase {
             XCTAssertTrue(DoubleTapLogic.asksToWrite(text), text)
         }
         for text in ["wat is het weer morgen", "maak een afspraak om 3 uur", "how do I write a for loop in Swift",
-                     "finish this for me", "voeg een afspraak toe", "schrijf me in op bol.com", "open Spotify", ""] {
+                     "finish this for me", "voeg een afspraak toe", "schrijf me in op bol.com", "open Spotify",
+                     "schrijf een post op Reddit over Nook", ""] {
             XCTAssertFalse(DoubleTapLogic.asksToWrite(text), text)
         }
     }
@@ -290,5 +291,62 @@ final class DoubleTapTests: XCTestCase {
         XCTAssertFalse(DoubleTapLogic.applied(edit, before: before, after: before))
         XCTAssertEqual(DoubleTapLogic.editPreview(edit), "“Twee” → “2 2b”")
         XCTAssertEqual(DoubleTapLogic.editPreview(DoubleTapEdit(find: "Twee", replace: "", range: edit.range)), "“Twee” ✕")
+    }
+
+    // MARK: The run's steps
+
+    func testEachStepEndsTheOneBeforeIt() {
+        var run = DoubleTapRun(request: "  vertaal dit  ")
+        XCTAssertEqual(run.request, "vertaal dit")
+        XCTAssertTrue(run.isRunning)
+        run.step("Pages lezen…")
+        run.step("Pages lezen…")
+        run.step("  ")
+        run.step("Denkt na: vertaal dit")
+        XCTAssertEqual(run.steps.map(\.text), ["Pages lezen…", "Denkt na: vertaal dit"], "the same line twice is one step")
+        XCTAssertEqual(run.steps.map(\.state), [.done, .running])
+    }
+
+    func testFinishingMarksTheLastStepAndKeepsTheFirstResult() {
+        var done = DoubleTapRun(request: "", started: Date(timeIntervalSince1970: 100))
+        done.step("Typt in Pages: Hallo")
+        done.finish(.done, result: "Getypt in Pages", detail: "⌘Z", at: Date(timeIntervalSince1970: 103.4))
+        done.finish(.failed, result: "later")
+        done.step("after the end")
+        XCTAssertFalse(done.isRunning)
+        XCTAssertEqual(done.outcome, .done)
+        XCTAssertEqual(done.result, "Getypt in Pages")
+        XCTAssertEqual(done.resultDetail, "⌘Z")
+        XCTAssertEqual(done.steps.map(\.state), [.done])
+        XCTAssertEqual(done.seconds, 3)
+
+        var failed = DoubleTapRun(request: "")
+        failed.step("Denkt na…")
+        failed.finish(.failed, result: "Het brein gaf geen antwoord")
+        XCTAssertEqual(failed.steps.last?.state, .failed)
+
+        var stopped = DoubleTapRun(request: "")
+        stopped.step("Denkt na…")
+        stopped.finish(.stopped, result: "Gestopt")
+        XCTAssertEqual(stopped.steps.last?.state, .failed)
+        XCTAssertNil(DoubleTapRun(request: "").seconds, "no time while it works")
+    }
+
+    func testChecksSkipEmptyValuesAndCountTheRest() {
+        var run = DoubleTapRun(request: "")
+        run.check("Naam", "  Michan ")
+        run.check("Leeg", "   ")
+        XCTAssertEqual(run.checks.map(\.value), ["Michan"])
+        for index in 0..<(DoubleTapRun.maxChecks + 2) { run.check("Veld \(index)", "waarde") }
+        XCTAssertEqual(run.checks.count, DoubleTapRun.maxChecks)
+        XCTAssertEqual(run.moreChecks, 3)
+    }
+
+    func testOnlyTheLatestStepsAreKept() {
+        var run = DoubleTapRun(request: "")
+        for index in 0..<(DoubleTapRun.maxSteps + 5) { run.step("Stap \(index)") }
+        XCTAssertEqual(run.steps.count, DoubleTapRun.maxSteps)
+        XCTAssertEqual(run.steps.last?.text, "Stap \(DoubleTapRun.maxSteps + 4)")
+        XCTAssertEqual(Set(run.steps.map(\.id)).count, run.steps.count, "ids stay unique")
     }
 }

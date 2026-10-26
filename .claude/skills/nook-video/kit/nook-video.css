@@ -1,0 +1,132 @@
+/* Nook video kit: the app's look for 1080x1920 social video.
+   Every value mirrors apps/macos/NotchUI/Theme/NookTheme.swift; the notch UI is drawn at 2.6x its size in the app
+   (a 15 pt title becomes 40 px), so the panel reads like a close-up of the real one. Change a token there, change it here. */
+
+:root {
+  /* Surface ramp, darkest to lightest (pure grey, no blue cast) */
+  --notch:#000000; --well:#080808; --canvas:#0A0A0A; --field:#111111; --surface:#121212;
+  --graphite:#171717; --hairline:#181818; --field-stroke:#1C1C1C; --smoke:#1F1F1F;
+  --line2:#232323; --separator:#2B2B2B;
+  /* Text */
+  --paper:#F5F5F5; --strong:#D6D6D6; --secondary:#999999; --muted:#878787; --tertiary:#6E6E6E;
+  --ink:#0B0B0D; --eye:#0B0A12;
+  /* Accent and state colors: one meaning each (see SKILL.md) */
+  --iris:#F4F3F7; --mint:#5ED6A6; --mint-soft:#74DDB3; --amber:#F2B866; --coral:#EF7B73;
+  --coral-soft:#F29A92; --violet:#AE94F2; --blue:#8FB3F0; --music:#F0936A;
+  /* NookTheme.Radius x2.6 */
+  --r-chip:16px; --r-control:21px; --r-card:26px; --r-panel:31px; --r-sheet:36px; --r-bubble:47px; --r-pill:52px; --r-composer:62px;
+  /* NookTheme.Spacing x2.6 */
+  --sp-xs:10px; --sp-sm:16px; --sp-md:21px; --sp-lg:31px; --sp-xl:42px; --sp-xxl:62px; --sp-xxxl:83px;
+  /* The app's system font; Inter stands in where SF Pro is not installed */
+  --font: -apple-system, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  --rounded: ui-rounded, "SF Pro Rounded", "Inter", system-ui, sans-serif;
+  /* Safe zones for Reels: Instagram draws its own UI over these bands */
+  --safe-top:220px; --safe-bottom:420px; --safe-right:120px; --gutter:80px;
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { width:1080px; height:1920px; overflow:hidden; background:var(--canvas); }
+body { font-family:var(--font); color:var(--paper); -webkit-font-smoothing:antialiased; font-feature-settings:"cv11","ss01"; }
+.abs { position:absolute; }
+
+/* Stage with a slow breathing light behind everything (NV.breathe) */
+#stage { position:absolute; inset:0; overflow:hidden; background:var(--canvas); }
+#glow { position:absolute; inset:-200px; pointer-events:none;
+        background: radial-gradient(900px 760px at 50% 40%, rgba(244,243,247,.075) 0%, rgba(244,243,247,0) 70%); }
+
+/* Safe-zone overlay: open the page with ?safe=1 */
+.safe-debug::after { content:""; position:absolute; inset:0; pointer-events:none; z-index:99;
+  background:
+    linear-gradient(rgba(239,123,115,.25),rgba(239,123,115,.25)) top/100% var(--safe-top) no-repeat,
+    linear-gradient(rgba(239,123,115,.25),rgba(239,123,115,.25)) bottom/100% var(--safe-bottom) no-repeat,
+    linear-gradient(rgba(239,123,115,.18),rgba(239,123,115,.18)) right/var(--safe-right) 100% no-repeat; }
+
+/* Mac menu bar */
+.menubar { left:0; right:0; top:0; height:96px; display:flex; align-items:center; gap:48px; padding:0 56px;
+           font-size:34px; color:var(--secondary); border-bottom:2px solid var(--line2); }
+.menubar b { color:var(--strong); font-weight:600; }
+.menubar .clock { margin-left:auto; }
+
+/* Nook, the orb: a round light with two bar eyes, lit like a ball. The color follows data-mood. */
+.orb { --d:120px; --mood:var(--iris); width:var(--d); height:var(--d); border-radius:50%; position:relative; flex:none;
+       background:var(--mood); will-change:transform; }
+.orb::after { content:""; position:absolute; inset:0; border-radius:50%;
+  background:
+    radial-gradient(circle at 30% 26%, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 24%),
+    radial-gradient(circle at 72% 86%, rgba(255,255,255,.18) 0%, rgba(255,255,255,0) 30%),
+    radial-gradient(circle at 50% 46%, rgba(0,0,0,0) 0%, rgba(0,0,0,.06) 42%, rgba(0,0,0,.2) 78%, rgba(0,0,0,.32) 100%); }
+.orb.flat::after { display:none; }  /* the plain logo mark */
+.orb.glow { box-shadow:0 0 calc(var(--d)*.6) calc(var(--d)*.06) color-mix(in srgb, var(--mood) 28%, transparent); }
+.orb i { position:absolute; z-index:1; top:31%; width:12.5%; height:38%; background:var(--eye); border-radius:999px;
+         transform-origin:50% 50%; }
+.orb i:nth-child(1) { left:31%; } .orb i:nth-child(2) { right:31%; }
+/* Happy ^ ^ eyes (done, proud, celebrate, cozy) */
+.orb.happy i { background:none; height:16%; top:38%; width:20%; border:calc(var(--d)*.045) solid var(--eye);
+               border-bottom:none; border-radius:999px 999px 0 0; }
+.orb.happy i:nth-child(1) { left:26%; } .orb.happy i:nth-child(2) { right:26%; }
+/* Shut eyes (breathe, sleepy): a soft closed curve */
+.orb.shut i { background:none; height:10%; top:46%; width:20%; border:calc(var(--d)*.04) solid var(--eye);
+              border-top:none; border-radius:0 0 999px 999px; }
+.orb.shut i:nth-child(1) { left:26%; } .orb.shut i:nth-child(2) { right:26%; }
+.orb[data-mood="done"], .orb[data-mood="listen"], .orb[data-mood="proud"], .orb[data-mood="celebrate"] { --mood:var(--mint); }
+.orb[data-mood="breathe"] { --mood:var(--mint-soft); }
+.orb[data-mood="waiting"], .orb[data-mood="remind"], .orb[data-mood="cozy"] { --mood:var(--amber); }
+.orb[data-mood="worry"] { --mood:var(--coral); }
+.orb[data-mood="caring"] { --mood:var(--coral-soft); }
+
+/* The notch panel (PanelView seen up close) */
+.notch { left:50%; top:0; transform:translateX(-50%); background:var(--notch); overflow:hidden;
+         border-radius:0 0 var(--r-composer) var(--r-composer); box-shadow:0 30px 80px rgba(0,0,0,.6); }
+.panel { background:var(--notch); border-radius:56px; padding:34px; box-shadow:0 30px 80px rgba(0,0,0,.6); }
+.tabs { display:flex; align-items:center; gap:14px; font-size:36px; color:var(--secondary); }
+.tabs span { padding:12px 14px; white-space:nowrap; }
+.tabs .on { background:var(--smoke); color:var(--paper); padding:12px 28px; border-radius:var(--r-pill); font-weight:500; }
+.tabs .count { margin-left:auto; color:var(--tertiary); font-size:32px; }
+
+.row { background:var(--graphite); border-radius:var(--r-panel); padding:30px 34px; display:flex; align-items:center; gap:30px; }
+.row + .row { margin-top:var(--sp-md); }
+.dot { width:24px; height:24px; border-radius:50%; flex:none; background:var(--state, var(--secondary)); }
+.row .t { font-size:40px; font-weight:600; white-space:nowrap; }
+.row .d { font-size:34px; color:var(--secondary); margin-top:6px; white-space:nowrap; }
+.row .when { margin-left:auto; font-size:32px; color:var(--tertiary); white-space:nowrap; }
+.row .when + .chip { margin-left:0; }
+
+/* A state chip: set data-state (NV.chip) and the color follows its meaning */
+.chip { margin-left:auto; font-size:32px; font-weight:500; padding:10px 24px; border-radius:var(--r-chip); white-space:nowrap;
+        color:var(--state, var(--secondary)); background:color-mix(in srgb, var(--state, var(--secondary)) 14%, transparent); }
+.chip.static { margin-left:0; }
+
+.composer { margin-top:var(--sp-md); background:var(--surface); border:2px solid var(--field-stroke); border-radius:var(--r-composer);
+            padding:22px 36px; font-size:34px; color:var(--tertiary); white-space:nowrap; overflow:hidden; }
+.composer .typed { color:var(--paper); }
+.caret { display:inline-block; width:3px; height:38px; background:var(--paper); vertical-align:-6px; margin-left:4px; }
+
+/* Type */
+.headline { left:var(--gutter); right:var(--gutter); }
+.h1 { font-size:104px; line-height:1.04; font-weight:700; letter-spacing:-3px; }
+.h1 .muted, .muted { color:var(--tertiary); }
+.h2 { font-size:46px; line-height:1.3; color:var(--secondary); font-weight:400; margin-top:28px; }
+.mono { font-family:var(--mono); }
+
+/* Cards and lists */
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+.card { background:var(--graphite); border-radius:var(--r-panel); padding:36px; }
+.card .k { display:flex; align-items:center; gap:18px; font-size:30px; color:var(--secondary); font-weight:500; }
+.card .k .dot { width:18px; height:18px; }
+.card .ttl { font-size:46px; font-weight:600; margin-top:20px; letter-spacing:-.5px; }
+.card .sub { font-size:32px; color:var(--secondary); margin-top:10px; line-height:1.3; }
+.step { display:flex; align-items:center; gap:34px; padding:28px 0; border-bottom:2px solid var(--line2); }
+.step .n { width:84px; height:84px; border-radius:50%; background:var(--smoke); display:flex; align-items:center; justify-content:center;
+           font-size:38px; font-weight:600; color:var(--strong); flex:none; }
+.step .st { font-size:48px; font-weight:600; }
+.step .sd { font-size:34px; color:var(--secondary); margin-top:6px; font-family:var(--mono); }
+
+/* Call to action */
+.cta { inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding-bottom:120px; }
+.cta .word { font-size:150px; font-weight:700; letter-spacing:-5px; line-height:1.0; }
+.cta .url { margin-top:56px; background:var(--paper); color:var(--ink); font-size:46px; font-weight:600; padding:30px 56px; border-radius:var(--r-composer); }
+.cta .tags { margin-top:44px; display:flex; gap:20px; }
+.cta .tags .chip { font-size:40px; padding:14px 30px; margin:0; }
+.cta .foot { margin-top:64px; font-size:36px; color:var(--tertiary); }
+.tag { font-size:36px; font-weight:500; color:var(--strong); background:var(--smoke); padding:14px 30px; border-radius:var(--r-pill); }

@@ -36,7 +36,7 @@ struct WardrobeSettingsSection: View {
                         tile(item)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, NookTheme.Spacing.xs)
                 .onChange(of: slot) { _, _ in trying = nil }
                 SettingToggle(tr("wardrobe.automatic"), detail: tr("wardrobe.automaticDetail"), isOn: $settings.nookWardrobe.automatic)
             } footer: {
@@ -73,13 +73,13 @@ struct WardrobeSettingsSection: View {
                         .font(NookTheme.TextStyle.body)
                         .foregroundStyle(NookTheme.textSecondary)
                 } else {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         ForEach(wearing) { item in
                             wornRow(item)
                         }
                     }
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: NookTheme.Spacing.md) {
                     Button { surprise() } label: {
                         Label(tr("wardrobe.shuffle"), systemImage: "dice")
                     }
@@ -87,11 +87,11 @@ struct WardrobeSettingsSection: View {
                         .disabled(settings.nookWardrobe.chosen.isEmpty)
                 }
                 .controlSize(.small)
-                .padding(.top, 2)
+                .padding(.top, NookTheme.Spacing.xxs)
             }
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(NookTheme.Spacing.xl)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.graphite))
         .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).strokeBorder(NookTheme.line2, lineWidth: 0.5))
         .accessibilityElement(children: .contain)
@@ -101,7 +101,7 @@ struct WardrobeSettingsSection: View {
     /// One thing he wears: its name, whether you chose it or he did, and a way to take your own picks off.
     private func wornRow(_ item: NookAccessory) -> some View {
         let chosen = settings.nookWardrobe.chosen.contains(item)
-        return HStack(spacing: 6) {
+        return HStack(spacing: NookTheme.Spacing.sm) {
             Image(systemName: chosen ? "checkmark.circle.fill" : "sparkles")
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(chosen ? NookTheme.iris : NookTheme.textSecondary)
@@ -222,7 +222,7 @@ private struct WardrobeTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: NookTheme.Spacing.sm) {
                 ZStack {
                     Circle()
                         .fill(RadialGradient(colors: [NookTheme.iris.opacity(selected ? 0.3 : (hovering ? 0.16 : 0)), Color.clear],
@@ -253,7 +253,7 @@ private struct WardrobeTile: View {
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(NookTheme.iris)
-                        .padding(6)
+                        .padding(NookTheme.Spacing.sm)
                 } else if picked {
                     Image(systemName: "sparkles")
                         .font(NookTheme.TextStyle.detail)
