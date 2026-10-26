@@ -188,7 +188,9 @@ def score(duration, cues, mood="calm", seed=7, chord_len=6.0, bells=True, bpm=No
 
     # Fade in (quickly for a groove, whose first second is the hook) and out over the last 3 s; then a soft limiter.
     t = np.arange(total) / SR
-    fade = np.minimum(1, t / (0.5 if bpm else 2.0)) * np.clip((duration - t) / 3.0, 0, 1)
+    # A video whose drums start on frame one is a cold open: full level from the first sample.
+    fade_in = 0.02 if bpm and (drums_from or 0) <= 0.05 else 0.5 if bpm else 2.0
+    fade = np.minimum(1, t / fade_in) * np.clip((duration - t) / 3.0, 0, 1)
     fade = 0.5 - 0.5 * np.cos(np.pi * fade)
     mix *= fade
     mix = np.tanh(mix * 1.2) / 1.2

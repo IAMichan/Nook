@@ -8,13 +8,11 @@
   #notch { top:150px; }
   #notchInner { position:absolute; left:0; top:0; width:960px; padding:44px 40px 40px; }
   .center { left:var(--gutter); right:var(--gutter); text-align:center; }
-  #hookOrb { left:390px; top:620px; }
-  #hook { top:1020px; }
-  #hook .h1 { font-size:120px; }
-  #intro { top:1000px; }
-  #intro .h1 { font-size:120px; letter-spacing:-4px; }
-  #open { top:760px; }
-  #open .h1 { font-size:132px; letter-spacing:-4.5px; }
+  #hook { top:1010px; }
+  #hook .h1 { font-size:124px; letter-spacing:-4.5px; }
+  #openSrc { top:880px; }
+  #openSrc .h1 { font-size:140px; letter-spacing:-5px; }
+  #peek { left:420px; top:560px; }
   #needs { top:560px; }
   #needs .h2 { margin:0; font-size:56px; color:var(--secondary); }
   #role { left:0; right:0; top:660px; text-align:center; font-size:150px; font-weight:700; letter-spacing:-5px; white-space:nowrap; }
@@ -24,7 +22,7 @@
   #platforms { left:var(--gutter); right:var(--gutter); top:1000px; display:flex; flex-wrap:wrap; gap:20px; justify-content:center; }
   #platforms .tag { font-size:44px; padding:18px 38px; }
   #pr { top:1000px; }
-  #pr .h1 { font-size:96px; letter-spacing:-3px; }
+  #pr .h1 { font-size:110px; letter-spacing:-3.5px; }
   #pr .h2 { font-size:52px; }
   #burst { left:148px; top:242px; width:0; height:0; z-index:5; }
   #cta .tags .tag { font-size:40px; }
@@ -34,10 +32,6 @@
 <div id="stage">
   <div id="glow"></div>
   <div id="menubar" class="abs menubar"><b>Finder</b><span>File</span><span class="clock">Thu 09:41</span></div>
-
-  <!-- Bar 1: the hook. Nook looks around. -->
-  <div class="orb glow abs" id="hookOrb" style="--d:300px"><i></i><i></i></div>
-  <div id="hook" class="abs center"><div class="h1" id="psst">Psst.</div><div class="h2" id="minute" style="font-size:56px">Got a minute?</div></div>
 
   <!-- The notch -->
   <div id="notch" class="abs notch">
@@ -66,20 +60,21 @@
   </div>
   <div id="burst" class="abs"></div>
 
-  <!-- Bar 2 -->
-  <div id="intro" class="abs headline"><div class="h1" id="intro1">This is Nook.</div><div class="h2" id="intro2">Your AI assistant and coding-agent command center, in the notch.</div></div>
-  <!-- Bar 3 -->
-  <div id="open" class="abs center"><div class="h1" id="open1">It's open<br><span class="muted">source.</span></div></div>
-  <!-- Bars 4–5: who it needs, one word per beat -->
+  <!-- Scene 1, on screen from the very first frame -->
+  <div id="hook" class="abs headline"><div class="h1">This lives in<br><span class="muted">your notch.</span></div></div>
+  <!-- Scene 2 -->
+  <div class="orb glow abs" id="peek" style="--d:240px"><i></i><i></i></div>
+  <div id="openSrc" class="abs center"><div class="h1" id="open1">It's open<br><span class="muted">source.</span></div></div>
+  <!-- Scene 3 -->
   <div id="needs" class="abs center"><div class="h2" id="needs1">Nook needs</div></div>
   <div id="role" class="abs"></div>
   <div id="roleSub" class="abs center"></div>
-  <!-- Bar 6 -->
+  <!-- Scene 4 -->
   <div id="nomac" class="abs center"><div class="h1" id="nomac1">No Mac?<br><span class="muted">No problem.</span></div></div>
   <div id="platforms" class="abs"><span class="tag">Windows</span><span class="tag">Linux</span><span class="tag">Android</span><span class="tag">iPhone</span></div>
-  <!-- Bar 7 -->
-  <div id="pr" class="abs headline"><div class="h1" id="pr1">Your first pull request?</div><div class="h2" id="pr2">We'll help you get it green.</div></div>
-  <!-- Bar 8 -->
+  <!-- Scene 5 -->
+  <div id="pr" class="abs headline"><div class="h1" id="pr1">Your first PR?</div><div class="h2" id="pr2">We'll help you get it green.</div></div>
+  <!-- Scene 6 -->
   <div id="cta" class="abs cta">
     <div class="orb glow" id="ctaOrb" style="--d:240px"><i></i><i></i></div>
     <div class="word" id="ctaWord" style="margin-top:64px">Build Nook<br>with us.</div>
@@ -93,137 +88,138 @@
 <script>
 const $ = id => document.getElementById(id);
 const { prog, settle, pop, ease, lerp, fade, state, orb, words, cycle, sparks, clamp } = NV;
-// 80 BPM: a beat is 0.75 s, a bar 3 s. Things arrive fast and on the beat; every line then stays long enough to read.
+// 80 BPM: a beat is 0.75 s, a bar 3 s. The drums play from the first frame; there is no intro.
 const T = NV.tempo(80), B = n => T.at(n), BAR = n => T.bar(n);
-// The hook gets a bar and a half, so every later scene starts on beat 3 of a bar: AT(n) is the start of scene bar n.
-const AT = n => BAR(n) + (n > 0 ? B(2) : 0);
 
-// Scenes, in bars: hook 0, the notch 1–2, open source 3, who Nook needs 4–5, no Mac 6, your PR 7–8, end card 9.
+// Scenes, in seconds: the hook 0–3, open source 3–6, who Nook needs 6–12, no Mac 12–15, your PR 15–19.5, end card.
+const S2 = BAR(1), S3 = BAR(2), S4 = BAR(4), S5 = BAR(5), S6 = BAR(6) + B(2);
 const roles = ['Developers.', 'Translators.', 'Testers.', 'You.'];
 const roleSubs = ['Swift · Rust · Svelte', 'NL · DE · FR · ES', 'real devices, honest feedback', ''];
-const roleTimes = roles.map((_, i) => AT(4) + B(2 * i));   // a new word every two beats
-const MERGE = AT(8) + B(2);
-const SNAP = { dur: 0.6 };                                 // quick arrivals
+const roleTimes = roles.map((_, i) => S3 + B(2 * i));
+const HOOK_MERGE = B(2), MERGE = S5 + B(4);
+const SNAP = { dur: 0.6 };
 
 function setRow(n, s, title, sub, when, word) {
   $('t' + n).textContent = title; $('d' + n).textContent = sub; $('w' + n).textContent = when;
   state($('dot' + n), s); state($('c' + n), s, word);
 }
+function chipPulse(id, t, times) {
+  $(id).style.transform = '';
+  times.forEach(at => { const p = prog(t, at, 0.4); if (p > 0 && p < 1) $(id).style.transform = `scale(${1 + 0.14 * Math.sin(p * Math.PI)})`; });
+}
 
 function notchContent(t) {
-  if (t < AT(6)) {
+  $('row3').style.display = t < S5 ? '' : 'none';
+  if (t < S5) {
+    // The hook: three things land in the notch on the first beats, and the pull request merges on the third.
     setRow(1, 'done', 'Claude Code · nook', 'Refactor finished, tests pass', '2m', 'Done');
     setRow(2, 'waiting', 'Codex · api', 'Wants to run the migration', 'now', 'Waiting');
-    setRow(3, 'merged', 'PR #642', 'Load older WhatsApp messages', '5m', 'Merged');
-    const shown = [1, 2, 3].filter(n => t >= AT(1) + B(n)).length;
-    $('count').textContent = shown ? `${shown} new` : '';
-    [1, 2, 3].forEach(n => fade($('row' + n), t, AT(1) + B(n), null, { rise: 30, dur: 0.6 }));
+    const m = t >= HOOK_MERGE;
+    setRow(3, m ? 'merged' : 'open', 'PR #642', 'Load older WhatsApp messages', 'now', m ? 'Merged' : 'Open');
+    $('count').textContent = `${[0.05, B(1), B(1.5)].filter(a => t >= a).length} new`;
+    [[1, 0.05], [2, B(1)], [3, B(1.5)]].forEach(([n, at]) => fade($('row' + n), t, at, null, { rise: 40, dur: 0.45 }));
+    chipPulse('c3', t, [HOOK_MERGE]);
   } else {
-    // Your pull request moves on: checks running, checks passed, approved, merged, a beat or two apart.
-    const step = t >= MERGE ? 3 : t >= AT(8) ? 2 : t >= AT(7) + B(3) ? 1 : 0;
+    // Your pull request: checks running, checks passed, approved, merged, a beat apart.
+    const step = t >= MERGE ? 3 : t >= MERGE - B(1) ? 2 : t >= MERGE - B(2) ? 1 : 0;
     setRow(1, step === 3 ? 'merged' : 'open', 'You · fix/onboarding-copy',
       step === 0 ? 'Checks running…' : 'All checks passed', step === 3 ? 'now' : '2h', step === 3 ? 'Merged' : 'Open');
     state($('dot1'), step === 0 ? 'checksRunning' : step === 3 ? 'merged' : 'open');
     setRow(2, step >= 2 ? 'approved' : 'reviewRequired', 'Maintainer', step >= 2 ? 'Looks good to me' : 'Review requested', step >= 2 ? 'now' : '1h', step >= 2 ? 'Approved' : 'Review');
     $('count').textContent = step === 3 ? '1 new' : '';
-    fade($('row1'), t, AT(7) + 0.15, null, { rise: 30, dur: 0.6 });
-    fade($('row2'), t, AT(7) + B(1), null, { rise: 30, dur: 0.6 });
-    $('row3').style.display = 'none';
-    [AT(7) + B(3), AT(8), MERGE].forEach(at => {
-      const p = prog(t, at, 0.4);
-      if (p > 0 && p < 1) $('c1').style.transform = `scale(${1 + 0.1 * Math.sin(p * Math.PI)})`;
-    });
+    fade($('row1'), t, S5 + 0.1, null, { rise: 40, dur: 0.45 });
+    fade($('row2'), t, S5 + B(1), null, { rise: 40, dur: 0.45 });
+    chipPulse('c1', t, [MERGE - B(2), MERGE]);
+    chipPulse('c2', t, [MERGE - B(1)]);
   }
 }
 
 function render(t) {
-  // Bar 0, the hook: Nook pops in, glances left, right, back at you, and whispers.
-  const hookIn = pop(prog(t, 0.1, 0.8));
-  const fly = settle(prog(t, AT(1), 0.9));
-  const gl = a => ease(prog(t, a, 0.3));
-  const look = { x: -gl(0.45) + 2 * gl(1.1) - gl(1.8), y: 0.2 * (gl(0.45) - gl(1.8)) };
-  const ho = $('hookOrb');
-  const x = lerp(0, 148 - 540, fly), y = lerp(0, 242 - 770, fly), s = lerp(1, 96 / 300, fly) * lerp(0.6, 1, hookIn);
-  ho.dataset.base = `translate(${x}px, ${y}px)`;
-  orb(ho, t, { scale: s, look, blinkOffset: 2.6 });
-  ho.style.opacity = clamp(hookIn * 1.4) * (1 - clamp((t - AT(1) - 0.75) / 0.2));
-  words($('psst'), t, 0.6, 0.12, AT(1) - 0.3, SNAP);
-  words($('minute'), t, 1.4, 0.15, AT(1) - 0.3, SNAP);
-
-  // The notch opens on the drop, steps away for the words, returns for the pull request, leaves for the end card.
-  const open = settle(prog(t, AT(1), 0.9));
-  const away = ease(prog(t, AT(3) - 0.3, 0.5)), back = settle(prog(t, AT(7), 0.8)), gone = ease(prog(t, AT(9) - 0.35, 0.6));
-  const shown = (t < AT(5) ? 1 - away : back) * (1 - gone);
+  // The notch: already opening on frame one, away for the words, back for your PR, gone for the end card.
+  const open = pop(prog(t, 0, 0.5));
+  const away = ease(prog(t, S2 - 0.25, 0.4)), back = settle(prog(t, S5, 0.6)), gone = ease(prog(t, S6 - 0.3, 0.4));
+  const shown = (t < S4 ? 1 - away : back) * (1 - gone);
   const n = $('notch'), inner = $('notchInner');
-  const fullH = inner.offsetHeight;
   n.style.width = lerp(330, 960, open) + 'px';
-  n.style.height = lerp(70, fullH, open) + 'px';
-  n.style.borderRadius = `0 0 ${lerp(36, 62, open)}px ${lerp(36, 62, open)}px`;
-  n.style.opacity = t < AT(1) ? 0 : shown;
+  n.style.height = lerp(70, inner.offsetHeight, open) + 'px';
+  n.style.borderRadius = `0 0 ${lerp(36, 62, clamp(open))}px ${lerp(36, 62, clamp(open))}px`;
+  n.style.opacity = shown;
   n.style.transform = `translateX(-50%) translateY(${(1 - shown) * -50}px) scale(${lerp(0.96, 1, shown)})`;
-  inner.style.opacity = settle(prog(t, AT(1) + 0.35, 0.5));
-  $('menubar').style.opacity = clamp(open) * (1 - away);
+  inner.style.opacity = clamp(prog(t, 0.05, 0.25));
+  $('menubar').style.opacity = 1 - away;
   notchContent(t);
-  const merged = t >= MERGE && t < MERGE + 1.8;
-  orb($('nookOrb'), t, { mood: merged ? 'celebrate' : 'rest', blinkOffset: 2.6 });
-  sparks($('burst'), t, MERGE, { reach: 200, life: 1.3 });
+  const celebrating = (t >= HOOK_MERGE && t < HOOK_MERGE + 1.2) || (t >= MERGE && t < MERGE + 1.6);
+  orb($('nookOrb'), t, { mood: celebrating ? 'celebrate' : 'rest', blinkOffset: 2.6 });
+  sparks($('burst'), t, t < S2 ? HOOK_MERGE : MERGE, { reach: 200, life: 1.1 });
 
-  // Bars 1–2
-  words($('intro1'), t, AT(1) + B(1), 0.15, AT(3) - 0.3, SNAP);
-  words($('intro2'), t, AT(1) + B(2.5), 0.05, AT(3) - 0.3, { rise: 0.4, dur: 0.6 });
-  // Bar 3
-  words($('open1'), t, AT(3) + 0.15, 0.2, AT(4) - 0.3, SNAP);
-  // Bars 4–5: who Nook needs, a word every two beats
-  words($('needs1'), t, AT(4) - B(0.5), 0.12, AT(6) - 0.3, SNAP);
-  const k = cycle($('role'), t < AT(6) - 0.3 ? t : -1, roles, roleTimes, { dur: 0.5, rise: 40 });
+  // Scene 1: the line is there on the first frame, so a scroller reads it before deciding.
+  const hook = $('hook');
+  hook.style.opacity = 1 - ease(prog(t, S2 - 0.3, 0.3));
+  hook.style.transform = `scale(${lerp(1.06, 1, settle(prog(t, 0, 0.6)))})`;
+
+  // Scene 2: Nook pops up and looks at the words, then at you.
+  const pk = $('peek');
+  const pin = pop(prog(t, S2, 0.6)), pout = ease(prog(t, S3 - 0.3, 0.3));
+  orb(pk, t, { mood: t > S2 + B(2.5) ? 'proud' : 'rest', scale: lerp(0.5, 1, pin), look: { x: 0, y: t < S2 + B(2) ? 0.9 : 0 }, blinkOffset: 1.7 });
+  pk.style.opacity = clamp(pin) * (1 - pout);
+  words($('open1'), t, S2 + 0.1, 0.15, S3 - 0.3, SNAP);
+
+  // Scene 3: who Nook needs, a word every two beats
+  words($('needs1'), t, S3, 0.1, S4 - 0.3, SNAP);
+  const k = cycle($('role'), t < S4 - 0.3 ? t : -1, roles, roleTimes, { dur: 0.45, rise: 50 });
   const role = $('role');
   if (k >= 0) {
     role.style.fontSize = '150px';
     const w = role.scrollWidth; if (w > 920) role.style.fontSize = 150 * 920 / w + 'px';
-    if (k === roles.length - 1) role.style.transform += ` scale(${1 + 0.08 * pop(prog(t, roleTimes[k], 0.6))})`;
+    if (k === roles.length - 1) role.style.transform += ` scale(${1 + 0.1 * pop(prog(t, roleTimes[k], 0.6))})`;
   }
   const sub = $('roleSub');
   sub.textContent = k >= 0 ? roleSubs[k] : '';
-  sub.style.opacity = k >= 0 ? ease(prog(t, roleTimes[k] + 0.15, 0.35)) : 0;
-  // Bar 6
-  words($('nomac1'), t, AT(6) + 0.1, 0.2, AT(7) - 0.3, SNAP);
+  sub.style.opacity = k >= 0 ? ease(prog(t, roleTimes[k] + 0.1, 0.3)) : 0;
+
+  // Scene 4
+  words($('nomac1'), t, S4 + 0.05, 0.15, S5 - 0.3, SNAP);
   document.querySelectorAll('#platforms .tag').forEach((tag, i) => {
-    const p = pop(prog(t, AT(6) + B(0.5) + i * 0.25, 0.6));
-    tag.style.opacity = clamp(p) * (1 - ease(prog(t, AT(7) - 0.3, 0.3)));
+    const p = pop(prog(t, S4 + B(1) + i * 0.2, 0.5));
+    tag.style.opacity = clamp(p) * (1 - ease(prog(t, S5 - 0.3, 0.3)));
     tag.style.transform = `translateY(${(1 - p) * 30}px) scale(${lerp(0.85, 1, p)})`;
   });
-  // Bars 7–8
-  words($('pr1'), t, AT(7) + B(1), 0.12, AT(9) - 0.35, SNAP);
-  words($('pr2'), t, AT(7) + B(2.5), 0.1, AT(9) - 0.35, SNAP);
 
-  // Bar 9: the end card. Nook pops in, breathes, and winks.
+  // Scene 5
+  words($('pr1'), t, S5 + 0.2, 0.12, S6 - 0.3, SNAP);
+  words($('pr2'), t, S5 + B(1), 0.1, S6 - 0.3, SNAP);
+
+  // Scene 6: the end card. Nook pops in and winks.
   const cta = $('cta');
-  cta.style.opacity = ease(prog(t, AT(9), 0.5));
+  cta.style.opacity = ease(prog(t, S6, 0.35));
   const co = $('ctaOrb'); co.dataset.base = '';
-  const wink = Math.sin(Math.PI * clamp(prog(t, AT(10) + B(1), 0.5)));
-  orb(co, t, { scale: lerp(0.7, 1, pop(prog(t, AT(9), 0.9))), wink, blinkOffset: 0.4 });
-  words($('ctaWord'), t, AT(9) + B(0.5), B(0.5), null, SNAP);
-  fade($('ctaUrl'), t, AT(9) + B(2), null, SNAP);
-  fade($('ctaTags'), t, AT(9) + B(3), null, SNAP);
-  fade($('ctaFoot'), t, AT(9) + B(3.5), null, SNAP);
+  const wink = Math.sin(Math.PI * clamp(prog(t, S6 + B(4), 0.5)));
+  orb(co, t, { scale: lerp(0.6, 1, pop(prog(t, S6, 0.7))), wink, blinkOffset: 0.4 });
+  words($('ctaWord'), t, S6 + 0.15, 0.15, null, SNAP);
+  fade($('ctaUrl'), t, S6 + B(1.5), null, SNAP);
+  fade($('ctaTags'), t, S6 + B(2.5), null, SNAP);
+  fade($('ctaFoot'), t, S6 + B(3), null, SNAP);
 
   // The light behind everything lifts a little on each kick while the drums play.
-  if (t > AT(1) && t < AT(10)) {
+  if (t < S6 + BAR(1)) {
     const bt = t - Math.floor(t / T.beat) * T.beat, onKick = T.index(t) % 2 === 0;
-    $('glow').style.opacity = parseFloat($('glow').style.opacity || 1) + (onKick ? 0.3 * Math.exp(-bt / 0.3) : 0);
+    $('glow').style.opacity = parseFloat($('glow').style.opacity || 1) + (onKick ? 0.35 * Math.exp(-bt / 0.3) : 0);
   }
 }
 
 NV.boot({
-  duration: AT(10) + 3.5,
-  music: { mood: 'calm', bpm: T.bpm, drumsFrom: AT(1), drumsUntil: AT(10) },
+  duration: S6 + BAR(1) + 3,
+  music: { mood: 'calm', bpm: T.bpm, drumsFrom: 0, drumsUntil: S6 + BAR(1) },
   cues: [
-    { t: AT(1), sound: 'open' },
-    ...[1, 2, 3].map(n => ({ t: AT(1) + B(n), sound: 'tick', gain: 1.5 })),
-    { t: AT(6) + B(1), sound: 'chime', gain: 0.6 },
-    { t: AT(8), sound: 'done' },
+    { t: 0, sound: 'chime' },
+    { t: B(1), sound: 'tick', gain: 1.5 },
+    { t: B(1.5), sound: 'tick', gain: 1.5 },
+    { t: HOOK_MERGE, sound: 'merge', gain: 0.8 },
+    { t: S2, sound: 'chime', gain: 0.6 },
+    { t: S5, sound: 'open', gain: 0.8 },
+    { t: MERGE - B(1), sound: 'done' },
     { t: MERGE, sound: 'merge' },
-    { t: AT(10), sound: 'end' },
+    { t: S6 + BAR(1), sound: 'end' },
   ],
   render,
 });

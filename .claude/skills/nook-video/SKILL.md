@@ -6,7 +6,7 @@ description: Make a short video about Nook (an Instagram Reel, TikTok, YouTube S
 # Making a Nook video
 
 A Nook video looks like Nook and feels like Nook, and it is fun to watch: Nook itself (the orb) as the main
-character, a hook in the first second, the real notch UI on a near-black canvas, words that land on the beat, and a
+character, a hook on the very first frame, the real notch UI on a near-black canvas, words that land on the beat, and a
 soft lo-fi groove under it. Catchy, never loud: no flashes, no hard hits, nothing that shouts. Calm by design, like
 the app (see the comment on `enum NookTheme` in `apps/macos/NotchUI/Theme/NookTheme.swift`).
 
@@ -21,7 +21,7 @@ for another language; Nook speaks English, Dutch, German, French and Spanish, so
 | `kit/nook-video.js` | `NV`: the frame clock (`NV.boot`) and beat grid (`NV.tempo`), motion (`fade`, `stagger`, `settle`, `pop`, `ease`, `swapText`, `breathe`), kinetic type (`words`, `cycle`, `type`), the orb (`NV.orb` breathes, blinks, looks around and winks like `NookOrb.swift`), Nook's celebration sparks (`NV.sparks`), and every app state with its color (`NV.STATES`, `NV.state`) |
 | `scripts/render.mjs` | Renders a page frame by frame with Playwright, composes the score, mixes and encodes the MP4, renders the cover, makes a storyboard |
 | `scripts/music.py` | The score: pads, soft bass, a lo-fi groove (plucked arpeggio, round kick, snap, a whisper of hi-hat) and sound cues, generated from scratch (numpy only), so it is free to use anywhere |
-| `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 35 s Reel on an 80 BPM grid and its cover: copy these to start |
+| `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 25 s Reel on an 80 BPM grid with a cold open, and its cover: copy these to start |
 
 Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On a Mac:
 `brew install ffmpeg node && npm i -g playwright && npx playwright install chromium && pip3 install numpy`.
@@ -33,8 +33,8 @@ Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On 
    the strings in `apps/macos/Core/I18n*.swift` so labels in the video match the app's own words. Never show a feature,
    number, platform or claim that the repository does not back up.
 2. **Write the script on the beat grid.** Use about 80 BPM (a bar is 3 s) and give every scene one or two bars: a
-   hook of about a bar and a half, then one idea per scene, and an end card that holds at least 4 s. One line on screen
-   per scene (headline ≤ 6 words), plus what the notch or Nook does in it. 30–40 s in total. Then check the reading
+   one-bar cold open (see "The first two seconds"), then one idea per scene, and an end card that holds at least 4 s. One line on screen
+   per scene (headline ≤ 6 words), plus what the notch or Nook does in it. 20–30 s in total. Then check the reading
    time of every line (see "Fast in, long enough to read"). Mark the moments that get a
    sound cue (the drop when the notch opens, cards arriving, a state turning to done or merged, the end card).
 3. **Build the page** in `.scratch/<name>/` (git-ignored; see AGENTS.md section 5) by copying
@@ -111,11 +111,17 @@ Open, Merged, Approved, Commented, Draft, Failed); check `I18n.swift` for the ex
 People decide in the first second whether to keep watching. Make that second count, then keep a rhythm. The app
 animates with springs and never jerks; a video does the same, on the beat.
 
-- **Hook in the first bars:** open on Nook (the orb, big and centered with its glow) doing something alive: its eyes
-  glide left, then right, it blinks, it looks at you (`NV.orb(el, t, { look })`, each look eased over half a second),
-  then one or two words ("Psst.", "Got a minute?"). No logo splash, no title card.
-- **The drop:** after the hook the drums come in and the orb flies up into the notch, which opens around it. That
-  moment is the video's "aha"; give it the `open` cue.
+- **The first two seconds decide everything.** People scroll on within two seconds, so the video starts in the middle
+  of the action (a cold open):
+  - **Frame one already says something:** a bold line is fully on screen at `t = 0`, a statement that makes people
+    curious ("This lives in your notch."). Never a fade from black, a logo splash, a title card, or an empty frame.
+  - **The product moves at once:** the notch is opening on frame one, and within two seconds things land in it on the
+    beat (an agent done, one waiting, a pull request merged) and Nook celebrates with sparks.
+  - **The music is already going:** drums from the first frame (`drumsFrom: 0`), no fade-in, a cue on `t = 0`.
+  - Tried and rejected: opening on the orb slowly looking around with "Psst. Got a minute?" lost viewers within two
+    seconds. Character moments belong after the hook, not before it.
+- **Then the story:** the reason to care (it's open source), who it needs, how easy it is, and the call to action; one
+  idea per scene, a new scene about every 3 s.
 - **Fast in, long enough to read.** Catchy comes from quick, on-beat arrivals; readable comes from how long a line
   then stays. Keep the two apart:
   - Arrivals are quick: about 0.6 s (`SNAP = { dur: 0.6 }`), words 0.12–0.2 s apart, cards one per beat, tags a
@@ -149,7 +155,7 @@ animates with springs and never jerks; a video does the same, on the beat.
 `render.mjs` composes the score with `music.py` and mixes it to -16 LUFS with 2 dB of true-peak headroom.
 
 - **Groove (with `bpm`, about 80):** open chords (major sevenths and ninths), one per bar, a soft plucked arpeggio from
-  the first second (the hook already has music), and from the drop a round kick on 1 and 3, a quiet finger snap on 2
+  the first second, and from the first frame (or a later drop) a round kick on 1 and 3, a quiet finger snap on 2
   and 4 and a whisper of swung hi-hat (it may start mid-bar, on the drop); the pads dip softly on each kick so it all breathes. Lo-fi, warm, unhurried,
   nothing bright or hard.
   Stop the drums when the end card arrives (`drumsUntil`) and let the chords and the `end` bell ring out.
@@ -203,7 +209,8 @@ Write it to `.scratch/<name>/caption.md`, English first and the user's language 
 - [ ] Every claim and label is backed by the repository; labels use the app's own words.
 - [ ] State colors keep their one meaning; nothing decorative is colored.
 - [ ] Nothing in the safe zones; nothing wraps or clips (check the stills at every scene).
-- [ ] The video opens on a hook (Nook doing something), arrivals are quick and on the beat, and the orb acts.
+- [ ] Frame one has a bold line and motion, the music is playing, and the product shows something within 2 s.
+- [ ] Arrivals are quick and on the beat, and the orb acts.
 - [ ] Every line passes the reading rule (1.2 s + 0.3 s per word after its last word lands); all words sharp before each exit.
 - [ ] Motion is soft: no shakes, flashes, hard zooms or empty frames; every headline is up long enough to read twice.
 - [ ] The MP4 has audio, the right length, loudness near -16 LUFS; cues land on their moments.
