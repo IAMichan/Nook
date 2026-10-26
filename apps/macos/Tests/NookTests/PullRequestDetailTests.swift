@@ -95,6 +95,15 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertEqual(detail.mergeNote, "agents.pr.note.unstable")
         detail.checks = Array(checks.dropFirst())
         XCTAssertEqual(detail.checkSummary, .pending)
+
+        // GitHub reports "unstable" while checks are still running: that is not a failure.
+        var object = try json(pull)
+        object["mergeable_state"] = "unstable"
+        var unstable = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        unstable.checks = Array(checks.dropFirst())
+        XCTAssertEqual(unstable.mergeNote, "agents.pr.note.checksRunning")
+        unstable.checks = checks
+        XCTAssertEqual(unstable.mergeNote, "agents.pr.note.unstable")
     }
 
     func testConversationIsInOrderWithoutEmptyWrappers() throws {
