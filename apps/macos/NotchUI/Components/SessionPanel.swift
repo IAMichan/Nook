@@ -73,6 +73,8 @@ struct SessionPanel: View {
     let agentWorking: Bool
     let showChanges: () -> Void
     let close: () -> Void
+    /// Beside the conversation: flat on the canvas like the tool panels, instead of the popover's own card.
+    var docked = false
 
     @AppStorage("agents.panel.openIn") private var openInID = OpenInTarget.finder
     @State private var targets: [OpenInTarget] = []
@@ -113,8 +115,9 @@ struct SessionPanel: View {
             }
         }
         .padding(NookTheme.Spacing.md)
-        .frame(width: 300, alignment: .leading)
-        .cardBackground(DropdownStyle.panel, stroke: NookTheme.line2, radius: NookTheme.Radius.sheet, style: .continuous)
+        .frame(width: docked ? nil : 300, alignment: .leading)
+        .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
+        .background(docked ? Color.clear : DropdownStyle.panel)
         .task(id: directory) {
             targets = OpenInTarget.available()
             let folder = directory

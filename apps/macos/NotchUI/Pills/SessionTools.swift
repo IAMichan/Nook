@@ -295,7 +295,10 @@ struct SessionWorkbench<Conversation: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
             if docked {
-                // The switch takes the height of the conversation's header, so the card starts where the conversation does.
+                // Ruled off from the conversation like the tool panels; the switch takes the height of the conversation's
+                // header, so the rows start where the conversation does.
+                HStack(spacing: 0) {
+                    NookDivider(vertical: true)
                 VStack(alignment: .trailing, spacing: 0) {
                     SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
                         .frame(height: 30)
@@ -305,6 +308,7 @@ struct SessionWorkbench<Conversation: View>: View {
                         viewModel.sessionTool = .changes
                     }
                     .id(directory)
+                }
                 }
                 .frame(width: PanelLayout.sessionPanel)
                 .padding(.leading, NookTheme.Spacing.sm)

@@ -258,7 +258,7 @@ struct DockedSessionPanel: View {
 
     var body: some View {
         ScrollView {
-            SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges) {}
+            SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges, close: {}, docked: true)
         }
         .scrollIndicators(.never)
         .task(id: model.directory) {
