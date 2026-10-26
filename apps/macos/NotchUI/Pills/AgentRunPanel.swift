@@ -262,6 +262,7 @@ struct AgentRunPanel: View {
                     }
                     .help(tr("ws.title.renameHelp"))
             }
+            if let lineage = run.lineage { LineageLink(workspace: workspace, lineage: lineage) }
             Spacer(minLength: 8)
             ResourceUsageBadge(workspace: workspace, runID: runID)
             if let remote = run.remote {
@@ -324,7 +325,7 @@ struct AgentRunPanel: View {
                 if let id = workspace.fork(runID) { app.viewModel.selectedAgentID = "run:" + id.uuidString }
             }
             .disabled(!workspace.canTransfer(runID))
-            if run.lineage != nil {
+            if run.lineage?.kind == .fork {
                 Button(tr("agents.mergeBack")) {
                     if workspace.mergeBack(runID), let parent = run.lineage?.parentID {
                         app.viewModel.selectedAgentID = "run:" + parent.uuidString

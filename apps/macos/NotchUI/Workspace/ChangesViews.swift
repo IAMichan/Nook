@@ -55,7 +55,7 @@ struct ChangesSheet: View {
                              onComment: { line, code, comment in
                                  workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment))
                              },
-                             onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true)
+                             onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true, path: file.path)
                         .sessionFileMenu(workspace, runID: runID, path: file.path)
                 }
             }

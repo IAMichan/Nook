@@ -178,7 +178,7 @@ extension WorkspaceManager {
     /// fork's timeline since the point where it split off. The parent takes it up as soon as it is idle.
     @discardableResult
     func mergeBack(_ id: UUID) -> Bool {
-        guard canTransfer(id), let fork = run(id), let lineage = fork.lineage,
+        guard canTransfer(id), let fork = run(id), let lineage = fork.lineage, lineage.kind == .fork,
               let parent = run(lineage.parentID), !parent.archived else { return false }
         loadTimeline(id)
         guard let handoff = ContextHandoff.render(

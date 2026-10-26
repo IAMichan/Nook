@@ -113,8 +113,8 @@ struct StackedDiffList<Content: View>: View {
 extension StackedDiffList where Content == DiffText {
     init(files: [StackedDiffFile], scope: String, expanded: Binding<Set<String>>, showsTree: Bool = false,
          focus: String? = nil, diff: @escaping (StackedDiffFile) async throws -> String) {
-        self.init(files: files, scope: scope, expanded: expanded, showsTree: showsTree, focus: focus, diff: diff) { _, text in
-            DiffText(text: text, stacked: true)
+        self.init(files: files, scope: scope, expanded: expanded, showsTree: showsTree, focus: focus, diff: diff) { file, text in
+            DiffText(text: text, stacked: true, path: file.path)
         }
     }
 }

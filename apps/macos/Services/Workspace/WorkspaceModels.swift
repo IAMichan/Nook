@@ -587,6 +587,8 @@ struct NewRunConfig: Equatable, Sendable {
     var delegation: DelegationLink? = nil
     /// Run on another machine over SSH, in this folder there (or a new worktree of it there).
     var remote: RemoteTarget? = nil
+    /// Set for a session of a model comparison after its first one (see `ModelComparison`).
+    var lineage: RunLineage? = nil
 
     /// Problem description enum, or nil if valid. Only checks input; manager checks Git and paths.
     var problem: ConfigProblem? {

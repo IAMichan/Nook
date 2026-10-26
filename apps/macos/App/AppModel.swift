@@ -519,6 +519,8 @@ final class AppModel: ObservableObject {
     @Published var selectedExternalSession: String?
     /// The first-run flow is showing in the main window.
     @Published var showOnboarding = false
+    /// The step the first-run flow opens on (0: the start; the empty Agents tab opens the coding agents step).
+    @Published var onboardingStep = 0
     /// The Settings window (created on first use).
     var settingsWindow: NSWindow?
     /// Tracks the message currently streaming per conversation, and its task. Multiple conversations can run concurrently.

@@ -520,11 +520,13 @@ final class WorkspaceManager: ObservableObject {
             guard let git else { throw StartError.noGit }
             guard let root = repoRoot else { throw StartError.notRepository }
             let base = config.baseBranch
-            let name = config.branchName
+            // The project's own branch prefix (Settings › Workspace, per project) wins over the global one.
+            let prefix = settings.sessionDefaults(for: root).branchPrefix
+            let name = ProjectSettings.branchName(config.branchName, globalPrefix: WorktreeNaming.branchPrefix, projectPrefix: prefix)
             let rootFolder = config.worktreeRoot.isEmpty ? settings.worktreeRoot : config.worktreeRoot
             let repoName = URL(fileURLWithPath: root).lastPathComponent
             let path = WorktreeNaming.worktreePath(root: (rootFolder as NSString).expandingTildeInPath, repoName: repoName,
-                                                   slug: WorktreeNaming.directorySlug(branch: name),
+                                                   slug: WorktreeNaming.directorySlug(branch: name, prefix: prefix),
                                                    exists: { FileManager.default.fileExists(atPath: $0) })
             do {
                 try await Task.detached(priority: .userInitiated) {
@@ -578,6 +580,7 @@ final class WorkspaceManager: ObservableObject {
             delegation: config.delegation
         )
         run.effort = config.effort
+        run.lineage = config.lineage
         runs.insert(run, at: 0)
         events[id] = []
         settings.rememberProject(repoRoot ?? projectPath)
@@ -640,8 +643,7 @@ final class WorkspaceManager: ObservableObject {
         let id = UUID()
         let now = Date()
         let clean = InjectedPrompt.title(title)
-        let permission = provider.capabilities.policies.contains(settings.defaultPermission)
-            ? settings.defaultPermission : (provider.capabilities.policies.first ?? .acceptEdits)
+        let permission = settings.sessionDefaults(for: repoRoot ?? projectPath).permission(for: provider)
         let run = WorkspaceRun(
             id: id,
             title: clean.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: clean),

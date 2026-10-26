@@ -1,9 +1,9 @@
 import SwiftUI
 import CoreGraphics
 
-/// The first-run flow, in the main window: pick a brain that suits this Mac, allow what Nook needs, look at the optional
-/// connections. Three steps, shown as a plan on top with a check for each one that is done; each can be skipped, and
-/// nothing is switched on without a click.
+/// The first-run flow, in the main window: pick a brain that suits this Mac, allow what Nook needs, set up your coding
+/// agents and projects, look at the optional connections. Four steps, shown as a plan on top with a check for each one
+/// that is done; each can be skipped, and nothing is switched on without a click.
 struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var settings = AppSettings.shared
@@ -17,7 +17,9 @@ struct OnboardingView: View {
     @State private var error: String?
     @State private var tick = 0
 
-    private let steps = 3
+    private let steps = 4
+    /// The "Coding agents" step, which the empty Agents tab opens directly (`AppModel.startOnboarding(at:)`).
+    static let agentsStep = 2
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
@@ -27,6 +29,7 @@ struct OnboardingView: View {
                 switch step {
                 case 0: brainStep
                 case 1: permissionsStep
+                case Self.agentsStep: OnboardingAgentsStep()
                 default: connectionsStep
                 }
             }
@@ -39,6 +42,7 @@ struct OnboardingView: View {
         .background(NookTheme.canvas)
         .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
+        .onAppear { step = min(max(app.onboardingStep, 0), steps - 1) }
         .task { recommendations = await app.brainRecommendations() }
     }
 
@@ -126,11 +130,12 @@ struct OnboardingView: View {
 
     // MARK: Step plan
 
-    /// The three steps by name, the current one highlighted and a check on each one that is done.
+    /// The steps by name, the current one highlighted and a check on each one that is done.
     private var stepPlan: some View {
         let _ = tick
-        let titles = [tr("onboarding.plan.brain"), tr("onboarding.plan.permissions"), tr("onboarding.plan.connections")]
-        let done = [settings.brainReady, missingPermissions.isEmpty, !app.connectors.active.isEmpty]
+        let titles = [tr("onboarding.plan.brain"), tr("onboarding.plan.permissions"), tr("onboarding.plan.agents"),
+                      tr("onboarding.plan.connections")]
+        let done = [settings.brainReady, missingPermissions.isEmpty, !app.connectedProviders.isEmpty, !app.connectors.active.isEmpty]
         return HStack(spacing: NookTheme.Spacing.md) {
             ForEach(0..<steps, id: \.self) { index in
                 Button { step = index } label: {
