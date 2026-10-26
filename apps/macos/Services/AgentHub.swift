@@ -761,6 +761,10 @@ final class AgentHub: ObservableObject {
 
         records[key] = record
         rebuild()
+        // A new prompt is a new turn: a chat you settled comes back now, whether or not the Agents list is on screen.
+        if kind == "UserPromptSubmit", let session = sessions.first(where: { $0.id == key }) {
+            FinishedSessions.shared.reopen(FinishedSessions.key(session: session))
+        }
         if attention, let session = sessions.first(where: { $0.id == key }) {
             onAttention?(session)
         }

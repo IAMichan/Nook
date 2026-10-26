@@ -4,7 +4,8 @@ import Foundation
 /// nothing has happened in the chat for a while (`autoFinishAfter`). A finished chat comes back by itself when the agent
 /// starts working in it again, and you can reopen it by hand; a chat you reopened stays open until it has new activity.
 /// A chat you mark while it still reads as busy (a turn that hangs, a hook that never came) stays finished until that turn
-/// ends and a new one starts.
+/// ends and a new one starts. A new turn reopens a chat where it starts (`WorkspaceManager.launchTurn`, a hook's
+/// `UserPromptSubmit`), not only when the Agents list happens to be on screen to see it work (`reconcile(busy:)`).
 ///
 /// Chats are identified by agent and conversation, not by the row they are shown in, so a mark follows a conversation from
 /// a running session to the earlier sessions list.
