@@ -2,13 +2,15 @@ import Foundation
 import AppKit
 import AVFoundation
 import Speech
+import Combine
 
 /// Listens in the background for "Hey Nook" and triggers active listening.
 /// Disabled by default and requires on-device speech recognition: audio never leaves your Mac.
 ///
 /// Frugal: the microphone only measures loudness until someone speaks (EnergyVAD); speech
 /// recognition runs for that stretch only, with the half second before it, and stops in the silence after. Listening
-/// pauses while the screen is locked or asleep and in Low Power Mode, and comes back by itself.
+/// pauses while the screen is locked or asleep, in Low Power Mode and while the battery runs low (`EnergyPlan.sparesBattery`),
+/// and comes back by itself.
 @MainActor
 final class WakeWordService {
     var onWake: (() -> Void)?
@@ -23,6 +25,7 @@ final class WakeWordService {
     private var task: SFSpeechRecognitionTask?
     private var paused = false
     private var observers: [NSObjectProtocol] = []
+    private var energyWatch: AnyCancellable?
     /// Each speech stretch gets an incremented generation; late results of an older one are ignored.
     private var generation = 0
 
@@ -60,6 +63,7 @@ final class WakeWordService {
             DistributedNotificationCenter.default().removeObserver($0)
         }
         observers = []
+        energyWatch = nil
         // Wait for the microphone to be released: voice input may start right after.
         teardown(wait: true)
     }
@@ -123,7 +127,7 @@ final class WakeWordService {
     // MARK: Pausing
 
     private var shouldPause: Bool {
-        ProcessInfo.processInfo.isLowPowerModeEnabled
+        ProcessInfo.processInfo.isLowPowerModeEnabled || EnergyMonitor.shared.plan.sparesBattery
     }
 
     private func observePause() {
@@ -150,11 +154,19 @@ final class WakeWordService {
             MainActor.assumeIsolated { self?.resume() }
         })
         observers.append(NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if self.shouldPause { self.pause() } else { self.resume() }
-            }
+            MainActor.assumeIsolated { self?.followPower() }
         })
+        // A battery that runs low, or the charger coming back.
+        energyWatch = EnergyMonitor.shared.$plan
+            .map(\.sparesBattery)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.followPower() }
+    }
+
+    private func followPower() {
+        if shouldPause { pause() } else { resume() }
     }
 
     private func pause() {

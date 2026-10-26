@@ -11,8 +11,14 @@ final class CompletionPowerTests: XCTestCase {
         XCTAssertNil(power.maxWords)
     }
 
+    func testOnBatteryItPausesByDefault() {
+        XCTAssertTrue(CompletionPower.plan(prefs: CompletionPreferences(), signals: EnergySignals(onBattery: true)).paused)
+    }
+
     func testOnBatteryTheModelOnlyRunsForWhatShows() {
-        let power = CompletionPower.plan(prefs: CompletionPreferences(), signals: EnergySignals(onBattery: true))
+        var prefs = CompletionPreferences()
+        prefs.pauseOnBattery = false
+        let power = CompletionPower.plan(prefs: prefs, signals: EnergySignals(onBattery: true))
         XCTAssertTrue(power.onBattery)
         XCTAssertFalse(power.speculates || power.writesAhead || power.branches || power.warms)
         XCTAssertEqual(power.minimumDelay, CompletionPower.typingPause)

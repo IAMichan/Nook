@@ -587,17 +587,20 @@ struct AutocompleteSettingsSection: View {
         let saving = energy.signals.onBattery || energy.signals.lowPowerMode
         return Section(tr("autocomplete.section.battery")) {
             SettingNote(tr(saving ? "autocomplete.battery.now" : "autocomplete.battery.plugged"), tone: saving ? .success : .info)
-            SettingToggle(tr("autocomplete.battery.fewerRuns"), detail: tr("autocomplete.battery.fewerRunsDetail"), isOn: $store.prefs.fewerRunsOnBattery)
-            SettingToggle(tr("autocomplete.battery.shorter"), detail: tr("autocomplete.battery.shorterDetail"), isOn: $store.prefs.shorterOnBattery)
-            SettingToggle(tr("autocomplete.battery.smaller"),
-                          detail: autocomplete.lighterModel.map { tr("autocomplete.battery.smallerDetail", $0.title) } ?? tr("autocomplete.battery.smallerNone"),
-                          isOn: $store.prefs.smallerModelOnBattery)
-            SettingToggle(tr("autocomplete.battery.onDemand"), detail: tr("autocomplete.battery.onDemandDetail"), isOn: $store.prefs.onDemandOnBattery)
-            if store.prefs.onDemandOnBattery {
-                CompletionKeyRecorder(title: tr("autocomplete.key.suggestNow"), shortcut: $store.prefs.suggestNow, fallback: nil, allowsOff: true)
-                if store.prefs.suggestNow == nil { SettingNote(tr("autocomplete.battery.onDemandNoKey"), tone: .warning) }
-            }
             Toggle(tr("autocomplete.battery.pause"), isOn: $store.prefs.pauseOnBattery)
+            // Paused, none of the rest applies.
+            if !store.prefs.pauseOnBattery {
+                SettingToggle(tr("autocomplete.battery.fewerRuns"), detail: tr("autocomplete.battery.fewerRunsDetail"), isOn: $store.prefs.fewerRunsOnBattery)
+                SettingToggle(tr("autocomplete.battery.shorter"), detail: tr("autocomplete.battery.shorterDetail"), isOn: $store.prefs.shorterOnBattery)
+                SettingToggle(tr("autocomplete.battery.smaller"),
+                              detail: autocomplete.lighterModel.map { tr("autocomplete.battery.smallerDetail", $0.title) } ?? tr("autocomplete.battery.smallerNone"),
+                              isOn: $store.prefs.smallerModelOnBattery)
+                SettingToggle(tr("autocomplete.battery.onDemand"), detail: tr("autocomplete.battery.onDemandDetail"), isOn: $store.prefs.onDemandOnBattery)
+                if store.prefs.onDemandOnBattery {
+                    CompletionKeyRecorder(title: tr("autocomplete.key.suggestNow"), shortcut: $store.prefs.suggestNow, fallback: nil, allowsOff: true)
+                    if store.prefs.suggestNow == nil { SettingNote(tr("autocomplete.battery.onDemandNoKey"), tone: .warning) }
+                }
+            }
         }
     }
 

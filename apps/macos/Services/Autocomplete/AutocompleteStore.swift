@@ -48,6 +48,12 @@ final class AutocompleteStore: ObservableObject {
             prefs.modelPath = defaults.string(forKey: "autocompleteModelPath") ?? ""
             if defaults.string(forKey: "autocompleteAcceptKey") == "optionTab" { prefs.acceptWord = .optionTab }
         }
+        // Pausing on battery was off at first; every suggestion is a model run on this Mac, so it is on now for everyone who
+        // kept the old default. Turning it off again in Settings › Autocomplete sticks.
+        if !defaults.bool(forKey: "autocompleteBatteryPauseMigrated") {
+            prefs.pauseOnBattery = true
+            defaults.set(true, forKey: "autocompleteBatteryPauseMigrated")
+        }
         // 120 ms was the first default; 70 shows a suggestion sooner, and a stale one is stopped by the next key anyway.
         if !defaults.bool(forKey: "autocompleteDelayMigrated") {
             if prefs.delayMilliseconds == 120 { prefs.delayMilliseconds = 70 }

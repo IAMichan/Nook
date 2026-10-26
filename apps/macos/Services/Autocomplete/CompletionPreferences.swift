@@ -142,7 +142,8 @@ struct CompletionPreferences: Codable, Equatable {
 
     // Battery (and Low Power Mode, see `CompletionPower`)
     var shorterOnBattery = true
-    var pauseOnBattery = false
+    /// Every suggestion is a run of a model on this Mac, on almost every key: the biggest draw on the battery there is.
+    var pauseOnBattery = true
     /// The model runs only once you pause and a suggestion can show: nothing written ahead, nothing on a click.
     var fewerRunsOnBattery = true
     /// Suggestions only with the `suggestNow` key.
