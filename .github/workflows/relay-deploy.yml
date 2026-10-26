@@ -43,7 +43,9 @@ jobs:
             echo "::notice::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set; Nook's relay was not deployed."
             exit 0
           fi
+          # A failed deploy fails the job (tee would hide it); finding no address in the log does not.
+          set -o pipefail
           npx --yes wrangler@4 deploy | tee deploy.log
-          address="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)"
+          address="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1 || true)"
           echo "Relay: ${address:-see the log}" >> "$GITHUB_STEP_SUMMARY"
           echo "Set the repository variable NOOK_RELAY_URL to this address once." >> "$GITHUB_STEP_SUMMARY"

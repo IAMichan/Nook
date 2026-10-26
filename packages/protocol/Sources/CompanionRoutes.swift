@@ -311,9 +311,14 @@ struct CommandReceipts: Sendable {
 
     func response(for id: String) -> CompanionResponse? { stored[id] }
 
-    /// Keeps an answer that settles the request; a passing failure (`failed`, `busy`) may be tried again.
+    /// Whether an answer settles the request; a passing failure (`failed`, `busy`) may be tried again with the same id.
+    static func settles(_ response: CompanionResponse) -> Bool {
+        response.ok || (response.error != .failed && response.error != .busy)
+    }
+
+    /// Keeps an answer that settles the request.
     mutating func record(_ id: String, _ response: CompanionResponse) {
-        guard response.ok || (response.error != .failed && response.error != .busy) else { return }
+        guard Self.settles(response) else { return }
         if stored[id] == nil {
             order.append(id)
             if order.count > Self.capacity { stored[order.removeFirst()] = nil }

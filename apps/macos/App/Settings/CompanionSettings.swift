@@ -241,7 +241,7 @@ struct CompanionSettingsRows: View {
         switch server.state {
         case .listening(let port):
             SettingNote(tr("companion.listening", Int(port)), tone: .success)
-            let places = server.endpoints().map { $0.tailnet == true ? "\($0.host) (Tailscale)" : $0.host }
+            let places = server.endpoints().map { $0.tailnet == true ? tr("companion.reachable.tailnet", $0.host) : $0.host }
             if !places.isEmpty { SettingNote(tr("companion.reachable", places.joined(separator: ", "))) }
         case .failed(let message): SettingNote(tr("companion.failed", message), tone: .error)
         case .stopped: EmptyView()

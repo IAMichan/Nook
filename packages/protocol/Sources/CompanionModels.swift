@@ -515,6 +515,9 @@ struct RequestGuard: Sendable {
         return nil
     }
 
+    /// A request that failed in passing (`failed`, `busy`) may come again with the same id: it is no repeat then.
+    mutating func forget(_ request: CompanionRequest) { seen.forget(request.id) }
+
     /// For a request whose id already has an answer (`CommandReceipts`): it must still be fresh and within the rate,
     /// but being a repeat is the point.
     mutating func admitRetry(_ request: CompanionRequest, now: Date) -> CompanionError? {

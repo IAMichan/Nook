@@ -59,6 +59,8 @@ final class CompanionRelayClient: ObservableObject {
     private static let tokenAccount = "companion.relay.cloudflareToken"
     /// The relay code version (`CloudflareRelaySetup.version`) deployed to `address`, and that address.
     private static let deployedKey = "companion.relay.deployed"
+    /// The Cloudflare account the relay was set up on, so an update goes to the same one.
+    private static let accountKey = "companion.relay.cloudflareAccount"
     private var updateChecked = false
     private var rooms: [String: RelayRoom] = [:]
     private var watch: AnyCancellable?
@@ -131,8 +133,11 @@ final class CompanionRelayClient: ObservableObject {
         setup = .working(.account)
         Task {
             do {
-                let address = try await CloudflareRelayDeployer.deploy(token: token) { [weak self] step in self?.setup = .working(step) }
+                let (address, account) = try await CloudflareRelayDeployer.deploy(token: token) { [weak self] step in
+                    self?.setup = .working(step)
+                }
                 _ = Keychain.write(token, account: Self.tokenAccount)
+                UserDefaults.standard.set(account, forKey: Self.accountKey)
                 markDeployed(address)
                 mode = .own
                 self.address = address
@@ -149,6 +154,7 @@ final class CompanionRelayClient: ObservableObject {
     func forgetOwnRelay() {
         _ = Keychain.write("", account: Self.tokenAccount)
         UserDefaults.standard.removeObject(forKey: Self.deployedKey)
+        UserDefaults.standard.removeObject(forKey: Self.accountKey)
         address = ""
         setup = .idle
     }
@@ -172,7 +178,9 @@ final class CompanionRelayClient: ObservableObject {
         let version = CloudflareRelaySetup.version(of: modules)
         guard UserDefaults.standard.string(forKey: Self.deployedKey) != version + " " + current else { return }
         Task {
-            if let deployed = try? await CloudflareRelayDeployer.deploy(token: token, progress: { _ in }), deployed == current {
+            let account = UserDefaults.standard.string(forKey: Self.accountKey)
+            if let deployed = try? await CloudflareRelayDeployer.deploy(token: token, account: account, progress: { _ in }),
+               deployed.address == current {
                 markDeployed(current)
             }
         }

@@ -129,6 +129,18 @@ final class CompanionRoutesTests: XCTestCase {
         XCTAssertNil(receipts.response(for: "a"), "the oldest go first")
     }
 
+    func testARequestThatFailedInPassingGetsThroughAgain() {
+        var guardian = RequestGuard()
+        let now = Date()
+        let request = CompanionRequest(id: "f", sent: now.timeIntervalSince1970, op: .send, session: "s", text: "hi")
+        XCTAssertNil(guardian.admit(request, now: now))
+        XCTAssertFalse(CommandReceipts.settles(.failure("f", .busy)))
+        XCTAssertTrue(CommandReceipts.settles(.failure("f", .unknownSession)))
+        guardian.forget(request)
+        XCTAssertNil(guardian.admit(request, now: now), "the outbox sends it again with the same id")
+        XCTAssertEqual(guardian.admit(request, now: now), .replay)
+    }
+
     func testRetryOfAKnownRequestIsAdmittedButStillChecked() {
         var guardian = RequestGuard()
         let now = Date()

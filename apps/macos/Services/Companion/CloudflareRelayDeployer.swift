@@ -25,15 +25,24 @@ enum CloudflareRelayDeployer {
         return modules
     }
 
-    /// Deploys (or updates) the relay; its address once it answers.
-    static func deploy(token: String, progress: @escaping @MainActor (Step) -> Void) async throws -> String {
+    /// Deploys (or updates) the relay; its address once it answers, and the account it is on. `account` is the account
+    /// an earlier setup used: a token that can see several accounts goes on that one, never on a guess.
+    static func deploy(token: String, account preferred: String? = nil,
+                       progress: @escaping @MainActor (Step) -> Void) async throws -> (address: String, account: String) {
         guard let modules = bundledModules() else { throw Failure(message: tr("companion.relay.setup.noCode")) }
         let client = Client(token: token)
 
         await progress(.account)
-        let accounts = try await client.call("GET", "/accounts?per_page=5")
-        guard let account = (accounts as? [[String: Any]])?.first?["id"] as? String else {
+        let accounts = ((try await client.call("GET", "/accounts?per_page=50")) as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+        let account: String
+        if let preferred, accounts.contains(preferred) {
+            account = preferred
+        } else if accounts.count == 1 {
+            account = accounts[0]
+        } else if accounts.isEmpty {
             throw Failure(message: tr("companion.relay.setup.noAccount"))
+        } else {
+            throw Failure(message: tr("companion.relay.setup.severalAccounts"))
         }
         // The account's workers.dev subdomain; an account that never used Workers has none yet.
         var subdomain = (try? await client.call("GET", "/accounts/\(account)/workers/subdomain") as? [String: Any])?["subdomain"] as? String
@@ -58,7 +67,7 @@ enum CloudflareRelayDeployer {
         let address = CloudflareRelaySetup.address(subdomain: subdomain)
         // A new workers.dev address can take a little while to answer.
         for _ in 0..<40 {
-            if await answers(address) { return address }
+            if await answers(address) { return (address, account) }
             try await Task.sleep(nanoseconds: 3_000_000_000)
         }
         throw Failure(message: tr("companion.relay.setup.noAnswer"))

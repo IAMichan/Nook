@@ -257,7 +257,14 @@ final class CompanionServer: ObservableObject {
             return
         }
         let response = await handle(request, deviceID: claimed)
-        if CommandReceipts.keeps(request.op) { receipts[claimed, default: CommandReceipts()].record(request.id, response) }
+        if CommandReceipts.keeps(request.op) {
+            if CommandReceipts.settles(response) {
+                receipts[claimed, default: CommandReceipts()].record(request.id, response)
+            } else {
+                // Failed in passing: the phone may send the same id again (its outbox does), and it must get through.
+                guards[claimed]?.forget(request)
+            }
+        }
         send(response, key: key, deviceID: claimed, on: connection)
     }
 

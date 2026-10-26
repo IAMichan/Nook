@@ -1,6 +1,6 @@
 # Nook Companion (iPhone)
 
-**Nook Companion** is a lightweight iPhone app that shows which coding-agent sessions on your Mac need your attention, letting you **approve or deny tool calls, answer questions, send follow-up messages, and stop sessions**. With a current Nook on the Mac it can also **start new agent sessions, follow a session's whole conversation, and chat with Nook itself**. It communicates directly with Nook on your Mac over your local Wi-Fi network (or Tailscale/VPN)—with no cloud relay server in between—and keeps a live connection while it is open (see *Staying Connected*).
+**Nook Companion** is a lightweight iPhone app that shows which coding-agent sessions on your Mac need your attention, letting you **approve or deny tool calls, answer questions, send follow-up messages, and stop sessions**. With a current Nook on the Mac it can also **start new agent sessions, follow a session's whole conversation, and chat with Nook itself**. It communicates directly with Nook on your Mac over your local Wi-Fi network (or Tailscale/VPN) and, only when you turn it on, through a relay that passes sealed bytes it cannot read (see *Away from Home*). It keeps a live connection while it is open (see *Staying Connected*).
 
 The phone sees two kinds of sessions:
 
