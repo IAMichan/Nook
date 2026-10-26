@@ -93,13 +93,17 @@
 <script>
 const $ = id => document.getElementById(id);
 const { prog, settle, pop, ease, lerp, fade, state, orb, words, cycle, sparks, clamp } = NV;
-const T = NV.tempo(72), B = n => T.at(n), BAR = n => T.bar(n);   // beat 0.833 s, bar 3.33 s
+// 80 BPM: a beat is 0.75 s, a bar 3 s. Things arrive fast and on the beat; every line then stays long enough to read.
+const T = NV.tempo(80), B = n => T.at(n), BAR = n => T.bar(n);
+// The hook gets a bar and a half, so every later scene starts on beat 3 of a bar: AT(n) is the start of scene bar n.
+const AT = n => BAR(n) + (n > 0 ? B(2) : 0);
 
-// Scenes, in bars: hook 0–1, the notch 2–3, open source 4, who Nook needs 5–6, no Mac 7, your PR 8–9, end card 10.
+// Scenes, in bars: hook 0, the notch 1–2, open source 3, who Nook needs 4–5, no Mac 6, your PR 7–8, end card 9.
 const roles = ['Developers.', 'Translators.', 'Testers.', 'You.'];
 const roleSubs = ['Swift · Rust · Svelte', 'NL · DE · FR · ES', 'real devices, honest feedback', ''];
-const roleTimes = roles.map((_, i) => BAR(5) + B(1.5 * i));   // a new word every one and a half beats; "You." stays longest
-const MERGE = BAR(9) + B(1);
+const roleTimes = roles.map((_, i) => AT(4) + B(2 * i));   // a new word every two beats
+const MERGE = AT(8) + B(2);
+const SNAP = { dur: 0.6 };                                 // quick arrivals
 
 function setRow(n, s, title, sub, when, word) {
   $('t' + n).textContent = title; $('d' + n).textContent = sub; $('w' + n).textContent = when;
@@ -107,122 +111,119 @@ function setRow(n, s, title, sub, when, word) {
 }
 
 function notchContent(t) {
-  if (t < BAR(7)) {
+  if (t < AT(6)) {
     setRow(1, 'done', 'Claude Code · nook', 'Refactor finished, tests pass', '2m', 'Done');
     setRow(2, 'waiting', 'Codex · api', 'Wants to run the migration', 'now', 'Waiting');
     setRow(3, 'merged', 'PR #642', 'Load older WhatsApp messages', '5m', 'Merged');
-    const shown = [1, 2, 3].filter(n => t >= BAR(2) + B(2 * n - 1)).length;
+    const shown = [1, 2, 3].filter(n => t >= AT(1) + B(n)).length;
     $('count').textContent = shown ? `${shown} new` : '';
-    [1, 2, 3].forEach(n => fade($('row' + n), t, BAR(2) + B(2 * n - 1), null, { rise: 24, dur: 1.0 }));
+    [1, 2, 3].forEach(n => fade($('row' + n), t, AT(1) + B(n), null, { rise: 30, dur: 0.6 }));
   } else {
-    // Your pull request moves one state every two beats: checks running, checks passed, approved, merged.
-    const step = t >= MERGE ? 3 : t >= MERGE - B(2) ? 2 : t >= MERGE - B(4) ? 1 : 0;
+    // Your pull request moves on: checks running, checks passed, approved, merged, a beat or two apart.
+    const step = t >= MERGE ? 3 : t >= AT(8) ? 2 : t >= AT(7) + B(3) ? 1 : 0;
     setRow(1, step === 3 ? 'merged' : 'open', 'You · fix/onboarding-copy',
       step === 0 ? 'Checks running…' : 'All checks passed', step === 3 ? 'now' : '2h', step === 3 ? 'Merged' : 'Open');
     state($('dot1'), step === 0 ? 'checksRunning' : step === 3 ? 'merged' : 'open');
     setRow(2, step >= 2 ? 'approved' : 'reviewRequired', 'Maintainer', step >= 2 ? 'Looks good to me' : 'Review requested', step >= 2 ? 'now' : '1h', step >= 2 ? 'Approved' : 'Review');
     $('count').textContent = step === 3 ? '1 new' : '';
-    fade($('row1'), t, BAR(8) + 0.3, null, { rise: 24, dur: 1.0 });
-    fade($('row2'), t, BAR(8) + B(2), null, { rise: 24, dur: 1.0 });
+    fade($('row1'), t, AT(7) + 0.15, null, { rise: 30, dur: 0.6 });
+    fade($('row2'), t, AT(7) + B(1), null, { rise: 30, dur: 0.6 });
     $('row3').style.display = 'none';
-    // A soft pop on the chip each time its state changes.
-    [MERGE - B(4), MERGE - B(2), MERGE].forEach(at => {
-      const p = prog(t, at, 0.6);
-      if (p > 0 && p < 1) $('c1').style.transform = `scale(${1 + 0.08 * Math.sin(p * Math.PI)})`;
+    [AT(7) + B(3), AT(8), MERGE].forEach(at => {
+      const p = prog(t, at, 0.4);
+      if (p > 0 && p < 1) $('c1').style.transform = `scale(${1 + 0.1 * Math.sin(p * Math.PI)})`;
     });
   }
 }
 
 function render(t) {
-  // Bar 1 — the hook: Nook arrives, looks left, then right, then at you.
-  const hookIn = settle(prog(t, 0.2, 1.6));
-  const fly = settle(prog(t, BAR(2), 1.3));
-  // The eyes glide to the left, to the right, and back to you (not jump): each look eases over half a second.
-  const gl = (a) => ease(prog(t, a, 0.5));
-  const look = { x: -gl(B(1.5)) + 2 * gl(B(3)) - gl(B(4.5)), y: 0.2 * (gl(B(1.5)) - gl(B(4.5))) };
+  // Bar 0, the hook: Nook pops in, glances left, right, back at you, and whispers.
+  const hookIn = pop(prog(t, 0.1, 0.8));
+  const fly = settle(prog(t, AT(1), 0.9));
+  const gl = a => ease(prog(t, a, 0.3));
+  const look = { x: -gl(0.45) + 2 * gl(1.1) - gl(1.8), y: 0.2 * (gl(0.45) - gl(1.8)) };
   const ho = $('hookOrb');
-  // Flies up into the notch on the drop and becomes the orb in its tab bar.
   const x = lerp(0, 148 - 540, fly), y = lerp(0, 242 - 770, fly), s = lerp(1, 96 / 300, fly) * lerp(0.6, 1, hookIn);
   ho.dataset.base = `translate(${x}px, ${y}px)`;
   orb(ho, t, { scale: s, look, blinkOffset: 2.6 });
-  ho.style.opacity = clamp(hookIn * 1.4) * (1 - clamp((t - BAR(2) - 1.1) / 0.3));
-  words($('psst'), t, BAR(1), 0.2, BAR(2) - 0.6, { dur: 1.0 });
-  words($('minute'), t, BAR(1) + B(2), 0.2, BAR(2) - 0.6, { dur: 1.0 });
+  ho.style.opacity = clamp(hookIn * 1.4) * (1 - clamp((t - AT(1) - 0.75) / 0.2));
+  words($('psst'), t, 0.6, 0.12, AT(1) - 0.3, SNAP);
+  words($('minute'), t, 1.4, 0.15, AT(1) - 0.3, SNAP);
 
   // The notch opens on the drop, steps away for the words, returns for the pull request, leaves for the end card.
-  const open = settle(prog(t, BAR(2), 1.4));
-  const away = ease(prog(t, BAR(4) - 0.5, 0.9)), back = settle(prog(t, BAR(8), 1.2)), gone = ease(prog(t, BAR(10) - 0.6, 1.0));
-  const shown = (t < BAR(6) ? 1 - away : back) * (1 - gone);
+  const open = settle(prog(t, AT(1), 0.9));
+  const away = ease(prog(t, AT(3) - 0.3, 0.5)), back = settle(prog(t, AT(7), 0.8)), gone = ease(prog(t, AT(9) - 0.35, 0.6));
+  const shown = (t < AT(5) ? 1 - away : back) * (1 - gone);
   const n = $('notch'), inner = $('notchInner');
   const fullH = inner.offsetHeight;
   n.style.width = lerp(330, 960, open) + 'px';
   n.style.height = lerp(70, fullH, open) + 'px';
   n.style.borderRadius = `0 0 ${lerp(36, 62, open)}px ${lerp(36, 62, open)}px`;
-  n.style.opacity = t < BAR(2) ? 0 : shown;
+  n.style.opacity = t < AT(1) ? 0 : shown;
   n.style.transform = `translateX(-50%) translateY(${(1 - shown) * -50}px) scale(${lerp(0.96, 1, shown)})`;
-  inner.style.opacity = settle(prog(t, BAR(2) + 0.6, 0.9));
+  inner.style.opacity = settle(prog(t, AT(1) + 0.35, 0.5));
   $('menubar').style.opacity = clamp(open) * (1 - away);
   notchContent(t);
-  const merged = t >= MERGE && t < MERGE + 2.4;
+  const merged = t >= MERGE && t < MERGE + 1.8;
   orb($('nookOrb'), t, { mood: merged ? 'celebrate' : 'rest', blinkOffset: 2.6 });
-  sparks($('burst'), t, MERGE, { reach: 200, life: 1.6 });
+  sparks($('burst'), t, MERGE, { reach: 200, life: 1.3 });
 
-  // Bars 2–3
-  words($('intro1'), t, BAR(2) + B(2), 0.3, BAR(4) - 0.6, { dur: 1.0 });
-  words($('intro2'), t, BAR(3), 0.09, BAR(4) - 0.6, { rise: 0.4, dur: 1.0 });
-  // Bar 4
-  words($('open1'), t, BAR(4) + B(0.5), B(1), BAR(5) - 0.6, { dur: 1.1 });
-  // Bars 5–6: who Nook needs, a word every two beats
-  words($('needs1'), t, BAR(5) - B(1), 0.2, BAR(7) - 0.6, { dur: 1.0 });
-  const k = cycle($('role'), t < BAR(7) - 0.6 ? t : -1, roles, roleTimes, { dur: 0.9, rise: 30 });
+  // Bars 1–2
+  words($('intro1'), t, AT(1) + B(1), 0.15, AT(3) - 0.3, SNAP);
+  words($('intro2'), t, AT(1) + B(2.5), 0.05, AT(3) - 0.3, { rise: 0.4, dur: 0.6 });
+  // Bar 3
+  words($('open1'), t, AT(3) + 0.15, 0.2, AT(4) - 0.3, SNAP);
+  // Bars 4–5: who Nook needs, a word every two beats
+  words($('needs1'), t, AT(4) - B(0.5), 0.12, AT(6) - 0.3, SNAP);
+  const k = cycle($('role'), t < AT(6) - 0.3 ? t : -1, roles, roleTimes, { dur: 0.5, rise: 40 });
   const role = $('role');
   if (k >= 0) {
     role.style.fontSize = '150px';
     const w = role.scrollWidth; if (w > 920) role.style.fontSize = 150 * 920 / w + 'px';
-    if (k === roles.length - 1) role.style.transform += ` scale(${1 + 0.06 * settle(prog(t, roleTimes[k], 1.2))})`;
+    if (k === roles.length - 1) role.style.transform += ` scale(${1 + 0.08 * pop(prog(t, roleTimes[k], 0.6))})`;
   }
   const sub = $('roleSub');
   sub.textContent = k >= 0 ? roleSubs[k] : '';
-  sub.style.opacity = k >= 0 ? ease(prog(t, roleTimes[k] + 0.2, 0.6)) : 0;
-  // Bar 7
-  words($('nomac1'), t, BAR(7) + 0.2, B(1), BAR(8) - 0.6, { dur: 1.1 });
+  sub.style.opacity = k >= 0 ? ease(prog(t, roleTimes[k] + 0.15, 0.35)) : 0;
+  // Bar 6
+  words($('nomac1'), t, AT(6) + 0.1, 0.2, AT(7) - 0.3, SNAP);
   document.querySelectorAll('#platforms .tag').forEach((tag, i) => {
-    const p = pop(prog(t, BAR(7) + B(2) + i * B(0.5), 0.9));
-    tag.style.opacity = clamp(p) * (1 - ease(prog(t, BAR(8) - 0.6, 0.6)));
+    const p = pop(prog(t, AT(6) + B(0.5) + i * 0.25, 0.6));
+    tag.style.opacity = clamp(p) * (1 - ease(prog(t, AT(7) - 0.3, 0.3)));
     tag.style.transform = `translateY(${(1 - p) * 30}px) scale(${lerp(0.85, 1, p)})`;
   });
-  // Bars 8–9
-  words($('pr1'), t, BAR(8) + B(1), 0.2, BAR(10) - 0.6, { dur: 1.0 });
-  words($('pr2'), t, BAR(8) + B(3), 0.15, BAR(10) - 0.6, { dur: 1.0 });
+  // Bars 7–8
+  words($('pr1'), t, AT(7) + B(1), 0.12, AT(9) - 0.35, SNAP);
+  words($('pr2'), t, AT(7) + B(2.5), 0.1, AT(9) - 0.35, SNAP);
 
-  // Bar 10: the end card. Nook arrives, breathes, and winks.
+  // Bar 9: the end card. Nook pops in, breathes, and winks.
   const cta = $('cta');
-  cta.style.opacity = ease(prog(t, BAR(10), 1.0));
+  cta.style.opacity = ease(prog(t, AT(9), 0.5));
   const co = $('ctaOrb'); co.dataset.base = '';
-  const wink = Math.sin(Math.PI * clamp(prog(t, BAR(11) + B(1), 0.7)));
-  orb(co, t, { scale: lerp(0.8, 1, settle(prog(t, BAR(10), 1.6))), wink, blinkOffset: 0.4 });
-  words($('ctaWord'), t, BAR(10) + B(1), B(0.5), null, { dur: 1.0 });
-  fade($('ctaUrl'), t, BAR(10) + B(3), null, { dur: 1.0 });
-  fade($('ctaTags'), t, BAR(10) + B(4), null, { dur: 1.0 });
-  fade($('ctaFoot'), t, BAR(10) + B(5), null, { dur: 1.0 });
+  const wink = Math.sin(Math.PI * clamp(prog(t, AT(10) + B(1), 0.5)));
+  orb(co, t, { scale: lerp(0.7, 1, pop(prog(t, AT(9), 0.9))), wink, blinkOffset: 0.4 });
+  words($('ctaWord'), t, AT(9) + B(0.5), B(0.5), null, SNAP);
+  fade($('ctaUrl'), t, AT(9) + B(2), null, SNAP);
+  fade($('ctaTags'), t, AT(9) + B(3), null, SNAP);
+  fade($('ctaFoot'), t, AT(9) + B(3.5), null, SNAP);
 
   // The light behind everything lifts a little on each kick while the drums play.
-  if (t > BAR(2) && t < BAR(10)) {
+  if (t > AT(1) && t < AT(10)) {
     const bt = t - Math.floor(t / T.beat) * T.beat, onKick = T.index(t) % 2 === 0;
-    $('glow').style.opacity = parseFloat($('glow').style.opacity || 1) + (onKick ? 0.2 * Math.exp(-bt / 0.4) : 0);
+    $('glow').style.opacity = parseFloat($('glow').style.opacity || 1) + (onKick ? 0.3 * Math.exp(-bt / 0.3) : 0);
   }
 }
 
 NV.boot({
-  duration: BAR(11) + 4.5,
-  music: { mood: 'calm', bpm: T.bpm, drumsFrom: BAR(2), drumsUntil: BAR(10) },
+  duration: AT(10) + 3.5,
+  music: { mood: 'calm', bpm: T.bpm, drumsFrom: AT(1), drumsUntil: AT(10) },
   cues: [
-    { t: BAR(2), sound: 'open' },
-    ...[1, 2, 3].map(n => ({ t: BAR(2) + B(2 * n - 1), sound: 'tick', gain: 1.5 })),
-    { t: BAR(7) + B(2), sound: 'chime', gain: 0.6 },
-    { t: MERGE - B(2), sound: 'done' },
+    { t: AT(1), sound: 'open' },
+    ...[1, 2, 3].map(n => ({ t: AT(1) + B(n), sound: 'tick', gain: 1.5 })),
+    { t: AT(6) + B(1), sound: 'chime', gain: 0.6 },
+    { t: AT(8), sound: 'done' },
     { t: MERGE, sound: 'merge' },
-    { t: BAR(10), sound: 'end' },
+    { t: AT(10), sound: 'end' },
   ],
   render,
 });

@@ -230,18 +230,21 @@ def groove(pads, bass, sparkle, drums, prog, bpm, duration, rng, drums_from, dru
                   + 0.2 * np.sin(6 * np.pi * f * tp) * np.exp(-tp / 0.04)) * np.exp(-tp / 0.45) * np.minimum(1, tp / 0.006)
             accent = 1.0 if step % 4 == 0 else 0.75
             add(sparkle, pl, at, pan=0.35 if step % 2 else -0.35, gain=0.04 * accent)
-        if not (drums_from - 1e-3 <= b * bar < drums_until - 1e-3):
-            continue
+        def playing(at):
+            return drums_from - 1e-3 <= at < drums_until - 1e-3
         for k_at in (0, 2):
             at = b * bar + k_at * beat
+            if not playing(at):
+                continue
             add(drums, kick, at, gain=0.3)
             i = int(at * SR)
             d = np.arange(pads.shape[1] - i) / SR
             duck[i:] *= 1 - 0.28 * np.exp(-d / 0.16)[: pads.shape[1] - i]
         for s_at in (1, 3):
-            add(sparkle, snap, b * bar + s_at * beat, pan=0.1, gain=0.045)
+            if playing(b * bar + s_at * beat):
+                add(sparkle, snap, b * bar + s_at * beat, pan=0.1, gain=0.045)
         for h in range(8):
-            if h % 2:
+            if h % 2 and playing(b * bar + h * beat / 2):
                 add(drums, hat, b * bar + h * beat / 2 + swing, pan=0.25, gain=0.012)
     pads *= duck
     bass *= duck
