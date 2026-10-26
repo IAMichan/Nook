@@ -168,12 +168,12 @@ extension SettingsView {
                                             ServiceTile(domain: domain, fallback: "app.dashed", size: 22)
                                         }
                                     }
-                                    VStack(alignment: .leading, spacing: 2) {
+                                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                                         Text(item.name)
                                         Text(item.how).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary).fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
-                                .padding(.vertical, 2)
+                                .padding(.vertical, NookTheme.Spacing.xxs)
                             }
                         }
                     }
@@ -245,7 +245,7 @@ extension SettingsView {
             HStack(spacing: 10) {
                 SiteIcon(domain: source.iconDomain, fallback: source.symbol, tint: source.accent, size: 20, source: source.id)
                     .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     Text(source.title)
                     Text(localDetail(source))
                         .font(NookTheme.TextStyle.detail)

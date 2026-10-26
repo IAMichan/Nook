@@ -47,8 +47,14 @@ final class FlowDictation: ObservableObject {
         }
         installMonitors()
         if !trusted { waitForTrust() }
-        Parakeet.shared.preload()
+        // Turned on in Settings: load the speech model now. At launch it waits for the dictation key (`begin`): a gigabyte on
+        // the Neural Engine is a lot to hold for a key you may not press for hours.
+        if refreshed { Parakeet.shared.preload() }
+        refreshed = true
     }
+
+    /// `refresh` ran before (the first time is at launch).
+    private var refreshed = false
 
     func askForAccessibility() {
         trusted = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)

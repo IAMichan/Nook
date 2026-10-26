@@ -42,8 +42,8 @@ and faint white fills instead of grey panels or lines, and color only where it c
   links (`NookTheme.blue`, no underline). Headers, composer controls, menus, bubbles, tool rows and counters stay grey.
   An agent's brand color lives in its logo only, and a row's logo is grey until the pointer is on the row or it is
   selected (`AgentMark(quiet:)`). The composer keeps Nook's own quiet tint for every agent.
-- **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron, queued messages'
-  buttons, and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
+- **Show at rest only what you use most.** Row actions, message actions, a tool row's chevron,
+  and the panel header's rarer buttons (talk, the window) appear under the pointer. A finished turn is folded
   into "Worked for …"; a thought shows two lines; a successful step has no mark (only a failure does).
 - **No boxes around groups.** Toolbar groups (`.toolbarGroup()`) and the composer's choices have no fill or stroke of
   their own; a gap separates them (`ComposerDivider`), and a button gets a fill only under the pointer. Badges in a
@@ -67,7 +67,8 @@ Nook has one visual language, and the repository guards it in three places:
    state or text color (`.red`, `.orange`, `.green`, `.secondary`), or a corner radius written as a number from the scale. It runs with the Xcode tests and with
    `./scripts/core-tests.sh`.
    It also fails when a search field or a 1 pt divider is built inline instead of with `NookSearchField` or
-   `NookDivider`, so these look and behave the same everywhere.
+   `NookDivider`, so these look and behave the same everywhere, and when a pull request icon is named or sized by hand
+   (`arrow.triangle.pull`, a `PullRequestStateGlyph` outside `PullRequestIcons.swift`) instead of through `PullRequestIcon`.
 2. **`scripts/ui-lint.sh`** checks the same rules with `grep`, so it runs anywhere, and the *UI consistency* job in
    `.github/workflows/build.yml` runs it on every pull request.
 3. **This document** is the catalogue: a pattern that shows up a third time becomes a component here.
@@ -88,7 +89,9 @@ The checklist for a new or changed view:
   `coral` is an error, `violet` is merged.
 - Corners from `NookTheme.Radius`, spacing from `NookTheme.Spacing`, hover with `.hoverLift`, animation with
   `NookTheme.open` / `close` / `swap` / `hover` / `reveal` / `scroll`, and a looping animation (a pulse, a blinking
-  cursor) stops with Reduce Motion.
+  cursor) stops with Reduce Motion. Anything that loops for long (a pulse, a spinner, a shimmer, Nook himself) is a
+  `TimelineView(.nookFrames(fps:paused:))` at an `EnergyPlan` rate, never `repeatForever`: that runs at the display's
+  own rate and redraws the whole window on every frame.
 - One layout: the notch, the main window, and a sheet show the same `PanelView`; Settings is the one place for
   configuration. A new task opens inside the panel, not in a new window with its own layout.
 - The buttons at the bottom of a notification are always a `NookNoticeActions` row, never loose buttons.
@@ -113,7 +116,7 @@ The checklist for a new or changed view:
 - A search is a `NookSearchField`, a list's title row a `PanelListHeader` (with `PanelNewButton` when it starts
   something), a group's name a `NookSectionLabel`, a count a `NookCountBadge`, a line a `NookDivider` (between the items of a list a `NookRowSeparator`), and a notice under
   the tabs a `PanelNoticeBar`. Change one of these and every tab follows.
-- Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: `ProgressView().controlSize(.small)`.
+- Empty: `WSEmptyState` for a whole panel, `ListEmptyNote` in a list. Loading: a whole panel or pane waiting for its content shows `PatientSpinner()` (nothing for the first 350 ms, so a quick load never flashes a spinner; show what was read last time while reading again where you can); a button or a row that is busy shows `ProgressView().controlSize(.small)`.
   Errors: `coralSoft` text, or a `.cardBackground` notice on `surface` with a coral symbol and a retry.
 
 ## Toasts — the result of what you did
@@ -157,7 +160,9 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `.panelCard()` | `PanelBlocks.swift` | The quiet card that groups rows: field fill, panel corners, no stroke |
 | `NookIconButton` | `NookButtons.swift` | Round symbol button (mic, close, play) |
 | `ToolbarIconButton` | `NookButtons.swift` | Small borderless symbol button in a panel header, a row, or under a message, with hover feedback; `width`/`height` for a tighter row and `enabled` for a dimmed one. Never hand-roll a `.plain` button around a lone `Image` |
+| `.rowActionsBackdrop(_:)` | `NookButtons.swift` | Puts a list row's hover buttons on the row's own fill, fading in from the left, so the title runs out softly underneath them instead of colliding with them |
 | `ConfirmedButton`, `.confirmDelete(_:question:detail:confirmTitle:action:)` | `ConfirmDestructive.swift` | Anything that cannot be undone (delete, remove a key, sign out, clear a history) asks first in the same dialog. `.confirmDelete` is for menu items, which cannot hold a dialog themselves |
+| `PatientSpinner` | `PatientSpinner.swift` | What a panel or pane shows while its content loads: invisible for the first 350 ms, then a small spinner that fades in |
 | `ListEmptyNote` | `ListEmptyNote.swift` | The one line a list shows when it is empty or has no matches; a whole empty panel is a `WSEmptyState` |
 | `.cardBackground(_:stroke:radius:style:)` | `CardBackground.swift` | Rounded fill with a 1 pt stroke: field cards and tinted notices |
 | `Pasteboard.copy(_:)` | `Pasteboard.swift` | Put text on the pasteboard |
@@ -165,10 +170,13 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `FileContextMenu`, `.sessionFileMenu(_:runID:path:)` | `FileContextMenu.swift` | The right-click menu of a session's file: open in your editor (at a line, through `WorkspaceManager.openFile`), show in Finder, copy the path or the path in the repository. Use it on every row that shows a changed file |
 | `.keyCommand(_:perform:)`, `.keyCommands(_:context:enabled:priority:)`, `KeyCommandCenter` | `KeyCommands.swift` | Offers keybinding commands (`Keybindings.commandIDs`) to the panel's one key monitor while the view is in a window; `context` adds `when` flags (`paletteOpen`, `turnRunning`…), `enabled` limits it to while a field has the keyboard, `priority: -1` makes a window-wide fallback. See [`KEYBINDINGS.md`](KEYBINDINGS.md) |
 | `.onEscapeKey(enabled:perform:)` | `EscapeKey.swift` | Escape that closes what is open (a chat in the Chats tab) also when nothing in the window has the keyboard, where `onExitCommand` hears nothing; a text field being typed in keeps its own Escape |
+| `NookFrames` (`.nookFrames(fps:paused:)`) | `NookFrames.swift` | The shared clock for looping animations: frames of different animations fall on one grid, so they cost one window update together |
 | `Bar`, `PulseDot`, `ShimmerText`, `PullRequestPill` | `AgentIndicators.swift` | Progress bar, live dot, shimmering current step, pull request state in a row |
-| `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with GitHub's mark and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
-| `CheckOutcomeGlyph` | `AgentIndicators.swift` | The outcome of a CI check or step (passing, failing, running, skipped); the pull request page and the CI popover of a watched pull request |
+| `PullRequestIcon`, `PullRequestStateIcon`, `PullRequestReviewIcon`, `CheckOutcomeGlyph` | `PullRequestIcons.swift` | The one icon and color of every pull request status. `PullRequestIcon` names the symbol and tint of a state (open, draft, conflict, merged, closed, stack), a check outcome, a review (approved, changes requested, required, none, commented, dismissed), a merge blocker, and `generic` for pull requests in general (navigation, Create PR). `PullRequestStateIcon` draws a state's mark at `.inline` (12 pt: rows, pills, tabs, menus) or `.header` (16 pt); `PullRequestReviewIcon` and `CheckOutcomeGlyph` draw a review and a check. An event or action shows the mark of the state it leads to (Reopen and Ready open, Close closed, Merge merged). Colors: mint good to go, amber waits on you, coral broken (closed the softer coral), violet merged, grey nothing to do yet. Never name a pull request symbol or color by hand |
+| `NookSymbol` | `NookSymbol.swift` | A symbol by name: an SF Symbol, or Nook's own pull request mark (`nook.pr.<state>`, from `PullRequestIcon.symbol`). Views that take a symbol name (`DropdownRow`, palettes, side panel launchers, the timeline) draw it through this, so a pull request mark works there too; never `arrow.triangle.pull`, `arrow.triangle.merge` or a warning triangle for a pull request |
+| `PullRequestStateBadge` | `AgentIndicators.swift` | A pull request's state as a tinted capsule with its `PullRequestStateIcon` and the word, optionally after its number (pull request page, watched pull request); never draw the state by hand |
 | `LabelChip`, `LabelDot` | `PullRequestMarks.swift` | A pull request label: a dot in the label's own GitHub color (`Color(hexString:)`) and its name in an outlined capsule, with an optional "+2". List rows, the pull request Summary, and the Labels filter |
+| `PullRequestCommentCard`, `PullRequestConversationList` | `NotchUI/Pills/PullRequestConversationView.swift` | A pull request comment or review as a card (author, verdict pill, reactions and time in a header strip, the file and line with **Outdated**, the text) on the Summary and the Timeline; the Summary's conversation of threads with their replies, folded resolved threads, its filter and paging (`PullRequestConversation`). Never draw a pull request comment by hand |
 | `GitHubAvatar` | `PullRequestMarks.swift` | A GitHub account's picture by login, its initials (`ChatPersonBadge`) until it loads or for a bot. Pull request rows, reviewers, comments, the Author filter |
 | `ChipFlow` | `PullRequestMarks.swift` | A `Layout` that wraps chips onto as many rows as the width needs (a pull request's labels) |
 | `PullRequestFreshness` | `NotchUI/Pills/PullRequestsPanel.swift` | "Updated 20 s ago": how fresh a pull request list or page is, ticking along; next to its refresh button |
@@ -179,12 +187,16 @@ the Tauri app. Use it whenever an action ends and its own view does not stay to 
 | `ComposerTray`, `ComposerTrayDivider` | `ComposerTray.swift` | The tray tucked behind the composer box: under it for a new session (folder and branch), above it for a running one (watched pull request, queued messages). Anything that belongs to the next message goes in here instead of a loose strip. `SessionComposer.choicesBelowBox()` puts the agent, model and mode choices in such a tray, so the box stays one line (the chat of a running session uses it) |
 | `.mentions(_:text:config:)`, `MentionSuggestions`, `ComposerConfig.mentions(folder:)` | `MentionField.swift` | `@` in any field where you write words (a follow-up, a prompt, a mail, a commit message): `.mentions` on the text field itself, `MentionSuggestions` right above its box, both sharing a `ComposerModel` the view owns. `@` lists people from your chats and, with a folder, its files, put in as plain words. `SessionComposer` and `ChatReplyField` have the same list built in |
 | `SelectionModeButton`, `.selectable(…)`, `SelectionBar` | `ListSelectionViews.swift` | Selecting several rows |
-| `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`) |
+| `StackedDiffList`, `StackedDiffToolbar`, `StackedDiffFile` | `StackedDiff.swift` | Changes laid out: every file in one scroll under a sticky 32 pt header (chevron in the file's color, path, copy, lines), folded at first and read when opened, a tree of the files on the right on request; the toolbar shows the total lines and folds every file or shows the tree. The changes of a folder, of a session Nook runs and of a turn all use it; never build a file list beside a single diff |
+| `TimelineProblemCard`, `CodeBlock` | `NotchUI/Workspace/RunTimelineRows.swift` | A conversation's timeline, the same for a session Nook runs and an agent's own transcript: an error or a usage limit is a `TimelineProblemCard` on `surface` (only the symbol in the state color, an error's words in soft coral), and what a tool call was given and gave back opens as `CodeBlock`s (title, copy, mono text that scrolls past 260 pt). A compaction is a quiet centered caption with room around it, no line. Never draw an error row or a tool's output by hand |
+| `SidePanelTabBar`, `SidePanelLauncher` | `SidePanelTabs.swift` | The side panel beside a session, laid out: small tabs that carry what they show (the page's title, a pull request's number and title) with an icon that turns into a cross under the pointer, + right after the last tab, the close button at the end; and with no tab open a short list of tools, each with the key that opens it (↑↓ and Return work too). **Pull request** (P) opens a tab that lists the pull requests to pick (`SidePanelPullRequestPicker`): the one for the session's branch first, then yours, review requests and watched ones |
+| `NookTabBar` | `NookTabBar.swift` | Segmented tabs, with an optional symbol, unread dot (`fresh`) or amber count (`count`); `prominent` puts the selected tab on the accent, as in the panel header's floating capsule (tabs, search, talk, bell); `segmented` draws small tabs on a shared track, as on a pull request's page |
 | `ChatTranscript` | `ChatTranscript.swift` | A conversation as bubbles (a WhatsApp card, the Chats tab): day lines, runs per person, colored names in a group, links, media, copy menu, the message a bubble answers quoted at its top and the emoji on it underneath. Given `onReply`/`onReact`, a bubble under the pointer offers to answer it or react with an emoji (also in its right-click menu). Never draw chat bubbles by hand |
+| `ChatMarkButton`, `ChatReadMark`, `ChatTicks` | `NotchUI/Pills/ChatsSidebar.swift` | Where a chat stands (a count of what is new, one grey tick for read in Nook, two mint ticks for read in its app too) and the steps between those states: `ChatMarkButton` shows the mark the chat gets and a word ("Read", "Read in WhatsApp", "Unread"), `compact` in a row under the pointer. Never mark a chat read or unread with a lone icon |
 | `EmojiBrowser` | `EmojiBrowser.swift` | Every emoji to choose from (`EmojiCatalog`, Unicode's own list): a search by English name and by Nook's own names, a tab per group, a grid per group. Behind the "+" of the reaction picker; never build an emoji grid by hand |
 | `ChatPhotoZoom` | `ChatTranscript.swift` | A chat photo enlarged over the card or chat it is in, sharp once the file is read; a click or Escape shrinks it back, the open button shows it in Quick Look |
 | `ChatMessageText` | `ChatMessageText.swift` | A message's text as its app shows it, the same in every chat (`ChatFormat` reads the markup): *bold*, _italic_, ~strikethrough~, `code`, code blocks in a box, quotes behind a bar, lists with their markers, links. Drawn by `ChatTranscript`; never draw a message's text by hand |
-| `ChatPollView` | `ChatPollView.swift` | A poll in a chat bubble, the same for every app (`ChatPoll`): the question, each option with its share and count, your choice ticked; with `onVote` a click votes, without it the poll says to vote in the app. Drawn by `ChatTranscript`; never draw a poll by hand |
+| `ChatPollView` | `ChatPollView.swift` | A poll in a chat bubble, the same for every app (`ChatPoll`): the question, each option with its share and count, your choice ticked, and "View votes" listing who chose each option where the app names them; with `onVote` a click votes, without it the poll says to vote in the app. Drawn by `ChatTranscript`; never draw a poll by hand |
 | `ChatBubble(_:time:)` | `ChatMediaViews.swift` | Any chat app's message (`InboxMessage`) as a bubble, its file included. A bridge only fills `InboxMessage.media` (`ChatMedia`); every chat then shows photos, videos, GIFs, stickers and audio the same way |
 | `ChatStickerView`, `ChatGIFView`, `ChatAudioView` | `ChatMediaViews.swift` | A sticker on its own (no bubble), a GIF that loops silently (a real GIF or a short video), an audio or voice message with play, progress and length. Drawn by `ChatTranscript`; never draw chat media by hand |
 | `TicksView` | `ChatTranscript.swift` | How far your own message got (clock, one grey tick, two grey, two blue, failed), in every chat app that says it (`ChatReceipt`): after a bubble's time and in front of a chat's newest message in the Chats list. Given `ChatBubble.readers`, a click on them opens `MessageInfoView`. Never draw ticks by hand |

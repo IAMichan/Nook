@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Review changes: file list on the left, diff of selected file on the right.
+/// Review changes, laid out(`StackedDiffList`): a toolbar, then every changed file in one
+/// scroll, folded until you open it; the file you came for opens at once. Hovering a line offers a comment for the agent;
+/// the comments go to it together from the bar at the bottom.
 struct ChangesSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
@@ -8,45 +10,58 @@ struct ChangesSheet: View {
     let initialFile: GitFileChange?
     /// Set when shown inside the notch: closes it there (and the notch shows the title).
     var onClose: (() -> Void)? = nil
-    /// In a narrow side panel: the file list above the diff instead of beside it.
+    /// Kept for the side panel's call; the stacked list fits a narrow panel and a wide one alike.
     var stacked = false
     private var embedded: Bool { onClose != nil }
     private func close() { if let onClose { onClose() } else { dismiss() } }
-    @State private var selected: String?
-    @State private var diff = ""
-    @State private var loading = false
-    @State private var error: String?
+    @State private var expanded: Set<String> = []
+    @State private var showsTree = false
 
     private var files: [GitFileChange] { workspace.git[runID]?.status?.files ?? [] }
 
     var body: some View {
+        let files = files.map(StackedDiffFile.init)
         VStack(spacing: 0) {
-            if !embedded {
-                HStack {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if !embedded {
                     Text(tr("ws.changes.title")).font(NookTheme.TextStyle.title)
                     if let run = workspace.run(runID) {
                         Text(run.branch ?? run.projectName).font(NookTheme.TextStyle.code).foregroundStyle(WS.secondary)
                     }
-                    Spacer()
+                } else {
+                    Text(tr("agents.turn.changedFiles", files.count))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showsTree)
+                if !embedded {
                     Button(tr("button.close")) { close() }.keyboardShortcut(.cancelAction)
                 }
-                .padding(14)
-                Divider()
             }
-            if stacked {
-                VSplitView {
-                    fileList.frame(minHeight: 90, idealHeight: 160, maxHeight: 320)
-                    diffView.frame(maxWidth: .infinity, minHeight: 160, maxHeight: .infinity)
-                }
+            .padding(.horizontal, embedded ? NookTheme.Spacing.sm : 14)
+            .frame(height: embedded ? 36 : 48)
+            NookDivider()
+            if files.isEmpty {
+                StackedDiffNote(text: tr("ws.changes.noDiffDetail"))
             } else {
-                HSplitView {
-                    fileList.frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
-                    diffView.frame(minWidth: embedded ? 360 : 420, maxWidth: .infinity, maxHeight: .infinity)
+                StackedDiffList(files: files, scope: runID.uuidString, expanded: $expanded, showsTree: showsTree,
+                                focus: initialFile?.path) { file in
+                    guard let change = self.files.first(where: { $0.path == file.path }) else { return "" }
+                    return try await workspace.diff(runID, file: change)
+                } content: { file, text in
+                    DiffText(text: text, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == file.path },
+                             onComment: { line, code, comment in
+                                 workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment))
+                             },
+                             onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true)
+                        .sessionFileMenu(workspace, runID: runID, path: file.path)
                 }
             }
             // Comments on the diff go to the agent together.
             if let comments = workspace.reviewComments[runID], !comments.isEmpty {
-                Divider()
+                NookDivider()
                 HStack(spacing: NookTheme.Spacing.md) {
                     Image(systemName: "text.bubble").foregroundStyle(NookTheme.amber)
                     Text(tr("ws.review.count", comments.count))
@@ -65,57 +80,7 @@ struct ChangesSheet: View {
         .frame(minWidth: embedded ? nil : 820, idealWidth: embedded ? nil : 1040, maxWidth: embedded ? CGFloat.infinity : nil,
                minHeight: embedded ? nil : 520, idealHeight: embedded ? nil : 700, maxHeight: embedded ? CGFloat.infinity : nil)
         .background(embedded ? Color.clear : WS.background)
-        .onAppear {
-            workspace.markReviewed(runID)
-            selected = initialFile?.path ?? files.first?.path
-        }
-        .onChange(of: selected) { _, path in load(path) }
-        .task { load(selected) }
-    }
-
-    private var fileList: some View {
-        List(selection: $selected) {
-            ForEach(files) { file in
-                FileChangeRow(file: file).tag(file.path)
-                    .sessionFileMenu(workspace, runID: runID, path: file.path)
-            }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(embedded ? .hidden : .automatic)
-    }
-
-    @ViewBuilder
-    private var diffView: some View {
-        if loading {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error {
-            WSEmptyState(symbol: "exclamationmark.triangle", title: tr("ws.changes.error"), message: error)
-        } else if diff.isEmpty {
-            WSEmptyState(symbol: "doc.text.magnifyingglass", title: tr("ws.changes.noDiff"), message: tr("ws.changes.noDiffDetail"))
-        } else {
-            DiffText(text: diff, comments: (workspace.reviewComments[runID] ?? []).filter { $0.path == selected },
-                     onComment: { line, code, text in
-                         guard let path = selected else { return }
-                         workspace.addReviewComment(runID, ReviewComment(path: path, line: line, code: code, text: text))
-                     },
-                     onRemoveComment: { workspace.removeReviewComment(runID, $0) })
-        }
-    }
-
-    private func load(_ path: String?) {
-        guard let path else { diff = ""; return }
-        let file = files.first { $0.path == path } ?? initialFile.flatMap { $0.path == path ? $0 : nil }
-        guard let file else { return }
-        loading = true
-        error = nil
-        Task {
-            do {
-                diff = try await workspace.diff(runID, file: file)
-            } catch let failure {
-                error = failure.localizedDescription
-            }
-            loading = false
-        }
+        .onAppear { workspace.markReviewed(runID) }
     }
 }
 
@@ -301,5 +266,23 @@ struct PullRequestSheet: View {
             }
             working = false
         }
+    }
+}
+
+/// The diffs last shown, by session or folder and file, so going back to a file shows its diff at once while git reads
+/// it again behind it. Small: diffs can be long, and only the ones you flip between matter.
+@MainActor
+enum DiffCache {
+    private static let cache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 40
+        cache.totalCostLimit = 8_000_000
+        return cache
+    }()
+
+    static func diff(_ key: String) -> String? { cache.object(forKey: key as NSString) as String? }
+
+    static func store(_ diff: String, _ key: String) {
+        cache.setObject(diff as NSString, forKey: key as NSString, cost: diff.utf8.count)
     }
 }

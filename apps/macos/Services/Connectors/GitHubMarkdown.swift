@@ -3,7 +3,9 @@ import Foundation
 /// GitHub-flavoured Markdown as written in pull request descriptions, reviews and comments, rewritten into the Markdown
 /// Nook's renderer draws. Reviews (review bots above all) mix in HTML that GitHub renders and Nook would show as raw
 /// tags: `<details>`/`<summary>`, `<!-- … -->` markers, `<b>`, `<a href>`, `<sub>`, entities. Code blocks nested in a
-/// list item are moved out of the item, so they draw as code instead of being glued onto the item's text.
+/// list item are moved out of the item, so they draw as code instead of being glued onto the item's text. A quote is
+/// converted on its own; since Nook draws a quote as one run of text, what follows its first paragraph and holds lists,
+/// code or headings (a bot's `> [!NOTE]` with `<details>` inside) moves out of the quote and draws as itself.
 enum GitHubMarkdown {
     static func markdown(_ raw: String) -> String {
         let text = raw.contains("\r") ? raw.replacingOccurrences(of: "\r\n", with: "\n") : raw
@@ -19,6 +21,15 @@ enum GitHubMarkdown {
 
         while let line = lines.popFirst() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix(">") {
+                flushProse()
+                var quoted = [unquote(line)]
+                while let next = lines.first, next.trimmingCharacters(in: .whitespaces).hasPrefix(">") {
+                    quoted.append(unquote(lines.removeFirst()))
+                }
+                output.append("\n" + quote(markdown(quoted.joined(separator: "\n"))) + "\n")
+                continue
+            }
             guard let fence = ["```", "~~~"].first(where: { trimmed.hasPrefix($0) }) else {
                 prose.append(line)
                 continue
@@ -39,6 +50,33 @@ enum GitHubMarkdown {
         return collapse(output.joined(separator: "\n")).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: Quotes
+
+    /// A quoted line without its `>` and the one space after it.
+    private static func unquote(_ line: String) -> String {
+        let rest = line.drop { $0 == " " || $0 == "\t" }.dropFirst()
+        return String(rest.first == " " ? rest.dropFirst() : rest)
+    }
+
+    private static let blockLineRegex = regex(#"^\s*(```|~~~|#{1,6}\s|\||[-*+]\s|\d{1,3}[.)]\s|([-*_]\s*){3,}$)"#)
+
+    private static func isBlockLine(_ line: String) -> Bool {
+        blockLineRegex?.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+    }
+
+    /// Converted quote text back under `>`. Plain paragraphs stay quoted; when lists, code, headings or tables follow,
+    /// only the first paragraph stays in the quote and the rest follows it as blocks of its own.
+    private static func quote(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        guard lines.contains(where: isBlockLine) else {
+            return lines.map { $0.isEmpty ? ">" : "> " + $0 }.joined(separator: "\n")
+        }
+        let cut = lines.firstIndex { $0.isEmpty || isBlockLine($0) } ?? lines.count
+        let kept = lines[..<cut].map { "> " + $0 }.joined(separator: "\n")
+        let rest = lines[cut...].joined(separator: "\n")
+        return [kept, rest].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
     // MARK: HTML
 
     private static func regex(_ pattern: String) -> NSRegularExpression? {
@@ -55,11 +93,11 @@ enum GitHubMarkdown {
     private static let altRegex = regex(#"\balt\s*=\s*["']([^"']*)["']"#)
     private static let breakRegex = regex(#"<br\s*/?>"#)
     private static let ruleRegex = regex(#"<hr\s*/?>"#)
-    private static let boldRegex = regex(#"</?(b|strong)\s*>"#)
-    private static let italicRegex = regex(#"</?(i|em)\s*>"#)
-    private static let codeRegex = regex(#"</?(code|kbd|tt)\s*>"#)
+    private static let boldRegex = regex(#"</?(b|strong)(\s[^>]*)?>"#)
+    private static let italicRegex = regex(#"</?(i|em)(\s[^>]*)?>"#)
+    private static let codeRegex = regex(#"</?(code|kbd|tt)(\s[^>]*)?>"#)
     private static let itemRegex = regex(#"<li[^>]*>"#)
-    private static let blockRegex = regex(#"</?(details|p|div|ul|ol|table|blockquote|pre|center)(\s[^>]*)?>|</li\s*>"#)
+    private static let blockRegex = regex(#"</?(details|dl|dt|dd|p|div|ul|ol|table|blockquote|pre|center)(\s[^>]*)?>|</li\s*>"#)
     /// Tags that only style a run of text; what is inside stays.
     private static let inlineRegex = regex(#"</?(sub|sup|small|span|ins|u|mark|font|picture|source|a|del|s|strike|summary|img)(\s[^>]*)?/?>"#)
 
@@ -96,17 +134,17 @@ enum GitHubMarkdown {
             return "\u{E000}\(spans.count - 1)\u{E001}"
         }
         text = replace(text, commentRegex) { _ in "" }
+        text = replace(text, imageRegex) { groups in
+            let alt = altRegex?.firstMatch(in: groups[0], range: NSRange(location: 0, length: (groups[0] as NSString).length))
+                .map { (groups[0] as NSString).substring(with: $0.range(at: 1)) } ?? ""
+            return alt
+        }
         text = replace(text, summaryRegex) { groups in
             let title = plain(groups[1])
             return title.isEmpty ? "\n\n" : "\n\n**" + title + "**\n\n"
         }
         text = replace(text, headingRegex) { groups in
             "\n\n" + String(repeating: "#", count: Int(groups[1]) ?? 3) + " " + plain(groups[2]) + "\n\n"
-        }
-        text = replace(text, imageRegex) { groups in
-            let alt = altRegex?.firstMatch(in: groups[0], range: NSRange(location: 0, length: (groups[0] as NSString).length))
-                .map { (groups[0] as NSString).substring(with: $0.range(at: 1)) } ?? ""
-            return alt
         }
         text = replace(text, linkRegex) { groups in
             let label = plain(groups[2])

@@ -88,7 +88,7 @@ extension AppModel {
             items.append(TodayItem(
                 id: "loop-\(loop.id)",
                 title: loop.title,
-                subtitle: tr("app.today.openSince", NookDates.short(loop.created)),
+                subtitle: tr("app.today.openSince", NookDates.short(loop.created, locale: NookDates.appLocale)),
                 action: tr("app.today.finish"),
                 color: NookTheme.amber,
                 target: .action { [weak self] in self?.presentLoop(loop) },
@@ -108,7 +108,9 @@ extension AppModel {
     func refreshUpcoming() async {
         guard calendar.hasEventAccess else { return }
         let now = Date()
-        upcoming = await calendar.loadEvents(from: now, to: now.addingTimeInterval(36 * 3600))
+        let events = await calendar.loadEvents(from: now, to: now.addingTimeInterval(36 * 3600))
+        // Every five minutes, and usually the same meetings: publishing them again would redraw every view of the app.
+        if events != upcoming { upcoming = events }
     }
 
 
@@ -118,7 +120,7 @@ extension AppModel {
         // Floating notch panel overlays all windows; dismiss it so clicks reach Settings.
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView().nookToastHost().environmentObject(self))
+            let host = NSHostingController(rootView: SettingsView().nookToastHost().nookAttention().environmentObject(self))
             host.sizingOptions = [.minSize]
             let window = NSWindow(contentViewController: host)
             window.title = "Nook"

@@ -10,7 +10,7 @@ struct UpdateSettingsSection: View {
         Section {
             if let source = updater.source {
                 StatusRow(title: status.title, detail: status.detail, state: status.state) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: NookTheme.Spacing.md) {
                         if updater.phase == .checking {
                             ProgressView().controlSize(.small)
                         }

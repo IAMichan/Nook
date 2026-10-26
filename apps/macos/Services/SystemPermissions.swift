@@ -57,6 +57,10 @@ enum SystemPermission: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What the setup recommends: reading the screen and the calendar, which Nook's own suggestions and the day's
+    /// overview use. Everything else is optional and only needed for the feature its line names; Nook works without it.
+    var isRecommended: Bool { self == .screen || self == .calendar }
+
     /// Asks macOS without showing anything.
     var isGranted: Bool {
         switch self {

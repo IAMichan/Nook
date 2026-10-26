@@ -2,14 +2,12 @@ import SwiftUI
 import AppKit
 import WebKit
 
-/// Next to a session's conversation: what the agent produced (see SessionOutputs). Its task list, the plans it
-/// proposed, and the designs, documents and images it wrote, each shown the way it is meant to be seen: a page as it
-/// renders, Markdown formatted, an image as the image.
+/// The outputs tab in a session's side (or bottom) panel: what the agent produced (see SessionOutputs). Its task list,
+/// the plans it proposed, and the designs, documents and images it wrote, each shown the way it is meant to be seen: a
+/// page as it renders, Markdown formatted, an image as the image. The panel's tab bar is its header.
 struct SessionOutputsPanel: View {
     let outputs: [SessionOutput]
     @Binding var selection: String?
-    @Binding var wide: Bool
-    let close: () -> Void
 
     private var current: SessionOutput? {
         outputs.first { $0.id == selection } ?? outputs.first
@@ -17,7 +15,6 @@ struct SessionOutputsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            header
             if outputs.isEmpty {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     Text(tr("ws.outputs.empty.title")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
@@ -36,22 +33,6 @@ struct SessionOutputsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var header: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "tray.full").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Text(tr("ws.outputs.title")).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
-            if !outputs.isEmpty {
-                Text("\(outputs.count)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
-            }
-            Spacer(minLength: 4)
-            ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
-                withAnimation(NookTheme.reveal) { wide.toggle() }
-            }
-            ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
-        }
-        .frame(height: 30)
     }
 
     /// One row per output, newest first; the list scrolls when it is long.
@@ -147,7 +128,7 @@ private struct OutputViewer: View {
         case .document:
             if let path = output.path { DocumentPreview(path: path, version: output.date) }
         case .image:
-            if let path = output.path, let image = NSImage(contentsOfFile: path) {
+            if let path = output.path, let image = PreviewImages.image(path, version: output.date) {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
             } else {
                 missing
@@ -242,7 +223,7 @@ struct FilePreviewPanel: View {
         case .document?:
             DocumentPreview(path: path, version: opened)
         case .image?:
-            if let image = NSImage(contentsOfFile: path) {
+            if let image = PreviewImages.image(path, version: opened) {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit).padding(10)
             } else {
                 FileTextPreview(path: path)
@@ -281,7 +262,7 @@ private struct FileTextPreview: View {
         Group {
             switch loaded {
             case nil:
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                PatientSpinner()
             case .missing:
                 note(tr("ws.outputs.missing"))
             case .binary:
@@ -310,7 +291,7 @@ private struct FileTextPreview: View {
         }
         .task(id: path) {
             let path = self.path
-            loaded = await Task.detached(priority: .utility) { () -> Loaded in
+            loaded = await Task.detached(priority: .userInitiated) { () -> Loaded in
                 guard let data = FileManager.default.contents(atPath: path) else { return .missing }
                 let head = data.prefix(400_000)
                 if head.prefix(8_000).contains(0) { return .binary }
@@ -328,6 +309,24 @@ private struct FileTextPreview: View {
     }
 }
 
+/// Pictures the outputs and the file preview show, read once per file and version: the panel redraws while the
+/// conversation beside it streams or you type, and reading a large picture from disk on each redraw made that stutter.
+private enum PreviewImages {
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 24
+        return cache
+    }()
+
+    static func image(_ path: String, version: Date) -> NSImage? {
+        let key = "\(path)@\(version.timeIntervalSince1970)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let image = NSImage(contentsOfFile: path) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}
+
 /// A Markdown file the agent wrote, formatted. Read again when it is written again; a very long one shows its start.
 private struct DocumentPreview: View {
     let path: String
@@ -337,14 +336,14 @@ private struct DocumentPreview: View {
     var body: some View {
         ScrollView {
             Group {
-                if let text { MarkdownView(text: text, size: 13.5) } else { ProgressView().controlSize(.small) }
+                if let text { MarkdownView(text: text, size: 13.5) } else { PatientSpinner() }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task(id: path + "@" + String(version.timeIntervalSince1970)) {
             let path = self.path
-            let read = await Task.detached(priority: .utility) { () -> String? in
+            let read = await Task.detached(priority: .userInitiated) { () -> String? in
                 FileManager.default.contents(atPath: path).map { String(decoding: $0.prefix(400_000), as: UTF8.self) }
             }.value
             text = read ?? tr("ws.outputs.missing")
@@ -397,39 +396,5 @@ struct TaskListRows: View {
                 TaskStepRow(step: step)
             }
         }
-    }
-}
-
-/// The button in a session's header that opens or closes the outputs panel: a quiet group of its own next to the
-/// side panel's tools, with how many outputs there are while the panel is closed and a dot when something is new.
-struct SessionOutputsButton: View {
-    let open: Bool
-    var count = 0
-    var fresh = false
-    var tint: Color = NookTheme.iris
-    let toggle: () -> Void
-
-    var body: some View {
-        let showCount = !open && count > 0
-        let label = fresh ? tr("ws.outputs.title") + " · " + tr("ws.outputs.new") : tr("ws.outputs.title")
-        Button { withAnimation(NookTheme.reveal) { toggle() } } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "tray.full").font(NookTheme.font(11, .medium))
-                if showCount { Text("\(count)").font(NookTheme.mono(10.5, .medium)) }
-            }
-            .foregroundStyle(open ? NookTheme.paper : NookTheme.textSecondary)
-            .padding(.horizontal, showCount ? 7 : 0)
-            .frame(height: ToolbarGroup.itemHeight)
-            .frame(minWidth: 26)
-            .background(RoundedRectangle(cornerRadius: ToolbarGroup.itemRadius, style: .continuous).fill(open ? NookTheme.smoke : Color.clear))
-            .overlay(alignment: .topTrailing) {
-                if fresh { Circle().fill(tint).frame(width: 5, height: 5).offset(x: -3, y: 3) }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .toolbarGroup()
-        .help(open || fresh ? label : tr("ws.outputs.show"))
-        .accessibilityLabel(label)
     }
 }

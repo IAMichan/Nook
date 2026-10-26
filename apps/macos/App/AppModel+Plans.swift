@@ -209,7 +209,7 @@ extension AppModel {
             let end = NookTools.parseDate(input, "end") ?? start.addingTimeInterval(3600)
             let location = (input["location"] as? String) ?? ""
             detail = .event(
-                top: NookDates.weekdayCaps(start),
+                top: NookDates.weekdayCaps(start, locale: NookDates.appLocale),
                 big: NookDates.dayNumber(start),
                 line: "\(NookDates.time(start)) – \(NookDates.time(end))" + (location.isEmpty ? "" : " · \(location)"),
                 subline: tr("app.plan.event", (input["title"] as? String) ?? tr("app.plan.appointment"))

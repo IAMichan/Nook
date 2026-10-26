@@ -8,6 +8,7 @@ Nook is an open-source project. **English is the default language across the ent
 
 - **Git Commits:** Always write commit subjects and bodies in **English**, using imperative mood (`<= 72` characters for the subject line), even if the user's prompt or conversation is in Dutch or another language.
 - **Pull Requests & Branches:** Always write branch names, pull request titles, and pull request descriptions in **English** (following [`.github/pull_request_template.md`](.github/pull_request_template.md)).
+- **Linking Issues:** Before opening a pull request, search the open issues for any the change resolves, and list them under *Related issues* in the description as `Closes #123` (`Part of #123` when the issue stays open). Only link an issue the diff actually resolves; write "None" when nothing matches.
 - **Code & Comments:** All Swift types, functions, variables, code comments, docstrings, and test names must be written in **English**.
 - **Documentation:** All root and technical documentation (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/*.md`) should be written and maintained in **English**.
 - **UI Localization (`I18n`):**
@@ -21,6 +22,7 @@ Nook is an open-source project. **English is the default language across the ent
 apps/
   macos/       # Native macOS app (Swift, SwiftUI/AppKit, XcodeGen)
   ios/         # Nook Companion for iPhone (SwiftUI, XcodeGen)
+  relay/       # Relay for the iPhone companion away from home (Cloudflare Worker; passes sealed bytes)
   android/     # Planned Android scaffold
   windows/     # Planned Windows scaffold
   linux/       # Planned Linux scaffold

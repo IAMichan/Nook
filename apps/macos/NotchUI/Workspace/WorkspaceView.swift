@@ -13,7 +13,7 @@ struct WorkspaceView: View {
         ZStack(alignment: .topLeading) {
             PanelView(viewModel: viewModel, tab: viewModel.windowTab, headerInset: PanelOrb.headerInset, inWindow: true)
             PanelOrb(viewModel: viewModel, mood: viewModel.mood(for: viewModel.windowTab), size: orb, inWindow: true)
-                .offset(y: (PanelView.headerHeight - orb) / 2)
+                .offset(y: (PanelView.headerHeight - orb) / 2 - WindowLayout.orbLift)
         }
         // The notch's margins. On top, the title bar with the traffic lights takes the place of the camera's strip: the
         // content stays in the safe area below it (whatever height the system gives the title bar), and only the black
@@ -70,6 +70,9 @@ private enum WindowLayout {
     /// The room between the title bar and the header row: enough for Nook and his task ring, who stand taller than the
     /// row, to stay clear of the traffic lights.
     static let belowTitleBar: CGFloat = 16
+    /// How far Nook sits above the header row's center. The window has room above the row (up to the traffic lights)
+    /// but its sidebars start right under it: centered, his task ring ran over a list's first row (Chats' All chats).
+    static let orbLift: CGFloat = NookTheme.Spacing.lg
 }
 
 /// Display name for an account: custom label, organization name, or "Personal".

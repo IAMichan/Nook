@@ -81,6 +81,13 @@ final class AcpAgentTests: XCTestCase {
         guard case .toolCallUpdate(let done)? = update.first else { return XCTFail("\(update)") }
         XCTAssertEqual(done.status, "completed")
         XCTAssertEqual(done.output, "ok")
+        let failed = events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"tool_call_update","toolCallId":"t3","status":"failed","rawOutput":{"error":"file not found"}}}}"#)
+        guard case .toolCallUpdate(let broken)? = failed.first else { return XCTFail("\(failed)") }
+        XCTAssertEqual(broken.output, "file not found", "a failed call says why, from rawOutput when it has no content")
+        XCTAssertEqual(AcpMapper.rawOutput("denied"), "denied")
+        XCTAssertEqual(AcpMapper.rawOutput(["error": ["message": "outside the workspace"]]), "outside the workspace")
+        XCTAssertEqual(AcpMapper.rawOutput(["lines": 3]), #"{"lines":3}"#)
+        XCTAssertNil(AcpMapper.rawOutput([String: Any]()))
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"plan","entries":[{"content":"Tests","status":"completed","priority":"high"},{"content":"Fix","status":"pending","priority":"high"}]}}}"#),
                        [.plan([RunTaskStep(text: "Tests", status: .done), RunTaskStep(text: "Fix", status: .pending)])])
         XCTAssertEqual(events(#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":53000,"size":200000,"cost":{"amount":0.42,"currency":"USD"}}}}"#),

@@ -79,7 +79,8 @@ final class PullRequestSync: ObservableObject {
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.tick)
+                // Away from the Mac or saving power, every git process and GitHub request can come less often.
+                try? await Task.sleep(for: Self.tick * EnergyMonitor.shared.plan.slowdown)
                 guard let self else { return }
                 self.refresh(now: Date())
             }
@@ -115,25 +116,49 @@ final class PullRequestSync: ObservableObject {
         running = true
         Task {
             defer { running = false }
+            // Most answers repeat what is shown: publish (and store) only the ones that changed, so the session list
+            // does not redraw after every round.
+            var changed = false
             for job in round {
                 switch job {
                 case .run(let id, let branch):
                     checked[id] = now
-                    guard let repo = await workspace.remoteRepository(id),
+                    let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
+                    guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                    links[id] = found.isEmpty ? nil : found
+                    let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    if links[id] != next {
+                        links[id] = next
+                        changed = true
+                    }
                 case .folder(let key, let path, let branch):
                     folderChecked[key] = now
-                    guard let repo = await Self.repository(path: path),
+                    guard let repo = await remote(path, read: { await Self.repository(path: path) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
-                    folderLinks[key] = found.isEmpty ? nil : found
+                    let next: [PullRequestLink]? = found.isEmpty ? nil : found
+                    if folderLinks[key] != next {
+                        folderLinks[key] = next
+                        changed = true
+                    }
                 }
             }
-            save()
+            if changed { save() }
         }
     }
 
     /// The forge repository of a folder on this Mac; nil when it is gone or has no remote.
+    /// Each folder's remote, read with `git remote get-url` at most every `remoteLifetime`: every round asked again for every
+    /// branch, a git process each time, for an answer that hardly ever changes.
+    private var remotes: [String: (repo: RemoteRepository?, read: Date)] = [:]
+    private static let remoteLifetime: TimeInterval = 30 * 60
+
+    private func remote(_ directory: String, read: () async -> RemoteRepository?) async -> RemoteRepository? {
+        if let hit = remotes[directory], Date().timeIntervalSince(hit.read) < Self.remoteLifetime { return hit.repo }
+        let repo = await read()
+        remotes[directory] = (repo, Date())
+        return repo
+    }
+
     private nonisolated static func repository(path: String) async -> RemoteRepository? {
         await Task.detached { () -> RemoteRepository? in
             guard let git = GitService.shared, FileManager.default.fileExists(atPath: path) else { return nil }

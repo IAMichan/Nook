@@ -12,8 +12,16 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var loading = false
     /// Why the app did not load, if it did not.
     @Published private(set) var lastError: String?
-    /// One web view per app opened this launch: switching back is instant and WhatsApp stays connected meanwhile.
+    /// A web view per recently opened app: switching back is instant and WhatsApp stays connected meanwhile. Each one is a
+    /// WebContent process of a few hundred MB, so at most `maxViews` are kept, and hidden ones go after `hiddenSeconds` or
+    /// when macOS runs low on memory. Their sign-in stays in the app's data store, so opening one again only reloads it.
     private var views: [String: WKWebView] = [:]
+    /// The apps in `views`, least recently opened first.
+    private var recent: [String] = []
+    private static let maxViews = 2
+    private static let hiddenSeconds: UInt64 = 10 * 60
+    private var releaseTask: Task<Void, Never>?
+    private var pressure: DispatchSourceMemoryPressure?
 
     var webView: WKWebView? { current.flatMap { views[$0.id] } }
     /// Per app, a page it made that shows in a side panel beside it (a Claude artifact). It shares the app's sign-in.
@@ -33,11 +41,16 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
             return
         }
         if current?.isMacApp == true { MacAppMirror.shared.close() }
+        releaseTask?.cancel()
+        watchMemoryPressure()
         if views[app.id] == nil {
             let view = makeWebView(for: app)
             views[app.id] = view
             view.load(URLRequest(url: app.url))
         }
+        recent.removeAll { $0 == app.id }
+        recent.append(app.id)
+        while recent.count > Self.maxViews { release(recent[0]) }
         current = app
         loading = views[app.id]?.isLoading ?? false
         if let side = sides[app.id] { refresh(side, loading: side.isLoading) }
@@ -66,11 +79,40 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         NSWorkspace.shared.open(url)
     }
 
-    /// Hides the app; it stays signed in and keeps running until Nook quits, so opening it again is instant.
+    /// Hides the app; it stays signed in and keeps running for `hiddenSeconds`, so opening it again soon is instant.
     func close() {
         if current?.isMacApp == true { MacAppMirror.shared.close() }
         current = nil
         loading = false
+        releaseTask?.cancel()
+        releaseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.hiddenSeconds * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.releaseHidden()
+        }
+    }
+
+    /// Lets go of the web views of every app not open right now (and their side panels); their sign-in stays.
+    private func releaseHidden() {
+        for id in Array(views.keys) where id != current?.id { release(id) }
+    }
+
+    private func release(_ id: String) {
+        recent.removeAll { $0 == id }
+        views[id]?.stopLoading()
+        views[id]?.removeFromSuperview()
+        views[id] = nil
+        sides[id]?.stopLoading()
+        sides[id]?.removeFromSuperview()
+        sides[id] = nil
+    }
+
+    private func watchMemoryPressure() {
+        guard pressure == nil else { return }
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.releaseHidden() } }
+        source.resume()
+        pressure = source
     }
 
     func reload() {
@@ -85,10 +127,7 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         close()
         guard !app.isMacApp else { return }
         // The store can only go once no web view uses it any more.
-        views[app.id]?.removeFromSuperview()
-        views[app.id] = nil
-        sides[app.id]?.removeFromSuperview()
-        sides[app.id] = nil
+        release(app.id)
         Self.stores[app.id] = nil
         try? await Task.sleep(nanoseconds: 300_000_000)
         try? await WKWebsiteDataStore.remove(forIdentifier: app.storeID)

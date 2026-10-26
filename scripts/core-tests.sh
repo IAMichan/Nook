@@ -72,6 +72,20 @@ public protocol ObservableObject: AnyObject {}
 
 // `tr` lives in Core/I18n.swift, which needs SwiftUI and is not part of this package: a text is its key here.
 func tr(_ key: String, _ args: CVarArg...) -> String { key }
+
+public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
+    case en = "en"
+    case nl = "nl"
+    case de = "de"
+    case fr = "fr"
+    case es = "es"
+    public var id: String { rawValue }
+}
+
+public final class I18n: @unchecked Sendable {
+    public static let shared = I18n()
+    public var currentLanguage: AppLanguage = .en
+}
 SWIFT
 
 cat > "$WORK/Package.swift" <<'SWIFT'

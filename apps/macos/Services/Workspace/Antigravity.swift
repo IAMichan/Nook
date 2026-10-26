@@ -179,6 +179,24 @@ enum AntigravityAcp {
         }
     }
 
+    /// The server sometimes ends a turn with `end_turn` before the model wrote a word, after its tool calls or with none:
+    /// the turn would look finished with nothing in it. Nook asks it to carry on, at most this often per message of yours.
+    static let maxContinuations = 2
+
+    /// Whether a turn that just ended should go on with `continuation(toolCalls:)` instead of finishing.
+    static func shouldContinue(reason: String, replied: Bool, stopping: Bool, continuations: Int) -> Bool {
+        reason == "end_turn" && !replied && !stopping && continuations < maxContinuations
+    }
+
+    /// The prompt that asks the model to finish what it started and report back.
+    static func continuation(toolCalls: Int) -> String {
+        if toolCalls > 0 {
+            return "You ran \(toolCalls) tool call\(toolCalls == 1 ? "" : "s") but stopped without replying. Summarize what you did, "
+                + "then continue with the task until it is done, and end with a short reply to the user."
+        }
+        return "You stopped without replying. Answer the previous message from the user now."
+    }
+
     /// The `initialize` reply of a correctly installed server: Antigravity's own, with Google sign-in.
     static func looksInstalled(_ result: [String: Any]) -> Bool {
         let info = (result["agentInfo"] as? [String: Any]) ?? [:]

@@ -167,6 +167,8 @@ final class WorkspaceManager: ObservableObject {
     var warmPrompts: [UUID: String] = [:]
     /// A message you sent while the previous turn's snapshot was still being made: shown at once, sent right after it.
     var awaitingCheckpoint: [UUID: String] = [:]
+    /// A queued message sent right away while a turn was active: sent as soon as that turn ends.
+    var pendingSendNow: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
     /// Sessions whose Antigravity sign-in page already opened.
@@ -221,6 +223,8 @@ final class WorkspaceManager: ObservableObject {
     private static let timelineIdleSeconds: TimeInterval = 300
     /// Set while an evicted timeline is read back for a view that is drawing it: no news for anyone.
     private var quietEvents = false
+    /// Timelines being read off the main thread by `prefetchTimeline`.
+    private var prefetching: Set<UUID> = []
     private var gitRefreshes: [UUID: Task<Void, Never>] = [:]
     /// Sessions whose next turn starts as a copy of the conversation (`--fork-session`), so the original keeps going untouched.
     var forkNext: Set<UUID> = []
@@ -257,6 +261,10 @@ final class WorkspaceManager: ObservableObject {
         var contextWindow: Int?
         /// ACP: the session's cost so far, as the agent reports it.
         var acpCost: Double?
+        /// ACP: whether the agent wrote any text this turn, its tool calls, and how often Nook asked it to carry on.
+        var acpReplied = false
+        var acpToolCalls = 0
+        var acpContinuations = 0
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
@@ -341,6 +349,8 @@ final class WorkspaceManager: ObservableObject {
         events[id] = store.loadEvents(id)
         quietEvents = false
         timelineUse[id] = Date()
+        // Read back from a view, so not now: another one may go once this update is done, or the limit no longer holds.
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.evictTimelines() } }
         return events[id] ?? []
     }
 
@@ -357,6 +367,29 @@ final class WorkspaceManager: ObservableObject {
     func lastAnswer(_ id: UUID) -> String {
         if let loaded = events[id] { return loaded.last(where: { $0.kind == .assistant })?.text ?? "" }
         return evictedAnswers[id] ?? ""
+    }
+
+    /// Reads a timeline that is not in memory off the main thread, so opening its session right after (a row under the
+    /// pointer, the session the list is about to show) draws it at once instead of decoding up to `RunStore.eventLimit`
+    /// events on the main thread first. Opening before this is done still reads it the plain way.
+    func prefetchTimeline(_ id: UUID) {
+        guard events[id] == nil, !prefetching.contains(id), runs.contains(where: { $0.id == id }) else { return }
+        prefetching.insert(id)
+        let store = store
+        Task { [weak self] in
+            let loaded = await Task.detached(priority: .userInitiated) { store.loadEvents(id) }.value
+            guard let self else { return }
+            self.prefetching.remove(id)
+            // Opened (or written to) meanwhile: what is in memory is newer than what was read.
+            guard self.events[id] == nil else { return }
+            self.evictedTimelines.remove(id)
+            self.evictedAnswers[id] = nil
+            self.timelineUse[id] = Date()
+            self.quietEvents = true
+            self.events[id] = loaded
+            self.quietEvents = false
+            self.evictTimelines()
+        }
     }
 
     /// Loads timeline from disk if not yet in memory.
@@ -698,6 +731,17 @@ final class WorkspaceManager: ObservableObject {
         send(id, text: text, shown: true)
     }
 
+    /// Sends the message you asked to go out right away once the turn ended; if it cannot go out now it waits
+    /// first in the queue. False when nothing was waiting.
+    @discardableResult
+    func sendPendingNow(_ id: UUID) -> Bool {
+        guard let next = pendingSendNow.removeValue(forKey: id) else { return false }
+        if !send(id, text: next, shown: false) {
+            queued[id, default: MessageQueue()].requeueFirst(next)
+        }
+        return true
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
@@ -824,7 +868,7 @@ final class WorkspaceManager: ObservableObject {
     /// A queued message can go out right away: into the running turn, or as a new turn when the agent is idle.
     func canSendQueuedNow(_ id: UUID) -> Bool {
         guard let run = run(id) else { return false }
-        if run.status.isActive { return canSteer(id) }
+        if run.status.isActive { return true }
         return run.canContinue && processes[id] == nil && !checkpointing.contains(id)
     }
 
@@ -832,7 +876,21 @@ final class WorkspaceManager: ObservableObject {
     /// agent is idle (also after a stop or a failure). It stays queued when it cannot go out.
     func sendQueuedNow(_ id: UUID, message: UUID) {
         guard canSendQueuedNow(id), let run = run(id) else { return }
-        if run.status.isActive { return steerQueued(id, message: message) }
+        if run.status.isActive {
+            if canSteer(id) {
+                guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+                store(queue, for: id)
+                if steer(id, text: text) { return }
+                queue.requeueFirst(text)
+                store(queue, for: id)
+            }
+            guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
+            queue.resume()
+            store(queue, for: id)
+            pendingSendNow[id] = text
+            stop(id)
+            return
+        }
         guard var queue = queued[id], let text = queue.promoteToSteer(message) else { return }
         queue.resume()
         store(queue, for: id)
@@ -909,6 +967,7 @@ final class WorkspaceManager: ObservableObject {
         guard let process = processes[id] else {
             // No running process: update state only.
             update(id) { $0.move(to: .stopped) }
+            sendPendingNow(id)
             return
         }
         turns[id]?.stopping = true
@@ -1394,6 +1453,9 @@ final class WorkspaceManager: ObservableObject {
         if state.stopping {
             update(id) { $0.move(to: .stopped) }
             append(id, RunEvent(kind: .system, text: tr("ws.event.stopped")))
+            scheduleGitRefresh(id, delay: 0.2)
+            sendPendingNow(id)
+            return
         } else {
             let detail = Self.cleanError(state.lastError ?? stderr, status: status)
             update(id) { $0.move(to: .failed, detail: detail) }
@@ -1583,7 +1645,8 @@ final class WorkspaceManager: ObservableObject {
         append(id, RunEvent(kind: .system, text: tr("ws.prwatch.news") + "\n" + lines.joined(separator: "\n"), tool: "prwatch"))
         guard wake, let run = run(id) else { return }
         let message = PullRequestNews.message(url: old.url, lines: lines)
-        if run.canContinue && processes[id] == nil { send(id, text: message) } else { enqueue(id, text: message) }
+        // The news line above already shows it: the agent gets it without a bubble of yours.
+        if run.canContinue && processes[id] == nil { sendHidden(id, text: message) } else { enqueue(id, text: message) }
     }
 
     /// Removes a session from Nook. The directory or worktree is preserved (removed separately); never allows deleting an active session.
@@ -1611,6 +1674,7 @@ final class WorkspaceManager: ObservableObject {
         limitResumes.removeValue(forKey: id)?.cancel()
         warmPrompts[id] = nil
         awaitingCheckpoint[id] = nil
+        pendingSendNow[id] = nil
         codexLimitSnapshots[id] = nil
         limitedTurns[id] = nil
         backgroundWork.remove(id)

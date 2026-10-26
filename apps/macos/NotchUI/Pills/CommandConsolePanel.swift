@@ -92,22 +92,16 @@ struct CommandConsolePanel: View {
 
 /// The block cursor of a shell that still runs.
 private struct BlinkingCursor: View {
-    @State private var on = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Rectangle()
-            .fill(NookTheme.textSecondary)
-            .frame(width: 7, height: 13)
-            // With Reduce Motion the cursor stays lit instead of blinking, also when it is turned on while it blinks.
-            .opacity(on || reduceMotion ? 1 : 0)
-            .onAppear(perform: blink)
-            .onChange(of: reduceMotion) { blink() }
-            .accessibilityHidden(true)
-    }
-
-    private func blink() {
-        guard !reduceMotion, on else { return }
-        withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { on = false }
+        TimelineView(.periodic(from: .now, by: 0.55)) { context in
+            let on = reduceMotion || Int(context.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
+            Rectangle()
+                .fill(NookTheme.textSecondary)
+                .frame(width: 7, height: 13)
+                .opacity(on ? 1 : 0)
+        }
+        .accessibilityHidden(true)
     }
 }

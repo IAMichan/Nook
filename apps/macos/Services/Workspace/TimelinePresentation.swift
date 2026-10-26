@@ -272,19 +272,19 @@ enum TimelinePresentation {
             || finished?.state == .failed
         // Fold only a turn that ended well: its answer stays, the work in between folds away.
         guard !open, first.kind == .user, let finished, !troubled,
-              let answer = turn.lastIndex(where: { $0.kind == .assistant }) else {
+              let answer = turn.lastIndex(where: { $0.kind == .assistant && !BackgroundWork.isNotice($0) }) else {
             return group(turn)
         }
         let work = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
-        guard work.contains(where: { $0.kind != .assistant }) else { return group(turn) }
+        guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn) }
         let seconds = max(0, finished.date.timeIntervalSince(first.date))
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.
         return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work)),
                 .event(turn[answer]), .event(finished)]
     }
 
-    /// Two or more tool calls in a row become one block, also across the agent's thinking between them: that thinking
-    /// opens with the block. Thinking before the first call or after the last stays on its own, and errors and
+    /// Two or more tool calls in a row become one block, also across the agent's thinking between them and its notes
+    /// that it started work in the background (see BackgroundWork.notice): those open with the block. Thinking before the first call or after the last stays on its own, and errors and
     /// approvals are never hidden inside a group.
     static func group(_ events: [RunEvent]) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
@@ -306,7 +306,7 @@ enum TimelinePresentation {
             run = []
         }
         for event in events {
-            if isWork(event) || event.kind == .thinking {
+            if isWork(event) || event.kind == .thinking || BackgroundWork.isNotice(event) {
                 run.append(event)
             } else {
                 flush()
@@ -418,6 +418,26 @@ enum BackgroundWork {
         if started { return true }
         if turn.first?.kind == .system, turn.first?.tool == "wake" { return false }
         return before
+    }
+
+    /// The tasks of a message that only says it started work in the background and waits for it, as Antigravity writes
+    /// after each command it leaves running ("task-148 has been launched in the background. I will wait for it to
+    /// complete before proceeding."): a quiet line among the commands, not an answer. Empty for any other text.
+    static func notice(_ text: String) -> [String] {
+        let pattern = #"\s*([\w.-]+) has been (?:launched|started) in the background\.?(?:\s*I will wait for it to (?:complete|finish) before proceeding\.?)?\s*"#
+        guard !text.isEmpty, text.count <= 2_000, let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        var tasks: [String] = []
+        var end = text.startIndex
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let whole = Range(match.range, in: text), whole.lowerBound == end, let task = Range(match.range(at: 1), in: text) else { return [] }
+            tasks.append(String(text[task]))
+            end = whole.upperBound
+        }
+        return end == text.endIndex ? tasks : []
+    }
+
+    static func isNotice(_ event: RunEvent) -> Bool {
+        event.kind == .assistant && !notice(event.text).isEmpty
     }
 
     /// What Codex gets when a background command finished: the command, its exit code and the end of its output.

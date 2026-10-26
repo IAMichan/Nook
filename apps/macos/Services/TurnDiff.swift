@@ -205,7 +205,7 @@ struct TurnDiff: Equatable, Identifiable, Sendable {
                 for step in message.steps where step.state != .failed {
                     current.add(step)
                 }
-            case .thinking:
+            case .thinking, .notice:
                 break
             }
         }

@@ -16,21 +16,21 @@ struct TurnChangesCard: View {
     let turn: TurnDiff
     let directory: String?
     let open: (_ file: String?) -> Void
-    /// Folders you folded shut; every folder starts open.
-    @State private var closed: Set<String> = []
+    /// Folders you opened; as on every folder starts closed, so a big turn stays one short list.
+    @State private var opened: Set<String> = []
     @State private var folded = false
 
     var body: some View {
         let tree = turn.tree(relativeTo: directory)
         VStack(alignment: .leading, spacing: 0) {
-            header
+            header(tree)
             if !folded {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(tree.flatten(expanded: tree.expandAll.subtracting(closed))) { row in
-                        TurnChangesRow(row: row, open: !closed.contains(row.path)) {
+                    ForEach(tree.flatten(expanded: opened)) { row in
+                        TurnChangesRow(row: row, open: opened.contains(row.path)) {
                             if row.isDirectory {
                                 withAnimation(NookTheme.reveal) {
-                                    if closed.contains(row.path) { closed.remove(row.path) } else { closed.insert(row.path) }
+                                    if opened.contains(row.path) { opened.remove(row.path) } else { opened.insert(row.path) }
                                 }
                             } else {
                                 open(row.path)
@@ -38,16 +38,18 @@ struct TurnChangesCard: View {
                         }
                     }
                 }
-                .padding(.horizontal, NookTheme.Spacing.xs)
-                .padding(.bottom, NookTheme.Spacing.xs)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .padding(.bottom, NookTheme.Spacing.sm)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
-        .padding(.top, NookTheme.Spacing.sm)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.field))
+        .padding(.top, NookTheme.Spacing.lg)
     }
 
-    private var header: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
+    private func header(_ tree: ChangedFilesTree) -> some View {
+        let all = tree.expandAll
+        let allOpen = !all.isEmpty && all.isSubset(of: opened)
+        return HStack(spacing: NookTheme.Spacing.sm) {
             Button {
                 withAnimation(NookTheme.reveal) { folded.toggle() }
             } label: {
@@ -63,6 +65,12 @@ struct TurnChangesCard: View {
             }
             .buttonStyle(.plain)
             Spacer(minLength: NookTheme.Spacing.sm)
+            if !all.isEmpty {
+                ToolbarIconButton(allOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                  tr(allOpen ? "agents.turn.collapseFolders" : "agents.turn.expandFolders"), height: 20, width: 20) {
+                    withAnimation(NookTheme.reveal) { opened = allOpen ? [] : all }
+                }
+            }
             Button { open(nil) } label: {
                 HStack(spacing: NookTheme.Spacing.xs) {
                     Image(systemName: "plusminus")
@@ -114,7 +122,7 @@ private struct TurnChangesRow: View {
             .foregroundStyle(NookTheme.textTertiary)
             .padding(.leading, NookTheme.Spacing.sm + CGFloat(row.depth) * 14)
             .padding(.trailing, NookTheme.Spacing.sm)
-            .frame(height: 26)
+            .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
                 .fill(hovering ? NookTheme.rowHover : Color.clear))
             .contentShape(Rectangle())
@@ -125,9 +133,10 @@ private struct TurnChangesRow: View {
     }
 }
 
-/// The diff panel next to a conversation: pick a turn or the whole session at the top, read the diff of
-/// every file or of one, with the files of that choice in a column beside it. Made from the agent's own edits, so it
-/// shows what each turn did, also for a session whose folder is not on this Mac.
+/// The diff panel next to a conversation, laid out: pick a turn or the whole session at the top, then
+/// every file of that choice in one scroll under sticky headers (`StackedDiffList`), folded until you open one; a file
+/// picked in a turn's changed-files card opens and scrolls into view. Made from the agent's own edits, so it shows what
+/// each turn did, also for a session whose folder is not on this Mac.
 struct TurnDiffPanel: View {
     let turns: [TurnDiff]
     @Binding var selection: TurnDiffSelection
@@ -137,7 +146,8 @@ struct TurnDiffPanel: View {
     /// fails, the diff made from the agent's edits shows.
     var load: ((TurnDiff, [TurnDiff.File]) async throws -> String)? = nil
     let close: () -> Void
-    @AppStorage("nook.agents.diffFiles") private var showFiles = true
+    @AppStorage("nook.agents.diffFiles") private var showFiles = false
+    @State private var expanded: Set<String> = []
 
     private var current: TurnDiff {
         if selection.turn == TurnDiffSelection.all { return TurnDiff.session(turns) }
@@ -146,143 +156,77 @@ struct TurnDiffPanel: View {
 
     var body: some View {
         let current = current
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            header(current)
-            ToolSurface {
-                HStack(spacing: 0) {
-                    diff(current).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if showFiles, !current.files.isEmpty {
-                        NookDivider(vertical: true)
-                        files(current).frame(width: 190)
-                    }
+        let files = current.files.map { file in
+            StackedDiffFile(path: TurnDiff.relative(file.path, to: directory),
+                            kind: file.patches.first?.hasPrefix("@@ -0,0") == true ? .added : .modified,
+                            additions: file.lines.added, deletions: file.lines.removed)
+        }
+        VStack(alignment: .leading, spacing: 0) {
+            header(current, files: files)
+            NookDivider()
+            if files.isEmpty {
+                StackedDiffNote(text: tr("agents.diff.none"))
+            } else {
+                StackedDiffList(files: files, scope: "turn|" + selection.turn, expanded: $expanded, showsTree: showFiles,
+                                focus: selection.file) { file in
+                    guard let source = current.file(file.path, relativeTo: directory) else { return "" }
+                    let fallback = TurnDiff.diff([source])
+                    guard let load else { return fallback }
+                    let loaded = (try? await load(current, [source])) ?? ""
+                    return loaded.isEmpty ? fallback : loaded
                 }
+                .id(selection.turn)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { if let file = selection.file { expanded = [file] } }
+        .onChange(of: selection.turn) { _, _ in expanded = selection.file.map { [$0] } ?? [] }
     }
 
-    private func header(_ current: TurnDiff) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            Image(systemName: "plusminus").font(NookTheme.font(11, .semibold)).foregroundStyle(NookTheme.textTertiary)
-            Menu {
-                Button(tr("agents.diff.allTurns")) { selection = TurnDiffSelection(turn: TurnDiffSelection.all) }
-                Divider()
+    private func header(_ current: TurnDiff, files: [StackedDiffFile]) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            ComposerDropdown(width: 240) {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(selection.turn == TurnDiffSelection.all ? tr("agents.diff.allTurns") : title(current))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down").font(NookTheme.font(9, .bold)).opacity(0.7)
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.paper)
+                .padding(.horizontal, NookTheme.Spacing.sm)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.smoke))
+                .contentShape(Rectangle())
+            } content: {
+                DropdownRow(title: tr("agents.diff.allTurns"), chosen: selection.turn == TurnDiffSelection.all) {
+                    selection = TurnDiffSelection(turn: TurnDiffSelection.all)
+                }
+                DropdownDivider()
                 ForEach(turns.reversed()) { turn in
-                    Button(title(turn) + "  +\(turn.lines.added) −\(turn.lines.removed)") {
+                    DropdownRow(title: title(turn), trailing: "+\(turn.lines.added) −\(turn.lines.removed)",
+                                chosen: selection.turn == turn.id) {
                         selection = TurnDiffSelection(turn: turn.id)
                     }
                 }
-            } label: {
-                Text(selection.turn == TurnDiffSelection.all ? tr("agents.diff.allTurns") : title(current))
-                    .font(NookTheme.TextStyle.strong)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            Text(tr("agents.turn.changedFiles", current.files.count))
+            Text(tr("agents.turn.changedFiles", files.count))
                 .font(NookTheme.TextStyle.detail)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
             Spacer(minLength: 4)
-            ToolbarIconButton(showFiles ? "sidebar.trailing" : "sidebar.right", tr(showFiles ? "agents.diff.hideFiles" : "agents.diff.showFiles")) {
-                withAnimation(NookTheme.reveal) { showFiles.toggle() }
-            }
+            StackedDiffToolbar(files: files, expanded: $expanded, showsTree: $showFiles)
             ToolbarIconButton(wide ? "arrow.right.to.line" : "arrow.left.to.line", tr(wide ? "ws.outputs.narrow" : "ws.outputs.widen")) {
                 withAnimation(NookTheme.reveal) { wide.toggle() }
             }
             ToolbarIconButton("xmark", tr("ws.outputs.close"), close)
         }
-        .frame(height: 30)
+        .padding(.horizontal, NookTheme.Spacing.xs)
+        .frame(height: 36)
     }
 
     /// "Turn 3", or "Latest turn" for the last one.
     private func title(_ turn: TurnDiff) -> String {
         turn.id == turns.last?.id ? tr("agents.diff.latestTurn") : tr("agents.diff.turn", turn.number)
     }
-
-    @ViewBuilder
-    private func diff(_ current: TurnDiff) -> some View {
-        if current.files.isEmpty {
-            ListEmptyNote(tr("agents.diff.none"), padding: NookTheme.Spacing.xl)
-        } else {
-            let shown = selection.file.flatMap { current.file($0, relativeTo: directory) }.map { [$0] } ?? current.files
-            let key = selection.turn + "|" + (selection.file ?? "")
-            if let load {
-                LoadedTurnDiff(fallback: TurnDiff.diff(shown)) { try await load(current, shown) }
-                    .id(key)
-            } else {
-                DiffText(text: TurnDiff.diff(shown)).id(key)
-            }
-        }
-    }
-
-    private func files(_ current: TurnDiff) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
-                fileRow(name: tr("agents.diff.allFiles"), folder: "", lines: current.lines, chosen: selection.file == nil) {
-                    selection.file = nil
-                }
-                ForEach(current.files) { file in
-                    let path = TurnDiff.relative(file.path, to: directory)
-                    let name = (path as NSString).lastPathComponent
-                    fileRow(name: name, folder: String(path.dropLast(name.count)), lines: file.lines, chosen: selection.file == path) {
-                        selection.file = path
-                    }
-                    .help(path)
-                }
-            }
-            .padding(NookTheme.Spacing.xs)
-        }
-    }
-
-    private func fileRow(name: String, folder: String, lines: EditLines, chosen: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: NookTheme.Spacing.xs) {
-                    Text(name)
-                        .font(NookTheme.mono(11.5))
-                        .foregroundStyle(chosen ? NookTheme.paper : NookTheme.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    EditLinesLabel(lines: lines, size: 10)
-                }
-                if !folder.isEmpty {
-                    Text(folder)
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-            }
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .padding(.vertical, NookTheme.Spacing.xs)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
-                .fill(chosen ? NookTheme.rowHover : Color.clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
 }
 
-/// A diff read when it shows (from git); while it loads, or when it cannot be read, the diff from the agent's edits.
-private struct LoadedTurnDiff: View {
-    let fallback: String
-    let load: () async throws -> String
-    @State private var text: String?
-
-    var body: some View {
-        Group {
-            if let text, !text.isEmpty {
-                DiffText(text: text)
-            } else if text == nil && fallback.isEmpty {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if fallback.isEmpty {
-                ListEmptyNote(tr("agents.diff.none"), padding: NookTheme.Spacing.xl)
-            } else {
-                DiffText(text: fallback)
-            }
-        }
-        .task { text = (try? await load()) ?? "" }
-    }
-}

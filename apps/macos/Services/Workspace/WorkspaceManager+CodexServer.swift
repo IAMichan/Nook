@@ -6,7 +6,7 @@ import Foundation
 /// (too old), the session falls back to `codex exec` for good, and nothing is lost.
 extension WorkspaceManager {
     /// Closes an idle Codex session after this long; the next message resumes the thread in a new process.
-    private static let codexIdleSeconds: UInt64 = 30 * 60
+    private static let codexIdleSeconds: UInt64 = 10 * 60
 
     // MARK: Turns
 
@@ -453,7 +453,7 @@ extension WorkspaceManager {
         turns[id] = nil
         turnDidFinish(id)
         scheduleGitRefresh(id, delay: 0.5)
-        sendQueued(id)
+        if !sendPendingNow(id) { sendQueued(id) }
         scheduleCodexIdleClose(id)
     }
 

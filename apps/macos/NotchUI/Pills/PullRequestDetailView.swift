@@ -1,12 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// One pull request, read in full inside Nook. On top what it is (title, state,
-/// author, branches, size), then four tabs: Summary (reviewers and labels, then the description, the checks and
-/// the comments in sections that fold), Guide, Timeline (everything that happened, commits included) and Code (every
+/// One pull request, read in full inside Nook, laid out. A fixed top with the crumbs
+/// (repository and the number in its state's color), the main action (merge, ready for review, or the state) and the ⋯
+/// menu, then the title, author, checkout command, branches and size, then the tabs; it folds to one line once you
+/// scroll past the title. Under it four tabs: Summary (reviewers and labels, then the description, the checks and
+/// the comments in sections that fold, the comments as threads them; see
+/// PullRequestConversationList), Guide, Timeline (everything that happened, commits included) and Code (every
 /// changed file with its diff). The bar under the tabs says what the open tab holds: the checks on Summary, the
-/// comments, commits and approvals with the order on Timeline, the files viewed on Code. The bar at the bottom merges
-/// it, after you confirm, with the account it was listed under.
+/// comments, commits and approvals with the order on Timeline, the files viewed on Code. Merge asks for a second click and
+/// uses the account it was listed under; the round button at the bottom right opens the composer.
 ///
 /// The page opens at once: the top shows what the list already knew while GitHub is asked, the overview follows with
 /// the first answer and the timeline, commits and files after it (see PullRequestDetailModel, which also keeps it
@@ -15,7 +18,8 @@ struct PullRequestDetailView: View {
     @EnvironmentObject private var app: AppModel
     let accountID: String
     let item: PullRequestItem
-    /// Beside the pull request list (a side panel): the button that leaves it closes the panel, on the right.
+    /// Beside the pull request list (a side panel): the button that leaves it closes the panel, on the right. The
+    /// Pull requests page puts that button on its tab line instead and passes no `onBack`.
     let inline: Bool
     /// Nil beside a session, where the side panel's tab closes it instead.
     let onBack: (() -> Void)?
@@ -32,9 +36,14 @@ struct PullRequestDetailView: View {
     @State private var writingGuide = false
     @State private var guideFailed = false
     @AppStorage("agents.pr.mergeMethod") private var methodRaw = PullRequestMergeMethod.merge.rawValue
-    @State private var confirmMerge = false
+    /// The merge button's first click arms it ("Confirm merge?"), the second merges; it disarms by itself after a while.
+    @State private var armedMerge = false
+    @State private var armToken = UUID()
     @State private var merging = false
-    @State private var mergeError: String?
+    /// Scrolled past the title: the top folds to one line (number and title).
+    @State private var condensed = false
+    /// The popover that says in full what may still hold the merge back.
+    @State private var showBlocker = false
     /// The composer, the ⋯ menu's actions and their confirmation.
     @StateObject private var actions = PullRequestActionState()
     /// The timeline newest first, when chosen.
@@ -44,8 +53,10 @@ struct PullRequestDetailView: View {
     @State private var checksOpen = false
     @State private var commentsOpen = true
     @AppStorage("agents.pr.commentsNewest") private var commentsNewestFirst = false
-    /// Comments by bots (CI reports, coverage, previews) are left out of the Summary until you ask for them.
+    /// Comments by bots (CI reports, coverage, previews), resolved threads and dismissed reviews are left out of the
+    /// Summary until you ask for them in its filter.
     @AppStorage("agents.pr.showBotComments") private var showBotComments = false
+    @AppStorage("agents.pr.showFinishedComments") private var showFinishedComments = false
 
     /// The stack this pull request is part of, bottom first (empty when it stands alone), and how to open another one of it.
     let stack: [PullRequestItem]
@@ -54,13 +65,19 @@ struct PullRequestDetailView: View {
     @State private var confirmStackMerge = false
     @State private var mergingStack = false
 
+    /// Hands the row back as the page last read it (merged, closed, ready for review, in conflict), so the tab that
+    /// holds it shows the same mark as the page.
+    let onUpdate: ((PullRequestItem) -> Void)?
+
     init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
-         onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onBack: (() -> Void)? = nil) {
+         onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onUpdate: ((PullRequestItem) -> Void)? = nil,
+         onBack: (() -> Void)? = nil) {
         self.accountID = accountID
         self.item = item
         self.inline = inline
         self.stack = stack
         self.onOpenPullRequest = onOpenPullRequest
+        self.onUpdate = onUpdate
         self.onBack = onBack
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
     }
@@ -74,21 +91,23 @@ struct PullRequestDetailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            topBar
-            if confirmStackMerge || mergingStack { stackMergeBar }
-            header
+        VStack(alignment: .leading, spacing: 0) {
+            headerBlock
+            if confirmStackMerge || mergingStack { stackMergeBar.padding(.top, NookTheme.Spacing.sm) }
             if let detail {
-                tabs(detail)
-                // The relative times in the timeline and the commits tick along, once a minute.
-                TimelineView(.periodic(from: .now, by: 60)) { context in
-                    content(detail, now: context.date)
+                ZStack(alignment: .bottomTrailing) {
+                    // The relative times in the timeline and the commits tick along, once a minute.
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        content(detail, now: context.date)
+                    }
+                    if actions.panel != .write { writeButton(detail) }
                 }
+                .frame(maxHeight: .infinity)
                 if actions.panel != .none || actions.pending != nil || actions.error != nil {
                     PullRequestActionPanel(state: actions, model: model, accountID: accountID, detail: detail)
+                        .padding(.top, NookTheme.Spacing.sm)
                         .transition(.opacity)
                 }
-                mergeBar(detail)
             } else if let error = model.error {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                     Text(tr("agents.pr.loadFailed")).font(NookTheme.TextStyle.title).foregroundStyle(NookTheme.paper)
@@ -99,10 +118,10 @@ struct PullRequestDetailView: View {
                     NookPrimaryButton(title: tr("agents.pr.retry")) { Task { await model.refresh(activity: true) } }
                         .padding(.top, NookTheme.Spacing.xs)
                 }
-                .padding(.top, NookTheme.Spacing.md)
+                .padding(.top, NookTheme.Spacing.lg)
                 Spacer(minLength: 0)
             } else {
-                PullRequestDetailGhost()
+                PullRequestDetailGhost().padding(.top, NookTheme.Spacing.lg)
                 Spacer(minLength: 0)
             }
         }
@@ -112,6 +131,11 @@ struct PullRequestDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if !merging { Task { await model.refresh() } }
         }
+        .onChange(of: detail.map { "\($0.state.rawValue)|\($0.conflicted)" }) { _, _ in
+            guard let detail, let onUpdate else { return }
+            let updated = item.updated(from: detail)
+            if updated != item { onUpdate(updated) }
+        }
         .onChange(of: detail?.files.map(\.path) ?? []) { _, paths in
             if let path = openFile, detail?.activityLoaded == true, !paths.contains(path) { openFile = nil }
         }
@@ -119,48 +143,260 @@ struct PullRequestDetailView: View {
 
     // MARK: Header
 
+    /// The top of the page, laid out: the crumbs with the page's actions, the title, who and when, the
+    /// branches and the size, then the tabs, ruled off from the content that scrolls under it. Once the title is
+    /// scrolled away the middle folds to one line and the crumbs show the number and title instead.
+    private var headerBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            topBar
+            if condensed {
+                condensedLine
+                    .padding(.bottom, NookTheme.Spacing.sm)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                header
+                    .padding(.top, NookTheme.Spacing.xs)
+                    .padding(.bottom, NookTheme.Spacing.lg)
+                    .transition(.opacity)
+            }
+            if let detail {
+                NookDivider()
+                tabs(detail).padding(.vertical, NookTheme.Spacing.sm)
+            }
+            NookDivider()
+        }
+        .animation(NookTheme.reveal, value: condensed)
+    }
+
     private var topBar: some View {
-        HStack(spacing: NookTheme.Spacing.md) {
+        HStack(spacing: NookTheme.Spacing.sm) {
             if let onBack, !inline {
-                NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 28, action: onBack)
-                    .help(tr("agents.pr.back"))
+                ToolbarIconButton("arrow.left", tr("agents.pr.back"), onBack)
             }
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Text(item.repo).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.right").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
-                Text("#\(item.number)").foregroundStyle(NookTheme.textSecondary).monospacedDigit()
-            }
-            .font(NookTheme.TextStyle.label)
-            .foregroundStyle(NookTheme.textTertiary)
+            crumbs
             Spacer(minLength: NookTheme.Spacing.sm)
-            if model.loading {
-                ProgressView().controlSize(.small)
-            } else if let read = model.fetchedAt {
-                PullRequestFreshness(date: read)
-            }
-            NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) {
-                Task { await model.refresh(activity: true) }
-            }
-            .help(tr("agents.pulls.refresh"))
             if stack.count > 1 { stackMenu }
             if let detail {
-                PullRequestMoreMenu(state: actions, detail: detail)
-            }
-            if let url = detail?.url ?? item.url {
-                NookIconButton(systemName: "link", label: tr("agents.pr.copyLink"), size: 28) {
-                    Pasteboard.copy(url.absoluteString)
-                    ToastCenter.shared.success(tr("agents.pr.copiedLink"))
+                primaryAction(detail)
+                // Refreshing is in the ⋯ menu, which spins while GitHub is asked.
+                PullRequestMoreMenu(state: actions, detail: detail, loading: model.loading, fetchedAt: model.fetchedAt) {
+                    Task { await model.refresh(activity: true) }
                 }
-                    .help(tr("agents.pr.copyLink"))
-                NookIconButton(systemName: "arrow.up.right.square", label: tr("agents.pulls.open"), size: 28) { NSWorkspace.shared.open(url) }
-                    .help(tr("agents.pulls.open"))
+            } else if model.loading {
+                ProgressView().controlSize(.small)
             }
             if let onBack, inline {
-                NookIconButton(systemName: "sidebar.right", label: tr("agents.pr.closePanel"), size: 28, action: onBack)
-                    .help(tr("agents.pr.closePanel"))
+                ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), onBack)
             }
         }
-        .frame(height: 30)
+        .frame(height: 32)
+    }
+
+    /// "acme/app #12↗", or "#12↗ Title" once folded. The number wears the state's color and opens it on GitHub.
+    private var crumbs: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            if condensed {
+                numberLink
+                Text(detail?.title ?? item.title)
+                    .foregroundStyle(NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(detail?.title ?? item.title)
+            } else {
+                Text(item.repo).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.tail)
+                numberLink
+            }
+        }
+        .font(NookTheme.TextStyle.label)
+    }
+
+    private var numberLink: some View {
+        Button {
+            if let url = detail?.url ?? item.url { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                Text("#\(item.number)").monospacedDigit()
+                Image(systemName: "arrow.up.right.square").font(NookTheme.font(9, .medium))
+            }
+            .foregroundStyle(PullRequestIcon.tint(glyph))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(tr("agents.pulls.open"))
+        .accessibilityLabel(tr("agents.pulls.open"))
+    }
+
+    /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            Text(detail?.title ?? item.title)
+                .font(NookTheme.font(16, .semibold))
+                .foregroundStyle(NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(detail?.title ?? item.title)
+                .textSelection(.enabled)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                let author = detail?.author ?? item.author
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    if !author.isEmpty {
+                        HStack(spacing: NookTheme.Spacing.sm) {
+                            GitHubAvatar(login: author, size: 16)
+                            Text(author).font(NookTheme.font(12, .medium)).foregroundStyle(NookTheme.paper)
+                        }
+                        .help("@" + author)
+                    }
+                    if let updated = detail?.updated ?? item.updated {
+                        if !author.isEmpty { Text("·").foregroundStyle(NookTheme.textMuted.opacity(0.6)) }
+                        Text(tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
+                    }
+                }
+                .help(detail?.created.map { tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince($0))) } ?? "")
+                Spacer(minLength: NookTheme.Spacing.sm)
+                if let detail { checkoutCommand(detail) }
+            }
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+            if let detail {
+                branchLine(detail).padding(.top, NookTheme.Spacing.md)
+            } else {
+                GhostBar(width: 260).padding(.top, NookTheme.Spacing.md)
+            }
+        }
+    }
+
+    /// The folded middle: the author and when, the branches, and the size, in one quiet line.
+    private var condensedLine: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            let author = detail?.author ?? item.author
+            if !author.isEmpty { GitHubAvatar(login: author, size: 16).help("@" + author) }
+            if let updated = detail?.updated ?? item.updated {
+                Text(AgentFormat.short(Date().timeIntervalSince(updated))).monospacedDigit()
+            }
+            if let detail {
+                NookDivider(vertical: true).frame(height: 12)
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text(detail.baseBranch).lineLimit(1)
+                    Image(systemName: "arrow.left").font(NookTheme.font(8.5, .semibold)).foregroundStyle(NookTheme.textMuted)
+                    Text(detail.headBranch).lineLimit(1).truncationMode(.middle)
+                }
+                .font(NookTheme.mono(10.5))
+                .foregroundStyle(NookTheme.textMuted)
+                Spacer(minLength: NookTheme.Spacing.sm)
+                diffStat(detail, compact: true)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .font(NookTheme.TextStyle.detail)
+        .foregroundStyle(NookTheme.textTertiary)
+        .frame(height: 20)
+    }
+
+    /// `gh pr checkout 12 --repo acme/app` in mono; a click copies it.
+    private func checkoutCommand(_ detail: PullRequestDetail) -> some View {
+        Button {
+            Pasteboard.copy(PullRequestMoreMenu.checkout(detail))
+            ToastCenter.shared.success(tr("agents.pr.action.copied"))
+        } label: {
+            Text("gh pr checkout \(detail.number)").font(NookTheme.mono(11.5))
+                .foregroundStyle(NookTheme.textTertiary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help(tr("agents.pr.action.copyCheckout"))
+    }
+
+    /// The list's state until the page has loaded (so a known conflict shows at once), then the page's.
+    private var glyph: PullRequestBadge.Glyph {
+        guard let detail else { return item.stateGlyph }
+        return PullRequestBadge.Glyph(detail.state, conflicted: detail.conflicted)
+    }
+
+    /// "main ← feature" in mono (a click on the head copies it), the update button when the branch is behind, and on
+    /// the right how many files and lines changed.
+    private func branchLine(_ detail: PullRequestDetail) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
+                Image(systemName: "arrow.left").font(NookTheme.font(10, .medium)).foregroundStyle(NookTheme.textMuted.opacity(0.6))
+                Button {
+                    Pasteboard.copy(detail.headBranch)
+                    ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
+                } label: {
+                    Text(detail.headBranch).lineLimit(1).truncationMode(.middle)
+                }
+                .buttonStyle(.plain)
+                .help(tr("agents.pr.copyBranch"))
+            }
+            .font(NookTheme.mono(11.5))
+            .foregroundStyle(NookTheme.textMuted)
+            if detail.isOpen && detail.mergeState == "behind" {
+                Button {
+                    actions.close()
+                    actions.pending = .updateBranch(headSHA: detail.headSHA)
+                } label: {
+                    HStack(spacing: NookTheme.Spacing.xxs) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text(tr("agents.pr.behind"))
+                    }
+                    .font(NookTheme.TextStyle.caption)
+                    .foregroundStyle(NookTheme.amber)
+                }
+                .buttonStyle(.plain)
+                .help(tr("agents.pr.action.updateBranch"))
+            }
+            Spacer(minLength: NookTheme.Spacing.sm)
+            diffStat(detail)
+        }
+    }
+
+    /// How many files and the lines added and removed them; folded, the number of files alone.
+    private func diffStat(_ detail: PullRequestDetail, compact: Bool = false) -> some View {
+        let files = max(detail.changedFiles, detail.files.count)
+        return HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                Image(systemName: "doc.text").font(NookTheme.font(compact ? 9.5 : 10.5))
+                Text(compact ? "\(files)" : tr("agents.pr.filesCount", files))
+            }
+            .foregroundStyle(NookTheme.textTertiary)
+            .help(tr("agents.pr.filesCount", files))
+            if detail.additions > 0 || detail.deletions > 0 {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Text("+\(detail.additions)").foregroundStyle(NookTheme.mint)
+                    Text("-\(detail.deletions)").foregroundStyle(NookTheme.coral)
+                }
+                .font(NookTheme.mono(compact ? 10.5 : 12))
+            }
+        }
+        .font((compact ? NookTheme.font(10.5) : NookTheme.TextStyle.detail).monospacedDigit())
+        .lineLimit(1)
+        .fixedSize()
+    }
+
+    /// The round button at the bottom right that opens the composer (a comment or a review).
+    private func writeButton(_ detail: PullRequestDetail) -> some View {
+        Button {
+            withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
+        } label: {
+            Image(systemName: "bubble.left")
+                .font(NookTheme.font(14, .medium))
+                .foregroundStyle(NookTheme.paper)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(NookTheme.smoke))
+                .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1))
+                .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(actions.sending)
+        .help(tr("agents.pr.write.open"))
+        .accessibilityLabel(tr("agents.pr.write.open"))
+        .padding(.trailing, NookTheme.Spacing.xs)
+        .padding(.bottom, NookTheme.Spacing.md)
     }
 
     // MARK: Stack
@@ -194,8 +430,7 @@ struct PullRequestDetailView: View {
             }
         } label: {
             HStack(spacing: NookTheme.Spacing.xxs) {
-                PullRequestStateGlyph(glyph: .stack, size: 13, lineWidth: 1.5, nodeRadius: 1.8)
-                    .frame(width: 13, height: 13)
+                PullRequestStateIcon(glyph: .stack, tinted: false)
                 Text("\(index)/\(stack.count)").font(NookTheme.TextStyle.caption).monospacedDigit()
             }
             .foregroundStyle(NookTheme.textSecondary)
@@ -216,7 +451,7 @@ struct PullRequestDetailView: View {
                 ProgressView().controlSize(.small)
                 Text(tr("agents.pulls.stack.merging", numbers)).foregroundStyle(NookTheme.textSecondary)
             } else {
-                Image(systemName: "arrow.triangle.merge").foregroundStyle(NookTheme.violet)
+                PullRequestStateIcon(glyph: .merged)
                 Text(tr("agents.pulls.stack.confirm", numbers)).foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: NookTheme.Spacing.sm)
@@ -249,110 +484,6 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// What the pull request is: shown from the list's row at once, and filled in when GitHub answers.
-    private var header: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(detail?.title ?? item.title)
-                .font(NookTheme.TextStyle.title)
-                .foregroundStyle(NookTheme.paper)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                PullRequestStateBadge(glyph: glyph)
-                let author = detail?.author ?? item.author
-                if !author.isEmpty {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        GitHubAvatar(login: author, size: 16)
-                        Text("@" + author).foregroundStyle(NookTheme.textSecondary)
-                    }
-                }
-                if let created = detail?.created {
-                    Text("· " + tr("agents.pr.openedAgo", AgentFormat.short(Date().timeIntervalSince(created))))
-                }
-                if let updated = detail?.updated ?? item.updated {
-                    Text("· " + tr("agents.pr.updatedAgo", AgentFormat.short(Date().timeIntervalSince(updated))))
-                }
-                Spacer(minLength: 0)
-            }
-            .font(NookTheme.TextStyle.detail)
-            .foregroundStyle(NookTheme.textTertiary)
-            .lineLimit(1)
-            if let detail {
-                branchLine(detail)
-            } else {
-                GhostBar(width: 260)
-            }
-        }
-    }
-
-    private var glyph: PullRequestBadge.Glyph {
-        guard let detail else {
-            switch item.state {
-            case .merged: return .merged
-            case .closed: return .closed
-            case .open: return item.draft ? .draft : .open
-            }
-        }
-        if detail.state == .open && detail.conflicted { return .conflict }
-        return PullRequestBadge.Glyph(rawValue: detail.state.rawValue) ?? .open
-    }
-
-    /// "main ← feature" with the size of the change: how many files, the lines added and removed, and a small bar.
-    private func branchLine(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                Image(systemName: "arrow.triangle.branch").font(NookTheme.font(10.5, .medium))
-                Text(detail.baseBranch).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "arrow.left").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textMuted)
-                Text(detail.headBranch).foregroundStyle(NookTheme.textSecondary).lineLimit(1).truncationMode(.middle)
-            }
-            .font(NookTheme.mono(11.5))
-            .foregroundStyle(NookTheme.textTertiary)
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(NookTheme.rowHover))
-            .help(tr("agents.pr.copyBranch"))
-            .onTapGesture {
-                Pasteboard.copy(detail.headBranch)
-                ToastCenter.shared.success(tr("agents.pr.copiedBranch"))
-            }
-            .accessibilityAddTraits(.isButton)
-            ToolbarIconButton("terminal", tr("agents.pr.action.copyCheckout")) {
-                Pasteboard.copy(PullRequestMoreMenu.checkout(detail))
-                ToastCenter.shared.success(tr("agents.pr.action.copied"))
-            }
-            if detail.isOpen && detail.mergeState == "behind" {
-                Button {
-                    actions.close()
-                    actions.pending = .updateBranch(headSHA: detail.headSHA)
-                } label: {
-                    HStack(spacing: NookTheme.Spacing.xxs) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text(tr("agents.pr.behind"))
-                    }
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.amber)
-                }
-                .buttonStyle(.plain)
-                .help(tr("agents.pr.action.updateBranch"))
-            }
-            Spacer(minLength: NookTheme.Spacing.sm)
-            HStack(spacing: NookTheme.Spacing.sm) {
-                HStack(spacing: NookTheme.Spacing.xxs) {
-                    Image(systemName: "doc").font(NookTheme.font(10))
-                    Text(tr("agents.pr.filesCount", max(detail.changedFiles, detail.files.count)))
-                }
-                .foregroundStyle(NookTheme.textTertiary)
-                Text("+\(detail.additions)").foregroundStyle(NookTheme.mint)
-                Text("−\(detail.deletions)").foregroundStyle(NookTheme.coral)
-                DiffStatBar(additions: detail.additions, deletions: detail.deletions)
-            }
-            .font(NookTheme.TextStyle.detail.monospacedDigit())
-            .lineLimit(1)
-            .fixedSize()
-        }
-    }
-
     /// The tab bar: the four tabs, and on the right what the open tab holds.
     private func tabs(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
@@ -361,9 +492,9 @@ struct PullRequestDetailView: View {
                 .init(value: Tab.guide, title: tr("agents.pr.tab.guide"), help: tr("agents.pr.guide.help")),
                 .init(value: Tab.timeline, title: tr("agents.pr.tab.timelinePlain")),
                 .init(value: Tab.code, title: tr("agents.pr.tab.code")),
-            ], selected: tab) { value in
+            ], selected: tab, onSelect: { value in
                 switchTo(value)
-            }
+            }, segmented: true)
             .fixedSize()
             Spacer(minLength: 0)
             tabAccessory(detail)
@@ -389,12 +520,13 @@ struct PullRequestDetailView: View {
             HStack(spacing: NookTheme.Spacing.md) {
                 if detail.activityLoaded {
                     let approvals = detail.verdicts.filter(\.approved).count
-                    Label("\(comments(detail, includeBots: true).count)", systemImage: "bubble.left")
+                    Label("\(PullRequestConversation.commentCount(PullRequestConversation.items(detail.events)))", systemImage: "bubble.left")
                         .help(tr("agents.pr.count.comments"))
                     Label("\(detail.commits.count)", systemImage: "circle.and.line.horizontal")
                         .help(tr("agents.pr.count.commits"))
                     if approvals > 0 {
-                        Label("\(approvals)", systemImage: "checkmark.circle").foregroundStyle(NookTheme.mint)
+                        Label("\(approvals)", systemImage: PullRequestIcon.symbol(PullRequestIcon.Review.approved))
+                            .foregroundStyle(PullRequestIcon.tint(PullRequestIcon.Review.approved))
                             .help(tr("agents.pr.count.approvals"))
                     }
                 }
@@ -442,7 +574,8 @@ struct PullRequestDetailView: View {
             }
         case .timeline:
             if detail.activityLoaded {
-                page { timeline(detail, now: now) }
+                // One centered column at most 768 pt wide.
+                page { timeline(detail, now: now).frame(maxWidth: 768).frame(maxWidth: .infinity) }
             } else {
                 activityLoading
             }
@@ -450,7 +583,7 @@ struct PullRequestDetailView: View {
             if !detail.activityLoaded {
                 activityLoading
             } else if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
-                fileDiff(file, detail: detail)
+                fileDiff(file, detail: detail).padding(.top, NookTheme.Spacing.md)
             } else {
                 page { files(detail) }
             }
@@ -579,13 +712,27 @@ struct PullRequestDetailView: View {
         }
     }
 
+    /// A tab's content, scrolling under the top. Scrolled well past the title (and with enough below to keep it
+    /// scrolled), the top folds; back at the start it unfolds.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         ScrollView(showsIndicators: false) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, NookTheme.Spacing.md)
+                .padding(.top, NookTheme.Spacing.md)
+                // Room for the round write button over the end of the page.
+                .padding(.bottom, NookTheme.Spacing.xxxl + NookTheme.Spacing.xxl)
         }
         .frame(maxHeight: .infinity)
+        .onScrollGeometryChange(for: PageScroll.self) { geometry in
+            PageScroll(offset: geometry.contentOffset.y + geometry.contentInsets.top,
+                       overflow: geometry.contentSize.height - geometry.containerSize.height)
+        } action: { _, scroll in
+            if condensed {
+                if scroll.offset < 4 { condensed = false }
+            } else if scroll.offset > 72 && scroll.overflow > 200 {
+                condensed = true
+            }
+        }
     }
 
     /// The summary is in, the timeline, commits and files are still on their way.
@@ -598,6 +745,7 @@ struct PullRequestDetailView: View {
             ForEach(0..<4, id: \.self) { _ in GhostRow() }
             Spacer(minLength: 0)
         }
+        .padding(.top, NookTheme.Spacing.md)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -606,9 +754,12 @@ struct PullRequestDetailView: View {
     /// The Summary: who reviews and which labels, then the description, the checks and the comments, each a section
     /// that folds under its heading.
     private func summary(_ detail: PullRequestDetail, now: Date) -> some View {
-        let shownComments = comments(detail, includeBots: showBotComments)
-        let hiddenBots = comments(detail, includeBots: true).count - comments(detail, includeBots: false).count
+        let conversation = PullRequestConversation.items(detail.events)
+        let total = PullRequestConversation.commentCount(conversation)
+        let hidden = total - PullRequestConversation.commentCount(
+            PullRequestConversation.filtered(conversation, bots: showBotComments, finished: showFinishedComments))
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            if let readiness = PullRequestReadiness(detail) { readinessCard(readiness, detail: detail) }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 metaRow(symbol: "person.2", title: tr("agents.pr.status.reviewers")) { reviewers(detail) }
                 if !detail.labels.isEmpty {
@@ -631,9 +782,8 @@ struct PullRequestDetailView: View {
                         MarkdownView(text: detail.body, size: 13.5)
                     }
                 }
-                .padding(NookTheme.Spacing.lg)
+                .padding(.horizontal, NookTheme.Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .panelCard()
             }
 
             SummarySection(title: tr("agents.pr.status.checks"), open: $checksOpen) {
@@ -642,30 +792,19 @@ struct PullRequestDetailView: View {
                 checksSummary(detail).font(NookTheme.TextStyle.detail)
             }
 
-            SummarySection(title: tr("agents.pr.comments", detail.activityLoaded ? shownComments.count : (detail.commentCount ?? 0)),
+            SummarySection(title: tr("agents.pr.comments", detail.activityLoaded ? total : (detail.commentCount ?? 0)),
                            open: $commentsOpen) {
                 if !detail.activityLoaded {
                     ForEach(0..<2, id: \.self) { _ in GhostRow() }
-                } else if shownComments.isEmpty {
-                    ListEmptyNote(tr("agents.pr.conversation.none"))
                 } else {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        ForEach(commentsNewestFirst ? Array(shownComments.reversed()) : shownComments) { event in
-                            eventCard(event, now: now, avatar: true)
-                        }
-                    }
+                    PullRequestConversationList(detail: detail, now: now, newestFirst: commentsNewestFirst,
+                                                showBots: showBotComments, showFinished: showFinishedComments)
                 }
             } accessory: {
                 HStack(spacing: NookTheme.Spacing.md) {
-                    if hiddenBots > 0 || showBotComments {
-                        Button {
-                            showBotComments.toggle()
-                        } label: {
-                            Text(showBotComments ? tr("agents.pr.comments.hideBots") : tr("agents.pr.comments.botsHidden", hiddenBots))
-                                .font(NookTheme.TextStyle.caption)
-                                .foregroundStyle(NookTheme.textTertiary)
-                        }
-                        .buttonStyle(.plain)
+                    if detail.activityLoaded, total > 0 {
+                        PullRequestConversationFilter(showBots: $showBotComments, showFinished: $showFinishedComments,
+                                                      hidden: hidden)
                     }
                     orderButton(newestFirst: $commentsNewestFirst)
                 }
@@ -673,15 +812,113 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// The conversation: comments, reviews with something to say or a verdict, and comments on lines, oldest first.
-    private func comments(_ detail: PullRequestDetail, includeBots: Bool) -> [PullRequestEvent] {
-        detail.events.filter { event in
-            if !includeBots && event.author.lowercased().hasSuffix("[bot]") { return false }
-            switch event.kind {
-            case .comment, .lineComment: return true
-            case .review: return !event.body.isEmpty || isVerdict(event.kind)
-            case .commit, .activity: return false
+    // MARK: Readiness
+
+    /// Where the pull request stands, first thing on the Summary: the verdict ("Ready to merge", "Not ready yet", "Needs
+    /// changes"), then one line per thing GitHub weighs, each with its mark in the state's color. A line with something
+    /// to look at or do takes you there: the checks unfold, the reviews open the timeline, a branch behind updates.
+    private func readinessCard(_ readiness: PullRequestReadiness, detail: PullRequestDetail) -> some View {
+        let verdict: (symbol: String, color: Color, title: String) = switch readiness.verdict {
+        case .ready: ("checkmark.circle.fill", NookTheme.mint, tr("agents.pr.ready.verdict.ready"))
+        case .waiting: ("clock.fill", NookTheme.amber, tr("agents.pr.ready.verdict.waiting"))
+        case .blocked: ("exclamationmark.circle.fill", NookTheme.coral, tr("agents.pr.ready.verdict.blocked"))
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: verdict.symbol).font(NookTheme.font(14, .semibold)).foregroundStyle(verdict.color)
+                Text(verdict.title).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper)
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.md)
+            NookDivider()
+            ForEach(Array(readiness.items.enumerated()), id: \.offset) { _, item in
+                readinessRow(item, detail: detail)
+            }
+        }
+        .padding(.bottom, NookTheme.Spacing.xs)
+        .panelCard()
+    }
+
+    @ViewBuilder
+    private func readinessRow(_ item: PullRequestReadiness.Item, detail: PullRequestDetail) -> some View {
+        let line = HStack(spacing: NookTheme.Spacing.md) {
+            readinessMark(item.tone).frame(width: 16)
+            Text(readinessText(item))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(item.tone == .neutral ? NookTheme.textSecondary : NookTheme.paper)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if let hint = readinessHint(item) {
+                HStack(spacing: NookTheme.Spacing.xxs) {
+                    Text(hint)
+                    Image(systemName: "chevron.right").font(NookTheme.font(8.5, .bold))
+                }
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.textTertiary)
+            }
+        }
+        if let action = readinessAction(item, detail: detail) {
+            HoverRow(action: action) { line }
+        } else {
+            line
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.vertical, NookTheme.Spacing.sm + NookTheme.Spacing.xxs)
+        }
+    }
+
+    private func readinessMark(_ tone: PullRequestReadiness.Tone) -> some View {
+        let look: (symbol: String, color: Color) = switch tone {
+        case .good: ("checkmark", NookTheme.mint)
+        case .waiting: ("circle.dotted", NookTheme.amber)
+        case .blocking: ("xmark", NookTheme.coral)
+        case .neutral: ("minus", NookTheme.textTertiary)
+        }
+        return Image(systemName: look.symbol).font(NookTheme.font(11, .bold)).foregroundStyle(look.color)
+    }
+
+    private func readinessText(_ item: PullRequestReadiness.Item) -> String {
+        let names: ([String]) -> String = { $0.map { "@" + $0 }.joined(separator: ", ") }
+        return switch item {
+        case .draft: tr("agents.pr.ready.draft")
+        case .conflicts(let base): tr("agents.pr.ready.conflicts", base)
+        case .noConflicts(let base): tr("agents.pr.ready.noConflicts", base)
+        case .behind(let base): tr("agents.pr.ready.behind", base)
+        case .checksFailing(let failing, let total): tr("agents.pr.ready.checksFailing", failing, total)
+        case .checksRunning(let running, let total): tr("agents.pr.ready.checksRunning", running, total)
+        case .checksPassed(let total): tr("agents.pr.ready.checksPassed", total)
+        case .noChecks: tr("agents.pr.ready.noChecks")
+        case .changesRequested(let by): tr("agents.pr.ready.changesRequested", names(by))
+        case .approved(let by): tr("agents.pr.ready.approved", names(by))
+        case .reviewRequested(let from): tr("agents.pr.ready.reviewRequested", names(from))
+        case .noReviews: tr("agents.pr.ready.noReviews")
+        }
+    }
+
+    /// The few words at the end of a line you can click: what the click does.
+    private func readinessHint(_ item: PullRequestReadiness.Item) -> String? {
+        switch item {
+        case .checksFailing, .checksRunning: tr("agents.pr.ready.showChecks")
+        case .changesRequested: tr("agents.pr.ready.showReviews")
+        case .behind: tr("agents.pr.action.updateBranch")
+        default: nil
+        }
+    }
+
+    private func readinessAction(_ item: PullRequestReadiness.Item, detail: PullRequestDetail) -> (() -> Void)? {
+        switch item {
+        case .checksFailing, .checksRunning:
+            return { withAnimation(NookTheme.reveal) { checksOpen = true } }
+        case .changesRequested:
+            return { switchTo(.timeline) }
+        case .behind where detail.canPush != false:
+            return {
+                actions.close()
+                actions.pending = .updateBranch(headSHA: detail.headSHA)
+            }
+        default:
+            return nil
         }
     }
 
@@ -697,7 +934,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// The reviewers' pictures, ringed by what they said (mint approved, coral changes requested, grey still asked).
+    /// The reviewers' pictures, ringed by what they said (mint approved, amber changes requested, grey still asked).
     @ViewBuilder
     private func reviewers(_ detail: PullRequestDetail) -> some View {
         let verdicts = detail.verdicts
@@ -711,7 +948,7 @@ struct PullRequestDetailView: View {
         } else {
             HStack(spacing: NookTheme.Spacing.xs) {
                 ForEach(verdicts, id: \.author) { verdict in
-                    reviewer(verdict.author, ring: verdict.approved ? NookTheme.mint : NookTheme.coral,
+                    reviewer(verdict.author, ring: PullRequestIcon.tint(verdict.approved ? PullRequestIcon.Review.approved : .changesRequested),
                              help: tr(verdict.approved ? "agents.pr.reviews.approved" : "agents.pr.reviews.changes", "@" + verdict.author))
                 }
                 ForEach(waiting, id: \.self) { login in
@@ -731,6 +968,7 @@ struct PullRequestDetailView: View {
     private func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
         openFile = nil
+        condensed = false
     }
 
     @ViewBuilder
@@ -766,7 +1004,7 @@ struct PullRequestDetailView: View {
         return VStack(alignment: .leading, spacing: 0) {
             if let created = detail.created, !newestFirst {
                 TimelineRail(last: entries.isEmpty) {
-                    TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
+                    TimelineMarker(symbol: PullRequestIcon.symbol(.open), color: PullRequestIcon.tint(.open))
                 } content: {
                     activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
@@ -781,7 +1019,7 @@ struct PullRequestDetailView: View {
             }
             if newestFirst, let created = detail.created {
                 TimelineRail(last: true) {
-                    TimelineMarker(symbol: "arrow.triangle.pull", color: NookTheme.mint)
+                    TimelineMarker(symbol: PullRequestIcon.symbol(.open), color: PullRequestIcon.tint(.open))
                 } content: {
                     activityLine(author: detail.author, sentence: tr("agents.pr.timeline.opened"), date: created, now: now)
                 }
@@ -793,10 +1031,13 @@ struct PullRequestDetailView: View {
     private func timelineEntry(_ entry: PullRequestTimelineEntry, detail: PullRequestDetail, now: Date, last: Bool) -> some View {
         switch entry {
         case .commits(let run):
-            TimelineRail(last: last) {
-                TimelineMarker(symbol: "smallcircle.filled.circle", color: NookTheme.textTertiary)
-            } content: {
-                commitRun(run, detail: detail, now: now)
+            // Each commit its own entry with its author's picture, as on timeline.
+            ForEach(Array(run.enumerated()), id: \.element.id) { index, event in
+                TimelineRail(last: last && index == run.count - 1) {
+                    GitHubAvatar(login: event.author, size: 28)
+                } content: {
+                    commitEntry(event, detail: detail, now: now)
+                }
             }
         case .event(let event):
             switch event.kind {
@@ -811,46 +1052,32 @@ struct PullRequestDetailView: View {
                 }
             default:
                 TimelineRail(last: last) {
-                    GitHubAvatar(login: event.author, size: 22)
+                    GitHubAvatar(login: event.author, size: 28)
                 } content: {
-                    eventCard(event, now: now)
+                    PullRequestCommentCard(event: event, now: now, showsAvatar: false)
                 }
             }
         }
     }
 
+    /// "ada labeled bug", the time under it writes an event.
     private func activityLine(author: String, sentence: String, date: Date?, now: Date) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NookTheme.Spacing.sm) {
-            (Text("@" + author + " ").font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textStrong)
-                + Text(sentence).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary))
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            (Text(author + " ").font(NookTheme.font(12, .semibold)).foregroundStyle(NookTheme.paper)
+                + Text(sentence).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textSecondary))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
             if let date { timeLabel(date, now: now) }
         }
-        .padding(.top, 3)
+        .padding(.vertical, NookTheme.Spacing.sm)
     }
 
-    /// Commits one person added one after the other: one line saying so, and each commit under it.
-    private func commitRun(_ run: [PullRequestEvent], detail: PullRequestDetail, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            activityLine(author: run.first?.author ?? "?",
-                         sentence: run.count == 1 ? tr("agents.pr.timeline.pushedOne") : tr("agents.pr.timeline.pushed", run.count),
-                         date: run.last?.date, now: now)
-            VStack(spacing: 0) {
-                ForEach(run) { event in
-                    if case .commit(let sha) = event.kind {
-                        HoverRow(action: { openCommit(sha, detail: detail) }) {
-                            HStack(spacing: NookTheme.Spacing.md) {
-                                Text(String(sha.prefix(7))).font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary)
-                                Text(event.body).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
-                                Spacer(minLength: 4)
-                            }
-                        }
-                    }
-                }
-            }
-            .panelCard()
+    /// A commit: its message in bold, its short hash and when under it; a click opens it on GitHub.
+    @ViewBuilder
+    private func commitEntry(_ event: PullRequestEvent, detail: PullRequestDetail, now: Date) -> some View {
+        if case .commit(let sha) = event.kind {
+            CommitEntry(sha: sha, message: event.body, time: event.date.map { AgentFormat.short(now.timeIntervalSince($0)) },
+                        date: event.date) { openCommit(sha, detail: detail) }
         }
     }
 
@@ -860,7 +1087,7 @@ struct PullRequestDetailView: View {
 
     private func timeLabel(_ date: Date, now: Date) -> some View {
         Text(AgentFormat.short(now.timeIntervalSince(date)))
-            .font(NookTheme.TextStyle.detail)
+            .font(NookTheme.font(11))
             .foregroundStyle(NookTheme.textTertiary)
             .monospacedDigit()
             .help(date.formatted(date: .abbreviated, time: .shortened))
@@ -870,110 +1097,44 @@ struct PullRequestDetailView: View {
         switch type {
         case "labeled", "unlabeled": return ("tag", NookTheme.textTertiary)
         case "assigned", "unassigned": return ("person", NookTheme.textTertiary)
-        case "review_requested", "review_request_removed", "ready_for_review": return ("eye", NookTheme.textTertiary)
+        case "review_requested", "review_request_removed":
+            return (PullRequestIcon.symbol(PullRequestIcon.Review.required), PullRequestIcon.tint(PullRequestIcon.Review.required))
+        // An event shows the mark of the state it leads to.
+        case "ready_for_review", "reopened": return (PullRequestIcon.symbol(.open), PullRequestIcon.tint(.open))
         case "renamed": return ("pencil", NookTheme.textTertiary)
-        case "convert_to_draft": return ("pencil.circle", NookTheme.textTertiary)
+        case "convert_to_draft": return (PullRequestIcon.symbol(.draft), PullRequestIcon.tint(.draft))
         case "head_ref_force_pushed": return ("arrow.up.circle", NookTheme.amber)
         case "head_ref_deleted", "head_ref_restored", "base_ref_changed": return ("arrow.triangle.branch", NookTheme.textTertiary)
-        case "merged": return ("arrow.triangle.merge", NookTheme.violet)
-        case "closed": return ("xmark.circle", NookTheme.coral)
-        case "reopened": return ("arrow.uturn.left.circle", NookTheme.mint)
+        case "merged": return (PullRequestIcon.symbol(.merged), PullRequestIcon.tint(.merged))
+        case "closed": return (PullRequestIcon.symbol(.closed), PullRequestIcon.tint(.closed))
         case "cross-referenced", "referenced": return ("link", NookTheme.textTertiary)
         case "milestoned", "demilestoned": return ("flag", NookTheme.textTertiary)
         case "auto_merge_enabled", "auto_merge_disabled": return ("bolt", NookTheme.textTertiary)
-        case "review_dismissed": return ("xmark.bubble", NookTheme.textTertiary)
+        case "review_dismissed":
+            return (PullRequestIcon.symbol(PullRequestIcon.Review.dismissed), PullRequestIcon.tint(PullRequestIcon.Review.dismissed))
         default: return ("circle", NookTheme.textTertiary)
-        }
-    }
-
-    /// A comment or review as a card: who and what on top (a review's verdict in its color), the text under it.
-    /// With `avatar` the author's picture leads the card (the Summary's comments, which have no rail beside them).
-    private func eventCard(_ event: PullRequestEvent, now: Date, avatar: Bool = false) -> some View {
-        let (label, color) = eventLabel(event.kind)
-        let verdict = isVerdict(event.kind)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                if avatar { GitHubAvatar(login: event.author, size: 18) }
-                Text("@" + event.author).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
-                if verdict {
-                    Text(label)
-                        .font(NookTheme.TextStyle.caption)
-                        .foregroundStyle(color)
-                        .padding(.horizontal, NookTheme.Spacing.sm)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(color.opacity(0.14)))
-                        .lineLimit(1)
-                } else {
-                    Text(label).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.middle)
-                }
-                Spacer(minLength: 4)
-                if let date = event.date { timeLabel(date, now: now) }
-                if let url = event.url {
-                    ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            }
-            if !event.body.isEmpty {
-                MarkdownView(text: event.body, size: 13.5)
-            }
-        }
-        .padding(NookTheme.Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .panelCard()
-    }
-
-    /// An approval or a request for changes, which wears its verdict as a tinted pill.
-    private func isVerdict(_ kind: PullRequestEvent.Kind) -> Bool {
-        if case .review(let state) = kind { return state == "APPROVED" || state == "CHANGES_REQUESTED" }
-        return false
-    }
-
-    private func eventLabel(_ kind: PullRequestEvent.Kind) -> (String, Color) {
-        switch kind {
-        case .comment: return (tr("agents.pr.event.comment"), NookTheme.textTertiary)
-        case .commit, .activity: return ("", NookTheme.textTertiary)
-        case .lineComment(let path, let line):
-            return (tr("agents.pr.event.line", line.map { "\(path):\($0)" } ?? path), NookTheme.textTertiary)
-        case .review(let state):
-            switch state {
-            case "APPROVED": return (tr("agents.pr.event.approved"), NookTheme.mint)
-            case "CHANGES_REQUESTED": return (tr("agents.pr.event.changes"), NookTheme.coral)
-            case "DISMISSED": return (tr("agents.pr.event.dismissed"), NookTheme.textTertiary)
-            default: return (tr("agents.pr.event.reviewed"), NookTheme.textTertiary)
-            }
         }
     }
 
     // MARK: Checks
 
-    /// The checks by outcome: what fails first, then what runs, then what passed or was skipped.
+    /// The checks as one plain list them: failing first, then running, then passed or skipped.
     private func checks(_ detail: PullRequestDetail) -> some View {
-        let groups: [(PullRequestCheck.Outcome, String)] = [
-            (.failing, "agents.pr.checks.group.failing"), (.pending, "agents.pr.checks.group.running"),
-            (.passing, "agents.pr.checks.group.passed"), (.skipped, "agents.pr.checks.group.skipped"),
-        ]
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+        VStack(alignment: .leading, spacing: 0) {
             if detail.checks.isEmpty {
                 ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
-                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                    let rows = detail.checks.filter { $0.outcome == group.0 }
-                    if !rows.isEmpty {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                            NookSectionLabel(tr(group.1) + " · \(rows.count)", inset: NookTheme.Spacing.xs)
-                            VStack(spacing: 0) {
-                                ForEach(Array(rows.enumerated()), id: \.offset) { index, check in
-                                    if index > 0 { NookDivider(inset: NookTheme.Spacing.lg + 16 + NookTheme.Spacing.md) }
-                                    checkRow(check)
-                                }
-                            }
-                            .panelCard()
-                        }
-                    }
-                }
+                // The ones that need you first: failing, then running, then passed, skipped last.
+                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check) }
             }
         }
+    }
+
+    private func sortedChecks(_ checks: [PullRequestCheck]) -> [PullRequestCheck] {
+        let rank: [PullRequestCheck.Outcome: Int] = [.failing: 0, .pending: 1, .passing: 2, .skipped: 3]
+        return checks.enumerated()
+            .sorted { (rank[$0.element.outcome] ?? 4, $0.offset) < (rank[$1.element.outcome] ?? 4, $1.offset) }
+            .map(\.element)
     }
 
     private func checkRow(_ check: PullRequestCheck) -> some View {
@@ -1125,89 +1286,126 @@ struct PullRequestDetailView: View {
 
     // MARK: Merging
 
-    private func mergeBar(_ detail: PullRequestDetail) -> some View {
-        let note = detail.mergeNote
-        let ready = detail.canMerge && note == nil
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            if confirmMerge {
-                confirmation(detail)
-            } else {
-                mergeRow(detail, note: note, ready: ready)
-            }
-            if let mergeError {
-                Text(mergeError)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.coralSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(NookTheme.Spacing.lg)
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(NookTheme.rowHover))
-    }
-
-    /// The confirmation, inside the bar: a system dialog is a window of its own, and on the notch panel its buttons do not
-    /// reliably get the click (the merge never ran).
-    private func confirmation(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.triangle.merge")
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(NookTheme.amber)
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                Text(tr("agents.pr.confirmTitle", "#\(detail.number)", detail.baseBranch))
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                Text(confirmMessage)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 6)
-            NookGhostButton(title: tr("button.cancel")) { confirmMerge = false }
-            NookPrimaryButton(title: tr("agents.pr.confirmButton")) {
-                confirmMerge = false
-                merge()
-            }
-        }
-    }
-
-    private func mergeRow(_ detail: PullRequestDetail, note: String?, ready: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: ready ? "checkmark.circle.fill" : detail.canMerge ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(ready ? NookTheme.mint : detail.canMerge ? NookTheme.amber : NookTheme.textSecondary)
-            Text(tr(note ?? "agents.pr.note.ready"))
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 6)
-            if actions.panel != .write {
-                NookGhostButton(title: tr("agents.pr.write.open"), symbol: "square.and.pencil", compact: true, height: 30) {
-                    withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
+    /// The page's main action at the top right, as on: merge an open pull request, mark a draft ready, or say
+    /// what it is (merged, closed, in conflict) when there is nothing to do.
+    @ViewBuilder
+    private func primaryAction(_ detail: PullRequestDetail) -> some View {
+        switch detail.state {
+        case .merged, .closed:
+            PullRequestStateBadge(glyph: glyph)
+        case .draft:
+            if !detail.nodeID.isEmpty, detail.canPush != false {
+                SmallPrimaryButton(title: tr("agents.pr.action.ready"), systemName: PullRequestIcon.symbol(.open)) {
+                    actions.close()
+                    actions.pending = .markReady(nodeID: detail.nodeID)
                 }
                 .disabled(actions.sending)
+            } else {
+                PullRequestStateBadge(glyph: .draft)
             }
-            if detail.isOpen && detail.canPush != false && !detail.methods.isEmpty {
-                Menu {
-                    ForEach(detail.methods) { option in
-                        Button(tr(option.titleKey)) { methodRaw = option.rawValue }
+        case .open:
+            if detail.conflicted {
+                PullRequestStateBadge(glyph: .conflict).help(tr("agents.pr.note.conflict"))
+            } else if detail.canPush != false && !detail.methods.isEmpty {
+                mergeButton(detail)
+            }
+        }
+    }
+
+    /// Merge with its method beside it. The first click arms it, the second merges; beside it, what GitHub may still hold
+    /// it back on (branch protection, a branch that is behind, failing checks), named in a few words.
+    private func mergeButton(_ detail: PullRequestDetail) -> some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            if let note = detail.mergeNote, detail.canMerge {
+                mergeBlocker(note, detail: detail)
+            }
+            if merging { ProgressView().controlSize(.small) }
+            SmallPrimaryButton(title: merging ? tr("agents.pr.merging") : armedMerge ? tr("agents.pr.confirmMerge") : tr("agents.pr.merge"),
+                               systemName: armedMerge ? "checkmark" : PullRequestIcon.symbol(.merged)) {
+                if armedMerge {
+                    armedMerge = false
+                    merge()
+                } else {
+                    armMerge()
+                }
+            }
+            .disabled(!detail.canMerge || merging)
+            .help(armedMerge ? confirmMessage : tr(method.titleKey))
+            ComposerDropdown(width: 240) {
+                Image(systemName: "chevron.down")
+                    .font(NookTheme.font(9, .bold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: 18, height: 28)
+                    .contentShape(Rectangle())
+            } content: {
+                DropdownHeader(title: tr("agents.pr.mergeMethod.title"))
+                ForEach(detail.methods) { option in
+                    DropdownRow(title: tr(option.titleKey), chosen: option == method) {
+                        methodRaw = option.rawValue
                     }
-                } label: {
-                    Text(tr(method.titleKey)).font(NookTheme.TextStyle.detail)
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .disabled(merging)
-                if merging {
-                    ProgressView().controlSize(.small)
-                }
-                NookPrimaryButton(title: merging ? tr("agents.pr.merging") : tr("agents.pr.merge")) {
-                    mergeError = nil
-                    confirmMerge = true
-                }
-                .disabled(!detail.canMerge || merging)
-                .opacity(!detail.canMerge || merging ? 0.4 : 1)
             }
+            .disabled(merging)
+            .help(tr("agents.pr.mergeMethod.title"))
+        }
+    }
+
+    /// What may still hold the merge back, in its own mark and a few words ("Branch protection", "Behind main",
+    /// "Checks failing"); a click shows GitHub's whole reason, and for a branch that is behind the button that updates it.
+    private func mergeBlocker(_ note: String, detail: PullRequestDetail) -> some View {
+        let reason = String(note.split(separator: ".").last ?? "")
+        let look: (symbol: String, color: Color, label: String) = switch reason {
+        case "blocked": (PullRequestIcon.blocked, PullRequestIcon.blockerTint, tr("agents.pr.blocker.blocked"))
+        case "behind": (PullRequestIcon.behind, PullRequestIcon.blockerTint, tr("agents.pr.blocker.behind", detail.baseBranch))
+        case "unstable": (PullRequestIcon.symbol(PullRequestCheck.Outcome.failing), PullRequestIcon.tint(PullRequestCheck.Outcome.failing),
+                          tr("agents.pr.blocker.unstable"))
+        case "checking": (PullRequestIcon.symbol(PullRequestCheck.Outcome.pending), PullRequestIcon.tint(PullRequestCheck.Outcome.pending),
+                          tr("agents.pr.blocker.checking"))
+        default: ("info.circle", NookTheme.textTertiary, tr(note))
+        }
+        return Button {
+            showBlocker.toggle()
+        } label: {
+            HStack(spacing: NookTheme.Spacing.xxs) {
+                Image(systemName: look.symbol).font(NookTheme.font(10, .semibold))
+                Text(look.label).lineLimit(1)
+            }
+            .font(NookTheme.TextStyle.caption)
+            .foregroundStyle(look.color)
+            .padding(.horizontal, NookTheme.Spacing.sm)
+            .frame(height: 22)
+            .background(Capsule().fill(look.color.opacity(0.12)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr(note))
+        .accessibilityLabel(tr(note))
+        .popover(isPresented: $showBlocker, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+                Text(tr(note))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.paper)
+                    .fixedSize(horizontal: false, vertical: true)
+                if reason == "behind" {
+                    SmallGhostButton(title: tr("agents.pr.action.updateBranch")) {
+                        showBlocker = false
+                        actions.close()
+                        actions.pending = .updateBranch(headSHA: detail.headSHA)
+                    }
+                }
+            }
+            .padding(NookTheme.Spacing.lg)
+            .frame(width: 280, alignment: .leading)
+        }
+    }
+
+    private func armMerge() {
+        let token = UUID()
+        armToken = token
+        withAnimation(NookTheme.hover) { armedMerge = true }
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if armToken == token { withAnimation(NookTheme.hover) { armedMerge = false } }
         }
     }
 
@@ -1221,14 +1419,13 @@ struct PullRequestDetailView: View {
     private func merge() {
         guard let detail, detail.canMerge, !merging else { return }
         guard let token = GitHubPullRequestDetail.token(accountID: accountID) else {
-            mergeError = tr("agents.pr.noToken")
+            ToastCenter.shared.error(tr("agents.pr.noToken"))
             return
         }
         let method = self.method
         let args = "\(detail.id) · \(method.rawValue) · \(detail.headBranch) → \(detail.baseBranch)"
         merging = true
         model.paused = true
-        mergeError = nil
         Task {
             defer { model.paused = false }
             do {
@@ -1247,7 +1444,7 @@ struct PullRequestDetailView: View {
                     settle()
                     await PullRequestStore.shared.refresh(force: true)
                 } else {
-                    mergeError = error.localizedDescription
+                    ToastCenter.shared.error(error, title: tr("agents.pr.mergeFailed"))
                 }
             }
         }
@@ -1256,8 +1453,8 @@ struct PullRequestDetailView: View {
     /// Shows the merge at once, here, in the list and on the agent rows, without waiting for GitHub's next answers.
     private func settle() {
         merging = false
-        mergeError = nil
         model.markMerged()
+        ToastCenter.shared.success(tr("agents.pr.state.merged"))
     }
 }
 
@@ -1303,6 +1500,12 @@ private struct SummarySection<Content: View, Accessory: View>: View {
     }
 }
 
+/// Where a tab's page is scrolled, and how much taller its content is than the room it has.
+private struct PageScroll: Equatable {
+    let offset: CGFloat
+    let overflow: CGFloat
+}
+
 /// One entry on the timeline: its marker on a thin rail that runs down to the next entry, the entry beside it.
 private struct TimelineRail<Marker: View, Content: View>: View {
     let last: Bool
@@ -1310,16 +1513,16 @@ private struct TimelineRail<Marker: View, Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        HStack(alignment: .top, spacing: NookTheme.Spacing.md) {
-            marker().frame(width: 22, height: 22)
+        HStack(alignment: .top, spacing: NookTheme.Spacing.xl + NookTheme.Spacing.xs) {
+            marker().frame(width: 28, height: 28)
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.bottom, NookTheme.Spacing.lg)
+        .padding(.bottom, NookTheme.Spacing.xl + NookTheme.Spacing.xs)
         .background(alignment: .topLeading) {
             if !last {
                 NookDivider(vertical: true)
-                    .padding(.leading, 10.5)
-                    .padding(.top, 24)
+                    .padding(.leading, 13.5)
+                    .padding(.top, 30)
             }
         }
     }
@@ -1331,11 +1534,44 @@ private struct TimelineMarker: View {
     let color: Color
 
     var body: some View {
-        Image(systemName: symbol)
+        NookSymbol(symbol, size: 12)
             .font(NookTheme.font(10.5, .medium))
             .foregroundStyle(color)
-            .frame(width: 22, height: 22)
-            .background(Circle().fill(NookTheme.field))
+            .frame(width: 28, height: 28)
+            .background(Circle().fill(NookTheme.notch))
+    }
+}
+
+/// One commit on the timeline: the message in bold (lit under the pointer), the short hash and when under it.
+private struct CommitEntry: View {
+    let sha: String
+    let message: String
+    let time: String?
+    let date: Date?
+    let open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                Text(message.isEmpty ? tr("agents.pr.timeline.pushedOne") : message)
+                    .font(NookTheme.font(12, .semibold))
+                    .foregroundStyle(hovering ? NookTheme.iris : NookTheme.paper)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                HStack(spacing: NookTheme.Spacing.sm) {
+                    Text(String(sha.prefix(7))).font(NookTheme.mono(10.5))
+                    if let time { Text(time).font(NookTheme.font(10.5)).monospacedDigit() }
+                }
+                .foregroundStyle(NookTheme.textTertiary)
+            }
+            .padding(.vertical, NookTheme.Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(date?.formatted(date: .abbreviated, time: .shortened) ?? "")
     }
 }
 

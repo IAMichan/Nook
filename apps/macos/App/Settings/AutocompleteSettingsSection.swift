@@ -170,7 +170,7 @@ struct AutocompleteSettingsSection: View {
             ForEach(CompletionCatalogModel.catalog) { model in downloadRow(model) }
             // The explanation goes above the field: inside a Form a text field's title becomes its label, and the field itself
             // was left with no room.
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("autocomplete.download.linkPlaceholder"))
                 HStack {
                     TextField("", text: $customLink, prompt: Text(verbatim: "https://huggingface.co/…/model.gguf"))
@@ -246,8 +246,8 @@ struct AutocompleteSettingsSection: View {
             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle")
                 .foregroundStyle(installed ? NookTheme.mint : NookTheme.textSecondary)
                 .font(NookTheme.font(16))
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                HStack(spacing: NookTheme.Spacing.sm) {
                     Text(model.name)
                     if model == recommended {
                         Text(tr("autocomplete.recommended"))
@@ -380,7 +380,7 @@ struct AutocompleteSettingsSection: View {
 
     private var personalSection: some View {
         Section(tr("autocomplete.section.personal")) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 Text(tr("autocomplete.instructions"))
                 TextEditor(text: $instructions)
                     .font(NookTheme.TextStyle.body)
@@ -778,7 +778,7 @@ struct CompletionKeyRecorder: View {
 
     var body: some View {
         LabeledContent(title) {
-            HStack(spacing: 6) {
+            HStack(spacing: NookTheme.Spacing.sm) {
                 Button { recording ? stop() : start() } label: {
                     if recording { Text(tr("shortcut.record")).foregroundStyle(NookTheme.textSecondary) }
                     else if let shortcut { Keycap(label: shortcut.label) }
@@ -797,6 +797,7 @@ struct CompletionKeyRecorder: View {
 
     private func start() {
         recording = true
+        AutocompleteController.shared.recordingKeys += 1
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 { stop() }
             else if event.keyCode == 51, allowsOff { shortcut = nil; stop() }
@@ -806,6 +807,7 @@ struct CompletionKeyRecorder: View {
     }
 
     private func stop() {
+        if recording { AutocompleteController.shared.recordingKeys -= 1 }
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil

@@ -73,6 +73,11 @@ final class AgentWorkTests: XCTestCase {
                        ["CI failed: build.", "Review from @ann (changes requested): Rename this", "Comment from @cy: App.swift: typo"])
         XCTAssertTrue(PullRequestNews.needsAgent(old: old, new: new))
         XCTAssertTrue(PullRequestNews.message(url: old.url, lines: ["CI failed."]).contains("- CI failed."))
+        let bot = #"<!-- coderabbit-ai-generated:v1 --> <!-- walkthrough --> <a href="https://x"><picture><img src="https://y.svg"></picture></a>"#
+            + "\n## Walkthrough\nRenames **the** [button](https://z) &amp; adds ![badge](https://b.svg) a test.\n<details><summary>More</summary>lots</details>"
+        XCTAssertEqual(PullRequestNews.plain(bot), "Walkthrough Renames **the** button & adds a test.")
+        XCTAssertEqual(PullRequestNews.plain("<!-- cut off before its end"), "")
+        XCTAssertEqual(PullRequestNews.plain(String(repeating: "a ", count: 400)).count, 301, "one line, at most 300 characters")
         let seen = PullRequestNews.updated(old, with: new, at: Date())
         XCTAssertEqual(PullRequestNews.lines(old: seen, new: new), [])
         var merged = new

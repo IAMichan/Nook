@@ -143,8 +143,9 @@ struct MusicScrubBar: View {
     @State private var hovering = false
 
     var body: some View {
-        // Spotify and Music are polled every 2 seconds; time advances locally in between.
-        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+        // Spotify and Music are polled every 2 seconds; time advances locally in between. Paused, the position stands
+        // still, so the clock does too (a drag or a new poll still redraws it).
+        TimelineView(.animation(minimumInterval: 0.5, paused: !info.isPlaying)) { context in
             let duration = Double(info.duration)
             let position = dragFraction.map { $0 * duration } ?? info.estimatedPosition(at: context.date)
             let fraction = duration > 0 ? min(1, max(0, position / duration)) : 0
