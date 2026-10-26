@@ -150,7 +150,8 @@ struct PullRequestsPanel: View {
     private func list(selected: String?) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             PanelListHeader(tr("agents.footer.pullRequests"), count: waitingCount) {
-                if store.loading {
+                // Only a refresh you asked for (or a first load) spins; the quiet ones every half minute do not.
+                if store.showsProgress {
                     ProgressView().controlSize(.small)
                 } else if let read = store.lastRead {
                     PullRequestFreshness(date: read)
@@ -194,12 +195,12 @@ struct PullRequestsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The last list shows at once; a stale one refreshes in the background, again every 20 seconds while open,
-        // and as soon as you come back to Nook.
+        // The last list shows at once; a stale one refreshes in the background, again every 30 seconds while open,
+        // and as soon as you come back to Nook. The slow searches follow at most every three minutes (see PullRequestStore).
         .task {
             while !Task.isCancelled {
                 await store.refresh()
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

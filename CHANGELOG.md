@@ -20,6 +20,9 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
+  the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
+  only a refresh you ask for shows a spinner.
 - "Post this on LinkedIn" and other requests to post on a site that don't start with a known verb are taken over
   again instead of being answered with text.
 
