@@ -2,7 +2,7 @@
 // Renders a Nook video page (built on kit/) to an Instagram-ready MP4 with its calm score, plus a storyboard and,
 // when asked, a cover image.
 //
-//   node render.mjs <video.html> --out .scratch/<name> [--name nook-reel] [--fps 30] [--cover cover.html]
+//   node render.mjs <video.html> --out .scratch/<name> [--name nook-reel] [--fps 30] [--size 1600x900] [--cover cover.html]
 //                   [--mood calm|warm|bright] [--bpm 84] [--no-groove] [--seed 7] [--chord 6] [--silent] [--keep-frames]
 //
 // Needs Node with Playwright (Chromium), ffmpeg, and python3 with numpy.
@@ -22,6 +22,8 @@ if (!page) { console.error('usage: node render.mjs <video.html> --out <dir> [--c
 const out = path.resolve(opt('out', '.scratch/nook-video'));
 const name = opt('name', path.basename(page, '.html'));
 const fps = Number(opt('fps', 30));
+// Reels are 1080x1920; a README or release clip is landscape (see SKILL.md, Formats).
+const [width, height] = opt('size', '1080x1920').split('x').map(Number);
 const frames = path.join(out, '.frames');
 fs.mkdirSync(frames, { recursive: true });
 
@@ -33,7 +35,7 @@ function loadPlaywright() {
 }
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch();
-const tab = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
+const tab = await browser.newPage({ viewport: { width, height } });
 await tab.goto(pathToFileURL(path.resolve(page)).href + '?still');
 await tab.evaluate(() => document.fonts.ready);
 const { duration, cues, music } = await tab.evaluate(() => ({ duration: window.DURATION, cues: window.CUES || [], music: window.MUSIC || {} }));

@@ -15,6 +15,12 @@
 
 **Your personal AI assistant and coding-agent command center — in the MacBook notch, at the top of your Windows or Linux screen, and on your phone.**
 
+<p align="center">
+  <a href="docs/assets/nook-demo.mp4"><img src="docs/assets/nook-demo.gif" width="100%" alt="Nook in the notch: a coding agent finishes, a chat waits for a reply and a pull request merges; Nook answers a question about your calendar, follows three coding agents, and gathers every chat in one inbox."></a>
+  <br>
+  <sub><a href="docs/assets/nook-demo.mp4">Watch with sound (MP4, 25 s)</a></sub>
+</p>
+
 Nook lives quietly in the notch of your Mac, in a bar at the top of your screen on Windows and Linux (or floats anywhere on any display), and comes along on your iPhone and Android phone. It keeps the text of every window up to date locally via on-device OCR, so any question is answered immediately with what you are looking at—combined with your Calendar, Reminders, Mail, browser tabs, local files, and connected services (**GitHub, Notion, Linear, Stripe, Vercel, Sentry, Cal.com, n8n, Resend, WhatsApp**, custom APIs/webhooks, and **MCP servers**).
 
 By default, Nook runs **100% locally on your own computer** (on a Mac via built-in MLX models, Apple Foundation Models, Ollama, or LM Studio; on Windows and Linux via Ollama or LM Studio) at zero cost per query, or connects to external cloud models when you explicitly choose (**Claude, OpenAI, Google Gemini, Grok / xAI, Mistral, Groq, OpenRouter, DeepSeek, Qwen, Moonshot, Claude Code**). It also monitors and orchestrates your **coding agents** (**Claude Code, Codex, Cursor, Gemini CLI, Antigravity, Copilot CLI, Muse, OpenCode, Amp, Hermes**, or any custom agent), complete with live diffs, inline approvals, isolated Git worktrees, a built-in terminal and browser, system-wide inline autocomplete, push-to-talk dictation, call note-taking, and media controls.

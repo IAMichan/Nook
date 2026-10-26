@@ -22,6 +22,7 @@ for another language; Nook speaks English, Dutch, German, French and Spanish, so
 | `scripts/render.mjs` | Renders a page frame by frame with Playwright, composes the score, mixes and encodes the MP4, renders the cover, makes a storyboard |
 | `scripts/music.py` | The score: pads, soft bass, a lo-fi groove (plucked arpeggio, round kick, snap, a whisper of hi-hat) and sound cues, generated from scratch (numpy only), so it is free to use anywhere |
 | `examples/contributor-reel.html`, `examples/contributor-cover.html` | A complete 25 s Reel on an 80 BPM grid with a cold open, and its cover: copy these to start |
+| `examples/readme-clip.html` | The 1600×900 README clip (`docs/assets/nook-demo.mp4` and `.gif`): the release banner's layout, with the notch's tabs changing per scene |
 
 Needs Node with Playwright (Chromium), `ffmpeg`, and `python3` with `numpy`. On a Mac:
 `brew install ffmpeg node && npm i -g playwright && npx playwright install chromium && pip3 install numpy`.
@@ -191,7 +192,7 @@ Plain, warm, and concrete, the way the README and commit messages read.
 | Reel / TikTok / Short | 1080×1920, 30 fps | H.264 High, yuv420p, AAC 48 kHz 192 kbps, `+faststart`; 15–30 s |
 | Reel cover | 1080×1920 | Key content inside 1080×1440 centered (the grid crop) |
 | Feed post | 1080×1350 | Set `html, body` to that size and drop the menu bar; same rules |
-| README or release clip | 1600×900 or the banner's 1800×620 | Use `docs/assets/release-banner.png` as the reference layout; consider `--silent` |
+| README or release clip | 1600×900 or the banner's 1800×620 | Render with `--size 1600x900`; use `docs/assets/release-banner.png` as the reference layout. GitHub does not play a video from the repository inline, so embed a GIF (`fps=15`, 960 px wide, under 5 MB) that links to the MP4 |
 
 ## Caption
 

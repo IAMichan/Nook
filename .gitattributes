@@ -10,5 +10,6 @@
 *.otf binary
 *.webp binary
 *.gif binary
+*.mp4 binary
 *.pdf binary
 *.jar binary
