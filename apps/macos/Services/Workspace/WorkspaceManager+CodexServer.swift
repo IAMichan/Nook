@@ -84,6 +84,7 @@ extension WorkspaceManager {
                                 if let threadID { $0.providerSessionID = threadID }
                                 if let model = response.dictionary["model"] as? String, !model.isEmpty { $0.resolvedModel = model }
                             }
+                            if let threadID { self.noteConversationSession(id, threadID, keepsHistory: false) }
                             if let next = prompt ?? self.warmPrompts.removeValue(forKey: id) {
                                 self.startCodexTurn(id, client, prompt: next)
                             } else {
@@ -111,25 +112,39 @@ extension WorkspaceManager {
         if !appContexts.isEmpty {
             params["additionalContext"] = Dictionary(uniqueKeysWithValues: appContexts.map { ($0.key, ["kind": "untrusted", "value": $0.text]) })
         }
-        client.request("turn/start", params) { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
-                switch result {
-                case .failure(let error):
-                    self.failCodexTurn(id, error.localizedDescription)
-                case .success(let response):
-                    if let turn = (response.dictionary["turn"] as? [String: Any])?["id"] as? String { client.turnID = turn }
+        // Going back to before a message dropped later turns: Codex forgets them before this turn starts.
+        let startParams = params
+        applyCodexRollback(id, client, thread: thread) { [weak self] failure in
+            guard let self else { return }
+            if let failure {
+                self.failCodexTurn(id, tr("ws.revert.conversationFailed", failure))
+                return
+            }
+            client.request("turn/start", startParams) { [weak self] result in
+                Task { @MainActor in
+                    guard let self else { return }
+                    switch result {
+                    case .failure(let error):
+                        self.failCodexTurn(id, error.localizedDescription)
+                    case .success(let response):
+                        if let turn = (response.dictionary["turn"] as? [String: Any])?["id"] as? String {
+                            client.turnID = turn
+                            self.noteConversationTurn(id, turnID: turn)
+                        }
+                    }
                 }
             }
         }
     }
 
-    /// Steers the running turn with a new message: `turn/steer` for Codex, a `priority: "now"` message for Claude Code.
+    /// Steers the running turn with a new message: `turn/steer` for Codex, a `priority: "now"` message for Claude Code, and
+    /// for an agent without native steering an interrupt followed by the message as the next prompt (see `SteerRoute`).
     /// False when the session cannot be steered right now.
     @discardableResult
     func steer(_ id: UUID, text: String) -> Bool {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, canSteer(id) else { return false }
+        if steerRoute(id) == .interruptRestart { return steerByRestart(id, text: clean) }
         if let process = processes[id], run(id)?.provider == .claude {
             append(id, RunEvent(kind: .user, text: ContextRefs.visible(clean)))
             turns[id]?.steered = true
@@ -145,15 +160,29 @@ extension WorkspaceManager {
         return true
     }
 
-    /// A running turn that can take a new message right away: Codex on app-server, or Claude Code on its live process
-    /// (not while it waits for an answer to its question, or once it is being stopped).
+    /// A running turn that can take a new message right away: Codex on app-server, Claude Code on its live process (not while
+    /// it waits for an answer to its question), or an agent that is steered by interrupting it; never once it is being stopped.
     func canSteer(_ id: UUID) -> Bool {
-        guard let run = run(id), run.status.isActive, turns[id]?.stopping != true, turns[id]?.finished != true else { return false }
-        if run.provider == .claude {
-            return processes[id]?.isRunning == true && questions[id] == nil
-        }
-        guard let client = codexServers[id] else { return false }
-        return client.turnID != nil
+        steerRoute(id) != .unavailable
+    }
+
+    func steerRoute(_ id: UUID) -> SteerRoute {
+        guard let run = run(id) else { return .unavailable }
+        let nativeReady = run.provider == .claude
+            ? processes[id]?.isRunning == true && questions[id] == nil
+            : codexServers[id]?.turnID != nil
+        return SteerRoute.choose(run.provider.capabilities, nativeReady: nativeReady, active: run.status.isActive,
+                                 ending: turns[id]?.stopping == true || turns[id]?.finished == true,
+                                 waitingOnYou: run.status == .waitingApproval || !(questions[id] ?? []).isEmpty)
+    }
+
+    /// Steering an agent that cannot take a message into its turn: the turn is interrupted and the message goes out as the
+    /// next prompt as soon as the turn has ended (the same path as "send now" for a queued message, `sendPendingNow`).
+    private func steerByRestart(_ id: UUID, text: String) -> Bool {
+        append(id, RunEvent(kind: .system, text: tr("ws.steer.restart")))
+        pendingSendNow[id] = text
+        stop(id)
+        return true
     }
 
     /// Stops the running turn politely (`turn/interrupt`). False when this is not a Codex app-server session.
@@ -231,6 +260,7 @@ extension WorkspaceManager {
             switch event {
             case .turnStarted(let turn):
                 client.turnID = turn
+                noteConversationTurn(id, turnID: turn)
                 // Codex started a turn on its own (background work it waited for finished): the session works again.
                 if let run = run(id), !run.status.isActive, turns[id] == nil { wakeCodexServer(id) }
             case .approval(let request):

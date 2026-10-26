@@ -294,35 +294,114 @@ struct CompanionOutbox: Codable, Equatable, Sendable {
 }
 
 /// The Mac's answers to requests that change something, by request id, so a repeated request (a retry after a lost
-/// answer, or a message from the outbox) gets the same answer instead of being carried out twice.
+/// answer, or a message from the outbox) gets the same answer instead of being carried out twice. A repeat that comes
+/// while the first is still being carried out waits for its answer (`begin` says `.running`).
+///
+/// Bounded both ways: at most `capacity` answers, the least recently asked for dropped first, and none older than
+/// `lifetime`, which outlives the phone's outbox (a message there waits up to a day, `CompanionOutbox.maxAge`).
 struct CommandReceipts: Sendable {
-    static let capacity = 200
+    static let capacity = 256
+    static let lifetime: TimeInterval = CompanionOutbox.maxAge + 3600
+
+    /// What is known about a request id.
+    enum Lookup: Equatable, Sendable {
+        /// Not seen (or forgotten): carry it out; it is marked as running from now on.
+        case new
+        /// Being carried out right now: wait for its answer instead of doing it again.
+        case running
+        /// Already answered: send this answer again.
+        case answered(CompanionResponse)
+    }
+
+    private struct Entry: Sendable {
+        var response: CompanionResponse?
+        var at: Date
+    }
+
+    /// Least recently used first.
     private var order: [String] = []
-    private var stored: [String: CompanionResponse] = [:]
+    private var entries: [String: Entry] = [:]
 
     init() {}
 
+    /// The requests that change something on the Mac: a repeat of one must not do it again. Reading requests are
+    /// answered afresh every time.
     static func keeps(_ op: CompanionOp) -> Bool {
         switch op {
-        case .send, .answer, .decide, .stop, .start, .ask, .inboxSend, .manage, .chatStop: return true
-        default: return false
+        case .send, .answer, .decide, .stop, .start, .ask, .inboxSend, .manage, .chatStop, .music, .inboxMark,
+             .register, .unregister, .liveActivity, .requestUpdate:
+            return true
+        case .hello, .list, .options, .timeline, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping:
+            return false
         }
     }
 
-    func response(for id: String) -> CompanionResponse? { stored[id] }
+    var count: Int { entries.count }
+
+    /// The answer to a request id, while it is kept.
+    func response(for id: String, now: Date = Date()) -> CompanionResponse? {
+        guard let entry = entries[id], now.timeIntervalSince(entry.at) <= Self.lifetime else { return nil }
+        return entry.response
+    }
+
+    /// Looks a request id up before carrying it out. `.new` marks it as running, so a repeat that comes in the meantime
+    /// waits; an answered id counts as used again (it is kept the longest).
+    mutating func begin(_ id: String, now: Date) -> Lookup {
+        expire(now: now)
+        if let entry = entries[id] {
+            touch(id)
+            return entry.response.map(Lookup.answered) ?? .running
+        }
+        insert(id, Entry(response: nil, at: now))
+        return .new
+    }
+
+    /// The request was refused before it ran (stale, a burst): it was never carried out, so it is forgotten.
+    mutating func cancel(_ id: String) {
+        guard entries[id]?.response == nil else { return }
+        remove(id)
+    }
+
+    /// The request was carried out: an answer that settles it is kept; a passing failure is forgotten, so the same id
+    /// may come again and get through.
+    mutating func finish(_ id: String, _ response: CompanionResponse, now: Date) {
+        guard Self.settles(response) else { remove(id); return }
+        if entries[id] == nil { insert(id, Entry(response: response, at: now)) } else { entries[id] = Entry(response: response, at: now); touch(id) }
+    }
+
+    /// Keeps an answer that settles the request (`begin` and `finish` in one).
+    mutating func record(_ id: String, _ response: CompanionResponse, now: Date = Date()) {
+        finish(id, response, now: now)
+    }
 
     /// Whether an answer settles the request; a passing failure (`failed`, `busy`) may be tried again with the same id.
     static func settles(_ response: CompanionResponse) -> Bool {
         response.ok || (response.error != .failed && response.error != .busy)
     }
 
-    /// Keeps an answer that settles the request.
-    mutating func record(_ id: String, _ response: CompanionResponse) {
-        guard Self.settles(response) else { return }
-        if stored[id] == nil {
-            order.append(id)
-            if order.count > Self.capacity { stored[order.removeFirst()] = nil }
+    private mutating func insert(_ id: String, _ entry: Entry) {
+        entries[id] = entry
+        order.append(id)
+        while order.count > Self.capacity {
+            let oldest = order.removeFirst()
+            entries[oldest] = nil
         }
-        stored[id] = response
+    }
+
+    private mutating func touch(_ id: String) {
+        guard let index = order.firstIndex(of: id) else { return }
+        order.remove(at: index)
+        order.append(id)
+    }
+
+    private mutating func remove(_ id: String) {
+        entries[id] = nil
+        order.removeAll { $0 == id }
+    }
+
+    /// Drops answers older than `lifetime`. A request still running is never dropped by age: its answer is coming.
+    private mutating func expire(now: Date) {
+        let old = entries.filter { $0.value.response != nil && now.timeIntervalSince($0.value.at) > Self.lifetime }.map(\.key)
+        for id in old { remove(id) }
     }
 }

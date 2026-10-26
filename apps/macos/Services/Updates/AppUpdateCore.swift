@@ -178,11 +178,19 @@ enum UpdateBlocker: Equatable, Sendable {
     case diverged(Int)
 }
 
-/// The steps of an install, in order.
+/// The steps of an install. A build from a checkout goes fetch → merge → generate → build → install → restart; a
+/// downloaded build download → verify → install → restart (`sequence`).
 enum UpdateStep: Int, CaseIterable, Comparable, Sendable {
     case fetch, merge, generate, build, install, restart
+    case download, verify
 
     static func < (lhs: UpdateStep, rhs: UpdateStep) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    /// The steps one install shows, in order. Run from Xcode, a checkout's install ends once the project is generated.
+    static func sequence(release: Bool, fromXcode: Bool) -> [UpdateStep] {
+        if release { return [.download, .verify, .install, .restart] }
+        return fromXcode ? [.fetch, .merge, .generate] : [.fetch, .merge, .generate, .build, .install, .restart]
+    }
 }
 
 /// What xcodebuild is doing, read from one line of its output.
@@ -248,16 +256,26 @@ enum BuildProduct {
 }
 
 /// Starting Nook again once this process is gone: a small shell loop that outlives Nook, waits for its process to end
-/// (a minute at most), then opens the app. The pid and the path are arguments, never part of the script text.
+/// (a minute at most), then opens the app. The pid and the paths are arguments, never part of the script text.
+/// After an update on trial (`UpdateTrial`) it first copies the database and its -wal and -shm into the snapshot folder:
+/// only once the process is really gone, so the copy is consistent.
 enum Relaunch {
     static let script = """
-    pid="$1"; app="$2"; n=0
+    pid="$1"; app="$2"; db="$3"; snap="$4"; n=0
     while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 300 ]; do sleep 0.2; n=$((n + 1)); done
+    if [ -n "$snap" ] && [ -f "$db" ] && ! kill -0 "$pid" 2>/dev/null; then
+      rm -rf "$snap" && mkdir -p "$snap" && for f in "$db" "$db-wal" "$db-shm"; do [ -f "$f" ] && cp -p "$f" "$snap/"; done
+    fi
     /usr/bin/open "$app"
     """
 
     static func arguments(pid: Int32, appPath: String) -> [String] {
         ["-c", script, "nook-relaunch", String(pid), appPath]
+    }
+
+    /// The same, taking a snapshot of `database` into `snapshot` before the app opens again.
+    static func arguments(pid: Int32, appPath: String, database: String, snapshot: String) -> [String] {
+        arguments(pid: pid, appPath: appPath) + [database, snapshot]
     }
 }
 
@@ -284,6 +302,9 @@ struct UpdateReceipt: Codable, Equatable, Sendable {
     let to: String
     let changes: [IncomingChange]
     let installedAt: Date
+
+    /// What the update brought, for the panel: a short commit, or a release version as it is.
+    var shortTarget: String { BuildSource.isCommit(to) ? String(to.prefix(7)) : to }
 }
 
 /// Text for an AppleScript (opening the project in Xcode): a path as a quoted string literal.

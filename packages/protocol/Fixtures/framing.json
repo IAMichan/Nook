@@ -1,0 +1,9 @@
+{
+  "comment": "Companion framing: a 4-byte big-endian length, then the payload (hex). maxFrame is the largest payload accepted.",
+  "maxFrame": 262144,
+  "frames": [
+    { "payload": "", "framed": "00000000" },
+    { "payload": "7b7d", "framed": "000000027b7d" },
+    { "payload": "68656c6c6f", "framed": "0000000568656c6c6f" }
+  ]
+}

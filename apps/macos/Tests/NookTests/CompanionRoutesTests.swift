@@ -129,6 +129,64 @@ final class CompanionRoutesTests: XCTestCase {
         XCTAssertNil(receipts.response(for: "a"), "the oldest go first")
     }
 
+    func testARepeatWhileTheFirstRunsWaitsForItsAnswer() {
+        var receipts = CommandReceipts()
+        let now = Date()
+        XCTAssertEqual(receipts.begin("s1", now: now), .new)
+        XCTAssertEqual(receipts.begin("s1", now: now), .running, "the same id while it is carried out")
+        let answer = CompanionResponse(id: "s1", ok: true, message: "sent")
+        receipts.finish("s1", answer, now: now)
+        XCTAssertEqual(receipts.begin("s1", now: now.addingTimeInterval(5)), .answered(answer))
+    }
+
+    func testAPassingFailureOrARefusalIsForgotten() {
+        var receipts = CommandReceipts()
+        let now = Date()
+        XCTAssertEqual(receipts.begin("b", now: now), .new)
+        receipts.finish("b", .failure("b", .busy), now: now)
+        XCTAssertEqual(receipts.begin("b", now: now), .new, "busy may be tried again with the same id")
+        receipts.cancel("b")
+        XCTAssertEqual(receipts.begin("b", now: now), .new, "refused before it ran: never carried out")
+        receipts.finish("b", CompanionResponse(id: "b", ok: true), now: now)
+        receipts.cancel("b")
+        XCTAssertNotNil(receipts.response(for: "b", now: now), "an answer is not cancelled")
+    }
+
+    func testReceiptsOutliveTheOutboxButNotForever() {
+        var receipts = CommandReceipts()
+        let now = Date()
+        receipts.record("m", CompanionResponse(id: "m", ok: true), now: now)
+        XCTAssertGreaterThan(CommandReceipts.lifetime, CompanionOutbox.maxAge, "a message from the outbox is still recognised")
+        XCTAssertNotNil(receipts.response(for: "m", now: now.addingTimeInterval(CompanionOutbox.maxAge)))
+        XCTAssertNil(receipts.response(for: "m", now: now.addingTimeInterval(CommandReceipts.lifetime + 1)))
+        XCTAssertEqual(receipts.begin("m", now: now.addingTimeInterval(CommandReceipts.lifetime + 1)), .new)
+        XCTAssertEqual(receipts.count, 1, "the expired answer is gone, the new run is kept")
+    }
+
+    func testReceiptsDropTheLeastRecentlyUsed() {
+        var receipts = CommandReceipts()
+        let now = Date()
+        receipts.record("keep", CompanionResponse(id: "keep", ok: true), now: now)
+        receipts.record("drop", CompanionResponse(id: "drop", ok: true), now: now)
+        for i in 0..<(CommandReceipts.capacity - 2) { receipts.record("x\(i)", CompanionResponse(id: "x\(i)", ok: true), now: now) }
+        // Asking for "keep" again makes it the most recent; the next one pushes "drop" out instead.
+        if case .answered = receipts.begin("keep", now: now) {} else { XCTFail("keep is answered") }
+        receipts.record("new", CompanionResponse(id: "new", ok: true), now: now)
+        XCTAssertNotNil(receipts.response(for: "keep", now: now))
+        XCTAssertNil(receipts.response(for: "drop", now: now))
+        XCTAssertEqual(receipts.count, CommandReceipts.capacity)
+    }
+
+    func testEverySideEffectIsKeptAndNoRead() {
+        for op in [CompanionOp.send, .answer, .decide, .stop, .start, .ask, .inboxSend, .manage, .chatStop, .music, .inboxMark,
+                   .register, .unregister, .liveActivity] {
+            XCTAssertTrue(CommandReceipts.keeps(op), "\(op)")
+        }
+        for op in [CompanionOp.hello, .list, .options, .timeline, .chats, .chat, .home, .usage, .inbox, .inboxChat, .subscribe, .ping] {
+            XCTAssertFalse(CommandReceipts.keeps(op), "\(op)")
+        }
+    }
+
     func testARequestThatFailedInPassingGetsThroughAgain() {
         var guardian = RequestGuard()
         let now = Date()

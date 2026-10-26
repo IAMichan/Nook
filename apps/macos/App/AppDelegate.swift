@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         model.start()
+        UpdateTrialRunner.startWatching()
+        if let rollback = UpdateTrialRunner.rollbackToReport { AppUpdater.shared.reportRollback(rollback) }
         installStatusItem()
         // The main window stays open until you close it: after a restart (an update, a new build) it is back.
         if WorkspaceWindowController.wasOpen { model.openWindow(activate: false) }
@@ -58,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Lopende agents uit de werkruimte netjes stoppen en hun tijdlijn bewaren.
         model.workspace.shutdown()
+        UpdateTrialRunner.cleanExit()
         AutocompleteController.shared.flush()
         ChatHelper.shared.stop()
         Self.skipStaticDestructorsAtExit()
@@ -202,7 +205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static func updateItem() -> (title: String, icon: String)? {
         let updater = AppUpdater.shared
         switch updater.phase {
-        case .available: return updater.available.map { (title: tr("update.menu.available", $0.count), icon: "arrow.down.circle") }
+        case .available:
+            if let release = updater.releaseUpdate { return (tr("update.menu.release", release.version.description), "arrow.down.circle") }
+            return updater.available.map { (title: tr("update.menu.available", $0.count), icon: "arrow.down.circle") }
         case .installing: return (tr("update.menu.installing"), "arrow.triangle.2.circlepath")
         case .readyToRestart: return (tr("update.menu.restart"), "arrow.clockwise.circle")
         case .readyToBuildInXcode: return (tr("update.menu.xcode"), "hammer")

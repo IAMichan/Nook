@@ -5,6 +5,8 @@ import Foundation
 struct RunCheckpoint: Codable, Equatable, Sendable {
     var ref: String
     var date: Date
+    /// Where the agent's conversation stood then, so going back here can roll it back too.
+    var conversation: ConversationMark? = nil
 }
 
 /// Checkpoints are made with a temporary index (`read-tree HEAD`, `add -A`, `write-tree`, `commit-tree`, `update-ref`):
@@ -65,6 +67,11 @@ extension GitService {
             guard url.path.hasPrefix(root.path + "/") else { continue }
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    /// Removes the given checkpoint refs (the ones past a point you went back to).
+    func removeCheckpointRefs(_ directory: String, refs: [String]) {
+        for ref in refs where ref.hasPrefix("refs/nook/checkpoints/") { _ = try? git(["update-ref", "-d", ref], in: directory, env: [:]) }
     }
 
     /// Removes a session's checkpoints (when the session is deleted).

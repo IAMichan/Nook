@@ -371,3 +371,101 @@ enum RouteLink {
         }
     }
 }
+
+/// One detailed check of a route for "Why can't I connect?" (`CompanionDiagnosis`): like `RouteProbe.check`, but it
+/// tells apart what went wrong (nothing there, something that does not hold the key, the relay's close code, a refusal).
+enum RouteDiagnostics {
+    static func probe(_ route: CompanionRoute, key: Data, timeout: TimeInterval = 5) async -> CompanionDiagnosis.RouteOutcome {
+        let request = CompanionRequest(op: .ping)
+        guard let framed = try? CompanionChannel.frame(request, key: key, deviceID: PairedDevice.identifier(forKey: key)),
+              let connection = RouteLink.connection(route, key: key) else { return .unreachable }
+        let webSocket = route.isRelay
+        let queue = DispatchQueue(label: "nook.companion.diagnose")
+        let started = Date()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<CompanionDiagnosis.RouteOutcome, Never>) in
+            let once = OnceOutcome(continuation)
+            var reader = CompanionFrameReader()
+            var opened = false
+            func finish(_ outcome: CompanionDiagnosis.RouteOutcome) {
+                connection.cancel()
+                once.resume(outcome)
+            }
+            func handle(_ frame: Data) {
+                guard let plain = try? CompanionSeal.open(frame, pairingKey: key, direction: .response) else { return finish(.wrongKey) }
+                guard let response = try? JSONDecoder().decode(CompanionResponse.self, from: plain), response.id == request.id else {
+                    return finish(.wrongKey)
+                }
+                if response.ok {
+                    finish(.answered(milliseconds: Int(Date().timeIntervalSince(started) * 1000)))
+                } else {
+                    finish(.refused(response.error ?? .failed))
+                }
+            }
+            func feed(_ data: Data?) -> Bool {
+                guard let data, !data.isEmpty else { return false }
+                let frames = reader.feed(data)
+                if let first = frames.first { handle(first); return true }
+                if reader.overflowed { finish(.wrongKey); return true }
+                return false
+            }
+            func receive() {
+                if webSocket {
+                    connection.receiveMessage { data, context, _, error in
+                        let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
+                        if metadata?.opcode == .close { return finish(.closed(code: closeCode(metadata?.closeCode))) }
+                        if feed(data) { return }
+                        if error != nil { return finish(.closedWithoutAnswer) }
+                        receive()
+                    }
+                } else {
+                    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, complete, error in
+                        if feed(data) { return }
+                        // The Mac closes a connection whose key it does not know without a word.
+                        if error != nil || complete { return finish(.closedWithoutAnswer) }
+                        receive()
+                    }
+                }
+            }
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    opened = true
+                    RouteLink.send(connection, framed, webSocket: webSocket) { error in
+                        if error != nil { finish(.closedWithoutAnswer) } else { receive() }
+                    }
+                case .failed, .waiting: finish(opened ? .closedWithoutAnswer : .unreachable)
+                default: break
+                }
+            }
+            connection.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + timeout) { finish(opened ? .timedOut : .unreachable) }
+        }
+    }
+
+    /// The number of a WebSocket close code (the relay's are private codes, 4000 and up).
+    private static func closeCode(_ code: NWProtocolWebSocket.CloseCode?) -> Int {
+        switch code {
+        case .privateCode(let value)?: return Int(value)
+        case .applicationCode(let value)?: return Int(value)
+        case .protocolCode(let value)?: return Int(value.rawValue)
+        case nil: return 1005
+        @unknown default: return 1005
+        }
+    }
+
+    /// Resumes a continuation once, however many callbacks race.
+    private final class OnceOutcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<CompanionDiagnosis.RouteOutcome, Never>?
+
+        init(_ continuation: CheckedContinuation<CompanionDiagnosis.RouteOutcome, Never>) { self.continuation = continuation }
+
+        func resume(_ value: CompanionDiagnosis.RouteOutcome) {
+            lock.lock()
+            let c = continuation
+            continuation = nil
+            lock.unlock()
+            c?.resume(returning: value)
+        }
+    }
+}

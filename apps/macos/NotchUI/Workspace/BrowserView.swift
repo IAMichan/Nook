@@ -232,6 +232,13 @@ final class BrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
         return (webView.title ?? url.absoluteString, url.absoluteString, String(text.prefix(14_000)))
     }
 
+    /// Runs an agent's script on the open page (see BridgeBrowserScript), first bringing back a page that was put away.
+    func evaluate(_ script: String) async throws -> Any {
+        await restoreParked()
+        guard webView.url != nil else { throw NookError(tr("workbench.browser.nothingOpen")) }
+        return try await webView.evaluateJavaScript(script)
+    }
+
     // MARK: Tools
 
     /// Reading the open page runs right away; going somewhere is an action that waits for approval. Static, so offering

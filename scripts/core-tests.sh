@@ -34,6 +34,9 @@ EXCLUDE_SOURCES=(
   "Services/WhatsApp/WhatsAppGateway.swift"
   "Brain/Weather.swift"
   "Services/LocalAgentScanner.swift"
+  "Services/Updates/Ed25519Verifier.swift"
+  "../../packages/protocol/Sources/CompanionSeal.swift"
+  "../../packages/protocol/Sources/RelayPushSeal.swift"
 )
 # Tests that belong to those sources.
 EXCLUDE_TESTS=(
@@ -92,10 +95,22 @@ cat > "$WORK/Package.swift" <<'SWIFT'
 // swift-tools-version:5.9
 import PackageDescription
 let package = Package(name: "NookCore", targets: [
-    .target(name: "Core", path: "Sources/Core"),
+    .target(name: "Core", dependencies: [.target(name: "SQLite3", condition: .when(platforms: [.linux]))], path: "Sources/Core"),
+    // macOS has an SQLite3 module in its SDK; on Linux the system library (libsqlite3-dev) gets one here.
+    .systemLibrary(name: "SQLite3", path: "Sources/SQLite3"),
     .testTarget(name: "CoreTests", dependencies: ["Core"], path: "Tests/CoreTests"),
 ])
 SWIFT
+
+mkdir -p "$WORK/Sources/SQLite3"
+cat > "$WORK/Sources/SQLite3/module.modulemap" <<'MAP'
+module SQLite3 [system] {
+    header "shim.h"
+    link "sqlite3"
+    export *
+}
+MAP
+echo '#include <sqlite3.h>' > "$WORK/Sources/SQLite3/shim.h"
 
 # The tests see the sources as a module here, but are part of the same target in Xcode: add the import.
 for file in "$ROOT"/Tests/NookTests/*.swift; do

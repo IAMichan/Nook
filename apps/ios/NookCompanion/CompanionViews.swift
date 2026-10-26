@@ -14,7 +14,8 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            switch client.phase {
+            // Pairing another Mac shows the pairing screen too; the paired Macs stay.
+            switch client.addingMac ? CompanionClient.Phase.unpaired : client.phase {
             case .unpaired, .pairing:
                 PairingView()
             case .connected, .offline:
@@ -33,18 +34,23 @@ struct RootView: View {
                     .tabItem { Label("Agents", systemImage: "square.stack.3d.up.fill") }
                     .badge(client.sessions.needingYou)
                     .tag(Tab.sessions)
-                    NavigationStack(path: $inboxPath) {
-                        InboxListView(path: $inboxPath)
+                    // A tab the Mac does not let this phone use (`CompanionScope`) is left out.
+                    if client.allows(.chats) {
+                        NavigationStack(path: $inboxPath) {
+                            InboxListView(path: $inboxPath)
+                        }
+                        .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+                        .badge(client.inboxUnread)
+                        .tag(Tab.chats)
                     }
-                    .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
-                    .badge(client.inboxUnread)
-                    .tag(Tab.chats)
-                    NavigationStack(path: $chatPath) {
-                        ChatListView(path: $chatPath)
+                    if client.allows(.nookChat) {
+                        NavigationStack(path: $chatPath) {
+                            ChatListView(path: $chatPath)
+                        }
+                        // Nook's own chats; "Chats" are your chat apps.
+                        .tabItem { Label("Nook", systemImage: "sparkles") }
+                        .tag(Tab.nook)
                     }
-                    // Nook's own chats; "Chats" are your chat apps.
-                    .tabItem { Label("Nook", systemImage: "sparkles") }
-                    .tag(Tab.nook)
                     NavigationStack {
                         UsageScreen()
                     }
@@ -134,6 +140,10 @@ struct PairingView: View {
                         Button("Paste the link instead") { withAnimation { pasting = true } }
                             .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
                     }
+                    if client.addingMac {
+                        Button("Cancel") { client.addingMac = false }
+                            .font(Theme.TextStyle.label).foregroundStyle(Theme.textSecondary)
+                    }
                 }
             }
             .padding(.horizontal, Theme.Spacing.xxl)
@@ -207,6 +217,7 @@ struct SessionListView: View {
     @ObservedObject private var live = LiveActivities.shared
     @Binding var path: [String]
     @State private var composing = false
+    @State private var diagnosing = false
     /// The prompt link the open New session sheet was opened for.
     @State private var link: PromptLink?
 
@@ -234,6 +245,26 @@ struct SessionListView: View {
                         if client.phase == .connected, let route = client.activeRoute {
                             Section { Label(RouteText.connected(route), systemImage: RouteText.symbol(route)) }
                         }
+                        // Every paired Mac: the live connection goes to the one that is checked.
+                        Section {
+                            ForEach(client.macs) { mac in
+                                Button { client.switchMac(to: mac.id) } label: {
+                                    if mac.id == client.activeMacID {
+                                        Label(mac.name, systemImage: "checkmark")
+                                    } else {
+                                        Label(mac.name, systemImage: "laptopcomputer")
+                                    }
+                                }
+                            }
+                            Button { client.addingMac = true } label: { Label("Pair another Mac", systemImage: "plus") }
+                        }
+                        Button { diagnosing = true } label: { Label("Check the connection", systemImage: "stethoscope") }
+                        // Opens the update panel on the Mac; installing stays a click there.
+                        if client.can(CompanionFeature.requestUpdate) {
+                            Button { Task { await client.requestMacUpdate() } } label: {
+                                Label("Show the update on your Mac", systemImage: "arrow.down.circle")
+                            }
+                        }
                         Button("Unpair from this Mac", role: .destructive) { client.unpair() }
                     } label: { NookIconLabel(symbol: "ellipsis") }
                     .accessibilityLabel("More")
@@ -253,6 +284,7 @@ struct SessionListView: View {
                 .padding(.horizontal, Theme.Spacing.xl)
                 group("Working", working)
                 group("Recent", rest)
+                otherMacs
                 if client.sessions.isEmpty, client.phase == .connected {
                     EmptyState(symbol: "square.stack.3d.up", title: "No sessions",
                                message: "Sessions of your coding agents on your Mac show up here.") {
@@ -274,6 +306,7 @@ struct SessionListView: View {
         .sheet(isPresented: $composing, onDismiss: { link = nil }) {
             NewSessionView(link: link) { id in path.append(id) }
         }
+        .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
         // An opened nook://prompt link: the New session sheet with its text, never started by itself.
         .onChange(of: client.pendingPrompt, initial: true) { _, prompt in
             guard let prompt else { return }
@@ -287,6 +320,31 @@ struct SessionListView: View {
             client.pendingPrompt = nil
         }
         .screen()
+    }
+
+    /// The sessions of every other paired Mac, under its name: what waits there first. A tap makes that Mac the active
+    /// one and opens the session once its list is in.
+    @ViewBuilder
+    private var otherMacs: some View {
+        ForEach(client.macs.filter { $0.id != client.activeMacID }) { mac in
+            let sessions = (client.otherSessions[mac.id] ?? []).sorted {
+                (Self.needsYou($0) ? 1 : 0, $0.updated) > (Self.needsYou($1) ? 1 : 0, $1.updated)
+            }
+            if !sessions.isEmpty {
+                SectionHeader(title: "On \(mac.name)", count: sessions.filter(Self.needsYou).count, urgent: sessions.contains(where: Self.needsYou))
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.xs)
+                ForEach(sessions.prefix(10)) { session in
+                    Button {
+                        client.switchMac(to: mac.id)
+                        path.append(session.id)
+                    } label: { AgentRow(session: session) }
+                        .buttonStyle(RowPress())
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.xxs / 2)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -397,11 +455,26 @@ struct SessionQuickActions: View {
 /// Only while the Mac does not answer: why, in one quiet line (the Mac's name is in the title row).
 struct ConnectionLine: View {
     @EnvironmentObject private var client: CompanionClient
+    @State private var diagnosing = false
 
     var body: some View {
         if case .offline(let reason) = client.phase {
             Banner(text: reason.isEmpty ? String(localized: "Looking for your Mac…") : reason, symbol: "wifi.slash")
             if let hint = client.awayHint { Banner(text: hint, symbol: "globe") }
+            Button { diagnosing = true } label: { Label("Why can't I connect?", systemImage: "stethoscope") }
+                .buttonStyle(ActionButtonStyle())
+                .sheet(isPresented: $diagnosing) { DiagnosisSheet() }
+        }
+        // The Mac and this app are too far apart in version for some of what the phone does (`CompanionCompatibility`).
+        switch client.compatibility {
+        case .macTooOld:
+            Banner(text: String(localized: "Update Nook on your Mac: it is too old for this version of the app."),
+                   symbol: "arrow.down.circle.fill")
+        case .phoneTooOld:
+            Banner(text: String(localized: "Update the app: Nook on your Mac needs a newer Nook Companion."),
+                   symbol: "arrow.down.circle.fill")
+        case .ok:
+            EmptyView()
         }
     }
 }
@@ -511,6 +584,8 @@ struct SessionNotice: View {
     private func actions(_ item: SessionDigest.Item) -> some View {
         HStack(spacing: Theme.Spacing.md) {
             switch item.kind {
+            case _ where !client.allows(.approve):
+                ApproveOffLabel()
             case .approval:
                 if item.canAllow {
                     NookSplitButton(primary: NoticeAction(label: "Allow", symbol: "checkmark") {

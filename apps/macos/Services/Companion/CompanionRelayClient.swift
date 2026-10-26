@@ -37,6 +37,9 @@ final class CompanionRelayClient: ObservableObject {
 
     @Published private(set) var status: Status = .off
     @Published private(set) var setup: Setup = .idle
+    /// *Test relay* in Settings: running, and what the last test found (`CompanionDiagnosis`).
+    @Published private(set) var testing = false
+    @Published private(set) var testResult: CompanionDiagnosis.Result?
     @Published var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: Self.enabledKey); scheduleApply() }
     }
@@ -104,6 +107,7 @@ final class CompanionRelayClient: ObservableObject {
     /// Opens every room again now (after sleep, on another network).
     func reconnect() {
         guard !rooms.isEmpty else { return }
+        CompanionDiagnosticsLog.mac.record("relayReconnect", ["rooms": String(rooms.count)])
         closeAll()
         apply()
     }
@@ -193,6 +197,76 @@ final class CompanionRelayClient: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             self?.apply()
+        }
+    }
+
+    // MARK: Testing the relay
+
+    /// Whether *Test relay* can run: the relay is on and set, and a phone is paired (the test goes through its room).
+    var canTest: Bool { enabled && current != nil && testDevice != nil }
+
+    private var testDevice: (id: String, key: Data)? {
+        for device in CompanionStore.shared.devices {
+            if let key = CompanionStore.key(for: device.id) { return (device.id, key) }
+        }
+        return nil
+    }
+
+    /// Sends a `ping` through the relay as the paired phone would (into its room, sealed with its key) and waits for this
+    /// Mac's answer to come back the same way: the whole path the phone takes from away, checked from here.
+    func testRelay() {
+        guard !testing, let relay = current, let device = testDevice else { return }
+        testing = true
+        testResult = nil
+        Task {
+            let outcome = await Self.probe(relay: relay, key: device.key)
+            testResult = CompanionDiagnosis.diagnose(.init(online: true, probes: [.init(route: .viaRelay(relay), outcome: outcome)]))
+            CompanionDiagnosticsLog.mac.record("relayTest", ["outcome": String(describing: outcome), "cause": testResult?.cause.rawValue ?? ""])
+            testing = false
+        }
+    }
+
+    /// One round trip through the relay with `key`'s room and seal.
+    nonisolated static func probe(relay: String, key: Data, timeout: TimeInterval = 8) async -> CompanionDiagnosis.RouteOutcome {
+        let request = CompanionRequest(op: .ping)
+        guard let url = CompanionRelay.socketURL(relay: relay, room: CompanionRelay.room(forKey: key), role: .phone),
+              let json = try? JSONEncoder().encode(request),
+              let sealed = try? CompanionSeal.seal(json, pairingKey: key, deviceID: PairedDevice.identifier(forKey: key), direction: .request),
+              let framed = CompanionFrameReader.frame(sealed) else { return .unreachable }
+        let task = URLSession.shared.webSocketTask(with: url)
+        task.resume()
+        let started = Date()
+        let timer = Task {
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            if !Task.isCancelled { task.cancel(with: .goingAway, reason: nil) }
+        }
+        defer {
+            timer.cancel()
+            task.cancel(with: .normalClosure, reason: nil)
+        }
+        do {
+            try await task.send(.data(framed))
+            var reader = CompanionFrameReader()
+            while true {
+                let message = try await task.receive()
+                guard case .data(let data) = message else { continue }
+                guard let frame = reader.feed(data).first else {
+                    if reader.overflowed { return .wrongKey }
+                    continue
+                }
+                guard let plain = try? CompanionSeal.open(frame, pairingKey: key, direction: .response),
+                      let response = try? JSONDecoder().decode(CompanionResponse.self, from: plain), response.id == request.id else {
+                    return .wrongKey
+                }
+                return response.ok ? .answered(milliseconds: Int(Date().timeIntervalSince(started) * 1000)) : .refused(response.error ?? .failed)
+            }
+        } catch {
+            // The relay closed the socket with a code (4404: this Mac is not in the room), or it was never reached.
+            let code = task.closeCode.rawValue
+            if code != URLSessionWebSocketTask.CloseCode.invalid.rawValue, code != URLSessionWebSocketTask.CloseCode.goingAway.rawValue {
+                return .closed(code: code)
+            }
+            return Date().timeIntervalSince(started) >= timeout ? .timedOut : .unreachable
         }
     }
 
@@ -300,13 +374,19 @@ final class RelayRoom {
                     if !connected {
                         connected = true
                         lastError = nil
+                        CompanionDiagnosticsLog.mac.record("relayRoom", ["state": "connected", "after": String(failures), "relay": relay])
                         failures = 0
                         onChange()
                     }
                     if case .data(let data) = message { handle(data) }
                 }
             } catch {
-                if !Task.isCancelled { lastError = error.localizedDescription }
+                if !Task.isCancelled {
+                    lastError = error.localizedDescription
+                    CompanionDiagnosticsLog.mac.record("relayRoom", ["state": "closed", "error": error.localizedDescription,
+                                                                     "code": String(task.closeCode.rawValue),
+                                                                     "up": String(Int(Date().timeIntervalSince(since)))])
+                }
             }
             keepAlive.cancel()
             task.cancel(with: .goingAway, reason: nil)

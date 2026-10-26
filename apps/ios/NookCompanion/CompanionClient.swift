@@ -59,8 +59,23 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var outbox = CompanionOutbox()
     /// The route the live connection (or the last answer) went over.
     @Published private(set) var activeRoute: CompanionRoute?
+    /// Whether this app and Nook on the Mac speak a protocol both understand (`CompanionCompatibility`), and the Mac's
+    /// app version, from the last `hello`, `list` or `subscribe` answer.
+    @Published private(set) var compatibility: CompanionCompatibility = .ok
+    @Published private(set) var macAppVersion: String?
+    /// What the Mac lets this phone do (`CompanionScope` names), from the last answer that listed features; nil from a
+    /// Mac without scopes, which allows everything.
+    @Published private(set) var scopes: Set<String>?
+    /// Every Mac this phone is paired with (`CompanionPairings`), the active one (the live connection goes there), and
+    /// what waits on each of the others, checked now and then.
+    @Published private(set) var macs: [PairedMac] = []
+    @Published private(set) var activeMacID: String?
+    @Published private(set) var otherSessions: [String: [SessionDigest]] = [:]
+    /// Pairing another Mac: the pairing screen shows while the current Mac stays paired.
+    @Published var addingMac = false
     private(set) var pushToken: String?
 
+    private var pairings = CompanionPairings()
     private var link: PairingLink?
     /// The ways to reach the Mac, the best first (`CompanionRoutes`); what the Mac reports is learned into it.
     private(set) var routes: [CompanionRoute] = []
@@ -86,17 +101,25 @@ final class CompanionClient: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     private var pathSignature: String?
     private var draining = false
+    /// Whether the phone has a network at all, and the last refusal the Mac gave a connection attempt, for
+    /// "Why can't I connect?" (`CompanionDiagnosis`).
+    private var isOnline = true
+    private var lastRefusal: CompanionError?
 
-    private static let featuresKey = "companion.features"
+    /// What the active Mac could do last time, and its outbox, each kept per Mac (`CompanionPairings.storageName`).
+    private var featuresKey: String { storageName("companion.features") }
+    private var outboxName: String { storageName("companion-outbox.json") }
+
+    private func storageName(_ base: String) -> String {
+        guard let id = pairings.active?.id else { return base }
+        return CompanionPairings.storageName(base, mac: id, legacyID: pairings.legacyID)
+    }
 
     init() {
-        link = PairingStore.load()
-        macName = link?.macName ?? ""
+        pairings = PairingStore.load()
+        phase = .unpaired
+        loadActive()
         phase = link == nil ? .unpaired : .offline("")
-        if let link { routes = PairingStore.loadRoutes() ?? CompanionRoutes.initial(from: link) }
-        // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
-        features = Set(UserDefaults.standard.stringArray(forKey: Self.featuresKey) ?? [])
-        outbox = OutboxStore.load()
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let kind = [NWInterface.InterfaceType.wifi, .wiredEthernet, .cellular].first { path.usesInterfaceType($0) }
             let signature = "\(kind.map { "\($0)" } ?? "other") \(path.gateways.map { "\($0)" }.joined(separator: ","))"
@@ -119,16 +142,19 @@ final class CompanionClient: ObservableObject {
         let name = UIDevice.current.name
         Task {
             do {
-                guard let picked = await RouteProbe.pick(candidates, key: parsed.key, makeRequest: { CompanionRequest(op: .hello, text: name) }) else {
+                guard let picked = await RouteProbe.pick(candidates, key: parsed.key, makeRequest: { CompanionRequest.versioned(.hello, text: name) }) else {
                     throw CompanionClientError.timeout
                 }
                 let response = picked.answer
                 guard response.ok else { throw CompanionClientError.refused(response.error) }
-                guard PairingStore.save(parsed) else { throw CompanionClientError.storage }
+                var next = pairings
+                guard next.add(parsed, routes: candidates) else { throw CompanionClientError.tooManyMacs }
+                guard PairingStore.save(next) else { throw CompanionClientError.storage }
                 stopConnection()
-                link = parsed
-                routes = candidates
-                PairingStore.saveRoutes(routes)
+                cacheActiveSessions()
+                pairings = next
+                loadActive()
+                addingMac = false
                 activeRoute = picked.route
                 macName = response.macName ?? parsed.macName
                 apply(response, to: CompanionRequest(op: .hello))
@@ -144,18 +170,57 @@ final class CompanionClient: ObservableObject {
         }
     }
 
+    /// Unpairs from the active Mac; another paired Mac becomes the active one.
     func unpair() {
         stopConnection()
         Task { await LiveActivities.shared.endAll() }
-        PairingStore.clear()
-        link = nil
-        routes = []
-        activeRoute = nil
+        guard let id = pairings.active?.id else { phase = .unpaired; return }
         outbox = CompanionOutbox()
-        OutboxStore.save(outbox)
-        UserDefaults.standard.removeObject(forKey: Self.featuresKey)
+        OutboxStore.save(outbox, name: outboxName)
+        UserDefaults.standard.removeObject(forKey: featuresKey)
+        pairings.remove(id)
+        PairingStore.save(pairings)
+        otherSessions[id] = nil
+        loadActive()
+        guard link != nil else { phase = .unpaired; return }
+        phase = .offline("")
+        superviseIfNeeded()
+    }
+
+    /// Makes another paired Mac the active one: the live connection moves there.
+    func switchMac(to id: String) {
+        guard id != pairings.active?.id, pairings.contains(id) else { return }
+        CompanionDiagnosticsLog.phone.record("switchMac", ["macs": String(pairings.macs.count)])
+        stopConnection()
+        Task { await LiveActivities.shared.endAll() }
+        cacheActiveSessions()
+        pairings.select(id)
+        PairingStore.save(pairings)
+        loadActive()
+        phase = .offline("")
+        superviseIfNeeded()
+        Task { await sendPushRegistration() }
+    }
+
+    /// The active Mac's sessions stay in the list under its name once another Mac is active.
+    private func cacheActiveSessions() {
+        guard let id = pairings.active?.id else { return }
+        otherSessions[id] = sessions
+    }
+
+    /// Takes in the active Mac: its pairing, routes, features and outbox; what was shown for the previous one goes.
+    private func loadActive() {
+        let mac = pairings.active
+        link = mac?.link
+        routes = mac?.routes ?? []
+        macName = mac?.name ?? ""
+        macs = pairings.macs
+        activeMacID = mac?.id
+        if let id = mac?.id { otherSessions[id] = nil }
+        // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
+        features = Set(UserDefaults.standard.stringArray(forKey: featuresKey) ?? [])
+        outbox = OutboxStore.load(name: outboxName)
         sessions = []
-        features = []
         featuresKnown = false
         launchOptions = nil
         timelines = [:]
@@ -166,7 +231,36 @@ final class CompanionClient: ObservableObject {
         inbox = []
         inboxLines = [:]
         inboxStatus = nil
-        phase = .unpaired
+        compatibility = .ok
+        macAppVersion = nil
+        scopes = nil
+        macPushReady = nil
+        activeRoute = nil
+        preferredRoute = nil
+        cooldowns = RouteCooldowns()
+        lastRefusal = nil
+        lastSearch = nil
+        failures = 0
+    }
+
+    /// Keeps the active Mac's routes with its pairing.
+    private func saveRoutes(_ next: [CompanionRoute]) {
+        guard let id = pairings.active?.id else { return }
+        pairings.setRoutes(next, for: id)
+        PairingStore.save(pairings)
+    }
+
+    /// Asks every other paired Mac what waits there, for the Agents list; one that does not answer keeps what it said last.
+    func refreshOthers() async {
+        for mac in pairings.others {
+            guard let key = mac.link?.key,
+                  let picked = await RouteProbe.pick(mac.routes, key: key, makeRequest: { CompanionRequest.versioned(.list) }),
+                  picked.answer.ok, let list = picked.answer.sessions else { continue }
+            // Only what that Mac lets this phone see comes back; an empty list is fine.
+            otherSessions[mac.id] = list
+        }
+        let paired = Set(pairings.macs.map(\.id))
+        for id in otherSessions.keys where !paired.contains(id) { otherSessions[id] = nil }
     }
 
     // MARK: Staying connected
@@ -186,6 +280,7 @@ final class CompanionClient: ObservableObject {
         guard let channel else { return }
         switch wakeup {
         case .reconnect:
+            CompanionDiagnosticsLog.phone.record("wakeup", ["action": "reconnect"])
             replacing = true
             channel.close()
         case .probe:
@@ -233,9 +328,11 @@ final class CompanionClient: ObservableObject {
     /// Wi-Fi to cellular, another Wi-Fi network, or back online: look again at once, check the connection, and whether a
     /// better route works now (home again: LAN instead of Tailscale).
     private func networkChanged(signature: String, online: Bool) {
+        isOnline = online
         let previous = pathSignature
         pathSignature = online ? signature : nil
         guard online, previous != signature, previous != nil || phase != .connected else { return }
+        CompanionDiagnosticsLog.phone.record("network", ["changed": previous == nil ? "online" : "other"])
         wakeUp(resetBackoff: true)
         if let channel {
             Task {
@@ -258,9 +355,11 @@ final class CompanionClient: ObservableObject {
         while !Task.isCancelled, let link {
             // Every route is asked for the list: any Mac answers it, and the answer says whether it keeps a live
             // connection, so a Mac that was updated (or rolled back) in the meantime is met as it is now.
-            guard let picked = await RouteProbe.pick(attemptOrder(), key: link.key, makeRequest: { CompanionRequest(op: .list) }) else {
+            guard let picked = await RouteProbe.pick(attemptOrder(), key: link.key, makeRequest: { CompanionRequest.versioned(.list) }) else {
                 if Task.isCancelled { return }
                 // Nothing answered: the Mac may listen on another port now; Bonjour finds it on the local network.
+                CompanionDiagnosticsLog.phone.record("unreachable", ["routes": attemptOrder().map(\.logKind).joined(separator: ","),
+                                                                     "failures": String(failures)])
                 if await relocate() { continue }
                 failures += 1
                 phase = .offline(CompanionClientError.timeout.localizedDescription)
@@ -270,6 +369,10 @@ final class CompanionClient: ObservableObject {
             if Task.isCancelled { return }
             if let preferred = preferredRoute, preferred.hostKey != picked.route.hostKey { cooldowns.hold(preferred, now: Date()) }
             preferredRoute = nil
+            lastRefusal = picked.answer.ok ? nil : picked.answer.error
+            CompanionDiagnosticsLog.phone.record(picked.answer.ok ? "route" : "refused",
+                                                 ["route": picked.route.logKind, "error": picked.answer.error?.rawValue ?? "",
+                                                  "failures": String(failures)])
             guard picked.answer.ok else {
                 failures += 1
                 phase = .offline(refusalText(picked.answer.error))
@@ -303,10 +406,11 @@ final class CompanionClient: ObservableObject {
         }
         do {
             try await channel.open(timeout: 5)
-            let response = try await channel.request(CompanionRequest(op: .subscribe), timeout: 10)
+            let response = try await channel.request(CompanionRequest.versioned(.subscribe), timeout: 10)
             guard response.ok else {
                 channel.close()
                 failures += 1
+                lastRefusal = response.error
                 phase = .offline(refusalText(response.error))
                 return
             }
@@ -318,6 +422,8 @@ final class CompanionClient: ObservableObject {
             Task { await afterConnecting() }
             await watch(channel)
             if self.channel === channel { self.channel = nil }
+            CompanionDiagnosticsLog.phone.record("closed", ["route": route.logKind, "up": String(Int(Date().timeIntervalSince(since))),
+                                                            "replacing": replacing ? "yes" : "no"])
             if Task.isCancelled { return }
             if Date().timeIntervalSince(since) >= RetryBackoff.stableAfter { failures = 0 }
             if !replacing {
@@ -327,6 +433,7 @@ final class CompanionClient: ObservableObject {
         } catch {
             channel.close()
             if self.channel === channel { self.channel = nil }
+            CompanionDiagnosticsLog.phone.record("channelFailed", ["route": route.logKind, "error": error.localizedDescription])
             failures += 1
             if !Task.isCancelled { phase = .offline(error.localizedDescription) }
         }
@@ -349,6 +456,7 @@ final class CompanionClient: ObservableObject {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
                     if Task.isCancelled { return }
                     await self?.refreshInbox()
+                    await self?.refreshOthers()
                 }
             }
             await group.next()
@@ -378,6 +486,7 @@ final class CompanionClient: ObservableObject {
         await LiveActivities.shared.reconcile(sessions)
         await drainOutbox()
         await refreshInbox()
+        await refreshOthers()
     }
 
     private func refreshInbox() async {
@@ -397,6 +506,7 @@ final class CompanionClient: ObservableObject {
             _ = try await channel.request(CompanionRequest(op: .ping), timeout: CompanionTiming.probeTimeout)
         } catch {
             guard self.channel === channel else { return }
+            CompanionDiagnosticsLog.phone.record("probeFailed", ["route": channel.route.logKind, "error": error.localizedDescription])
             replacing = true
             channel.close()
         }
@@ -423,6 +533,7 @@ final class CompanionClient: ObservableObject {
         }
         guard let first = answered.firstIndex(of: true), self.channel === channel else { return }
         preferredRoute = better[first]
+        CompanionDiagnosticsLog.phone.record("betterRoute", ["from": channel.route.logKind, "to": better[first].logKind])
         replacing = true
         channel.close()
     }
@@ -444,7 +555,7 @@ final class CompanionClient: ObservableObject {
             next = CompanionRoutes.insert(next, CompanionRoute(host: place.host, port: place.port, learned: true))
         }
         routes = next
-        PairingStore.saveRoutes(routes)
+        saveRoutes(routes)
         return true
     }
 
@@ -452,7 +563,7 @@ final class CompanionClient: ObservableObject {
     private func learn(_ reported: [CompanionEndpoint]) {
         guard let merged = CompanionRoutes.merge(routes, reported: reported) else { return }
         routes = merged
-        PairingStore.saveRoutes(merged)
+        saveRoutes(merged)
         if let channel, let index = merged.firstIndex(where: { $0.hostKey == channel.route.hostKey }), index > 0 {
             Task { await checkBetterRoutes(channel) }
         }
@@ -484,7 +595,7 @@ final class CompanionClient: ObservableObject {
         draining = true
         defer { draining = false }
         if !outbox.expire(now: Date()).isEmpty {
-            OutboxStore.save(outbox)
+            OutboxStore.save(outbox, name: outboxName)
             notice = String(localized: "A message that waited more than a day for your Mac was not sent.")
         }
         while let entry = outbox.entries.first {
@@ -493,7 +604,7 @@ final class CompanionClient: ObservableObject {
             // Refused for now (still being handled, a burst, the clocks): it waits for the next try.
             if !response.ok, let error = response.error, [CompanionError.replay, .stale, .rateLimited, .busy, .failed].contains(error) { return }
             outbox.remove(entry.id)
-            OutboxStore.save(outbox)
+            OutboxStore.save(outbox, name: outboxName)
             if response.ok {
                 apply(response, to: request)
                 if response.message == "queued" { notice = String(localized: "Queued: the session is still busy.") }
@@ -509,7 +620,7 @@ final class CompanionClient: ObservableObject {
 
     func refresh() async {
         guard link != nil else { return }
-        await perform(CompanionRequest(op: .list))
+        await perform(CompanionRequest.versioned(.list))
         guard phase == .connected else { return }
         // The Live Activities follow the list (and the Mac gets the tokens it does not have yet).
         await LiveActivities.shared.reconcile(sessions)
@@ -571,7 +682,7 @@ final class CompanionClient: ObservableObject {
             await perform(request)
             return
         }
-        OutboxStore.save(outbox)
+        OutboxStore.save(outbox, name: outboxName)
         await drainOutbox()
     }
 
@@ -588,6 +699,9 @@ final class CompanionClient: ObservableObject {
     // MARK: Starting a session
 
     func can(_ feature: String) -> Bool { features.contains(feature) }
+
+    /// Whether the Mac lets this phone do what `scope` covers; the screens hide what it may not.
+    func allows(_ scope: CompanionScope) -> Bool { scopes?.contains(scope.rawValue) ?? true }
 
     /// `can`, after asking the Mac first when its features are not known yet (a screen that loads right after launch,
     /// before the first `list` came back).
@@ -679,6 +793,53 @@ final class CompanionClient: ObservableObject {
         await perform(CompanionRequest(op: .chatStop, conversation: conversationID))
     }
 
+    // MARK: Why it does not connect
+
+    /// Checks every route once more, in detail, and says what stands in the way (`CompanionDiagnosis`).
+    func diagnose() async -> CompanionDiagnosis.Result {
+        guard let link else { return CompanionDiagnosis.diagnose(.init(online: isOnline, probes: [])) }
+        let key = link.key
+        let checked = routes
+        let outcomes = await withTaskGroup(of: (Int, CompanionDiagnosis.RouteOutcome).self) { group -> [CompanionDiagnosis.RouteOutcome] in
+            for (index, route) in checked.enumerated() {
+                group.addTask { (index, await RouteDiagnostics.probe(route, key: key)) }
+            }
+            var results = [CompanionDiagnosis.RouteOutcome](repeating: .unchecked, count: checked.count)
+            for await (index, outcome) in group { results[index] = outcome }
+            return results
+        }
+        let probes = zip(checked, outcomes).map { CompanionDiagnosis.Probe(route: $0.0, outcome: $0.1) }
+        let result = CompanionDiagnosis.diagnose(.init(online: isOnline, probes: probes, compatibility: compatibility, lastError: lastRefusal))
+        var fields = ["cause": result.cause.rawValue]
+        for (index, probe) in probes.enumerated() { fields["\(probe.route.logKind).\(index)"] = String(describing: probe.outcome) }
+        CompanionDiagnosticsLog.phone.record("diagnosis", fields)
+        return result
+    }
+
+    /// What "Copy diagnostics" puts on the clipboard: versions, what is set up, and the redacted log. Nothing is sent.
+    func diagnosticsBundle() -> String {
+        CompanionDiagnosticsLog.phone.bundle(about: [
+            "app": CompanionProtocol.appVersion ?? "?", "protocol": String(CompanionProtocol.version),
+            "macApp": macAppVersion ?? "?", "macs": String(pairings.macs.count),
+            "routes": routes.map(\.logKind).joined(separator: ","), "features": features.sorted().joined(separator: ","),
+            "compatibility": String(describing: compatibility), "phase": String(describing: phase),
+            "scopes": scopes.map { $0.sorted().joined(separator: ",") } ?? "all",
+        ])
+    }
+
+    // MARK: Versions
+
+    /// Opens Nook's update panel on the Mac, where the update waits for a click there; nothing is installed from the
+    /// phone. Says what happened in `notice`.
+    func requestMacUpdate() async {
+        guard can(CompanionFeature.requestUpdate), let response = await perform(CompanionRequest(op: .requestUpdate)) else { return }
+        switch response.message {
+        case "available": notice = String(localized: "The update is waiting on your Mac: install it there.")
+        case "none": notice = String(localized: "Nook on your Mac has no update ready yet.")
+        default: notice = String(localized: "Nook on your Mac cannot update itself. Update it the way you installed it.")
+        }
+    }
+
     /// Sends a request and takes in whatever the answer carries. The answer when the Mac said yes, else nil with the reason
     /// in `notice`. `quiet` is for the requests a screen repeats by itself: a session or chat that is gone says so on that
     /// screen instead of in an alert every few seconds.
@@ -741,16 +902,31 @@ final class CompanionClient: ObservableObject {
             if list.needingYou != sessions.needingYou || phase != .connected { Notifications.setBadge(list.needingYou) }
             if list != sessions { sessions = list }
         }
-        if let name = response.macName, name != macName { macName = name }
+        if let name = response.macName, name != macName {
+            macName = name
+            if let id = pairings.active?.id {
+                pairings.rename(id, to: name)
+                PairingStore.save(pairings)
+                macs = pairings.macs
+            }
+        }
+        // Only an answer to hello, list or subscribe says what the Mac speaks (it carries the features too).
+        if response.features != nil {
+            let compatible = CompanionCompatibility.check(response)
+            if compatible != compatibility { compatibility = compatible }
+            if response.appVersion != macAppVersion { macAppVersion = response.appVersion }
+            let granted = response.scopes.map(Set.init)
+            if granted != scopes { scopes = granted }
+        }
         if let features = response.features, Set(features) != self.features {
             self.features = Set(features)
-            UserDefaults.standard.set(features, forKey: Self.featuresKey)
+            UserDefaults.standard.set(features, forKey: featuresKey)
         }
         if let endpoints = response.endpoints { learn(endpoints) }
         // The relay the Mac uses now ("" when none): the route through it follows.
         if let relay = CompanionRoutes.withRelay(routes, relay: response.relay) {
             routes = relay
-            PairingStore.saveRoutes(relay)
+            saveRoutes(relay)
         }
         if req.op == .list || req.op == .hello { featuresKnown = true }
         if let options = response.launch, options != launchOptions { launchOptions = options }
@@ -816,21 +992,32 @@ final class CompanionClient: ObservableObject {
     }
 }
 
-/// Messages that wait for the Mac, in a file of the app that only opens while the phone is unlocked.
+extension CompanionDiagnosticsLog {
+    /// The phone's companion log (docs/COMPANION.md, "Diagnostics"): local only, copied redacted from "Why can't I connect?".
+    static let phone = CompanionDiagnosticsLog(url: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("companion-diagnostics.ndjson"))
+}
+
+extension CompanionRoute {
+    /// The kind of route for the diagnostics log: never its address.
+    var logKind: String { isRelay ? "relay" : kind.rawValue }
+}
+
+/// Messages that wait for a Mac, one file per Mac (`name`), of the app, that only opens while the phone is unlocked.
 enum OutboxStore {
-    private static var url: URL? {
+    private static func url(_ name: String) -> URL? {
         try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("companion-outbox.json")
+            .appendingPathComponent(name)
     }
 
-    static func load() -> CompanionOutbox {
-        guard let url, let data = try? Data(contentsOf: url),
+    static func load(name: String) -> CompanionOutbox {
+        guard let url = url(name), let data = try? Data(contentsOf: url),
               let outbox = try? JSONDecoder().decode(CompanionOutbox.self, from: data) else { return CompanionOutbox() }
         return outbox
     }
 
-    static func save(_ outbox: CompanionOutbox) {
-        guard let url else { return }
+    static func save(_ outbox: CompanionOutbox, name: String) {
+        guard let url = url(name) else { return }
         if outbox.entries.isEmpty {
             try? FileManager.default.removeItem(at: url)
         } else if let data = try? JSONEncoder().encode(outbox) {
@@ -842,7 +1029,7 @@ enum OutboxStore {
 
 enum CompanionClientError: LocalizedError {
     case refused(CompanionError?)
-    case storage, badRequest, timeout, closed
+    case storage, badRequest, timeout, closed, tooManyMacs
 
     var errorDescription: String? {
         switch self {
@@ -851,6 +1038,7 @@ enum CompanionClientError: LocalizedError {
         case .badRequest: return String(localized: "Unreadable reply from your Mac.")
         case .timeout: return String(localized: "Your Mac does not answer. Is the companion on, and are you on the same Wi‑Fi?")
         case .closed: return String(localized: "The connection was lost.")
+        case .tooManyMacs: return String(localized: "This iPhone is paired with as many Macs as it can keep. Unpair one first.")
         }
     }
 }

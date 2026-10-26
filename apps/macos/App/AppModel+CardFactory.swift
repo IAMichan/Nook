@@ -171,8 +171,9 @@ extension AppModel {
         viewModel.show(.panel(.chat), inNotch: !WorkspaceWindowController.shared.isKey)
     }
 
-    /// Opens the first-run flow in the main window.
-    func startOnboarding() {
+    /// Opens the first-run flow in the main window, at `step` (`OnboardingView.agentsStep` for the coding agents).
+    func startOnboarding(at step: Int = 0) {
+        onboardingStep = step
         openWindow()
         showOnboarding = true
     }

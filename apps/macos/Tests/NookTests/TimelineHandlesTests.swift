@@ -58,10 +58,16 @@ final class TimelineHandlesTests: XCTestCase {
         XCTAssertEqual(PlanPreview.fileName(forTitle: "日本語"), "plan.md")
     }
 
+    func testCompactIsSuggestedOnceTheWindowFillsUp() {
+        XCTAssertFalse(ContextMeter.suggestsCompact(0.8))
+        XCTAssertTrue(ContextMeter.suggestsCompact(0.85))
+        XCTAssertTrue(ContextMeter.suggestsCompact(0.95))
+    }
+
     func testContextLevels() {
         XCTAssertEqual(ContextMeter.level(0.5), .normal)
-        XCTAssertEqual(ContextMeter.level(0.749), .normal)
-        XCTAssertEqual(ContextMeter.level(0.75), .warning)
+        XCTAssertEqual(ContextMeter.level(0.8), .normal)
+        XCTAssertEqual(ContextMeter.level(0.801), .warning)
         XCTAssertEqual(ContextMeter.level(0.9), .warning)
         XCTAssertEqual(ContextMeter.level(0.901), .critical)
     }

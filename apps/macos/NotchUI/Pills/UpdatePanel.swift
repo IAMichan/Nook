@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// What the update button opens: what was merged since this build and the button that installs it, the steps while it
-/// installs, the restart that waits for you (or, run from Xcode, the build there), why an install stopped, or what came
+/// What the update button opens: what was merged since this build (or, in a downloaded build, the newer release) and the
+/// button that installs it, the steps while it installs, the restart that waits for you (or, run from Xcode, the build there), why an install stopped, or what came
 /// in with the update you just got.
 struct UpdatePanel: View {
     @ObservedObject private var updater = AppUpdater.shared
@@ -20,6 +20,8 @@ struct UpdatePanel: View {
             default:
                 if let update = updater.available {
                     available(update)
+                } else if let release = updater.releaseUpdate {
+                    releaseAvailable(release)
                 } else if let receipt = updater.receipt {
                     updated(receipt)
                 } else {
@@ -92,19 +94,56 @@ struct UpdatePanel: View {
             Text(verbatim: to).foregroundStyle(NookTheme.paper)
             Spacer(minLength: 0)
             if let url = update.github?.compare(from, to) {
-                Button { NSWorkspace.shared.open(url) } label: {
-                    HStack(spacing: 3) {
-                        Text(tr("update.viewOnGitHub"))
-                        Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold))
-                    }
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                webLink(tr("update.viewOnGitHub"), url: url)
             }
         }
         .font(NookTheme.mono(11.5))
+    }
+
+    /// A small "… ↗" link that opens a page in the browser.
+    private func webLink(_ title: String, url: URL) -> some View {
+        Button { NSWorkspace.shared.open(url) } label: {
+            HStack(spacing: 3) {
+                Text(title)
+                Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold))
+            }
+            .font(NookTheme.TextStyle.label)
+            .foregroundStyle(NookTheme.textSecondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Available release (a downloaded build)
+
+    private func releaseAvailable(_ release: ReleaseCandidate) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+            header(symbol: "arrow.down.circle.fill", tint: NookTheme.mint, title: tr("update.title"),
+                   detail: tr("update.release.subtitle", release.title))
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Text(verbatim: updater.release.map { "\($0.version)" } ?? "").foregroundStyle(NookTheme.textSecondary)
+                Image(systemName: "arrow.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                Text(verbatim: "\(release.version)").foregroundStyle(NookTheme.paper)
+                Spacer(minLength: 0)
+                if let page = release.page {
+                    webLink(tr("update.release.notes"), url: page)
+                }
+            }
+            .font(NookTheme.mono(11.5))
+            if updater.runningSessions > 0 {
+                note(tr("update.warning.sessions", updater.runningSessions), symbol: "pause.circle", tint: NookTheme.amber)
+            }
+            Text(tr("update.release.how"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: NookTheme.Spacing.md) {
+                Spacer(minLength: 0)
+                SmallGhostButton(title: tr("update.later"), action: close)
+                SmallPrimaryButton(title: tr("update.install"), systemName: "arrow.down.circle") { updater.install() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
     }
 
     /// The merged pull requests, newest first; a row opens its pull request on GitHub.
@@ -132,8 +171,9 @@ struct UpdatePanel: View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: nil, tint: NookTheme.iris, title: tr("update.installing.title"), detail: tr("update.keepWorking"))
             VStack(alignment: .leading, spacing: 7) {
-                // From Xcode the update ends with the project generated; Xcode does the build.
-                ForEach(UpdateStep.allCases.filter { !updater.fromXcode || $0 <= .generate }, id: \.self) { step in
+                // From Xcode the update ends with the project generated; Xcode does the build. A downloaded build
+                // downloads and checks instead of building.
+                ForEach(updater.steps, id: \.self) { step in
                     stepRow(step, current: current)
                 }
             }
@@ -163,17 +203,20 @@ struct UpdatePanel: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if current < .install {
+                if order(current) < order(.install) {
                     SmallGhostButton(title: tr("update.cancel")) { updater.cancel() }
                 }
             }
         }
     }
 
+    /// Where a step comes in this install (the two kinds of install have their steps in another order).
+    private func order(_ step: UpdateStep) -> Int { updater.steps.firstIndex(of: step) ?? step.rawValue }
+
     private func stepRow(_ step: UpdateStep, current: UpdateStep) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
             Group {
-                if step < current {
+                if order(step) < order(current) {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(NookTheme.mint)
                 } else if step == current {
                     ProgressView().controlSize(.mini)
@@ -185,7 +228,7 @@ struct UpdatePanel: View {
             .frame(width: 16, height: 16)
             Text(UpdateText.step(step))
                 .font(step == current ? NookTheme.TextStyle.strong : NookTheme.TextStyle.body)
-                .foregroundStyle(step <= current ? NookTheme.paper : NookTheme.textTertiary)
+                .foregroundStyle(order(step) <= order(current) ? NookTheme.paper : NookTheme.textTertiary)
         }
     }
 
@@ -267,7 +310,7 @@ struct UpdatePanel: View {
                     updater.dismissFailure()
                     close()
                 }
-                if updater.available != nil {
+                if updater.hasUpdate {
                     SmallPrimaryButton(title: tr("update.tryAgain"), systemName: "arrow.clockwise") {
                         updater.dismissFailure()
                     }
@@ -279,7 +322,7 @@ struct UpdatePanel: View {
     private func updated(_ receipt: UpdateReceipt) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             header(symbol: "checkmark.circle.fill", tint: NookTheme.mint, title: tr("update.updated.title"),
-                   detail: tr("update.updated.detail", receipt.changes.count, String(receipt.to.prefix(7))))
+                   detail: tr("update.updated.detail", receipt.changes.count, receipt.shortTarget))
             if !receipt.changes.isEmpty {
                 changeList(receipt.changes, total: receipt.changes.count, github: nil)
             }

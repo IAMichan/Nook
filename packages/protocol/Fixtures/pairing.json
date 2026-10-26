@@ -1,0 +1,28 @@
+{
+  "comment": "Pairing links (nook://pair). key is base64url. Every implementation reads host, port, key and name; alternates (a) and relay (r) are checked where the implementation knows them.",
+  "valid": [
+    {
+      "url": "nook://pair?h=Michaels-MacBook.local&p=49321&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&n=Michael%E2%80%99s%20MacBook",
+      "host": "Michaels-MacBook.local", "port": 49321, "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "macName": "Michael’s MacBook", "alternates": [], "relay": null
+    },
+    {
+      "url": "nook://pair?h=192.168.1.20&p=5000&k=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc&n=Studio&a=100.101.102.103&a=10.0.0.4&r=https://relay.example.com",
+      "host": "192.168.1.20", "port": 5000, "key": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+      "macName": "Studio", "alternates": ["100.101.102.103", "10.0.0.4"], "relay": "https://relay.example.com"
+    },
+    {
+      "url": "nook://pair?h=mac.local&p=1&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "host": "mac.local", "port": 1, "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "macName": "Mac", "alternates": [], "relay": null
+    }
+  ],
+  "invalid": [
+    "https://pair?h=mac.local&p=5000&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "nook://prompt?h=mac.local&p=5000&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "nook://pair?h=mac.local&p=0&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "nook://pair?h=mac.local&p=5000&k=AAECAw",
+    "nook://pair?h=mac%20local&p=5000&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "nook://pair?p=5000&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+  ]
+}

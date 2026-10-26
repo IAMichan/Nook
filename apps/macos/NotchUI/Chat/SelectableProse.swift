@@ -5,12 +5,23 @@ private struct QuoteSelectionKey: EnvironmentKey {
     static let defaultValue: ((String) -> Void)? = nil
 }
 
+private struct AskAboutSelectionKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     /// Set where an answer has a reply box under it (a session's conversation): selected words of the answer can be
     /// quoted into it from the right-click menu, to cite a selection in the composer.
     var quoteSelection: ((String) -> Void)? {
         get { self[QuoteSelectionKey.self] }
         set { self[QuoteSelectionKey.self] = newValue }
+    }
+
+    /// Set next to `quoteSelection`: "Ask about this" in the right-click menu quotes the selected words and puts the
+    /// keyboard in the reply box, to ask about them.
+    var askAboutSelection: ((String) -> Void)? {
+        get { self[AskAboutSelectionKey.self] }
+        set { self[AskAboutSelectionKey.self] = newValue }
     }
 }
 
@@ -29,6 +40,22 @@ struct SelectableProse: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
+
+    /// The words selected in an answer's text view, trimmed; nil when nothing is selected.
+    static func selection(of view: NSTextView) -> String? {
+        let range = view.selectedRange()
+        guard range.length > 0, NSMaxRange(range) <= (view.string as NSString).length else { return nil }
+        let text = ComposerQuotes.normalize((view.string as NSString).substring(with: range))
+        return text.isEmpty ? nil : text
+    }
+
+    /// The words selected in an answer that has the keyboard in `window` (for the `selection.quote` and `selection.ask`
+    /// keys); nil when the keyboard is elsewhere or nothing is selected.
+    @MainActor
+    static func selection(in window: NSWindow?) -> String? {
+        guard let view = window?.firstResponder as? NSTextView, view.delegate is Coordinator else { return nil }
+        return selection(of: view)
+    }
 
     func makeNSView(context: Context) -> NSTextView {
         let view = NSTextView(usingTextLayoutManager: false)
@@ -51,6 +78,7 @@ struct SelectableProse: NSViewRepresentable {
         context.coordinator.fileLinkBase = context.environment.fileLinkBase
         context.coordinator.pullRequestLinksBeside = context.environment.pullRequestLinksBeside
         context.coordinator.quote = context.environment.quoteSelection
+        context.coordinator.ask = context.environment.askAboutSelection
         view.linkTextAttributes = [
             // Links in the link blue without an underline; the pointer says they are links.
             .foregroundColor: NSColor(NookTheme.blue),
@@ -94,27 +122,38 @@ struct SelectableProse: NSViewRepresentable {
         var pullRequestLinksBeside = false
         /// Quotes selected words into the reply box, when there is one.
         var quote: ((String) -> Void)?
+        /// Quotes them and puts the keyboard in the reply box.
+        var ask: ((String) -> Void)?
         /// A quote longer than this is refused: the reply should point at a passage, not repeat the answer.
-        static let quoteLimit = 4_000
+        static let quoteLimit = ComposerQuotes.characterLimit
 
         func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
-            let range = view.selectedRange()
-            guard quote != nil, range.length > 0 else { return menu }
-            let text = (view.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return menu }
-            let item = NSMenuItem(title: tr("ws.review.quoteSelection"), action: #selector(quoteSelection(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = text
-            item.isEnabled = text.count <= Self.quoteLimit
-            if !item.isEnabled { item.toolTip = tr("ws.review.quoteTooLong") }
-            menu.insertItem(item, at: 0)
-            menu.insertItem(.separator(), at: 1)
+            guard quote != nil || ask != nil, let text = SelectableProse.selection(of: view) else { return menu }
+            var index = 0
+            for (title, action, wanted) in [
+                (tr("ws.review.quoteSelection"), #selector(quoteSelection(_:)), quote != nil),
+                (tr("selection.ask"), #selector(askAboutSelection(_:)), ask != nil),
+            ] where wanted {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.target = self
+                item.representedObject = text
+                item.isEnabled = text.count <= Self.quoteLimit
+                if !item.isEnabled { item.toolTip = tr("ws.review.quoteTooLong") }
+                menu.insertItem(item, at: index)
+                index += 1
+            }
+            menu.insertItem(.separator(), at: index)
             return menu
         }
 
         @objc private func quoteSelection(_ sender: NSMenuItem) {
             guard let text = sender.representedObject as? String else { return }
             quote?(text)
+        }
+
+        @objc private func askAboutSelection(_ sender: NSMenuItem) {
+            guard let text = sender.representedObject as? String else { return }
+            ask?(text)
         }
         private let layout = NSLayoutManager()
         private let container = NSTextContainer()
