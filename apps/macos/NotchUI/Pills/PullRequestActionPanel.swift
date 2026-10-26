@@ -17,6 +17,8 @@ final class PullRequestActionState: ObservableObject {
     /// Writing a review (with a verdict) instead of a plain comment.
     @Published var asReview = false
     @Published var verdict: PullRequestAction.Verdict = .comment
+    /// Who can be asked for a review, offered as chips under the reviewer field. Nil until GitHub answered.
+    @Published var candidates: [String]?
 
     func open(_ panel: Panel, detail: PullRequestDetail) {
         error = nil
@@ -35,6 +37,34 @@ final class PullRequestActionState: ObservableObject {
         pending = nil
         error = nil
         text = ""
+    }
+
+    /// The logins typed or picked in the reviewer field.
+    var chosenReviewers: [String] { PullRequestAction.logins([text]) }
+
+    func isChosen(_ login: String) -> Bool {
+        chosenReviewers.contains { $0.caseInsensitiveCompare(login) == .orderedSame }
+    }
+
+    /// Picks a reviewer from the chips, or puts one back.
+    func toggle(_ login: String) {
+        var logins = chosenReviewers
+        if let index = logins.firstIndex(where: { $0.caseInsensitiveCompare(login) == .orderedSame }) {
+            logins.remove(at: index)
+        } else {
+            logins.append(login)
+        }
+        text = logins.joined(separator: ", ")
+    }
+
+    /// The chips to offer: the ones picked, and the others matching what is being typed after the last comma.
+    func offered(limit: Int = 16) -> [String] {
+        let typed = text.split(separator: ",", omittingEmptySubsequences: false).last
+            .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "@")) } ?? ""
+        let matching = (candidates ?? []).filter { login in
+            isChosen(login) || typed.isEmpty || login.range(of: typed, options: .caseInsensitive) != nil
+        }
+        return Array(matching.prefix(limit))
     }
 
     /// What the panel would send now, or nil while it is not complete.
@@ -223,11 +253,50 @@ struct PullRequestActionPanel: View {
                 .padding(NookTheme.Spacing.sm)
                 .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous).fill(NookTheme.smoke))
                 .onSubmit { review() }
+            if state.candidates == nil {
+                ProgressView().controlSize(.small)
+            } else if !state.offered().isEmpty {
+                ChipFlow(spacing: NookTheme.Spacing.xs) {
+                    ForEach(state.offered(), id: \.self) { login in candidate(login) }
+                }
+            }
             HStack {
                 Spacer(minLength: 0)
                 send(title: tr("agents.pr.reviewers.send"))
             }
         }
+        .task(id: detail.id) { await loadCandidates() }
+    }
+
+    /// One person who can be asked: their picture and login, filled with the accent once picked.
+    private func candidate(_ login: String) -> some View {
+        let chosen = state.isChosen(login)
+        return Button { state.toggle(login) } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                GitHubAvatar(login: login, size: 16)
+                Text(login).font(NookTheme.TextStyle.label)
+                if chosen { Image(systemName: "checkmark").font(NookTheme.font(9, .bold)) }
+            }
+            .foregroundStyle(chosen ? NookTheme.onIris : NookTheme.textStrong)
+            .padding(.leading, NookTheme.Spacing.xxs)
+            .padding(.trailing, NookTheme.Spacing.sm)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .background(Capsule().fill(chosen ? NookTheme.iris : NookTheme.smoke))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr(chosen ? "agents.pr.reviewers.remove" : "agents.pr.reviewers.add", "@" + login))
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+
+    /// Asks GitHub once per page who can review; without an answer the field still takes names typed by hand.
+    private func loadCandidates() async {
+        guard state.candidates == nil else { return }
+        guard let token = GitHubPullRequestDetail.token(accountID: accountID) else {
+            state.candidates = []
+            return
+        }
+        state.candidates = await GitHubPullRequestDetail.reviewerCandidates(for: detail, token: token)
     }
 
     private var editor: some View {
