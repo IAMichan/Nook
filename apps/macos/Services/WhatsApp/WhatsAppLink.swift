@@ -49,6 +49,15 @@ enum WhatsAppSettings {
         defaults.set(ChatReadMarks.pruned(marks), forKey: key)
     }
 
+    /// Each chat's unread messages when Nook last ran (see `WAUnreadCarry`), by its JID.
+    static var unreadCarry: [String: WAUnreadCarry] {
+        get {
+            defaults.data(forKey: "whatsappUnreadCarry")
+                .flatMap { try? JSONDecoder().decode([String: WAUnreadCarry].self, from: $0) } ?? [:]
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "whatsappUnreadCarry") }
+    }
+
     /// Read receipts when a message is answered or marked read in the notch; never on mere reception.
     static var markReadOnReply: Bool {
         get { defaults.object(forKey: "whatsappMarkRead") as? Bool ?? true }
@@ -142,7 +151,10 @@ final class WhatsAppLink: ObservableObject {
 
     /// Votes received are kept on disk (see `WAPollLedger`), so a poll shows them again after a restart.
     @Published private(set) var inbox = WAInbox(polls: WAPollStore.load()) {
-        didSet { if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) } }
+        didSet {
+            if inbox.pollLedger != oldValue.pollLedger { WAPollStore.save(inbox.pollLedger) }
+            keepUnread()
+        }
     }
     @Published private(set) var link: Link = .off
     @Published private(set) var webhook: Webhook = .off
@@ -158,13 +170,18 @@ final class WhatsAppLink: ObservableObject {
     private var knownIndex: [String: Int] = [:]
     /// When a chat was last read in WhatsApp itself: marked read from Nook (by hand), or read on the phone.
     @Published private(set) var readInWhatsApp = WhatsAppSettings.readMarks(WhatsAppLink.readInWhatsAppKey) {
-        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey) }
+        didSet { WhatsAppSettings.setReadMarks(readInWhatsApp, Self.readInWhatsAppKey); keepUnread() }
     }
     /// When you last read a chat in Nook: WhatsApp's own unread count from before then no longer shows. Kept across
     /// launches, so a chat you read in Nook stays read after a restart.
     @Published private(set) var readInNook = WhatsAppSettings.readMarks(WhatsAppLink.readInNookKey) {
-        didSet { WhatsAppSettings.setReadMarks(readInNook, Self.readInNookKey) }
+        didSet { WhatsAppSettings.setReadMarks(readInNook, Self.readInNookKey); keepUnread() }
     }
+    /// What each chat counted unread when Nook last ran (see `WAUnreadCarry`): it shows until the chat is read or
+    /// answered in, so a restart does not make every chat read.
+    private var carriedUnread = WhatsAppSettings.unreadCarry
+    /// What the next launch starts from, as last written.
+    private var keptUnread: [String: WAUnreadCarry]?
     private static let readInNookKey = "whatsappReadInNook"
     private static let readInWhatsAppKey = "whatsappReadInWhatsApp"
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
@@ -307,6 +324,7 @@ final class WhatsAppLink: ObservableObject {
         failures = 0
         if !WhatsAppSettings.enabled { WhatsAppGOWAProcess.shared.stopNow() }
         if forget {
+            carriedUnread = [:]
             inbox.clear()
             knownChats = []
         }
@@ -876,6 +894,7 @@ final class WhatsAppLink: ObservableObject {
     /// tell WhatsApp, also when Nook shows no badge any more.
     func waitsInWhatsApp(_ chat: String) -> Bool {
         let key = WAJID.normalized(chat)
+        if carried(key) > 0 { return true }
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
             guard !last.fromMe, last.date > readThere else { return false }
@@ -913,23 +932,51 @@ final class WhatsAppLink: ObservableObject {
     /// gateway says), until you read it in Nook.
     func unread(_ chat: String) -> Int {
         let key = WAJID.normalized(chat)
-        if let counted = inbox.conversations[key]?.unread, counted > 0 { return counted }
+        let counted = (inbox.conversations[key]?.unread ?? 0) + carried(key)
+        if counted > 0 { return counted }
         guard let known = known(key), known.unread > 0 else { return 0 }
         if let read = readInNook[key], known.last <= read { return 0 }
         return known.unread
     }
 
+    /// Unread messages in the chats the pill shows, also those still unread from before a restart.
+    var visibleUnread: Int {
+        inbox.visibleUnread(filters: filters) + carriedUnread.keys.reduce(0) { total, key in
+            filters.ignored.contains(key) || filters.isQuiet(key) ? total : total + carried(key)
+        }
+    }
+
+    /// What a chat still counts unread from before Nook restarted: nothing once it was read or answered in since.
+    private func carried(_ key: String) -> Int {
+        guard let carry = carriedUnread[key], carry.holds(readSince: readSince(key)) else { return 0 }
+        return carry.count
+    }
+
+    /// When a chat was last read (in Nook, in WhatsApp) or answered in.
+    private func readSince(_ key: String) -> Date? {
+        [readInNook[key], readInWhatsApp[key], inbox.conversations[key]?.messages.last { $0.fromMe }?.date].compactMap { $0 }.max()
+    }
+
+    /// Writes down what each chat counts unread, for the next launch; only when that changed.
+    private func keepUnread() {
+        let kept = WAUnreadCarry.kept(carried: carriedUnread, inbox: inbox, readSince: readSince)
+        guard kept != keptUnread else { return }
+        keptUnread = kept
+        WhatsAppSettings.unreadCarry = kept
+    }
+
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
+        carriedUnread[WAJID.normalized(chat)] = nil
         readInNook[WAJID.normalized(chat)] = nil
         inbox.markUnread(chat)
     }
 
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
+        let hadUnread = (inbox.conversations[key]?.unread ?? 0) + carried(key) > 0
         readInNook[key] = Date()
         guard let provider, let conversation = inbox.conversations[key] else { return }
-        let hadUnread = conversation.unread > 0
         inbox.markRead(key)
         guard hadUnread, WhatsAppSettings.markReadOnReply else { return }
         let last = conversation.messages.last { !$0.fromMe }?.id

@@ -276,7 +276,7 @@ struct ChatsTab: View {
     @MainActor
     static var unread: Int {
         let link = WhatsAppLink.shared
-        return ChatCaptureService.shared.inbox.totalUnread + (link.isConnected ? link.inbox.visibleUnread(filters: link.filters) : 0)
+        return ChatCaptureService.shared.inbox.totalUnread + (link.isConnected ? link.visibleUnread : 0)
     }
 
     /// The sidebar folds to a rail of icons when the panel is narrow, so the list and the chat keep their room.
