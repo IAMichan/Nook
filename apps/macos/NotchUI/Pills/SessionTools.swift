@@ -524,19 +524,17 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
-                        // Back to the list to pick another, as the + of the tab does.
-                        subheader {
-                            HStack(spacing: NookTheme.Spacing.xs) {
-                                ToolbarIconButton("chevron.left", tr("agents.pr.back"), showPullRequestList)
-                                Text(tr("agents.pr.back")).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, NookTheme.Spacing.sm)
+                        // One column, so the back button keeps its own height and the pull request takes the rest.
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Back to the list to pick another, as the + of the tab does.
+                            NookGhostButton(title: tr("agents.pr.back"), symbol: "chevron.left", compact: true, height: 26,
+                                            action: showPullRequestList)
+                                .help(tr("agents.pr.back"))
+                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                            })
+                                .id(pullRequest.account + " " + pullRequest.item.id)
                         }
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
-                            updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        })
-                            .id(pullRequest.account + " " + pullRequest.item.id)
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
