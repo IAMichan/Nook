@@ -14,8 +14,7 @@ struct PanelView: View {
     var inWindow = false
     @EnvironmentObject private var app: AppModel
     /// For the dot on Chats when a message comes in.
-    @ObservedObject private var chats = ChatCaptureService.shared
-    @ObservedObject private var whatsApp = WhatsAppLink.shared
+    @ObservedObject private var chatsDot = ChatsUnreadDot.shared
     /// The width of the Agents session list, which the footer takes on a tab without a list of its own.
     @AppStorage("nook.agents.listWidth") private var agentsListWidth = PanelLayout.agentsList
     /// Search everything is open over the tab (⌘K or ⇧⌘F, or the magnifying glass in the header).
@@ -124,7 +123,7 @@ struct PanelView: View {
         let tabs = PanelTab.visible(musicAvailable: app.nowPlaying.current != nil || tab == .music)
         let waiting = app.activeAgents.filter { $0.status == .waiting || $0.approvalID != nil }.count
         let unread = tab != .chat && app.chat.list(query: "", showArchived: false).contains { $0.status == .unread }
-        let chatsUnread = tab != .inbox && ChatsTab.unread > 0
+        let chatsUnread = tab != .inbox && chatsDot.lit
         return tabs.enumerated().map { index, value in
             NookTabBar<PanelTab>.Item(value: value, title: value.title,
                                       fresh: (value == .chat && unread) || (value == .inbox && chatsUnread),
