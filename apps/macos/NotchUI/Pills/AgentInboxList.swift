@@ -99,9 +99,8 @@ struct AgentInboxList: View {
         let visible = InboxSearch.filter(rows: rows, query: store.query)
         let sections = InboxLayout.sections(rows: visible, state: store.state, showWorking: store.showWorking, now: now,
                                             settledLimit: settledLimit, selectedID: current)
-        // The rows as shown, top to bottom (folded shelves left out): what select all and a ⇧-click range go by.
-        let shown = sections.filter { $0.kind == .pinned || $0.kind == .active || !collapsed.contains($0.kind) }
-            .flatMap { $0.rows.map(\.id) }
+        // The rows as shown, top to bottom (a folded shelf only with the open session): what select all and a ⇧-click range go by.
+        let shown = sections.flatMap { rows(of: $0).map(\.id) }
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
             HStack(spacing: NookTheme.Spacing.sm) {
                 searchField
@@ -122,7 +121,8 @@ struct AgentInboxList: View {
                     ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
                         sectionView(section, sections: sections, byID: byID, shown: shown)
                     }
-                    if sections.isEmpty { emptyState }
+                    // Only the docked settled shelf left (or nothing): say so instead of an empty space.
+                    if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -174,6 +174,12 @@ struct AgentInboxList: View {
 
     // MARK: Sections
 
+    /// What a section draws: a folded shelf still shows the session that is open on the right.
+    private func rows(of section: InboxSection) -> [InboxEntry] {
+        let foldable = section.kind != .pinned && section.kind != .active
+        return InboxLayout.shownRows(section, folded: foldable && collapsed.contains(section.kind), selectedID: current)
+    }
+
     @ViewBuilder
     private func sectionView(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem], shown: [String]) -> some View {
         switch section.kind {
@@ -186,9 +192,7 @@ struct AgentInboxList: View {
         case .working, .snoozed, .settled:
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 shelfHeader(section, sections: sections, byID: byID)
-                if !collapsed.contains(section.kind) {
-                    ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
-                }
+                ForEach(rows(of: section)) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
             }
             .padding(.top, NookTheme.Spacing.md)
             .modifier(DropTarget(kind: section.kind, section: section, list: self, sections: sections, byID: byID, row: nil))
@@ -199,9 +203,10 @@ struct AgentInboxList: View {
     /// on their own once they no longer fit.
     private func settledShelf(_ section: InboxSection, sections: [InboxSection], byID: [String: AgentListItem],
                               shown: [String]) -> some View {
-        let rows = VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            ForEach(section.rows) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
-            if section.hiddenCount > 0 {
+        let open = !collapsed.contains(section.kind)
+        let list = VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+            ForEach(rows(of: section)) { entry in entryRow(entry, in: section, sections: sections, byID: byID, shown: shown) }
+            if open && section.hiddenCount > 0 {
                 Button { settledLimit += InboxLayout.settledPage } label: {
                     Text(tr("inbox.moreSettled", min(section.hiddenCount, InboxLayout.settledPage)))
                         .font(NookTheme.TextStyle.label)
@@ -213,10 +218,10 @@ struct AgentInboxList: View {
             }
         }
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            if !collapsed.contains(section.kind) {
+            if !rows(of: section).isEmpty {
                 ViewThatFits(in: .vertical) {
-                    rows
-                    ScrollView(showsIndicators: false) { rows }
+                    list
+                    ScrollView(showsIndicators: false) { list }
                 }
                 .frame(maxHeight: 280)
             }
