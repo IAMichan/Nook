@@ -45,8 +45,11 @@ html, body {
   color: var(--paper);
   background: var(--graphite);
   -webkit-font-smoothing: antialiased;
-  user-select: none;
+  user-select: text;
 }
+
+/* Text is selectable by dragging; only controls and the floating bar are not. */
+body.bar, button, summary, img, svg, [data-tauri-drag-region], input[type="range"] { user-select: none; }
 
 html:has(body.bar), body.bar { background: transparent; overflow: hidden; }
 
