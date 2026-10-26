@@ -65,6 +65,13 @@ final class ResearchTests: XCTestCase {
         XCTAssertEqual(sources, ["calendar", "notes", "mail", "files", "contacts"], "not the web: the user's own data first")
     }
 
+    func testAQuestionAboutTheScreenIsNotSearchedEverywhere() {
+        let question = "Is deze pitch goed?"
+        let sources = Research.sources(question: question, intent: ChatIntent.detect(question), terms: Research.terms(in: question),
+                                       relevant: ["calendar"], aboutScreen: true, available: available, active: active)
+        XCTAssertEqual(sources, ["calendar"], "the screen answers it: no searching notes, mail and files for \"pitch\"")
+    }
+
     func testACommandIsNotSearchedEverywhere() {
         let question = "Zet de muziek wat zachter"
         let sources = Research.sources(question: question, intent: ChatIntent.detect(question), terms: Research.terms(in: question),

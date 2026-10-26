@@ -226,9 +226,17 @@ extension AppModel {
         return false
     }
 
+    /// "deze week" or "dit jaar" names a period, not something on screen.
+    private static let periodCue = try? NSRegularExpression(
+        pattern: #"\b(dit|deze)\s+(week|weekend|maand|jaar|kwartaal|ochtend|middag|avond|nacht|keer)\b"#,
+        options: [.caseInsensitive]
+    )
+
     static func refersToScreen(_ text: String) -> Bool {
         guard let screenCue else { return false }
-        return screenCue.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        let range = NSRange(text.startIndex..., in: text)
+        let rest = periodCue?.stringByReplacingMatches(in: text, range: range, withTemplate: " ") ?? text
+        return screenCue.firstMatch(in: rest, range: NSRange(rest.startIndex..., in: rest)) != nil
     }
 
     /// Everything the brain needs for one question. Chat answers and notch cards (looking at the screen, thinking along)
@@ -339,8 +347,10 @@ extension AppModel {
                 sources = Set(usable.sources).union(Prefetch.inContext.intersection(relevant))
                 calls = QueryPlanner.lookups(usable, question: text, available: available, limit: roomy ? 12 : 9)
             } else {
+                // A dropped file or the screen the question points at is the thing asked about.
+                let aboutScreen = snapshotText != nil || (scope.allows(SourceCatalog.screen) && Self.refersToScreen(text))
                 sources = Research.sources(question: text, intent: intent, terms: terms, relevant: named.isEmpty ? relevant.union(learned) : relevant, previous: previous,
-                                           named: named, available: available, active: activeIDs.filter { scope.allows($0) })
+                                           named: named, aboutScreen: aboutScreen, available: available, active: activeIDs.filter { scope.allows($0) })
                 calls = Research.lookups(question: text, terms: terms, sources: sources, available: available, limit: roomy ? 12 : 9)
             }
             // Fallback when the brain gave no plan in time: a question about a day ("heb ik morgen een gesprek met Aron?")
