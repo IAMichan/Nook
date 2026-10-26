@@ -71,6 +71,13 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// Every token's bytes, read once per model when first needed: a word the model did not see coming is spelled from the
     /// whole vocabulary (see `healed`).
     private lazy var pieces: [[UInt8]] = (0..<self.vocabSize).map { self.piece(llama_token($0)) }
+    /// The tokens whose piece starts with each byte: a token fits a word still to be spelled only if its first byte is the
+    /// word's, so the whole-vocabulary search in `healed` looks at a few hundred tokens instead of all of them.
+    private lazy var tokensByFirstByte: [[Int]] = {
+        var buckets = [[Int]](repeating: [], count: 256)
+        for (index, bytes) in pieces.enumerated() { if let first = bytes.first { buckets[Int(first)].append(index) } }
+        return buckets
+    }()
 
     /// The longest prompt, in tokens.
     static let contextLength: UInt32 = 4_096
@@ -453,7 +460,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // A name or a rare word: none of the likely tokens spells it. Look through the whole vocabulary rather than give up, or
         // a word would only be finished once it was common enough.
         if fitting.isEmpty {
-            for (index, bytes) in pieces.enumerated() where CompletionHealing.fits(bytes, required) {
+            for index in tokensByFirstByte[Int(required.first ?? 0)] where CompletionHealing.fits(pieces[index], required) {
                 let token = llama_token(index)
                 guard !llama_vocab_is_control(vocab, token), !llama_vocab_is_eog(vocab, token) else { continue }
                 fitting.append((token, logits[index]))
