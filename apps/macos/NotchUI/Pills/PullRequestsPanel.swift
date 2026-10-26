@@ -90,6 +90,7 @@ struct PullRequestsPanel: View {
         }])
         .onChange(of: filter) { _, filter in filter.save() }
         .onChange(of: activeTab) { _, tab in if tab == nil { maximized = false } }
+        .onChange(of: accounts) { _, _ in finishTabs() }
     }
 
     private func panelWidthBinding(_ total: Double) -> Binding<Double> {
@@ -141,6 +142,17 @@ struct PullRequestsPanel: View {
         guard let current = activeTab, ids.contains(current) else { return }
         guard !tabs.isEmpty, let index else { activeTab = nil; return }
         activeTab = tabs[min(index, tabs.count - 1)].id
+    }
+
+    /// Tabs whose pull request the list now shows merged or closed take that mark, the ones in the background too.
+    /// Only that way round: a list read can lag behind the page, which hands its own state back through `onUpdate`.
+    private func finishTabs() {
+        for index in tabs.indices where tabs[index].item.state == .open {
+            let tab = tabs[index]
+            guard let listed = items(of: tab.account).first(where: { $0.id == tab.item.id }), listed.state != .open else { continue }
+            tabs[index].item.state = listed.state
+            tabs[index].item.conflict = false
+        }
     }
 
     /// Every pull request listed under an account, unfiltered, for finding stacks.
