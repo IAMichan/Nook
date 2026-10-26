@@ -1,0 +1,7 @@
+{"type":"transcript_start","provider":"claude","protocol":"claude-code.stream-json","scenario":"claude_stop","source":"hand-written for Nook: Stop while a tool runs; the agent exits on SIGINT"}
+{"type":"expect_outbound","frame":{"type":"user","message":{"role":"user","content":"Run sleep 30, then say done."}}}
+{"type":"emit_inbound","frame":{"type":"system","subtype":"init","session_id":"5b6f3c1e-0d6a-4d55-9f0e-6c2a1b7e9a10","model":"claude-sonnet-4-6","cwd":"/tmp/nook-replay","tools":["Bash"],"permissionMode":"bypassPermissions"}}
+{"type":"emit_inbound","frame":{"type":"assistant","message":{"id":"msg_stop_1","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"toolu_stop_1","name":"Bash","input":{"command":"sleep 30","description":"Wait 30 seconds"}}],"usage":{"input_tokens":12,"output_tokens":20}},"parent_tool_use_id":null,"session_id":"5b6f3c1e-0d6a-4d55-9f0e-6c2a1b7e9a10"}}
+{"type":"expect_signal","signal":"SIGINT"}
+{"type":"emit_stderr","text":"Interrupted by user\n"}
+{"type":"exit","status":2}

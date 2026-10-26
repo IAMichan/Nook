@@ -189,10 +189,13 @@ enum AgentCommand {
 /// A single running agent process. Delivers stdout lines one by one on a dedicated queue.
 /// It runs in a process group of its own (see `SpawnedProcess`), so stopping it also stops what it started.
 /// Termination is always safe: graceful first (SIGINT), then forced after a few seconds.
+/// The process sits behind `ProviderTransport`, so tests replay a recorded agent through the same line handling.
 final class AgentProcess: @unchecked Sendable {
     let spec: LaunchSpec
-    private let process = SpawnedProcess()
+    private let process: ProviderTransport
     private let scheduler: ProcessScheduler
+    /// What went over stdio, when Settings › Workspace asks for it (see `ProviderTrafficLog`).
+    let trafficLog: ProviderTrafficLog?
     private let queue = DispatchQueue(label: "nook.agent-process")
     private var buffer = Data()
     private var stderrTail = Data()
@@ -207,9 +210,12 @@ final class AgentProcess: @unchecked Sendable {
     /// The process has exited: exit code and the last lines of stderr.
     var onExit: (@Sendable (Int32, String) -> Void)?
 
-    init(spec: LaunchSpec, scheduler: ProcessScheduler = DispatchProcessScheduler()) {
+    init(spec: LaunchSpec, transport: ProviderTransport = SpawnedProcess(), scheduler: ProcessScheduler = DispatchProcessScheduler(),
+         trafficLog: ProviderTrafficLog? = nil) {
         self.spec = spec
+        self.process = transport
         self.scheduler = scheduler
+        self.trafficLog = trafficLog ?? ProviderTrafficLog.forLaunch(spec)
     }
 
     var pid: Int32 { process.pid }
@@ -232,6 +238,7 @@ final class AgentProcess: @unchecked Sendable {
         }, onStderr: { [weak self] data in
             guard let self, !data.isEmpty else { return }
             self.queue.async {
+                self.trafficLog?.stderr(String(decoding: data, as: UTF8.self))
                 self.stderrTail.append(data)
                 if self.stderrTail.count > 8_192 { self.stderrTail = self.stderrTail.suffix(8_192) }
             }
@@ -241,6 +248,7 @@ final class AgentProcess: @unchecked Sendable {
             self.scheduler.schedule(after: 0.3) {
                 self.queue.async {
                     self.flushRemainder()
+                    self.trafficLog?.exit(status)
                     let tail = String(decoding: self.stderrTail, as: UTF8.self)
                     self.markFinished()
                     self.onExit?(status, tail)
@@ -256,6 +264,7 @@ final class AgentProcess: @unchecked Sendable {
         let done = finished
         lock.unlock()
         guard !done, let data = line.data(using: .utf8) else { return }
+        trafficLog?.outbound(line)
         do {
             try process.write(data)
         } catch {
@@ -265,6 +274,7 @@ final class AgentProcess: @unchecked Sendable {
 
     /// Closes stdin: the agent wraps up and exits.
     func closeInput() {
+        trafficLog?.closedInput()
         process.closeInput()
     }
 
@@ -278,6 +288,7 @@ final class AgentProcess: @unchecked Sendable {
         guard first, process.isRunning else { return }
         // An exited leader stays unreaped until the last signal, so its group id cannot be given to another program.
         process.hold()
+        trafficLog?.signal(SIGINT)
         process.signalGroup(SIGINT)
         let process = process
         scheduler.schedule(after: grace) {
@@ -313,6 +324,7 @@ final class AgentProcess: @unchecked Sendable {
         }
         if start > buffer.startIndex { buffer.removeSubrange(buffer.startIndex..<start) }
         guard !batch.isEmpty else { return }
+        if let trafficLog { for line in batch { trafficLog.inbound(line) } }
         if let onLines {
             onLines(batch)
         } else if let onLine {
@@ -325,6 +337,7 @@ final class AgentProcess: @unchecked Sendable {
         let line = String(decoding: buffer, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         buffer.removeAll()
         guard !line.isEmpty else { return }
+        trafficLog?.inbound(line)
         if let onLines {
             onLines([line])
         } else {

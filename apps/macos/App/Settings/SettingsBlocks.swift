@@ -490,6 +490,12 @@ struct WorkspaceSettingsSection: View {
             Toggle(tr("settings.ws.codexAppServer"), isOn: $ws.codexAppServer)
             LabeledContent("Antigravity") { AntigravitySetupRow(inSettings: true) }
         }
+        // A raw log of what agents send and receive, for reproducing a bug as a replay fixture.
+        Section {
+            Toggle(tr("settings.ws.trafficLog"), isOn: $ws.providerTrafficLog)
+        } footer: {
+            Text(tr("settings.ws.trafficLog.footer"))
+        }
         Section {
             Toggle(tr("settings.ws.autoResumeLimited"), isOn: $ws.autoResumeLimited)
             Toggle(tr("settings.ws.continueAfterRelaunch"), isOn: $ws.continueAfterRelaunch)

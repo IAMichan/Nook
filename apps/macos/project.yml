@@ -196,6 +196,7 @@ targets:
       - path: Core/I18n+ChatCompose.swift
       - path: Core/I18n+PullRequests.swift
       - path: Core/I18n+Keybindings.swift
+      - path: Core/I18n+ProviderTraffic.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -363,6 +364,7 @@ targets:
       - path: Services/Workspace/RunEventLog.swift
       - path: Services/Workspace/AgentProcess.swift
       - path: Services/Workspace/ProcessGroups.swift
+      - path: Services/Workspace/ProviderTransport.swift
       - path: Services/AgentTranscript.swift
       - path: Services/TranscriptPresentation.swift
       - path: Services/TurnDiff.swift

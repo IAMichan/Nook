@@ -370,8 +370,8 @@ final class WorkspaceManager: ObservableObject {
     }
 
     /// Reads a timeline that is not in memory off the main thread, so opening its session right after (a row under the
-    /// pointer, the session the list is about to show) draws it at once instead of decoding up to `RunStore.eventLimit`
-    /// events on the main thread first. Opening before this is done still reads it the plain way.
+    /// pointer, the session the list is about to show) draws it at once instead of replaying its whole log
+    /// on the main thread first. Opening before this is done still reads it the plain way.
     func prefetchTimeline(_ id: UUID) {
         guard events[id] == nil, !prefetching.contains(id), runs.contains(where: { $0.id == id }) else { return }
         prefetching.insert(id)
