@@ -721,9 +721,11 @@ struct PullRequestDetailView: View {
     /// scrolled), the top folds; back at the start it unfolds.
     /// A click that points somewhere on the page (see `scrollRequest`) scrolls there once the section has unfolded.
     private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        ScrollViewReader { proxy in
+        // Built here: `ScrollViewReader` holds on to its closure, so it can't call the non-escaping builder.
+        let content = content()
+        return ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
-                content()
+                content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, NookTheme.Spacing.md)
                     // Room for the round write button over the end of the page.
