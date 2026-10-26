@@ -53,6 +53,8 @@ The menu bar menu shows the same state as one line that opens the panel.
    fails. The old one is kept for a rollback (below).
 6. **Restart**: a small `/bin/sh` loop waits for Nook to quit and opens the app again. If sessions that Nook runs are
    still working, Nook waits for you to press **Restart** (they stop on restart and can be resumed afterwards).
+   The new build opens the main window on the screen you clicked **Install** (or **Restart**) on: the main window's
+   screen when it had the keyboard, else the screen under the pointer (the notch's panel).
 
 Every step's output goes to `~/Library/Logs/Nook/Update-<date>.log`. The start and the outcome of every install are
 written to the action log (`audit` table, tool `app_update`). Cancelling stops the running command; what already

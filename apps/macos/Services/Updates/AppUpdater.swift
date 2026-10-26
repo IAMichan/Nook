@@ -93,6 +93,8 @@ final class AppUpdater: ObservableObject {
 
     private static let autoCheckKey = "nook.updates.autoCheck"
     private static let receiptKey = "nook.updates.receipt"
+    /// The screen an install or restart was clicked on, with when the restart started (`at`).
+    private static let restartScreenKey = "nook.updates.restartScreen"
     private static let interval: TimeInterval = 30 * 60
     /// The footer asks for a check when it appears, at most this often.
     private static let staleAfter: TimeInterval = 10 * 60
@@ -295,6 +297,7 @@ final class AppUpdater: ObservableObject {
 
     /// Starts the install you confirmed. `stash`: you agreed to set uncommitted changes aside and put them back after.
     func install(stash: Bool = false) {
+        rememberScreen()
         if source == nil, let release, let candidate = releaseUpdate {
             installRelease(candidate, over: release)
             return
@@ -404,7 +407,7 @@ final class AppUpdater: ObservableObject {
         if let data = try? JSONEncoder().encode(receipt) { UserDefaults.standard.set(data, forKey: Self.receiptKey) }
         AppModel.shared.store.audit(tool: "app_update", args: "\(release.version) → \(candidate.version)", result: "installed")
         if AppModel.shared.workspace.activeRuns.isEmpty {
-            restart()
+            relaunch()
         } else {
             phase = .readyToRestart
         }
@@ -456,7 +459,7 @@ final class AppUpdater: ObservableObject {
         if fromXcode {
             phase = .readyToBuildInXcode
         } else if AppModel.shared.workspace.activeRuns.isEmpty {
-            restart()
+            relaunch()
         } else {
             phase = .readyToRestart
         }
@@ -474,8 +477,14 @@ final class AppUpdater: ObservableObject {
     /// How long Nook's own saving at quit may take during a restart before the process ends anyway.
     nonisolated static let quitDeadline: TimeInterval = 30
 
-    /// Quits and opens the app again from where it runs, which now holds the new build.
+    /// Quits and opens the app again from where it runs, which now holds the new build: the Restart button.
     func restart() {
+        rememberScreen()
+        relaunch()
+    }
+
+    /// The same, right after an install you started: the screen stays the one you clicked Install on.
+    private func relaunch() {
         phase = .installing(.restart)
         guard startRelaunch() else { return }
         restarting = true
@@ -492,6 +501,7 @@ final class AppUpdater: ObservableObject {
     /// Restarts without waiting for a normal quit: stops the sessions Nook runs (as a quit does) and ends the process,
     /// after which the relaunch opens the new build.
     func forceRestart() {
+        rememberScreen()
         phase = .installing(.restart)
         guard startRelaunch() else { return }
         restarting = true
@@ -524,6 +534,10 @@ final class AppUpdater: ObservableObject {
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
+            if var saved = UserDefaults.standard.dictionary(forKey: Self.restartScreenKey) {
+                saved["at"] = Date().timeIntervalSince1970
+                UserDefaults.standard.set(saved, forKey: Self.restartScreenKey)
+            }
             return true
         } catch {
             phase = .failed(UpdateFailure(step: .restart, reason: .other(error.localizedDescription), errors: [], logPath: nil))
@@ -574,6 +588,28 @@ final class AppUpdater: ObservableObject {
         let current = BuildSource.isCommit(trial.from) ? String(trial.from.prefix(7)) : trial.from
         phase = .failed(UpdateFailure(step: .restart, reason: .rolledBack(failed), errors: [], logPath: nil))
         AppModel.shared.store.audit(tool: "app_update", args: "\(failed) → \(current)", result: "rolled back")
+    }
+
+    /// Remembers the screen you clicked on: the main window's when it has the keyboard, else the one under the pointer
+    /// (the notch's panel). The new build opens its window there (`takeRestartScreen`).
+    private func rememberScreen() {
+        guard let screen = WorkspaceWindowController.shared.keyScreen ?? NotchGeometry.screenWithMouse(),
+              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return }
+        UserDefaults.standard.set(["display": number.uint32Value, "name": screen.localizedName], forKey: Self.restartScreenKey)
+    }
+
+    /// The screen the restart into this build was started from: once, and only right after that restart. Matched by
+    /// display, else by name (a display can get another number after the restart).
+    static func takeRestartScreen() -> NSScreen? {
+        let defaults = UserDefaults.standard
+        guard let saved = defaults.dictionary(forKey: restartScreenKey) else { return nil }
+        defaults.removeObject(forKey: restartScreenKey)
+        guard let at = saved["at"] as? Double, Date().timeIntervalSince1970 - at < 5 * 60 else { return nil }
+        let screens = NSScreen.screens
+        if let display = (saved["display"] as? NSNumber)?.uint32Value, let screen = screens.first(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display
+        }) { return screen }
+        return screens.first { $0.localizedName == saved["name"] as? String }
     }
 
     private func loadReceipt(for build: String) {

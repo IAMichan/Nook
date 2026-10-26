@@ -39,6 +39,7 @@ final class WindowAttach {
         self.target = nil
         Task { @MainActor in
             guard ScreenAccess.isUsable else {
+                ScreenAccess.clearStaleGrant()
                 _ = CGRequestScreenCaptureAccess()
                 onFailure?(tr("chat.capture.permission"))
                 return

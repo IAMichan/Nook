@@ -57,6 +57,7 @@ extension AppModel {
     func captureScreenPart() {
         guard !capturingScreenPart else { return }
         guard ScreenAccess.isUsable else {
+            ScreenAccess.clearStaleGrant()
             _ = CGRequestScreenCaptureAccess()
             viewModel.show(.card(errorCard(tr("chat.capture.permission"))))
             return
