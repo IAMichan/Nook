@@ -205,4 +205,45 @@ final class TeamsWebDataTests: XCTestCase {
         let result = TeamsData.distinguish([[blank, named], [blank, named]], labels: ["Work", "School"])
         XCTAssertEqual(result.map { $0.map(\.name) }, [["", "Team (Work)"], ["", "Team (School)"]])
     }
+
+    func testDeletedMessagesAreReportedSoTheChatDropsThem() {
+        let json: [String: Any] = ["messages": [
+            ["id": "1800", "messagetype": "RichText/Html", "content": "", "composetime": "2027-01-15T10:00:00.000Z",
+             "from": "https://x/contacts/" + me, "properties": ["deletetime": "1800000000500"]],
+            ["id": "1900", "messagetype": "RichText/Html", "content": "<p>still here</p>", "composetime": "2027-01-15T10:01:00.000Z",
+             "from": "https://x/contacts/8:orgid:jan", "properties": [:]],
+        ]]
+        let chat = TeamsData.Chat(id: "19:a@unq.gbl.spaces", name: "Jan", isGroup: false, last: nil, readUntil: nil)
+        XCTAssertEqual(TeamsWebData.deleted(json), ["teams-1800"])
+        XCTAssertEqual(TeamsWebData.messages(json, chat: chat, me: me).map(\.id), ["teams-1900"])
+        XCTAssertEqual(TeamsWebData.deleted(["messages": []]), [])
+    }
+
+    func testEditingAndDeletingAMessageGoToItsOwnAddress() {
+        XCTAssertEqual(TeamsWebData.serviceID("teams-1800"), "1800")
+        XCTAssertNil(TeamsWebData.serviceID("slack-1800"), "only a message read through the chat service")
+        XCTAssertNil(TeamsWebData.serviceID("teams-"))
+        XCTAssertEqual(TeamsWebData.messagePath(chat: "19:abc@thread.v2", message: "1800"),
+                       "/v1/users/ME/conversations/19:abc@thread.v2/messages/1800")
+        XCTAssertEqual(TeamsWebData.messagePath(chat: "19:abc@thread.v2"), "/v1/users/ME/conversations/19:abc@thread.v2/messages")
+        let json = TeamsWebData.edited(html: TeamsWebData.html("new"), name: "Me", clientMessageID: "42")
+        XCTAssertEqual(json["content"] as? String, "<p>new</p>")
+        XCTAssertEqual(json["messagetype"] as? String, "RichText/Html")
+        XCTAssertEqual(json["contenttype"] as? String, "text")
+        XCTAssertEqual(json["imdisplayname"] as? String, "Me")
+        XCTAssertEqual(json["clientmessageid"] as? String, "42")
+    }
+
+    func testMarkingReadPutsTheNewestMessageInTheHorizon() {
+        let newest = TeamsWebData.newest(["teams-1700000000000", "teams-1700000005000", "slack-9999999999999", "teams-x"])
+        XCTAssertEqual(newest?.id, "1700000005000", "message ids are when they arrived")
+        XCTAssertEqual(newest?.arrived, 1_700_000_005_000)
+        XCTAssertNil(TeamsWebData.newest(["slack-1"]))
+        XCTAssertEqual(TeamsWebData.horizonPath(chat: "19:abc@thread.v2"),
+                       "/v1/users/ME/conversations/19:abc@thread.v2/properties?name=consumptionhorizon")
+        let body = TeamsWebData.horizon(newest: "1700000005000", arrived: 1_700_000_005_000,
+                                        now: Date(timeIntervalSince1970: 1_700_000_010))
+        XCTAssertEqual(body["consumptionhorizon"] as? String, "1700000005000;1700000010000;1700000005000")
+        XCTAssertEqual(TeamsWebData.readUntil(body), Date(timeIntervalSince1970: 1_700_000_005), "reads back as until when")
+    }
 }

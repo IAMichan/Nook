@@ -4,7 +4,8 @@ import Foundation
 /// those requests (picked up by `TeamsWebSession` after you signed in on teams.microsoft.com), the chat list and each
 /// chat's messages, turned into chats for the Chats tab. Foundation only, so it can be tested anywhere; `TeamsBridge`
 /// makes the calls. Work or school accounts, as on the website; channels are left out, as with Microsoft Graph.
-/// Endpoints: {base}/v1/users/ME/conversations and {base}/v1/users/ME/conversations/{id}/messages.
+/// Endpoints: {base}/v1/users/ME/conversations and {base}/v1/users/ME/conversations/{id}/messages; a message is
+/// edited and deleted at …/messages/{messageId}, and a chat marked read at …/{id}/properties?name=consumptionhorizon.
 enum TeamsWebData {
     /// What reading needs: where the chat service of your region is, the website's token for it, and who you are there.
     struct Session: Codable, Equatable, Sendable {
@@ -344,6 +345,60 @@ enum TeamsWebData {
             escaped = escaped.replacingOccurrences(of: character, with: entity)
         }
         return escaped
+    }
+
+    /// The messages Teams marked as deleted (`properties.deletetime`), by their id in Nook ("teams-…"): `messages`
+    /// leaves them out, and the chat in Nook drops them too.
+    static func deleted(_ json: [String: Any]) -> [String] {
+        (json["messages"] as? [[String: Any]] ?? []).compactMap { message in
+            guard let id = message["id"] as? String, !id.isEmpty,
+                  let properties = message["properties"] as? [String: Any], properties["deletetime"] != nil else { return nil }
+            return "teams-" + id
+        }
+    }
+
+    // MARK: Changing a chat
+
+    /// A message's id on the chat service, from its id in Nook ("teams-…"); nil for a message Nook did not read there.
+    static func serviceID(_ message: String) -> String? {
+        guard message.hasPrefix("teams-") else { return nil }
+        let id = String(message.dropFirst("teams-".count))
+        return id.isEmpty ? nil : id
+    }
+
+    /// Where a chat's messages are on the chat service (after the session's base), or one message of them, as the
+    /// website edits ("PUT") and deletes ("DELETE") it there.
+    static func messagePath(chat: String, message: String? = nil) -> String {
+        "/v1/users/ME/conversations/" + ChatJSON.segment(chat) + "/messages" + (message.map { "/" + ChatJSON.segment($0) } ?? "")
+    }
+
+    /// What editing a message puts at `messagePath(chat:message:)`: the new text as rich text under your name, as
+    /// sending writes it (`outgoing`).
+    static func edited(html: String, name: String, clientMessageID: String) -> [String: Any] {
+        ["content": html, "messagetype": "RichText/Html", "contenttype": "text", "clientmessageid": clientMessageID,
+         "imdisplayname": name]
+    }
+
+    /// The newest of these messages (ids in Nook, "teams-…"): Teams' message ids are the time the message arrived, in
+    /// milliseconds, so the largest is the newest. Nil when none is a message of the chat service.
+    static func newest(_ messages: [String]) -> (id: String, arrived: Int64)? {
+        messages.compactMap { message -> (id: String, arrived: Int64)? in
+            guard let id = serviceID(message), let ms = Int64(id) else { return nil }
+            return (id, ms)
+        }.max { $0.arrived < $1.arrived }
+    }
+
+    /// Where a chat's "consumption horizon" is (after the session's base): until when you read it.
+    static func horizonPath(chat: String) -> String {
+        "/v1/users/ME/conversations/" + ChatJSON.segment(chat) + "/properties?name=consumptionhorizon"
+    }
+
+    /// What marking a chat read puts at `horizonPath(chat:)`, as the website does. The horizon is three numbers with
+    /// semicolons between them: when the newest message you read arrived (milliseconds since 1970, which is also its
+    /// id), when you read it (now, in milliseconds), and that message's id. `readUntil` reads the first one back.
+    static func horizon(newest id: String, arrived: Int64, now: Date = Date()) -> [String: Any] {
+        let read = Int64((now.timeIntervalSince1970 * 1000).rounded())
+        return ["consumptionhorizon": "\(arrived);\(read);\(id)"]
     }
 
     /// Who wrote each message ("8:orgid:…"), by its id in Nook.
