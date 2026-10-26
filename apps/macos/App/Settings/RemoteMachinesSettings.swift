@@ -43,9 +43,7 @@ struct RemoteMachinesSection: View {
             }
             Button { adding = true } label: { Label(tr("remote.add"), systemImage: "plus") }
         } header: {
-            Text(tr("remote.title"))
-        } footer: {
-            Text(tr("remote.footer"))
+            SettingsSectionTitle(tr("remote.title"), info: tr("remote.footer"))
         }
         .sheet(isPresented: $adding) {
             AddMachineSheet { machine in

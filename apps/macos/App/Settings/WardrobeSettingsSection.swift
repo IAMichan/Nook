@@ -17,7 +17,7 @@ struct WardrobeSettingsSection: View {
             Section {
                 mirror
             } header: {
-                Text(tr("wardrobe.title"))
+                SettingsSectionTitle(tr("wardrobe.title"), info: tr("wardrobe.footer"))
             }
             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             .listRowBackground(Color.clear)
@@ -39,8 +39,6 @@ struct WardrobeSettingsSection: View {
                 .padding(.vertical, NookTheme.Spacing.xs)
                 .onChange(of: slot) { _, _ in trying = nil }
                 SettingToggle(tr("wardrobe.automatic"), detail: tr("wardrobe.automaticDetail"), isOn: $settings.nookWardrobe.automatic)
-            } footer: {
-                Text(tr("wardrobe.footer"))
             }
         }
     }

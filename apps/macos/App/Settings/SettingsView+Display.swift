@@ -23,8 +23,6 @@ extension SettingsView {
                 }
             } header: {
                 Text(tr("settings.overview.languageSection"))
-            } footer: {
-                Text(tr("settings.general.languageFooter"))
             }
             Section(tr("settings.notch.title")) {
                 Picker(tr("settings.notch.placement"), selection: $settings.placement) {
@@ -73,9 +71,10 @@ extension SettingsView {
                     Text(tr(mode.titleKey)).tag(mode)
                 }
             } label: {
-                SettingLabel(tr("settings.energy.mode"), detail: tr("settings.energy.modeDetail"))
+                Text(tr("settings.energy.mode"))
             }
             .pickerStyle(.segmented)
+            .help(tr("settings.energy.modeDetail"))
             SettingNote(tr(settings.energyMode.detailKey))
             LabeledContent(tr("settings.energy.now")) {
                 HStack(spacing: NookTheme.Spacing.sm) {
@@ -86,8 +85,6 @@ extension SettingsView {
             }
         } header: {
             Text(tr("settings.energy.title"))
-        } footer: {
-            Text(tr("settings.energy.footer"))
         }
     }
 

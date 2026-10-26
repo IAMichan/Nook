@@ -17,20 +17,11 @@ extension SettingsView {
                 }
             } header: {
                 Text(tr("settings.privacy.permissions"))
-            } footer: {
-                Text(tr("settings.privacy.permissionsFooter"))
             }
             .onAppear { permissions.watch() }
             .onDisappear { permissions.unwatch() }
             privateSourcesSection
             neverReadAppsSection
-            // What Nook promises, on its own: four facts to read, apart from the switches.
-            Section(tr("settings.privacy.whatLeavesMac")) {
-                promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
-                promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
-                promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
-                promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
-            }
             Section {
                 SettingToggle(tr("settings.privacy.onlineLyrics"), detail: tr("settings.privacy.onlineLyricsDetail"),
                               isOn: $settings.onlineLyrics)
@@ -40,6 +31,13 @@ extension SettingsView {
                         ToastCenter.shared.success(tr("settings.privacy.screenTextForgotten"))
                     }
                 }
+            }
+            // What Nook promises, on its own: four facts to read, after the switches.
+            Section(tr("settings.privacy.whatLeavesMac")) {
+                promise("eye.slash", tr("settings.privacy.noScreenshots"), tr("settings.privacy.noScreenshotsDetail"))
+                promise("key", tr("settings.privacy.passwordsHidden"), tr("settings.privacy.passwordsHiddenDetail"))
+                promise("hand.raised", tr("settings.privacy.nothingWithoutClick"), tr("settings.privacy.nothingWithoutClickDetail"))
+                promise("lock", tr("settings.privacy.keysInKeychain"), tr("settings.privacy.keysInKeychainDetail"))
             }
             // The log of what Nook did last: the longest part, so it comes last.
             AuditLogSection()
@@ -54,17 +52,16 @@ extension SettingsView {
                     Text(tr(level.titleKey)).tag(level)
                 }
             } label: {
-                SettingLabel(tr("settings.privacy.level"), detail: tr("settings.privacy.levelDetail"))
+                Text(tr("settings.privacy.level"))
             }
             .pickerStyle(.segmented)
+            .help(tr("settings.privacy.levelDetail"))
             SettingNote(tr(settings.privacyLevel.detailKey))
             if settings.isLocalBrain {
                 SettingNote(tr("settings.privacy.level.localBrain"), tone: .success)
             }
         } header: {
             Text(tr("settings.privacy.levelTitle"))
-        } footer: {
-            Text(tr("settings.privacy.levelFooter"))
         }
     }
 
@@ -83,9 +80,7 @@ extension SettingsView {
             }
             Button(tr("settings.privacy.neverRead.add")) { chooseNeverReadApp() }
         } header: {
-            Text(tr("settings.privacy.neverRead.title"))
-        } footer: {
-            Text(tr("settings.privacy.neverRead.footer"))
+            SettingsSectionTitle(tr("settings.privacy.neverRead.title"), info: tr("settings.privacy.neverRead.footer"))
         }
     }
 
@@ -109,18 +104,25 @@ extension SettingsView {
         return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
     }
 
+    /// One promise on one line; the longer explanation shows on hover.
     func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(spacing: NookTheme.Spacing.lg) {
             Image(systemName: symbol)
                 .font(NookTheme.font(14))
                 .foregroundStyle(NookTheme.textSecondary)
                 .frame(width: 22)
-            SettingLabel(title, detail: detail)
+            Text(title)
+            Spacer(minLength: 0)
         }
+        .contentShape(Rectangle())
+        .help(detail)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(detail)
     }
 
     func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping @MainActor () async -> Void) -> some View {
-        StatusRow(title: title, detail: detail, state: granted ? .done : .todo) {
+        // Once granted, the row is just its name and a check; why Nook asks only shows while it still has to.
+        StatusRow(title: title, detail: granted ? "" : detail, state: granted ? .done : .todo) {
             // Granted needs no word: the check in front of the row says it.
             if !granted {
                 Button(tr("button.allow")) {

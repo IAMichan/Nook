@@ -36,20 +36,10 @@ extension SettingsView {
 
     var startSection: some View {
         Group {
-            // How far setup is, said once: the count and the guided setup on top, then only the steps still open.
+            // Only the steps still open, each with the one button that does it; once all are done the block is gone.
             let openSteps = checklist.filter { !$0.done }
-            Section {
-                StatusRow(title: tr("settings.overview.readyToUse"),
-                          detail: tr("settings.overview.countOf", checklist.filter(\.done).count, checklist.count),
-                          state: openSteps.isEmpty ? .done : .todo) {
-                    if !openSteps.isEmpty {
-                        Button(tr("settings.setup.open")) { app.startOnboarding() }
-                            .controlSize(.small)
-                    }
-                }
-            }
             if !openSteps.isEmpty {
-                Section(tr("settings.start.todo")) {
+                Section {
                     ForEach(openSteps) { step in
                         StatusRow(title: step.title, detail: step.detail, state: .todo) {
                             Button(step.button) {
@@ -62,6 +52,13 @@ extension SettingsView {
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
                         }
+                    }
+                } header: {
+                    HStack {
+                        Text(tr("settings.start.todo"))
+                        Spacer()
+                        Button(tr("settings.setup.open")) { app.startOnboarding() }
+                            .buttonStyle(.link)
                     }
                 }
                 .onAppear { permissions.watch() }

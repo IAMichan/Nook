@@ -26,9 +26,7 @@ struct FlowSettingsSection: View {
                     }
                 }
             } header: {
-                Text(tr("flow.settings.title"))
-            } footer: {
-                Text(tr("flow.settings.footer"))
+                SettingsSectionTitle(tr("flow.settings.title"), info: tr("flow.settings.footer"))
             }
             .onAppear { PermissionMonitor.shared.watch() }
             .onDisappear { PermissionMonitor.shared.unwatch() }

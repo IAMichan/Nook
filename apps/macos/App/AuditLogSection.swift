@@ -43,9 +43,7 @@ struct AuditLogSection: View {
                 .disabled(entries.isEmpty)
             }
         } header: {
-            Text(tr("privacy.log.title"))
-        } footer: {
-            Text(tr("privacy.log.footer"))
+            SettingsSectionTitle(tr("privacy.log.title"), info: tr("privacy.log.footer"))
         }
         .onAppear(perform: load)
     }

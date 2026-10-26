@@ -5,7 +5,6 @@ import Foundation
 let quietTranslations: [AppLanguage: [String: String]] = [
     .nl: [
         "quiet.title": "Meetings en scherm delen",
-        "quiet.footer": "Delen merkt Nook aan Zoom, Teams, Webex, Slack, je browser en macOS-opname (vraagt Schermopname). Een vergadering is een app die je microfoon gebruikt, een gesprek dat Nook opneemt, of je agenda.",
         "quiet.sharing": "Als je je scherm deelt",
         "quiet.sharingDetail": "Bijvoorbeeld een presentatie in Zoom, Teams of Google Meet, of een schermopname.",
         "quiet.meeting": "Tijdens een meeting",
@@ -47,7 +46,6 @@ let quietTranslations: [AppLanguage: [String: String]] = [
     ],
     .en: [
         "quiet.title": "Meetings and screen sharing",
-        "quiet.footer": "Sharing is noticed from Zoom, Teams, Webex, Slack, your browser and macOS recording (needs Screen Recording). A meeting is an app using your microphone, a call Nook records, or your calendar.",
         "quiet.sharing": "When you share your screen",
         "quiet.sharingDetail": "For example a presentation in Zoom, Teams or Google Meet, or a screen recording.",
         "quiet.meeting": "During a meeting",
@@ -89,7 +87,6 @@ let quietTranslations: [AppLanguage: [String: String]] = [
     ],
     .de: [
         "quiet.title": "Meetings und Bildschirmfreigabe",
-        "quiet.footer": "Teilen erkennt Nook an Zoom, Teams, Webex, Slack, deinem Browser und der macOS-Aufnahme (braucht Bildschirmaufnahme). Ein Meeting ist eine App mit deinem Mikrofon, ein Anruf, den Nook aufnimmt, oder dein Kalender.",
         "quiet.sharing": "Wenn du deinen Bildschirm teilst",
         "quiet.sharingDetail": "Zum Beispiel eine Präsentation in Zoom, Teams oder Google Meet oder eine Bildschirmaufnahme.",
         "quiet.meeting": "Während eines Meetings",
@@ -131,7 +128,6 @@ let quietTranslations: [AppLanguage: [String: String]] = [
     ],
     .fr: [
         "quiet.title": "Réunions et partage d'écran",
-        "quiet.footer": "Nook détecte le partage depuis Zoom, Teams, Webex, Slack, votre navigateur et l’enregistrement macOS (demande Enregistrement de l’écran). Une réunion, c’est une app qui utilise votre micro, un appel que Nook enregistre ou votre calendrier.",
         "quiet.sharing": "Quand vous partagez votre écran",
         "quiet.sharingDetail": "Par exemple une présentation dans Zoom, Teams ou Google Meet, ou un enregistrement d'écran.",
         "quiet.meeting": "Pendant une réunion",
@@ -173,7 +169,6 @@ let quietTranslations: [AppLanguage: [String: String]] = [
     ],
     .es: [
         "quiet.title": "Reuniones y compartir pantalla",
-        "quiet.footer": "Nook detecta que compartes desde Zoom, Teams, Webex, Slack, tu navegador y la grabación de macOS (requiere Grabación de pantalla). Una reunión es una app que usa tu micrófono, una llamada que Nook graba o tu calendario.",
         "quiet.sharing": "Cuando compartes tu pantalla",
         "quiet.sharingDetail": "Por ejemplo una presentación en Zoom, Teams o Google Meet, o una grabación de pantalla.",
         "quiet.meeting": "Durante una reunión",

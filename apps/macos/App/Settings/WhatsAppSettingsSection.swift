@@ -68,7 +68,7 @@ struct WhatsAppLinkSection: View {
                         // Nook installs GOWA once; a newer one (polls need 9.3) comes from here.
                         if !installer.busy {
                             HStack(spacing: NookTheme.Spacing.md) {
-                                SettingLabel(tr("whatsapp.update.title"), detail: tr("whatsapp.update.detail"))
+                                SettingLabel(tr("whatsapp.update.title"), hint: tr("whatsapp.update.detail"))
                                 Spacer()
                                 Button(tr("whatsapp.update.button")) { installer.install() }
                             }
@@ -81,9 +81,7 @@ struct WhatsAppLinkSection: View {
                 }
             }
         } header: {
-            Text(tr("whatsapp.settings.title"))
-        } footer: {
-            Text(tr("whatsapp.settings.footer"))
+            SettingsSectionTitle(tr("whatsapp.settings.title"), info: tr("whatsapp.settings.footer"))
         }
 
         // Once linked, what reaches you gets a section of its own: the main switch, the rule per kind of chat, then
@@ -206,7 +204,7 @@ struct WhatsAppChatModeList: View {
                 }
             }
         } label: {
-            SettingLabel(tr("whatsapp.settings.perChat"), detail: tr("whatsapp.settings.perChatDetail"))
+            SettingLabel(tr("whatsapp.settings.perChat"), hint: tr("whatsapp.settings.perChatDetail"))
         }
     }
 

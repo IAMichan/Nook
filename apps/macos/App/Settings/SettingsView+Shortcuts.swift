@@ -27,7 +27,9 @@ extension SettingsView {
                 Text(tr("flow.settings.title"))
             }
             Section {
+                // What a double tap can do takes four paragraphs; they show on hover, so the page stays a list of keys.
                 Toggle(tr("doubletap.settings.enable"), isOn: $doubleTap.enabled)
+                    .help(doubleTapHelp)
                 Picker(tr("doubletap.settings.key"), selection: $doubleTap.key) {
                     ForEach(FlowKey.allCases) { key in
                         Text(key == .fn ? "fn" : tr("flow.settings.keyRight", key.symbol)).tag(key)
@@ -36,23 +38,22 @@ extension SettingsView {
                 .disabled(!doubleTap.enabled)
                 Toggle(tr("takeover.settings.onTap"), isOn: $doubleTap.taskOnTap)
                     .disabled(!doubleTap.enabled)
+                    .help(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
             } header: {
                 Text(tr("doubletap.settings.title"))
             } footer: {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-                    Text(tr("doubletap.settings.askDetail", doubleTap.key.symbol))
-                    Text(tr("doubletap.settings.writeDetail"))
-                    Text(tr("doubletap.settings.editDetail"))
-                    Text(tr("doubletap.settings.detail"))
-                    if doubleTap.taskOnTap {
-                        Text(tr("takeover.settings.onTapDetail", doubleTap.key.symbol))
-                    }
-                    if doubleTap.enabled && doubleTap.conflictsWithFlow {
-                        SettingNote(tr("doubletap.settings.conflict"), tone: .warning)
-                    }
+                // Only a conflict is worth reading here.
+                if doubleTap.enabled && doubleTap.conflictsWithFlow {
+                    SettingNote(tr("doubletap.settings.conflict"), tone: .warning)
                 }
             }
             AutocompleteKeysSection()
         }
+    }
+
+    /// Everything a double tap can do, as one tooltip.
+    private var doubleTapHelp: String {
+        [tr("doubletap.settings.askDetail", doubleTap.key.symbol), tr("doubletap.settings.writeDetail"),
+         tr("doubletap.settings.editDetail"), tr("doubletap.settings.detail")].joined(separator: "\n\n")
     }
 }

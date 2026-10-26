@@ -16,9 +16,12 @@ extension SettingsView {
                 Toggle(tr("settings.voice.wakeWord"), isOn: $settings.wakeWord)
                     .disabled(!WakeWordService.supported)
             } header: {
-                Text(tr("settings.voice.speaking"))
+                SettingsSectionTitle(tr("settings.voice.speaking"), info: tr("settings.voice.wakeWordFooter"))
             } footer: {
-                Text(WakeWordService.supported ? tr("settings.voice.wakeWordFooter") : tr("settings.voice.wakeWordUnsupported"))
+                // Why the wake word is greyed out is worth seeing; how it works when it is on sits behind the ⓘ.
+                if !WakeWordService.supported {
+                    SettingNote(tr("settings.voice.wakeWordUnsupported"), tone: .warning)
+                }
             }
         }
     }
@@ -35,9 +38,7 @@ extension SettingsView {
                 }
                 .disabled(!settings.sounds)
             } header: {
-                Text(tr("settings.voice.sounds"))
-            } footer: {
-                Text(tr("settings.voice.customSoundsHint"))
+                SettingsSectionTitle(tr("settings.voice.sounds"), info: tr("settings.voice.customSoundsHint"))
             }
             quietSection
             Section {
@@ -56,12 +57,12 @@ extension SettingsView {
             Picker(selection: $settings.quietWhileSharing) {
                 ForEach(QuietBehavior.allCases) { Text(tr($0.titleKey)).tag($0) }
             } label: {
-                SettingLabel(tr("quiet.sharing"), detail: tr("quiet.sharingDetail"))
+                SettingLabel(tr("quiet.sharing"), hint: tr("quiet.sharingDetail"))
             }
             Picker(selection: $settings.quietInMeetings) {
                 ForEach(QuietBehavior.meetingChoices) { Text(tr($0.titleKey)).tag($0) }
             } label: {
-                SettingLabel(tr("quiet.meeting"), detail: tr("quiet.meetingDetail"))
+                SettingLabel(tr("quiet.meeting"), hint: tr("quiet.meetingDetail"))
             }
             SettingToggle(tr("quiet.useCalendar"), detail: tr("quiet.useCalendarDetail"), isOn: $settings.quietUseCalendar)
             SettingToggle(tr("quiet.hideFromCaptures"), detail: tr("quiet.hideFromCapturesDetail"), isOn: $settings.hideFromCaptures)
@@ -75,8 +76,6 @@ extension SettingsView {
             .onDisappear { app.quietViewers = max(0, app.quietViewers - 1) }
         } header: {
             Text(tr("quiet.title"))
-        } footer: {
-            Text(tr("quiet.footer"))
         }
     }
 }

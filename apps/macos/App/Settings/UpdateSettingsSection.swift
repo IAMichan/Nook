@@ -42,9 +42,8 @@ struct UpdateSettingsSection: View {
                 }
             }
         } header: {
-            Text(tr("update.settings.title"))
-        } footer: {
-            Text(tr(updater.isReleaseBuild ? "update.release.footer" : "update.settings.footer"))
+            SettingsSectionTitle(tr("update.settings.title"),
+                                 info: tr(updater.isReleaseBuild ? "update.release.footer" : "update.settings.footer"))
         }
     }
 

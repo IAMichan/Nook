@@ -38,9 +38,7 @@ struct BeeperImportSection: View {
                     .disabled(importer.isBusy)
             }
         } header: {
-            Text(tr("beeper.import.header"))
-        } footer: {
-            Text(tr("beeper.import.footer"))
+            SettingsSectionTitle(tr("beeper.import.header"), info: tr("beeper.import.footer"))
         }
         .sheet(item: $open) { item in
             ChatAppSheet(app: item.id, setCollecting: setCollecting)

@@ -58,8 +58,6 @@ extension SettingsView {
             Section {
                 NookSearchField(prompt: tr("settings.connections.searchPrompt"), text: $connectionSearch, style: .inline)
                 ServiceCategoryChips(selection: $connectionCategory)
-            } footer: {
-                Text(tr("connect.intro"))
             }
 
             if !expired.isEmpty {
@@ -103,8 +101,6 @@ extension SettingsView {
                     }
                 } header: {
                     Text(tr("settings.connections.onYourMac"))
-                } footer: {
-                    Text(tr("settings.connections.footer"))
                 }
             }
 
@@ -144,8 +140,6 @@ extension SettingsView {
                     .listRowBackground(Color.clear)
                 } header: {
                     Text(tr("settings.connections.add"))
-                } footer: {
-                    Text(tr("settings.connections.addFooter"))
                 }
                 .sheet(item: $mcpAdd) { request in
                     AddMCPServerWizardSheet(preset: request.preset) { mcpAdd = nil }
@@ -178,9 +172,7 @@ extension SettingsView {
                         }
                     }
                 } header: {
-                    Text(tr("connect.notListed"))
-                } footer: {
-                    Text(tr("settings2.connections.missingDetail"))
+                    SettingsSectionTitle(tr("connect.notListed"), info: tr("settings2.connections.missingDetail"))
                 }
             }
         }

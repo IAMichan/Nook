@@ -16,7 +16,7 @@ struct NoticeRulesSettings: View {
                     Picker(selection: style(source)) {
                         ForEach(NoticeStyle.allCases) { Text(tr($0.titleKey)).tag($0) }
                     } label: {
-                        SettingLabel(tr(source.titleKey), detail: tr(source.detailKey))
+                        SettingLabel(tr(source.titleKey), hint: tr(source.detailKey))
                     }
                 }
                 if notifier.blocked, settings.noticeRules.usesSystem {
@@ -27,20 +27,18 @@ struct NoticeRulesSettings: View {
                 SettingToggle(tr("agentNotice.watching"), detail: tr("agentNotice.watchingDetail"),
                               isOn: $settings.quietWhileWatching)
             } header: {
-                Text(tr("notices.settings.how"))
-            } footer: {
-                Text(tr("notices.settings.howFooter"))
+                SettingsSectionTitle(tr("notices.settings.how"), info: tr("notices.settings.howFooter"))
             }
             .onAppear { if settings.noticeRules.usesSystem { notifier.requestAccess() } }
 
-            appSection(.agents, header: tr("notices.settings.agents"), footer: tr("notices.settings.agentsFooter"),
+            appSection(.agents, header: tr("notices.settings.agents"), info: tr("notices.settings.agentsFooter"),
                        apps: AgentKind.allCases.map { AppRow(id: $0.rawValue, name: $0.name, icon: $0.rawValue, symbol: "terminal") })
-            appSection(.chats, header: tr("notices.settings.chats"), footer: tr("notices.settings.chatsFooter"),
+            appSection(.chats, header: tr("notices.settings.chats"), info: tr("notices.settings.chatsFooter"),
                        apps: capture.sources.apps.map {
                            AppRow(id: $0.id, name: $0.name, icon: $0.id, domain: $0.site, symbol: "bubble.left.fill")
                        })
             if !thinkAlong.mutedApps.isEmpty {
-                appSection(.suggestions, header: tr("notices.settings.suggestions"), footer: tr("notices.settings.suggestionsFooter"),
+                appSection(.suggestions, header: tr("notices.settings.suggestions"), info: tr("notices.settings.suggestionsFooter"),
                            apps: thinkAlong.mutedApps.sorted { $0.value < $1.value }.map {
                                AppRow(id: $0.key, name: $0.value, icon: nil, symbol: "app.dashed")
                            })
@@ -59,7 +57,7 @@ struct NoticeRulesSettings: View {
     }
 
     /// A source's apps, each with its own switch. Greyed out while the source shows nothing at all.
-    private func appSection(_ source: NoticeSource, header: String, footer: String, apps: [AppRow]) -> some View {
+    private func appSection(_ source: NoticeSource, header: String, info: String, apps: [AppRow]) -> some View {
         Section {
             ForEach(apps) { row in
                 Toggle(isOn: isOn(source, app: row.id)) {
@@ -71,9 +69,7 @@ struct NoticeRulesSettings: View {
                 }
             }
         } header: {
-            Text(header)
-        } footer: {
-            Text(footer)
+            SettingsSectionTitle(header, info: info)
         }
         .disabled(settings.noticeRules.style(for: source) == .off)
     }

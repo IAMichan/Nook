@@ -14,7 +14,7 @@ struct SettingsSearchHit: Identifiable {
 enum SettingsSearch {
     /// Text key of a setting → the section that shows it.
     static let index: [(key: String, section: SettingsSection)] = [
-        ("settings.overview.readyToUse", .start),
+        ("settings.start.glance", .start),
         ("settings.overview.appLanguage", .general),
         ("settings.brain.answerLanguage", .general),
         ("flow.settings.translate", .general),
