@@ -228,7 +228,7 @@ are not kept there.
 
 | Component | File | Use |
 | --- | --- | --- |
-| `SettingToggle(_:detail:isOn:)` | `SettingsBlocks.swift` | A switch with a caption under its title |
+| `SettingToggle(_:detail:isOn:)` | `SettingsBlocks.swift` | A switch with its title only; the detail shows on hover and to VoiceOver |
 | `SettingLabel(_:detail:)` | `SettingsBlocks.swift` | The same title and caption, for rows with a button or picker |
 | `StatusRow`, `SettingsHeader`, `Keycap` | `SettingsBlocks.swift` | Status lines, section headers, keyboard keys |
 | `SettingNote(_:tone:)` | `SettingsBlocks.swift` | The one hint or status line under a setting: `info`, `success`, `warning`, `error`; a warning or error carries a symbol, not only a color |

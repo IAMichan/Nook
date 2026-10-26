@@ -75,8 +75,6 @@ extension SettingsView {
             .onDisappear { app.quietViewers = max(0, app.quietViewers - 1) }
         } header: {
             Text(tr("quiet.title"))
-        } footer: {
-            Text(tr("quiet.footer"))
         }
     }
 }

@@ -77,8 +77,6 @@ struct MemorySettingsSection: View {
                 }
             } header: {
                 Text(tr("memory.settings.list", app.memory.items.count))
-            } footer: {
-                Text(tr("memory.settings.listFooter"))
             }
 
             Section {

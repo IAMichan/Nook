@@ -897,7 +897,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "accounts.reauthHelp": "Opent een Terminal-venster om met dit account in te loggen. Andere accounts en lopende sessies merken er niets van.",
         "accounts.logout": "Uitloggen",
         "accounts.logoutHelp": "Logt alleen dit account uit, in zijn eigen map.",
-        "accounts.isolationNote": "Elk account heeft een eigen map; een ander standaardaccount laat lopende sessies op hun account.",
         "accounts.geminiSingle": "Gemini CLI kent geen aparte accountmappen: je kunt maar één Google-account tegelijk gebruiken. Wisselen doe je in Gemini CLI zelf.",
         "accounts.antigravitySingle": "Antigravity kent geen aparte accountmappen: je gebruikt het Google-account waarmee je in Antigravity zelf bent ingelogd. Wisselen doe je daar.",
         "accounts.codexLimitsNote": "Limieten toont Nook alleen voor het eerste Codex-account; Codex meldt ze niet per map.",
@@ -1795,7 +1794,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "accounts.reauthHelp": "Opens a Terminal window to log in with this account. Other accounts and running sessions aren't affected.",
         "accounts.logout": "Log out",
         "accounts.logoutHelp": "Logs out only this account, in its own folder.",
-        "accounts.isolationNote": "Each account has its own folder; switching the default leaves running sessions on their account.",
         "accounts.geminiSingle": "Gemini CLI has no separate account folders: you can only use one Google account at a time. Switch accounts in Gemini CLI itself.",
         "accounts.antigravitySingle": "Antigravity has no separate account folders: it uses the Google account you are signed in with in Antigravity itself. Switch accounts there.",
         "accounts.codexLimitsNote": "Nook shows limits only for the first Codex account; Codex doesn't report them per folder.",
@@ -2405,7 +2403,6 @@ let workspaceTranslations: [AppLanguage: [String: String]] = [
         "accounts.removeKey": "Schlüssel löschen",
         "accounts.reauth": "Erneut anmelden",
         "accounts.logout": "Abmelden",
-        "accounts.isolationNote": "Jedes Konto hat einen eigenen Ordner; ein anderes Standardkonto lässt laufende Sitzungen auf ihrem Konto.",
         "accounts.geminiSingle": "Gemini CLI kennt keine getrennten Kontoordner: Es kann nur ein Google-Konto gleichzeitig genutzt werden.",
         "accounts.antigravitySingle": "Antigravity kennt keine getrennten Kontoordner: Es wird das Google-Konto genutzt, mit dem du in Antigravity angemeldet bist.",
     ]

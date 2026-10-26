@@ -127,10 +127,13 @@ struct StatusRow<Trailing: View>: View {
             }
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(title)
-                Text(detail)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(state == .warning || state == .error ? state.color : NookTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // An empty detail leaves the row at one line: what is done needs no explanation.
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(state == .warning || state == .error ? state.color : NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             trailing()
@@ -139,7 +142,8 @@ struct StatusRow<Trailing: View>: View {
     }
 }
 
-/// Toggle switch with concise description below.
+/// Toggle switch that shows only its title. The explanation is there when you want it, on hover and for VoiceOver,
+/// so a page full of switches reads as a calm list instead of a wall of captions.
 struct SettingToggle: View {
     let title: String
     let detail: String
@@ -152,7 +156,9 @@ struct SettingToggle: View {
     }
 
     var body: some View {
-        Toggle(isOn: $isOn) { SettingLabel(title, detail: detail) }
+        Toggle(title, isOn: $isOn)
+            .help(detail)
+            .accessibilityHint(detail)
     }
 }
 

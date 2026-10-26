@@ -61,9 +61,8 @@ extension SettingsView {
             // What Nook thinks with right now, and the one way to check it works, said once at the top.
             Section {
                 StatusRow(title: settings.brainReady ? tr("settings.checklist.brain.ready", settings.activeModelName) : tr("settings.checklist.brain"),
-                          detail: settings.brainReady
-                              ? (settings.isLocalBrain ? tr("settings.brain.localChoice") : tr("settings.brain.externalChoice"))
-                              : tr("settings.checklist.brain.notReady"),
+                          // Local or external is the choice right below; the row only explains itself while not ready.
+                          detail: settings.brainReady ? "" : tr("settings.checklist.brain.notReady"),
                           state: settings.brainReady ? .done : .todo) {
                     if testing { ProgressView().controlSize(.small) }
                     Button(tr("button.testConnection")) { Task { await testConnection() } }
@@ -110,12 +109,6 @@ extension SettingsView {
             }
 
             if settings.brainProfile.isSmall { LocalQualitySection(settings: settings) }
-
-            // The answer language and the sources kept on this Mac have one home each: General and Privacy.
-            Section {
-                settingsLink(.general, title: tr("settings.brain.answerLanguage"), detail: tr("settings.brain.languageMoved"))
-                settingsLink(.privacy, title: tr("settings.private.title"), detail: tr("settings.brain.privateMoved"))
-            }
         }
         .task { recommendations = await app.brainRecommendations() }
     }

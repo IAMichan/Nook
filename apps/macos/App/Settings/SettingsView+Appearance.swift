@@ -10,8 +10,6 @@ extension SettingsView {
         Group {
             Section {
                 lookPreview
-            } footer: {
-                Text(tr("settings.display.lookHint"))
             }
             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             .listRowBackground(Color.clear)
@@ -56,8 +54,6 @@ extension SettingsView {
                 }
             } header: {
                 Text(tr("settings.display.color"))
-            } footer: {
-                Text(tr("settings.display.accentHint"))
             }
 
             Section {

@@ -103,8 +103,6 @@ extension SettingsView {
                     }
                 } header: {
                     Text(tr("settings.connections.onYourMac"))
-                } footer: {
-                    Text(tr("settings.connections.footer"))
                 }
             }
 
@@ -144,8 +142,6 @@ extension SettingsView {
                     .listRowBackground(Color.clear)
                 } header: {
                     Text(tr("settings.connections.add"))
-                } footer: {
-                    Text(tr("settings.connections.addFooter"))
                 }
                 .sheet(item: $mcpAdd) { request in
                     AddMCPServerWizardSheet(preset: request.preset) { mcpAdd = nil }

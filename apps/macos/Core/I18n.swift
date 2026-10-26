@@ -403,7 +403,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.section.privacy.sub": "Machtigingen en wat er je Mac verlaat",
 
         // MARK: Settings - Overview
-        "settings.overview.readyToUse": "Klaar om te gebruiken",
         "settings.overview.countOf": "%d van %d",
         "settings.overview.askTyping": "Vraag iets (typen)",
         "settings.overview.talkNook": "Praat met Nook",
@@ -492,7 +491,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.onYourMac": "Op je Mac",
         "settings.connections.services": "Diensten",
         "settings.connections.crypto": "Crypto-portfolio",
-        "settings.connections.footer": "Mail en je browser leest Nook alleen als die apps open zijn. macOS vraagt de eerste keer om toestemming.",
         "settings.connections.calendarDetail": "Je afspraken",
         "settings.connections.remindersDetail": "Je open herinneringen",
         "settings.connections.mailDetail": "Ongelezen mail en zoeken in je inbox (Mail)",
@@ -505,7 +503,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.accounts": "Accounts",
         "settings.agents.accountsFooter": "Eén klik koppelt alles voor dat account. Staat de agent nog niet op je Mac of ben je niet ingelogd, dan opent Nook Terminal om te installeren en in te loggen. Van elk bestand dat Nook aanpast, komt eerst een backup.",
         "settings.agents.linkAgents": "Koppel je agents",
-        "settings.agents.linkAgentsFooter": "Nook laat eerst precies zien wat er verandert en maakt een backup voordat er iets wordt geschreven. Draait Nook niet, dan doen de koppelingen niets.",
         "settings.agents.subscriptions": "Abonnementen",
         "settings.agents.weekRecap": "Weekoverzicht",
         "settings.agents.weekRecapCleared": "Weekoverzicht gewist.",
@@ -744,7 +741,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.tooHeavyForMemory": "Te zwaar voor %lld GB",
         "settings.brain.localModelDownloadHint": "Eén keer downloaden (een paar GB), daarna werkt het zonder internet. Deze Mac heeft %lld GB geheugen. Het model gaat na anderhalve minuut zonder vraag weer uit het geheugen.",
         "settings.voice.customSoundsHint": "Zet attention, done of error (.wav, .mp3, .aiff, .m4a) in de map om een eigen geluid te gebruiken.",
-        "settings.privacy.permissionsFooter": "macOS vraagt om toegang tot Mail, browser en muziek zodra Nook ze voor het eerst gebruikt.",
         "settings.agents.changeNotice": "Dit verandert in %@. Je eigen instellingen blijven staan; er komt eerst een backup naast het bestand.",
         "settings.agents.noChange": "Er verandert niets.",
 
@@ -1186,7 +1182,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.section.privacy.sub": "Permissions and what leaves your Mac",
 
         // MARK: Settings - Overview
-        "settings.overview.readyToUse": "Ready to use",
         "settings.overview.countOf": "%d of %d",
         "settings.overview.askTyping": "Ask something (typing)",
         "settings.overview.talkNook": "Talk to Nook",
@@ -1275,7 +1270,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.onYourMac": "On your Mac",
         "settings.connections.services": "Services",
         "settings.connections.crypto": "Crypto portfolio",
-        "settings.connections.footer": "Mail and browser are only read when those apps are open. macOS asks for permission the first time.",
         "settings.connections.calendarDetail": "Your appointments",
         "settings.connections.remindersDetail": "Your open reminders",
         "settings.connections.mailDetail": "Unread email and searching your inbox (Mail)",
@@ -1288,7 +1282,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.accounts": "Accounts",
         "settings.agents.accountsFooter": "One click connects everything for that account. If the agent isn't installed yet or you're not logged in, Nook opens Terminal. Every modified file gets backed up first.",
         "settings.agents.linkAgents": "Connect your agents",
-        "settings.agents.linkAgentsFooter": "Nook shows exactly what will change and creates a backup beforehand. If Nook isn't running, connections stay dormant.",
         "settings.agents.subscriptions": "Subscriptions",
         "settings.agents.weekRecap": "Weekly recap",
         "settings.agents.weekRecapCleared": "Weekly recap cleared.",
@@ -1527,7 +1520,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.tooHeavyForMemory": "Too demanding for %lld GB",
         "settings.brain.localModelDownloadHint": "Download once (a few GB), then works completely offline. This Mac has %lld GB memory. The model unloads after 90 seconds of inactivity.",
         "settings.voice.customSoundsHint": "Place attention, done or error (.wav, .mp3, .aiff, .m4a) files in the folder to use custom sounds.",
-        "settings.privacy.permissionsFooter": "macOS asks for Mail, browser and music access the first time Nook uses them.",
         "settings.agents.changeNotice": "This changes in %@. Your existing settings remain intact; a backup is created alongside the file.",
         "settings.agents.noChange": "No changes.",
 
@@ -1969,7 +1961,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.section.privacy.sub": "Berechtigungen und was deinen Mac verlässt",
 
         // MARK: Settings - Overview
-        "settings.overview.readyToUse": "Einsatzbereit",
         "settings.overview.countOf": "%d von %d",
         "settings.overview.askTyping": "Etwas fragen (tippen)",
         "settings.overview.talkNook": "Mit Nook sprechen",
@@ -2058,7 +2049,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.connections.onYourMac": "Auf deinem Mac",
         "settings.connections.services": "Dienste",
         "settings.connections.crypto": "Krypto-Portfolio",
-        "settings.connections.footer": "Mail und Browser werden nur gelesen, wenn sie geöffnet sind. macOS fragt beim ersten Mal um Erlaubnis.",
         "settings.connections.calendarDetail": "Deine Termine",
         "settings.connections.remindersDetail": "Deine offenen Aufgaben",
         "settings.connections.mailDetail": "Ungelesene E-Mails und Posteingangssuche (Mail)",
@@ -2071,7 +2061,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.agents.accounts": "Konten",
         "settings.agents.accountsFooter": "Ein Klick verbindet alles für dieses Konto. Ist der Agent noch nicht installiert oder bist du nicht angemeldet, öffnet Nook das Terminal. Für jede geänderte Datei wird zuerst ein Backup erstellt.",
         "settings.agents.linkAgents": "Agents verbinden",
-        "settings.agents.linkAgentsFooter": "Nook zeigt vorher genau, was sich ändert, und erstellt ein Backup. Läuft Nook nicht, bleiben die Verbindungen inaktiv.",
         "settings.agents.subscriptions": "Abonnements",
         "settings.agents.weekRecap": "Wochenrückblick",
         "settings.agents.weekRecapCleared": "Wochenrückblick gelöscht.",
@@ -2305,7 +2294,6 @@ private let translations: [AppLanguage: [String: String]] = [
         "settings.brain.tooHeavyForMemory": "Zu anspruchsvoll für %lld GB",
         "settings.brain.localModelDownloadHint": "Einmalig herunterladen (ein paar GB), danach funktioniert es komplett offline. Dieser Mac hat %lld GB Speicher. Das Modell entlädt sich nach 90 Sekunden Inaktivität.",
         "settings.voice.customSoundsHint": "Platziere attention-, done- oder error-Dateien (.wav, .mp3, .aiff, .m4a) im Ordner, um eigene Töne zu nutzen.",
-        "settings.privacy.permissionsFooter": "macOS fragt nach Zugriff auf Mail, Browser und Musik, wenn Nook sie zum ersten Mal nutzt.",
         "settings.agents.changeNotice": "Dies ändert sich in %@. Deine eigenen Einstellungen bleiben erhalten; eine Sicherungskopie wird daneben angelegt.",
         "settings.agents.noChange": "Keine Änderungen.",
 
