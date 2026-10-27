@@ -1,5 +1,6 @@
 <script lang="ts">
   // Algemeen: taal, plek van de balk, kleur, energie, sneltoetsen.
+  import { api } from "../../lib/api";
   import { nook, accentCss } from "../../lib/state.svelte";
   import { services, serviceEvents, type EnergyView } from "../../lib/services";
   import type { EnergyMode } from "../../lib/types";
@@ -26,6 +27,10 @@
       if (on) await enable(); else await disable();
     } catch {}
     launchAtLogin = await isEnabled().catch(() => !on);
+  }
+  let shortcutNote = $state("");
+  async function repairShortcut() {
+    shortcutNote = await api.repairStartMenuShortcut().then(() => "Snelkoppeling in het Startmenu gemaakt.", (e) => String(e));
   }
   let energy = $state<EnergyView | null>(null);
   $effect(() => {
@@ -55,6 +60,12 @@
       </select>
     </label>
     <label class="row"><span>Starten als ik inlog op de computer</span><input type="checkbox" checked={launchAtLogin} onchange={(e) => setLaunchAtLogin(e.currentTarget.checked)} /></label>
+    {#if nook.info.capabilities.os === "windows"}
+      <div class="row">
+        <span>Snelkoppeling in het Startmenu{#if shortcutNote} <small>{shortcutNote}</small>{/if}</span>
+        <button onclick={repairShortcut}>Herstellen</button>
+      </div>
+    {/if}
     <label class="row"><span>Groter paneel</span><input type="checkbox" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
   {/if}
   <div class="row">

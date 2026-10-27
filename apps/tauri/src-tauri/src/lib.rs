@@ -107,6 +107,7 @@ pub fn run() {
             commands::show_main,
             commands::bar_moved,
             commands::take_route,
+            commands::repair_start_menu_shortcut,
             commands::companion::companion_info,
             commands::companion::companion_set_enabled,
             commands::companion::companion_begin_pairing,
