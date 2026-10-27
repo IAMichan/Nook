@@ -51,6 +51,26 @@
     };
   });
 
+  // Apps folded shut with the arrow, so a long WhatsApp list does not push the calendar off screen. Remembered between visits.
+  const FOLDED_KEY = "chats.folded";
+  function loadFolded(): string[] {
+    try {
+      const v = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? "[]");
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  let folded = $state<string[]>(loadFolded());
+  function fold(id: string) {
+    folded = folded.includes(id) ? folded.filter((x) => x !== id) : [...folded, id];
+    try {
+      localStorage.setItem(FOLDED_KEY, JSON.stringify(folded));
+    } catch {
+      // The choice only lasts until the window closes.
+    }
+  }
+
   const domainOf = (id: string) => overview?.services.find((s) => s.id === id)?.domain ?? null;
   // The linked apps with something to show; WhatsApp has its own section.
   const apps = $derived((overview?.connectors ?? []).filter((c) => c.configured && c.on && c.id !== WHATSAPP));
@@ -121,8 +141,17 @@
     <div class="list">
       {#each shown as c (c.id)}
         <section>
-          <h4><ServiceIcon domain={c.domain} title={c.title} size={16} /> {c.title}</h4>
-          {#if c.id === WHATSAPP}
+          <h4>
+            <button class="fold" aria-expanded={!folded.includes(c.id)} onclick={() => fold(c.id)}>
+              <svg class="arrow" class:open={!folded.includes(c.id)} width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <ServiceIcon domain={c.domain} title={c.title} size={16} />
+              <span class="name">{c.title}</span>
+              {#if folded.includes(c.id) && c.count}<span class="count">{c.count}</span>{/if}
+            </button>
+          </h4>
+          {#if folded.includes(c.id)}
+            <!-- Folded: only the header shows. -->
+          {:else if c.id === WHATSAPP}
             {#if wa && wa.link.kind !== "connected"}
               <p class="faint note">{wa.statusLine}</p>
               <button class="small" onclick={settings}>{tr("Naar instellingen", "Open settings")}</button>
@@ -180,7 +209,12 @@
   .chip.on { color: var(--paper); border-color: color-mix(in srgb, var(--iris) 55%, var(--line)); }
   .count { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--iris); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
   .list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
-  h4 { display: flex; align-items: center; gap: 8px; margin: 10px 4px 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); }
+  h4 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); }
+  .fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left; cursor: pointer; }
+  .fold:hover { color: var(--text2); }
+  .fold .name { flex: 1; min-width: 0; }
+  .arrow { flex: none; transition: transform 0.12s ease; }
+  .arrow.open { transform: rotate(90deg); }
   .note { margin: 4px 4px 8px; font-size: 11px; line-height: 1.5; }
   .row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px; margin-bottom: 2px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; }
   .row:hover { background: var(--row-hover); }
