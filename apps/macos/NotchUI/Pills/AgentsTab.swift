@@ -43,6 +43,10 @@ struct AgentsTab: View {
         let past = app.demoMode ? [] : Array(lists.past
             .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
+        // A session with its side panel open needs room for both: the list gives way first, so a narrow window keeps
+        // the conversation and the panel side by side for as long as it can.
+        let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
+            ? PanelLayout.minimumPanel + PanelSplit.handle + NookTheme.Spacing.sm + 10 : 0
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 listHeader(selection)
@@ -58,7 +62,7 @@ struct AgentsTab: View {
             }
             .padding(.trailing, NookTheme.Spacing.xs)
             .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
-                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom,
                             edge: .trailing, divider: true)
 
             Group {
@@ -155,6 +159,14 @@ struct AgentsTab: View {
 
     /// What is shown on the right. Without a choice (or when it is gone): whatever waits for you or works, otherwise the
     /// place to start a new session.
+    /// The selections that open in a `SessionWorkbench`, with a side panel beside the conversation.
+    private func workbench(_ selection: Selection) -> Bool {
+        switch selection {
+        case .live, .past, .run, .new: return true
+        default: return false
+        }
+    }
+
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
         let id = viewModel.selectedAgentID
         if id == "new" { return .new }

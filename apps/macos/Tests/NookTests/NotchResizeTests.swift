@@ -21,6 +21,14 @@ final class NotchResizeTests: XCTestCase {
         XCTAssertEqual(NotchResize.size(base: tall, extra: .zero, maximum: maximum), tall)
     }
 
+    func testATabWiderThanTheScreenFitsIt() {
+        // A small screen: the tab and what you dragged give way, so the notch never runs off the sides.
+        let small = CGSize(width: 984, height: 860)
+        XCTAssertEqual(NotchResize.size(base: CGSize(width: 1180, height: 480), extra: CGSize(width: 200, height: 0), maximum: small),
+                       CGSize(width: 984, height: 480))
+        XCTAssertEqual(NotchResize.clamped(CGSize(width: 200, height: 0), base: CGSize(width: 1180, height: 480), maximum: small), .zero)
+    }
+
     func testASideMovesBothSidesSoTheEdgeFollowsThePointer() {
         let start = CGSize(width: 40, height: 10)
         XCTAssertEqual(NotchResize.dragged(.right, from: start, translation: CGSize(width: 15, height: 30)), CGSize(width: 70, height: 10))

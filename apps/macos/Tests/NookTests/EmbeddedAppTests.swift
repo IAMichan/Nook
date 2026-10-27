@@ -92,7 +92,10 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(EmbeddedSplit.chatWidth(100, total: 1200), EmbeddedSplit.minimumChat, "the chat never gets too narrow")
         XCTAssertEqual(EmbeddedSplit.chatWidth(5000, total: 1200), 1200 - EmbeddedSplit.minimumApp - EmbeddedSplit.handle, "nor does the app")
         XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 0), 400, "width not known yet")
-        XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 500), EmbeddedSplit.minimumChat, "too small for both: the chat keeps its minimum")
+        let minimum = EmbeddedSplit.minimumChat
+        XCTAssertEqual(EmbeddedSplit.chatWidth(400, total: 500),
+                       500 * minimum / (minimum + EmbeddedSplit.minimumApp + EmbeddedSplit.handle), accuracy: 0.01,
+                       "too small for both: the chat and the app shrink together, never past the window")
     }
 
     func testPanelSplitKeepsBothSidesUsable() {
@@ -100,7 +103,12 @@ final class EmbeddedAppTests: XCTestCase {
         XCTAssertEqual(PanelSplit.width(100, minimum: 220, available: 1000, rest: 400), 220, "never narrower than its minimum")
         XCTAssertEqual(PanelSplit.width(900, minimum: 220, available: 1000, rest: 400), 600, "leaves the rest its room")
         XCTAssertEqual(PanelSplit.width(900, minimum: 220, available: 0, rest: 400), 900, "width not known yet")
-        XCTAssertEqual(PanelSplit.width(300, minimum: 220, available: 500, rest: 400), 220, "too small for both: the panel keeps its minimum")
+        XCTAssertEqual(PanelSplit.width(300, minimum: 220, available: 620, rest: 400), 220, "just room for both minimums")
+        XCTAssertEqual(PanelSplit.width(300, minimum: 220, available: 310, rest: 200), 310 * 220 / 420, accuracy: 0.01,
+                       "too small for both: the two shrink in proportion, never past the window")
+        XCTAssertTrue(PanelSplit.fits(minimum: 220, available: 620, rest: 400))
+        XCTAssertFalse(PanelSplit.fits(minimum: 220, available: 619, rest: 400))
+        XCTAssertTrue(PanelSplit.fits(minimum: 220, available: 0, rest: 400), "width not known yet")
         XCTAssertEqual(PanelSplit.dragged(from: 400, offset: -50, handleOnLeading: true), 450, "a right-hand panel widens to the left")
         XCTAssertEqual(PanelSplit.dragged(from: 280, offset: 40, handleOnLeading: false), 320, "a left-hand panel widens to the right")
     }

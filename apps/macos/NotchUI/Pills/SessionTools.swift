@@ -270,8 +270,19 @@ struct SessionWorkbench<Conversation: View>: View {
         let side = shown(.side)
         let bottom = shown(.bottom)
         let outputsShown = side == .outputs || bottom == .outputs
-        let docked = dockSessionPanel && !directory.isEmpty
-            && totalWidth - (side != .conversation ? toolWidth + PanelSplit.handle : 0) >= PanelLayout.sessionPanelRoom
+        let sideOpen = side != .conversation
+        let conversationRoom = PanelLayout.minimumConversation + PanelSplit.handle
+        // Too narrow for the conversation beside the side panel: the panel covers the conversation until you close it,
+        // instead of both squeezing until neither reads.
+        let covering = sideOpen
+            && !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
+        let sideWidth = sideOpen && !covering
+            ? PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
+                + PanelSplit.handle + NookTheme.Spacing.sm
+            : 0
+        // The width the side panel actually takes, not the one it was dragged to, so a window that got narrower
+        // gives up the docked column first.
+        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - sideWidth >= PanelLayout.sessionPanelRoom
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 // Docked, the switch sits above the session panel instead of in the conversation's header.
@@ -296,6 +307,9 @@ struct SessionWorkbench<Conversation: View>: View {
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
+            // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
+            .allowsHitTesting(!covering)
+            .accessibilityHidden(covering)
             if docked {
                 // The switch takes the height of the conversation's header, so the rows start where the conversation does.
                 HStack(spacing: 0) {
@@ -313,16 +327,22 @@ struct SessionWorkbench<Conversation: View>: View {
                 .frame(width: PanelLayout.sessionPanel)
                 .padding(.leading, NookTheme.Spacing.sm)
             }
-            if side != .conversation {
+            if sideOpen && !covering {
                 panel(.side, tool: side)
                     .padding(.leading, NookTheme.Spacing.sm)
                     .resizablePanel(width: $toolWidth, defaultWidth: PanelLayout.tool, minimum: PanelLayout.minimumPanel,
-                                    available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                    edge: .leading, divider: true)
+                                    available: totalWidth, rest: conversationRoom, edge: .leading, divider: true)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay {
+            if covering {
+                panel(.side, tool: side)
+                    .background(NookTheme.notch)
+                    .transition(.opacity)
+            }
+        }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .animation(NookTheme.reveal, value: side == .conversation)
         .animation(NookTheme.reveal, value: bottom == .conversation)

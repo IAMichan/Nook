@@ -74,10 +74,12 @@ struct AgentSessionDetail: View {
     /// "nook / Agents-pagina rustiger maken" with the branch button on the right.
     private func header(folder: String, title: String, directory: String, agentWorking: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
+            // pushing the header past the conversation.
             Text(folder)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
-                .fixedSize()
+                .layoutPriority(1)
             Text("/").foregroundStyle(NookTheme.textTertiary)
             Text(title)
                 .font(NookTheme.TextStyle.strong)
