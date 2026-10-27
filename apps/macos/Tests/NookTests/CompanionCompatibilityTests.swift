@@ -20,6 +20,19 @@ final class CompanionCompatibilityTests: XCTestCase {
         XCTAssertTrue(CompanionCompatibility.phoneSupported(2, oldestPhone: 2))
     }
 
+    func testUnknownFeaturesAreReportedWithoutDuplicates() {
+        XCTAssertEqual(CompanionCompatibility.unknownFeatures([CompanionFeature.start, "future", "future"]), ["future"])
+    }
+
+    func testKnownFeaturesAreNotUnknown() {
+        XCTAssertEqual(CompanionCompatibility.unknownFeatures(CompanionFeature.all), [])
+    }
+
+    func testMissingFeatureInformationIsDistinctFromAnEmptyList() {
+        XCTAssertNil(CompanionCompatibility.unknownFeatures(nil))
+        XCTAssertEqual(CompanionCompatibility.unknownFeatures([]), [])
+    }
+
     func testAMacTooOldWinsOverAPhoneTooOld() {
         // Both are out of range: the Mac is the one that cannot even say what it needs.
         XCTAssertEqual(CompanionCompatibility.check(macVersion: 1, oldestPhone: 9, phoneVersion: 2, oldestMac: 2), .macTooOld)

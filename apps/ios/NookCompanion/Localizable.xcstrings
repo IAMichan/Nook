@@ -7235,6 +7235,34 @@
         }
       }
     },
+    "Update Nook Companion to use everything your Mac offers." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiere Nook Companion, um alle Funktionen deines Macs nutzen zu können."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Nook Companion para aprovechar todo lo que ofrece tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettez à jour Nook Companion pour profiter de tout ce que votre Mac propose."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werk Nook Companion bij om alles te kunnen gebruiken wat je Mac biedt."
+          }
+        }
+      }
+    },
     "Update Nook on your Mac" : {
       "extractionState" : "stale",
       "localizations" : {
