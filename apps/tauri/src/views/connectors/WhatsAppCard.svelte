@@ -7,6 +7,7 @@
   import { whatsapp } from "../../lib/whatsapp.svelte";
   import { bubbleText, context, fileLabel, ticks, time } from "../../lib/whatsapp";
   import { connectorsApi, type WhatsAppMessage } from "../../lib/connectors";
+  import Avatar from "./Avatar.svelte";
   import ServiceIcon from "./ServiceIcon.svelte";
 
   // `onnook`: Nook antwoordt in deze Nook (de balk toont hem).
@@ -71,7 +72,7 @@
   <div class="alert" class:inline>
     <div class="card">
       <div class="context faint"><ServiceIcon domain="whatsapp.com" title="WhatsApp" size={16} /><span>{context(conversation.unread)}</span></div>
-      <div class="title">{conversation.name}</div>
+      <div class="title"><Avatar chat={conversation.id} name={conversation.name} size={22} /><span>{conversation.name}</span></div>
       <div class="chat" bind:this={scroller}>
         {#if conversation.messages.length > 8}<div class="older faint">{tr("Scroll omhoog voor oudere berichten", "Scroll up for older messages")}</div>{/if}
         {#each conversation.messages as m (m.id)}
@@ -143,7 +144,7 @@
   .inline .large { border-radius: 0; }
   .card { position: relative; background: var(--graphite); border: 1px solid var(--line2); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
   .context { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-  .title { font-weight: 600; font-size: 14px; line-height: 1.35; }
+  .title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; line-height: 1.35; }
   .chat { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 2px; }
   .older { font-size: 11px; text-align: center; }
   .row { display: flex; }

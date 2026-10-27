@@ -328,6 +328,8 @@ export const connectorsApi = {
   whatsappIgnore: (chat: string) => invoke<void>("whatsapp_ignore", { chat }),
   whatsappUnmute: () => invoke<void>("whatsapp_unmute"),
   whatsappCard: (chat: string) => invoke<WhatsAppCard | null>("whatsapp_card", { chat }),
+  /** Profile photos of these chats as small data URLs, by chat; a chat without one is left out. */
+  whatsappAvatars: (chats: string[]) => invoke<Record<string, string>>("whatsapp_avatars", { chats }),
   whatsappCardLoad: (chat: string) => invoke<boolean>("whatsapp_card_load", { chat }),
   whatsappOpenFile: (chat: string, message: string) => invoke<void>("whatsapp_open_file", { chat, message }),
   whatsappAskNook: (chat: string) => invoke<string>("whatsapp_ask_nook", { chat }),
