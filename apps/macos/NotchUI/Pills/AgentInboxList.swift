@@ -500,11 +500,20 @@ struct AgentInboxList: View {
                         .font(NookTheme.TextStyle.detail)
                         .foregroundStyle(NookTheme.textSecondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                     Spacer(minLength: 4)
-                    Button(tr("inbox.undo")) { store.undo() }
+                    // On a narrow panel the message gives way first; the button never wraps and shrinks to its icon.
+                    Button { store.undo() } label: {
+                        ViewThatFits(in: .horizontal) {
+                            Text(tr("inbox.undo")).lineLimit(1).fixedSize()
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                    }
                         .buttonStyle(.plain)
                         .font(NookTheme.TextStyle.label)
                         .foregroundStyle(NookTheme.iris)
+                        .help(tr("inbox.undo"))
+                        .layoutPriority(1)
                         // ⌘Z, while no text field has the keyboard (there it undoes typing).
                         .keyCommand("session.undo") { store.undo() }
                 }
