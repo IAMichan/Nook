@@ -270,6 +270,7 @@ pub fn bar_moved(app: AppHandle, state: State<'_, AppState>) {
 }
 
 /// Maak (of herstel) de snelkoppeling "Nook" in het Startmenu, zodat die rechtstreeks naar het draaiende Nook.exe wijst.
+/// An existing "Nook" shortcut on the desktop (for example an old one that points at a loose start script) is repaired too.
 #[tauri::command]
 pub fn repair_start_menu_shortcut() -> Res<String> {
     #[cfg(windows)]
@@ -281,11 +282,15 @@ pub fn repair_start_menu_shortcut() -> Res<String> {
         std::fs::create_dir_all(&programs).map_err(|e| e.to_string())?;
         let link = programs.join("Nook.lnk");
         // Paden gaan als omgevingsvariabelen mee, zodat aanhalingstekens in een pad niets kunnen breken.
-        let script = "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:NOOK_LNK);\
-                      $s.TargetPath=$env:NOOK_EXE;$s.WorkingDirectory=$env:NOOK_DIR;$s.IconLocation=$env:NOOK_EXE;$s.Save()";
+        let desktop = dirs::desktop_dir().map(|d| d.join("Nook.lnk")).filter(|p| p.exists()).unwrap_or_default();
+        let script = "$w=New-Object -ComObject WScript.Shell;\
+                      foreach($p in @($env:NOOK_LNK,$env:NOOK_DESKTOP_LNK)){if(-not $p){continue};\
+                      $s=$w.CreateShortcut($p);$s.TargetPath=$env:NOOK_EXE;$s.Arguments='';\
+                      $s.WorkingDirectory=$env:NOOK_DIR;$s.IconLocation=$env:NOOK_EXE;$s.Save()}";
         let out = std::process::Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .env("NOOK_LNK", &link)
+            .env("NOOK_DESKTOP_LNK", &desktop)
             .env("NOOK_EXE", &exe)
             .env("NOOK_DIR", &dir)
             .creation_flags(0x0800_0000)
