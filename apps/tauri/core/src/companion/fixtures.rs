@@ -76,8 +76,12 @@ fn core_requests_and_responses_read_and_write_back() {
         let back = serde_json::to_value(&request).unwrap();
         // Numbers come back as floats (Swift's Double), so the written JSON is compared by reading it again.
         assert_eq!(serde_json::from_value::<CompanionRequest>(back.clone()).unwrap(), request);
-        assert_eq!(back.as_object().unwrap().len(), entry["json"].as_object().unwrap().len(),
-                   "{}: every field is known and written back", str_of(entry, "name"));
+        assert_eq!(
+            back.as_object().unwrap().len(),
+            entry["json"].as_object().unwrap().len(),
+            "{}: every field is known and written back",
+            str_of(entry, "name")
+        );
         assert_eq!(back["op"], entry["json"]["op"]);
         assert_eq!(request.sent, entry["json"]["sent"].as_f64().unwrap());
     }

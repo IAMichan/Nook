@@ -378,7 +378,10 @@ pub mod jid {
     pub fn is_placeholder_name(chat: &str, name: &str) -> bool {
         let user = chat.split('@').next().unwrap_or(chat);
         let user = user.split(':').next().unwrap_or(user);
-        name.trim().is_empty() || name == display_number(chat) || name == user || name.strip_prefix("Group ").is_some_and(|rest| rest == user)
+        name.trim().is_empty()
+            || name == display_number(chat)
+            || name == user
+            || name.strip_prefix("Group ").is_some_and(|rest| rest == user)
     }
 
     /// "33612345678@s.whatsapp.net" → "+33612345678".
