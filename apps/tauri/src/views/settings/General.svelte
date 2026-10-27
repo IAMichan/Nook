@@ -1,8 +1,10 @@
 <script lang="ts">
   // Algemeen: taal, plek van de balk, kleur, energie, sneltoetsen.
+  import { api } from "../../lib/api";
   import { nook, accentCss } from "../../lib/state.svelte";
   import { services, serviceEvents, type EnergyView } from "../../lib/services";
   import type { EnergyMode } from "../../lib/types";
+  import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 
   const s = $derived(nook.settings!);
   const accents = [0xf4f3f7, 0x8b7bff, 0x46e0a6, 0xffb84d, 0xff8a5b, 0x5ab8ff, 0xff6bb5];
@@ -16,6 +18,20 @@
     { id: "saver", title: "Zuinig", detail: "Altijd licht: het scherm wordt minder vaak gelezen en suggesties komen minder vaak. Fijn op een laptop die lang op de accu moet." },
     { id: "full", title: "Volle kracht", detail: "Nooit rustiger voor de accu of een drukke computer. Een warme computer krijgt nog wel even rust." },
   ];
+  let launchAtLogin = $state(false);
+  $effect(() => {
+    if (nook.info?.capabilities.desktop) isEnabled().then((v) => (launchAtLogin = v)).catch(() => {});
+  });
+  async function setLaunchAtLogin(on: boolean) {
+    try {
+      if (on) await enable(); else await disable();
+    } catch {}
+    launchAtLogin = await isEnabled().catch(() => !on);
+  }
+  let shortcutNote = $state("");
+  async function repairShortcut() {
+    shortcutNote = await api.repairStartMenuShortcut().then(() => "Snelkoppeling in het Startmenu gemaakt.", (e) => String(e));
+  }
   let energy = $state<EnergyView | null>(null);
   $effect(() => {
     services.energyStatus().then((v) => (energy = v)).catch(() => {});
@@ -43,6 +59,13 @@
         <option value="floating">Zwevend op het scherm</option>
       </select>
     </label>
+    <label class="row"><span>Starten als ik inlog op de computer</span><input type="checkbox" checked={launchAtLogin} onchange={(e) => setLaunchAtLogin(e.currentTarget.checked)} /></label>
+    {#if nook.info.capabilities.os === "windows"}
+      <div class="row">
+        <span>Snelkoppeling in het Startmenu{#if shortcutNote} <small>{shortcutNote}</small>{/if}</span>
+        <button onclick={repairShortcut}>Herstellen</button>
+      </div>
+    {/if}
     <label class="row"><span>Groter paneel</span><input type="checkbox" checked={s.panelLarge} onchange={(e) => nook.saveSettings({ panelLarge: e.currentTarget.checked })} /></label>
   {/if}
   <div class="row">

@@ -7,6 +7,7 @@ import type {
 
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
+  repairStartMenuShortcut: () => invoke<string>("repair_start_menu_shortcut"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   providers: () => invoke<ProviderInfo[]>("providers"),
