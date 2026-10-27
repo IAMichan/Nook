@@ -5,6 +5,7 @@ import type { AccountPullRequests, Ci, PullRequestItem } from "./connectors";
 
 export type DetailState = "open" | "draft" | "merged" | "closed";
 export type CheckOutcome = "passing" | "failing" | "pending" | "skipped";
+export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 export type MergeMethod = "merge" | "squash" | "rebase";
 
 export interface PullRequestCheck {
@@ -157,6 +158,11 @@ export interface PullRequestDetail {
   files: PullRequestFile[];
   methods: MergeMethod[];
   canPush: boolean | null;
+  /// Your permission in the repository: ADMIN, MAINTAIN, WRITE, TRIAGE or READ.
+  permission: string | null;
+  /// Whether you may merge although branch protection blocks it.
+  canBypass: boolean | null;
+  autoMerge: boolean;
   isOpen: boolean;
   canMerge: boolean;
   checkSummary: Ci;
@@ -170,6 +176,9 @@ export const pullsApi = {
   /// Only after the confirmation in the view. Runs the `github_merge_pr` action and writes it to the action log.
   merge: (account: string | null, repo: string, number: number, method: MergeMethod, sha: string) =>
     invoke<string>("github_merge_pull_request", { account, repo, number, method, sha }),
+  /// Approves, asks for changes on or comments on a pull request (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`); only after a click.
+  review: (account: string | null, repo: string, number: number, event: ReviewEvent, body: string) =>
+    invoke<string>("github_review_pull_request", { account, repo, number, event, body }),
   watchAdd: (text: string) => invoke<string[]>("pull_watch_add", { text }),
   watchRemove: (entry: string) => invoke<string[]>("pull_watch_remove", { entry }),
 };
@@ -265,9 +274,10 @@ const notes: Record<string, string> = {
   merged: "Deze pull request is samengevoegd.",
   closed: "Deze pull request is gesloten.",
   draft: "Concept: zet hem op GitHub klaar voor review voordat je merget.",
-  noAccess: "Dit account mag in deze repository niet mergen.",
+  noAccess: "Je hebt geen schrijfrechten in deze repository, dus je kunt hem niet zelf mergen. Wacht tot een maintainer hem merget; Nook houdt hem bij.",
+  auto: "Automatisch mergen staat aan: hij wordt gemerged zodra alle vereiste reviews en checks er zijn.",
   conflict: "Er is een merge-conflict met de basisbranch.",
-  blocked: "Branchbeveiliging houdt de merge tegen (reviews of verplichte checks). GitHub laat hem alleen door als je dat mag omzeilen.",
+  blocked: "Branchbeveiliging houdt de merge tegen: er ontbreken vereiste reviews of checks. Je mag dat niet omzeilen, dus wacht tot het in orde is.",
   behind: "De branch loopt achter op zijn basis en moet eerst worden bijgewerkt.",
   unstable: "Sommige checks falen.",
   checking: "GitHub controleert nog of hij kan worden gemerged.",
@@ -336,3 +346,82 @@ export function diffLines(patch: string): { kind: "add" | "remove" | "hunk" | "c
     text,
   }));
 }
+
+// The GitHub dashboard in Chats: every open pull request sorted by what you have to do about it.
+
+export type Lane = "review" | "fix" | "ready" | "waiting" | "draft" | "merged";
+export type Reason = "reviewRequested" | "failing" | "changes" | "conflict" | "approved" | "passing" | "pending" | "needsReview" | "draft" | "merged";
+
+export interface Triaged {
+  account: string;
+  item: PullRequestItem;
+  lane: Lane;
+  reasons: Reason[];
+}
+
+/// The order the lanes are shown in: what needs you first, what only waits last.
+export const LANES: Lane[] = ["review", "fix", "ready", "waiting", "draft", "merged"];
+
+/// A pull request of yours: broken (CI, requested changes, a conflict), ready to merge, a draft, or waiting on others.
+export function laneOfMine(item: PullRequestItem): { lane: Lane; reasons: Reason[] } {
+  if (item.state === "merged") return { lane: "merged", reasons: ["merged"] };
+  if (item.draft) return { lane: "draft", reasons: ["draft"] };
+  const broken: Reason[] = [];
+  if (item.ci === "failing") broken.push("failing");
+  if (item.review === "changesRequested") broken.push("changes");
+  if (item.conflicting) broken.push("conflict");
+  if (broken.length) return { lane: "fix", reasons: broken };
+  if (item.ci !== "pending" && (item.review === "approved" || item.review === "none")) {
+    return { lane: "ready", reasons: [item.review === "approved" ? "approved" : "passing"] };
+  }
+  return { lane: "waiting", reasons: [item.ci === "pending" ? "pending" : "needsReview"] };
+}
+
+/// Open pull requests waiting for your review and your own, plus your last few merged ones; each pull request once.
+export function triage(accounts: AccountPullRequests[], mergedLimit = 5): Triaged[] {
+  const seen = new Set<string>();
+  const result: Triaged[] = [];
+  const add = (account: string, item: PullRequestItem, lane: Lane, reasons: Reason[]) => {
+    if (seen.has(itemId(item))) return;
+    seen.add(itemId(item));
+    result.push({ account, item, lane, reasons });
+  };
+  for (const a of accounts) {
+    for (const item of a.reviews) if (item.state === "open") add(a.id, item, "review", ["reviewRequested"]);
+  }
+  for (const a of accounts) {
+    for (const item of a.mine) {
+      if (item.state === "closed") continue;
+      if (item.state === "merged") continue;
+      const { lane, reasons } = laneOfMine(item);
+      add(a.id, item, lane, reasons);
+    }
+  }
+  const merged = accounts
+    .flatMap((a) => a.mine.filter((i) => i.state === "merged").map((item) => ({ account: a.id, item })))
+    .sort((x, y) => (y.item.updated ?? "").localeCompare(x.item.updated ?? ""))
+    .slice(0, mergedLimit);
+  for (const { account, item } of merged) add(account, item, "merged", ["merged"]);
+  const rank = (t: Triaged) => LANES.indexOf(t.lane);
+  return result.sort((x, y) => rank(x) - rank(y) || (y.item.updated ?? "").localeCompare(x.item.updated ?? ""));
+}
+
+/// How many pull requests are in each lane, for the tiles that filter the dashboard.
+export function laneCounts(items: Triaged[]): Record<Lane, number> {
+  const counts: Record<Lane, number> = { review: 0, fix: 0, ready: 0, waiting: 0, draft: 0, merged: 0 };
+  for (const t of items) counts[t.lane]++;
+  return counts;
+}
+
+/// Whether a triaged pull request or issue matches the dashboard's search words (repo, title, "#12", "@author").
+export function matchesQuery(query: string, parts: { repo: string; number: number; title: string; author: string }): boolean {
+  const text = `${parts.repo}#${parts.number} ${parts.title} @${parts.author}`.toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => text.includes(w.startsWith("#") ? `#${w.slice(1)}` : w));
+}
+
+/// The size of a change as a short label: "+120 −8".
+export const sizeLabel = (item: { additions: number; deletions: number }) => (item.additions || item.deletions ? `+${item.additions} −${item.deletions}` : "");

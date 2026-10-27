@@ -3,7 +3,7 @@ import type { AccountPullRequests, PullRequestItem } from "./connectors";
 import { renderMarkdown } from "./markdown";
 import {
   activeCount, activitySentence, apply, authors, chosenMethod, defaultFilter, diffLines, eventLabel, isActive, matches,
-  ciLines, ciProblems, jobId, noteText, unreadable,
+  ciLines, ciProblems, jobId, laneCounts, laneOfMine, matchesQuery, noteText, triage, unreadable,
 } from "./pulls";
 
 const item = (number: number, extra: Partial<PullRequestItem> = {}): PullRequestItem => ({
@@ -16,6 +16,11 @@ const item = (number: number, extra: Partial<PullRequestItem> = {}): PullRequest
   author: "ada",
   ci: "passing",
   state: "open",
+  review: "none",
+  comments: 0,
+  additions: 0,
+  deletions: 0,
+  conflicting: false,
   ...extra,
 });
 
@@ -25,6 +30,7 @@ const account = (extra: Partial<AccountPullRequests> = {}): AccountPullRequests 
   login: "me",
   mine: [],
   reviews: [],
+  issues: [],
   error: null,
   errorKind: null,
   watched: [],
@@ -132,5 +138,37 @@ describe("ci log lines", () => {
     const lines = ciLines("##[group]A\nfine\n##[group]Build\nx: error: one\ny: error: two\n##[group]Post\nfine");
     expect(ciProblems(lines).map((l) => l.text)).toEqual(["Build", "x: error: one", "y: error: two"]);
     expect(ciProblems(ciLines("all good"))).toEqual([]);
+  });
+});
+
+describe("github dashboard", () => {
+  it("sorts your own pull requests by what they need", () => {
+    expect(laneOfMine(item(1, { ci: "failing" }))).toEqual({ lane: "fix", reasons: ["failing"] });
+    expect(laneOfMine(item(2, { review: "changesRequested", conflicting: true })).reasons).toEqual(["changes", "conflict"]);
+    expect(laneOfMine(item(3, { review: "approved" }))).toEqual({ lane: "ready", reasons: ["approved"] });
+    expect(laneOfMine(item(4, { review: "required" })).lane).toBe("waiting");
+    expect(laneOfMine(item(5, { ci: "pending", review: "approved" })).lane).toBe("waiting");
+    expect(laneOfMine(item(6, { draft: true, ci: "failing" })).lane).toBe("draft");
+  });
+
+  it("puts reviews first, lists a pull request once and keeps the last merged ones", () => {
+    const accounts = [
+      account({
+        reviews: [item(10, { author: "bob" })],
+        mine: [item(1, { ci: "failing" }), item(2, { review: "approved" }), item(3, { state: "merged", updated: "2026-10-20T00:00:00Z" }), item(4, { state: "closed" })],
+        watched: [item(99)],
+      }),
+      account({ id: "github.werk", mine: [item(1, { ci: "failing" })] }),
+    ];
+    const t = triage(accounts);
+    expect(t.map((x) => [x.item.number, x.lane])).toEqual([[10, "review"], [1, "fix"], [2, "ready"], [3, "merged"]]);
+    expect(laneCounts(t).review).toBe(1);
+  });
+
+  it("searches repo, title, number and author", () => {
+    const parts = { repo: "acme/web", number: 12, title: "Fix parser", author: "ada" };
+    expect(matchesQuery("parser @ada", parts)).toBe(true);
+    expect(matchesQuery("#12", parts)).toBe(true);
+    expect(matchesQuery("#13", parts)).toBe(false);
   });
 });

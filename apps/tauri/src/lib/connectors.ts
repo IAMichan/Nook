@@ -264,6 +264,27 @@ export interface PullRequestItem {
   author: string;
   ci: Ci;
   state: "open" | "closed" | "merged";
+  review: ReviewDecision;
+  /// Comments and reviews on the conversation.
+  comments: number;
+  additions: number;
+  deletions: number;
+  /// A merge conflict with the base branch.
+  conflicting: boolean;
+}
+
+export type ReviewDecision = "none" | "approved" | "changesRequested" | "required";
+
+/// An open issue assigned to you.
+export interface IssueItem {
+  repo: string;
+  number: number;
+  title: string;
+  url: string | null;
+  updated: string | null;
+  author: string;
+  comments: number;
+  labels: string[];
 }
 
 export type Ci = "unknown" | "pending" | "passing" | "failing";
@@ -274,6 +295,8 @@ export interface AccountPullRequests {
   login: string;
   mine: PullRequestItem[];
   reviews: PullRequestItem[];
+  /// The open issues assigned to you.
+  issues: IssueItem[];
   error: string | null;
   errorKind: ErrorKind | null;
   /// The other pull requests in the watched organizations and repositories.

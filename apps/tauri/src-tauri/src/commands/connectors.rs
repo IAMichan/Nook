@@ -424,6 +424,39 @@ pub async fn github_merge_pull_request(
     }
 }
 
+/// Approves, asks for changes on, or comments on a pull request, as the account it was listed under. Only after the
+/// button in the view; written to the action log like a merge.
+#[tauri::command]
+pub async fn github_review_pull_request(
+    c: State<'_, Connectors>,
+    state: State<'_, AppState>,
+    account: Option<String>,
+    repo: String,
+    number: i64,
+    event: String,
+    body: String,
+) -> Res<String> {
+    pull_target(&repo, number)?;
+    let event = event.to_uppercase();
+    if !["APPROVE", "REQUEST_CHANGES", "COMMENT"].contains(&event.as_str()) {
+        return Err("Onbekende review-actie.".into());
+    }
+    let (account, _) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
+    let input = serde_json::json!({"repo": repo, "number": number, "event": event, "body": body, "account": account});
+    let args = format!("{repo}#{number} · {event} · {account}");
+    let result = c.github.execute("github_review_pr", &input).await.unwrap_or_else(|| Err(ConnectorError::not_set_up("GitHub")));
+    match result {
+        Ok(text) => {
+            state.store.audit("github_review_pr", &args, &text);
+            Ok(text)
+        }
+        Err(e) => {
+            state.store.audit("github_review_pr", &args, &format!("FOUT: {}", e.message));
+            Err(e.message)
+        }
+    }
+}
+
 /// Adds what was typed (one or more organizations or repositories, separated by commas or spaces) to the watch list.
 #[tauri::command]
 pub fn pull_watch_add(app: AppHandle, state: State<'_, AppState>, text: String) -> Res<Vec<String>> {
