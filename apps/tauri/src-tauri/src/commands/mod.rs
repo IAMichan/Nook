@@ -280,9 +280,9 @@ pub fn repair_start_menu_shortcut() -> Res<String> {
         let programs = dirs::data_dir().ok_or("Geen map voor het Startmenu gevonden")?.join(r"Microsoft\Windows\Start Menu\Programs");
         std::fs::create_dir_all(&programs).map_err(|e| e.to_string())?;
         let link = programs.join("Nook.lnk");
-        // Paden gaan als argumenten mee, zodat aanhalingstekens in een pad niets kunnen breken.
-        let script = "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($args[0]);\
-                      $s.TargetPath=$args[1];$s.WorkingDirectory=$args[2];$s.IconLocation=$args[1];$s.Save()";
+        // Paden gaan als omgevingsvariabelen mee, zodat aanhalingstekens in een pad niets kunnen breken.
+        let script = "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:NOOK_LNK);\
+                      $s.TargetPath=$env:NOOK_EXE;$s.WorkingDirectory=$env:NOOK_DIR;$s.IconLocation=$env:NOOK_EXE;$s.Save()";
         let out = std::process::Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .env("NOOK_LNK", &link)
