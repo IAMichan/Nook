@@ -473,6 +473,9 @@ struct ConnectionLine: View {
         case .phoneTooOld:
             Banner(text: String(localized: "Update the app: Nook on your Mac needs a newer Nook Companion."),
                    symbol: "arrow.down.circle.fill")
+        case .ok where client.hasUnrecognizedMacFeatures:
+            Banner(text: String(localized: "Update Nook Companion to use everything your Mac offers."),
+                   symbol: "arrow.down.circle.fill")
         case .ok:
             EmptyView()
         }

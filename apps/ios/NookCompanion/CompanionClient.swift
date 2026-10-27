@@ -33,6 +33,8 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var macPushReady: Bool?
     /// `CompanionFeature` values the Mac understands; empty for a Mac that only answers what waits.
     @Published private(set) var features: Set<String> = []
+    /// Whether the active Mac advertises features this phone build does not recognize.
+    @Published private(set) var hasUnrecognizedMacFeatures = false
     /// What a new session can start with, once asked.
     @Published private(set) var launchOptions: LaunchOptions?
     /// The conversation of each session that was opened, by session id.
@@ -221,6 +223,7 @@ final class CompanionClient: ObservableObject {
         if let id = mac?.id { otherSessions[id] = nil }
         // What the Mac could do last time, so a message written before the first answer can already wait in the outbox.
         features = Set(UserDefaults.standard.stringArray(forKey: featuresKey) ?? [])
+        hasUnrecognizedMacFeatures = false
         outbox = OutboxStore.load(name: outboxName)
         sessions = []
         featuresKnown = false
@@ -912,6 +915,13 @@ final class CompanionClient: ObservableObject {
                 PairingStore.save(pairings)
                 macs = pairings.macs
             }
+        }
+        // Only these answers report the Mac's feature list. Missing features on an older Mac clear this warning;
+        // unrelated answers leave the last handshake result alone.
+        if req.op == .hello || req.op == .list || req.op == .subscribe {
+            let unknown = CompanionCompatibility.unknownFeatures(response.features)
+            let hasUnknown = unknown?.isEmpty == false
+            if hasUnknown != hasUnrecognizedMacFeatures { hasUnrecognizedMacFeatures = hasUnknown }
         }
         // Only an answer to hello, list or subscribe says what the Mac speaks (it carries the features too).
         if response.features != nil {

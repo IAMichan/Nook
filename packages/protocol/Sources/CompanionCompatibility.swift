@@ -42,6 +42,12 @@ enum CompanionCompatibility: Equatable, Sendable {
     /// The Mac no longer supports this phone's protocol: update the app on the phone.
     case phoneTooOld
 
+    /// Features the Mac advertises that this phone build does not recognize. Nil means no feature list was sent.
+    static func unknownFeatures(_ advertised: [String]?) -> Set<String>? {
+        guard let advertised else { return nil }
+        return Set(advertised).subtracting(CompanionFeature.all)
+    }
+
     /// Decides from what the Mac said (`macVersion` and `oldestPhone`, nil from a Mac that predates versions).
     static func check(macVersion: Int?, oldestPhone: Int?, phoneVersion: Int = CompanionProtocol.version,
                       oldestMac: Int = CompanionProtocol.oldestMac) -> CompanionCompatibility {
