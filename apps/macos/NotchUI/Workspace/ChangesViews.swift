@@ -88,7 +88,9 @@ struct ChangesSheet: View {
 struct CommitSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
-    let runID: UUID
+    /// A session Nook runs, or (nil) the repository root in `folder` of one it only sees.
+    let runID: UUID?
+    var folder: String? = nil
     /// Set when shown inside the notch: closes it there (and the notch shows the title).
     var onClose: (() -> Void)? = nil
     private var embedded: Bool { onClose != nil }
@@ -98,17 +100,33 @@ struct CommitSheet: View {
     @State private var working = false
     @State private var error: String?
     @State private var done: String?
+    /// The status of `folder`, read when the sheet opens.
+    @State private var folderStatus: GitStatus?
     /// `@` in the message: the files of the repository and people from your chats, as plain words.
     @StateObject private var mentionModel = ComposerModel()
-    private var mentionConfig: ComposerConfig { .mentions(folder: workspace.run(runID)?.workingDirectory) }
+    private var mentionConfig: ComposerConfig { .mentions(folder: directory) }
 
-    private var files: [GitFileChange] { workspace.git[runID]?.status?.files ?? [] }
+    init(runID: UUID, onClose: (() -> Void)? = nil) {
+        self.runID = runID
+        self.onClose = onClose
+    }
+
+    init(folder: String, onClose: (() -> Void)? = nil) {
+        self.runID = nil
+        self.folder = folder
+        self.onClose = onClose
+    }
+
+    private var run: WorkspaceRun? { runID.flatMap { workspace.run($0) } }
+    private var directory: String? { run?.workingDirectory ?? folder }
+    private var files: [GitFileChange] { runID.flatMap { workspace.git[$0]?.status?.files } ?? folderStatus?.files ?? [] }
+    private var branch: String? { runID != nil ? run?.branch : folderStatus?.branch }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !embedded { Text(tr("ws.commit.title")).font(NookTheme.TextStyle.title) }
-            if let run = workspace.run(runID) {
-                Text(tr("ws.commit.where", run.branch ?? "HEAD", AgentPathFormat.tilde(run.workingDirectory)))
+            if let directory {
+                Text(tr("ws.commit.where", branch ?? "HEAD", AgentPathFormat.tilde(directory)))
                     .font(NookTheme.TextStyle.detail).foregroundStyle(WS.secondary)
             }
             List {
@@ -120,7 +138,12 @@ struct CommitSheet: View {
                         FileChangeRow(file: file)
                     }
                     .toggleStyle(.checkbox)
-                    .sessionFileMenu(workspace, runID: runID, path: file.path)
+                    .contextMenu {
+                        FileContextMenu(absolutePath: runID.map { workspace.absolutePath($0, repositoryPath: file.path) }
+                                            ?? folder.map { ($0 as NSString).appendingPathComponent(file.path) },
+                                        relativePath: file.path)
+                            .environmentObject(workspace)
+                    }
                 }
             }
             .frame(minHeight: 160, maxHeight: 260)
@@ -134,7 +157,7 @@ struct CommitSheet: View {
                 .scrollContentBackground(.hidden)
                 .padding(NookTheme.Spacing.sm)
                 .cardBackground(WS.surface, stroke: WS.border, radius: NookTheme.Radius.chip)
-            if let run = workspace.run(runID), message.isEmpty {
+            if let run, message.isEmpty {
                 Button(tr("ws.commit.useTitle")) { message = run.title }
                     .buttonStyle(.link)
                     .font(NookTheme.TextStyle.detail)
@@ -153,7 +176,10 @@ struct CommitSheet: View {
         .padding(embedded ? 0 : 18)
         .frame(width: 560)
         .frame(maxWidth: .infinity, alignment: embedded ? .topLeading : .center)
-        .onAppear { included = Set(files.map(\.path)) }
+        .task {
+            if let folder { folderStatus = await workspace.folderStatus(folder) }
+            included = Set(files.map(\.path))
+        }
     }
 
     private func commit() {
@@ -161,7 +187,11 @@ struct CommitSheet: View {
         error = nil
         Task {
             do {
-                done = try await workspace.commit(runID, message: message, paths: Array(included))
+                if let runID {
+                    done = try await workspace.commit(runID, message: message, paths: Array(included))
+                } else if let folder {
+                    done = try await workspace.commit(folder: folder, message: message, paths: Array(included))
+                }
                 try? await Task.sleep(nanoseconds: 900_000_000)
                 close()
             } catch let failure {
@@ -176,7 +206,9 @@ struct CommitSheet: View {
 struct PullRequestSheet: View {
     @EnvironmentObject private var workspace: WorkspaceManager
     @Environment(\.dismiss) private var dismiss
-    let runID: UUID
+    /// A session Nook runs, or (nil) the repository root in `folder` of one it only sees.
+    let runID: UUID?
+    var folder: String? = nil
     /// Set when shown inside the notch: closes it there (and the notch shows the title).
     var onClose: (() -> Void)? = nil
     private var embedded: Bool { onClose != nil }
@@ -193,7 +225,18 @@ struct PullRequestSheet: View {
     @State private var created: URL?
     /// `@` in the description: the files of the repository and people from your chats, as plain words.
     @StateObject private var mentionModel = ComposerModel()
-    private var mentionConfig: ComposerConfig { .mentions(folder: workspace.run(runID)?.workingDirectory) }
+    private var mentionConfig: ComposerConfig { .mentions(folder: runID.flatMap { workspace.run($0)?.workingDirectory } ?? folder) }
+
+    init(runID: UUID, onClose: (() -> Void)? = nil) {
+        self.runID = runID
+        self.onClose = onClose
+    }
+
+    init(folder: String, onClose: (() -> Void)? = nil) {
+        self.runID = nil
+        self.folder = folder
+        self.onClose = onClose
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
@@ -236,12 +279,19 @@ struct PullRequestSheet: View {
         .frame(width: 560)
         .frame(maxWidth: .infinity, alignment: embedded ? .topLeading : .center)
         .task {
-            let run = workspace.run(runID)
-            title = run?.title ?? ""
-            base = run?.baseBranch ?? ""
-            bodyText = run.map { tr("ws.pr.bodyDefault", $0.task) } ?? ""
-            repo = await workspace.remoteRepository(runID)
-            branch = await workspace.currentBranch(runID)
+            if let runID {
+                let run = workspace.run(runID)
+                title = run?.title ?? ""
+                base = run?.baseBranch ?? ""
+                bodyText = run.map { tr("ws.pr.bodyDefault", $0.task) } ?? ""
+                repo = await workspace.remoteRepository(runID)
+                branch = await workspace.currentBranch(runID)
+                if base.isEmpty { base = await workspace.pullRequestBaseBranch(runID) ?? "" }
+            } else if let folder {
+                repo = await workspace.remoteRepository(folder: folder)
+                branch = await workspace.currentBranch(folder: folder)
+                base = await workspace.pullRequestBaseBranch(folder: folder) ?? ""
+            }
             loading = false
         }
     }

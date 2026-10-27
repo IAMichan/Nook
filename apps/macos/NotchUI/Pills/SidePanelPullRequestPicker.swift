@@ -8,7 +8,10 @@ struct SidePanelPullRequestPicker: View {
     let choose: (PullRequestOpenRequest) -> Void
     @ObservedObject private var store = PullRequestStore.shared
     @StateObject private var git: FolderGitModel
-    @State private var query = ""
+    /// The same search and Filters as the Pull requests page (open ones by default); a change in one applies to both.
+    @ObservedObject private var filterStore = PullRequestFilterStore.shared
+    private var filter: PullRequestFilter { filterStore.filter }
+    @ObservedObject private var watching = PullRequestWatchSettings.shared
 
     init(directory: String, choose: @escaping (PullRequestOpenRequest) -> Void) {
         self.directory = directory
@@ -20,6 +23,7 @@ struct SidePanelPullRequestPicker: View {
     private struct PickGroup: Identifiable {
         let id: String
         let title: String
+        let role: PullRequestRepoGroup.Role
         let items: [PullRequestOpenRequest]
     }
 
@@ -27,30 +31,38 @@ struct SidePanelPullRequestPicker: View {
         let branch = git.status?.branch ?? ""
         var seen = Set<String>()
         func take(_ pick: (AccountPullRequests) -> [PullRequestItem]) -> [PullRequestOpenRequest] {
-            store.accounts.flatMap { account in pick(account).map { PullRequestOpenRequest(account: account.id, item: $0) } }
-                .filter { matches($0.item) && seen.insert($0.item.id.lowercased()).inserted }
+            filter.apply(store.accounts).flatMap { account in pick(account).map { PullRequestOpenRequest(account: account.id, item: $0) } }
+                .filter { seen.insert($0.item.id.lowercased()).inserted }
         }
         let onBranch = branch.isEmpty ? [] : take { ($0.mine + $0.reviews + $0.watched).filter { $0.headBranch == branch } }
         return [
-            PickGroup(id: "branch", title: tr("agents.pr.pick.branch", branch), items: onBranch),
-            PickGroup(id: "mine", title: tr("agents.pr.pick.mine"), items: take(\.mine)),
-            PickGroup(id: "reviews", title: tr("agents.pr.pick.reviews"), items: take(\.reviews)),
-            PickGroup(id: "watched", title: tr("agents.pr.pick.watched"), items: take(\.watched)),
+            PickGroup(id: "branch", title: tr("agents.pr.pick.branch", branch), role: .mine, items: onBranch),
+            PickGroup(id: "mine", title: tr("agents.pr.pick.mine"), role: .mine, items: take(\.mine)),
+            PickGroup(id: "reviews", title: tr("agents.pr.pick.reviews"), role: .review, items: take(\.reviews)),
+            PickGroup(id: "watched", title: tr("agents.pr.pick.watched"), role: .watched, items: take(\.watched)),
         ].filter { !$0.items.isEmpty }
     }
 
-    private func matches(_ item: PullRequestItem) -> Bool {
-        let text = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !text.isEmpty else { return true }
-        let number = text.hasPrefix("#") ? String(text.dropFirst()) : text
-        return item.title.lowercased().contains(text) || item.repo.lowercased().contains(text)
-            || item.headBranch.lowercased().contains(text) || String(item.number) == number
+    /// Every pull request of one account, for where one stands in a stack.
+    private func items(of account: String) -> [PullRequestItem] {
+        guard let found = store.accounts.first(where: { $0.id == account }) else { return [] }
+        return found.reviews + found.mine + found.watched
     }
 
     var body: some View {
         let groups = groups
         VStack(spacing: 0) {
-            NookSearchField(prompt: tr("agents.pr.pick.search"), text: $query, style: .inline)
+            PullRequestSearchBar(filter: $filterStore.filter, accounts: store.accounts, prompt: tr("agents.pr.pick.search"),
+                                 watching: !watching.entries.isEmpty, style: .inline) {
+                // As on the Pull requests page: only a refresh you asked for (or a first load) spins.
+                if store.showsProgress {
+                    ProgressView().controlSize(.small)
+                } else {
+                    NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) {
+                        Task { await store.refresh(force: true) }
+                    }
+                }
+            }
                 .padding(NookTheme.Spacing.sm)
             NookDivider()
             if !GitHubPullRequestList.isAvailable {
@@ -59,7 +71,7 @@ struct SidePanelPullRequestPicker: View {
                 if store.loading && !store.loaded {
                     PatientSpinner()
                 } else {
-                    StackedDiffNote(text: tr(query.isEmpty ? "agents.pr.pick.none" : "agents.pr.pick.noMatch"))
+                    StackedDiffNote(text: tr(!filter.isActive ? "agents.pr.pick.none" : "agents.pr.pick.noMatch"))
                 }
             } else {
                 ScrollView {
@@ -68,7 +80,10 @@ struct SidePanelPullRequestPicker: View {
                             NookSectionLabel(group.title, inset: NookTheme.Spacing.sm)
                                 .padding(.top, NookTheme.Spacing.md)
                             ForEach(group.items, id: \.item.id) { request in
-                                SidePanelPullRequestRow(item: request.item) { choose(request) }
+                                PullRequestRow(item: request.item, role: group.role, showRepo: true, accountID: request.account,
+                                               stack: PullRequestStack.position(of: request.item, in: items(of: request.account))) {
+                                    choose(request)
+                                }
                             }
                         }
                     }
@@ -81,44 +96,5 @@ struct SidePanelPullRequestPicker: View {
             await git.refresh()
             await store.refresh()
         }
-    }
-}
-
-/// One pull request to open: its state mark in the state's color, number and title, and its repository under them.
-private struct SidePanelPullRequestRow: View {
-    let item: PullRequestItem
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: NookTheme.Spacing.sm) {
-                PullRequestStateIcon(glyph: item.stateGlyph)
-                    .padding(.top, 2)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        Text("#\(item.number)").font(NookTheme.mono(11, .medium)).foregroundStyle(NookTheme.textTertiary)
-                        Text(item.title)
-                            .font(NookTheme.TextStyle.body)
-                            .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
-                            .lineLimit(1)
-                    }
-                    Text(item.headBranch.isEmpty ? item.repo : item.repo + " · " + item.headBranch)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, NookTheme.Spacing.sm)
-            .padding(.vertical, NookTheme.Spacing.sm)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(hovering ? NookTheme.rowHover : Color.clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(item.repo + " #\(item.number)")
     }
 }

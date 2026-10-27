@@ -509,13 +509,8 @@ impl WhatsAppLink {
     pub fn chat_list(&self) -> Vec<super::Conversation> {
         let ignored = self.settings().ignored;
         self.with(|i| {
-            let mut out: Vec<super::Conversation> = i
-                .inbox
-                .sorted()
-                .into_iter()
-                .filter(|c| !ignored.contains(&c.id) && c.kind != super::ChatKind::Status)
-                .cloned()
-                .collect();
+            let mut out: Vec<super::Conversation> =
+                i.inbox.sorted().into_iter().filter(|c| !ignored.contains(&c.id) && c.kind != super::ChatKind::Status).cloned().collect();
             let have: HashSet<String> = out.iter().map(|c| c.id.clone()).collect();
             for k in &i.known {
                 let kind = jid::kind(&k.jid);
@@ -707,7 +702,12 @@ impl WhatsAppLink {
         });
         // The gateway names a group it has no subject for after its id: ask for the real names of the newest ones.
         let unnamed: Vec<String> = self.with(|i| {
-            i.known.iter().filter(|k| jid::is_group(&k.jid) && jid::is_placeholder_name(&k.jid, &k.name)).take(40).map(|k| k.jid.clone()).collect()
+            i.known
+                .iter()
+                .filter(|k| jid::is_group(&k.jid) && jid::is_placeholder_name(&k.jid, &k.name))
+                .take(40)
+                .map(|k| k.jid.clone())
+                .collect()
         });
         for chat in unnamed {
             if let Some(name) = provider.group_name(&chat).await {
@@ -1049,7 +1049,12 @@ impl WhatsAppLink {
         if file.data.is_empty() {
             return Err(ConnectorError::new(FETCH_FAILED));
         }
-        let name = files::file_name(&media, file.name.as_deref(), file.mime.as_deref());
+        let mut name = files::file_name(&media, file.name.as_deref(), file.mime.as_deref());
+        if files::extension(&name).is_none() {
+            if let Some(ext) = files::sniff_extension(&file.data) {
+                name = format!("{name}.{ext}");
+            }
+        }
         let root = self.files_dir();
         let folder = root.join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir_all(&folder).map_err(|e| ConnectorError::new(e.to_string()))?;
@@ -1100,7 +1105,10 @@ impl WhatsAppLink {
             }
             for k in &i.known {
                 if seen.insert(k.jid.clone()) {
-                    out.push((k.jid.clone(), if jid::is_placeholder_name(&k.jid, &k.name) { jid::fallback_name(&k.jid) } else { k.name.clone() }));
+                    out.push((
+                        k.jid.clone(),
+                        if jid::is_placeholder_name(&k.jid, &k.name) { jid::fallback_name(&k.jid) } else { k.name.clone() },
+                    ));
                 }
             }
         });

@@ -70,6 +70,7 @@ struct TranscriptConversation: View {
         let lastPrompt = shown.last(where: { $0.kind == .user && !$0.queued })?.id
         let cards = Dictionary(turns.filter { !(working && $0.id == lastPrompt) }.compactMap { turn in turn.answerID.map { ($0, turn) } },
                                uniquingKeysWith: { first, _ in first })
+        let beforeNew = newSince.flatMap { id in rows.firstIndex { $0.id == id } }.flatMap { $0 > 0 ? rows[$0 - 1].id : nil }
         HStack(alignment: .top, spacing: 0) {
             ScrollViewReader { proxy in
                 // No scroll bar, not even when the system shows them always: the rail beside it marks your messages.
@@ -94,7 +95,8 @@ struct TranscriptConversation: View {
                                 }
                                 .id(row.id)
                             } else {
-                                self.row(row, answerable: answerable, cards: cards).id(row.id)
+                                // The "new since" line is a hairline of its own: a fold right above it gives up its own.
+                                self.row(row, answerable: answerable, cards: cards, ruled: row.id != beforeNew).id(row.id)
                             }
                         }
                         if let footer {
@@ -109,7 +111,7 @@ struct TranscriptConversation: View {
                     .chatColumn()
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Open at the newest message; the transcript loads after the view appears, so also follow it once it arrives.
                 .defaultScrollAnchor(.bottom)
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.1) { ids in onScreen.ids = Set(ids) }
@@ -180,6 +182,9 @@ struct TranscriptConversation: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
+        // would hand the panels more room than there is and push everything off both sides.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
         .environment(\.fileLinkBase, directory)
@@ -228,12 +233,13 @@ struct TranscriptConversation: View {
     // MARK: Rows
 
     @ViewBuilder
-    private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff]) -> some View {
+    private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff], ruled: Bool = true) -> some View {
         if case let (key, text, inner)? = Self.fold(row) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 TranscriptFoldLine(text: text,
                                    open: open.contains(key),
-                                   checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))) { toggle(key) }
+                                   checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check)),
+                                   ruled: ruled) { toggle(key) }
                 if open.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         ForEach(inner) { flatRow($0, answerable: nil, cards: cards).id($0.id) }
@@ -499,15 +505,17 @@ private final class TranscriptDerived {
 }
 
 /// Your messages as short marks along the edge of the conversation, where a scroll bar would be: each sits about where
-/// the message is, a click scrolls to it, and hovering shows what you wrote.
+/// the message is, a click scrolls to it, and hovering shows the prompt you wrote. The rail itself only shows while the pointer is over it.
 struct TranscriptPromptRail: View {
     let marks: [PromptMark]
     let onSelect: (PromptMark) -> Void
     @State private var hovered: String?
+    /// The pointer is over the rail: only then it shows, with a background so the marks stand out over the text.
+    @State private var overRail = false
 
-    private static let width: CGFloat = 16
+    private static let width: CGFloat = 28
     /// The height each mark can be clicked over.
-    private static let target: CGFloat = 8
+    private static let target: CGFloat = 16
 
     var body: some View {
         GeometryReader { geometry in
@@ -522,7 +530,7 @@ struct TranscriptPromptRail: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(Self.summary(mark.text))
+                .hoverCard { PromptCard(text: Self.prompt(mark.text)) }
                 .onHover { inside in
                     if inside { hovered = mark.id } else if hovered == mark.id { hovered = nil }
                 }
@@ -530,14 +538,39 @@ struct TranscriptPromptRail: View {
             }
         }
         .frame(width: Self.width)
+        .background(
+            RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                .fill(DropdownStyle.panel)
+                .opacity(overRail ? 0.92 : 0)
+        )
+        .opacity(overRail ? 1 : 0)
+        .contentShape(Rectangle())
+        .onHover { overRail = $0 }
         .animation(NookTheme.hover, value: hovered)
+        .animation(NookTheme.hover, value: overRail)
     }
 
-    /// The first line of a message, without the pictures sent along, short enough for a tooltip.
-    private static func summary(_ text: String) -> String {
+    /// What you wrote, without the pictures sent along, cut when it is too long for a card.
+    private static func prompt(_ text: String) -> String {
         let words = ImageAttachment.splittingPaths(from: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let line = words.split(separator: "\n").first.map(String.init) ?? words
-        return line.count > 80 ? String(line.prefix(79)) + "…" : line
+        return words.count > 600 ? String(words.prefix(599)) + "…" : words
+    }
+}
+
+/// The prompt behind a mark on the rail, in a card beside it.
+private struct PromptCard: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textSecondary)
+            .lineLimit(12)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(NookTheme.Spacing.lg)
+            .frame(width: 300, alignment: .leading)
+            .background(DropdownStyle.panel)
     }
 }
 
@@ -818,6 +851,8 @@ struct TranscriptFoldLine: View {
     let open: Bool
     /// What the turn's tests and builds came to, in sight while its work is folded.
     var checks: [VerificationCheck] = []
+    /// The hairline under the line; off when another rule follows right away.
+    var ruled = true
     let action: () -> Void
     @State private var hovering = false
 
@@ -835,7 +870,7 @@ struct TranscriptFoldLine: View {
             .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
             .padding(.top, NookTheme.Spacing.xxs)
             .padding(.bottom, NookTheme.Spacing.md)
-            .overlay(alignment: .bottom) { NookDivider() }
+            .overlay(alignment: .bottom) { if ruled { NookDivider() } }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

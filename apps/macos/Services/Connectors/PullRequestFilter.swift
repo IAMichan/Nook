@@ -426,3 +426,11 @@ extension AccountPullRequests {
         }
     }
 }
+
+/// The one search and Filters of every pull request list: the Pull requests page and the side panel's picker read and
+/// change the same filter, so a choice in one applies in the other, and it is kept across launches.
+@MainActor
+final class PullRequestFilterStore: ObservableObject {
+    static let shared = PullRequestFilterStore()
+    @Published var filter = PullRequestFilter.load() { didSet { if filter != oldValue { filter.save() } } }
+}

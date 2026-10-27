@@ -140,6 +140,7 @@ pub fn run() {
             commands::connectors::github_device_start,
             commands::connectors::github_pull_requests,
             commands::connectors::github_pull_request,
+            commands::connectors::github_ci_log,
             commands::connectors::github_merge_pull_request,
             commands::connectors::pull_watch_add,
             commands::connectors::pull_watch_remove,

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Git as seen from the folder a session works in, for any session: one Nook runs, one in a terminal, or an earlier
-/// one. Reads the branch, the changes and what is not pushed yet, and switches branches or pushes on request.
+/// one. Reads the branch, the changes and what is not pushed yet, and and switches branches on request.
 @MainActor
 final class FolderGitModel: ObservableObject {
     @Published private(set) var status: GitStatus?
@@ -47,12 +47,6 @@ final class FolderGitModel: ObservableObject {
     var files: [GitFileChange] { status?.files ?? [] }
     var added: Int { changes.compactMap(\.added).reduce(0, +) }
     var removed: Int { changes.compactMap(\.removed).reduce(0, +) }
-
-    /// A branch that has commits the remote does not have yet, or no upstream at all.
-    var canPush: Bool {
-        guard let status, status.branch != nil, !status.detached, !remotes.isEmpty, !working else { return false }
-        return status.upstream == nil || status.ahead > 0
-    }
 
     func refresh() async {
         if git == nil { git = await Task.detached(priority: .utility) { GitService.shared }.value }
@@ -104,14 +98,6 @@ final class FolderGitModel: ObservableObject {
         }
     }
 
-    func push() {
-        guard let git, let root, canPush, let branch = status?.branch else { return }
-        let remote = remotes.contains("origin") ? "origin" : (remotes.first ?? "origin")
-        perform(done: tr("ws.quick.done.push"), failed: tr("toast.failed", tr("ws.quick.push"))) {
-            try git.push(root, remote: remote, branch: branch)
-        }
-    }
-
     func diff(_ file: GitFileChange) async throws -> String {
         guard let git, let root else { throw GitError(tr("ws.error.noGit")) }
         let ref = file.kind == .untracked ? nil : comparedTo
@@ -154,6 +140,9 @@ struct FolderGitButton: View {
     /// Called after a push or branch switch, so a session Nook runs can refresh its own view of git.
     var onChange: (() -> Void)? = nil
     @State private var open = false
+    /// With room beside the conversation the session panel stays open on the right (`DockedSessionPanel`); this
+    /// button, which opens it as a popover, steps aside.
+    @Environment(\.sessionPanelDocked) private var docked
 
     init(directory: String, runID: UUID? = nil, agentWorking: Bool, showChanges: @escaping () -> Void, onChange: (() -> Void)? = nil) {
         _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
@@ -165,7 +154,7 @@ struct FolderGitButton: View {
 
     var body: some View {
         Group {
-            if !model.directory.isEmpty {
+            if !model.directory.isEmpty, !docked {
                 HStack(spacing: 0) {
                     Button { open.toggle() } label: {
                         if model.isRepository {
@@ -201,8 +190,8 @@ struct FolderGitButton: View {
                 .fixedSize()
             }
         }
-        .task(id: model.directory) {
-            while !Task.isCancelled {
+        .task(id: "\(model.directory)|\(docked)") {
+            while !Task.isCancelled, !docked {
                 await model.refresh()
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
             }
@@ -229,6 +218,44 @@ struct FolderGitButton: View {
         .padding(.horizontal, 7)
         .frame(height: ToolbarGroup.itemHeight)
         .contentShape(Rectangle())
+    }
+}
+
+extension EnvironmentValues {
+    /// The session panel is docked beside the conversation, so the header's branch button is not needed.
+    @Entry var sessionPanelDocked = false
+}
+
+/// The session panel as a column beside the conversation, for a window with room for it. It is the same panel the
+/// branch button opens as a popover when the window is narrower.
+struct DockedSessionPanel: View {
+    @EnvironmentObject private var workspace: WorkspaceManager
+    @StateObject private var model: FolderGitModel
+    let runID: UUID?
+    let agentWorking: Bool
+    let showChanges: () -> Void
+
+    init(directory: String, runID: UUID?, agentWorking: Bool, showChanges: @escaping () -> Void) {
+        _model = StateObject(wrappedValue: FolderGitModel(directory: directory))
+        self.runID = runID
+        self.agentWorking = agentWorking
+        self.showChanges = showChanges
+    }
+
+    var body: some View {
+        ScrollView {
+            SessionPanel(model: model, runID: runID, agentWorking: agentWorking, showChanges: showChanges, close: {}, docked: true)
+        }
+        .scrollIndicators(.never)
+        .task(id: model.directory) {
+            while !Task.isCancelled {
+                await model.refresh()
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+            }
+        }
+        .onChange(of: model.working) { _, working in
+            if !working, let runID { workspace.refreshGit(runID) }
+        }
     }
 }
 

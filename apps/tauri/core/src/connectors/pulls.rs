@@ -930,6 +930,131 @@ pub async fn load_detail(env: &Env, token: &str, repo: &str, number: i64) -> CRe
     Ok(detail.finish())
 }
 
+/// One step of a GitHub Actions job.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CiStep {
+    pub number: i64,
+    pub name: String,
+    pub outcome: CheckOutcome,
+}
+
+/// What a check shows when you open it in Nook (`CILog` on the Mac): the steps of its job and, once GitHub has it, the
+/// end of the log.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CiLog {
+    pub steps: Vec<CiStep>,
+    /// The end of the log, cleaned up for reading; None while GitHub has none yet (a job that still runs).
+    pub text: Option<String>,
+    /// Lines left out at the top because the log was longer than Nook shows.
+    pub omitted_lines: usize,
+}
+
+/// The lines of a log Nook shows: the end, where a failure is.
+pub const LOG_LINES: usize = 2_000;
+
+/// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); None for a check from another app.
+pub fn job_id(url: &str) -> Option<i64> {
+    let url = url::Url::parse(url).ok()?;
+    if !url.host_str().is_some_and(|h| h.ends_with("github.com")) {
+        return None;
+    }
+    let parts: Vec<&str> = url.path_segments()?.collect();
+    let index = parts.iter().position(|p| *p == "job")?;
+    if !parts.contains(&"actions") {
+        return None;
+    }
+    parts.get(index + 1)?.parse().ok()
+}
+
+/// The steps of `GET /actions/jobs/{id}`, in order.
+pub fn parse_steps(job: &Value) -> Vec<CiStep> {
+    list(&job["steps"])
+        .iter()
+        .map(|step| {
+            let status = step["status"].as_str().unwrap_or("");
+            let conclusion = step["conclusion"].as_str().unwrap_or("");
+            let outcome = if status != "completed" {
+                CheckOutcome::Pending
+            } else if ["failure", "timed_out", "cancelled"].contains(&conclusion) {
+                CheckOutcome::Failing
+            } else if ["skipped", "neutral"].contains(&conclusion) {
+                CheckOutcome::Skipped
+            } else {
+                CheckOutcome::Passing
+            };
+            CiStep { number: step["number"].as_i64().unwrap_or(0), name: step["name"].as_str().unwrap_or("?").to_string(), outcome }
+        })
+        .collect()
+}
+
+/// A raw job log as people read it: without the timestamp GitHub puts before every line and without terminal colour
+/// codes, and only its last `limit` lines.
+pub fn clean_log(raw: &str, limit: usize) -> (String, usize) {
+    let raw = raw.replace("\r\n", "\n");
+    let mut lines: Vec<&str> = raw.split('\n').collect();
+    if lines.last() == Some(&"") {
+        lines.pop();
+    }
+    let omitted = lines.len().saturating_sub(limit);
+    let shown: Vec<String> = lines[omitted..].iter().map(|line| strip_ansi(strip_timestamp(line))).collect();
+    (shown.join("\n"), omitted)
+}
+
+/// "2026-10-20T12:00:01.1234567Z Run cargo test" → "Run cargo test".
+fn strip_timestamp(line: &str) -> &str {
+    let body = line.strip_prefix('\u{FEFF}').unwrap_or(line);
+    let Some((stamp, rest)) = body.split_once(' ') else { return body };
+    let stamped = stamp.len() >= 20
+        && stamp.ends_with('Z')
+        && stamp.as_bytes().get(10) == Some(&b'T')
+        && stamp.as_bytes()[..4].iter().all(u8::is_ascii_digit);
+    if stamped {
+        rest
+    } else {
+        body
+    }
+}
+
+/// Removes ESC [ … letter sequences (colours, cursor moves).
+fn strip_ansi(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1B}' {
+            result.push(c);
+            continue;
+        }
+        if chars.next() != Some('[') {
+            continue;
+        }
+        for code in chars.by_ref() {
+            if code.is_alphabetic() {
+                break;
+            }
+        }
+    }
+    result
+}
+
+/// The steps of a job and, once GitHub has it (a running job has none yet), the end of its log. GitHub answers the log
+/// request with a redirect to a short-lived download link; the client does not send the token along to that other host.
+pub async fn load_ci_log(env: &Env, token: &str, repo: &str, job: i64) -> CResult<CiLog> {
+    let base = format!("{}/repos/{repo}/actions/jobs/{job}", api());
+    let headers = super::github::headers(token);
+    let job = env.http.get(&base, &headers, "GitHub").await?;
+    let mut log = CiLog { steps: parse_steps(&job), text: None, omitted_lines: 0 };
+    if let Ok((status, bytes)) = env.http.send("GET", &format!("{base}/logs"), &headers, None, "GitHub").await {
+        if (200..300).contains(&status) {
+            let (text, omitted) = clean_log(&String::from_utf8_lossy(&bytes), LOG_LINES);
+            log.text = Some(text);
+            log.omitted_lines = omitted;
+        }
+    }
+    Ok(log)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1097,6 +1222,42 @@ mod tests {
         failing.checks = parse_checks(&[json!({"name": "ci", "status": "completed", "conclusion": "failure"})], &[]);
         let failing = failing.finish();
         assert_eq!((failing.check_summary, failing.merge_note.as_deref(), failing.can_merge), (Ci::Failing, Some("unstable"), true));
+    }
+
+    #[test]
+    fn job_id_only_for_github_actions() {
+        assert_eq!(job_id("https://github.com/o/r/actions/runs/123/job/456"), Some(456));
+        assert_eq!(job_id("https://github.com/o/r/actions/runs/123/job/456?pr=7"), Some(456));
+        // A check run page, not a job; and another host.
+        assert_eq!(job_id("https://github.com/o/r/runs/456"), None);
+        assert_eq!(job_id("https://ci.example.com/actions/runs/1/job/2"), None);
+    }
+
+    #[test]
+    fn job_steps() {
+        let job = json!({"steps": [
+            {"number": 1, "name": "Set up job", "status": "completed", "conclusion": "success"},
+            {"number": 2, "name": "Test", "status": "completed", "conclusion": "failure"},
+            {"number": 3, "name": "Upload", "status": "completed", "conclusion": "skipped"},
+            {"number": 4, "name": "Post", "status": "in_progress"},
+        ]});
+        let steps = parse_steps(&job);
+        let outcomes: Vec<CheckOutcome> = steps.iter().map(|s| s.outcome).collect();
+        assert_eq!(outcomes, vec![CheckOutcome::Passing, CheckOutcome::Failing, CheckOutcome::Skipped, CheckOutcome::Pending]);
+        assert_eq!(steps[3].name, "Post");
+        assert!(parse_steps(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn clean_log_drops_timestamps_and_colours() {
+        let raw = "\u{FEFF}2026-10-20T12:00:01.1234567Z ##[group]Run cargo test\r\n2026-10-20T12:00:02.0000000Z \u{1B}[31merror:\u{1B}[0m it broke\nno stamp here\n";
+        assert_eq!(clean_log(raw, LOG_LINES), ("##[group]Run cargo test\nerror: it broke\nno stamp here".to_string(), 0));
+    }
+
+    #[test]
+    fn clean_log_keeps_the_end() {
+        let raw: Vec<String> = (1..=10).map(|i| format!("line {i}")).collect();
+        assert_eq!(clean_log(&raw.join("\n"), 3), ("line 8\nline 9\nline 10".to_string(), 7));
     }
 
     #[test]

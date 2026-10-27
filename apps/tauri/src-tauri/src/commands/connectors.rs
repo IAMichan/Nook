@@ -10,7 +10,7 @@ use nook_core::connectors::github;
 use nook_core::connectors::hub::Connector;
 use nook_core::connectors::hub::ConnectorInfo;
 use nook_core::connectors::mcp::{self, connector as mcp_store, McpServerConfig, McpTool, Pasted, Transport};
-use nook_core::connectors::pulls::{self, PullRequestDetail, PullRequestList};
+use nook_core::connectors::pulls::{self, CiLog, PullRequestDetail, PullRequestList};
 use nook_core::connectors::whatsapp::{link::LinkView, Conversation, WhatsAppSettings};
 use nook_core::connectors::ConnectorError;
 use nook_core::connectors::{brand, gitlab};
@@ -376,6 +376,17 @@ pub async fn github_pull_request(c: State<'_, Connectors>, account: Option<Strin
     pull_target(&repo, number)?;
     let (_, token) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
     Ok(pulls::load_detail(&c.env, &token, &repo, number).await?)
+}
+
+/// The steps and the end of the log of one GitHub Actions job of a pull request's checks, so a failing check can be read
+/// in Nook instead of on GitHub.
+#[tauri::command]
+pub async fn github_ci_log(c: State<'_, Connectors>, account: Option<String>, repo: String, job: i64) -> Res<CiLog> {
+    if !github::is_repository(&repo) || job <= 0 {
+        return Err("Deze check bestaat niet.".into());
+    }
+    let (_, token) = c.github.token_for(account.as_deref()).ok_or(NO_GITHUB)?;
+    Ok(pulls::load_ci_log(&c.env, &token, &repo, job).await?)
 }
 
 /// Merges a pull request after the user confirmed it in the view, through the same `github_merge_pr` action a plan

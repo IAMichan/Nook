@@ -486,3 +486,34 @@ private struct FilterChoiceRow: View {
         .contentShape(Rectangle())
     }
 }
+
+/// The search and Filters of a pull request list: the search field (which also takes `label:bug`, `author:ada` …),
+/// anything the list puts between them (Sort), then the Filters button. The Pull requests page and the side panel's
+/// pull request picker both use it, so the two lists filter the same way.
+struct PullRequestSearchBar<Middle: View>: View {
+    @Binding var filter: PullRequestFilter
+    let accounts: [AccountPullRequests]
+    let prompt: String
+    var watching = false
+    var focus: FocusState<Bool>.Binding? = nil
+    var onEscape: (() -> Void)? = nil
+    var style: NookSearchField.Style = .panel
+    @ViewBuilder var middle: () -> Middle
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            NookSearchField(prompt: prompt, text: $filter.query, style: style, focus: focus, onEscape: onEscape)
+            middle()
+            PullRequestFilterMenu(filter: $filter, facets: PullRequestFilter.facets(in: accounts, state: filter.state),
+                                  accounts: accounts.map { (id: $0.id, name: $0.login.isEmpty ? $0.name : $0.name + " · @" + $0.login) },
+                                  watching: watching)
+        }
+    }
+}
+
+extension PullRequestSearchBar where Middle == EmptyView {
+    init(filter: Binding<PullRequestFilter>, accounts: [AccountPullRequests], prompt: String, watching: Bool = false,
+         style: NookSearchField.Style = .panel) {
+        self.init(filter: filter, accounts: accounts, prompt: prompt, watching: watching, style: style) { EmptyView() }
+    }
+}

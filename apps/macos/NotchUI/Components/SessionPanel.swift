@@ -73,6 +73,8 @@ struct SessionPanel: View {
     let agentWorking: Bool
     let showChanges: () -> Void
     let close: () -> Void
+    /// Beside the conversation: flat on the canvas like the tool panels, instead of the popover's own card.
+    var docked = false
 
     @AppStorage("agents.panel.openIn") private var openInID = OpenInTarget.finder
     @State private var targets: [OpenInTarget] = []
@@ -112,9 +114,10 @@ struct SessionPanel: View {
                     .padding(.vertical, NookTheme.Spacing.sm)
             }
         }
-        .padding(NookTheme.Spacing.sm)
-        .frame(width: 300, alignment: .leading)
-        .background(DropdownStyle.panel)
+        .padding(NookTheme.Spacing.md)
+        .frame(width: docked ? nil : 300, alignment: .leading)
+        .frame(maxWidth: docked ? .infinity : nil, alignment: .leading)
+        .background(docked ? Color.clear : DropdownStyle.panel)
         .task(id: directory) {
             targets = OpenInTarget.available()
             let folder = directory
@@ -127,22 +130,24 @@ struct SessionPanel: View {
             guard let runID, progress == nil else { return }
             quick = await workspace.quickGitState(runID)
         }
+        // A session Nook only sees: looked at again whenever its folder's git status changes.
+        .task(id: runID == nil ? model.status : nil) {
+            guard runID == nil, progress == nil else { return }
+            await readFolderState()
+        }
     }
 
     // MARK: Machine and folder
 
     private var machineRow: some View {
-        PanelRow(icon: AnyView(HStack(spacing: NookTheme.Spacing.xxs) {
-            Image(systemName: "laptopcomputer")
-            Image(systemName: "folder")
-        }.font(NookTheme.font(11, .medium)).foregroundStyle(NookTheme.textSecondary).fixedSize()),
+        PanelRow(icon: symbol("laptopcomputer"),
                  title: machine.isEmpty ? "Mac" : machine,
-                 detail: AgentPathFormat.tilde(directory),
-                 iconWidth: 34,
+                 help: AgentPathFormat.tilde(directory),
                  menu: AnyView(Group {
                      Button(tr("button.openTerminalHere")) { done { app.openTerminal(in: directory) } }
                      Button(tr("agents.panel.copyPath")) { Pasteboard.copy(directory) }
-                 }))
+                 }),
+                 menuSymbol: "folder")
     }
 
     private var openInRow: some View {
@@ -255,13 +260,14 @@ struct SessionPanel: View {
     private var branchRow: some View {
         let branch = model.status?.branch
         let base = run?.baseBranch ?? model.base
-        let title = base.flatMap { $0 == branch ? nil : tr("agents.panel.from", $0) } ?? (branch ?? tr("agents.git.detached"))
+        let title = branch ?? tr("agents.git.detached")
         var trailing: String?
         if let status = model.status, status.upstream != nil, status.ahead + status.behind > 0 {
             trailing = "↑\(status.ahead) ↓\(status.behind)"
         }
         return PanelRow(icon: symbol("arrow.triangle.branch"), title: title,
-                        detail: title == branch ? nil : branch, trailing: trailing.map { AnyView(Text($0).font(NookTheme.mono(11))) },
+                        trailing: trailing.map { AnyView(Text($0).font(NookTheme.mono(11))) },
+                        help: base.flatMap { $0 == branch ? nil : tr("agents.panel.from", $0) },
                         menu: AnyView(Group {
                             Section(tr("agents.panel.switchBranch")) {
                                 ForEach(model.branches, id: \.self) { name in
@@ -286,21 +292,10 @@ struct SessionPanel: View {
 
     // MARK: Commit, push, pull request
 
-    @ViewBuilder
+    /// The same button for every session: one Nook runs goes through its workspace, one it only sees (started in a
+    /// terminal or the Claude desktop app) through its folder.
     private var commitRow: some View {
-        if let runID {
-            runCommitRow(runID)
-        } else {
-            // A session Nook only sees: pushing is all it does here; committing is left to the agent or you.
-            PanelRow(icon: symbol("arrow.up.circle"),
-                     title: model.status.map { $0.ahead > 0 ? tr("agents.git.pushAhead", $0.ahead) : tr("agents.git.push") } ?? tr("agents.git.push"),
-                     disabledReason: model.canPush ? nil : tr("agents.panel.commitNookOnly"),
-                     action: { model.push() })
-        }
-    }
-
-    private func runCommitRow(_ runID: UUID) -> some View {
-        let active = run?.status.isActive == true
+        let active = runID == nil ? agentWorking : run?.status.isActive == true
         let resolved: (action: GitQuickAction?, reason: String?)
         switch quick.map(GitQuickResolver.resolve) {
         case .success(let found)?: resolved = (found, nil)
@@ -309,7 +304,7 @@ struct SessionPanel: View {
         }
         let action = resolved.action
         let reason = active ? tr("ws.error.busy") : resolved.reason
-        let files = workspace.git[runID]?.status?.files ?? model.files
+        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
         let behind = (quick?.behind ?? 0) > 0
         return PanelRow(icon: progress != nil ? AnyView(ProgressView().controlSize(.mini)) : symbol(action.map(Self.actionSymbol) ?? "checkmark.circle"),
                         title: progress ?? action.map { tr($0.labelKey) } ?? tr("ws.quick.commit"),
@@ -317,19 +312,30 @@ struct SessionPanel: View {
                         disabledReason: progress ?? (action == nil || active ? reason : nil),
                         action: { if let action { start(action) } },
                         menu: AnyView(Group {
-                            Button(tr("ws.git.commit")) { done { app.viewModel.open(.commit(runID)) } }
+                            Button(tr("ws.git.commit")) { open(commit: true) }
                                 .disabled(files.isEmpty || active)
-                            Button(tr("ws.git.push")) { push(runID) }
+                            Button(tr("ws.git.push")) { push() }
                                 .disabled(active || progress != nil || model.status?.detached == true)
-                            Button(tr("ws.git.pullRequest")) { done { app.viewModel.open(.pullRequest(runID)) } }
+                            Button(tr("ws.git.pullRequest")) { open(commit: false) }
                                 .disabled(active)
                             Button(tr("ws.quick.pull")) { perform(.pull) }
                                 .disabled(active || progress != nil || !behind)
-                            if let link = workspace.openPullRequests[runID] {
-                                Divider()
-                                Button(tr("ws.quick.viewPR")) { done { BrowserStore.show(link) } }
-                            }
                         }))
+    }
+
+    /// The commit or pull request sheet: of the session Nook runs, else of the repository it works in.
+    private func open(commit: Bool) {
+        if let runID {
+            done { app.viewModel.open(commit ? .commit(runID) : .pullRequest(runID)) }
+        } else if let root = model.root {
+            done { app.viewModel.open(commit ? .folderCommit(root) : .folderPullRequest(root)) }
+        }
+    }
+
+    /// The button's state for a session Nook only sees, read in its repository root.
+    private func readFolderState() async {
+        guard let root = model.root, let status = model.status else { quick = nil; return }
+        quick = await workspace.quickGitState(folder: root, status: status)
     }
 
     private static func actionSymbol(_ action: GitQuickAction) -> String {
@@ -346,24 +352,29 @@ struct SessionPanel: View {
     }
 
     private func perform(_ action: GitQuickAction) {
-        guard let runID else { return }
+        let root = model.root
+        guard runID != nil || root != nil else { return }
         confirmDefault = nil
         progress = tr(action.labelKey)
         Task {
             do {
-                // A pull request it made stays put: "View PR" in the menu opens it in Nook's browser when you want it.
-                let link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                // A pull request it made stays put in the tray above the composer.
+                let link: URL?
+                if let runID {
+                    link = try await workspace.performQuickGit(runID, action, progress: { progress = $0 })
+                } else {
+                    link = try await workspace.performQuickGit(folder: root ?? directory, action, progress: { progress = $0 })
+                }
                 ToastCenter.shared.gitQuick(action, result: .success(link))
             } catch let failure {
                 ToastCenter.shared.gitQuick(action, result: .failure(failure))
             }
-            progress = nil
-            quick = await workspace.quickGitState(runID)
-            await model.refresh()
+            await finish()
         }
     }
 
-    private func push(_ runID: UUID) {
+    private func push() {
+        guard let runID else { return perform(.push) }
         progress = tr("ws.quick.pushing")
         Task {
             do {
@@ -372,10 +383,15 @@ struct SessionPanel: View {
             } catch let failure {
                 ToastCenter.shared.gitQuick(.push, result: .failure(failure))
             }
-            progress = nil
-            quick = await workspace.quickGitState(runID)
-            await model.refresh()
+            await finish()
         }
+    }
+
+    /// After an action: read git again, for the button and the rest of the panel.
+    private func finish() async {
+        progress = nil
+        await model.refresh()
+        if let runID { quick = await workspace.quickGitState(runID) } else { await readFolderState() }
     }
 
     /// Pushing to the default branch asks first, right here in the panel.
@@ -403,8 +419,8 @@ struct SessionPanel: View {
         return PanelRow(icon: symbol("plus.forwardslash.minus"),
                         title: files.isEmpty ? tr("agents.panel.changes") : tr("agents.git.changes", files.count),
                         trailing: AnyView(HStack(spacing: 5) {
-                            Text("+\(added)").foregroundStyle(NookTheme.mint)
-                            Text("−\(removed)").foregroundStyle(NookTheme.coral)
+                            Text("+\(added)").foregroundStyle(added > 0 ? NookTheme.mint : NookTheme.textTertiary)
+                            Text("−\(removed)").foregroundStyle(removed > 0 ? NookTheme.coral : NookTheme.textTertiary)
                         }.font(NookTheme.mono(11.5))),
                         disabledReason: files.isEmpty ? tr("agents.git.noChanges") : nil,
                         action: { done(showChanges) })
@@ -436,6 +452,8 @@ private struct PanelRow: View {
     var disabledReason: String? = nil
     var action: (() -> Void)? = nil
     var menu: AnyView? = nil
+    /// The mark at the end of the line that opens `menu`.
+    var menuSymbol = "chevron.down"
     @State private var hovering = false
 
     private var enabled: Bool { disabledReason == nil }
@@ -448,7 +466,6 @@ private struct PanelRow: View {
                     .disabled(!enabled)
                     .opacity(enabled ? 1 : 0.55)
                 if let menu {
-                    Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
                     Menu { menu } label: { chevron.frame(width: 30, height: 34).contentShape(Rectangle()) }
                         .composerMenu()
                         .help(tr("a11y.more"))
@@ -471,7 +488,7 @@ private struct PanelRow: View {
                 content.opacity(enabled ? 1 : 0.55)
             }
         }
-        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(hovering && enabled ? DropdownStyle.hover : .clear))
         .onHover { hovering = $0 }
         .help(disabledReason ?? help ?? "")
     }
@@ -504,8 +521,8 @@ private struct PanelRow: View {
     }
 
     private var chevron: some View {
-        Image(systemName: "chevron.down")
-            .font(NookTheme.font(10, .semibold))
+        Image(systemName: menuSymbol)
+            .font(NookTheme.font(menuSymbol == "chevron.down" ? 10 : 12, menuSymbol == "chevron.down" ? .semibold : .medium))
             .foregroundStyle(NookTheme.textSecondary)
     }
 }

@@ -4,7 +4,7 @@ import WebKit
 
 /// Linking one chat app, or managing it once it is linked, in numbered steps. Nook links the apps it reads itself in its
 /// own way, with nothing else needed: WhatsApp with a QR code from your phone, Teams with a code from Microsoft, Slack
-/// with a token, Messages from this Mac. Telegram, Instagram, Messenger, Signal, X and LinkedIn link through the chat
+/// with a token, Messages from this Mac, Snapchat from its website. Telegram, Instagram, Messenger, Signal, X and LinkedIn link through the chat
 /// service on this Mac (Nook's own helper: your phone number and a code, logging in on the app's own website, or a QR
 /// code), which is also offered as another way for the rest while it runs. A build without the helper
 /// links Telegram itself, through TDLib.
@@ -296,6 +296,7 @@ struct ChatOwnLinkSteps: View {
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
     @ObservedObject private var whatsApp = WhatsAppLink.shared
     @ObservedObject private var installer = WhatsAppGOWAInstaller.shared
+    @ObservedObject private var snapchat = SnapchatWebSession.shared
     @State private var whatsAppOptions = false
 
     var body: some View {
@@ -321,6 +322,8 @@ struct ChatOwnLinkSteps: View {
             }
         case capture.messagesBridge.app:
             messagesStep
+        case capture.snapchatBridge.app:
+            snapchatStep
         default:
             EmptyView()
         }
@@ -398,6 +401,35 @@ struct ChatOwnLinkSteps: View {
         case .verifying: return tr("whatsapp.install.verifying")
         case .installing: return tr("whatsapp.install.installing")
         default: return tr("whatsapp.install.checking")
+        }
+    }
+
+    // MARK: Snapchat
+
+    @ViewBuilder
+    private var snapchatStep: some View {
+        let app = capture.snapchatBridge.app
+        SetupStep(number: 1, title: tr("chats.own.snapchat.step"), done: snapchat.isSignedIn) {
+            if snapchat.isSignedIn {
+                let problem = capture.bridgeProblems[app]
+                StatusRow(title: tr("chats.snapchat.connected"), detail: problem ?? tr("chats.snapchat.connectedDetail"),
+                          state: problem == nil ? .done : .error) {
+                    ConfirmedButton(tr("chats.teams.signOut"), question: tr("confirm.logout", "Snapchat")) {
+                        snapchat.signOut()
+                        capture.snapchatBridge.reset()
+                        capture.bridgeChanged(app)
+                    }
+                }
+            } else {
+                detail(tr("chats.snapchat.signInDetail"))
+                SettingNote(tr("chats.link.risk", "Snapchat"), tone: .warning)
+                Button(tr("chats.snapchat.signIn")) {
+                    snapchat.signIn(title: tr("chats.link.browser.title", "Snapchat")) { linked(app) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(snapchat.isSigningIn)
+            }
+            SettingNote(tr("chats.snapchat.howItReads"))
         }
     }
 

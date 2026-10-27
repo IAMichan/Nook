@@ -8,9 +8,23 @@ extension AppModel {
         profiles.profile(id: profileID)?.home ?? ""
     }
 
+    /// The current session id of the Nook session that continues an earlier id of the same conversation, by
+    /// "<agent>|<earlier id>". A chat resumed in Nook gets a new id; the transcript under the old one is still that chat.
+    private var continuedSessionIDs: [String: String] {
+        var map: [String: String] = [:]
+        for run in workspace.runs {
+            guard let current = run.providerSessionID, !current.isEmpty else { continue }
+            for earlier in run.conversation?.earlierSessions ?? [] {
+                map["\(run.provider.displayName)|\(earlier)"] = current
+            }
+        }
+        return map
+    }
+
     /// Every known conversation as a record, one per source row (not yet merged).
     func sessionRecords() -> [AgentSessionRecord] {
         var records: [AgentSessionRecord] = []
+        let continued = continuedSessionIDs
         let sessions = hub.sessions + hub.detected
         for session in sessions {
             let phase: AgentSessionRecord.Phase
@@ -25,7 +39,7 @@ extension AppModel {
                 sources: [session.isDetected ? .process : .hook],
                 agent: session.name,
                 accountHome: session.home,
-                conversationID: session.isDetected ? "" : (conversationID(for: session) ?? ""),
+                conversationID: session.isDetected ? "" : (conversationID(for: session).map { continued["\(session.name)|\($0)"] ?? $0 } ?? ""),
                 pid: session.isDetected ? Int32(session.id.dropFirst(5)) : nil,
                 cwd: session.cwd,
                 title: session.project,
@@ -61,7 +75,7 @@ extension AppModel {
                 sources: [.transcript],
                 agent: past.agent.name,
                 accountHome: accountHome(profileID: past.profileID),
-                conversationID: past.sessionID,
+                conversationID: continued["\(past.agent.name)|\(past.sessionID)"] ?? past.sessionID,
                 pid: nil,
                 cwd: past.cwd,
                 title: past.title,
@@ -121,11 +135,13 @@ extension AppModel {
 
     private var pastNotCovered: [PastSession] {
         let shown = Set(mergedSessions.filter { $0.leading != .transcript }.compactMap(\.conversationKey))
+        let continued = continuedSessionIDs
         return history.sessions.filter { past in
             // A resumed chat is covered when a running session continues any of its transcripts.
             ([past.sessionID] + past.earlierIDs).allSatisfy { id in
                 let key = AgentSessionRecord(id: "", sources: [.transcript], agent: past.agent.name,
-                                             accountHome: accountHome(profileID: past.profileID), conversationID: id,
+                                             accountHome: accountHome(profileID: past.profileID),
+                                             conversationID: continued["\(past.agent.name)|\(id)"] ?? id,
                                              pid: nil, cwd: "", title: "", phase: .finished, updated: past.ended).conversationKey
                 return key.map { !shown.contains($0) } ?? true
             }
@@ -151,5 +167,25 @@ extension AppModel {
         let current = external.filter { $0.section != .earlier }
         let earlier = external.filter { $0.section == .earlier }.prefix(limitEarlier)
         return current + earlier
+    }
+
+    /// A conversation Nook runs that was continued in the terminal (`claude --resume` writes a new transcript under a new
+    /// session id): the Nook session moves on to that id and shows what was said there. Without it the continuation
+    /// appeared as a second chat and Nook's next turn resumed the older conversation, losing the terminal's messages.
+    func followTerminalContinuations() {
+        for run in workspace.runs where !run.archived && !run.status.isActive {
+            guard let current = run.providerSessionID, !current.isEmpty else { continue }
+            let agent = run.provider.displayName
+            guard let past = history.sessions.first(where: {
+                $0.agent.name == agent && $0.sessionID != current && !$0.path.isEmpty && $0.earlierIDs.contains(current)
+            }) else { continue }
+            let id = run.id
+            let path = past.path
+            let newSession = past.sessionID
+            Task { [weak self] in
+                let messages = await Task.detached(priority: .utility) { AgentTranscript.recent(path: path) }.value
+                self?.workspace.followContinuation(id, from: current, to: newSession, messages: messages)
+            }
+        }
     }
 }

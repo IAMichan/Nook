@@ -70,3 +70,19 @@ enum BrowserSearchEngine: String, CaseIterable, Identifiable, Sendable {
         return url
     }
 }
+
+/// Where a web link in an agent's conversation opens "link target" setting has it: in the session's side
+/// panel (its browser, or the artifact tab) or in the system browser. ⌘ or ⌃ while clicking, or the link's right-click
+/// menu, picks the other one for that link.
+enum AgentLinkTarget: String, CaseIterable, Identifiable, Sendable {
+    case app, system
+
+    var id: String { rawValue }
+    static let defaultsKey = "nook.agents.linkTarget"
+
+    var name: String { tr("settings.ws.linkTarget." + rawValue) }
+
+    static func current(defaults: UserDefaults = .standard) -> AgentLinkTarget {
+        defaults.string(forKey: defaultsKey).flatMap(AgentLinkTarget.init(rawValue:)) ?? .app
+    }
+}

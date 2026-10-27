@@ -61,7 +61,7 @@ public final class I18n: ObservableObject, @unchecked Sendable {
 
     /// Every table of texts, newest first: a later table never hides an earlier key, but wins over the base table.
     static var tables: [[AppLanguage: [String: String]]] {
-        [providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
+        [snapchatTranslations, providerTrafficTranslations, chatTimelineTranslations, releaseTranslations, relayPushTranslations, bridgeTranslations, agentLifecycleTranslations, workspaceFeatureTranslations, companionTranslations, beeperImportTranslations, chatReadTranslations, keybindingTranslations, harnessTranslations, searchTranslations, pullRequestTranslations, takeoverTranslations, chatMediaTranslations, chatComposeTranslations, doubleTapTranslations, noticesTranslations, privacyTranslations, toastTranslations, confirmTranslations, energyTranslations, updateTranslations, quietTranslations, buddyTranslations, controlTranslations, settingsLayoutTranslations, lookTranslations, selectionTranslations, homeTranslations, permissionTranslations, agentWorkTranslations, musicTranslations, languageTranslations, memoryTranslations, autocompleteTranslations, connectTranslations, completionTranslations, redesignTranslations, agentsTranslations, translations, workspaceTranslations]
     }
 
     /// Per language, every key with the text `lookup` finds for it: the tables merged in their order of precedence, with
@@ -287,6 +287,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.mail.cc": "Cc",
         "chat.mail.subject": "Onderwerp",
         "chat.mail.optional": "optioneel",
+        "chat.mail.dismiss": "Concept sluiten",
+        "chat.mail.dismissed": "gesloten, niet verstuurd",
+        "chat.mail.reopen": "Weer openen",
         "chat.choices.choose": "Kies iets",
         "chat.choices.sendCount": "Verstuur (%d)",
 
@@ -1066,6 +1069,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.mail.cc": "Cc",
         "chat.mail.subject": "Subject",
         "chat.mail.optional": "optional",
+        "chat.mail.dismiss": "Close draft",
+        "chat.mail.dismissed": "closed, not sent",
+        "chat.mail.reopen": "Reopen",
         "chat.choices.choose": "Choose an option",
         "chat.choices.sendCount": "Send (%d)",
 
@@ -1845,6 +1851,9 @@ private let translations: [AppLanguage: [String: String]] = [
         "chat.mail.cc": "Cc",
         "chat.mail.subject": "Betreff",
         "chat.mail.optional": "optional",
+        "chat.mail.dismiss": "Entwurf schließen",
+        "chat.mail.dismissed": "geschlossen, nicht gesendet",
+        "chat.mail.reopen": "Wieder öffnen",
         "chat.choices.choose": "Wähle eine Option",
         "chat.choices.sendCount": "Senden (%d)",
 

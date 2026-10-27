@@ -1,6 +1,7 @@
 // WhatsApp through a local gateway (GOWA or OpenWA) on this Mac: the messages, the conversations kept in memory, and
 // what the gateways send and answer. Pure Foundation (and CryptoKit for the webhook's signature), tested without the app
-// in Tests/NookTests/WhatsAppTests.swift. Nothing parsed here is ever written to disk or to a log.
+// in Tests/NookTests/WhatsAppTests.swift. No message text parsed here is ever written to disk or to a log; only poll
+// votes (`WAPollStore`) and the ticks of your own messages (`WAReceiptStore`) are kept, by message id.
 //
 // Adapted from open-source code under the MIT License, Copyright (c) 2026 Louis Raillé (see THIRD-PARTY-NOTICES.md). The gateway field names come from their docs:
 //   GOWA   — github.com/aldinokemal/go-whatsapp-web-multidevice (docs/webhook-payload.md, docs/openapi.yaml)
@@ -177,6 +178,28 @@ struct WAPollLedger: Codable, Equatable, Sendable {
 }
 
 /// Where `WAPollLedger` lives: a small JSON file in Nook's own folder, readable by the user only.
+/// Where the ticks of your messages are kept on this Mac (`WAReceiptLedger`): message ids, ticks and who has them, no text.
+enum WAReceiptStore {
+    static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-receipts.json") }
+
+    static func load(from file: URL = file) -> WAReceiptLedger {
+        guard let data = try? Data(contentsOf: file),
+              let ledger = try? JSONDecoder().decode(WAReceiptLedger.self, from: data) else { return WAReceiptLedger() }
+        return ledger
+    }
+
+    /// Writes the ledger; an empty one removes the file.
+    static func save(_ ledger: WAReceiptLedger, to file: URL = file) {
+        guard !ledger.entries.isEmpty else {
+            try? FileManager.default.removeItem(at: file)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(ledger) else { return }
+        try? data.write(to: file, options: [.atomic])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+}
+
 enum WAPollStore {
     static var file: URL { NookPaths.supportDirectory.appendingPathComponent("whatsapp-poll-votes.json") }
 
@@ -348,8 +371,11 @@ struct WAMemberIndex {
     private var writtenByKey: [String: (place: Int, name: String)] = [:]
     private var named: [String: String] = [:]
     private var listed: [String]?
+    /// Your Contacts and the phone's: a saved contact shows by the name you gave it, as in WhatsApp.
+    private let book: WANameBook
 
-    init(_ conversation: WAConversation) {
+    init(_ conversation: WAConversation, book: WANameBook = WANameBook()) {
+        self.book = book
         members = conversation.members ?? []
         for (index, member) in members.enumerated() {
             for id in member.ids {
@@ -373,7 +399,8 @@ struct WAMemberIndex {
         return (digits.isEmpty ? [] : ["d" + digits]) + ["e" + id]
     }
 
-    /// A member's name: the one the gateway gives, else the name they wrote under here, else their number.
+    /// A member's name: a saved contact's (`WANameBook`), else the one the gateway gives, else the name they wrote under
+    /// here, else their number.
     mutating func name(_ id: String) -> String {
         if let known = named[id] { return known }
         let found = lookUp(id)
@@ -382,9 +409,12 @@ struct WAMemberIndex {
     }
 
     private func lookUp(_ id: String) -> String {
-        if let first = Self.memberKeys(id).compactMap({ memberByKey[$0] }).min(), !members[first].name.isEmpty {
-            return members[first].name
+        if let first = Self.memberKeys(id).compactMap({ memberByKey[$0] }).min() {
+            // Any of the member's ids may be the one a contact is saved under (their number when this is their @lid).
+            if let saved = book.name(any: members[first].ids) { return saved }
+            if !members[first].name.isEmpty { return members[first].name }
         }
+        if let saved = book.name(id) { return saved }
         if let written = Self.writerKeys(id).compactMap({ writtenByKey[$0] }).max(by: { $0.place < $1.place }) {
             return written.name
         }
@@ -395,7 +425,9 @@ struct WAMemberIndex {
     var all: [String] {
         mutating get {
             if let listed { return listed }
-            let made = members.map { member in member.name.isEmpty ? name(member.ids.first ?? "") : member.name }
+            let made = members.map { member in
+                book.name(any: member.ids) ?? (member.name.isEmpty ? name(member.ids.first ?? "") : member.name)
+            }
             listed = made
             return made
         }
@@ -591,6 +623,11 @@ struct WAInbox: Equatable, Sendable {
     private(set) var conversations: [String: WAConversation] = [:]
     /// Every vote received, kept across restarts (see `WAPollLedger`).
     private(set) var pollLedger: WAPollLedger
+    /// The ticks of your messages as they came in, kept across restarts (see `WAReceiptLedger`): the gateways' history
+    /// has none, so an older message gets its real ticks from here.
+    private(set) var receiptLedger: WAReceiptLedger
+    /// Your Contacts and the phone's: a private chat with a saved contact is called by the name you gave them.
+    private(set) var names = WANameBook()
     private var seenIds: Set<String> = []
     /// The same ids in arrival order, so the oldest are the ones forgotten.
     private var seenOrder: [String] = []
@@ -607,8 +644,9 @@ struct WAInbox: Equatable, Sendable {
 
     var totalUnread: Int { conversations.values.reduce(0) { $0 + $1.unread } }
 
-    init(polls: WAPollLedger = WAPollLedger()) {
+    init(polls: WAPollLedger = WAPollLedger(), receipts: WAReceiptLedger = WAReceiptLedger()) {
         pollLedger = polls
+        receiptLedger = receipts
     }
 
     enum Outcome: Equatable { case duplicate, ignored, quiet, notify }
@@ -658,7 +696,9 @@ struct WAInbox: Equatable, Sendable {
             id: chat, name: name ?? message.chatName ?? personName ?? number,
             isGroup: isGroup, lastActivity: message.date)
         // A stand-in for the id ("Group 3162…", the id itself) never replaces a real name the chat already has.
-        if let name = name ?? message.chatName, !name.isEmpty,
+        if kind == .person, let saved = names.name(chat) {
+            conversation.name = saved
+        } else if let name = name ?? message.chatName, !name.isEmpty,
            !WAJID.isPlaceholderName(name, for: chat) || WAJID.isPlaceholderName(conversation.name, for: chat) {
             conversation.name = name
         } else if conversation.name == number, let personName { conversation.name = personName }
@@ -674,6 +714,12 @@ struct WAInbox: Equatable, Sendable {
             msg.poll = pollLedger.applied(to: poll, id: msg.id)
         }
         if msg.fromMe {
+            // What came in for it before, also before a restart: the history it comes from says nothing of its ticks.
+            msg = receiptLedger.restored(msg)
+            if isGroup, !msg.readers.isEmpty {
+                msg.receipt = ChatReceipts.overall(Array(msg.readers.values), members: conversation.members?.count,
+                                                   current: msg.receipt ?? .sent)
+            }
             // Your own message that just went out has reached WhatsApp's server: one tick.
             if msg.receipt == nil, !history { msg.receipt = .sent }
             if let early = earlyReceipts.removeValue(forKey: msg.id) { msg.receipt = (msg.receipt ?? .sent).advanced(to: early) }
@@ -724,6 +770,7 @@ struct WAInbox: Equatable, Sendable {
                     let next = reader.advanced(to: status, at: date)
                     if next != reader { conversation.messages[index].readers[chatKey] = next; touched = true }
                 }
+                receiptLedger.record(conversation.messages[index])
             }
             if touched { conversations[chatKey] = conversation; changed = chatKey }
             if pending.isEmpty { break }
@@ -731,6 +778,12 @@ struct WAInbox: Equatable, Sendable {
         // Not here yet: kept a little while for the message itself (only ids never seen; a few hundred at most).
         for id in pending where !seenIds.contains(id) {
             earlyReceipts[id] = (earlyReceipts[id] ?? status).advanced(to: status)
+        }
+        // An older message the chat no longer keeps: its ticks wait in the ledger for when its history comes back.
+        for id in pending where seenIds.contains(id) {
+            receiptLedger.note(id, receipt: status, reader: nil, at: date)
+            // A receipt that names no chat (OpenWA's may not) has no person to keep it for.
+            if !key.isEmpty, WAJID.kind(key) == .person { receiptLedger.note(id, receipt: status, reader: key, at: date) }
         }
         if earlyReceipts.count > 500 { earlyReceipts.removeAll() }
         return changed
@@ -778,8 +831,15 @@ struct WAInbox: Equatable, Sendable {
     mutating func applyMemberReceipt(_ status: WAReceipt, ids: [String], chat: String, member: String,
                                      at date: Date = Date()) -> String? {
         let key = WAJID.normalized(chat)
-        guard !member.isEmpty, status >= .delivered, var conversation = conversations[key] else { return nil }
+        guard !member.isEmpty, status >= .delivered else { return nil }
         let wanted = Set(ids)
+        // A message the chat no longer keeps: who has it waits in the ledger for when its history comes back.
+        let kept = Set(conversations[key]?.messages.map(\.id) ?? [])
+        for id in wanted where !kept.contains(id) {
+            let slot = receiptLedger.entries[id]?.readers.keys.first { WAJID.sameReactor($0, member) } ?? member
+            receiptLedger.note(id, receipt: status, reader: slot, at: date)
+        }
+        guard var conversation = conversations[key] else { return nil }
         var touched = false
         for index in conversation.messages.indices where wanted.contains(conversation.messages[index].id) {
             guard conversation.messages[index].fromMe else { continue }
@@ -790,6 +850,7 @@ struct WAInbox: Equatable, Sendable {
             message.receipt = ChatReceipts.overall(Array(message.readers.values), members: conversation.members?.count,
                                                    current: message.receipt ?? .sent)
             if message != conversation.messages[index] { conversation.messages[index] = message; touched = true }
+            receiptLedger.record(message)
         }
         guard touched else { return nil }
         conversations[key] = conversation
@@ -924,7 +985,19 @@ struct WAInbox: Equatable, Sendable {
 
     mutating func rename(_ chat: String, to name: String) {
         guard !name.isEmpty else { return }
-        conversations[WAJID.normalized(chat)]?.name = name
+        let key = WAJID.normalized(chat)
+        // A saved contact keeps the name you gave them.
+        if WAJID.kind(key) == .person, names.name(key) != nil { return }
+        conversations[key]?.name = name
+    }
+
+    /// New names from your Contacts and the phone's: every private chat with a saved contact is called by it.
+    mutating func setNames(_ book: WANameBook) {
+        guard book != names else { return }
+        names = book
+        for (key, conversation) in conversations where WAJID.kind(key) == .person {
+            if let saved = book.name(key), saved != conversation.name { conversations[key]?.name = saved }
+        }
     }
 
     /// Everything goes (Nook quits, WhatsApp turned off).
@@ -935,6 +1008,7 @@ struct WAInbox: Equatable, Sendable {
         earlyReceipts = [:]
         deletedIds = []
         pollLedger = WAPollLedger()
+        receiptLedger = WAReceiptLedger()
     }
 
     private func nonEmpty(_ s: String) -> String? { s.isEmpty ? nil : s }

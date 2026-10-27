@@ -3,7 +3,7 @@ import type { AccountPullRequests, PullRequestItem } from "./connectors";
 import { renderMarkdown } from "./markdown";
 import {
   activeCount, activitySentence, apply, authors, chosenMethod, defaultFilter, diffLines, eventLabel, isActive, matches,
-  noteText, unreadable,
+  ciLines, ciProblems, jobId, noteText, unreadable,
 } from "./pulls";
 
 const item = (number: number, extra: Partial<PullRequestItem> = {}): PullRequestItem => ({
@@ -107,5 +107,30 @@ describe("pull request detail", () => {
     const link = renderMarkdown('[x](https://a.b/"onmouseover="alert(1))');
     expect(link).not.toContain('"onmouseover');
     expect(renderMarkdown("[x](javascript:alert(1))")).not.toContain("href");
+  });
+});
+
+describe("jobId", () => {
+  it("reads only GitHub Actions jobs", () => {
+    expect(jobId("https://github.com/o/r/actions/runs/123/job/456")).toBe(456);
+    expect(jobId("https://github.com/o/r/actions/runs/123/job/456?pr=7")).toBe(456);
+    // A check run page, another host, nothing.
+    expect(jobId("https://github.com/o/r/runs/456")).toBeNull();
+    expect(jobId("https://ci.example.com/actions/runs/1/job/2")).toBeNull();
+    expect(jobId(null)).toBeNull();
+  });
+});
+
+describe("ci log lines", () => {
+  it("takes the kind from GitHub's markers and the words", () => {
+    const lines = ciLines("##[group]Run build\n##[command]xcodebuild\nCompiling\nFoo.swift:1: error: nope\nFoo.swift:2: warning: hmm\n##[endgroup]\n##[debug]noise\n##[error]Exit 65");
+    expect(lines.map((l) => l.kind)).toEqual(["group", "command", "plain", "error", "warning", "error"]);
+    expect(lines[0].text).toBe("Run build");
+  });
+
+  it("keeps a group's name once before its problems", () => {
+    const lines = ciLines("##[group]A\nfine\n##[group]Build\nx: error: one\ny: error: two\n##[group]Post\nfine");
+    expect(ciProblems(lines).map((l) => l.text)).toEqual(["Build", "x: error: one", "y: error: two"]);
+    expect(ciProblems(ciLines("all good"))).toEqual([]);
   });
 });

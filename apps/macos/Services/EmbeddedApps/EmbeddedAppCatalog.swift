@@ -556,10 +556,19 @@ enum PanelSplit {
     static let handle: Double = 16
 
     /// `wanted` kept at least `minimum`, and at most what leaves `rest` of `available` for the rest. Before the available
-    /// width is known (0), only the minimum applies; when there is too little room for both, the panel keeps its minimum.
+    /// width is known (0), only the minimum applies. When there is too little room for both minimums, the two shrink
+    /// together in proportion, so the panel never takes room the rest needs and nothing runs under it.
     static func width(_ wanted: Double, minimum: Double, available: Double, rest: Double) -> Double {
-        let most = available > 0 ? max(minimum, available - rest) : .infinity
+        guard available > 0 else { return max(wanted, minimum) }
+        let share = available * minimum / max(1, minimum + rest)
+        let most = max(available - rest, min(minimum, share))
         return min(max(wanted, minimum), most)
+    }
+
+    /// Whether `available` holds a panel of `minimum` beside the `rest` at all; under that, a panel can better cover
+    /// what it sits beside than squeeze both.
+    static func fits(minimum: Double, available: Double, rest: Double) -> Bool {
+        available <= 0 || available >= minimum + rest
     }
 
     /// The width after dragging the line `offset` points from where it was at `start`. A line on the panel's leading

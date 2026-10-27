@@ -371,6 +371,81 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertTrue(shown.namesVoters)
     }
 
+    func testContactsNameMembersReadersAndChats() {
+        let book = WANameBook(contacts: ["600000001": "Mama"],
+                              gateway: [WAContact(jid: "31600000001@s.whatsapp.net", name: "Ans"),
+                                        WAContact(jid: "31600000002@s.whatsapp.net", name: "Bram de Vries"),
+                                        WAContact(jid: "45600000000001@lid", name: "Cor"),
+                                        WAContact(jid: "31600000009@s.whatsapp.net", name: "+31600000009")])
+        XCTAssertEqual(book.name("31600000001@c.us"), "Mama", "your own Contacts win over the phone's")
+        XCTAssertEqual(book.name("+31 6 0000 0002"), "Bram de Vries", "found by the last nine digits")
+        XCTAssertEqual(book.name("45600000000001@lid"), "Cor")
+        XCTAssertNil(book.name("45600000000001@s.whatsapp.net"), "an @lid is not a number")
+        XCTAssertNil(book.name("31600000009@s.whatsapp.net"), "a name that is only the number is none")
+        XCTAssertNil(book.name("120363000000000001@g.us"))
+
+        // A member known by their @lid is named by the contact saved under their number.
+        let group = "120363000000000001@g.us"
+        var conversation = WAConversation(id: group, name: "Club", isGroup: true, lastActivity: Date())
+        conversation.members = [WAMember(ids: ["123@lid", "31600000001@s.whatsapp.net"], name: "Annie"),
+                                WAMember(ids: ["31600000002@s.whatsapp.net"], name: "")]
+        var names = WAMemberIndex(conversation, book: book)
+        XCTAssertEqual(names.name("123@lid"), "Mama")
+        XCTAssertEqual(names.name("31600000002@s.whatsapp.net"), "Bram de Vries")
+        XCTAssertEqual(names.name("45600000000001@lid"), "Cor", "someone who is no member yet is still named")
+        XCTAssertEqual(names.all, ["Mama", "Bram de Vries"])
+
+        // A private chat is called by the saved name, also when a message brings their own.
+        var inbox = WAInbox()
+        inbox.add(message("M1", chat: "31600000002@s.whatsapp.net", name: "~bram"), filters: WAFilters())
+        XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.name, "~bram")
+        inbox.setNames(book)
+        XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.name, "Bram de Vries")
+        inbox.add(message("M2", chat: "31600000002@s.whatsapp.net", at: 1, name: "~bram"), filters: WAFilters())
+        inbox.rename("31600000002@s.whatsapp.net", to: "Other")
+        XCTAssertEqual(inbox.conversations["31600000002@s.whatsapp.net"]?.name, "Bram de Vries")
+    }
+
+    func testBothGatewaysListContacts() {
+        let gowa = Data(#"{"code":"SUCCESS","results":{"data":[{"jid":"31600000001@s.whatsapp.net","name":"Ans"},{"jid":"x@s.whatsapp.net","name":""}]}}"#.utf8)
+        XCTAssertEqual(WAGOWA.contacts(gowa), [WAContact(jid: "31600000001@s.whatsapp.net", name: "Ans")])
+        let openwa = Data(#"[{"id":"31600000001@c.us","name":"Ans","pushName":"A"},{"id":"31600000002@c.us","name":"","pushName":"Bram"},{"id":"31600000003@c.us"}]"#.utf8)
+        XCTAssertEqual(WAOpenWA.contacts(openwa), [WAContact(jid: "31600000001@c.us", name: "Ans"),
+                                                   WAContact(jid: "31600000002@c.us", name: "Bram")])
+    }
+
+    func testTicksThatCameInLiveOutlastARestart() throws {
+        let chat = "31611111111@s.whatsapp.net"
+        let group = "120363000000000001@g.us"
+        var inbox = WAInbox()
+        inbox.add(message("M1", chat: chat, fromMe: true), filters: WAFilters())
+        inbox.add(message("G1", chat: group, fromMe: true), filters: WAFilters())
+        let read = Date(timeIntervalSince1970: 1_800_000_100)
+        inbox.applyReceipt(.read, ids: ["M1"], chat: chat, at: read)
+        inbox.applyMemberReceipt(.read, ids: ["G1"], chat: group, member: "31600000001@s.whatsapp.net", at: read)
+        // A receipt for a message the chat no longer keeps waits for it too.
+        inbox.applyMemberReceipt(.delivered, ids: ["G0"], chat: group, member: "31600000002@s.whatsapp.net", at: read)
+
+        // Written and read back, as across a restart.
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("receipts-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        WAReceiptStore.save(inbox.receiptLedger, to: file)
+        var restarted = WAInbox(receipts: WAReceiptStore.load(from: file))
+        // The gateway's history brings the messages back without ticks.
+        restarted.add(message("M1", chat: chat, fromMe: true), filters: WAFilters(), history: true)
+        restarted.add(message("G1", chat: group, fromMe: true), filters: WAFilters(), history: true)
+        restarted.add(message("G0", chat: group, at: -1, fromMe: true), filters: WAFilters(), history: true)
+        let m1 = restarted.conversations[chat]?.messages.first
+        XCTAssertEqual(m1?.receipt, .read)
+        XCTAssertEqual(m1?.readers[chat]?.date, read)
+        let g1 = restarted.conversations[group]?.messages.first { $0.id == "G1" }
+        XCTAssertEqual(g1?.readers["31600000001@s.whatsapp.net"]?.receipt, .read)
+        XCTAssertEqual(g1?.readers["31600000001@s.whatsapp.net"]?.date, read)
+        let g0 = restarted.conversations[group]?.messages.first { $0.id == "G0" }
+        XCTAssertEqual(g0?.readers["31600000002@s.whatsapp.net"]?.receipt, .delivered)
+        XCTAssertEqual(WAReceiptStore.load(from: file).entries.count, 3)
+    }
+
     func testAnOpenedChatFetchesItsMessagesAgainNotOnlyOnce() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         XCTAssertTrue(WAInbox.historyDue(last: nil, now: now))

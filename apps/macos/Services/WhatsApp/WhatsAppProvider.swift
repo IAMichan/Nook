@@ -78,6 +78,8 @@ protocol WhatsAppProvider: Sendable {
     func setPinned(_ pinned: Bool, chat: String) async throws
     /// Archives the chat on the phone.
     func archive(_ chat: String) async throws
+    /// The phone's contacts with their names, so members and readers show by name; empty when the gateway cannot say.
+    func contacts() async -> [WAContact]
     /// Says this device is online while `chat` is open in Nook, or no longer: WhatsApp only says who is typing to a
     /// device that is, and OpenWA only for a chat it was asked to watch.
     func setOnline(_ online: Bool, chat: String?) async
@@ -89,6 +91,7 @@ extension WhatsAppProvider {
     func groupMembers(_ chat: String) async -> [WAMember] { [] }
     func channels() async -> [WAChannel] { [] }
     func setOnline(_ online: Bool, chat: String?) async {}
+    func contacts() async -> [WAContact] { [] }
     var canVote: Bool { false }
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
     var sends: Set<ChatOutgoing.Kind> { [] }
@@ -404,6 +407,11 @@ actor GOWAProvider: WhatsAppProvider {
         _ = try? await scoped("POST", "/send/presence", json: ["type": online ? "available" : "unavailable"])
     }
 
+    func contacts() async -> [WAContact] {
+        guard let data = try? await scoped("GET", "/user/my/contacts") else { return [] }
+        return WAGOWA.contacts(data)
+    }
+
     func groupName(_ chat: String) async -> String? {
         guard let info = await groupInfo(chat) else { return nil }
         if let name = info.name { return name }
@@ -606,6 +614,20 @@ actor OpenWAProvider: WhatsAppProvider {
     /// An empty emoji takes the reaction back.
     func react(_ emoji: String, to message: String, chat: String, old: String?) async throws {
         _ = try await scoped("POST", "/messages/react", json: ["chatId": Self.openwaId(chat), "messageId": message, "emoji": emoji])
+    }
+
+    /// The address book, in pages of 1000 (the most OpenWA gives at once), up to 10 000 contacts.
+    func contacts() async -> [WAContact] {
+        var all: [WAContact] = []
+        for page in 0..<10 {
+            guard let data = try? await scoped("GET", "/contacts", query: [URLQueryItem(name: "limit", value: "1000"),
+                                                                        URLQueryItem(name: "offset", value: String(page * 1000))])
+            else { break }
+            all += WAOpenWA.contacts(data)
+            // A full page (also of contacts without a name) means there may be more.
+            if (((try? JSONSerialization.jsonObject(with: data)) as? [Any])?.count ?? 0) < 1000 { break }
+        }
+        return all
     }
 
     /// Online while a chat is open, and that chat's presence watched (Baileys only; whatsapp-web.js answers 501 and

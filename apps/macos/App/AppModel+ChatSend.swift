@@ -3,7 +3,7 @@ import Foundation
 
 /// Where what you send in a chat goes: WhatsApp through the linked phone's gateway, Telegram through TDLib, Teams through
 /// the website's session, Slack through its web API, Messages through the Messages app on this Mac (the last three by
-/// the chat's name in Nook), or any app the chat helper on this Mac links (Instagram, Messenger, Signal…). A chat
+/// the chat's name in Nook), Snapchat through its website (by the chat's name too), or any app the chat helper on this Mac links (Instagram, Messenger, Signal…). A chat
 /// without one is only read: its text is copied for its own app instead.
 enum ChatRoute: Equatable {
     case whatsApp(String)
@@ -11,6 +11,7 @@ enum ChatRoute: Equatable {
     case teams(String)
     case slack(String)
     case messages(String)
+    case snapchat(String)
     case linked(String)
 }
 
@@ -51,6 +52,7 @@ extension AppModel {
             if entry.app == capture.teamsBridge.app, capture.teamsBridge.canSend(name: entry.name) { return .teams(entry.name) }
             if entry.app == capture.slackBridge.app, capture.slackBridge.canSend(name: entry.name) { return .slack(entry.name) }
             if entry.app == capture.messagesBridge.app, capture.messagesBridge.canSend(name: entry.name) { return .messages(entry.name) }
+            if entry.app == capture.snapchatBridge.app, capture.snapchatBridge.canSend(name: entry.name) { return .snapchat(entry.name) }
             return nil
         }
     }
@@ -77,6 +79,9 @@ extension AppModel {
         case .messages:
             // Messages lets another app send text and files, and nothing else.
             return ChatAbilities(send: true, sends: capture.messagesBridge.sends)
+        case .snapchat:
+            // Snapchat for Web takes typed text from Nook, and nothing else Nook can reach.
+            return ChatAbilities(send: true)
         case .linked(let id):
             let bridge = capture.serviceBridge
             let chat = bridge.chats[id]
@@ -112,6 +117,9 @@ extension AppModel {
         case .messages(let chat):
             try await capture.messagesBridge.send(text: text, to: chat)
             tool = "messages_send"
+        case .snapchat(let chat):
+            try await capture.snapchatBridge.send(text: text, to: chat)
+            tool = "snapchat_send"
         case .linked(let id):
             try await capture.serviceBridge.send(text: text, to: id, replyTo: replyTo)
             tool = "chat_send"
@@ -141,8 +149,8 @@ extension AppModel {
         case .linked(let id):
             try await capture.serviceBridge.send(outgoing, to: id, replyTo: replyTo)
             tool = "chat_send"
-        case .teams:
-            // Teams takes text from Nook; its abilities offer nothing else for it.
+        case .teams, .snapchat:
+            // Teams and Snapchat take text from Nook; their abilities offer nothing else for them.
             throw NookError(tr("chat.compose.unsupported"))
         }
         if case .whatsApp = route {} else { capture.readSoon(appID(route)) }
@@ -162,6 +170,7 @@ extension AppModel {
         case .teams: return capture.teamsBridge.app
         case .slack: return capture.slackBridge.app
         case .messages: return capture.messagesBridge.app
+        case .snapchat: return capture.snapchatBridge.app
         case .linked: return capture.serviceBridge.app
         }
     }
@@ -201,7 +210,7 @@ extension AppModel {
         case .linked(let id): markLinkedChat(id, read: true); return true
         case .teams(let chat): work = { try await capture.teamsBridge.markRead(name: chat) }
         case .slack(let chat): work = { try await capture.slackBridge.markRead(name: chat) }
-        case .messages, nil: work = nil
+        case .messages, .snapchat, nil: work = nil
         }
         guard let work else { return false }
         Task {
@@ -227,7 +236,7 @@ extension AppModel {
             try await capture.slackBridge.react(emoji, to: bubble.id, in: chat, mine: mine)
         case .linked(let id):
             try await capture.serviceBridge.react(emoji, to: bubble.id, in: id, mine: mine)
-        case .messages:
+        case .messages, .snapchat:
             throw NookError(tr("chat.compose.unsupported"))
         }
         if let thread { capture.toggleReaction(emoji, on: bubble.id, in: thread) }
@@ -243,7 +252,7 @@ extension AppModel {
         case .teams(let chat): try await capture.teamsBridge.edit(bubble.id, in: chat, to: text)
         case .slack(let chat): try await capture.slackBridge.edit(bubble.id, in: chat, to: text)
         case .linked(let id): try await capture.serviceBridge.edit(bubble.id, in: id, to: text)
-        case .messages: throw NookError(tr("chat.compose.unsupported"))
+        case .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))
         }
         if case .whatsApp = route {} else { capture.readSoon(appID(route)) }
         store.audit(tool: "chat_edit", args: name, result: "bewerkt")
@@ -258,7 +267,7 @@ extension AppModel {
         case .teams(let chat): try await capture.teamsBridge.delete(bubble.id, in: chat)
         case .slack(let chat): try await capture.slackBridge.delete(bubble.id, in: chat)
         case .linked(let id): try await capture.serviceBridge.delete(bubble.id, in: id)
-        case .messages: throw NookError(tr("chat.compose.unsupported"))
+        case .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))
         }
         if case .whatsApp = route {} else { capture.readSoon(appID(route)) }
         store.audit(tool: "chat_delete", args: name, result: "verwijderd")
@@ -270,7 +279,7 @@ extension AppModel {
         case .whatsApp(let jid): try await WhatsAppLink.shared.setPinned(pinned, chat: jid)
         case .telegram(let id): try ChatCaptureService.shared.telegramBridge.setPinned(pinned, chat: id)
         case .linked(let id): try await ChatCaptureService.shared.serviceBridge.setPinned(pinned, chat: id)
-        case .teams, .slack, .messages: throw NookError(tr("chat.compose.unsupported"))
+        case .teams, .slack, .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))
         }
         store.audit(tool: "chat_pin", args: name, result: pinned ? "vastgezet" : "losgemaakt")
     }
@@ -280,7 +289,7 @@ extension AppModel {
         switch route {
         case .telegram(let id): try ChatCaptureService.shared.telegramBridge.setMuted(muted, chat: id)
         case .linked(let id): try await ChatCaptureService.shared.serviceBridge.setMuted(muted, chat: id)
-        case .whatsApp, .teams, .slack, .messages: throw NookError(tr("chat.compose.unsupported"))
+        case .whatsApp, .teams, .slack, .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))
         }
         store.audit(tool: "chat_mute", args: name, result: muted ? "gedempt" : "niet meer gedempt")
     }
@@ -292,7 +301,7 @@ extension AppModel {
         case .whatsApp(let jid): try await WhatsAppLink.shared.archive(jid)
         case .telegram(let id): try ChatCaptureService.shared.telegramBridge.archive(id)
         case .linked(let id): try await ChatCaptureService.shared.serviceBridge.archive(id)
-        case .teams, .slack, .messages: throw NookError(tr("chat.compose.unsupported"))
+        case .teams, .slack, .messages, .snapchat: throw NookError(tr("chat.compose.unsupported"))
         }
         if let thread { ChatCaptureService.shared.remove(thread) }
         store.audit(tool: "chat_archive", args: name, result: "gearchiveerd")

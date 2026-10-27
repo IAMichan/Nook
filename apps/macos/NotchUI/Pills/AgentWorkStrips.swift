@@ -193,21 +193,26 @@ struct PullRequestWatchStrip: View {
     let url: URL
     /// nil while the session's pull request is not watched.
     let watch: PullRequestWatch?
-    let toggle: () -> Void
+    /// Nil for a session Nook does not run: it has nothing to watch with, so the strip only shows and opens the pull request.
+    var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
+    /// How the pull request looks while it is not watched (a watch brings its own), so state and checks show either way.
+    @State private var seen: PullRequestSnapshot?
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            Button(action: toggle) {
-                ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
-                             text: tr(watch == nil ? "ws.prwatch.notWatching" : "ws.prwatch.watching"), showsChevron: false)
+            if let toggle {
+                Button(action: toggle) {
+                    ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
+                                 text: tr(watch == nil ? "ws.prwatch.notWatching" : "ws.prwatch.watching"), showsChevron: false)
+                }
+                .buttonStyle(.plain)
+                .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
             }
-            .buttonStyle(.plain)
-            .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
             // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
             Button(action: open) {
-                PullRequestStateBadge(glyph: watch.flatMap { PullRequestBadge.Glyph(rawValue: $0.state) } ?? .open, number: number)
+                PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch?.state ?? seen?.state ?? "open") ?? .open, number: number)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -216,11 +221,12 @@ struct PullRequestWatchStrip: View {
                 // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
                 Button(action: openCI) {
                     HStack(spacing: NookTheme.Spacing.xs) {
+                        if let ciOutcome { CheckOutcomeGlyph(outcome: ciOutcome) }
                         Text(ci)
                         Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
                     }
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(watch?.checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
+                    .foregroundStyle((watch?.checks ?? seen?.checks) == "failure" ? NookTheme.coral : NookTheme.textTertiary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -238,9 +244,15 @@ struct PullRequestWatchStrip: View {
             }
             Spacer(minLength: 6)
             trayButton("arrow.up.right.square", tr("ws.prwatch.open"), action: open)
-            if watch != nil { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
+            if watch != nil, let toggle { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
         }
         .foregroundStyle(NookTheme.textSecondary)
+        .task(id: url) {
+            while !Task.isCancelled {
+                if watch == nil { seen = await GitHubPullRequests.snapshot(url: url) }
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
     }
 
     private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
@@ -250,8 +262,18 @@ struct PullRequestWatchStrip: View {
     /// "…/pull/12" or "…/-/merge_requests/12".
     private var number: Int? { Int(url.lastPathComponent) }
 
+    /// The checks as the shared CI icon shows them, the same one the pull request rows and page use.
+    private var ciOutcome: PullRequestCheck.Outcome? {
+        switch watch?.checks ?? seen?.checks ?? "" {
+        case "success": return .passing
+        case "failure": return .failing
+        case "pending": return .pending
+        default: return nil
+        }
+    }
+
     private var ci: String? {
-        switch watch?.checks ?? "" {
+        switch watch?.checks ?? seen?.checks ?? "" {
         case "success": return tr("ws.prwatch.ciPassed")
         case "failure": return tr("ws.prwatch.ciFailed")
         case "pending": return tr("ws.prwatch.ciPending")

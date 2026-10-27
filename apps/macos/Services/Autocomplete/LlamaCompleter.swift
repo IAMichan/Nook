@@ -71,6 +71,29 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
     /// Every token's bytes, read once per model when first needed: a word the model did not see coming is spelled from the
     /// whole vocabulary (see `healed`).
     private lazy var pieces: [[UInt8]] = (0..<self.vocabSize).map { self.piece(llama_token($0)) }
+    /// The tokens by the first byte (`tokensByFirstByte`) or the first two bytes (`tokensByFirstTwoBytes`) of their piece. A
+    /// token fits a word still to be spelled only if it starts with the word's first byte, so `healed` searches these instead
+    /// of the whole vocabulary. Two bytes where the word has them: half of the vocabulary starts with a space.
+    private lazy var tokensByFirstByte: [[Int]] = {
+        var buckets = [[Int]](repeating: [], count: 256)
+        for (index, bytes) in pieces.enumerated() { if let first = bytes.first { buckets[Int(first)].append(index) } }
+        return buckets
+    }()
+    private lazy var tokensByFirstTwoBytes: [UInt16: [Int]] = {
+        var buckets: [UInt16: [Int]] = [:]
+        for (index, bytes) in pieces.enumerated() where bytes.count >= 2 {
+            buckets[UInt16(bytes[0]) << 8 | UInt16(bytes[1]), default: []].append(index)
+        }
+        return buckets
+    }()
+
+    /// The tokens that could fit `required` (see `CompletionHealing.fits`), a superset to test.
+    private func candidates(for required: [UInt8]) -> [Int] {
+        guard required.count >= 2 else { return tokensByFirstByte[Int(required.first ?? 0)] }
+        // A one-byte piece fits when it is the word's first byte; longer ones need the first two bytes to match.
+        let single = tokensByFirstByte[Int(required[0])].filter { pieces[$0].count == 1 }
+        return single + (tokensByFirstTwoBytes[UInt16(required[0]) << 8 | UInt16(required[1])] ?? [])
+    }
 
     /// The longest prompt, in tokens.
     static let contextLength: UInt32 = 4_096
@@ -453,7 +476,7 @@ final class LlamaCompleter: CompletionEngine, @unchecked Sendable {
         // A name or a rare word: none of the likely tokens spells it. Look through the whole vocabulary rather than give up, or
         // a word would only be finished once it was common enough.
         if fitting.isEmpty {
-            for (index, bytes) in pieces.enumerated() where CompletionHealing.fits(bytes, required) {
+            for index in candidates(for: required) where CompletionHealing.fits(pieces[index], required) {
                 let token = llama_token(index)
                 guard !llama_vocab_is_control(vocab, token), !llama_vocab_is_eog(vocab, token) else { continue }
                 fitting.append((token, logits[index]))

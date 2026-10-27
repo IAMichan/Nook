@@ -6,7 +6,7 @@ import SwiftUI
 /// what the agent produced: its plans, task list and the files it wrote (`outputs`).
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, outputs, pullRequest, picker
+    case conversation, terminal, browser, changes, outputs, pullRequest, artifact, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.outputs, .terminal, .browser, .changes]
@@ -14,8 +14,9 @@ enum SessionTool: String {
     /// the session, never in the bottom panel).
     static let launchable: [SessionTool] = panelTools + [.pullRequest]
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
-    /// + menu, and not kept across launches).
-    static let sideTabs: [SessionTool] = panelTools + [.pullRequest]
+    /// + menu, and not kept across launches). An artifact (a Claude artifact, a ChatGPT canvas) clicked in the conversation
+    /// opens the same way, in the signed-in web version of the app that made it.
+    static let sideTabs: [SessionTool] = panelTools + [.pullRequest, .artifact]
 
     var symbol: String {
         switch self {
@@ -25,13 +26,14 @@ enum SessionTool: String {
         case .changes: return "plus.forwardslash.minus"
         case .outputs: return "list.bullet.clipboard"
         case .pullRequest: return PullRequestIcon.generic
+        case .artifact: return "square.on.square"
         case .picker: return "square.grid.2x2"
         }
     }
 
     /// Whether the tool works for a session in `directory`: without a folder there is only the browser and the outputs.
     func available(in directory: String) -> Bool {
-        if self == .pullRequest || self == .outputs { return true }
+        if self == .pullRequest || self == .outputs || self == .artifact { return true }
         return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
@@ -45,7 +47,7 @@ enum SessionTool: String {
         case .browser: return "b"
         case .changes: return "c"
         case .pullRequest: return "p"
-        case .conversation, .picker: return " "
+        case .conversation, .artifact, .picker: return " "
         }
     }
     /// What the icon in the session's header does.
@@ -235,7 +237,11 @@ struct SessionWorkbench<Conversation: View>: View {
     let directory: String
     /// A session Nook runs: its changes open in its own review, with comments for the agent.
     var runID: UUID? = nil
+    /// Whether the session panel docks on the right when the window has room; the session views that have a branch button.
+    var dockSessionPanel = false
+    var agentWorking = false
     @ViewBuilder var conversation: (AnyView) -> Conversation
+    @EnvironmentObject private var workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @AppStorage("nook.agents.sideTool") private var lastTool = SessionTool.browser.rawValue
     @AppStorage("nook.agents.bottomTool") private var lastBottomTool = SessionTool.terminal.rawValue
@@ -264,16 +270,31 @@ struct SessionWorkbench<Conversation: View>: View {
         let side = shown(.side)
         let bottom = shown(.bottom)
         let outputsShown = side == .outputs || bottom == .outputs
+        let sideOpen = side != .conversation
+        let conversationRoom = PanelLayout.minimumConversation + PanelSplit.handle
+        // Too narrow for the conversation beside the side panel: the panel covers the conversation until you close it,
+        // instead of both squeezing until neither reads.
+        let covering = sideOpen
+            && !PanelSplit.fits(minimum: PanelLayout.minimumPanel + NookTheme.Spacing.sm, available: totalWidth, rest: conversationRoom)
+        let sideWidth = sideOpen && !covering
+            ? PanelSplit.width(toolWidth, minimum: PanelLayout.minimumPanel, available: totalWidth, rest: conversationRoom)
+                + PanelSplit.handle + NookTheme.Spacing.sm
+            : 0
+        // The width the side panel actually takes, not the one it was dragged to, so a window that got narrower
+        // gives up the docked column first.
+        let docked = dockSessionPanel && !directory.isEmpty && totalWidth - sideWidth >= PanelLayout.sessionPanelRoom
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
-                conversation(AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
+                // Docked, the switch sits above the session panel instead of in the conversation's header.
+                conversation(docked ? AnyView(EmptyView()) : AnyView(SessionToolSwitch(viewModel: viewModel, directory: directory,
                                                        outputsFresh: outputs.fresh && !outputsShown)))
                     // A pull request link in the conversation opens in the side panel.
                     .environment(\.pullRequestLinksBeside, true)
                     // The conversation hands up what the agent produced, and opens a new plan in the outputs tab.
                     .environment(\.sessionOutputs, SessionOutputsLink(shown: outputsShown, open: openOutput))
+                    .environment(\.sessionPanelDocked, docked)
                     .onPreferenceChange(SessionOutputsReport.self) { outputs = $0 }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if bottom != .conversation {
                     VStack(spacing: 0) {
                         BottomSplitHandle(onDrag: dragBottom, onEnd: { dragStart = nil },
@@ -284,18 +305,44 @@ struct SessionWorkbench<Conversation: View>: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.height) } action: { totalHeight = $0 }
-            if side != .conversation {
+            // Under the covering panel the conversation keeps its place (and what you typed) but takes no clicks.
+            .allowsHitTesting(!covering)
+            .accessibilityHidden(covering)
+            if docked {
+                // The switch takes the height of the conversation's header, so the rows start where the conversation does.
+                HStack(spacing: 0) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    SessionToolSwitch(viewModel: viewModel, directory: directory, outputsFresh: outputs.fresh && !outputsShown)
+                        .frame(height: 30)
+                        .padding(.trailing, NookTheme.Spacing.xs)
+                    DockedSessionPanel(directory: directory, runID: runID, agentWorking: agentWorking) {
+                        if let runID { workspace.markReviewed(runID) }
+                        viewModel.sessionTool = .changes
+                    }
+                    .id(directory)
+                }
+                }
+                .frame(width: PanelLayout.sessionPanel)
+                .padding(.leading, NookTheme.Spacing.sm)
+            }
+            if sideOpen && !covering {
                 panel(.side, tool: side)
                     .padding(.leading, NookTheme.Spacing.sm)
                     .resizablePanel(width: $toolWidth, defaultWidth: PanelLayout.tool, minimum: PanelLayout.minimumPanel,
-                                    available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
-                                    edge: .leading, divider: true)
+                                    available: totalWidth, rest: conversationRoom, edge: .leading, divider: true)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay {
+            if covering {
+                panel(.side, tool: side)
+                    .background(NookTheme.notch)
+                    .transition(.opacity)
+            }
+        }
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .animation(NookTheme.reveal, value: side == .conversation)
         .animation(NookTheme.reveal, value: bottom == .conversation)
@@ -313,10 +360,10 @@ struct SessionWorkbench<Conversation: View>: View {
     /// this session cannot use.
     private func reopenClosed() -> Bool {
         let open = tabs(.side) + tabs(.bottom)
-        guard let tab = viewModel.closedSessionTabs.reopen(skipping: { open.contains($0.tool) || !$0.tool.available(in: directory) })
+        guard let tab = viewModel.closedSessionTabs.reopen(skipping: { open.contains($0.tool) || $0.tool == .artifact || !$0.tool.available(in: directory) })
         else { return false }
         withAnimation(NookTheme.swap) {
-            if tab.tool == .pullRequest { viewModel.sidePullRequest = tab.pullRequest }
+            if tab.tool == .pullRequest { viewModel.openSidePullRequest(tab.pullRequest) }
             viewModel[keyPath: (tab.bottom ? SessionPanelSlot.bottom : SessionPanelSlot.side).tool] = tab.tool
         }
         return true
@@ -343,24 +390,32 @@ struct SessionWorkbench<Conversation: View>: View {
 
     private func panel(_ slot: SessionPanelSlot, tool: SessionTool) -> some View {
         SessionToolPanel(directory: directory, runID: runID, tool: tool, tabs: tabs(slot), pullRequest: viewModel.sidePullRequest,
+                         pullRequestTabs: viewModel.sidePullRequestTabs, activePullRequest: viewModel.activeSidePullRequest,
                          outputs: outputs.outputs, outputSelection: $outputSelection, outputsFresh: outputs.fresh,
                          closeHelp: tr(slot.closeHelp), closeSymbol: slot.closeSymbol,
                          show: { item in withAnimation(NookTheme.swap) { viewModel[keyPath: slot.tool] = item } },
-                         openPullRequest: openPullRequest,
-                         closeTab: { closeTab($0, in: slot) },
+                         selectPullRequest: { id in
+                             withAnimation(NookTheme.swap) { viewModel.activeSidePullRequest = id; viewModel.sessionTool = .pullRequest }
+                         },
+                         openPullRequest: { request in withAnimation(NookTheme.swap) { viewModel.openSidePullRequest(request) } },
+                         updatePullRequest: { viewModel.updateSidePullRequest($0) },
+                         showPullRequestList: { withAnimation(NookTheme.swap) { viewModel.showSidePullRequestList() } },
+                         closeTab: { closeSessionTab($0, in: slot) },
                          close: { viewModel[keyPath: slot.tool] = .conversation })
     }
 
-    /// Opens the Pull request tab beside the session: on `request`, or on the list to pick one. Asked again while a pull
-    /// request is open there, it goes back to that list to pick another.
-    private func openPullRequest(_ request: PullRequestOpenRequest?) {
-        withAnimation(NookTheme.swap) {
-            if let request {
-                viewModel.sidePullRequest = request
-            } else if viewModel.sessionTool == .pullRequest {
-                viewModel.sidePullRequest = nil
+    /// Closes a tab. One of several Pull request tabs goes by itself, and the one next to it comes into view.
+    private func closeSessionTab(_ tab: SessionTab, in slot: SessionPanelSlot) {
+        switch tab {
+        case .tool(let item): closeTab(item, in: slot)
+        case .pullRequest(let id):
+            if viewModel.sidePullRequestTabs.count > 1 {
+                let request = viewModel.sidePullRequestTabs.first { $0.id == id }?.request
+                viewModel.closedSessionTabs.push(ClosedSessionTab(tool: .pullRequest, bottom: false, pullRequest: request))
+                withAnimation(NookTheme.swap) { viewModel.closeSidePullRequest(id) }
+            } else {
+                closeTab(.pullRequest, in: slot)
             }
-            viewModel.sessionTool = .pullRequest
         }
     }
 
@@ -373,7 +428,11 @@ struct SessionWorkbench<Conversation: View>: View {
                                                           pullRequest: item == .pullRequest ? viewModel.sidePullRequest : nil))
         withAnimation(NookTheme.swap) {
             viewModel[keyPath: slot.tabs].removeAll { $0 == item }
-            if item == .pullRequest { viewModel.sidePullRequest = nil }
+            if item == .artifact { EmbeddedAppStore.shared.closeArtifact() }
+            if item == .pullRequest {
+                viewModel.sidePullRequestTabs = []
+                viewModel.activeSidePullRequest = nil
+            }
             if viewModel[keyPath: slot.tool] == item {
                 viewModel[keyPath: slot.tool] = rest.isEmpty ? .picker : rest[min(index, rest.count - 1)]
             }
@@ -436,6 +495,12 @@ private struct BottomSplitHandle: View {
     }
 }
 
+/// One tab of a tool panel: a tool, or one of the Pull request tabs (there can be several).
+private enum SessionTab: Hashable {
+    case tool(SessionTool)
+    case pullRequest(UUID)
+}
+
 /// A tool panel beside or under a session: its open tools as tabs, + to open another, the button that closes it, and
 /// the tool in view (or the list of tools while none is open). It sits flat on the notch, not as a card.
 private struct SessionToolPanel: View {
@@ -444,15 +509,22 @@ private struct SessionToolPanel: View {
     let tool: SessionTool
     let tabs: [SessionTool]
     let pullRequest: PullRequestOpenRequest?
+    let pullRequestTabs: [SidePullRequestTab]
+    let activePullRequest: UUID?
     let outputs: [SessionOutput]
     @Binding var outputSelection: String?
     let outputsFresh: Bool
     let closeHelp: String
     let closeSymbol: String
     let show: (SessionTool) -> Void
-    /// Opens the Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
+    let selectPullRequest: (UUID) -> Void
+    /// Opens a Pull request tab beside the session, on this pull request or (nil) on the list to pick one.
     let openPullRequest: (PullRequestOpenRequest?) -> Void
-    let closeTab: (SessionTool) -> Void
+    /// The active tab's pull request was read again.
+    let updatePullRequest: (PullRequestOpenRequest) -> Void
+    /// The active tab goes back to the list to pick another.
+    let showPullRequestList: () -> Void
+    let closeTab: (SessionTab) -> Void
     let close: () -> Void
     @ObservedObject private var bridge = WorkspaceBridge.shared
     /// The open page's title for the browser's tab, once the browser was started (it is not started for it).
@@ -477,14 +549,27 @@ private struct SessionToolPanel: View {
                     }
                 case .pullRequest:
                     if let pullRequest {
-                        PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
-                            openPullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
-                        })
-                            .id(pullRequest.account + " " + pullRequest.item.id)
+                        // One column, so the back button keeps its own height and the pull request takes the rest.
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Back to the list to pick another, as the + of the tab does.
+                            NookGhostButton(title: tr("agents.pr.back"), symbol: "chevron.left", compact: true, height: 26,
+                                            action: showPullRequestList)
+                                .help(tr("agents.pr.back"))
+                            PullRequestDetailView(accountID: pullRequest.account, item: pullRequest.item, onUpdate: { updated in
+                                updatePullRequest(PullRequestOpenRequest(account: pullRequest.account, item: updated))
+                            })
+                                .id(pullRequest.account + " " + pullRequest.item.id)
+                        }
                     } else {
                         SidePanelPullRequestPicker(directory: directory) { openPullRequest($0) }
                     }
-                default: BrowserView()
+                // The pages sit in rounded corners like the other panels, not edge to edge.
+                case .artifact:
+                    SessionArtifactPanel()
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+                default:
+                    BrowserView()
+                        .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -500,27 +585,51 @@ private struct SessionToolPanel: View {
     /// The open tabs, + right after them, and the button that closes the panel. The
     /// tabs scroll sideways when they do not fit, so the close button always stays in view.
     private var header: some View {
-        SidePanelTabBar(items: tabs.map(tabItem), selected: tool, onSelect: show, onClose: closeTab) {
+        SidePanelTabBar(items: tabs.flatMap(tabItems), selected: selectedTab, onSelect: selectTab, onClose: closeTab) {
             addMenu
         } trailing: {
             ToolbarIconButton(closeSymbol, closeHelp, height: 24, width: 24, close)
         }
     }
 
-    /// A tab with what it shows: the page's title in the browser, the number and title of a pull request.
-    private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTool> {
+    /// The tab in view: a Pull request tab by its own id, as there can be several.
+    private var selectedTab: SessionTab {
+        if tool == .pullRequest, let active = activePullRequest ?? pullRequestTabs.first?.id { return .pullRequest(active) }
+        return .tool(tool)
+    }
+
+    private func selectTab(_ tab: SessionTab) {
+        switch tab {
+        case .tool(let item): show(item)
+        case .pullRequest(let id): selectPullRequest(id)
+        }
+    }
+
+    /// The tabs of a tool: one, or for the Pull request tool one for each pull request (or list) open.
+    private func tabItems(_ item: SessionTool) -> [SidePanelTabItem<SessionTab>] {
+        guard item == .pullRequest, !pullRequestTabs.isEmpty else { return [tabItem(item)] }
+        return pullRequestTabs.map { tab in
+            let request = tab.request
+            let title = request.map { "#\($0.item.number) " + ($0.item.title.isEmpty ? $0.item.repo : $0.item.title) } ?? item.title
+            let fresh = item != tool && bridge.hasUnseen(directory, item.rawValue)
+            return SidePanelTabItem(value: .pullRequest(tab.id), title: title, icon: AnyView(SidePanelPullRequestIcon(item: request?.item)),
+                                    fresh: fresh, help: request.map { $0.item.repo + " #\($0.item.number)" } ?? item.help)
+        }
+    }
+
+    /// A tab with what it shows: the page's title in the browser, the name of a tool.
+    private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTab> {
         let fresh = item != tool && (item == .outputs ? outputsFresh : bridge.hasUnseen(directory, item.rawValue))
         switch item {
-        case .pullRequest:
-            let title = pullRequest.map { "#\($0.item.number) " + ($0.item.title.isEmpty ? $0.item.repo : $0.item.title) } ?? item.title
-            return SidePanelTabItem(value: item, title: title, icon: AnyView(SidePanelPullRequestIcon(item: pullRequest?.item)),
-                                    fresh: fresh, help: pullRequest.map { $0.item.repo + " #\($0.item.number)" } ?? item.help)
         case .browser:
-            return SidePanelTabItem(value: item, title: browserTitle.isEmpty ? item.title : browserTitle,
+            return SidePanelTabItem(value: .tool(item), title: browserTitle.isEmpty ? item.title : browserTitle,
                                     icon: AnyView(SidePanelSymbol(symbol: "globe")), fresh: fresh,
                                     help: browserTitle.isEmpty ? item.help : browserTitle)
+        case .pullRequest:
+            return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelPullRequestIcon(item: nil)),
+                                    fresh: fresh, help: item.help)
         default:
-            return SidePanelTabItem(value: item, title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
+            return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
                                     fresh: fresh, help: item.help)
         }
     }

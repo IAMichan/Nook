@@ -29,6 +29,15 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var sideLoading = false
     @Published private(set) var sideTitle = ""
 
+    /// The artifact open in an agent session's side panel: its own web view on the owning app's sign-in, so it needs
+    /// no app beside the chat.
+    @Published private(set) var artifactView: WKWebView?
+    @Published private(set) var artifactLoading = false
+    @Published private(set) var artifactTitle = ""
+    /// The window a page in the artifact tab opened (the "Continue with Google" sign-in): it must stay in Nook with the
+    /// page's own configuration, since the page that opened it waits for its answer.
+    @Published private(set) var artifactPopup: WKWebView?
+
     /// The side panel of the open app, if it has one.
     var side: WKWebView? { current.flatMap { sides[$0.id] } }
 
@@ -62,6 +71,50 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
         let view = sides[app.id] ?? makeSideView(configuration: main.configuration)
         sides[app.id] = view
         view.load(URLRequest(url: url))
+    }
+
+    /// Loads `url` (an artifact of `owner`) in the session's side panel, signed in with that app.
+    func openArtifact(_ url: URL, of owner: EmbeddedApp) {
+        let view: WKWebView
+        if let existing = artifactView {
+            view = existing
+        } else {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = Self.dataStore(for: owner)
+            configuration.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
+            // Without Apple's browser entitlement Google's sign-in would wait for a passkey on a phone nearby and stop
+            // there; hidden, it offers a password or a code. The sign-in window it opens shares this script.
+            if !BrowserStore.hasPasskeyEntitlement {
+                configuration.userContentController.addUserScript(
+                    WKUserScript(source: BrowserStore.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            }
+            view = makeSideView(configuration: configuration)
+            artifactView = view
+        }
+        artifactTitle = ""
+        view.load(URLRequest(url: url))
+    }
+
+    /// Closes the window the artifact's page opened, for instance a sign-in you gave up on.
+    func closeArtifactPopup() {
+        artifactPopup?.stopLoading()
+        artifactPopup = nil
+    }
+
+    /// Puts the session's artifact away.
+    func closeArtifact() {
+        artifactView?.stopLoading()
+        artifactPopup?.stopLoading()
+        artifactPopup = nil
+        artifactView = nil
+        artifactLoading = false
+        artifactTitle = ""
+    }
+
+    /// The session's artifact in the user's own browser.
+    func openArtifactInDefaultBrowser() {
+        guard let url = artifactView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     /// Puts the side panel away; the app stays open.
@@ -245,6 +298,13 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
             sideTitle = ""
             return view
         }
+        if webView === artifactView || webView === artifactPopup {
+            artifactPopup?.stopLoading()
+            // WebKit loads the request in the view returned, which must use the configuration it hands over.
+            let view = makeSideView(configuration: configuration)
+            artifactPopup = view
+            return view
+        }
         if let url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             NSWorkspace.shared.open(url)
         }
@@ -253,6 +313,10 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
 
     /// The page in the side panel closed itself (`window.close()`).
     func webViewDidClose(_ webView: WKWebView) {
+        if webView === artifactPopup {
+            artifactPopup = nil
+            return
+        }
         guard let id = sides.first(where: { $0.value === webView })?.key else { return }
         sides[id] = nil
         if current?.id == id {
@@ -262,6 +326,10 @@ final class EmbeddedAppStore: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     private func refresh(_ webView: WKWebView, loading: Bool) {
+        if webView === artifactView {
+            artifactLoading = loading
+            artifactTitle = webView.title ?? ""
+        }
         if webView === side {
             sideLoading = loading
             sideTitle = webView.title ?? ""
@@ -423,6 +491,39 @@ private struct EmbeddedArtifactPanel: View {
             WebViewHost(webView: webView)
         }
         .background(NookTheme.field)
+    }
+}
+
+/// An artifact clicked in an agent's conversation, as a tab of the session's side panel: the page fills it, with no bar
+/// or frame of its own, so it reads as part of Nook and takes all the room. One small button floats in the corner to
+/// open it in the user's own browser. A sign-in window the page opens covers the whole panel the same way. It shares the
+/// sign-in of the app that made it.
+struct SessionArtifactPanel: View {
+    @ObservedObject private var store = EmbeddedAppStore.shared
+
+    var body: some View {
+        if let webView = store.artifactView {
+            ZStack(alignment: .topTrailing) {
+                WebViewHost(webView: webView)
+                if let popup = store.artifactPopup {
+                    WebViewHost(webView: popup)
+                    cornerButton("xmark", help: tr("embedded.artifact.close")) { store.closeArtifactPopup() }
+                } else if store.artifactLoading {
+                    ProgressView().controlSize(.small).padding(NookTheme.Spacing.sm)
+                } else {
+                    cornerButton("arrow.up.forward.app", help: tr("browser.openExternal")) { store.openArtifactInDefaultBrowser() }
+                }
+            }
+            .background(NookTheme.field)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func cornerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        NookIconButton(systemName: symbol, label: help, size: 26, action: action)
+            .help(help)
+            .padding(NookTheme.Spacing.xs)
     }
 }
 

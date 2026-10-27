@@ -608,6 +608,7 @@ struct WorkspaceSettingsSection: View {
                 ForEach(WorkspaceSettings.installed(WorkspaceSettings.terminalCandidates)) { Text($0.name).tag($0.bundleID) }
             }
             BrowserSearchPicker()
+            AgentLinkTargetPicker()
         }
     }
 
@@ -772,6 +773,17 @@ struct WatchedPullRequestsSection: View {
     private func add() {
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         if watching.add(text) { text = "" } else { invalid = true }
+    }
+}
+
+/// Where a link in an agent's conversation opens (see AgentLinkTarget).
+private struct AgentLinkTargetPicker: View {
+    @AppStorage(AgentLinkTarget.defaultsKey) private var target = AgentLinkTarget.app.rawValue
+
+    var body: some View {
+        Picker(tr("settings.ws.linkTarget"), selection: $target) {
+            ForEach(AgentLinkTarget.allCases) { Text($0.name).tag($0.rawValue) }
+        }
     }
 }
 

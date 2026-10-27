@@ -14,6 +14,94 @@ export interface PullRequestCheck {
   url: string | null;
 }
 
+/// One step of a GitHub Actions job.
+export interface CiStep {
+  number: number;
+  name: string;
+  outcome: CheckOutcome;
+}
+
+/// What a check shows when you open it in Nook (`CILog` on the Mac): its job's steps and the end of its log.
+export interface CiLog {
+  steps: CiStep[];
+  /// Null while GitHub has no log yet (the job still runs).
+  text: string | null;
+  omittedLines: number;
+}
+
+export type CiLineKind = "plain" | "group" | "command" | "error" | "warning" | "notice";
+export interface CiLine {
+  kind: CiLineKind;
+  text: string;
+}
+
+const MARKERS: [string, CiLineKind][] = [
+  ["##[group]", "group"],
+  ["##[command]", "command"],
+  ["##[error]", "error"],
+  ["##[warning]", "warning"],
+  ["##[notice]", "notice"],
+];
+
+/// The cleaned log as lines with a kind (`CILogParser.lines` on the Mac): GitHub's `##[…]` markers become the kind and
+/// leave the text, `##[endgroup]` and `##[debug]` are dropped, and a plain line saying "error:", "warning:" or that the
+/// build failed counts too.
+export function ciLines(text: string): CiLine[] {
+  const lines: CiLine[] = [];
+  for (const line of text.split("\n")) {
+    const marker = MARKERS.find(([prefix]) => line.startsWith(prefix));
+    if (marker) {
+      lines.push({ kind: marker[1], text: line.slice(marker[0].length) });
+      continue;
+    }
+    if (line.startsWith("##[endgroup]") || line.startsWith("##[debug]")) continue;
+    const lower = line.toLowerCase();
+    const kind: CiLineKind =
+      lower.includes("error:") || lower.includes("build failed") || lower.includes("test failed") || lower.startsWith("fatal:")
+        ? "error"
+        : lower.includes("warning:")
+          ? "warning"
+          : "plain";
+    lines.push({ kind, text: line });
+  }
+  return lines;
+}
+
+/// Only what went wrong: the error and warning lines, each group's name before its first one.
+export function ciProblems(lines: CiLine[]): CiLine[] {
+  const result: CiLine[] = [];
+  let group: CiLine | null = null;
+  for (const line of lines) {
+    if (line.kind === "group") group = line;
+    else if (line.kind === "error" || line.kind === "warning") {
+      if (group) {
+        result.push(group);
+        group = null;
+      }
+      result.push(line);
+    }
+  }
+  return result;
+}
+
+/// The job id of a GitHub Actions check ("…/actions/runs/123/job/456" → 456); null for a check from another app, which
+/// has no log for Nook to read. The same rule as `job_id` in the core.
+export function jobId(url: string | null): number | null {
+  if (!url) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!parsed.hostname.endsWith("github.com")) return null;
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const index = parts.indexOf("job");
+  if (index < 0 || !parts.includes("actions")) return null;
+  const id = Number(parts[index + 1]);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 export type PullRequestEvent = {
   id: string;
   author: string;
@@ -78,6 +166,7 @@ export interface PullRequestDetail {
 export const pullsApi = {
   detail: (account: string | null, repo: string, number: number) =>
     invoke<PullRequestDetail>("github_pull_request", { account, repo, number }),
+  ciLog: (account: string | null, repo: string, job: number) => invoke<CiLog>("github_ci_log", { account, repo, job }),
   /// Only after the confirmation in the view. Runs the `github_merge_pr` action and writes it to the action log.
   merge: (account: string | null, repo: string, number: number, method: MergeMethod, sha: string) =>
     invoke<string>("github_merge_pull_request", { account, repo, number, method, sha }),

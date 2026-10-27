@@ -107,7 +107,7 @@ struct AgentRunPanel: View {
                         composer(run).chatColumn()
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 let turns = turnDiffs(run)
                 if let selection = diffSelection, !turns.isEmpty {
                     TurnDiffPanel(turns: turns, selection: Binding(get: { diffSelection ?? selection }, set: { diffSelection = $0 }),
@@ -130,7 +130,7 @@ struct AgentRunPanel: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
             // A file the agent links to (`src/app.swift:12`) opens in your editor at that line.
             .environment(\.fileLinkBase, run.isRemote ? nil : run.workingDirectory)
@@ -399,9 +399,11 @@ struct AgentRunPanel: View {
     /// The session's open GitHub pull request or GitLab merge request, from the git button or the pull request list.
     private func watchablePullRequest() -> URL? {
         if let url = workspace.openPullRequests[runID], PullRequestWatch.canWatch(url) { return url }
-        return PullRequestSync.shared.links[runID]?
-            .first { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }
-            .flatMap { URL(string: $0.url) }
+        if let synced = PullRequestSync.shared.links[runID]?
+            .first(where: { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) })
+            .flatMap({ URL(string: $0.url) }) { return synced }
+        // The one the agent just made, before the sync has found it.
+        return derived.createdPullRequest.flatMap { PullRequestWatch.canWatch($0) ? $0 : nil }
     }
 
     private func saveQueuedEdit() {
@@ -1166,6 +1168,8 @@ private final class RunTimelineDerived {
     private(set) var turns: [TurnDiff] = []
     private(set) var outputs: [SessionOutput] = []
     private(set) var runningCommand: UUID?
+    /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
+    private(set) var createdPullRequest: URL?
 
     @discardableResult
     func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
@@ -1179,6 +1183,8 @@ private final class RunTimelineDerived {
         turns = TurnDiff.collect(events: all)
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
+        createdPullRequest = all.last { $0.kind == .assistant && $0.text.contains("/pull/") }
+            .flatMap { MarkdownBlock.lastGitHubPullRequest(in: $0.text) }
         return self
     }
 }

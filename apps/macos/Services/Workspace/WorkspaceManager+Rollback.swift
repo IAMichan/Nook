@@ -19,6 +19,37 @@ extension WorkspaceManager {
         }
     }
 
+    /// The agent continues the conversation under a new session id (a resumed Claude Code chat gets one): keep the old
+    /// id, so the transcript under it is recognised as this session and does not show up as a second chat.
+    func rememberEarlierSession(_ id: UUID, replacedBy session: String) {
+        guard let previous = run(id)?.providerSessionID, !previous.isEmpty, previous != session else { return }
+        update(id) { run in
+            var log = run.conversation ?? ConversationLog(session: previous, provider: run.provider)
+            var earlier = log.earlierSessions ?? []
+            if !earlier.contains(previous) { earlier.append(previous) }
+            log.earlierSessions = earlier
+            run.conversation = log
+        }
+    }
+
+    /// The conversation went on outside Nook under `session` (a resumed terminal chat): the next turn resumes that one,
+    /// and the messages written there that this session does not show yet are added.
+    func followContinuation(_ id: UUID, from previous: String, to session: String, messages: [AgentChatMessage]) {
+        guard let run = run(id), !run.status.isActive, run.providerSessionID == previous else { return }
+        loadTimeline(id)
+        let known = Set((events[id] ?? []).filter { $0.kind == .user || $0.kind == .assistant }
+            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) })
+        rememberEarlierSession(id, replacedBy: session)
+        update(id) { $0.providerSessionID = session }
+        noteConversationSession(id, session, keepsHistory: true)
+        for message in messages where message.kind == .user || message.kind == .assistant {
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !known.contains(text) else { continue }
+            let kind: RunEvent.Kind = message.kind == .user ? .user : .assistant
+            append(id, RunEvent(kind: kind, text: text, state: kind == .assistant ? .done : nil))
+        }
+    }
+
     func noteConversationTurn(_ id: UUID, turnID: String? = nil) {
         update(id) { run in
             var log = run.conversation ?? ConversationLog(session: run.providerSessionID, provider: run.provider)

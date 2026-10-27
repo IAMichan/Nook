@@ -29,6 +29,8 @@ struct PullRequestDetailView: View {
     @StateObject private var model: PullRequestDetailModel
     @State private var tab: Tab = .summary
     @State private var openFile: String?
+    /// The check whose steps and log the Summary shows in place of itself.
+    @State private var openCheck: PullRequestCheck?
     /// Files you marked as viewed; a mark lapses when a push changes the file.
     @State private var viewed = PullRequestViewedFiles.load()
     /// The review guide written for this pull request, if any, and whether one is being written.
@@ -382,26 +384,58 @@ struct PullRequestDetailView: View {
         .fixedSize()
     }
 
-    /// The round button at the bottom right that opens the composer (a comment or a review).
+    /// The split button at the bottom right that opens the composer (a comment or a review): the bubble
+    /// writes a comment, the chevron beside it starts straight as a comment, an approval or a request for changes.
     private func writeButton(_ detail: PullRequestDetail) -> some View {
-        Button {
-            withAnimation(NookTheme.swap) { actions.open(.write, detail: detail) }
-        } label: {
-            Image(systemName: "bubble.left")
-                .font(NookTheme.font(14, .medium))
-                .foregroundStyle(NookTheme.paper)
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(NookTheme.smoke))
-                .overlay(Circle().strokeBorder(NookTheme.line2, lineWidth: 1))
-                .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
-                .contentShape(Circle())
+        HStack(spacing: 0) {
+            Button {
+                openWriter(detail, review: nil)
+            } label: {
+                Image(systemName: "bubble.left")
+                    .font(NookTheme.font(14, .medium))
+                    .foregroundStyle(NookTheme.paper)
+                    .frame(width: 40, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("agents.pr.write.open"))
+            .accessibilityLabel(tr("agents.pr.write.open"))
+            Rectangle().fill(NookTheme.line2).frame(width: 1, height: 18)
+            ComposerDropdown(width: 220) {
+                Image(systemName: "chevron.up")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textSecondary)
+                    .frame(width: 30, height: 38)
+                    .contentShape(Rectangle())
+            } content: {
+                ForEach(PullRequestAction.Verdict.allCases, id: \.self) { verdict in
+                    DropdownRow(symbol: PullRequestActionPanel.verdictSymbol(verdict),
+                                title: tr(PullRequestActionPanel.verdictKey(verdict))) { openWriter(detail, review: verdict) }
+                }
+            }
+            .help(tr("agents.pr.write.choose"))
+            .accessibilityLabel(tr("agents.pr.write.choose"))
         }
-        .buttonStyle(.plain)
+        .background(Capsule().fill(NookTheme.smoke))
+        .overlay(Capsule().strokeBorder(NookTheme.line2, lineWidth: 1))
+        .shadow(color: NookTheme.notch.opacity(0.45), radius: 10, y: 4)
+        .clipShape(Capsule())
         .disabled(actions.sending)
-        .help(tr("agents.pr.write.open"))
-        .accessibilityLabel(tr("agents.pr.write.open"))
         .padding(.trailing, NookTheme.Spacing.xs)
         .padding(.bottom, NookTheme.Spacing.md)
+    }
+
+    /// Opens the composer as a plain comment (nil) or as a review with the verdict picked in the dropdown.
+    private func openWriter(_ detail: PullRequestDetail, review verdict: PullRequestAction.Verdict?) {
+        withAnimation(NookTheme.swap) {
+            actions.open(.write, detail: detail)
+            if let verdict {
+                actions.asReview = true
+                actions.verdict = verdict
+            } else {
+                actions.asReview = false
+            }
+        }
     }
 
     // MARK: Stack
@@ -570,7 +604,18 @@ struct PullRequestDetailView: View {
     private func content(_ detail: PullRequestDetail, now: Date) -> some View {
         switch tab {
         case .summary:
-            page { summary(detail, now: now) }
+            if let check = openCheck, let url = detail.url {
+                // The check as last read: a running one turns failed or passed in place.
+                CICheckLogView(pullRequest: url, check: detail.checks.first { $0.id == check.id } ?? check) {
+                    openCheck = nil
+                    // Back where the check was: the page is built again on this turn, so it can scroll on the next.
+                    DispatchQueue.main.async { revealChecks() }
+                }
+                .padding(.top, NookTheme.Spacing.md)
+                .id(check.id)
+            } else {
+                page { summary(detail, now: now) }
+            }
         case .guide:
             if detail.activityLoaded {
                 page { reviewGuide(detail) }
@@ -1001,6 +1046,7 @@ struct PullRequestDetailView: View {
     private func switchTo(_ value: Tab) {
         withAnimation(NookTheme.swap) { tab = value }
         openFile = nil
+        openCheck = nil
         condensed = false
     }
 
@@ -1158,7 +1204,7 @@ struct PullRequestDetailView: View {
                 ListEmptyNote(tr("agents.pr.checks.none"))
             } else {
                 // The ones that need you first: failing, then running, then passed, skipped last.
-                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check) }
+                ForEach(Array(sortedChecks(detail.checks).enumerated()), id: \.offset) { _, check in checkRow(check, detail: detail) }
             }
         }
     }
@@ -1170,8 +1216,16 @@ struct PullRequestDetailView: View {
             .map(\.element)
     }
 
-    private func checkRow(_ check: PullRequestCheck) -> some View {
-        HoverRow(action: { if let url = check.url { NSWorkspace.shared.open(url) } }) {
+    /// A GitHub Actions job opens its steps and log here; a check from another app has no log to read, so its own page.
+    private func checkRow(_ check: PullRequestCheck, detail: PullRequestDetail) -> some View {
+        let readsHere = CILogParser.jobID(from: check.url) != nil && detail.url.flatMap(GitHubPullRequests.parse) != nil
+        return HoverRow(action: {
+            if readsHere {
+                withAnimation(NookTheme.swap) { openCheck = check }
+            } else if let url = check.url {
+                NSWorkspace.shared.open(url)
+            }
+        }) {
             HStack(spacing: NookTheme.Spacing.md) {
                 CheckOutcomeGlyph(outcome: check.outcome).frame(width: 16)
                 Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
@@ -1181,7 +1235,9 @@ struct PullRequestDetailView: View {
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
                 if check.url != nil {
-                    Image(systemName: "arrow.up.right").font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textTertiary)
+                    Image(systemName: readsHere ? "chevron.right" : "arrow.up.right")
+                        .font(NookTheme.font(9, .semibold))
+                        .foregroundStyle(NookTheme.textTertiary)
                 }
             }
         }

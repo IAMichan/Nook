@@ -71,14 +71,18 @@ extension ChatsEntry {
         let linkedWhatsApp = whatsApp.isConnected && !helperWhatsApp
         if linkedWhatsApp {
             for conversation in whatsApp.inbox.sorted where !whatsApp.filters.ignored.contains(conversation.id) {
-                let preview = conversation.messages.last.map { line($0, group: conversation.isGroup) } ?? ""
+                // Who is who by your Contacts and the phone's: names instead of numbers.
+                var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
+                let preview = conversation.messages.last.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let newest = conversation.messages.last
-                let ticks = newest.flatMap { $0.fromMe ? $0.receipt.map(AppModel.bubbleTicks) : nil }
+                let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
+                                                   private: !conversation.isGroup)
+                let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
                 entries.append(ChatsEntry(id: "wa|" + conversation.id, origin: .whatsApp(conversation.id), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
                                           readKnown: whatsApp.readIsKnown(conversation.id),
-                                          ticks: ticks, members: conversation.members == nil ? nil : conversation.memberNames,
+                                          ticks: ticks, members: conversation.members == nil ? nil : names?.all,
                                           handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id]))
             }
             // Every other chat on the phone, also the ones that wrote nothing since Nook was linked: their messages load
@@ -89,7 +93,7 @@ extension ChatsEntry {
                 let id = "wa|" + chat.jid
                 guard listed.insert(id).inserted else { continue }
                 entries.append(ChatsEntry(id: id, origin: .whatsApp(chat.jid), app: "whatsapp",
-                                          name: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name,
+                                          name: whatsApp.chatName(chat.jid, fallback: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name),
                                           preview: "", last: chat.last, read: whatsApp.readState(chat.jid),
                                           readKnown: whatsApp.readIsKnown(chat.jid), handle: handle(chat.jid),
                                           avatar: whatsApp.avatars[chat.jid]))
@@ -97,11 +101,25 @@ extension ChatsEntry {
         }
         // While the phone is linked every WhatsApp chat comes from the link, with its history: what notifications (or an
         // import) collected before stays out of the list, or each chat would show twice.
-        for thread in capture.inbox.sorted
-        where capture.sources.isOn(thread.app) && !(thread.app == "whatsapp" && linkedWhatsApp) {
+        // One chat, one card: an app that names the same chat twice (a chat without a topic is named after whoever wrote
+        // last) leaves two threads holding the same messages; the fuller one stays.
+        var newestSeen: [String: Int] = [:]
+        let threads = capture.inbox.sorted.filter { $0.app != "whatsapp" || !linkedWhatsApp }
+        for thread in threads {
+            guard let id = thread.messages.last?.id else { continue }
+            let key = thread.app + "|" + id
+            newestSeen[key] = max(newestSeen[key] ?? 0, thread.messages.count)
+        }
+        var shownNewest = Set<String>()
+        for thread in threads where capture.sources.isOn(thread.app) {
+            if let id = thread.messages.last?.id {
+                let key = thread.app + "|" + id
+                guard thread.messages.count == newestSeen[key], shownNewest.insert(key).inserted else { continue }
+            }
             let preview = thread.messages.last.map(line) ?? ""
             let newest = thread.messages.last
-            let ticks = newest.flatMap { $0.isMine ? $0.receipt.map(BubbleTicks.init) : nil }
+            let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
+            let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
                                       preview: preview, last: thread.last, read: thread.readState,
                                       lastIsMine: newest?.isMine ?? false, ticks: ticks,
@@ -110,14 +128,15 @@ extension ChatsEntry {
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
     }
 
-    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"). A photo, video or
+    /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"; `sender` is empty in a
+    /// private chat). A photo, video or
     /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
     @MainActor
-    static func line(_ message: WAMessage, group: Bool) -> String {
+    static func line(_ message: WAMessage, sender: String) -> String {
         let caption = ChatFormat.plain(message.text)
         let file = AppModel.whatsAppFileLabel(message.media)
         let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
-        let who = message.fromMe ? tr("chat.you") : (group ? message.senderName : "")
+        let who = message.fromMe ? tr("chat.you") : sender
         return who.isEmpty ? text : "\(who): \(text)"
     }
 
@@ -141,10 +160,13 @@ extension ChatsEntry {
         switch origin {
         case .whatsApp(let jid):
             guard let conversation = whatsApp.inbox.conversations[jid] else { return nil }
+            // Found by who wrote it as the chat shows them: a saved contact's name, also when they set another.
+            var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
             match = conversation.messages.last { message in
                 AppModel.whatsAppText(message).localizedCaseInsensitiveContains(needle)
                     || message.senderName.localizedCaseInsensitiveContains(needle)
-            }.map { Self.line($0, group: conversation.isGroup) }
+                    || (!message.fromMe && names?.name(message.sender).localizedCaseInsensitiveContains(needle) == true)
+            }.map { Self.line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") }
         case .captured(let id):
             guard let thread = capture.inbox.threads[id] else { return nil }
             match = thread.messages.last { message in
@@ -183,6 +205,38 @@ final class ChatsEntryMemo {
         entries = made
         DispatchQueue.main.async { [weak self] in self?.entries = nil }
         return made
+    }
+}
+
+/// Whether any chat has something new, for the dot on the Chats tab. The panel watches this instead of the chats
+/// themselves: those change with nearly every bridge read (a tick, a reaction, a chat listed again), and each change
+/// redrew the whole panel, which with many chats kept the CPU busy. This changes only when the dot does.
+@MainActor
+final class ChatsUnreadDot: ObservableObject {
+    static let shared = ChatsUnreadDot()
+
+    @Published private(set) var lit = false
+    private var watching: [AnyCancellable] = []
+    private var pending = false
+
+    private init() {
+        lit = ChatsTab.unread > 0
+        watching = [
+            WhatsAppLink.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
+            ChatCaptureService.shared.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.recount() } },
+        ]
+    }
+
+    /// Counts again once the change is made (`objectWillChange` comes before it), once for a burst of changes.
+    private func recount() {
+        guard !pending else { return }
+        pending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            pending = false
+            let now = ChatsTab.unread > 0
+            if now != lit { lit = now }
+        }
     }
 }
 
@@ -340,11 +394,11 @@ struct ChatsTab: View {
                         }
                     }
                     .padding(.leading, NookTheme.Spacing.lg)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         .onAppear {
             takeFocus()

@@ -342,6 +342,11 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
         if !next.isActive { turnStartedAt = nil }
         return true
     }
+
+    /// Does `session` name this run's conversation: its current session id or an earlier one (a resumed chat gets a new id)?
+    func isConversation(_ session: String) -> Bool {
+        providerSessionID == session || conversation?.earlierSessions?.contains(session) == true
+    }
 }
 
 /// One step of the task list an agent keeps while it works: Claude Code's TodoWrite, Codex's `turn/plan/updated`,

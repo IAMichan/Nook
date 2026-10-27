@@ -296,6 +296,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertNil(inbox.threads[ChatInbox.key(app: "whatsapp", chat: "Daan van Oosterom")])
     }
 
+    func testAChatOnlyGroupsWroteInIsNoGroupAndGoesBack() {
+        var inbox = ChatInbox()
+        // Notifications of two groups landed in one person's chat: two different "senders" do not make it a group.
+        inbox.add(notice("Aron", "ok", app: "teams", sender: "Dev"), id: "n1")
+        inbox.add(notice("Aron", "top", app: "teams", sender: "Business", at: 10), id: "n2")
+        for (name, people) in [("Dev", ["Rutger", "Thomas"]), ("Business", ["Thomas", "Sander"])] {
+            inbox.merge(BridgedChat(app: "teams", name: name, messages: people.enumerated().map { index, who in
+                InboxMessage(id: name + who, sender: who, text: "hi \(index)", date: now.addingTimeInterval(-60 - Double(index)))
+            }, unread: 0))
+        }
+        inbox.trim(now: now)
+        XCTAssertNil(inbox.threads[ChatInbox.key(app: "teams", chat: "Aron")])
+        XCTAssertEqual(inbox.threads[ChatInbox.key(app: "teams", chat: "Dev")]?.messages.last?.text, "ok")
+    }
+
     func testAGroupIsNeverFoldedIntoAPersonsChat() {
         var inbox = ChatInbox()
         // A group only its notifications know, where one person wrote: it stays a group.
@@ -1389,6 +1404,46 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(filled, [.read, nil, .read, .read, .read, .delivered, .failed, .sent],
                        "older ones go as far as a later one did; theirs have none; a red mark stays; the newest unknown has one tick")
         XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
+    }
+
+    func testAMemberWhoWroteLaterHasReadYourMessage() {
+        let anna = ChatReader(name: "Anna", receipt: .sent)
+        let bo = ChatReader(name: "Bo", receipt: .delivered)
+        let filled = ChatReceipts.filledReaders([[anna, bo], [], []], speakers: [nil, ("anna", now), nil])
+        XCTAssertEqual(filled[0].map(\.receipt), [.read, .delivered])
+        XCTAssertEqual(filled[0].first?.date, now, "read no later than when they wrote")
+        let before = ChatReceipts.filledReaders([[], [anna]], speakers: [("Anna", now), nil])
+        XCTAssertEqual(before[1].map(\.receipt), [.sent], "a message before yours says nothing")
+    }
+
+    func testAnOlderMessageIsReadByWhoReadALaterOne() {
+        let anna = { (receipt: ChatReceipt, date: Date?) in ChatReader(name: "Anna", receipt: receipt, date: date) }
+        let bo = { (receipt: ChatReceipt) in ChatReader(name: "Bo", receipt: receipt) }
+        let filled = ChatReceipts.filledReaders([
+            [anna(.sent, nil), bo(.sent)],
+            [],
+            [anna(.delivered, now), bo(.sent)],
+            [anna(.read, now), bo(.delivered)],
+        ])
+        XCTAssertEqual(filled[0], [anna(.read, nil), bo(.delivered)], "without a time of its own: when is not known")
+        XCTAssertEqual(filled[1], [])
+        XCTAssertEqual(filled[2], [anna(.read, nil), bo(.delivered)])
+        XCTAssertEqual(filled[3], [anna(.read, now), bo(.delivered)], "the newest keeps what its app said")
+        XCTAssertEqual(ChatReceipts.overall(of: filled[0]), .delivered)
+
+        // Two members called Jan are told apart by their id: one's read is never passed on to the other.
+        let jan1 = { (receipt: ChatReceipt) in ChatReader(name: "Jan", receipt: receipt, key: "j1") }
+        let jan2 = { (receipt: ChatReceipt) in ChatReader(name: "Jan", receipt: receipt, key: "j2") }
+        let twins = ChatReceipts.filledReaders([[jan1(.sent), jan2(.sent), ChatReader(name: "Jan", receipt: .sent)],
+                                                [jan1(.read), jan2(.delivered)]])
+        XCTAssertEqual(twins[0].map(\.receipt), [.read, .delivered, .sent], "a name two people share matches neither")
+        XCTAssertEqual(twins[0].map(\.key), ["j1", "j2", nil])
+        XCTAssertNil(ChatReceipts.overall(of: []))
+
+        // In a private chat, their message after yours says yours reached them; in a group it says nothing of the rest.
+        XCTAssertEqual(ChatReceipts.filled([(true, nil), (false, nil)], private: true), [.delivered, nil])
+        XCTAssertEqual(ChatReceipts.filled([(true, nil), (false, nil)]), [.sent, nil])
+        XCTAssertEqual(ChatReceipts.filled([(false, nil), (true, nil)], private: true), [nil, .sent])
     }
 
     func testWhoIsTyping() {

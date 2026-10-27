@@ -31,6 +31,9 @@ struct ConversationLog: Codable, Equatable, Sendable {
     var turns = 0
     var head: String?
     var exact = true
+    /// Earlier ids of this conversation: the agent hands a resumed conversation a new session id, and the transcript
+    /// under the old id is still the same chat.
+    var earlierSessions: [String]?
 
     init(session: String? = nil, provider: RunProvider? = nil) {
         self.session = session

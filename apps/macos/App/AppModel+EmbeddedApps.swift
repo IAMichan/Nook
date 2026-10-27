@@ -64,17 +64,39 @@ extension AppModel {
 
     /// An artifact clicked or opened in Nook (a Claude artifact, a ChatGPT canvas): the app that made it opens beside the
     /// chat in its web version, with the artifact in a side panel next to it, signed in with the app so a private one
-    /// shows too. Returns that app; nil when `url` is no artifact.
+    /// shows too. In an agent's conversation (`beside`) it opens as a tab of the session's side panel instead, without
+    /// opening the app. Returns that app; nil when `url` is no artifact.
     @discardableResult
-    func openArtifact(_ url: URL) -> EmbeddedApp? {
+    func openArtifact(_ url: URL, beside: Bool = false) -> EmbeddedApp? {
         guard let owner = EmbeddedArtifact.app(for: url) else { return nil }
         let store = EmbeddedAppStore.shared
+        if beside, !demoMode {
+            // Clicked in an agent's conversation: it loads in the session's side panel, in Nook, signed in with the app.
+            store.openArtifact(url, of: owner)
+            viewModel.sessionTool = .artifact
+            return owner
+        }
         if store.current?.id != owner.id { store.open(owner) }
         viewModel.browserBesideChat = false
         viewModel.embeddedAppOpen = true
         store.openBeside(url)
         showChat()
         return owner
+    }
+
+    /// A web link clicked in an agent's conversation opens in the session's side panel opens links in the
+    /// thread's integrated browser: an artifact in its own tab, signed in with the app that made it, any other page in
+    /// the browser tab. The link target setting or ⌘ or ⌃ held while clicking sends it to the system browser instead
+    /// (false: the caller opens it); `forced` (the link's right-click menu) opens it in the panel whatever they say.
+    @discardableResult
+    func openLinkBeside(_ url: URL, forced: Bool = false) -> Bool {
+        guard !demoMode, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              forced || (AgentLinkTarget.current() == .app && NSEvent.modifierFlags.isDisjoint(with: [.command, .control]))
+        else { return false }
+        if openArtifact(url, beside: true) != nil { return true }
+        BrowserStore.shared.open(url)
+        viewModel.sessionTool = .browser
+        return true
     }
 
     /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
@@ -91,8 +113,7 @@ extension AppModel {
         let account = listed?.0 ?? AccountRegistry.shared.accounts(for: "github").first?.id ?? "github"
         let request = PullRequestOpenRequest(account: account, item: listed?.1 ?? link)
         if beside {
-            viewModel.sidePullRequest = request
-            viewModel.sessionTool = .pullRequest
+            viewModel.openSidePullRequest(request)
             return true
         }
         viewModel.pullRequestToOpen = request

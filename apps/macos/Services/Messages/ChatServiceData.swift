@@ -134,7 +134,7 @@ enum ChatServiceData {
         var readers: [String: ChatReader] = [:]
         let delivered = ((message["sendStatus"] as? [String: Any])?["deliveredToUsers"] as? [String]) ?? []
         for id in delivered where id != chat.me {
-            readers[id] = ChatReader(name: chat.isGroup ? chat.people[id] ?? id : "", receipt: .delivered)
+            readers[id] = ChatReader(name: chat.isGroup ? chat.people[id] ?? id : "", receipt: .delivered, key: chat.isGroup ? id : nil)
         }
         switch message["seen"] {
         case let time as String where !time.isEmpty && !chat.isGroup:
@@ -142,7 +142,7 @@ enum ChatServiceData {
         case let people as [String: Any]:
             for (id, value) in people where id != chat.me && seen(value) {
                 readers[id] = ChatReader(name: chat.isGroup ? chat.people[id] ?? id : "", receipt: .read,
-                                         date: ChatJSON.date(value))
+                                         date: ChatJSON.date(value), key: chat.isGroup ? id : nil)
             }
         default: break
         }

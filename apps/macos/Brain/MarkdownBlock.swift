@@ -41,7 +41,8 @@ enum MarkdownBlock: Equatable {
 
     /// Cleans up artifacts models sometimes output: trailing backslashes (hard breaks), `<br>`, and Windows line endings.
     static func clean(_ text: String) -> String {
-        var normalized = text.contains("\r") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
+        // By its scalars: "\r\n" is one Character in Swift, so `text.contains("\r")` misses every Windows line end.
+        var normalized = text.unicodeScalars.contains("\r") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
         if normalized.contains("<"), let rx = brRegex {
             normalized = rx.stringByReplacingMatches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized), withTemplate: "\n")
         }
@@ -143,6 +144,16 @@ enum MarkdownBlock: Equatable {
               let value = Range(match.range(at: 2), in: line), let url = URL(string: String(line[value])),
               pullRequestReference(url) != nil else { return nil }
         return url
+    }
+
+    private static let gitHubPullRequestRegex = try? NSRegularExpression(pattern: #"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+"#)
+
+    /// The last GitHub pull request link in a text, tagged with `<pr-created>` or written out.
+    static func lastGitHubPullRequest(in text: String) -> URL? {
+        guard text.contains("/pull/"), let rx = gitHubPullRequestRegex,
+              let match = rx.matches(in: text, range: NSRange(text.startIndex..., in: text)).last,
+              let range = Range(match.range, in: text) else { return nil }
+        return URL(string: String(text[range]))
     }
 
     /// "owner/repo" and the number of a GitHub pull request or GitLab merge request link.

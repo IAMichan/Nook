@@ -94,7 +94,12 @@ pub async fn whatsapp_audio(c: State<'_, Connectors>, chat: String, message: Str
     if !link.owns_file(&path) {
         return Err("Nook speelt alleen bestanden die het zelf ophaalde.".into());
     }
-    let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let bytes = std::fs::read(&path).map_err(|_| "Het bestand kon niet worden gelezen.".to_string())?;
+    // A file saved without an extension (the gateway named no usable type) is still known by its first bytes.
+    let extension = match path.extension() {
+        Some(e) => e.to_string_lossy().to_lowercase(),
+        None => files::sniff_extension(&bytes).unwrap_or_default().to_string(),
+    };
     let mime = match extension.as_str() {
         "ogg" | "oga" | "opus" => "audio/ogg",
         "mp3" => "audio/mpeg",
@@ -103,7 +108,6 @@ pub async fn whatsapp_audio(c: State<'_, Connectors>, chat: String, message: Str
         "amr" => "audio/amr",
         _ => return Err("Dit is geen geluid dat Nook kan afspelen.".into()),
     };
-    let bytes = std::fs::read(&path).map_err(|_| "Het bestand kon niet worden gelezen.".to_string())?;
     if bytes.len() > 25 * 1024 * 1024 {
         return Err("Dit geluid is te groot om hier af te spelen.".into());
     }

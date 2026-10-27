@@ -43,6 +43,10 @@ struct AgentsTab: View {
         let past = app.demoMode ? [] : Array(lists.past
             .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
+        // A session with its side panel open needs room for both: the list gives way first, so a narrow window keeps
+        // the conversation and the panel side by side for as long as it can.
+        let besideRoom = workbench(selection) && viewModel.sessionTool != .conversation
+            ? PanelLayout.minimumPanel + PanelSplit.handle + NookTheme.Spacing.sm + 10 : 0
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
                 listHeader(selection)
@@ -58,24 +62,30 @@ struct AgentsTab: View {
             }
             .padding(.trailing, NookTheme.Spacing.xs)
             .resizablePanel(width: $listWidth, defaultWidth: PanelLayout.agentsList, minimum: PanelLayout.minimumList,
-                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle,
+                            available: totalWidth, rest: PanelLayout.minimumConversation + PanelSplit.handle + besideRoom,
                             edge: .trailing, divider: true)
 
             Group {
                 switch selection {
                 case .live(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true,
+                                     agentWorking: session.status == .running || session.status == .waiting) { tools in
                         AgentSessionDetail(selection: .live(session), headerAccessory: tools)
                     }
                     .id(session.id)
                 case .past(let session):
-                    SessionWorkbench(viewModel: viewModel, directory: session.cwd) { tools in
-                        AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                    SessionWorkbench(viewModel: viewModel, directory: session.cwd, dockSessionPanel: true) { tools in
+                        // An earlier conversation Nook can run opens as a Nook session: the same panel, composer and
+                        // pull request status as one started here. The read-only view is for the rest.
+                        ImportedSession(session: session) {
+                            AgentSessionDetail(selection: .past(session), headerAccessory: tools)
+                        }
                     }
                     .id("past:" + session.id)
                 case .run(let id):
                     let run = app.workspace.run(id)
-                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id) { tools in
+                    SessionWorkbench(viewModel: viewModel, directory: run?.workingDirectory ?? "", runID: id,
+                                 dockSessionPanel: run?.remote == nil, agentWorking: run?.status.isActive ?? false) { tools in
                         AgentRunPanel(workspace: app.workspace, runID: id, headerAccessory: tools)
                     }
                     // Each session gets its own panel state: nothing (a pending "restore files" above all) carries over.
@@ -99,8 +109,11 @@ struct AgentsTab: View {
                 }
             }
             .padding(.leading, 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        // Exactly the width it is given, however wide a row inside wants to be: measuring a row that runs past the window
+        // would hand the panels more room than there is and push everything off both sides.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { totalWidth = $0 }
         // Where back on the pull requests page returns to.
         .onChange(of: viewModel.selectedAgentID) { previous, id in
@@ -146,6 +159,14 @@ struct AgentsTab: View {
 
     /// What is shown on the right. Without a choice (or when it is gone): whatever waits for you or works, otherwise the
     /// place to start a new session.
+    /// The selections that open in a `SessionWorkbench`, with a side panel beside the conversation.
+    private func workbench(_ selection: Selection) -> Bool {
+        switch selection {
+        case .live, .past, .run, .new: return true
+        default: return false
+        }
+    }
+
     private func resolve(live: [AgentSession], past: [PastSession]) -> Selection {
         let id = viewModel.selectedAgentID
         if id == "new" { return .new }
@@ -726,5 +747,27 @@ enum WorkspaceRunsSection {
             .filter { !$0.archived && ($0.status.isActive || Date().timeIntervalSince($0.updatedAt) < 24 * 3600) }
             .sorted { ($0.status.isActive ? 0 : 1, $1.updatedAt) < ($1.status.isActive ? 0 : 1, $0.updatedAt) }
         return Array(list.prefix(12))
+    }
+}
+
+/// Takes over an earlier conversation as a Nook session the moment it opens, so it works and looks like a session
+/// started in Nook. While that runs, or when it cannot (`fallback`), the read-only view shows.
+struct ImportedSession<Fallback: View>: View {
+    @EnvironmentObject private var app: AppModel
+    let session: PastSession
+    @ViewBuilder let fallback: () -> Fallback
+    @State private var failed = false
+
+    var body: some View {
+        if failed || !app.canContinueInNook(session) {
+            fallback()
+        } else {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .task(id: session.id) {
+                    do { _ = try await app.continueInNook(session) } catch { failed = true }
+                }
+        }
     }
 }

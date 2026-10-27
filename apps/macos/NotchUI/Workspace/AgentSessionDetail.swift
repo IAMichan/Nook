@@ -74,10 +74,12 @@ struct AgentSessionDetail: View {
     /// "nook / Agents-pagina rustiger maken" with the branch button on the right.
     private func header(folder: String, title: String, directory: String, agentWorking: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            // The folder keeps its name before the title gives way, but truncates too in a narrow window instead of
+            // pushing the header past the conversation.
             Text(folder)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
-                .fixedSize()
+                .layoutPriority(1)
             Text("/").foregroundStyle(NookTheme.textTertiary)
             Text(title)
                 .font(NookTheme.TextStyle.strong)
@@ -177,7 +179,12 @@ struct AgentSessionDetail: View {
                 ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
             } else {
                 errorLine
-                liveComposer(shown)
+                VStack(spacing: 0) {
+                    pullRequestTray(pullRequest(cwd: session.cwd, branch: known(session).flatMap { $0.branch.isEmpty ? nil : $0.branch } ?? GitHead.branch(for: session.cwd) ?? "", reply: pullRequestText(shown)))
+                    liveComposer(shown).zIndex(1)
+                }
+                // The tray keeps to the box's column, so it follows the box when that is narrower than the panel.
+                .chatColumn()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -249,6 +256,30 @@ struct AgentSessionDetail: View {
         }
         .frame(maxWidth: .infinity, maxHeight: 110, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
+    }
+
+    /// The pull request of a session Nook does not run: the one for its folder and branch, else the last one its reply
+    /// links. Shown in a tray above the composer, as for a session Nook runs.
+    private func pullRequest(cwd: String, branch: String, reply: String) -> URL? {
+        if !cwd.isEmpty, !branch.isEmpty,
+           let link = PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: cwd, branch: branch)]?
+            .first(where: { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }),
+           let url = URL(string: link.url) { return url }
+        return MarkdownBlock.lastGitHubPullRequest(in: reply)
+    }
+
+    /// What a live session said, for a pull request link: its last reply, and for an agent whose conversation Nook cannot
+    /// read (Antigravity, for one) what it reported while it worked.
+    private func pullRequestText(_ session: AgentSession) -> String {
+        ([session.lastReply, session.summary] + session.steps.suffix(10).map(\.text)).joined(separator: "\n")
+    }
+
+    /// The tray above a composer with the session's pull request in it (its state, checks and a way to open it).
+    @ViewBuilder
+    private func pullRequestTray(_ url: URL?) -> some View {
+        if let url {
+            ComposerTray(edge: .top) { PullRequestWatchStrip(url: url, watch: nil) }
+        }
     }
 
     /// The composer under a live session. What you send continues the conversation in Nook: an idle session goes on as
@@ -566,6 +597,8 @@ struct AgentSessionDetail: View {
             .id("past:" + session.id)
 
             errorLine
+            VStack(spacing: 0) {
+            pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
             SessionComposer(
                 text: $draft,
                 prompt: canContinue ? tr("agents.reply.resume")
@@ -584,6 +617,9 @@ struct AgentSessionDetail: View {
             .choicesBelowBox()
             .images($images)
             .trailing { ComposerMic(text: $draft) }
+            .zIndex(1)
+            }
+            .chatColumn()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

@@ -6,6 +6,8 @@ struct MailDraftView: View {
     let draft: MailDraft
     let onSend: (MailDraft) -> Void
     let onOpen: (MailDraft) -> Void
+    let onDismiss: (MailDraft) -> Void
+    let onReopen: (MailDraft) -> Void
 
     @State private var to: String
     @State private var cc: String
@@ -15,10 +17,13 @@ struct MailDraftView: View {
     /// `@` in the body: people from your chats by name.
     @StateObject private var mentionModel = ComposerModel()
 
-    init(draft: MailDraft, onSend: @escaping (MailDraft) -> Void, onOpen: @escaping (MailDraft) -> Void) {
+    init(draft: MailDraft, onSend: @escaping (MailDraft) -> Void, onOpen: @escaping (MailDraft) -> Void,
+         onDismiss: @escaping (MailDraft) -> Void, onReopen: @escaping (MailDraft) -> Void) {
         self.draft = draft
         self.onSend = onSend
         self.onOpen = onOpen
+        self.onDismiss = onDismiss
+        self.onReopen = onReopen
         _to = State(initialValue: draft.to)
         _cc = State(initialValue: draft.cc)
         _subject = State(initialValue: draft.subject)
@@ -36,7 +41,40 @@ struct MailDraftView: View {
 
     private var locked: Bool { draft.state == .sent || draft.state == .sending }
 
+    /// Sent or on its way: nothing left to close.
+    private var closable: Bool { !locked }
+
     var body: some View {
+        if draft.state == .dismissed {
+            dismissedRow
+        } else {
+            card
+        }
+    }
+
+    /// A closed draft folds to one line, so the conversation stays readable and the draft can still come back.
+    private var dismissedRow: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(systemName: "envelope")
+                .font(NookTheme.font(12, .medium))
+                .foregroundStyle(NookTheme.textTertiary)
+            Text(subject.isEmpty ? tr("chat.mail.concept") : subject)
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(tr("chat.mail.dismissed"))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+            Spacer()
+            SmallGhostButton(title: tr("chat.mail.reopen")) { onReopen(edited) }
+        }
+        .padding(.horizontal, NookTheme.Spacing.xl)
+        .padding(.vertical, NookTheme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.sheet, style: .continuous).fill(NookTheme.field))
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NookTheme.Spacing.md) {
                 Image(systemName: "envelope")
@@ -47,6 +85,9 @@ struct MailDraftView: View {
                     .foregroundStyle(NookTheme.paper)
                 Spacer()
                 statusLabel
+                if closable {
+                    ToolbarIconButton("xmark", tr("chat.mail.dismiss"), height: 20, width: 20) { onDismiss(edited) }
+                }
             }
             .padding(.bottom, NookTheme.Spacing.md)
 

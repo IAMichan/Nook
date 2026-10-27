@@ -152,7 +152,7 @@ extension EnvironmentValues {
         set { self[FileLinkBaseKey.self] = newValue }
     }
 
-    /// In an agent's conversation: a pull request link opens in the session's side panel, not on the Pull requests page.
+    /// In an agent's conversation: a pull request or artifact link opens in the session's side panel, not on the Pull requests page.
     var pullRequestLinksBeside: Bool {
         get { self[PullRequestLinksBesideKey.self] }
         set { self[PullRequestLinksBesideKey.self] = newValue }
@@ -210,6 +210,10 @@ struct MarkdownView: View {
             guard MarkdownBlock.isSafeLink(url) else { return .discarded }
             // A pull request opens in Nook: beside the session, or on the Pull requests page.
             if MainActor.assumeIsolated({ AppModel.shared.openPullRequestLink(url, beside: pullRequestLinksBeside) }) { return .handled }
+            // In an agent's conversation any web page opens in the session's side panel (⌘-click: the system browser).
+            if pullRequestLinksBeside {
+                return MainActor.assumeIsolated({ AppModel.shared.openLinkBeside(url) }) ? .handled : .systemAction
+            }
             // An artifact opens beside the chat, next to the app that made it.
             guard EmbeddedArtifact.app(for: url) != nil else { return .systemAction }
             Task { @MainActor in AppModel.shared.openArtifact(url) }
@@ -254,8 +258,9 @@ struct MarkdownView: View {
             TableBlock(header: header, rows: rows, size: size)
         case .rule:
             NookDivider().padding(.vertical, 4)
-        case .pullRequest(let url):
-            PullRequestLinkCard(url: url)
+        case .pullRequest:
+            // Lives in the tray above the composer (`PullRequestWatchStrip`), where it can be followed and shows its checks.
+            EmptyView()
         }
     }
 
@@ -307,56 +312,6 @@ private struct CalloutBlock: View {
         .padding(NookTheme.Spacing.lg)
         // Tinted, without an edge: the color says what kind of note it is, the fill keeps it apart from the text.
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous).fill(callout.kind.color.opacity(0.08)))
-    }
-}
-
-// MARK: Pull requests
-
-/// A pull request an agent made, as a card instead of its raw tag: the pull request mark (grey, since the link does not
-/// say its state), "Pull request #12", the repository, and an arrow; a click opens it.
-private struct PullRequestLinkCard: View {
-    let url: URL
-    @Environment(\.openURL) private var openURL
-    @State private var hovering = false
-
-    var body: some View {
-        let reference = MarkdownBlock.pullRequestReference(url)
-        let gitLab = url.path.contains("/merge_requests/")
-        Button { openURL(url) } label: {
-            HStack(spacing: NookTheme.Spacing.md) {
-                PullRequestStateIcon(glyph: .open, size: .header, tinted: false)
-                    .foregroundStyle(NookTheme.textSecondary)
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    Text(tr(gitLab ? "markdown.mergeRequest" : "markdown.pullRequest", reference?.number ?? 0))
-                        .font(NookTheme.TextStyle.strong)
-                        .foregroundStyle(NookTheme.paper)
-                    if let repo = reference?.repo {
-                        Text(repo)
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up.right")
-                    .font(NookTheme.font(10, .semibold))
-                    .foregroundStyle(hovering ? NookTheme.textSecondary : NookTheme.textTertiary)
-            }
-            .padding(.horizontal, NookTheme.Spacing.lg)
-            .padding(.vertical, NookTheme.Spacing.md)
-            .frame(maxWidth: 360, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous)
-                .fill(hovering ? NookTheme.graphite : NookTheme.field))
-            .contentShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(NookTheme.hover, value: hovering)
-        .help(url.absoluteString)
-        .contextMenu {
-            Button(tr("button.copy")) { Pasteboard.copy(url.absoluteString) }
-        }
     }
 }
 

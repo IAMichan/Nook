@@ -9,6 +9,13 @@ struct CILog: Equatable, Sendable {
         let outcome: PullRequestCheck.Outcome
     }
 
+    /// One line of the log as it is read: what GitHub marked it as (`##[error]`, `##[group]`…) or what its words say.
+    struct Line: Equatable, Sendable {
+        enum Kind: Equatable, Sendable { case plain, group, command, error, warning, notice }
+        let kind: Kind
+        let text: String
+    }
+
     var steps: [Step] = []
     /// The end of the log, cleaned up for reading; nil while GitHub has none yet (a job that still runs).
     var text: String?
@@ -74,5 +81,46 @@ enum CILogParser {
             while let code = iterator.next(), !code.isLetter {}
         }
         return result
+    }
+
+    /// The cleaned log as lines with a kind: GitHub's `##[…]` markers become the kind and leave the text, `##[endgroup]`
+    /// and `##[debug]` are dropped, and a plain line that says "error:", "warning:" or that the build failed counts too.
+    static func lines(_ text: String) -> [CILog.Line] {
+        text.components(separatedBy: "\n").compactMap { line in
+            for (marker, kind) in markers where line.hasPrefix(marker) {
+                return CILog.Line(kind: kind, text: String(line.dropFirst(marker.count)))
+            }
+            if line.hasPrefix("##[endgroup]") || line.hasPrefix("##[debug]") { return nil }
+            return CILog.Line(kind: plainKind(line), text: line)
+        }
+    }
+
+    /// Only what went wrong: the error and warning lines, each group's name before its first one so a line keeps its place.
+    static func problems(_ lines: [CILog.Line]) -> [CILog.Line] {
+        var result: [CILog.Line] = []
+        var group: CILog.Line?
+        for line in lines {
+            switch line.kind {
+            case .group: group = line
+            case .error, .warning:
+                if let heading = group { result.append(heading); group = nil }
+                result.append(line)
+            default: break
+            }
+        }
+        return result
+    }
+
+    private static let markers: [(String, CILog.Line.Kind)] = [
+        ("##[group]", .group), ("##[command]", .command), ("##[error]", .error),
+        ("##[warning]", .warning), ("##[notice]", .notice),
+    ]
+
+    private static func plainKind(_ line: String) -> CILog.Line.Kind {
+        let lower = line.lowercased()
+        if lower.contains("error:") || lower.contains("build failed") || lower.contains("test failed")
+            || lower.hasPrefix("fatal:") { return .error }
+        if lower.contains("warning:") { return .warning }
+        return .plain
     }
 }

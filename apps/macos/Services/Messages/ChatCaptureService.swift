@@ -40,18 +40,19 @@ final class ChatCaptureService: ObservableObject {
 
     /// The apps Nook reads itself, with their history (`ChatBridge`): Messages from this Mac, Slack with a token,
     /// Telegram through TDLib once you logged in, Teams through Microsoft Graph once you signed in, Instagram through its
-    /// own web API once you logged in on it inside Nook.
+    /// own web API once you logged in on it inside Nook, Snapchat from its website once you signed in on it inside Nook.
     let messagesBridge = MessagesBridge()
     let slackBridge = SlackBridge()
     let telegramBridge = TelegramBridge()
     let teamsBridge = TeamsBridge()
+    let snapchatBridge = SnapchatBridge()
     /// WhatsApp from the WhatsApp app on this Mac while no phone is linked, and every app linked through Nook's own chat
     /// helper.
     let whatsAppDesktopBridge = WhatsAppDesktopBridge()
     let serviceBridge = ChatServiceBridge()
     /// The chat helper goes last: an app another bridge reads is left to that one.
     private var bridges: [ChatBridge] {
-        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, serviceBridge]
+        [messagesBridge, whatsAppDesktopBridge, slackBridge, telegramBridge, teamsBridge, snapchatBridge, serviceBridge]
     }
 
     /// You logged in to an app from its row in Settings › Chats: it is switched on, collecting with it, and read now.
@@ -120,6 +121,10 @@ final class ChatCaptureService: ObservableObject {
         serviceBridge.onChange = { [weak self] in
             guard let self else { return }
             self.bridgeDue[self.serviceBridge.app] = nil
+        }
+        // A change from the last moment before quitting is still written.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.flushSave(wait: true) }
         }
     }
 
@@ -491,8 +496,30 @@ final class ChatCaptureService: ObservableObject {
             .max()
     }
 
+    /// A write of `chat-inbox.json` is waiting (see `save`).
+    private var savePending = false
+    private static let saving = DispatchQueue(label: "nook.chat-inbox.save", qos: .utility)
+
+    /// Writes `chat-inbox.json` a moment after a change, off the main thread, once for all changes in that moment. With
+    /// many chats the file is large, and encoding all of it on the main thread after each bridge read kept the CPU busy.
     private func save() {
-        guard let data = try? JSONEncoder().encode(inbox) else { return }
-        try? SafeStorage.write(data, to: Self.file)
+        guard !savePending else { return }
+        savePending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            MainActor.assumeIsolated { self?.flushSave() }
+        }
+    }
+
+    /// Writes what is waiting now; `wait` holds on until it is on disk (Nook quits).
+    private func flushSave(wait: Bool = false) {
+        guard savePending else { return }
+        savePending = false
+        let inbox = inbox
+        let file = Self.file
+        let write = {
+            guard let data = try? JSONEncoder().encode(inbox) else { return }
+            try? SafeStorage.write(data, to: file)
+        }
+        if wait { Self.saving.sync(execute: write) } else { Self.saving.async(execute: write) }
     }
 }
