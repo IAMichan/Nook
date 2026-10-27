@@ -25,13 +25,15 @@ enum NotchResize {
     static let cardDefaultsKey = "notch.cardExtra"
 
     /// `base` with `extra` added, kept between `base` itself and `maximum` (the room the panel window and the screen give).
-    /// A tab that starts larger than the maximum keeps that edge of its own size.
+    /// A tab that starts wider than the screen allows shrinks to fit it, so nothing runs off a small screen; a tab that
+    /// starts taller keeps its own height (a sheet can start at the full height of the window).
     static func size(base: CGSize, extra: CGSize, maximum: CGSize) -> CGSize {
         func fit(_ value: CGFloat, _ base: CGFloat, high: CGFloat) -> CGFloat {
             min(max(value, base), max(high, base))
         }
-        return CGSize(width: fit(base.width + extra.width, base.width, high: maximum.width),
-                      height: fit(base.height + extra.height, base.height, high: maximum.height))
+        let wide = fit(base.width + extra.width, base.width, high: maximum.width)
+        let width = maximum.width > 0 ? min(wide, maximum.width) : wide
+        return CGSize(width: width, height: fit(base.height + extra.height, base.height, high: maximum.height))
     }
 
     /// The extra size after dragging `edge` by `translation` (screen points, y down) from where it was at `start`.
@@ -44,7 +46,7 @@ enum NotchResize {
     /// `extra` limited to what `size` can actually show for `base`, so dragging past the limit and back responds at once.
     static func clamped(_ extra: CGSize, base: CGSize, maximum: CGSize) -> CGSize {
         let shown = size(base: base, extra: extra, maximum: maximum)
-        return CGSize(width: shown.width - base.width, height: shown.height - base.height)
+        return CGSize(width: max(0, shown.width - base.width), height: max(0, shown.height - base.height))
     }
 
     /// Never below zero: a size saved back when the notch could be made smaller than a tab's own size counts as that size.
