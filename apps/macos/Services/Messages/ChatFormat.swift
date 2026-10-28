@@ -158,6 +158,53 @@ enum ChatFormat {
         return (Span(text: isAddress ? shortLink(url) : shown, link: url), text.index(after: end))
     }
 
+    /// What a web address in a message leads to, for how the chat shows it under the text: a picture, a video or a
+    /// sound file shows as itself, any other page as a preview card of its title and picture.
+    enum LinkKind: Equatable, Sendable {
+        case image, video, audio, page
+    }
+
+    /// The first web address in a message (written out, or as a Markdown link), for its preview; nil when it has none.
+    static func firstLink(_ text: String) -> URL? {
+        guard text.contains("http") else { return nil }
+        for block in blocks(text) {
+            let spans: [Span]
+            switch block {
+            case .paragraph(let found), .quote(let found), .item(_, let found): spans = found
+            case .code: continue
+            }
+            for span in spans where !span.code {
+                if let link = span.link, ["http", "https"].contains(link.scheme?.lowercased() ?? "") { return link }
+                guard let start = span.text.range(of: "https://") ?? span.text.range(of: "http://") else { continue }
+                let rest = span.text[start.lowerBound...]
+                let end = rest.firstIndex(where: { $0.isWhitespace || $0 == ">" || $0 == ")" }) ?? rest.endIndex
+                var address = String(rest[..<end])
+                // A sentence's own punctuation is no part of the address.
+                while let last = address.last, ".,;:!?\"'".contains(last) { address.removeLast() }
+                if let url = URL(string: address), url.host != nil { return url }
+            }
+        }
+        return nil
+    }
+
+    /// The kind of a link by its file's extension; anything without a known one is a page.
+    static func linkKind(_ url: URL) -> LinkKind {
+        switch url.pathExtension.lowercased() {
+        case "jpg", "jpeg", "png", "gif", "webp", "heic", "bmp": return .image
+        case "mp4", "mov", "m4v", "webm": return .video
+        case "mp3", "m4a", "aac", "wav", "ogg", "opus", "flac": return .audio
+        default: return .page
+        }
+    }
+
+    /// A page whose preview is a video (a YouTube, Vimeo, TikTok or Instagram reel link): its card has a play mark.
+    static func isVideoPage(_ url: URL) -> Bool {
+        let host = (url.host ?? "").lowercased()
+        let path = url.path.lowercased()
+        return ["youtube.com", "youtu.be", "vimeo.com", "tiktok.com"].contains { host == $0 || host.hasSuffix("." + $0) }
+            || (host.hasSuffix("instagram.com") && (path.hasPrefix("/reel") || path.hasPrefix("/tv/")))
+    }
+
     /// A web address as a chat shows it in a line: its site and path without "https://", "www." or the query, cut short
     /// when long ("instagram.com/reel/DevP29EPzQg").
     static func shortLink(_ url: URL) -> String {

@@ -1347,6 +1347,13 @@ private struct ChatsDetail: View {
         replyFocused = true
     }
 
+    /// ↑ in the empty field: your newest message with text goes into the field to change it.
+    private func editLastMessage() -> Bool {
+        guard let mine = bubbles.last(where: { $0.fromMe && !$0.text.isEmpty && $0.poll == nil }) else { return false }
+        edit(mine)
+        return true
+    }
+
     /// The changed text goes to your message; when it fails the text stays in the field to try again.
     private func sendEdit(_ bubble: ChatBubble, route: ChatRoute) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1560,6 +1567,7 @@ private struct ChatsDetail: View {
                 }
             })
             .offersNookReplies(!entry.lastIsMine)
+            .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
             .tray(entry.read.isUnread
                 ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                                markReadInNook: { app.markChatReadInNook(entry) },

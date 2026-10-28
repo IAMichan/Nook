@@ -65,6 +65,7 @@ struct ChatReplyField: View {
     private var hasExtra = false
     private var pasted: (() -> Bool)?
     private var offersReplies = false
+    private var editLast: (() -> Bool)?
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
          sendSymbol: String, sendLabel: String, readyNotice: String, outgoing: ChatSending? = nil, recipient: String? = nil,
@@ -116,6 +117,14 @@ struct ChatReplyField: View {
     func offersNookReplies(_ on: Bool = true) -> Self {
         var copy = self
         copy.offersReplies = on
+        return copy
+    }
+
+    /// ↑ in the empty field changes your last message, as in Slack and Telegram: `edit` puts it in the field (false
+    /// when there is none to change).
+    func editsLastMessage(_ edit: (() -> Bool)?) -> Self {
+        var copy = self
+        copy.editLast = edit
         return copy
     }
 
@@ -220,7 +229,10 @@ struct ChatReplyField: View {
                 // keybinding commands, run by the panel's key monitor while this field has the keyboard.
                 .onKeyPress(.return, phases: .down) { (press: KeyPress) -> KeyPress.Result in returnKey(press) }
                 .keyCommands(keyHandlers, context: ["composerFocus": true, "composerDraft": !empty], enabled: focus.wrappedValue)
-                .onKeyPress(.upArrow) { () -> KeyPress.Result in moveInMenu(-1) }
+                .onKeyPress(.upArrow) { () -> KeyPress.Result in
+                    if !menu.isOpen, text.isEmpty, quote == nil, let editLast, editLast() { return .handled }
+                    return moveInMenu(-1)
+                }
                 .onKeyPress(.downArrow) { () -> KeyPress.Result in moveInMenu(1) }
                 .onKeyPress(.tab) { () -> KeyPress.Result in
                     guard menu.isOpen else { return .ignored }

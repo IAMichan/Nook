@@ -73,7 +73,8 @@ extension ChatBubble {
             }
         }
         guard let file = message.media else { return }
-        attachment = file.label
+        // A song or a sound file goes by its own name ("track.mp3"); a voice message, a photo or a video by its kind.
+        attachment = file.kind == .audio ? (file.name.flatMap { $0.isEmpty ? nil : $0 } ?? file.label) : file.label
         guard let url = file.url else { return }
         self.file = url
         switch file.kind {
@@ -170,8 +171,8 @@ struct ChatStickerView: View {
 /// A GIF in a bubble: it plays by itself, in a loop and without sound, as chat apps show them. A real GIF (or WebP) is
 /// drawn frame by frame; one that came as a short video (as WhatsApp, Telegram and Slack send them) loops as a video.
 struct ChatGIFView: View {
-    static let maxWidth: CGFloat = 240
-    static let maxHeight: CGFloat = 180
+    static let maxWidth: CGFloat = 280
+    static let maxHeight: CGFloat = 220
 
     let url: URL
     let name: String
@@ -283,6 +284,14 @@ struct ChatAudioView: View {
             .help(player.failed ? tr("card.attachment.open") : (player.playing ? tr("chat.media.pause") : tr("chat.media.play")))
             .accessibilityLabel("\(player.playing ? tr("chat.media.pause") : tr("chat.media.play")): \(name)")
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                // A sound file (an mp3, a song) says which; a voice message needs no name.
+                if !(name as NSString).pathExtension.isEmpty {
+                    Text(name)
+                        .font(NookTheme.TextStyle.label)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule().fill(NookTheme.line2)

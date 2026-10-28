@@ -341,6 +341,21 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads["x"]?.messages.map(\.text), ["Amen"], "kept from before: it goes")
     }
 
+    func testLinksInAMessageShowWhatTheyLeadTo() {
+        XCTAssertEqual(ChatFormat.firstLink("look at https://example.com/a, nice!"), URL(string: "https://example.com/a"),
+                       "the sentence's comma is no part of the address")
+        XCTAssertEqual(ChatFormat.firstLink("[here](https://x.com/p) and https://y.com"), URL(string: "https://x.com/p"))
+        XCTAssertNil(ChatFormat.firstLink("`https://code.example`"), "an address in code is code, not a link")
+        XCTAssertNil(ChatFormat.firstLink("no link at all"))
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/cat.GIF")!), .image)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/clip.mp4?x=1")!), .video)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/song.mp3")!), .audio)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/news")!), .page)
+        XCTAssertTrue(ChatFormat.isVideoPage(URL(string: "https://youtu.be/abc")!))
+        XCTAssertTrue(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/reel/DevP29EPzQg/")!))
+        XCTAssertFalse(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/p/C1/")!))
+    }
+
     func testChatMovedBeforeItsMessageIsReadAgain() {
         let moved = Date(timeIntervalSince1970: 1_000)
         let chat = ChatServiceData.Chat(id: "!i", app: "instagram", title: "Anna", isGroup: false, unread: 1, last: moved)
