@@ -200,14 +200,18 @@ struct SpinningRing: View {
             Circle().stroke(color.opacity(0.2), lineWidth: 1.6)
             // A turn every 0.9 s on a timeline at the ambient rate: a `repeatForever` animation turns it at the display's
             // own rate and redraws the whole window with it, for as long as the agent works. Still with Reduce Motion.
-            TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended),
-                                     paused: energy.plan.pace == .paused || reduceMotion)) { context in
-                let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
-                Circle()
-                    .trim(from: 0, to: 0.7)
-                    .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                    .rotationEffect(.degrees(360 * turn))
+            // In a graph of its own (`SeparateGraph`), so its frames do not update the transcript or panel around it.
+            SeparateGraph {
+                TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended),
+                                         paused: energy.plan.pace == .paused || reduceMotion)) { context in
+                    let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+                    Circle()
+                        .trim(from: 0, to: 0.7)
+                        .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                        .rotationEffect(.degrees(360 * turn))
+                }
             }
+            .allowsHitTesting(false)
         }
         .padding(1)
     }
