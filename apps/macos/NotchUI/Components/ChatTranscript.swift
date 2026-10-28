@@ -33,11 +33,18 @@ struct ChatTranscript: View {
     var onLoadOlder: (() async -> Bool)? = nil
     /// Who is typing in the chat now ("Jan is typing…"), shown under its last message; nil while no one does.
     var typing: String? = nil
+    /// The first message that was new when the chat opened: a line above it says so, and it stays put while you read.
+    var newFrom: String? = nil
     @State private var loadingOlder = false
     /// The pointer or fingers moved the chat: only then does reaching the top load older messages, not the first layout.
     @State private var scrolledByUser = false
     /// The last fetch brought nothing: the chat's start is shown, so reaching the top again does not ask once more.
     @State private var reachedStart = false
+    /// The newest message is in view (or nearly): a new one glides in. Scrolled back to read, nothing moves the chat;
+    /// a button brings you back down instead.
+    @State private var atBottom = true
+    /// Messages from others that came in while you were scrolled back, counted on the button.
+    @State private var missed = 0
 
     var body: some View {
         if fills {
@@ -62,6 +69,16 @@ struct ChatTranscript: View {
                 }
             }
             .defaultScrollAnchor(.bottom)
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom, let last = bubbles.last?.id {
+                    ChatJumpButton(missed: missed) {
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                    }
+                    .padding(NookTheme.Spacing.md)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .animation(NookTheme.reveal, value: atBottom)
             // Scrolling up to the top loads the older messages by itself; the button stays for a click. Moving up while
             // the sizes stay the same can only be you (loading and new messages change the size), so a mouse wheel,
             // which reports no scroll phase, counts as well as the trackpad.
@@ -74,6 +91,10 @@ struct ChatTranscript: View {
                     scrolledByUser = true
                 }
                 if new.nearTop, scrolledByUser { loadOlder(proxy, automatic: true) }
+                if new.nearBottom != atBottom {
+                    atBottom = new.nearBottom
+                    if atBottom { missed = 0 }
+                }
             }
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting || phase == .decelerating { scrolledByUser = true }
@@ -84,6 +105,12 @@ struct ChatTranscript: View {
                 // at once, is not a new message: it is simply there, at its newest, without scrolling past everything.
                 let arrived = previous.map { old in bubbles.suffix(4).contains { $0.id == old } } ?? false
                 if arrived {
+                    // Reading back: the chat stays where you are, and the button counts what came in. Your own
+                    // message always brings you down to it.
+                    guard atBottom || bubbles.last?.fromMe == true else {
+                        missed += 1
+                        return
+                    }
                     withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
                 } else {
                     var jump = Transaction()
@@ -100,6 +127,8 @@ struct ChatTranscript: View {
             .onChange(of: contact) {
                 scrolledByUser = false
                 reachedStart = false
+                atBottom = true
+                missed = 0
             }
         }
     }
@@ -153,6 +182,10 @@ struct ChatTranscript: View {
                 case .day(_, let label):
                     ChatDayDivider(label: label)
                 case .message(_, let first, _):
+                    if row.id == newFrom, row.id != top {
+                        ChatNewDivider()
+                            .padding(.top, NookTheme.Spacing.md)
+                    }
                     if let bubble = byID[row.id] {
                         ChatBubbleView(bubble: bubble, first: first, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
@@ -439,6 +472,54 @@ private struct ChatBubbleView: View, Equatable {
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
                                       style: .continuous)
+    }
+}
+
+/// Where what was new when the chat opened starts: a hairline on either side of "New messages".
+private struct ChatNewDivider: View {
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider(tint: NookTheme.amber.opacity(0.35))
+            Text(tr("chat.newMessages"))
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize()
+            NookDivider(tint: NookTheme.amber.opacity(0.35))
+        }
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Back to the newest message, while you read further up: a round arrow, with how many came in meanwhile.
+private struct ChatJumpButton: View {
+    let missed: Int
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.down")
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(hovering ? NookTheme.rowSelected : NookTheme.smoke))
+                .overlay(Circle().strokeBorder(NookTheme.separator, lineWidth: 1))
+                .overlay(alignment: .topTrailing) {
+                    if missed > 0 {
+                        NookCountBadge(count: missed)
+                            .background(Capsule().fill(NookTheme.canvas))
+                            .offset(x: NookTheme.Spacing.xs, y: -NookTheme.Spacing.xs)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(tr("chat.jumpToNewest"))
+        .accessibilityLabel(tr("chat.jumpToNewest"))
     }
 }
 
@@ -990,4 +1071,6 @@ private struct TranscriptScrollGeometry: Equatable {
     var content: Double
 
     var nearTop: Bool { offset <= 80 }
+    /// The newest message is in view, give or take a line.
+    var nearBottom: Bool { content <= container || offset + container >= content - 60 }
 }

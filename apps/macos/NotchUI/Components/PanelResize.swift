@@ -67,7 +67,7 @@ enum PanelLayout {
     /// An artifact beside the app that made it (a Claude artifact next to Claude).
     static let artifact: Double = 420
     /// The chat list on the left of the Chats tab.
-    static let chatsList: Double = 290
+    static let chatsList: Double = 320
     /// The Chats tab's sidebar with its views and apps; under `chatsSidebarRoom` it folds to a rail of icons.
     static let chatsSidebar: CGFloat = 184
     static let chatsRail: CGFloat = 48

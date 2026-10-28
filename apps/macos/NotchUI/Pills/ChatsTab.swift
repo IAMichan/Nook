@@ -141,14 +141,23 @@ extension ChatsEntry {
         let caption = ChatFormat.plain(message.text)
         let file = AppModel.whatsAppFileLabel(message.media)
         let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
-        let who = message.fromMe ? tr("chat.you") : sender
+        let who = message.fromMe ? tr("chat.you") : shortSender(sender)
         return who.isEmpty ? text : "\(who): \(text)"
+    }
+
+    /// Who wrote in a group, as a chat list says it: the first name ("Henco" for "Henco Hendriksen"), so the message
+    /// itself keeps the room. A phone number or a one-word name stays whole.
+    static func shortSender(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.hasPrefix("+"), let first = trimmed.split(separator: " ").first, first.count >= 2,
+              first.count < trimmed.count, first.first?.isLetter == true else { return trimmed }
+        return String(first)
     }
 
     /// A message of any other app as one line in the list.
     @MainActor
     static func line(_ message: InboxMessage) -> String {
-        let who = message.isMine ? tr("chat.you") : message.sender
+        let who = message.isMine ? tr("chat.you") : shortSender(message.sender)
         return who.isEmpty ? message.summary : "\(who): \(message.summary)"
     }
 
@@ -417,6 +426,8 @@ struct ChatsTab: View {
                 return nil
             })
         }
+        // ⌘⇧[ and ⌘⇧] go to the chat above or below in the list, as they go through sessions on Agents.
+        .keyCommands(["session.previous": { step(-1) }, "session.next": { step(1) }], enabled: !all.isEmpty)
         .onChange(of: viewModel.chatsFocus) { _, _ in takeFocus() }
         .onChange(of: selection) { _, id in
             ChatsTab.lastOpened = id
@@ -438,6 +449,17 @@ struct ChatsTab: View {
             PanelFooter(selected: "", open: openOnAgents, openSettings: { app.openSettings() }, history: app.history,
                         vertical: compactSidebar && !all.isEmpty)
         }
+    }
+
+    /// Opens the chat `offset` rows from the open one in the list (the first one when none is open). False at either end.
+    private func step(_ offset: Int) -> Bool {
+        let rows = shown.filter { searching || !collapsed.contains(ChatsGroup.of($0, now: Date())) }
+        guard !rows.isEmpty else { return false }
+        let index = selection.flatMap { id in rows.firstIndex { $0.id == id } }
+        let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : rows.count - 1)
+        guard rows.indices.contains(next) else { return false }
+        selection = rows[next].id
+        return true
     }
 
     /// Escape (see `ChatsDetail`): the open chat closes; the list stays.
@@ -607,6 +629,7 @@ struct ChatsTab: View {
             listHeader
             searchField
 
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: NookTheme.Spacing.xxs) {
                     let selected = current?.id
@@ -625,10 +648,17 @@ struct ChatsTab: View {
                                 ChatsRow(entry: entry, photo: photo(entry), selected: entry.id == selected,
                                          rowAction: rowAction(entry)) { selection = entry.id }
                                     .contextMenu { readMenu(entry) }
+                                    .id(entry.id)
                             }
                         }
                     }
                 }
+            }
+            // A chat opened from elsewhere (the keyboard, a card, search) is brought into view in the list.
+            .onChange(of: selection) { _, id in
+                guard let id else { return }
+                withAnimation(NookTheme.scroll) { proxy.scrollTo(id) }
+            }
             }
             if shown.isEmpty { emptyList }
             listHints
@@ -946,6 +976,13 @@ private struct ChatsRow: View {
         .animation(NookTheme.hover, value: hovering)
     }
 
+    /// The newest message as the row shows it: after your own message's ticks without "You:", which the ticks say.
+    private var previewText: String {
+        let mine = tr("chat.you") + ": "
+        guard entry.ticks != nil, entry.preview.hasPrefix(mine) else { return entry.preview }
+        return String(entry.preview.dropFirst(mine.count))
+    }
+
     /// Where the chat stands, in words, for VoiceOver.
     private var stateLabel: String {
         switch entry.read {
@@ -985,7 +1022,7 @@ private struct ChatsRow: View {
                                 .lineLimit(1)
                         } else {
                             // A chat on the phone that wrote nothing since Nook was linked: its messages load when opened.
-                            Text(entry.preview.isEmpty ? tr("chats.row.load") : entry.preview)
+                            Text(entry.preview.isEmpty ? tr("chats.row.load") : previewText)
                                 .font(NookTheme.TextStyle.detail)
                                 .foregroundStyle(entry.preview.isEmpty ? NookTheme.textTertiary
                                                  : (entry.read.isUnread ? NookTheme.textStrong : NookTheme.textSecondary))
@@ -1090,6 +1127,30 @@ private struct ChatsDetail: View {
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
     /// Files waiting to go, the poll, place, contact or sticker panel, and the voice recorder.
     @StateObject private var composer = ChatComposerModel()
+    /// How many messages were new when the chat opened (before opening read them), and the first of them once the chat
+    /// shows them: the transcript draws "New messages" above it.
+    @State private var unreadAtOpen: Int
+    @State private var newFrom: String?
+
+    init(entry: ChatsEntry, photo: NSImage?, capture: ChatCaptureService, whatsApp: WhatsAppLink,
+         onMarkUnread: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}) {
+        self.entry = entry
+        self.photo = photo
+        self.capture = capture
+        self.whatsApp = whatsApp
+        self.onMarkUnread = onMarkUnread
+        self.onClose = onClose
+        _unreadAtOpen = State(initialValue: entry.unread)
+    }
+
+    /// Places "New messages" above the first of what was new, once the chat shows it.
+    private func landNew() {
+        guard newFrom == nil, unreadAtOpen > 0 else { return }
+        let incoming = bubbles.filter { !$0.fromMe }
+        guard incoming.count >= unreadAtOpen else { return }
+        newFrom = incoming[incoming.count - unreadAtOpen].id
+        unreadAtOpen = 0
+    }
 
     private static let time: DateFormatter = {
         let formatter = DateFormatter()
@@ -1151,7 +1212,7 @@ private struct ChatsDetail: View {
                                onEdit: abilities.edit ? edit : nil,
                                onDelete: abilities.delete ? { deleting = $0 } : nil,
                                onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
-                               typing: typing.line(entry.id))
+                               typing: typing.line(entry.id), newFrom: newFrom)
                     .padding(.horizontal, NookTheme.Spacing.xs)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 footer
@@ -1173,7 +1234,9 @@ private struct ChatsDetail: View {
         .task(id: entry.id) {
             // Every app the same: an opened chat is read from its app now, so it shows the newest messages at once.
             if case .captured(let id) = entry.origin { capture.refresh(id) }
+            landNew()
             await loadWhatsApp()
+            landNew()
         }
         // While a WhatsApp chat is open Nook is online there, as WhatsApp Web is: only then does WhatsApp say who types.
         .onAppear { WhatsAppLink.shared.setOnline(entry.whatsAppChat) }

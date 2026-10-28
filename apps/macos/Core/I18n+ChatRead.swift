@@ -5,6 +5,8 @@ import Foundation
 
 let chatReadTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chat.newMessages": "Nieuwe berichten",
+        "chat.jumpToNewest": "Naar het nieuwste bericht",
         "chats.detail.empty": "Nog geen berichten hier. Nieuwe berichten uit %@ komen vanzelf binnen.",
         "chats.view.all": "Alle chats",
         "chats.view.unread": "Nieuw",
@@ -30,6 +32,8 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook kan %@ dit niet zelf laten weten: het opent de chat daar, zodat je hem daar leest.",
     ],
     .en: [
+        "chat.newMessages": "New messages",
+        "chat.jumpToNewest": "Go to the newest message",
         "chats.detail.empty": "No messages here yet. New ones from %@ come in by themselves.",
         "chats.view.all": "All chats",
         "chats.view.unread": "New",
@@ -55,6 +59,8 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook can't tell %@ itself: it opens the chat there, so you read it there.",
     ],
     .de: [
+        "chat.newMessages": "Neue Nachrichten",
+        "chat.jumpToNewest": "Zur neuesten Nachricht",
         "chats.detail.empty": "Noch keine Nachrichten hier. Neue aus %@ kommen von selbst.",
         "chats.view.all": "Alle Chats",
         "chats.view.unread": "Neu",
@@ -80,6 +86,8 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook kann %@ das nicht selbst sagen: Es öffnet den Chat dort, damit du ihn dort liest.",
     ],
     .fr: [
+        "chat.newMessages": "Nouveaux messages",
+        "chat.jumpToNewest": "Aller au message le plus récent",
         "chats.detail.empty": "Aucun message ici pour l’instant. Les nouveaux de %@ arrivent tout seuls.",
         "chats.view.all": "Toutes les discussions",
         "chats.view.unread": "Nouveau",
@@ -105,6 +113,8 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook ne peut pas le dire à %@ lui-même : il ouvre la discussion là-bas, pour que vous la lisiez là.",
     ],
     .es: [
+        "chat.newMessages": "Mensajes nuevos",
+        "chat.jumpToNewest": "Ir al mensaje más reciente",
         "chats.detail.empty": "Aún no hay mensajes aquí. Los nuevos de %@ llegan solos.",
         "chats.view.all": "Todos los chats",
         "chats.view.unread": "Nuevo",

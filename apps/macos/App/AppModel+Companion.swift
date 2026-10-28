@@ -353,8 +353,20 @@ extension AppModel {
     }
 
     static func whatsAppText(_ message: WAMessage) -> String {
-        [WhatsAppRecipients.label(message.media), message.poll?.chatPoll.line, message.text.isEmpty ? nil : message.text]
+        [whatsAppKind(message), message.poll?.chatPoll.line, message.text.isEmpty ? nil : message.text]
             .compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// What came with a message, in words for the person reading it ("📍 Location"), as every chat app's line says it.
+    /// Something WhatsApp sends without a kind of its own (a call, a system note) says only its text.
+    private static func whatsAppKind(_ message: WAMessage) -> String? {
+        switch message.media {
+        case .none: return nil
+        case .location: return "📍 " + tr("chat.media.location")
+        case .contact: return "👤 " + tr("chat.media.contact")
+        case .other: return message.text.isEmpty ? tr("chat.media.attachment") : nil
+        default: return whatsAppFileLabel(message.media)
+        }
     }
 
     /// What a bubble calls a file that can be opened: a document by its name, anything else by its kind.
