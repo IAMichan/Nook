@@ -340,7 +340,8 @@ final class AgentHub: ObservableObject {
             record.sessionID = item.sessionID
             record.transcriptPath = item.transcriptPath
             record.lastPrompt = item.lastPrompt
-            record.firstPrompt = item.firstPrompt ?? ""
+            // Saved before the first prompt was kept: the prompt known then is the oldest one there is.
+            record.firstPrompt = item.firstPrompt ?? item.lastPrompt
             record.started = item.started
             record.turnStarted = status == .done ? nil : item.turnStarted
             restored[item.key] = record

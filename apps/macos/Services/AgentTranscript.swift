@@ -333,8 +333,8 @@ enum AgentTranscript {
                     let ptype = payload["type"] as? String {
                 switch ptype {
                 case "user_message":
-                    let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { continue }
+                    // Without an `<environment_context>` or other block of Codex's own in front, as in `AgentHistory`.
+                    guard let text = InjectedPrompt.prompt((payload["message"] as? String) ?? "") else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
                 case "agent_message":
                     append(reply: (payload["message"] as? String) ?? "", id: id, at: when, to: &messages)
@@ -698,7 +698,8 @@ enum AgentTranscript {
 
     /// What you typed in a user line: the agent's own blocks in front of it (the Claude desktop app opens a chat with
     /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.
-    private static func typedText(_ content: Any?) -> String {
+    /// Your words in a user message: per text block, without the blocks the agent added (also used by `AgentHistory`).
+    static func typedText(_ content: Any?) -> String {
         if let blocks = content as? [[String: Any]] {
             // A block that is nothing but the agent's own (a reminder in front of your words) stays whole in `typed`:
             // dropped here, or it would make the whole message look injected.

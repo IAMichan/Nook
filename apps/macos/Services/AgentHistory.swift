@@ -1257,8 +1257,9 @@ private final class HistoryScanner: @unchecked Sendable {
             }
         } else {
             if (object["isMeta"] as? Bool) == true || (object["isSidechain"] as? Bool) == true { return }
-            // Without the blocks the agent put in front (the Claude app's worktree reminder before your first prompt).
-            guard let text = InjectedPrompt.prompt(Self.text(message["content"])) else { return }
+            // Block by block without the agent's own (the Claude app's worktree reminder before your first prompt), as
+            // the conversation view reads it.
+            guard let text = InjectedPrompt.prompt(AgentTranscript.typedText(message["content"])) else { return }
             progress.session.prompts += 1
             progress.session.lastPrompt = text
             if progress.session.title.isEmpty { progress.session.title = text }

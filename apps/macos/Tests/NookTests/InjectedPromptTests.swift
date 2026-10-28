@@ -72,4 +72,19 @@ final class InjectedPromptTests: XCTestCase {
         XCTAssertEqual(first.kind, .user)
         XCTAssertEqual(first.text, "Improve the agent connection")
     }
+
+    func testAReminderBlockAfterYourWordsIsLeftOut() throws {
+        let line = #"{"type":"user","uuid":"u1","message":{"role":"user","content":["# + #"{"type":"text","text":"Fix the bug"},"# + #"{"type":"text","text":"<system-reminder>ctx</system-reminder>"}]}}"#
+        let first = try XCTUnwrap(AgentTranscript.jsonl(Data(line.utf8)).first)
+        XCTAssertEqual(first.text, "Fix the bug")
+    }
+
+    func testCodexPromptAfterItsEnvironmentBlockIsYourWords() throws {
+        let line = #"{"type":"event_msg","payload":{"type":"user_message","message":"<environment_context>cwd</environment_context>\nFix the bug"}}"#
+        let first = try XCTUnwrap(AgentTranscript.jsonl(Data(line.utf8)).first)
+        XCTAssertEqual(first.kind, .user)
+        XCTAssertEqual(first.text, "Fix the bug")
+        let injected = #"{"type":"event_msg","payload":{"type":"user_message","message":"<environment_context>cwd</environment_context>"}}"#
+        XCTAssertTrue(AgentTranscript.jsonl(Data(injected.utf8)).isEmpty)
+    }
 }
