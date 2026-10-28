@@ -9,6 +9,14 @@ final class SessionLivenessTests: XCTestCase {
     private let partial = #"{"type":"assistant","uuid":"4","message":{"stop_reason":null,"content":[{"type":"text"}]}}"#
     private let reply = #"{"type":"assistant","uuid":"5","message":{"stop_reason":"end_turn","content":[{"type":"text"}]}}"#
 
+    /// A done chat you have not handled stays listed for a day, the same window as the sessions Nook runs itself.
+    func testDoneSessionStaysListedForADay() {
+        XCTAssertFalse(SessionLiveness.isExpired(done: true, age: 5 * 3600), "a chat done this afternoon is still there tonight")
+        XCTAssertTrue(SessionLiveness.isExpired(done: true, age: 24 * 3600))
+        XCTAssertFalse(SessionLiveness.isExpired(done: false, age: 11 * 3600))
+        XCTAssertTrue(SessionLiveness.isExpired(done: false, age: 12 * 3600))
+    }
+
     func testClaudeTurnEndsOnlyOnAFinalAssistantLine() {
         XCTAssertEqual(SessionLiveness.lastTurn(in: tail([prompt, toolCall, toolResult, partial, reply])), .ended)
         XCTAssertEqual(SessionLiveness.lastTurn(in: tail([prompt, toolCall])), .open, "a tool call follows")

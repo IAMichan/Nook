@@ -415,7 +415,7 @@ struct AgentSessionDetail: View {
     private func sessionMenu(_ session: AgentSession) -> some View {
         let finishKey = FinishedSessions.key(session: session)
         let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
-        let isFinished = finishedMarks.isFinished(key: finishKey, idle: !busy && !session.isDetected, lastActive: session.updated)
+        let isFinished = finishedMarks.contains(finishKey)
         return ComposerPlusMenu(attach: { attachFile(in: session.cwd) }) {
             Divider()
             Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {

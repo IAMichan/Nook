@@ -1,8 +1,9 @@
 import Foundation
 
-/// Which chats count as finished in the Agents list. Two ways in: you mark a chat as finished, or the agent is done and
-/// nothing has happened in the chat for a while (`autoFinishAfter`). A finished chat comes back by itself when the agent
-/// starts working in it again, and you can reopen it by hand; a chat you reopened stays open until it has new activity.
+/// Which chats count as finished in the Agents list: the ones you marked as finished (by hand, or through the auto-settle
+/// rules you switched on in `InboxStore`). A chat that only went quiet stays in the list until you handled it. A finished
+/// chat comes back by itself when the agent starts working in it again, and you can reopen it by hand.
+/// The notch is quieter: a done session leaves it once nothing has happened in it for a while (`isFinished`).
 /// A chat you mark while it still reads as busy (a turn that hangs, a hook that never came) stays finished until that turn
 /// ends and a new one starts. A new turn reopens a chat where it starts (`WorkspaceManager.launchTurn`, a hook's
 /// `UserPromptSubmit`), not only when the Agents list happens to be on screen to see it work (`reconcile(busy:)`).
@@ -19,7 +20,7 @@ final class FinishedSessions: ObservableObject {
     private static let defaultsKey = "agents.finishedSessions"
     private static let keptKey = "agents.keptOpenSessions"
     private static let busyKey = "agents.finishedWhileBusy"
-    /// How long an idle chat stays in the list before it moves to "Finished" by itself.
+    /// How long a done session stays in the notch after its last activity. The Agents list keeps it until you settle it.
     static let autoFinishAfter: TimeInterval = 10 * 60
     /// Chats you reopened, and when.
     @Published private(set) var kept: [String: Date]
@@ -79,7 +80,7 @@ final class FinishedSessions: ObservableObject {
     /// Marked by you while busy, and still in that busy spell: the list shows it as finished anyway.
     func isMarkedWhileBusy(_ key: String) -> Bool { markedWhileBusy.contains(key) }
 
-    /// You reopen a chat: it leaves "Finished" and stays out of it until the agent has done something new in it.
+    /// You reopen a chat: it leaves "Finished", and a done session shows in the notch again until it has new activity.
     func reopenByUser(_ key: String) {
         reopen(key)
         guard !key.isEmpty else { return }
@@ -95,8 +96,8 @@ final class FinishedSessions: ObservableObject {
         if contains(key) { reopenByUser(key) } else { mark(key) }
     }
 
-    /// Is this chat finished right now: marked by you, or idle for long enough after the agent was done?
-    /// `lastActive` is the last time anything happened in it; nil when that is not known.
+    /// Is this chat out of the notch: marked by you, or idle for long enough after the agent was done? The Agents list
+    /// asks `contains` instead. `lastActive` is the last time anything happened in it; nil when that is not known.
     func isFinished(key: String, idle: Bool, lastActive: Date?, now: Date = Date()) -> Bool {
         if keys.contains(key) { return true }
         guard idle, let lastActive, now.timeIntervalSince(lastActive) >= Self.autoFinishAfter else { return false }

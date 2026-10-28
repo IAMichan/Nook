@@ -26,6 +26,14 @@ final class FinishedSessionsTests: XCTestCase {
                        "reopened after its last activity: stays open")
     }
 
+    /// The Agents list settles only what you marked: a chat that went quiet stays until you handled it.
+    func testQuietChatIsNotMarkedFinished() {
+        let store = FinishedSessions.shared
+        let quiet = Date().addingTimeInterval(-FinishedSessions.autoFinishAfter - 1)
+        XCTAssertTrue(store.isFinished(key: key, idle: true, lastActive: quiet), "out of the notch")
+        XCTAssertFalse(store.contains(key), "still in the list")
+    }
+
     func testIdleChatFinishesByItself() {
         let store = FinishedSessions.shared
         let now = Date()
