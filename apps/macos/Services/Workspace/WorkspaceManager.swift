@@ -250,22 +250,15 @@ final class WorkspaceManager: ObservableObject {
 
     /// State tracked by Nook during a single turn.
     struct TurnState {
-        var liveTextID: UUID?
-        /// Claude Code: the last finished answer, which a failed turn's result may repeat word for word.
-        var lastTextID: UUID?
-        var toolEvents: [String: UUID] = [:]
-        var toolNames: [String: String] = [:]
-        var toolInputs: [String: JSONBox] = [:]
+        /// The turn's open answer, thought and tool calls (see AgentTimeline).
+        var timeline = AgentTimeline()
         var messageUsage: [String: TokenCounts] = [:]
         var lastContext: Int?
         var finished = false
         var stopping = false
         var lastError: String?
         var started = Date()
-        /// codex app-server: the item the live answer belongs to, the thought being streamed, and token totals.
-        var liveTextItem: String?
-        var liveReasoningID: UUID?
-        var liveReasoningItem: String?
+        /// codex app-server: token totals when the turn started.
         var codexBaseline: TokenCounts?
         var contextWindow: Int?
         /// ACP: the session's cost so far, as the agent reports it.
@@ -279,11 +272,6 @@ final class WorkspaceManager: ObservableObject {
         /// Claude Code: a steering message went in, so a result that says "aborted" ends a segment, not the turn.
         var steered = false
         var steeredUsage: [TurnUsage] = []
-        /// Claude Code's thinking as it streams: the block being written, whether a thinking block is open, and the
-        /// finished streamed blocks waiting for their complete copy (nil: the block streamed no text).
-        var liveThinkingID: UUID?
-        var thinkingOpen = false
-        var streamedThinking: [UUID?] = []
         /// Claude Code's blocked usage-limit windows during the turn, with their reset if known.
         var limitWindows: [String: Date?] = [:]
         /// A turn the agent started by itself after background work, with no message of yours to answer.
@@ -1164,42 +1152,19 @@ final class WorkspaceManager: ObservableObject {
                 if let model, !model.isEmpty { $0.resolvedModel = model }
             }
         case .text(let text, let delta):
-            if let live = turns[id]?.liveTextID {
-                mutateEvent(id, live) { $0.text = delta ? $0.text + text : text }
-            } else {
-                let event = RunEvent(kind: .assistant, text: text, state: .running)
-                turns[id]?.liveTextID = event.id
-                append(id, event)
-            }
-            if !delta { finishLiveText(id) }
+            feed(id, delta ? .textDelta(text) : .text(text))
         case .toolUse(let callID, let name, let input):
-            finishLiveText(id)
-            let event = RunEvent(kind: .tool, text: ToolSummary.describe(tool: name, input: input.dictionary), tool: name,
-                                 callID: callID, detail: ToolSummary.json(input.object), state: .running)
-            turns[id]?.toolEvents[callID] = event.id
-            turns[id]?.toolNames[callID] = name
-            turns[id]?.toolInputs[callID] = input
-            recap?.toolUse(name)
-            append(id, event)
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: name, title: ToolSummary.describe(tool: name, input: input.dictionary),
+                                                detail: ToolSummary.json(input.object), input: input)))
         case .toolResult(let callID, let output, let isError):
-            if let eventID = turns[id]?.toolEvents[callID] {
-                mutateEvent(id, eventID) {
-                    $0.output = RunEvent.clip(output)
-                    $0.state = isError ? .failed : .done
-                }
-            }
-            if !isError, let name = turns[id]?.toolNames[callID], let input = turns[id]?.toolInputs[callID] {
-                for change in ToolSummary.fileChanges(tool: name, input: input.dictionary) {
-                    recordFileChange(id, path: change.path, kind: change.kind)
-                }
-            }
+            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : .done))
         case .warning(let message):
             append(id, RunEvent(kind: .system, text: message))
         case .failed(let message):
             turns[id]?.lastError = message
             append(id, RunEvent(kind: .error, text: message))
         case .result(let isError, let message, var usage):
-            finishLiveText(id)
+            pauseLive(id)
             if usage.durationSeconds == nil, let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
             turns[id]?.finished = true
             let stopping = turns[id]?.stopping ?? false
@@ -1232,79 +1197,29 @@ final class WorkspaceManager: ObservableObject {
         case .chainEntry(let uuid):
             noteConversationHead(id, uuid)
         case .textDelta(let text):
-            if let live = turns[id]?.liveTextID {
-                mutateEvent(id, live) { $0.text += text }
-            } else {
-                let event = RunEvent(kind: .assistant, text: text, state: .running)
-                turns[id]?.liveTextID = event.id
-                append(id, event)
-            }
+            feed(id, .textDelta(text))
         case .text(let text):
-            if let live = turns[id]?.liveTextID {
-                mutateEvent(id, live) { $0.text = text; $0.state = .done }
-                turns[id]?.liveTextID = nil
-                turns[id]?.lastTextID = live
-            } else {
-                let event = RunEvent(kind: .assistant, text: text, state: .done)
-                turns[id]?.lastTextID = event.id
-                append(id, event)
-            }
+            feed(id, .text(text))
         case .thinkingDelta(let text, let starts):
-            if starts {
-                closeThinking(id)
-                turns[id]?.thinkingOpen = true
-            }
-            guard !text.isEmpty else { return }
-            if let live = turns[id]?.liveThinkingID {
-                mutateEvent(id, live) { $0.text += text }
-            } else {
-                let event = RunEvent(kind: .thinking, text: text, state: .running)
-                turns[id]?.liveThinkingID = event.id
-                append(id, event)
-            }
+            if starts { feed(id, .thinkingStarted) }
+            feed(id, .thinkingDelta(text))
         case .blockStopped:
-            closeThinking(id)
+            feed(id, .thinkingEnded)
         case .thinking(let text):
-            closeThinking(id)
-            // The complete copy of a block that streamed: keep the streamed text unless this one has more to say.
-            if let state = turns[id], !state.streamedThinking.isEmpty {
-                let streamed = turns[id]?.streamedThinking.removeFirst()
-                if let streamed = streamed ?? nil {
-                    if !text.isEmpty { mutateEvent(id, streamed) { $0.text = text } }
-                    return
-                }
-            }
-            if !text.isEmpty { append(id, RunEvent(kind: .thinking, text: text)) }
+            feed(id, .thinking(text))
         case .toolUse(let callID, let name, let input, let nested):
-            finishLiveText(id)
-            let summary = ToolSummary.describe(tool: name, input: input.dictionary)
-            let event = RunEvent(kind: .tool, text: nested ? "↳ " + summary : summary, tool: name, callID: callID,
-                                 detail: ToolSummary.json(input.object), state: .running)
-            turns[id]?.toolEvents[callID] = event.id
-            turns[id]?.toolNames[callID] = name
-            turns[id]?.toolInputs[callID] = input
-            recap?.toolUse(name)
-            append(id, event)
+            feed(id, .toolStarted(AgentToolCall(id: callID, name: name, title: ToolSummary.describe(tool: name, input: input.dictionary),
+                                                detail: ToolSummary.json(input.object), input: input, nested: nested)))
             // Claude Code's own task list (not a subagent's) becomes the Tasks strip above the composer.
             if name == "TodoWrite", !nested, let steps = RunTasks.claude(input.dictionary) { setTasks(id, steps) }
         case .toolResult(let callID, let output, let isError):
-            if let eventID = turns[id]?.toolEvents[callID] {
-                mutateEvent(id, eventID) {
-                    $0.output = RunEvent.clip(output)
-                    $0.state = isError ? .failed : .done
-                }
-            }
-            if !isError, let name = turns[id]?.toolNames[callID], let input = turns[id]?.toolInputs[callID] {
-                for change in ToolSummary.fileChanges(tool: name, input: input.dictionary) {
-                    recordFileChange(id, path: change.path, kind: change.kind)
-                }
-            }
+            feed(id, .toolUpdated(id: callID, output: output, state: isError ? .failed : .done))
         case .usage(let messageID, let tokens, let model):
             turns[id]?.messageUsage[messageID] = tokens
             turns[id]?.lastContext = tokens.context + tokens.output
             if let model, !model.isEmpty, run(id)?.resolvedModel == nil { update(id) { $0.resolvedModel = model } }
         case .permissionRequest(let requestID, let tool, let input, let suggestions, _):
-            finishLiveText(id)
+            pauseLive(id)
             // A question is answered, not approved: the answers go back as the tool's input.
             if tool == "AskUserQuestion" {
                 let items = ClaudeStreamParser.questions(from: input)
@@ -1341,17 +1256,15 @@ final class WorkspaceManager: ObservableObject {
             update(id) { $0.move(to: .waitingApproval) }
             if let run = run(id) { onApproval?(run, pending) }
         case .result(let result):
-            finishLiveText(id)
+            pauseLive(id)
             // A steering message cut this segment short: the turn goes on with the new message.
             if turns[id]?.steered == true, turns[id]?.stopping != true, result.endedBySteer {
                 turns[id]?.steeredUsage.append(result.usage)
                 // A thinking block the steer cut off gets no complete copy: start the pairing afresh.
-                closeThinking(id)
-                turns[id]?.streamedThinking.removeAll()
+                turns[id]?.timeline.forgetPendingCopies()
                 return
             }
             turns[id]?.steered = false
-            closeThinking(id)
             // Stopped by a usage limit: remember when it resets, for "Resume at reset".
             if turns[id]?.stopping != true {
                 let evidence = FailureEvidence(terminalReason: result.terminalReason, apiErrorStatus: result.apiErrorStatus,
@@ -1388,7 +1301,7 @@ final class WorkspaceManager: ObservableObject {
             if result.isError && !stopping {
                 // Claude Code writes an API error as an answer first, then again as the result: show it once, as the error.
                 let failure = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !failure.isEmpty, let echoed = state?.lastTextID,
+                if !failure.isEmpty, let echoed = state?.timeline.lastTextID,
                    events[id]?.last(where: { $0.id == echoed })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == failure {
                     mutateEvent(id, echoed) { $0.kind = .error; $0.text = result.text; $0.state = nil }
                 } else {
@@ -1418,37 +1331,25 @@ final class WorkspaceManager: ObservableObject {
         case .threadStarted(let thread):
             update(id) { $0.providerSessionID = thread }
         case .message(let text):
-            append(id, RunEvent(kind: .assistant, text: text, state: .done))
+            feed(id, .text(text))
         case .reasoning(let text):
-            append(id, RunEvent(kind: .thinking, text: text))
+            feed(id, .thinking(text))
         case .commandStarted(let callID, let command):
-            let event = RunEvent(kind: .tool, text: "shell · " + ToolSummary.oneLine(command, 120), tool: "shell",
-                                 callID: callID, detail: command, state: .running)
-            turns[id]?.toolEvents[callID] = event.id
-            append(id, event)
+            feed(id, .toolStarted(Self.codexCommand(callID, command)))
         case .commandFinished(let callID, let command, let output, let exitCode):
-            let failed = (exitCode ?? 0) != 0
-            if let eventID = turns[id]?.toolEvents[callID] ?? timeline(id).last(where: { $0.callID == callID && $0.kind == .tool })?.id {
-                mutateEvent(id, eventID) {
-                    $0.output = RunEvent.clip(output)
-                    $0.state = failed ? .failed : .done
-                }
-            } else {
-                append(id, RunEvent(kind: .tool, text: "shell · " + ToolSummary.oneLine(command, 120), tool: "shell",
-                                    callID: callID, detail: command, output: RunEvent.clip(output), state: failed ? .failed : .done))
-            }
+            var call = Self.codexCommand(callID, command)
+            call.output = output
+            call.state = (exitCode ?? 0) != 0 ? .failed : .done
+            feed(id, .toolFinished(call))
         case .fileChanges(_, let changes):
             for change in changes { recordFileChange(id, path: change.path, kind: change.kind) }
-        case .toolCall(let callID, let name, let detail, let finished, let failed):
-            if let eventID = turns[id]?.toolEvents[callID] {
-                if finished { mutateEvent(id, eventID) { $0.state = failed ? .failed : .done } }
-            } else {
-                let event = RunEvent(kind: .tool, text: detail.isEmpty ? name : "\(name) · \(detail)", tool: name, callID: callID,
+        case .toolCall(let callID, let name, let detail, let finished, let failed, let input, let output):
+            let call = AgentToolCall(id: callID, name: name, title: detail.isEmpty ? name : "\(name) · \(detail)",
+                                     detail: input.map { ToolSummary.json($0.object) }, input: input, output: output,
                                      state: finished ? (failed ? .failed : .done) : .running)
-                turns[id]?.toolEvents[callID] = event.id
-                append(id, event)
-            }
+            feed(id, finished ? .toolFinished(call) : .toolStarted(call))
         case .turnCompleted(var usage):
+            pauseLive(id)
             if let started = turns[id]?.started { usage.durationSeconds = Date().timeIntervalSince(started) }
             turns[id]?.finished = true
             let stopping = turns[id]?.stopping ?? false
@@ -1480,9 +1381,9 @@ final class WorkspaceManager: ObservableObject {
         processes[id] = nil
         // A question can no longer be answered once the process is gone.
         questions[id] = nil
+        pauseLive(id)
         let state = turns[id]
         turns[id] = nil
-        finishLiveText(id)
         expireApprovals(id)
         // Whatever was still running is settled: nothing may stay open after the process is gone.
         settleOpenWork(id, reason: state?.stopping == true ? .stopped : .processExited)
@@ -1539,20 +1440,9 @@ final class WorkspaceManager: ObservableObject {
         return parts.joined(separator: " · ")
     }
 
-    /// Ends the thinking block being streamed; it then waits for its complete copy (see `.thinking`).
-    func closeThinking(_ id: UUID) {
-        guard turns[id]?.thinkingOpen == true else { return }
-        turns[id]?.thinkingOpen = false
-        let live = turns[id]?.liveThinkingID
-        if let live { mutateEvent(id, live) { $0.state = .done } }
-        turns[id]?.liveThinkingID = nil
-        turns[id]?.streamedThinking.append(live)
-    }
-
-    func finishLiveText(_ id: UUID) {
-        guard let live = turns[id]?.liveTextID else { return }
-        mutateEvent(id, live) { $0.state = .done }
-        turns[id]?.liveTextID = nil
+    /// A Codex shell command as a tool call: "shell · npm test".
+    static func codexCommand(_ callID: String, _ command: String) -> AgentToolCall {
+        AgentToolCall(id: callID, name: "shell", title: "shell · " + ToolSummary.oneLine(command, 120), detail: command)
     }
 
     func recordFileChange(_ id: UUID, path: String, kind: String) {

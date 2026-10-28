@@ -1,5 +1,20 @@
 import XCTest
 
+final class CodexToolResultTests: XCTestCase {
+    func testMcpCallsCarryTheirArgumentsAndResult() {
+        let exec = #"{"type":"item.completed","item":{"id":"m1","type":"mcp_tool_call","server":"linear","tool":"list_issues","arguments":{"team":"NOOK"},"result":{"content":[{"type":"text","text":"3 issues"}]},"status":"completed"}}"#
+        XCTAssertEqual(CodexStreamParser.parse(exec),
+                       [.toolCall(id: "m1", name: "list_issues", detail: "linear", finished: true, failed: false,
+                                  input: JSONBox(["team": "NOOK"]), output: "3 issues")])
+        let failed = #"{"type":"item.completed","item":{"id":"m2","type":"mcp_tool_call","server":"linear","tool":"list_issues","error":{"message":"not signed in"},"status":"failed"}}"#
+        XCTAssertEqual(CodexStreamParser.parse(failed),
+                       [.toolCall(id: "m2", name: "list_issues", detail: "linear", finished: true, failed: true, output: "not signed in")])
+        let started = #"{"type":"item.started","item":{"id":"m3","type":"mcp_tool_call","server":"linear","tool":"list_issues","status":"in_progress"}}"#
+        XCTAssertEqual(CodexStreamParser.parse(started),
+                       [.toolCall(id: "m3", name: "list_issues", detail: "linear", finished: false, failed: false)])
+    }
+}
+
 final class ClaudeStreamParserTests: XCTestCase {
     func testInit() {
         let events = ClaudeStreamParser.parse(#"{"type":"system","subtype":"init","session_id":"abc","model":"claude-sonnet-4-5","cwd":"/x","tools":[]}"#)

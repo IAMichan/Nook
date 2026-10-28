@@ -420,6 +420,30 @@ enum AgentTranscript {
                 }
                 append(thinking: thoughts.joined(separator: "\n\n"), id: id, at: when, to: &messages)
                 append(reply: content, id: id, at: when, to: &messages)
+                // The tools it called after writing, each with how it went: the same steps Claude Code and Codex show.
+                for (callIndex, call) in ((message["toolCalls"] as? [[String: Any]]) ?? []).enumerated() {
+                    let callID = (call["id"] as? String) ?? "\(id)-call-\(callIndex)"
+                    let raw = (call["name"] as? String) ?? ""
+                    let input = (call["args"] as? [String: Any]) ?? [:]
+                    let callDate = date(call["timestamp"]) ?? when
+                    let path = ToolSummary.path(input)
+                    append(step: AgentToolStep(id: callID, name: geminiToolName(raw), summary: geminiSummary(raw, input),
+                                               command: ToolSummary.command(input),
+                                               path: ToolCategory.of(tool: raw) == .edit ? path : nil,
+                                               lines: EditLines.of(tool: raw, input: input),
+                                               file: opensFile(raw) ? path : nil,
+                                               patch: EditPatch.make(tool: raw, input: input)),
+                           at: callDate, to: &messages)
+                    let display = call["resultDisplay"] as? String
+                    switch call["status"] as? String {
+                    case "success":
+                        finish(step: callID, failed: false, output: display, at: callDate, in: &messages)
+                    case "error", "cancelled":
+                        finish(step: callID, failed: true, error: display.flatMap(errorLine), output: display, at: callDate, in: &messages)
+                    default:
+                        continue
+                    }
+                }
             default:
                 continue
             }
@@ -581,6 +605,33 @@ enum AgentTranscript {
         case "update_plan": return "Plan"
         default: return toolName(raw)
         }
+    }
+
+    /// Gemini CLI's tools by the names the other agents' steps use, so a step reads the same whichever agent ran it.
+    private static func geminiToolName(_ raw: String) -> String {
+        switch raw {
+        case "run_shell_command": return "Shell"
+        case "read_file", "read_many_files": return "Read"
+        case "write_file": return "Write"
+        case "replace": return "Edit"
+        case "glob": return "Glob"
+        case "search_file_content": return "Grep"
+        case "google_web_search": return "WebSearch"
+        case "web_fetch": return "WebFetch"
+        default: return toolName(raw)
+        }
+    }
+
+    /// Gemini CLI: what a step was about, from its own argument names.
+    private static func geminiSummary(_ raw: String, _ input: [String: Any]) -> String {
+        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine(URL(fileURLWithPath: path).lastPathComponent) }
+        if let paths = input["paths"] as? [String], let first = paths.first {
+            return oneLine(paths.count == 1 ? first : "\(first) +\(paths.count - 1)")
+        }
+        for key in ["description", "command", "pattern", "query", "url", "prompt"] {
+            if let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return oneLine(value) }
+        }
+        return ""
     }
 
     /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.

@@ -58,8 +58,8 @@ extension WorkspaceManager {
         closeClaudeProcess(id)
         closeAcpClient(id)
         processes[id] = nil
+        pauseLive(id)
         turns[id] = nil
-        finishLiveText(id)
         settleOpenWork(id, reason: .stopped)
         expireApprovals(id)
         questions[id] = nil

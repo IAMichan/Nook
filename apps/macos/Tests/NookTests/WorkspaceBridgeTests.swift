@@ -108,7 +108,8 @@ final class WorkspaceBridgeTests: XCTestCase {
     func testCodexTimelineNamesNookTools() {
         let nook = #"{"type":"item.started","item":{"id":"m1","type":"mcp_tool_call","server":"nook","tool":"browser_open","arguments":{"url":"http://localhost:3000"},"status":"in_progress"}}"#
         XCTAssertEqual(CodexStreamParser.parse(nook),
-                       [.toolCall(id: "m1", name: "Nook browser", detail: "http://localhost:3000", finished: false, failed: false)])
+                       [.toolCall(id: "m1", name: "Nook browser", detail: "http://localhost:3000", finished: false, failed: false,
+                                  input: JSONBox(["url": "http://localhost:3000"]))])
         let other = #"{"type":"item.completed","item":{"id":"m2","type":"mcp_tool_call","server":"linear","tool":"browser_open","status":"completed"}}"#
         XCTAssertEqual(CodexStreamParser.parse(other),
                        [.toolCall(id: "m2", name: "browser_open", detail: "linear", finished: true, failed: false)])
