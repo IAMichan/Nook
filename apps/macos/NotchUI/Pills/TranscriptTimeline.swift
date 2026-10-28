@@ -15,6 +15,8 @@ struct TranscriptConversation: View {
     var fallback: [AgentChatMessage] = []
     var onReply: ((String) -> Void)? = nil
     var footer: String? = nil
+    /// The composer (and what sits on it) under the conversation, which scrolls on behind it.
+    var bottomBar: AnyView? = nil
     /// Reads the conversation from somewhere else than a transcript file (a session in the cloud); nil when it could not.
     var load: (@Sendable () -> [AgentChatMessage]?)? = nil
     /// How often the conversation is read again while the agent works.
@@ -143,14 +145,13 @@ struct TranscriptConversation: View {
                 .onChange(of: atEnd) { _, now in
                     if !now, scrollPhase != .idle && scrollPhase != .animating { scroll.userScrolled() }
                 }
-                .overlay(alignment: .bottom) {
-                    if scroll.mode == .free, !atEnd, !shown.isEmpty {
-                        TimelineToEndPill {
+                // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+                .composerInset(spacing: bottomBar == nil ? 0 : NookTheme.Spacing.xxxl) {
+                    (bottomBar ?? AnyView(Color.clear.frame(height: 0)))
+                        .toEndPill(scroll.mode == .free && !atEnd && !shown.isEmpty) {
                             scroll.jumpedToEnd()
                             withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                         }
-                        .padding(.bottom, NookTheme.Spacing.md)
-                    }
                 }
                 // Only while you are at the end: reading higher up, new messages do not pull you down.
                 .onChange(of: shown) { _, _ in if scroll.shouldFollowEnd { scrollToEnd(proxy) } }

@@ -84,28 +84,6 @@ struct AgentRunPanel: View {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                     header(run)
                     timeline(run)
-                    if let pending = workspace.approvals[runID], let first = pending.first {
-                        approval(run, first, more: pending.count - 1).chatColumn()
-                    } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
-                        // A command or pull request the agent asks for through Nook's workspace.
-                        let approval = ApprovalCenter.make(request)
-                        ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }.chatColumn()
-                    }
-                    if let target = revertTarget {
-                        revertConfirmation(target)
-                    } else if confirmDelete {
-                        deleteConfirmation(run)
-                    } else if let question = workspace.questions[runID]?.first {
-                        // The agent asks something: its question takes the composer's place until answered (Stop stays).
-                        RunQuestionPanel(question: question, agent: run.provider.displayName,
-                                         onStop: { workspace.stop(runID) }) { answers in
-                            workspace.answer(runID, questionID: question.id, answers: answers)
-                        }
-                        .id(question.id)
-                        .chatColumn()
-                    } else {
-                        composer(run).chatColumn()
-                    }
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 let turns = turnDiffs(run)
@@ -557,6 +535,33 @@ struct AgentRunPanel: View {
 
     // MARK: Timeline
 
+    /// What sits under the timeline: an approval, a confirmation, the agent's question, or the composer.
+    @ViewBuilder
+    private func bottomBar(_ run: WorkspaceRun) -> some View {
+        if let pending = workspace.approvals[runID], let first = pending.first {
+            approval(run, first, more: pending.count - 1).chatColumn()
+        } else if let request = bridge.pending.first(where: { $0.caller.kind == .run(runID) }) {
+            // A command or pull request the agent asks for through Nook's workspace.
+            let approval = ApprovalCenter.make(request)
+            ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }.chatColumn()
+        }
+        if let target = revertTarget {
+            revertConfirmation(target)
+        } else if confirmDelete {
+            deleteConfirmation(run)
+        } else if let question = workspace.questions[runID]?.first {
+            // The agent asks something: its question takes the composer's place until answered (Stop stays).
+            RunQuestionPanel(question: question, agent: run.provider.displayName,
+                             onStop: { workspace.stop(runID) }) { answers in
+                workspace.answer(runID, questionID: question.id, answers: answers)
+            }
+            .id(question.id)
+            .chatColumn()
+        } else {
+            composer(run).chatColumn()
+        }
+    }
+
     private func timeline(_ run: WorkspaceRun) -> some View {
         let memo = derived.update(workspace.timeline(runID), run: run)
         let events = memo.events
@@ -615,7 +620,15 @@ struct AgentRunPanel: View {
                 .scrollTargetLayout()
                 .chatColumn()
             }
-            .padding(.vertical, NookTheme.Spacing.xs)
+            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+            .composerInset {
+                VStack(spacing: NookTheme.Spacing.lg) { bottomBar(run) }
+                    .toEndPill(scroll.mode == .free && !atEnd && !finding) {
+                        scroll.jumpedToEnd()
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+            }
+            .padding(.top, NookTheme.Spacing.xs)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.1) { ids in onScreen.ids = Set(ids.map(\.uuidString)) }
             // Scrolling away from the end stops the following until you come back.
@@ -627,15 +640,6 @@ struct AgentRunPanel: View {
             }
             .onScrollPhaseChange { _, phase in
                 if (phase == .interacting || phase == .decelerating) && !atEnd { scroll.userScrolled() }
-            }
-            .overlay(alignment: .bottom) {
-                if scroll.mode == .free, !atEnd, !finding {
-                    TimelineToEndPill {
-                        scroll.jumpedToEnd()
-                        withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-                    .padding(.bottom, NookTheme.Spacing.md)
-                }
             }
             .overlay(alignment: .top) {
                 if finding {

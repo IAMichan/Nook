@@ -722,6 +722,8 @@ struct AgentConversation: View {
     let session: AgentSession
     /// Sends an answer to the agent when an option of its last question is tapped; nil when the session cannot be written to.
     var onReply: ((String) -> Void)? = nil
+    /// The composer under the conversation, which scrolls on behind it.
+    var bottomBar: AnyView? = nil
 
     /// Without a transcript: the last prompt and reply the hooks reported.
     private var fallback: [AgentChatMessage] {
@@ -735,7 +737,7 @@ struct AgentConversation: View {
         TranscriptConversation(path: session.transcriptPath, author: session.name,
                                accent: AgentKind(agentName: session.name)?.color ?? NookTheme.iris,
                                working: session.status == .running, fallback: fallback, onReply: onReply,
-                               directory: session.cwd)
+                               bottomBar: bottomBar, directory: session.cwd)
             .id(session.id)
     }
 }
