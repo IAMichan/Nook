@@ -522,8 +522,9 @@ enum TelegramData {
     }
 
     /// `deleteMessages` for everyone in the chat.
-    static func deleteMessages(chat: Int64, messages: [Int64]) -> [String: Any] {
-        ["@type": "deleteMessages", "chat_id": chat, "message_ids": messages, "revoke": true]
+    /// Deletes messages for everyone (`revoke`), or for you alone on all your devices.
+    static func deleteMessages(chat: Int64, messages: [Int64], revoke: Bool = true) -> [String: Any] {
+        ["@type": "deleteMessages", "chat_id": chat, "message_ids": messages, "revoke": revoke]
     }
 
     /// Whether `sending_state` says a message is still on its way from this device: Nook shows it once Telegram has it.

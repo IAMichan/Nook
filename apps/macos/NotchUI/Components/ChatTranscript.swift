@@ -215,9 +215,9 @@ struct ChatTranscript: View {
                                     Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
                                 }
                                 Button(tr("whatsapp.copy.chat")) { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) }
-                                if bubble.fromMe, let onDelete {
+                                if let onDelete {
                                     Divider()
-                                    Button(tr("chat.delete"), role: .destructive) { onDelete(bubble) }
+                                    Button(tr("chat.deleteMessage"), role: .destructive) { onDelete(bubble) }
                                 }
                             }
                             // A new run starts with room above it; the messages of one run sit close together, so who
@@ -248,9 +248,9 @@ struct ChatTranscript: View {
         return { onVote(bubble, $0) }
     }
 
-    /// Deleting your own message for everyone, where its app takes that (the host asks first).
+    /// Deleting a message: the host asks how (for you, or for everyone where it is yours and its app takes that).
     private func deleteAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onDelete, bubble.fromMe else { return nil }
+        guard let onDelete else { return nil }
         return { onDelete(bubble) }
     }
 
@@ -604,7 +604,7 @@ private struct MessageMenuButton: View {
             Button { onCopyChat() } label: { Label(tr("whatsapp.copy.chat"), systemImage: "text.bubble") }
             if let onDelete {
                 Divider()
-                Button(role: .destructive) { onDelete() } label: { Label(tr("chat.delete"), systemImage: "trash") }
+                Button(role: .destructive) { onDelete() } label: { Label(tr("chat.deleteMessage"), systemImage: "trash") }
             }
         } label: {
             Image(systemName: "chevron.down")
