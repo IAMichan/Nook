@@ -5,7 +5,6 @@ import Foundation
 
 let chatComposeTranslations: [AppLanguage: [String: String]] = [
     .nl: [
-        "chats.draft.suggest": "Laat Nook antwoorden",
         "chats.draft.version": "%ld van %ld",
         "chats.draft.previous": "Vorige versie",
         "chats.draft.next": "Volgende versie",
@@ -74,7 +73,6 @@ let chatComposeTranslations: [AppLanguage: [String: String]] = [
         "chats.giphy.notSaved": "De GIPHY-sleutel kon niet bewaard worden",
     ],
     .en: [
-        "chats.draft.suggest": "Let Nook answer",
         "chats.draft.version": "%ld of %ld",
         "chats.draft.previous": "Previous version",
         "chats.draft.next": "Next version",
@@ -143,7 +141,6 @@ let chatComposeTranslations: [AppLanguage: [String: String]] = [
         "chats.giphy.notSaved": "The GIPHY key could not be saved",
     ],
     .de: [
-        "chats.draft.suggest": "Nook antworten lassen",
         "chats.draft.version": "%ld von %ld",
         "chats.draft.previous": "Vorherige Version",
         "chats.draft.next": "Nächste Version",
@@ -212,7 +209,6 @@ let chatComposeTranslations: [AppLanguage: [String: String]] = [
         "chats.giphy.notSaved": "Der GIPHY-Schlüssel konnte nicht gesichert werden",
     ],
     .fr: [
-        "chats.draft.suggest": "Laisser Nook répondre",
         "chats.draft.version": "%ld sur %ld",
         "chats.draft.previous": "Version précédente",
         "chats.draft.next": "Version suivante",
@@ -281,7 +277,6 @@ let chatComposeTranslations: [AppLanguage: [String: String]] = [
         "chats.giphy.notSaved": "La clé GIPHY n’a pas pu être enregistrée",
     ],
     .es: [
-        "chats.draft.suggest": "Deja que Nook responda",
         "chats.draft.version": "%ld de %ld",
         "chats.draft.previous": "Versión anterior",
         "chats.draft.next": "Versión siguiente",

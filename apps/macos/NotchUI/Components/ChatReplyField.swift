@@ -64,7 +64,6 @@ struct ChatReplyField: View {
     private var trayContent: AnyView?
     private var hasExtra = false
     private var pasted: (() -> Bool)?
-    private var offersReplies = false
     private var editLast: (() -> Bool)?
 
     init(text: Binding<String>, notice: Binding<String?>, focus: FocusState<Bool>.Binding, placeholder: String,
@@ -109,14 +108,6 @@ struct ChatReplyField: View {
     func tray<Content: View>(_ content: Content?) -> Self {
         var copy = self
         copy.trayContent = content.map { AnyView($0) }
-        return copy
-    }
-
-    /// One click lets Nook write an answer while the field is empty: "Let Nook answer" and a few ready-made requests sit
-    /// above it. For the Chats tab, where there is room; a card in the notch keeps to the field.
-    func offersNookReplies(_ on: Bool = true) -> Self {
-        var copy = self
-        copy.offersReplies = on
         return copy
     }
 
@@ -171,10 +162,6 @@ struct ChatReplyField: View {
             if menu.isOpen {
                 ComposerSuggestionList(model: menu, tint: NookTheme.iris) { choose($0) }
             }
-            if offersReplies, text.isEmpty, !showsDraft, outgoing == nil, quote == nil, !menu.isOpen, !hasExtra {
-                NookReplyChips(write: letNookWrite)
-                    .transition(.opacity)
-            }
             if let quote {
                 ReplyingBar(quote: quote, cancel: cancelQuote)
                     .transition(.opacity)
@@ -203,7 +190,6 @@ struct ChatReplyField: View {
         .animation(NookTheme.reveal, value: showsDraft)
         .animation(NookTheme.reveal, value: drafting)
         .animation(NookTheme.reveal, value: outgoing)
-        .animation(NookTheme.reveal, value: text.isEmpty)
         .onAppear(perform: startPasteMonitor)
         .onDisappear { pasteMonitor.stop() }
     }
@@ -216,8 +202,12 @@ struct ChatReplyField: View {
     }
 
     private var field: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            if let leadingAccessory { leadingAccessory }
+        // The buttons sit at the foot of the field, by the line you type on, as the field grows with a long message.
+        HStack(alignment: .bottom, spacing: NookTheme.Spacing.sm) {
+            if let leadingAccessory {
+                HStack(spacing: NookTheme.Spacing.xxs) { leadingAccessory }
+                    .frame(minHeight: Self.buttonSide)
+            }
             TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(NookTheme.textTertiary), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(NookTheme.TextStyle.body)
@@ -272,26 +262,32 @@ struct ChatReplyField: View {
                 }
                 .disabled(busy || drafting)
                 .opacity(drafting || busy ? 0.55 : 1)
+                .padding(.vertical, NookTheme.Spacing.sm)
+                .frame(minHeight: Self.buttonSide, alignment: .center)
             if drafting {
-                NookIconButton(systemName: "stop.fill", label: tr("chats.draft.stop"), filled: true, size: 28) { stopWriting() }
+                ChatSendButton(symbol: "stop.fill", label: tr("chats.draft.stop"), tint: NookTheme.iris, ready: true) { stopWriting() }
             } else if empty, !busy, let idleAccessory {
                 idleAccessory
             } else {
-                NookIconButton(systemName: asksNook ? "sparkles" : sendSymbol, label: buttonLabel, filled: true, size: 28) { submit() }
-                    .disabled(busy || empty)
-                    .help(buttonLabel + " (↩)")
+                ChatSendButton(symbol: asksNook ? "sparkles" : sendSymbol, label: buttonLabel + " (↩)",
+                               tint: asksNook ? NookTheme.iris : NookTheme.paper, ready: !busy && !empty) { submit() }
             }
         }
-        .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.md : NookTheme.Spacing.xs)
-        .padding(.trailing, NookTheme.Spacing.xs)
-        .padding(.vertical, NookTheme.Spacing.xs)
-        // Nook's draft in the field: the field takes Nook's color, so it is clear whose words are about to go out.
-        // The field you type in stands out a little from the rest of the panel.
-        .cardBackground(NookTheme.field, stroke: showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45)
-                            : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke),
-                        radius: NookTheme.Radius.sheet)
+        .padding(.leading, leadingAccessory == nil ? NookTheme.Spacing.lg : NookTheme.Spacing.sm)
+        .padding(.trailing, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.sm)
+        // A soft, round field that stands out a little from the panel, and a little more while you type in it; Nook's
+        // draft gives it Nook's color, so it is clear whose words are about to go out.
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+            .fill(focus.wrappedValue ? NookTheme.surface : NookTheme.field))
+        .overlay(RoundedRectangle(cornerRadius: NookTheme.Radius.composer, style: .continuous)
+            .strokeBorder(showsDraft && outgoing == nil ? NookTheme.iris.opacity(0.45)
+                          : (focus.wrappedValue ? NookTheme.separator : NookTheme.fieldStroke), lineWidth: 1))
         .animation(NookTheme.hover, value: focus.wrappedValue)
     }
+
+    /// The side of the round buttons in and beside the field.
+    static let buttonSide: CGFloat = 32
 
     private var buttonLabel: String { asksNook ? tr("chats.draft.button") : sendLabel }
 
@@ -376,13 +372,6 @@ struct ChatReplyField: View {
         versions = []
         version = 0
         run(instruction)
-    }
-
-    /// One of the ready-made answers above an empty field: the request goes in the field and Nook writes at once.
-    private func letNookWrite(_ request: String) {
-        guard !busy, !drafting else { return }
-        text = request.isEmpty ? "@nook" : "@nook " + request
-        submit()
     }
 
     /// Back or forward to another of Nook's versions of this message.
@@ -661,34 +650,32 @@ private struct DraftPanel: View {
     }
 }
 
-/// Above an empty answer field: one click lets Nook write the answer ("Let Nook answer"), or a ready-made one (say yes,
-/// say no kindly, another moment). Nook writes it into the field, where you read it before it goes.
-private struct NookReplyChips: View {
-    let write: (String) -> Void
-
-    private static let presets = ["chats.nook.preset.yes", "chats.nook.preset.no", "chats.nook.preset.later",
-                                  "chats.nook.preset.thanks"]
+/// The round button at the end of the answer field: lit in its color once there is something to send (Nook's color
+/// for "@nook …"), a quiet circle while there is not.
+private struct ChatSendButton: View {
+    let symbol: String
+    let label: String
+    let tint: Color
+    let ready: Bool
+    let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        // As many as fit on one line, in this order: the open request first.
-        ViewThatFits(in: .horizontal) {
-            row(Self.presets.count)
-            row(3)
-            row(2)
-            row(0)
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(13, .bold))
+                .foregroundStyle(ready ? NookTheme.ink : NookTheme.textTertiary)
+                .frame(width: ChatReplyField.buttonSide, height: ChatReplyField.buttonSide)
+                .background(Circle().fill(ready ? tint : NookTheme.smoke))
+                .hoverLift(hovering && ready, scale: 1.05)
+                .contentShape(Circle())
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(tr("chats.draft.suggest"))
-    }
-
-    private func row(_ presets: Int) -> some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            DraftChip(title: tr("chats.draft.suggest"), symbol: "sparkles", tint: NookTheme.iris) { write("") }
-            ForEach(Self.presets.prefix(presets), id: \.self) { key in
-                DraftChip(title: tr(key), symbol: nil) { write(tr(key)) }
-            }
-        }
-        .fixedSize()
+        .buttonStyle(.plain)
+        .disabled(!ready)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: ready)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
 
