@@ -274,9 +274,9 @@ struct SessionComposer<Controls: View>: View {
     private func sendKey(alternate: Bool) -> Bool {
         if chooseSelected() { return true }
         if alternate {
-            if busy, !isEmpty, let flipAction { flipAction() }
+            if busy, !isEmpty, let flipAction { fire(flipAction) }
         } else if !busy, enabled {
-            onSend()
+            fire(onSend)
         }
         return true
     }
@@ -339,8 +339,11 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             if choicesBelow {
-                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                // The text gets 4 pt of its own above and below, so lines that wrap keep 12 pt from the edges while the
+                // send button stays 8 pt in; one line still fits beside the button, so the 48 pt capsule does not grow.
+                HStack(alignment: .center, spacing: NookTheme.Spacing.lg) {
                     withKeys(field(focused: focused), focused: focused.wrappedValue)
+                        .padding(.vertical, NookTheme.Spacing.xs)
                         .frame(minHeight: minHeight, alignment: .center)
                     sendCluster
                 }
@@ -436,13 +439,21 @@ struct SessionComposer<Controls: View>: View {
         }
     }
 
-    /// Sends. For agents the pictures first become paths below the text, so the caller's own send sees one text.
+    /// Sends. For agents the pictures first become paths below the text, so the caller's own send sees one text. The
+    /// paths are only there for that moment: when the caller keeps the text in the box (it starts a session in the
+    /// background, or could not send), the box gets back your words and the pictures instead of the paths.
     private func fire(_ action: () -> Void) {
-        if imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty {
-            text = ImageAttachment.appendingPaths(of: imagesBinding.wrappedValue, to: text)
-            imagesBinding.wrappedValue = []
-        }
+        guard imagesAsPaths, let imagesBinding, !imagesBinding.wrappedValue.isEmpty else { return action() }
+        let typed = text
+        let pictures = imagesBinding.wrappedValue
+        let outgoing = ImageAttachment.appendingPaths(of: pictures, to: typed)
+        text = outgoing
+        imagesBinding.wrappedValue = []
         action()
+        if text == outgoing {
+            text = typed
+            imagesBinding.wrappedValue = pictures
+        }
     }
 
     private func insertPath(_ url: URL) {

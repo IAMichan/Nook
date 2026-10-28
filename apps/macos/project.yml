@@ -209,6 +209,7 @@ targets:
       - path: Core/I18n+ProviderTraffic.swift
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
+      - path: Core/I18n+MailSend.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -392,6 +393,7 @@ targets:
       - path: Services/Workspace/UsageLimits.swift
       - path: Services/Workspace/Antigravity.swift
       - path: Services/Workspace/AgentStreamParsers.swift
+      - path: Services/Workspace/AgentTimeline.swift
       - path: Services/Workspace/GitService.swift
       - path: Services/Workspace/RunStore.swift
       - path: Services/Workspace/RunEventLog.swift

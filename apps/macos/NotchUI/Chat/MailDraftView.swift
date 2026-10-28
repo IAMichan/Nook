@@ -9,6 +9,7 @@ struct MailDraftView: View {
     let onDismiss: (MailDraft) -> Void
     let onReopen: (MailDraft) -> Void
 
+    @State private var from: String
     @State private var to: String
     @State private var cc: String
     @State private var subject: String
@@ -24,6 +25,7 @@ struct MailDraftView: View {
         self.onOpen = onOpen
         self.onDismiss = onDismiss
         self.onReopen = onReopen
+        _from = State(initialValue: draft.from)
         _to = State(initialValue: draft.to)
         _cc = State(initialValue: draft.cc)
         _subject = State(initialValue: draft.subject)
@@ -32,6 +34,7 @@ struct MailDraftView: View {
 
     private var edited: MailDraft {
         var copy = draft
+        copy.from = from
         copy.to = to
         copy.cc = cc
         copy.subject = subject
@@ -91,6 +94,8 @@ struct MailDraftView: View {
             }
             .padding(.bottom, NookTheme.Spacing.md)
 
+            // The account to send from, only when the user named one; otherwise Mail's default account sends it.
+            if !draft.from.isEmpty { field(tr("chat.mail.from"), text: $from, prompt: tr("chat.mail.emailPrompt")) }
             field(tr("chat.mail.to"), text: $to, prompt: tr("chat.mail.emailPrompt"))
             if !cc.isEmpty || !locked { field(tr("chat.mail.cc"), text: $cc, prompt: tr("chat.mail.optional")) }
             field(tr("chat.mail.subject"), text: $subject, prompt: tr("chat.mail.subject"))

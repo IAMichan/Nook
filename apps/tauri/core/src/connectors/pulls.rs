@@ -483,6 +483,12 @@ pub struct PullRequestCheck {
     /// The conclusion or state GitHub gave ("success", "failure", "in_progress"…), shown next to the name.
     pub detail: String,
     pub url: Option<String>,
+    /// A check run (with GitHub's own status words in `detail`) rather than a commit status (with its own sentence).
+    pub check_run: bool,
+    /// Runs right now; a pending check that has not started yet is queued.
+    pub running: bool,
+    pub started: Option<DateTime<Utc>>,
+    pub finished: Option<DateTime<Utc>>,
 }
 
 /// What a timeline entry is.
@@ -779,6 +785,10 @@ pub fn parse_checks(runs: &[Value], statuses: &[Value]) -> Vec<PullRequestCheck>
                 outcome,
                 detail: if status == "completed" { conclusion } else { status }.to_string(),
                 url: link(run["html_url"].as_str().or(run["details_url"].as_str())),
+                check_run: true,
+                running: status == "in_progress",
+                started: date(&run["started_at"]),
+                finished: if status == "completed" { date(&run["completed_at"]) } else { None },
             }
         })
         .collect();
@@ -796,6 +806,10 @@ pub fn parse_checks(runs: &[Value], statuses: &[Value]) -> Vec<PullRequestCheck>
             outcome,
             detail: if description.is_empty() { state } else { description }.to_string(),
             url: link(status["target_url"].as_str()),
+            check_run: false,
+            running: false,
+            started: None,
+            finished: None,
         });
     }
     let rank = |c: &PullRequestCheck| match c.outcome {
@@ -1076,6 +1090,10 @@ pub struct CiStep {
     pub number: i64,
     pub name: String,
     pub outcome: CheckOutcome,
+    pub started: Option<DateTime<Utc>>,
+    pub finished: Option<DateTime<Utc>>,
+    /// Runs right now (a pending step that has not started yet waits).
+    pub running: bool,
 }
 
 /// What a check shows when you open it in Nook (`CILog` on the Mac): the steps of its job and, once GitHub has it, the
@@ -1088,6 +1106,9 @@ pub struct CiLog {
     pub text: Option<String>,
     /// Lines left out at the top because the log was longer than Nook shows.
     pub omitted_lines: usize,
+    /// When the job started and finished, for its clock; None while it waits or runs.
+    pub started: Option<DateTime<Utc>>,
+    pub finished: Option<DateTime<Utc>>,
 }
 
 /// The lines of a log Nook shows: the end, where a failure is.
@@ -1123,7 +1144,14 @@ pub fn parse_steps(job: &Value) -> Vec<CiStep> {
             } else {
                 CheckOutcome::Passing
             };
-            CiStep { number: step["number"].as_i64().unwrap_or(0), name: step["name"].as_str().unwrap_or("?").to_string(), outcome }
+            CiStep {
+                number: step["number"].as_i64().unwrap_or(0),
+                name: step["name"].as_str().unwrap_or("?").to_string(),
+                outcome,
+                started: date(&step["started_at"]),
+                finished: if status == "completed" { date(&step["completed_at"]) } else { None },
+                running: status == "in_progress",
+            }
         })
         .collect()
 }
@@ -1183,7 +1211,13 @@ pub async fn load_ci_log(env: &Env, token: &str, repo: &str, job: i64) -> CResul
     let base = format!("{}/repos/{repo}/actions/jobs/{job}", api());
     let headers = super::github::headers(token);
     let job = env.http.get(&base, &headers, "GitHub").await?;
-    let mut log = CiLog { steps: parse_steps(&job), text: None, omitted_lines: 0 };
+    let mut log = CiLog {
+        steps: parse_steps(&job),
+        text: None,
+        omitted_lines: 0,
+        started: date(&job["started_at"]),
+        finished: if job["status"].as_str() == Some("completed") { date(&job["completed_at"]) } else { None },
+    };
     if let Ok((status, bytes)) = env.http.send("GET", &format!("{base}/logs"), &headers, None, "GitHub").await {
         if (200..300).contains(&status) {
             let (text, omitted) = clean_log(&String::from_utf8_lossy(&bytes), LOG_LINES);
@@ -1408,6 +1442,7 @@ mod tests {
         let outcomes: Vec<CheckOutcome> = steps.iter().map(|s| s.outcome).collect();
         assert_eq!(outcomes, vec![CheckOutcome::Passing, CheckOutcome::Failing, CheckOutcome::Skipped, CheckOutcome::Pending]);
         assert_eq!(steps[3].name, "Post");
+        assert!(steps[3].running && !steps[0].running);
         assert!(parse_steps(&json!({})).is_empty());
     }
 

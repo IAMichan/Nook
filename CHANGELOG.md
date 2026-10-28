@@ -39,6 +39,12 @@ user or contributor notices, add a line under **Unreleased**. At release time th
 
 ### Fixed
 
+- Sending a mail draft from the chat no longer fails with "error -1712" when Mail was not running: Nook starts Mail
+  first and gives it time to send. Mail errors are now shown in your language, and a draft can send from the account
+  you named ("vanuit mijn gmail").
+- A mail draft (or a chat message) is the only step to approve: Nook no longer adds a second "takes over" proposal
+  for the same message, and asking for a change replaces the open draft instead of stacking a new one under it. The
+  "only on this Mac" notice for Contacts no longer shows when the request already gave the address.
 - The pull request list loads much faster and no longer looks like it is always loading: the quick refresh reads only
   the open pull requests, the closed ones and watched organizations follow in the background every few minutes, and
   only a refresh you ask for shows a spinner.

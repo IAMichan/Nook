@@ -10,7 +10,31 @@ struct MailDraft: Identifiable, Equatable {
     var cc: String
     var subject: String
     var body: String
+    /// The account to send from, when the user named one. Empty: Mail's default account.
+    var from: String = ""
     var state: State = .draft
+
+    /// Not sent, opened or closed yet.
+    var isOpen: Bool {
+        switch state {
+        case .draft, .failed: return true
+        case .sending, .sent, .opened, .dismissed: return false
+        }
+    }
+
+    /// The same mail written again: to the same people, or with the same subject.
+    func isVersion(of other: MailDraft) -> Bool {
+        func people(_ text: String) -> Set<String> { Set(MailSender.addresses(text).map { $0.lowercased() }) }
+        func topic(_ text: String) -> String {
+            text.lowercased()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: #"^((re|fw|fwd|aw|wg|tr|rv)\s*:\s*)+"#, with: "", options: .regularExpression)
+        }
+        let recipients = people(to)
+        if !recipients.isEmpty, recipients == people(other.to) { return true }
+        let ownTopic = topic(subject)
+        return !ownTopic.isEmpty && ownTopic == topic(other.subject)
+    }
 }
 
 /// A single message in the conversation with Nook.
@@ -421,6 +445,25 @@ final class NookChat: ObservableObject {
         }
     }
 
+    /// A new version of a mail replaces the draft that was still open: an earlier draft in the same conversation to the
+    /// same recipients, or with the same subject, folds to one line (it can be reopened), so only the newest version is
+    /// there to send and nothing has to be approved twice. Drafts of the same answer stay: one invite to Lisa and one to
+    /// Bram are two mails, not two versions.
+    func supersedeMails(by draft: MailDraft) {
+        guard let index = conversations.firstIndex(where: { $0.messages.contains { $0.mails.contains { $0.id == draft.id } } }) else { return }
+        for message in conversations[index].messages.indices {
+            guard !conversations[index].messages[message].mails.contains(where: { $0.id == draft.id }) else { continue }
+            var changed = false
+            for mail in conversations[index].messages[message].mails.indices {
+                let old = conversations[index].messages[message].mails[mail]
+                guard old.id != draft.id, old.isOpen, old.isVersion(of: draft) else { continue }
+                conversations[index].messages[message].mails[mail].state = .dismissed
+                changed = true
+            }
+            if changed { conversations[index].messages[message].revision &+= 1 }
+        }
+    }
+
     func updateMail(_ mailID: UUID, _ change: (inout MailDraft) -> Void) {
         for index in conversations.indices {
             for message in conversations[index].messages.indices {
@@ -817,6 +860,7 @@ private struct StoredMail: Codable {
     var cc: String
     var subject: String
     var body: String
+    var from: String?
     var state: String
 
     init(_ mail: MailDraft) {
@@ -824,6 +868,7 @@ private struct StoredMail: Codable {
         cc = mail.cc
         subject = mail.subject
         body = mail.body
+        from = mail.from.isEmpty ? nil : mail.from
         switch mail.state {
         case .sent: state = "sent"
         case .opened: state = "opened"
@@ -833,7 +878,7 @@ private struct StoredMail: Codable {
     }
 
     func restored() -> MailDraft {
-        var mail = MailDraft(to: to, cc: cc, subject: subject, body: body)
+        var mail = MailDraft(to: to, cc: cc, subject: subject, body: body, from: from ?? "")
         switch state {
         case "sent": mail.state = .sent
         case "opened": mail.state = .opened

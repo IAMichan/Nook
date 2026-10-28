@@ -6,7 +6,7 @@ can tell us something new.
 
 | Workflow | Runs on | When |
 |---|---|---|
-| `build.yml` | ubuntu (UI lint), then macOS (build + `NookTests`) | `apps/macos`, `packages/protocol`, `scripts/ui-lint.sh` |
+| `build.yml` | ubuntu (UI and performance lint), then macOS (build + `NookTests`) | `apps/macos`, `packages/protocol`, `scripts/ui-lint.sh`, `scripts/perf-lint.sh` |
 | `ios.yml` | ubuntu (gate), then macOS (Companion build) | `apps/ios`, `packages/protocol` |
 | `packages.yml` | ubuntu, then macOS (`swift test` of `packages/core`) | `packages/core` |
 | `relay.yml` | ubuntu, seconds | `apps/relay` (the companion relay's tests) |

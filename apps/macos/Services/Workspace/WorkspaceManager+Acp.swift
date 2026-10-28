@@ -198,8 +198,7 @@ extension WorkspaceManager {
               !state.acpReplied, !state.stopping, state.acpToolCalls == 0 else { return }
         let thought = state.acpThought.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !thought.isEmpty else { return }
-        finishLiveText(id)
-        finishAcpThought(id)
+        pauseLive(id)
         append(id, RunEvent(kind: .assistant, text: thought, state: .done))
         turns[id]?.acpReplied = true
     }
@@ -291,7 +290,7 @@ extension WorkspaceManager {
         acpWakeFinish[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled, let self, let state = self.turns[id], state.unprompted, !state.finished else { return }
-            let running = state.toolEvents.values.contains { eventID in
+            let running = state.timeline.runningCalls.contains { eventID in
                 self.timeline(id).first { $0.id == eventID }?.state == .running
             }
             // Still a tool at work, or waiting on you: not over yet.
@@ -305,45 +304,17 @@ extension WorkspaceManager {
         for event in events {
             switch event {
             case .messageChunk(let text):
-                finishAcpThought(id)
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { turns[id]?.acpReplied = true }
-                if let live = turns[id]?.liveTextID {
-                    mutateEvent(id, live) { $0.text += text }
-                } else {
-                    let event = RunEvent(kind: .assistant, text: text, state: .running)
-                    turns[id]?.liveTextID = event.id
-                    append(id, event)
-                }
+                feed(id, .textDelta(text))
             case .thoughtChunk(let text):
                 turns[id]?.acpThought += text
-                if let live = turns[id]?.liveReasoningID {
-                    mutateEvent(id, live) { $0.text += text }
-                } else {
-                    finishLiveText(id)
-                    let event = RunEvent(kind: .thinking, text: text, state: .running)
-                    turns[id]?.liveReasoningID = event.id
-                    append(id, event)
-                }
+                feed(id, .thinkingDelta(text))
             case .toolCall(let call):
-                finishLiveText(id)
-                finishAcpThought(id)
-                let event = RunEvent(kind: .tool, text: call.title.isEmpty ? call.toolName : call.title, tool: call.toolName,
-                                     callID: call.id, detail: call.input.map { ToolSummary.json($0.object) },
-                                     output: call.output.isEmpty ? nil : RunEvent.clip(call.output), state: Self.state(call.status) ?? .running)
-                turns[id]?.toolEvents[call.id] = event.id
-                turns[id]?.acpToolCalls += 1
-                recap?.toolUse(call.toolName)
-                append(id, event)
-                if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
+                feed(id, .toolStarted(AgentToolCall(id: call.id, name: call.toolName, title: call.title.isEmpty ? call.toolName : call.title,
+                                                    detail: call.input.map { ToolSummary.json($0.object) }, input: call.input,
+                                                    output: call.output, state: Self.state(call.status) ?? .running, paths: call.paths)))
             case .toolCallUpdate(let call):
-                // A call from an earlier turn (work it left running in the background) is found by its id.
-                guard let eventID = turns[id]?.toolEvents[call.id] ?? timeline(id).last(where: { $0.callID == call.id })?.id else { continue }
-                mutateEvent(id, eventID) { event in
-                    if !call.title.isEmpty { event.text = call.title }
-                    if !call.output.isEmpty { event.output = RunEvent.clip(call.output) }
-                    if let state = Self.state(call.status) { event.state = state }
-                }
-                if call.status == "completed" { for path in call.paths { recordFileChange(id, path: path, kind: "modified") } }
+                feed(id, .toolUpdated(id: call.id, title: call.title, output: call.output, state: Self.state(call.status), paths: call.paths))
             case .plan(let steps):
                 setTasks(id, steps)
             case .usage(let used, let size, let cost):
@@ -389,15 +360,8 @@ extension WorkspaceManager {
         if let run = run(id) { onApproval?(run, pending) }
     }
 
-    private func finishAcpThought(_ id: UUID) {
-        guard let live = turns[id]?.liveReasoningID else { return }
-        mutateEvent(id, live) { $0.state = .done }
-        turns[id]?.liveReasoningID = nil
-    }
-
     private func finishAcpTurn(_ id: UUID, reason: String, usage reported: TurnUsage) {
-        finishLiveText(id)
-        finishAcpThought(id)
+        pauseLive(id)
         let state = turns[id]
         var usage = reported
         usage.contextTokens = state?.lastContext
@@ -476,8 +440,7 @@ extension WorkspaceManager {
             launchTurn(id, prompt: prompt, executable: executable, showPrompt: false)
             return
         }
-        finishLiveText(id)
-        finishAcpThought(id)
+        pauseLive(id)
         expireApprovals(id)
         turns[id] = nil
         if state.stopping {
@@ -493,7 +456,7 @@ extension WorkspaceManager {
     }
 
     private func failAcpTurn(_ id: UUID, _ message: String) {
-        finishLiveText(id)
+        pauseLive(id)
         turns[id] = nil
         update(id) { $0.move(to: .failed, detail: message) }
         append(id, RunEvent(kind: .error, text: message))

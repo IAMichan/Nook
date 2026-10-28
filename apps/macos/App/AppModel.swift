@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     let calendar = CalendarService()
     let nowPlaying = NowPlayingService()
     let hub = AgentHub()
+    /// The merged session lists, kept until one of the lists they come from changes (see `AppModel+Sessions`).
+    var sessionListsCache: SessionListsCache?
     let voice = VoiceService()
     let screen = ScreenReader()
     let recap = RecapStore()
@@ -105,7 +107,11 @@ final class AppModel: ObservableObject {
     /// Charts and mail drafts: attached to the message currently being streamed.
     private(set) lazy var chatTools: [ToolSpec] = ChatTools.specs(
         onChart: { [weak self] chart in self?.attachToReply { $0.charts.append(chart) } },
-        onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
+        onMail: { [weak self] mail in
+            self?.attachToReply { $0.mails.append(mail) }
+            // "Maak hem korter": the new version takes the place of the draft that was still open.
+            self?.chat.supersedeMails(by: mail)
+        }
     )
 
     /// What Nook learned about the user, stored next to the open loops (see `AppModel+Memory`).
@@ -284,8 +290,11 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
         // A chat that went on in the terminal after Nook last ran it: its new messages show up in the Nook session.
-        history.$sessions.receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.followTerminalContinuations() }
+        history.$sessions.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.followTerminalContinuations()
+                self?.nameSessionsAfterAgents()
+            }
             .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in
@@ -377,6 +386,7 @@ final class AppModel: ObservableObject {
             self.viewModel.present(self.errorCard(message))
         }
         settings.$wakeWord
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateWakeWord() }
             .store(in: &bag)
@@ -458,6 +468,7 @@ final class AppModel: ObservableObject {
         connectors.syncMCP(MCPServerStore.shared.servers)
         MCPServerStore.shared.$servers
             .dropFirst()
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] servers in self?.connectors.syncMCP(servers) }
             .store(in: &bag)

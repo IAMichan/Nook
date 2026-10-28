@@ -108,6 +108,9 @@ extension AppModel {
         spokenRequest = false
     }
 
+    /// Actions that send a message the user approves in the chat, for every chat app.
+    static let messageSendTools: Set<String> = ["whatsapp_send", "send_to_source"]
+
     /// Collects charts and mail drafts produced by tools for the conversation that spawned them.
     func attachToReply(_ change: (inout ChatMessage) -> Void) {
         let target = ReplyContext.messageID ?? chat.activeID.flatMap { replies[$0] }
@@ -393,7 +396,11 @@ extension AppModel {
             if !withheld.isEmpty {
                 notices.append(tr("chat.notice.private", withheld.map { SourceCatalog.title($0) }.sorted().joined(separator: ", ")))
             }
-            let normalized = plan.actions.map { action -> PlannedAction in
+            // A mail draft or a chat message in the plan is already the step to approve: its Send button sends it.
+            // Taking over the same message (writing it in Mail or the chat app by hand) on top would only ask twice.
+            let drafted = !(chat.message(id)?.mails.isEmpty ?? true) || plan.actions.contains { Self.messageSendTools.contains($0.tool) }
+            let proposed = drafted ? plan.actions.filter { $0.tool != TakeoverPolicy.toolName } : plan.actions
+            let normalized = proposed.map { action -> PlannedAction in
                 var copy = action
                 if let spec = tools.first(where: { $0.name == action.tool }) { copy.input = ActionGate.normalized(action.input, schema: spec.schema) }
                 return copy

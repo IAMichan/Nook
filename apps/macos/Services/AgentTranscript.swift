@@ -333,8 +333,8 @@ enum AgentTranscript {
                     let ptype = payload["type"] as? String {
                 switch ptype {
                 case "user_message":
-                    let text = ((payload["message"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { continue }
+                    // Without an `<environment_context>` or other block of Codex's own in front, as in `AgentHistory`.
+                    guard let text = InjectedPrompt.prompt((payload["message"] as? String) ?? "") else { continue }
                     messages.append(AgentChatMessage(id: id, kind: .user, text: clip(text), date: when))
                 case "agent_message":
                     append(reply: (payload["message"] as? String) ?? "", id: id, at: when, to: &messages)
@@ -420,6 +420,30 @@ enum AgentTranscript {
                 }
                 append(thinking: thoughts.joined(separator: "\n\n"), id: id, at: when, to: &messages)
                 append(reply: content, id: id, at: when, to: &messages)
+                // The tools it called after writing, each with how it went: the same steps Claude Code and Codex show.
+                for (callIndex, call) in ((message["toolCalls"] as? [[String: Any]]) ?? []).enumerated() {
+                    let callID = (call["id"] as? String) ?? "\(id)-call-\(callIndex)"
+                    let raw = (call["name"] as? String) ?? ""
+                    let input = (call["args"] as? [String: Any]) ?? [:]
+                    let callDate = date(call["timestamp"]) ?? when
+                    let path = ToolSummary.path(input)
+                    append(step: AgentToolStep(id: callID, name: geminiToolName(raw), summary: geminiSummary(raw, input),
+                                               command: ToolSummary.command(input),
+                                               path: ToolCategory.of(tool: raw) == .edit ? path : nil,
+                                               lines: EditLines.of(tool: raw, input: input),
+                                               file: opensFile(raw) ? path : nil,
+                                               patch: EditPatch.make(tool: raw, input: input)),
+                           at: callDate, to: &messages)
+                    let display = call["resultDisplay"] as? String
+                    switch call["status"] as? String {
+                    case "success":
+                        finish(step: callID, failed: false, output: display, at: callDate, in: &messages)
+                    case "error", "cancelled":
+                        finish(step: callID, failed: true, error: display.flatMap(errorLine), output: display, at: callDate, in: &messages)
+                    default:
+                        continue
+                    }
+                }
             default:
                 continue
             }
@@ -583,6 +607,33 @@ enum AgentTranscript {
         }
     }
 
+    /// Gemini CLI's tools by the names the other agents' steps use, so a step reads the same whichever agent ran it.
+    private static func geminiToolName(_ raw: String) -> String {
+        switch raw {
+        case "run_shell_command": return "Shell"
+        case "read_file", "read_many_files": return "Read"
+        case "write_file": return "Write"
+        case "replace": return "Edit"
+        case "glob": return "Glob"
+        case "search_file_content": return "Grep"
+        case "google_web_search": return "WebSearch"
+        case "web_fetch": return "WebFetch"
+        default: return toolName(raw)
+        }
+    }
+
+    /// Gemini CLI: what a step was about, from its own argument names.
+    private static func geminiSummary(_ raw: String, _ input: [String: Any]) -> String {
+        if let path = ToolSummary.path(input), raw != "run_shell_command" { return oneLine(URL(fileURLWithPath: path).lastPathComponent) }
+        if let paths = input["paths"] as? [String], let first = paths.first {
+            return oneLine(paths.count == 1 ? first : "\(first) +\(paths.count - 1)")
+        }
+        for key in ["description", "command", "pattern", "query", "url", "prompt"] {
+            if let value = input[key] as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return oneLine(value) }
+        }
+        return ""
+    }
+
     /// Codex: the command it runs (`["bash", "-lc", "…"]` reads as the script), or the first telling argument.
     private static func codexSummary(_ name: String, _ arguments: [String: Any]) -> String {
         if let command = arguments["command"] as? [String] {
@@ -647,10 +698,15 @@ enum AgentTranscript {
 
     /// What you typed in a user line: the agent's own blocks in front of it (the Claude desktop app opens a chat with
     /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.
-    private static func typedText(_ content: Any?) -> String {
+    /// Your words in a user message: per text block, without the blocks the agent added (also used by `AgentHistory`).
+    static func typedText(_ content: Any?) -> String {
         if let blocks = content as? [[String: Any]] {
-            return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
-                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }.joined(separator: "\n")
+            // A block that is nothing but the agent's own (a reminder in front of your words) stays whole in `typed`:
+            // dropped here, or it would make the whole message look injected.
+            let texts = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }
+            let yours = texts.filter { !InjectedPrompt.isInjected($0) }
+            return (yours.isEmpty ? texts : yours).joined(separator: "\n")
         }
         return InjectedPrompt.typed(text(content))
     }
@@ -701,7 +757,9 @@ enum AgentTranscript {
 enum InjectedPrompt {
     private static let prefixes = [
         "<command-", "<local-command", "<system-reminder", "<bash-", "<user-memory", "<task-notification",
-        "<environment_context", "<user_instructions", "<turn_aborted", "Caveat:", "[Request interrupted"
+        "<environment_context", "<user_instructions", "<turn_aborted", "[Request interrupted",
+        // Claude Code's note before the output of local commands; a prompt of yours may start with "Caveat:" too.
+        "Caveat: The messages below were generated by the user while running local commands"
     ]
     /// A whole message wrapped in one tag of the agent's own (with a dash or underscore, which HTML tags do not have):
     /// `<some-tag …>…</some-tag>`.
@@ -726,6 +784,14 @@ enum InjectedPrompt {
             rest = remainder
         }
         return rest
+    }
+
+    /// What you typed in a message, without the blocks the agent put in front of it (the Claude app opens the first
+    /// message of a worktree session with a `<system-reminder>`); nil when the whole message is the agent's own.
+    static func prompt(_ text: String) -> String? {
+        let typed = typed(text)
+        guard !typed.isEmpty, !isInjected(typed) else { return nil }
+        return typed
     }
 
     static func isInjected(_ text: String) -> Bool {

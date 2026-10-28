@@ -168,6 +168,7 @@ pub fn run() {
             commands::connectors::whatsapp_unmute,
             commands::whatsapp::whatsapp_card,
             commands::whatsapp::whatsapp_card_load,
+            commands::whatsapp::whatsapp_avatars,
             commands::whatsapp::whatsapp_open_file,
             commands::whatsapp::whatsapp_audio,
             commands::whatsapp::whatsapp_ask_nook,

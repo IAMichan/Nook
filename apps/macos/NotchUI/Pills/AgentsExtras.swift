@@ -71,9 +71,7 @@ struct PanelFooter: View {
                     history.refresh(minimumInterval: 0)
                     updater.check()
                 }) {
-                    ToolGlyph(symbol: "arrow.triangle.2.circlepath")
-                        .rotationEffect(.degrees(busy ? 360 : 0))
-                        .animation(busy ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: busy)
+                    TurningGlyph(symbol: "arrow.triangle.2.circlepath", turning: busy)
                 }
                 .disabled(busy)
             }
@@ -214,6 +212,25 @@ private struct ToolGlyph: View {
         Image(systemName: symbol)
             .font(NookTheme.TextStyle.body)
             .frame(width: 16, height: 16)
+    }
+}
+
+/// A tool's symbol that turns once a second while `turning`. On a timeline at the ambient rate, like `SpinningRing`: a
+/// `repeatForever` animation turns it at the display's own rate and redraws the whole window with it.
+private struct TurningGlyph: View {
+    let symbol: String
+    let turning: Bool
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @Environment(\.nookAttended) private var attended
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        // perf: turns only for the second or two a refresh takes, and takes its color from the button around it.
+        TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended),
+                                 paused: !turning || reduceMotion || energy.plan.pace == .paused)) { context in
+            let turn = turning ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) : 0
+            ToolGlyph(symbol: symbol).rotationEffect(.degrees(360 * turn))
+        }
     }
 }
 

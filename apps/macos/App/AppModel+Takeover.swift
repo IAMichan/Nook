@@ -71,7 +71,7 @@ extension AppModel {
         [
             ToolSpec(
                 name: TakeoverPolicy.toolName,
-                description: "Lets Nook carry out a task on the Mac by itself, from start to finish, in the user's own apps and logged-in browser: ordering or buying something, booking, unsubscribing, filling out and sending a form, finishing what is on screen, changing a setting that takes several steps. Use it when the request takes many clicks across windows or web pages. Nook asks the user itself before anything that pays, orders, sends, deletes or books. Give the task in the user's words, with every detail they gave.",
+                description: "Lets Nook carry out a task on the Mac by itself, from start to finish, in the user's own apps and logged-in browser: ordering or buying something, booking, unsubscribing, filling out and sending a form, finishing what is on screen, changing a setting that takes several steps. Use it when the request takes many clicks across windows or web pages. Nook asks the user itself before anything that pays, orders, sends, deletes or books. Never use it to write or send an email: compose_mail drafts it in the chat and the user sends it from there. Give the task in the user's words, with every detail they gave.",
                 schema: [
                     "type": "object",
                     "properties": ["task": ["type": "string", "description": "The task, complete, in the user's words, e.g. \"Bestel nieuwe koffiefilters bij bol.com, dezelfde als vorige keer\"."]],

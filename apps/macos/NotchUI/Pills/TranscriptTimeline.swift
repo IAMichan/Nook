@@ -238,7 +238,7 @@ struct TranscriptConversation: View {
             VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                 TranscriptFoldLine(text: text,
                                    open: open.contains(key),
-                                   checks: Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check)),
+                                   checks: derived.foldChecks[row.id] ?? [],
                                    ruled: ruled) { toggle(key) }
                 if open.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
@@ -493,6 +493,9 @@ private final class TranscriptDerived {
     private(set) var outputs: [SessionOutput] = []
     private(set) var turns: [TurnDiff] = []
     private(set) var marks: [PromptMark] = []
+    /// The tests and builds each fold holds, by the fold's row id: reading every command again on each redraw of the
+    /// timeline cost more than the rest of the row.
+    private(set) var foldChecks: [String: [VerificationCheck]] = [:]
 
     func update(_ messages: [AgentChatMessage], working: Bool, directory: String?) {
         if let key, key.working == working, key.directory == directory, key.messages == messages { return }
@@ -501,6 +504,14 @@ private final class TranscriptDerived {
         outputs = SessionOutputs.collect(messages, directory: directory ?? "").filter { directory != nil || !$0.isFile }
         turns = TurnDiff.collect(messages)
         marks = TranscriptPresentation.promptMarks(rows)
+        foldChecks = [:]
+        for row in rows {
+            switch row {
+            case .fold(_, _, let inner), .continued(_, _, let inner):
+                foldChecks[row.id] = Verification.latest(TranscriptPresentation.steps(inner).compactMap(Verification.check))
+            default: break
+            }
+        }
     }
 }
 

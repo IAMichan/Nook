@@ -7,8 +7,8 @@
   import type { PullRequestItem } from "../../../lib/connectors";
   import { renderMarkdown } from "../../../lib/markdown";
   import {
-    activitySentence, chosenMethod, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
-    type MergeMethod, type PullRequestCheck, type ReviewEvent, type PullRequestDetail, type PullRequestEvent, type PullRequestFile,
+    activitySentence, chosenMethod, ciStatusLine, detailStateNames, diffLines, eventLabel, itemId, jobId, methodNames, noteText, pullsApi,
+    type MergeMethod, type PullRequestCheck, type PullRequestDetail, type PullRequestEvent, type PullRequestFile, type ReviewEvent,
   } from "../../../lib/pulls";
   import { pullRequests } from "../../../lib/pulls.svelte";
   import { ago } from "../time";
@@ -219,10 +219,10 @@
             <!-- A GitHub Actions job opens its steps and log here; a check from another app only has its own page. -->
             <button class="line" disabled={!check.url} onclick={() => (jobId(check.url) !== null ? (openCheck = check) : open(check.url))}>
               <span class="mark">
-                {#if check.outcome === "passing"}<span class="good">✓</span>{:else if check.outcome === "failing"}<span class="bad">✕</span>{:else if check.outcome === "pending"}<span class="dot waiting"></span>{:else}<span class="faint">–</span>{/if}
+                {#if check.outcome === "passing"}<span class="good">✓</span>{:else if check.outcome === "failing"}<span class="bad">✕</span>{:else if check.outcome === "pending"}<span class="dot" class:working={check.running} class:waiting={!check.running}></span>{:else}<span class="faint">–</span>{/if}
               </span>
               <span class="name">{check.name}</span>
-              <span class="faint small ellipsis">{check.detail}</span>
+              <span class="small ellipsis" class:faint={check.outcome !== "failing"} class:bad={check.outcome === "failing"}>{ciStatusLine(check, now)}</span>
               <span class="spacer"></span>
               {#if check.url}<span class="faint small">{jobId(check.url) !== null ? "›" : "↗"}</span>{/if}
             </button>

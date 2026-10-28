@@ -45,8 +45,9 @@ struct NookTaskRing: View {
     /// Where the pointer is, shared with `NookTaskRingLabel`; nil where the ring only shows.
     var pointer: TaskRingPointer?
     let onOpen: (TaskRingItem) -> Void
-    /// Where Nook is pushed from his place, written by his `NookOrb`; the ring follows it.
-    @ObservedObject private var motion: NookMotion
+    /// Where Nook is pushed from his place, written by his `NookOrb`. Only the drawing observes it: observed here, every
+    /// move of Nook would update the notch or window the ring sits in.
+    private let motion: NookMotion
 
     init(items: [TaskRingItem], style: Style = .panel, orbSize: CGFloat = 46, maxSide: CGFloat = .infinity,
          hovered: String? = nil, pointer: TaskRingPointer? = nil, motion: NookMotion? = nil,
@@ -57,150 +58,48 @@ struct NookTaskRing: View {
         self.maxSide = maxSide
         self.hovered = hovered
         self.pointer = pointer
-        _motion = ObservedObject(wrappedValue: motion ?? NookMotion())
+        self.motion = motion ?? NookMotion()
         self.onOpen = onOpen
     }
 
-    @State private var shown = false
-    @State private var appeared = Date()
-    @StateObject private var spring = RingSpring()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nookAttended) private var attended
-    /// Published only when the plan changes: sets how often the ring redraws.
-    @ObservedObject private var energy = EnergyMonitor.shared
 
-    private var compact: Bool { style == .compact }
-    private var lineWidth: CGFloat { compact ? 2 : 3.6 }
-    private var radius: CGFloat { compact ? min(orbSize / 2 + 3.5, (maxSide - lineWidth) / 2 - 1) : Self.radius(orbSize: orbSize) }
-    private var side: CGFloat { compact ? radius * 2 + lineWidth : radius * 2 + 14 }
-    /// Room between two pieces, as a fraction of the circle.
-    private var gap: CGFloat { items.count > 1 ? (compact ? 4 : 8) / (2 * .pi * radius) : 0 }
+    private var metrics: TaskRingMetrics { TaskRingMetrics(compact: style == .compact, orbSize: orbSize, maxSide: maxSide, count: items.count) }
 
     static func radius(orbSize: CGFloat) -> CGFloat { orbSize / 2 + 12 }
 
     var body: some View {
-        let moving = !reduceMotion && items.contains { $0.state == .running || $0.state == .waiting }
-        // Keeps drawing while the ring still catches up with Nook; once it rests, the spring asks for one more redraw
-        // so the timeline can pause again.
-        let following = !reduceMotion && !spring.settled(at: motion.offset)
-        // Possibly for hours, closed or open: the ambient rate keeps the light fluid at a fraction of the redraws, and every
-        // frame redraws the whole window the ring is in. Only while you point at a piece in the panel does it run at the
-        // interactive rate.
-        // On a screen or in a window the pointer is not on, at most the unattended rate.
-        let rate = energy.plan.frameRate(compact || hovered == nil ? energy.plan.ambientFrameRate : energy.plan.interactiveFrameRate,
-                                         attended: attended)
+        let metrics = metrics
         // In a graph of its own (`SeparateGraph`), so its frames do not update the window it is in; hover and clicks stay
-        // on the band below.
+        // on the band below. Environment values do not reach into that graph, so they go in as values.
         SeparateGraph {
-            TimelineView(.nookFrames(fps: rate, paused: !moving && !following)) { context in
-                ring(at: context.date)
-            }
-            // One picture per frame instead of a layer per piece, its light and its glow; twice its size, so the ring
-            // trailing behind Nook and stretching is not cut off.
-            .frame(width: side * 2, height: side * 2)
-            .drawingGroup()
+            TaskRingDrawing(items: items, metrics: metrics, hovered: hovered, motion: motion,
+                            reduceMotion: reduceMotion, attended: attended)
         }
-        .frame(width: side * 2, height: side * 2)
+        // Twice its size, so the ring trailing behind Nook and stretching is not cut off.
+        .frame(width: metrics.side * 2, height: metrics.side * 2)
         .allowsHitTesting(false)
-        .frame(width: side, height: side)
-        .contentShape(RingBand(radius: radius, width: 16), eoFill: true)
+        .frame(width: metrics.side, height: metrics.side)
+        .contentShape(RingBand(radius: metrics.radius, width: 16), eoFill: true)
         .onContinuousHover { phase in
-            guard !compact else { return }
+            guard style == .panel else { return }
             switch phase {
             case .active(let point): hover(index(at: point))
             case .ended: hover(nil)
             }
         }
         .onTapGesture { point in
-            guard !compact, let i = index(at: point) else { return }
+            guard style == .panel, let i = index(at: point) else { return }
             pointer?.clear()
             onOpen(items[i])
         }
-        .allowsHitTesting(!compact)
-        .onAppear {
-            appeared = Date()
-            shown = true
-        }
-        .onDisappear { if !compact { pointer?.clear() } }
+        .allowsHitTesting(style == .panel)
+        .onDisappear { if style == .panel { pointer?.clear() } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tr("notch.taskRing"))
         .accessibilityValue(items.map { "\($0.title), \($0.detail)" }.joined(separator: "; "))
     }
-
-    private func ring(at date: Date) -> some View {
-        let t = date.timeIntervalSinceReferenceDate
-        // The closed notch comes and goes all day: there the ring is simply there, without drawing itself in.
-        let settled = compact || date.timeIntervalSince(appeared) > 0.9
-        let stretch = elastic()
-        return ZStack {
-            Circle()
-                .stroke(Color(hex: 0x141419), lineWidth: lineWidth + 0.9)
-                .opacity(shown || compact ? 1 : 0)
-                .animation(compact ? nil : .easeOut(duration: 0.5).delay(0.25), value: shown)
-            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
-                piece(item, index: i, t: t, settled: settled)
-            }
-        }
-        .frame(width: radius * 2, height: radius * 2)
-        .rotationEffect(.degrees(-90))
-        // Stretched along the line towards Nook, a little narrower across it, like a band that is pulled.
-        .rotationEffect(.radians(-stretch.direction))
-        .scaleEffect(x: 1 + stretch.amount, y: 1 - stretch.amount * 0.6)
-        .rotationEffect(.radians(stretch.direction))
-        .offset(spring.position)
-        .frame(width: side, height: side)
-    }
-
-    /// Moves the ring on towards Nook and says how far, and in which direction, it is pulled out of round.
-    private func elastic() -> (amount: CGFloat, direction: Double) {
-        guard !reduceMotion else { return (0, 0) }
-        let target = motion.offset
-        spring.advance(towards: target, at: Date().timeIntervalSinceReferenceDate)
-        let dx = target.width - spring.position.width
-        let dy = target.height - spring.position.height
-        let pull = hypot(dx, dy)
-        guard pull > 0.05 else { return (0, 0) }
-        return (min(pull / radius * 0.9, 0.12), atan2(dy, dx))
-    }
-
-    private func piece(_ item: TaskRingItem, index i: Int, t: Double, settled: Bool) -> some View {
-        let span = self.span(i)
-        let hot = hovered == item.id
-        let width = hot ? lineWidth * 1.5 : lineWidth
-        let pulse = item.state == .waiting && !reduceMotion ? 0.5 + 0.5 * abs(cos(t * 2)) : 1
-        return ZStack {
-            Circle()
-                .trim(from: span.start, to: shown || compact ? span.end : span.start)
-                .stroke(item.color.opacity(item.state == .running ? 0.28 : pulse), style: StrokeStyle(lineWidth: width, lineCap: .round))
-                .animation(compact ? nil : .spring(duration: 0.7, bounce: 0.15).delay(0.3 + Double(i) * 0.08), value: shown)
-            if item.state == .running, settled {
-                let light = comet(span, t: t)
-                Circle()
-                    .trim(from: light.start, to: light.end)
-                    .stroke(item.color, style: StrokeStyle(lineWidth: width, lineCap: .round))
-            }
-        }
-        .shadow(color: item.color.opacity(0.55), radius: compact ? 1 : 2)
-        .animation(.easeOut(duration: 0.15), value: hot)
-    }
-
-    /// A short light that sweeps through a running piece and back, so you see something is happening.
-    private func comet(_ span: (start: CGFloat, end: CGFloat), t: Double) -> (start: CGFloat, end: CGFloat) {
-        let length = min((compact ? 7 : 10) / (2 * .pi * radius), (span.end - span.start) * 0.35)
-        let phase = reduceMotion ? 0.5 : (1 - cos((t * 0.45 + Double(span.start)) * 2 * .pi)) / 2
-        let start = span.start + (span.end - span.start - length) * CGFloat(phase)
-        return (start, start + length)
-    }
-
-    /// Where piece `i` starts and ends, as fractions of the circle measured clockwise from the top.
-    private func span(_ i: Int) -> (start: CGFloat, end: CGFloat) {
-        let slot = 1 / CGFloat(max(items.count, 1))
-        let start = CGFloat(i) * slot + gap / 2
-        return (start, start + max(0.001, slot - gap))
-    }
-
-    /// The direction of the middle of piece `i` from the center: 0 is right, clockwise, y pointing down.
-    private func angle(_ i: Int) -> Double { Self.angle(i, count: items.count, radius: radius) }
 
     static func angle(_ i: Int, count: Int, radius: CGFloat) -> Double {
         let gap: CGFloat = count > 1 ? 8 / (2 * .pi * radius) : 0
@@ -210,18 +109,228 @@ struct NookTaskRing: View {
         return Double((start + end) / 2) * 2 * .pi - .pi / 2
     }
 
+    /// The piece under `point`, measured on the ring at rest: it trails Nook by a few points at most.
     private func index(at point: CGPoint) -> Int? {
         guard !items.isEmpty else { return nil }
-        let dx = point.x - side / 2 - spring.position.width
-        let dy = point.y - side / 2 - spring.position.height
-        guard abs(hypot(dx, dy) - radius) < 9 else { return nil }
+        let side = metrics.side
+        let dx = point.x - side / 2
+        let dy = point.y - side / 2
+        guard abs(hypot(dx, dy) - metrics.radius) < 9 else { return nil }
         var fraction = (atan2(dy, dx) + .pi / 2) / (2 * .pi)
         if fraction < 0 { fraction += 1 }
         return min(Int(fraction * CGFloat(items.count)), items.count - 1)
     }
 
     private func hover(_ index: Int?) {
-        pointer?.onRing(index.map { items[$0].id }, angle: index.map { angle($0) })
+        pointer?.onRing(index.map { items[$0].id }, angle: index.map { Self.angle($0, count: items.count, radius: metrics.radius) })
+    }
+}
+
+/// The ring's sizes for one style, Nook's size and number of pieces.
+private struct TaskRingMetrics: Equatable {
+    let compact: Bool
+    let orbSize: CGFloat
+    let maxSide: CGFloat
+    let count: Int
+
+    var lineWidth: CGFloat { compact ? 2 : 3.6 }
+    var radius: CGFloat { compact ? min(orbSize / 2 + 3.5, (maxSide - lineWidth) / 2 - 1) : NookTaskRing.radius(orbSize: orbSize) }
+    var side: CGFloat { compact ? radius * 2 + lineWidth : radius * 2 + 14 }
+    /// Room between two pieces, as a fraction of the circle.
+    var gap: CGFloat { count > 1 ? (compact ? 4 : 8) / (2 * .pi * radius) : 0 }
+
+    /// Where piece `i` starts and ends, as fractions of the circle measured clockwise from the top.
+    func span(_ i: Int) -> (start: CGFloat, end: CGFloat) {
+        let slot = 1 / CGFloat(max(count, 1))
+        let start = CGFloat(i) * slot + gap / 2
+        return (start, start + max(0.001, slot - gap))
+    }
+}
+
+/// What the ring draws, in its own graph: one `Canvas` per frame, rendered off the main thread, instead of a view tree
+/// of trimmed circles and a shadow per piece that SwiftUI compared and blurred on the main thread every frame.
+///
+/// It runs at the ambient rate while only the light moves through running pieces (slow, it stays fluid), at the
+/// interactive rate while the ring trails Nook, draws itself in or a piece grows under the pointer, so motion stays
+/// smooth, and not at all once everything holds still.
+private struct TaskRingDrawing: View {
+    let items: [TaskRingItem]
+    let metrics: TaskRingMetrics
+    let hovered: String?
+    @ObservedObject var motion: NookMotion
+    let reduceMotion: Bool
+    let attended: Bool
+
+    @StateObject private var spring = RingSpring()
+    /// Published only when the plan changes: sets how often the ring redraws.
+    @ObservedObject private var energy = EnergyMonitor.shared
+    @State private var appeared = Date()
+    /// The last change of the piece under the pointer: the one it went to, the one it left, and when.
+    @State private var hoverChange = (id: String?.none, previous: String?.none, at: Date.distantPast)
+    /// Until when a transition (drawing in, a piece growing or shrinking) runs; flipped once it ends, to let the
+    /// timeline pause.
+    @State private var transitionUntil = Date.distantPast
+    @State private var transitionEnd: Task<Void, Never>?
+
+    private static let drawIn = 1.3
+    private static let hoverGrow = 0.15
+    private static let track = Color(hex: 0x141419)
+
+    var body: some View {
+        let moving = !reduceMotion && items.contains { $0.state == .running || $0.state == .waiting }
+        // Keeps drawing while the ring still catches up with Nook; once it rests, the spring asks for one more redraw so
+        // the timeline can pause again.
+        let following = !reduceMotion && !spring.settled(at: motion.offset)
+        let transition = transitionUntil > Date()
+        let plan = energy.plan
+        let rate = plan.frameRate(following || transition ? plan.interactiveFrameRate : plan.ambientFrameRate, attended: attended)
+        // perf: this view is the root of the ring's SeparateGraph (see NookTaskRing.body).
+        TimelineView(.nookFrames(fps: rate, paused: !moving && !following && !transition)) { context in
+            // Worked out here, on the main thread: the spring and the state belong to it. The canvas only gets values, so
+            // it can draw on a thread of its own.
+            let frame = frame(at: context.date)
+            Canvas(rendersAsynchronously: true) { canvas, size in
+                Self.draw(frame, in: &canvas, size: size)
+            }
+        }
+        .onAppear {
+            appeared = Date()
+            if !metrics.compact { startTransition(Self.drawIn) }
+        }
+        .onChange(of: hovered) { previous, id in
+            hoverChange = (id, previous, Date())
+            startTransition(Self.hoverGrow)
+        }
+        .onDisappear { transitionEnd?.cancel() }
+    }
+
+    /// Runs the timeline for `duration` at the interactive rate, then lets it pause again.
+    private func startTransition(_ duration: TimeInterval) {
+        guard !reduceMotion else { return }
+        let until = Date().addingTimeInterval(duration)
+        guard until > transitionUntil else { return }
+        transitionUntil = until
+        transitionEnd?.cancel()
+        transitionEnd = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000) + 20_000_000)
+            guard !Task.isCancelled else { return }
+            transitionUntil = .distantPast
+        }
+    }
+
+    /// One frame of the ring, as plain values.
+    private struct Frame {
+        var offset = CGSize.zero
+        var stretch: (amount: CGFloat, direction: Double) = (0, 0)
+        var radius: CGFloat = 0
+        var trackWidth: CGFloat = 0
+        var trackOpacity: Double = 1
+        var glowRadius: CGFloat = 2
+        var lines: [(path: Path, color: Color, width: CGFloat)] = []
+    }
+
+    private func frame(at date: Date) -> Frame {
+        let t = date.timeIntervalSinceReferenceDate
+        let since = date.timeIntervalSince(appeared)
+        let radius = metrics.radius
+        let width = metrics.lineWidth
+        // The closed notch comes and goes all day: there the ring is simply there, without drawing itself in.
+        let drawn = metrics.compact || reduceMotion
+        var frame = Frame()
+        frame.stretch = elastic(at: t)
+        frame.offset = spring.position
+        frame.radius = radius
+        frame.trackWidth = width + 0.9
+        frame.trackOpacity = drawn ? 1 : Double(Self.easeOut(Self.progress(since, delay: 0.25, duration: 0.5)))
+        frame.glowRadius = metrics.compact ? 1 : 2
+        for (i, item) in items.enumerated() {
+            let span = metrics.span(i)
+            let grown = drawn ? 1 : Self.springOut(Self.progress(since, delay: 0.3 + Double(i) * 0.08, duration: 0.7))
+            guard grown > 0 else { continue }
+            let end = span.start + (span.end - span.start) * grown
+            let lineWidth = width * (1 + 0.5 * hot(item.id, at: date))
+            let pulse = item.state == .waiting && !reduceMotion ? 0.5 + 0.5 * abs(cos(t * 2)) : 1
+            frame.lines.append((Self.arc(span.start, end, radius: radius),
+                                item.color.opacity(item.state == .running ? 0.28 : pulse), lineWidth))
+            if item.state == .running, drawn || since > 0.9 {
+                let light = comet(span, t: t)
+                frame.lines.append((Self.arc(light.start, light.end, radius: radius), item.color, lineWidth))
+            }
+        }
+        return frame
+    }
+
+    private static func draw(_ frame: Frame, in canvas: inout GraphicsContext, size: CGSize) {
+        // Centered, moved with the spring and stretched along the line towards Nook, a little narrower across it, like a
+        // band that is pulled; then turned so a piece's 0 is at the top.
+        canvas.translateBy(x: size.width / 2 + frame.offset.width, y: size.height / 2 + frame.offset.height)
+        canvas.rotate(by: .radians(frame.stretch.direction))
+        canvas.scaleBy(x: 1 + frame.stretch.amount, y: 1 - frame.stretch.amount * 0.6)
+        canvas.rotate(by: .radians(-frame.stretch.direction - .pi / 2))
+        if frame.trackOpacity > 0 {
+            canvas.stroke(arc(0, 1, radius: frame.radius), with: .color(track.opacity(frame.trackOpacity)), lineWidth: frame.trackWidth)
+        }
+        // The glow: the pieces once more, blurred together in one layer, instead of a shadow per piece.
+        canvas.drawLayer { glow in
+            glow.addFilter(.blur(radius: frame.glowRadius))
+            glow.opacity = 0.55
+            for line in frame.lines {
+                glow.stroke(line.path, with: .color(line.color), style: StrokeStyle(lineWidth: line.width, lineCap: .round))
+            }
+        }
+        for line in frame.lines {
+            canvas.stroke(line.path, with: .color(line.color), style: StrokeStyle(lineWidth: line.width, lineCap: .round))
+        }
+    }
+
+    /// How far piece `id` has grown under the pointer, 0 to 1, easing over `hoverGrow`.
+    private func hot(_ id: String, at date: Date) -> CGFloat {
+        let p = reduceMotion ? 1 : Self.easeOut(Self.progress(date.timeIntervalSince(hoverChange.at), delay: 0, duration: Self.hoverGrow))
+        if hoverChange.id == id { return p }
+        // The piece the pointer just left shrinks back.
+        return hoverChange.previous == id ? 1 - p : 0
+    }
+
+    /// Moves the ring on towards Nook and says how far, and in which direction, it is pulled out of round.
+    private func elastic(at t: TimeInterval) -> (amount: CGFloat, direction: Double) {
+        guard !reduceMotion else { return (0, 0) }
+        let target = motion.offset
+        spring.advance(towards: target, at: t)
+        let dx = target.width - spring.position.width
+        let dy = target.height - spring.position.height
+        let pull = hypot(dx, dy)
+        guard pull > 0.05 else { return (0, 0) }
+        return (min(pull / metrics.radius * 0.9, 0.12), atan2(dy, dx))
+    }
+
+    /// A short light that sweeps through a running piece and back, so you see something is happening.
+    private func comet(_ span: (start: CGFloat, end: CGFloat), t: Double) -> (start: CGFloat, end: CGFloat) {
+        let length = min((metrics.compact ? 7 : 10) / (2 * .pi * metrics.radius), (span.end - span.start) * 0.35)
+        let phase = reduceMotion ? 0.5 : (1 - cos((t * 0.45 + Double(span.start)) * 2 * .pi)) / 2
+        let start = span.start + (span.end - span.start - length) * CGFloat(phase)
+        return (start, start + length)
+    }
+
+    /// An arc from fraction `start` to `end` of the circle, clockwise, starting at the drawing's 0 (turned to the top).
+    private static func arc(_ start: CGFloat, _ end: CGFloat, radius: CGFloat) -> Path {
+        var path = Path()
+        path.addArc(center: .zero, radius: radius, startAngle: .radians(Double(start) * 2 * .pi),
+                    endAngle: .radians(Double(end) * 2 * .pi), clockwise: false)
+        return path
+    }
+
+    private static func progress(_ elapsed: TimeInterval, delay: Double, duration: Double) -> CGFloat {
+        CGFloat(min(max((elapsed - delay) / duration, 0), 1))
+    }
+
+    private static func easeOut(_ p: CGFloat) -> CGFloat { 1 - (1 - p) * (1 - p) }
+
+    /// A spring with a little bounce, like `.spring(duration: 0.7, bounce: 0.15)`: past the end and back.
+    private static func springOut(_ p: CGFloat) -> CGFloat {
+        guard p < 1 else { return 1 }
+        let overshoot: CGFloat = 1.2
+        let q = p - 1
+        return 1 + q * q * ((overshoot + 1) * q + overshoot)
     }
 }
 

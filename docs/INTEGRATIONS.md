@@ -31,7 +31,7 @@ Code, it still applies to every coding agent. Mention any member you could not d
 | Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | `InboxMessage`/`InboxThread` (`ChatInbox.swift`), `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab` |
 | WhatsApp gateways | GOWA, OpenWA | `WhatsAppProvider` (`WhatsAppProvider.swift`), `WAWebhookEvent` (`WhatsAppGateway.swift`) |
 | Chat helper networks | every bridge in `apps/chatd` | `apps/chatd` (bridgev2 `MatrixAPI` in `matrix.go`, the `/v1` API, the `/v1/ws` live line) → `ChatServiceData` |
-| Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Copilot CLI, Muse Code, OpenCode, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `AgentConfigInstaller`, the hook event protocol, the session rows in the notch |
+| Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Copilot CLI, Muse Code, OpenCode, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
 | Connectors | everything registered with `SourceCatalog.register` | `SourceCatalog` (metadata, tools, aliases, intents) |
 | AI providers | the providers behind the Brain | `AIProvider`, the single `prepareRun` pipeline |
 | Platforms | `apps/macos`, `apps/ios`, `apps/linux`, `apps/windows`, `apps/android`, `apps/tauri` | `packages/protocol`, the companion protocol ([`COMPANION.md`](COMPANION.md)) |
@@ -57,6 +57,32 @@ it was linked) shows only what those rules prove.
 
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
 WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.
+
+## Coding agent timeline
+
+How a session's work reaches its timeline. Sessions Nook runs itself go through one path: each provider's handler only
+translates its own output into `AgentSignal`s, and `AgentTimeline` writes them by the same rules for every agent (one
+answer and one thought streaming at a time, a tool call is one row from start to end, nothing stays running after the
+turn). Add a provider by translating into those signals, never by writing `RunEvent`s for text, thinking or tools
+yourself.
+
+| Feature | Claude Code | Codex (app-server) | Codex (exec) | Gemini CLI (ACP) | Gemini CLI (headless) | ACP agents (OpenCode, Cursor, Grok, Antigravity…) |
+|---|---|---|---|---|---|---|
+| Answer streams live | ✓ | ✓ | – (only whole messages) | ✓ | ✓ | ✓ |
+| Thinking streams live | ✓ | ✓ | – (only whole reasoning) | ✓ | – (its stream has no thoughts) | ✓ (when the agent sends them) |
+| Tool input in the row | ✓ | ✓ (also MCP and dynamic tools) | ✓ (also MCP) | ✓ | ✓ | ✓ |
+| Tool output in the row | ✓ | ✓ (commands live, MCP results) | ✓ (commands, MCP results) | ✓ | ✓ | ✓ |
+| Files a call changed | ✓ (Edit/Write) | ✓ (`fileChange`) | ✓ (`file_change`) | ✓ (call paths) | ✓ (replace/write_file) | ✓ (call paths) |
+
+Sessions in a terminal are read from the agent's own transcript (`AgentTranscript`). Claude Code and Codex give
+messages, thinking, steps with their outcome and output, compactions and errors. Gemini CLI's chat file gives messages,
+thoughts and its `toolCalls` as the same steps (with outcome, output and the lines an edit changed).
+
+A session's title is the name the agent gave it, when it gives one: Claude Code's `custom-title` lines (the Claude app
+names every session, `/rename` too), Codex's `thread_name` in `session_index.jsonl`, and Antigravity's
+`conversation_summaries.db`. Gemini CLI's chat files hold no name, so its sessions take their first prompt. A session Nook
+takes over without either is named after its first question and then gets a written title (`generateTitle`), never the
+folder name.
 
 ## Platforms and chats
 

@@ -22,6 +22,33 @@ final class CILogTests: XCTestCase {
         XCTAssertTrue(CILogParser.steps(job: [:]).isEmpty)
     }
 
+    func testRunningJobKeepsItsClock() {
+        let job: [String: Any] = ["status": "in_progress", "started_at": "2026-10-28T12:00:00Z", "steps": [
+            ["number": 1, "name": "Set up job", "status": "completed", "conclusion": "success",
+             "started_at": "2026-10-28T12:00:00Z", "completed_at": "2026-10-28T12:00:05Z"],
+            ["number": 2, "name": "Build", "status": "in_progress", "started_at": "2026-10-28T12:00:05Z"],
+            ["number": 3, "name": "Test", "status": "queued"],
+        ]]
+        let log = CILogParser.log(job: job)
+        XCTAssertNotNil(log.started)
+        XCTAssertNil(log.finished, "a running job has no end yet")
+        XCTAssertEqual(log.runningStep?.name, "Build")
+        XCTAssertEqual(log.doneSteps, 1)
+        XCTAssertEqual(log.steps.map(\.running), [false, true, false], "a queued step waits, it does not run")
+        XCTAssertEqual(CILogParser.elapsed(started: log.steps[0].started, finished: log.steps[0].finished), 5)
+        let now = log.steps[1].started!.addingTimeInterval(72)
+        XCTAssertEqual(CILogParser.elapsed(started: log.steps[1].started, finished: nil, now: now), 72)
+        XCTAssertNil(CILogParser.elapsed(started: nil, finished: nil))
+    }
+
+    func testClock() {
+        XCTAssertEqual(CILogParser.clock(0), "0:00")
+        XCTAssertEqual(CILogParser.clock(42.9), "0:42")
+        XCTAssertEqual(CILogParser.clock(192), "3:12")
+        XCTAssertEqual(CILogParser.clock(3845), "1:04:05")
+        XCTAssertEqual(CILogParser.clock(-3), "0:00")
+    }
+
     func testCleanDropsTimestampsAndColours() {
         let raw = "\u{FEFF}2026-10-20T12:00:01.1234567Z ##[group]Run swift test\r\n"
             + "2026-10-20T12:00:02.0000000Z \u{1B}[31merror:\u{1B}[0m it broke\n"

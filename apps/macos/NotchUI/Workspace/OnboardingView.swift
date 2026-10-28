@@ -20,11 +20,18 @@ struct OnboardingView: View {
     private let steps = 4
     /// The "Coding agents" step, which the empty Agents tab opens directly (`AppModel.startOnboarding(at:)`).
     static let agentsStep = 2
+    /// The room between the sheet's edge and its content, for the header, each step's page, and the footer.
+    static let inset = NookTheme.Spacing.xxl
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-            header
-            stepPlan
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
+                header
+                stepPlan
+            }
+            .padding([.horizontal, .top], OnboardingView.inset)
+            .padding(.bottom, NookTheme.Spacing.lg)
+            // Each step is an `OnboardingPage`: it scrolls on its own, with the scroller at the sheet's edge.
             Group {
                 switch step {
                 case 0: brainStep
@@ -34,11 +41,14 @@ struct OnboardingView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            NookDivider()
             footer
+                .padding(.horizontal, OnboardingView.inset)
+                .padding(.vertical, NookTheme.Spacing.lg)
         }
         .foregroundStyle(NookTheme.paper)
-        .padding(NookTheme.Spacing.xxl)
-        .frame(width: 600, height: 600)
+        // The sheet can be resized: the step plan folds to symbols and every step scrolls when it gets small.
+        .frame(minWidth: 520, idealWidth: 680, maxWidth: 960, minHeight: 460, idealHeight: 640, maxHeight: 960)
         .background(NookTheme.canvas)
         .preferredColorScheme(.dark)
         .tint(NookTheme.iris)
@@ -82,9 +92,7 @@ struct OnboardingView: View {
     // MARK: 1 · Brain
 
     private var brainStep: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(tr("onboarding.brain.title")).font(NookTheme.TextStyle.strong)
-            Text(tr("onboarding.brain.detail", EmbeddedModel.memoryGB)).foregroundStyle(NookTheme.textSecondary)
+        OnboardingPage(title: tr("onboarding.brain.title"), detail: tr("onboarding.brain.detail", EmbeddedModel.memoryGB)) {
             if settings.brainReady {
                 Label(tr("settings.checklist.brain.ready", settings.activeModelName), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(NookTheme.mint)
@@ -108,7 +116,6 @@ struct OnboardingView: View {
                 ProgressView()
             }
             if let error { Text(error).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.coral) }
-            Spacer(minLength: 0)
             Button(tr("onboarding.brain.external")) { app.openSettings(section: .brain) }
                 .buttonStyle(.link)
                 .foregroundStyle(NookTheme.blue)
@@ -130,31 +137,48 @@ struct OnboardingView: View {
 
     // MARK: Step plan
 
-    /// The steps by name, the current one highlighted and a check on each one that is done.
+    /// The steps by name, the current one highlighted and a check on each one that is done. A name never wraps: when
+    /// the four do not fit on one line, only the current step keeps its name and the others show their number or check.
     private var stepPlan: some View {
+        ViewThatFits(in: .horizontal) {
+            stepPlanRow(compact: false)
+            stepPlanRow(compact: true)
+        }
+    }
+
+    private func stepPlanRow(compact: Bool) -> some View {
         let _ = tick
         let titles = [tr("onboarding.plan.brain"), tr("onboarding.plan.permissions"), tr("onboarding.plan.agents"),
                       tr("onboarding.plan.connections")]
         let done = [settings.brainReady, missingPermissions.isEmpty, !app.connectedProviders.isEmpty, !app.connectors.active.isEmpty]
         return HStack(spacing: NookTheme.Spacing.md) {
             ForEach(0..<steps, id: \.self) { index in
+                let current = index == step
+                let named = !compact || current
                 Button { step = index } label: {
                     HStack(spacing: NookTheme.Spacing.sm) {
                         Image(systemName: done[index] ? "checkmark.circle.fill" : "\(index + 1).circle")
-                            .foregroundStyle(done[index] ? NookTheme.mint : (index == step ? NookTheme.paper : NookTheme.textSecondary))
-                        Text(titles[index])
-                            .font(NookTheme.TextStyle.label)
-                            .foregroundStyle(index == step ? NookTheme.paper : NookTheme.textSecondary)
-                        Spacer(minLength: 0)
+                            .foregroundStyle(done[index] ? NookTheme.mint : (current ? NookTheme.paper : NookTheme.textSecondary))
+                        if named {
+                            Text(titles[index])
+                                .font(NookTheme.TextStyle.label)
+                                .foregroundStyle(current ? NookTheme.paper : NookTheme.textSecondary)
+                                .lineLimit(1)
+                                .fixedSize()
+                            Spacer(minLength: 0)
+                        }
                     }
                     .padding(.horizontal, NookTheme.Spacing.md)
                     .padding(.vertical, NookTheme.Spacing.sm)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: named ? .infinity : nil)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                        .fill(index == step ? NookTheme.rowSelected : NookTheme.field))
+                        .fill(current ? NookTheme.rowSelected : NookTheme.field))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(titles[index])
+                .accessibilityLabel(titles[index])
+                .layoutPriority(current ? 1 : 0)
             }
         }
     }
@@ -175,41 +199,37 @@ struct OnboardingView: View {
         let recommended = SystemPermission.allCases.filter(\.isRecommended)
         let optional = SystemPermission.allCases.filter { !$0.isRecommended }
         let missing = missingPermissions
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            Text(tr("onboarding.permissions.title")).font(NookTheme.TextStyle.strong)
-            Text(tr("onboarding.permissions.detail")).foregroundStyle(NookTheme.textSecondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                    HStack {
-                        NookSectionLabel(tr("onboarding.permissions.recommended"), inset: 0)
-                        Text(tr("onboarding.permissions.progress", recommended.count - missing.count, recommended.count))
-                            .font(NookTheme.TextStyle.caption)
-                            .foregroundStyle(missing.isEmpty ? NookTheme.mint : NookTheme.textSecondary)
-                            .monospacedDigit()
-                        Spacer()
-                        if let next = missing.first {
-                            SmallPrimaryButton(title: tr("onboarding.permissions.allowNext", next.title), systemName: "checkmark") {
-                                app.requestPermission { await permissions.request(next, app: app); tick += 1 }
-                            }
+        return OnboardingPage(title: tr("onboarding.permissions.title"), detail: tr("onboarding.permissions.detail")) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                HStack {
+                    NookSectionLabel(tr("onboarding.permissions.recommended"), inset: 0)
+                    Text(tr("onboarding.permissions.progress", recommended.count - missing.count, recommended.count))
+                        .font(NookTheme.TextStyle.caption)
+                        .foregroundStyle(missing.isEmpty ? NookTheme.mint : NookTheme.textSecondary)
+                        .monospacedDigit()
+                    Spacer()
+                    if let next = missing.first {
+                        SmallPrimaryButton(title: tr("onboarding.permissions.allowNext", next.title), systemName: "checkmark") {
+                            app.requestPermission { await permissions.request(next, app: app); tick += 1 }
                         }
                     }
-                    ForEach(recommended) { permission in
-                        permissionRow(permission, granted: permissions.isGranted(permission))
-                    }
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        NookSectionLabel(tr("onboarding.permissions.optional"), inset: 0)
-                        Text(tr("onboarding.permissions.optionalDetail"))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.top, NookTheme.Spacing.lg)
-                    ForEach(optional) { permission in
-                        permissionRow(permission, granted: permissions.isGranted(permission))
-                    }
-                    keychainNote
-                        .padding(.top, NookTheme.Spacing.lg)
                 }
+                ForEach(recommended) { permission in
+                    permissionRow(permission, granted: permissions.isGranted(permission))
+                }
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    NookSectionLabel(tr("onboarding.permissions.optional"), inset: 0)
+                    Text(tr("onboarding.permissions.optionalDetail"))
+                        .font(NookTheme.TextStyle.detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, NookTheme.Spacing.lg)
+                ForEach(optional) { permission in
+                    permissionRow(permission, granted: permissions.isGranted(permission))
+                }
+                keychainNote
+                    .padding(.top, NookTheme.Spacing.lg)
             }
         }
         .onAppear { permissions.watch() }
@@ -260,15 +280,44 @@ struct OnboardingView: View {
     // MARK: 3 · Connections
 
     private var connectionsStep: some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
-            Text(tr("onboarding.connections.title")).font(NookTheme.TextStyle.strong)
-            Text(tr("onboarding.connections.detail", app.connectors.active.count)).foregroundStyle(NookTheme.textSecondary)
+        OnboardingPage(title: tr("onboarding.connections.title"),
+                       detail: tr("onboarding.connections.detail", app.connectors.active.count)) {
             NookGhostButton(title: tr("onboarding.connections.open"), symbol: "link", compact: true, height: 32) {
                 app.openSettings(section: .connections)
             }
             .fixedSize()
-            Spacer(minLength: 0)
-            Text(tr("onboarding.firstQuestion")).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.textSecondary)
+            Text(tr("onboarding.firstQuestion"))
+                .font(NookTheme.TextStyle.body)
+                .foregroundStyle(NookTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, NookTheme.Spacing.md)
         }
+    }
+}
+
+/// One step of the first-run flow: its title and what it is about, then its content, in a scroll view that spans the
+/// sheet's width so the scroller sits at the edge and never over a row. The text wraps instead of being cut off.
+struct OnboardingPage<Content: View>: View {
+    let title: String
+    let detail: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    Text(title).font(NookTheme.TextStyle.strong)
+                    Text(detail)
+                        .foregroundStyle(NookTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, OnboardingView.inset)
+            .padding(.top, NookTheme.Spacing.md)
+            .padding(.bottom, NookTheme.Spacing.xl)
+        }
+        .scrollBounceBehavior(.basedOnSize)
     }
 }
