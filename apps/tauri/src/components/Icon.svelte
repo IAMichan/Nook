@@ -1,6 +1,6 @@
 <script lang="ts">
   let { name, size = 18 }: {
-    name: "chat" | "agents" | "workspace" | "phone" | "settings" | "plus" | "search" | "sidebar" | "arrow" | "back" | "attach" | "mic" | "copy";
+    name: "chat" | "agents" | "workspace" | "phone" | "settings" | "plus" | "search" | "sidebar" | "arrow" | "back" | "attach" | "mic" | "copy" | "lock" | "unlock";
     size?: number;
   } = $props();
 </script>
@@ -19,5 +19,7 @@
   {:else if name === "attach"}<path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L12 3" />
   {:else if name === "mic"}<rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
   {:else if name === "copy"}<rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+  {:else if name === "lock"}<rect x="5" y="11" width="14" height="10" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  {:else if name === "unlock"}<rect x="5" y="11" width="14" height="10" rx="2.5" /><path d="M8 11V8a4 4 0 0 1 7.5-1.9" />
   {/if}
 </svg>
