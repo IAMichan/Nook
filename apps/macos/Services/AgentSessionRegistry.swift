@@ -114,6 +114,16 @@ enum AgentSessionRegistry {
         }
     }
 
+    /// A hooked session you continued in Nook as it was (the same conversation, not a copy): the Nook session is that chat
+    /// now, so the lists show it once. One that works or waits for you in its own app again stays, so you see it there.
+    /// `runs`: the agent and the conversation ids (current and earlier) of each session Nook runs.
+    static func isContinuedInNook(agent: String, conversation: String?, busy: Bool,
+                                  runs: [(agent: String, conversations: Set<String>)]) -> Bool {
+        guard !busy, let conversation, !conversation.isEmpty else { return false }
+        let family = AgentSessionRecord.family(agent)
+        return runs.contains { AgentSessionRecord.family($0.agent) == family && $0.conversations.contains(conversation) }
+    }
+
     private static func fold(_ a: AgentSessionRecord, _ b: AgentSessionRecord) -> AgentSessionRecord {
         let (lead, other) = a.leading >= b.leading ? (a, b) : (b, a)
         var result = lead

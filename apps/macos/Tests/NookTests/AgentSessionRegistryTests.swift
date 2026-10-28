@@ -99,4 +99,16 @@ final class AgentSessionRegistryTests: XCTestCase {
         XCTAssertTrue(AgentProcessEnvironment.isNookOwned("9 claude -p NOOK_INTERNAL=1"))
         XCTAssertFalse(AgentProcessEnvironment.isNookOwned("9 claude PATH=/usr/bin"))
     }
+
+    /// The desktop app's chat you continued in Nook is the Nook session now: listed once. A copy Nook made (another id)
+    /// and a chat that works in its app again stay.
+    func testAChatContinuedInNookIsListedOnce() {
+        let runs: [(agent: String, conversations: Set<String>)] = [(agent: "Claude Code", conversations: ["abc", "older"])]
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "abc", busy: false, runs: runs))
+        XCTAssertTrue(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: "older", busy: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "copy", busy: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude (app)", conversation: "abc", busy: true, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Codex", conversation: "abc", busy: false, runs: runs))
+        XCTAssertFalse(AgentSessionRegistry.isContinuedInNook(agent: "Claude Code", conversation: nil, busy: false, runs: runs))
+    }
 }
