@@ -339,8 +339,11 @@ struct SessionComposer<Controls: View>: View {
                 }
             }
             if choicesBelow {
-                HStack(alignment: .center, spacing: NookTheme.Spacing.md) {
+                // The text gets 4 pt of its own above and below, so lines that wrap keep 12 pt from the edges while the
+                // send button stays 8 pt in; one line still fits beside the button, so the 48 pt capsule does not grow.
+                HStack(alignment: .center, spacing: NookTheme.Spacing.lg) {
                     withKeys(field(focused: focused), focused: focused.wrappedValue)
+                        .padding(.vertical, NookTheme.Spacing.xs)
                         .frame(minHeight: minHeight, alignment: .center)
                     sendCluster
                 }
