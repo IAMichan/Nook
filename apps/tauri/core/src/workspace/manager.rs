@@ -2148,6 +2148,57 @@ impl Manager {
         Ok(branch)
     }
 
+    /// Een nieuwe branch voor een nieuwe pull request, met de niet-gecommitte wijzigingen mee. Geeft de naam en het
+    /// snijpunt voor `move_onto_base`.
+    pub fn start_branch(self: &Arc<Self>, id: Uuid, topic: &str) -> Result<(String, Option<String>), String> {
+        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        if run.status.is_active() {
+            return Err("Kan niet terwijl de agent werkt.".into());
+        }
+        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let dir = &run.working_directory;
+        let name = super::models::branch_name(topic, Uuid::new_v4());
+        let cut = git.start_branch(dir, &name, &Self::push_remote(git, dir)).map_err(|e| e.0)?;
+        let mut out = Out::default();
+        {
+            let mut s = self.lock();
+            Self::append(
+                &mut s,
+                id,
+                RunEvent::new(EventKind::System, format!("Branch {name} gestart voor een nieuwe pull request")),
+                &mut out,
+            );
+            Self::update(&mut s, id, |r| r.branch = Some(name.clone()));
+        }
+        self.emit(out);
+        self.refresh_git(id);
+        Ok((name, cut))
+    }
+
+    /// Alleen het nieuwe werk in de nieuwe pull request: de commits na `cut` op de basis van de sessie.
+    pub fn move_onto_base(self: &Arc<Self>, id: Uuid, cut: &str) -> Result<bool, String> {
+        let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;
+        let git = self.git.as_ref().ok_or("Git is niet gevonden.")?;
+        let dir = &run.working_directory;
+        let remote = Self::push_remote(git, dir);
+        let base = git
+            .default_branch(dir, &remote)
+            .or_else(|| run.base_branch.clone().map(|b| b.trim_start_matches("origin/").to_string()))
+            .ok_or("De basisbranch is onbekend.")?;
+        let moved = git.move_onto_base(dir, &base, &remote, cut);
+        self.refresh_git(id);
+        Ok(moved)
+    }
+
+    fn push_remote(git: &Git, dir: &str) -> String {
+        let remotes = git.remotes(dir);
+        if remotes.iter().any(|r| r == "origin") {
+            "origin".to_string()
+        } else {
+            remotes.first().cloned().unwrap_or_else(|| "origin".into())
+        }
+    }
+
     /// Alleen fast-forward, nooit terwijl de agent werkt.
     pub fn pull(self: &Arc<Self>, id: Uuid) -> Result<(), String> {
         let run = self.run(id).ok_or("Deze sessie bestaat niet meer.")?;

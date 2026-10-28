@@ -43,7 +43,16 @@ final class PullRequestSync: ObservableObject {
 
     func merged(_ id: UUID) -> Bool { PullRequestSettlement.shouldSettle(links: links[id] ?? []) }
 
-    /// A GitHub pull request merged from Nook: the badges of its sessions turn merged at once, not at the next round.
+    /// The session moved on to a new branch: its old pull requests no longer say anything about it (a merged one would
+    /// settle it), and the new branch is asked about in the next round.
+    func forget(_ id: UUID) {
+        guard links[id] != nil || checked[id] != nil else { return }
+        links[id] = nil
+        checked[id] = nil
+        save()
+    }
+
+    /// A GitHub pull request merged from Nook:the badges of its sessions turn merged at once, not at the next round.
     func markMerged(repository: String, number: Int) {
         func settle(_ list: [PullRequestLink]) -> [PullRequestLink] {
             list.map { link in

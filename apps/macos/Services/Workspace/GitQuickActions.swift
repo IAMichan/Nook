@@ -2,13 +2,17 @@ import Foundation
 
 /// Single git action button: what it does depends on the state of the branch. Changes are committed (with a message an
 /// agent writes), then pushed, then proposed as a pull request, as far as makes sense; a branch that is behind is
-/// pulled; a diverged branch is left to you.
+/// pulled; a diverged branch is left to you. Once the branch's pull request is merged or closed, new work goes to a new
+/// branch with a pull request of its own, so one chat can open several.
 enum GitQuickAction: Equatable, Sendable {
     case commit, commitPush, commitPushPR, push, pushPR, createPR, pull
+    /// A new branch (with the changes, committed there) for a new pull request.
+    case branchCommitPushPR, branchPushPR
 
-    var commits: Bool { self == .commit || self == .commitPush || self == .commitPushPR }
+    var commits: Bool { self == .commit || self == .commitPush || self == .commitPushPR || self == .branchCommitPushPR }
     var pushes: Bool { self != .commit && self != .pull }
-    var proposes: Bool { self == .commitPushPR || self == .pushPR || self == .createPR }
+    var proposes: Bool { self == .commitPushPR || self == .pushPR || self == .createPR || startsBranch }
+    var startsBranch: Bool { self == .branchCommitPushPR || self == .branchPushPR }
 
     /// The localization key of the button's label.
     var labelKey: String {
@@ -20,6 +24,7 @@ enum GitQuickAction: Equatable, Sendable {
         case .pushPR: return "ws.quick.pushPR"
         case .createPR: return "ws.quick.createPR"
         case .pull: return "ws.quick.pull"
+        case .branchCommitPushPR, .branchPushPR: return "ws.quick.newBranchPR"
         }
     }
 
@@ -29,6 +34,7 @@ enum GitQuickAction: Equatable, Sendable {
         case .commit: return "ws.quick.done.commit"
         case .commitPush, .push: return "ws.quick.done.push"
         case .commitPushPR, .pushPR, .createPR: return "ws.quick.done.pr"
+        case .branchCommitPushPR, .branchPushPR: return "ws.quick.done.newBranchPR"
         case .pull: return "ws.quick.done.pull"
         }
     }
@@ -46,6 +52,8 @@ struct GitQuickState: Equatable, Sendable {
     /// Commits on this branch that the base branch does not have (for a branch that was never pushed).
     var aheadOfBase: Int
     var hasOpenPullRequest: Bool
+    /// The branch had a pull request that is merged or closed (and none is open): its work is done.
+    var pullRequestLanded = false
 }
 
 enum GitQuickResolver {
@@ -53,19 +61,43 @@ enum GitQuickResolver {
     static func resolve(_ state: GitQuickState) -> Result<GitQuickAction, Reason> {
         guard state.branch != nil else { return .failure(Reason("ws.quick.detached")) }
         let finished = state.hasOpenPullRequest || state.isDefaultBranch
+        let landed = landed(state)
         if state.hasChanges {
             if !state.hasRemote { return .success(.commit) }
+            if landed { return .success(.branchCommitPushPR) }
             return .success(finished ? .commitPush : .commitPushPR)
         }
         if state.ahead > 0 && state.behind > 0 { return .failure(Reason("ws.quick.diverged")) }
         if state.behind > 0 { return .success(.pull) }
         if !state.hasRemote { return .failure(Reason("ws.quick.noRemote")) }
+        if landed && state.ahead > 0 { return .success(.branchPushPR) }
         if state.ahead > 0 || (!state.hasUpstream && state.aheadOfBase > 0) {
             return .success(finished ? .push : .pushPR)
         }
         if !state.hasUpstream { return .failure(Reason("ws.quick.nothingToPush")) }
+        // A merged branch is still ahead of the base after a squash: proposing it again would repeat the merged work.
+        if landed { return .failure(Reason("ws.quick.landed")) }
         if !finished && state.aheadOfBase > 0 { return .success(.createPR) }
         return .failure(Reason("ws.quick.upToDate"))
+    }
+
+    /// The other way to go, offered beside the main action: changes next to an open pull request (or on the default
+    /// branch) can start a new branch and pull request of their own instead.
+    static func alternatives(_ state: GitQuickState) -> [GitQuickAction] {
+        guard state.branch != nil, state.hasChanges, state.hasRemote, !landed(state),
+              state.hasOpenPullRequest || state.isDefaultBranch else { return [] }
+        return [.branchCommitPushPR]
+    }
+
+    /// The localization key of the line under the action that says where its work goes, when that is not obvious.
+    static func destinationKey(_ state: GitQuickState, action: GitQuickAction) -> String? {
+        if action.startsBranch { return landed(state) ? "ws.quick.landedNewBranch" : "ws.quick.newBranchHint" }
+        if state.hasOpenPullRequest && !state.isDefaultBranch && action.pushes { return "ws.quick.addsToPR" }
+        return nil
+    }
+
+    private static func landed(_ state: GitQuickState) -> Bool {
+        state.pullRequestLanded && !state.hasOpenPullRequest && !state.isDefaultBranch
     }
 
     struct Reason: Error, Equatable { let key: String; init(_ key: String) { self.key = key } }
@@ -94,6 +126,33 @@ extension GitService {
         if !body.isEmpty { arguments += ["-m", body] }
         try run(arguments, in: directory, timeout: 120)
         return try run(["rev-parse", "--short", "HEAD"], in: directory).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A new branch at HEAD, taking the uncommitted changes along. Returns where the branch it left was last pushed
+    /// (`origin/feat`), the cut for `moveOntoBase`.
+    func startBranch(_ directory: String, name: String, remote: String) throws -> String? {
+        guard !name.isEmpty, !name.hasPrefix("-") else { throw GitError("Invalid branch name.") }
+        let old = currentBranch(directory)
+        try run(["switch", "-c", name], in: directory)
+        guard let old, refExists("refs/remotes/\(remote)/\(old)", in: directory) else { return nil }
+        return "\(remote)/\(old)"
+    }
+
+    /// Replays the commits made after `cut` onto the freshly fetched base, so a new pull request holds only the new work
+    /// (a squash-merged branch would otherwise bring its merged commits again). A conflict leaves the branch as it was.
+    /// Returns whether it moved.
+    @discardableResult
+    func moveOntoBase(_ directory: String, base: String, remote: String, cut: String) -> Bool {
+        _ = try? run(["fetch", "--quiet", remote, base], in: directory, timeout: 60)
+        let target = comparisonBase(directory, base: base, remote: remote)
+        guard target != cut, (try? run(["merge-base", "--is-ancestor", cut, "HEAD"], in: directory)) != nil else { return false }
+        do {
+            try run(["rebase", "--quiet", "--onto", target, cut], in: directory, timeout: 120)
+            return true
+        } catch {
+            _ = try? run(["rebase", "--abort"], in: directory)
+            return false
+        }
     }
 
     /// Fast-forward only: never a merge commit or a rebase behind your back.

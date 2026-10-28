@@ -681,7 +681,11 @@ impl PullRequestDetail {
     /// bypass), so only what certainly fails holds the button back.
     pub fn finish(mut self) -> Self {
         self.is_open = matches!(self.state, DetailState::Open | DetailState::Draft);
-        self.can_merge = self.state == DetailState::Open && !self.conflicted() && self.can_push != Some(false) && !self.held_back() && !self.methods.is_empty();
+        self.can_merge = self.state == DetailState::Open
+            && !self.conflicted()
+            && self.can_push != Some(false)
+            && !self.held_back()
+            && !self.methods.is_empty();
         self.check_summary = self.summary();
         self.merge_note = self.note().map(str::to_string);
         self
@@ -1404,11 +1408,15 @@ mod tests {
         assert_eq!((read_only.can_merge, read_only.merge_note.as_deref()), (false, Some("noAccess")));
 
         let mut blocked = parse_detail(&pull(json!({"mergeable_state": "blocked"})), None).unwrap();
-        blocked.apply_viewer(&json!({"viewerPermission": "WRITE", "pullRequest": {"mergeStateStatus": "BLOCKED", "viewerCanMergeAsAdmin": false}}));
+        blocked.apply_viewer(
+            &json!({"viewerPermission": "WRITE", "pullRequest": {"mergeStateStatus": "BLOCKED", "viewerCanMergeAsAdmin": false}}),
+        );
         let blocked = blocked.finish();
         assert_eq!((blocked.can_merge, blocked.merge_note.as_deref()), (false, Some("blocked")));
         let mut admin = parse_detail(&pull(json!({"mergeable_state": "blocked"})), None).unwrap();
-        admin.apply_viewer(&json!({"viewerPermission": "ADMIN", "pullRequest": {"mergeStateStatus": "BLOCKED", "viewerCanMergeAsAdmin": true}}));
+        admin.apply_viewer(
+            &json!({"viewerPermission": "ADMIN", "pullRequest": {"mergeStateStatus": "BLOCKED", "viewerCanMergeAsAdmin": true}}),
+        );
         assert!(admin.finish().can_merge);
         let mut triage = parse_detail(&pull(json!({})), None).unwrap();
         triage.apply_viewer(&json!({"viewerPermission": "TRIAGE", "pullRequest": {"mergeStateStatus": "CLEAN"}}));

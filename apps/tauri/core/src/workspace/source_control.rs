@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::git::{Git, Result as GitResult};
+use super::git::{Git, GitError, Result as GitResult};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "host")]
@@ -360,7 +360,8 @@ fn query(items: &[(&str, Option<&str>)]) -> String {
 
 // MARK: De git-knop
 
-/// De ene git-knop: wat hij doet hangt af van de stand van de branch.
+/// De ene git-knop: wat hij doet hangt af van de stand van de branch. Is de pull request van de branch gemerged of
+/// gesloten, dan gaat nieuw werk naar een nieuwe branch met een eigen pull request: één chat kan er meerdere openen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum QuickAction {
@@ -371,11 +372,14 @@ pub enum QuickAction {
     PushPr,
     CreatePr,
     Pull,
+    /// Een nieuwe branch (met de wijzigingen, daar gecommit) voor een nieuwe pull request.
+    BranchCommitPushPr,
+    BranchPushPr,
 }
 
 impl QuickAction {
     pub fn commits(self) -> bool {
-        matches!(self, Self::Commit | Self::CommitPush | Self::CommitPushPr)
+        matches!(self, Self::Commit | Self::CommitPush | Self::CommitPushPr | Self::BranchCommitPushPr)
     }
 
     pub fn pushes(self) -> bool {
@@ -383,7 +387,11 @@ impl QuickAction {
     }
 
     pub fn proposes(self) -> bool {
-        matches!(self, Self::CommitPushPr | Self::PushPr | Self::CreatePr)
+        matches!(self, Self::CommitPushPr | Self::PushPr | Self::CreatePr) || self.starts_branch()
+    }
+
+    pub fn starts_branch(self) -> bool {
+        matches!(self, Self::BranchCommitPushPr | Self::BranchPushPr)
     }
 
     pub fn label(self) -> &'static str {
@@ -395,6 +403,7 @@ impl QuickAction {
             Self::PushPr => "Push & maak PR",
             Self::CreatePr => "Maak PR",
             Self::Pull => "Pull",
+            Self::BranchCommitPushPr | Self::BranchPushPr => "Nieuwe branch en PR",
         }
     }
 }
@@ -412,6 +421,8 @@ pub struct QuickState {
     /// Commits op deze branch die de basis niet heeft (voor een branch die nooit gepusht is).
     pub ahead_of_base: u32,
     pub has_open_pull_request: bool,
+    /// De branch had een pull request die gemerged of gesloten is (en er is er geen open): zijn werk is klaar.
+    pub pull_request_landed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -422,6 +433,7 @@ pub enum QuickReason {
     NoRemote,
     NothingToPush,
     UpToDate,
+    Landed,
 }
 
 impl QuickReason {
@@ -432,6 +444,7 @@ impl QuickReason {
             Self::NoRemote => "Deze repository heeft geen remote om naar te pushen.",
             Self::NothingToPush => "Geen eigen commits om te pushen.",
             Self::UpToDate => "De branch is bij. Niets te doen.",
+            Self::Landed => "De pull request van deze branch is gemerged. Nieuwe wijzigingen gaan naar een nieuwe branch.",
         }
     }
 }
@@ -442,9 +455,13 @@ pub fn resolve(state: &QuickState) -> Result<QuickAction, QuickReason> {
         return Err(QuickReason::Detached);
     }
     let finished = state.has_open_pull_request || state.is_default_branch;
+    let landed = landed(state);
     if state.has_changes {
         if !state.has_remote {
             return Ok(QuickAction::Commit);
+        }
+        if landed {
+            return Ok(QuickAction::BranchCommitPushPr);
         }
         return Ok(if finished { QuickAction::CommitPush } else { QuickAction::CommitPushPr });
     }
@@ -457,16 +474,53 @@ pub fn resolve(state: &QuickState) -> Result<QuickAction, QuickReason> {
     if !state.has_remote {
         return Err(QuickReason::NoRemote);
     }
+    if landed && state.ahead > 0 {
+        return Ok(QuickAction::BranchPushPr);
+    }
     if state.ahead > 0 || (!state.has_upstream && state.ahead_of_base > 0) {
         return Ok(if finished { QuickAction::Push } else { QuickAction::PushPr });
     }
     if !state.has_upstream {
         return Err(QuickReason::NothingToPush);
     }
+    // Een squash-gemergde branch loopt nog voor op de basis: hem opnieuw voorstellen zou het gemergde werk herhalen.
+    if landed {
+        return Err(QuickReason::Landed);
+    }
     if !finished && state.ahead_of_base > 0 {
         return Ok(QuickAction::CreatePr);
     }
     Err(QuickReason::UpToDate)
+}
+
+/// De andere weg, naast de hoofdactie: wijzigingen naast een open pull request (of op de standaardbranch) kunnen een
+/// eigen nieuwe branch en pull request krijgen.
+pub fn alternatives(state: &QuickState) -> Vec<QuickAction> {
+    if state.branch.is_none()
+        || !state.has_changes
+        || !state.has_remote
+        || landed(state)
+        || !(state.has_open_pull_request || state.is_default_branch)
+    {
+        return Vec::new();
+    }
+    vec![QuickAction::BranchCommitPushPr]
+}
+
+/// De regel onder de actie die zegt waar het werk heen gaat, als dat niet vanzelf spreekt.
+pub fn destination(state: &QuickState, action: QuickAction) -> Option<&'static str> {
+    if action.starts_branch() {
+        return Some(if landed(state) {
+            "De vorige pull request is gemerged: deze wijzigingen krijgen een nieuwe branch en een eigen pull request."
+        } else {
+            "Zet deze wijzigingen op een nieuwe branch met een eigen pull request."
+        });
+    }
+    (state.has_open_pull_request && !state.is_default_branch && action.pushes()).then_some("Komt bij de open pull request van deze branch.")
+}
+
+fn landed(state: &QuickState) -> bool {
+    state.pull_request_landed && !state.has_open_pull_request && !state.is_default_branch
 }
 
 impl Git {
@@ -480,6 +534,39 @@ impl Git {
         }
         self.run_with(&args, dir, std::time::Duration::from_secs(120), &[0], &Default::default())?;
         Ok(self.run(&["rev-parse", "--short", "HEAD"], dir)?.trim().to_string())
+    }
+
+    /// Een nieuwe branch op HEAD; de niet-gecommitte wijzigingen gaan mee. Geeft waar de verlaten branch het laatst
+    /// gepusht is (`origin/feat`): het snijpunt voor `move_onto_base`.
+    pub fn start_branch(&self, dir: &str, name: &str, remote: &str) -> GitResult<Option<String>> {
+        if name.is_empty() || name.starts_with('-') {
+            return Err(GitError("Ongeldige branchnaam.".into()));
+        }
+        let old = self.current_branch(dir);
+        self.run(&["switch", "-c", name], dir)?;
+        Ok(old.filter(|o| self.ref_exists(&format!("refs/remotes/{remote}/{o}"), dir)).map(|o| format!("{remote}/{o}")))
+    }
+
+    /// Zet de commits na `cut` op de net opgehaalde basis, zodat een nieuwe pull request alleen het nieuwe werk bevat
+    /// (een squash-gemergde branch zou anders zijn gemergde commits weer meenemen). Bij een conflict blijft de branch
+    /// zoals hij was. Geeft of hij verplaatst is.
+    pub fn move_onto_base(&self, dir: &str, base: &str, remote: &str, cut: &str) -> bool {
+        let _ = self.run(&["fetch", "--quiet", remote, base], dir);
+        let target = self.comparison_base(dir, base, remote);
+        if target == cut || self.run(&["merge-base", "--is-ancestor", cut, "HEAD"], dir).is_err() {
+            return false;
+        }
+        let moved = self.run_with(
+            &["rebase", "--quiet", "--onto", &target, cut],
+            dir,
+            std::time::Duration::from_secs(120),
+            &[0],
+            &Default::default(),
+        );
+        if moved.is_err() {
+            let _ = self.run(&["rebase", "--abort"], dir);
+        }
+        moved.is_ok()
     }
 
     /// Alleen fast-forward: nooit een merge-commit of rebase achter je rug.
@@ -606,24 +693,31 @@ fn github_client() -> reqwest::Client {
         .clone()
 }
 
-/// De open pull request met `branch` als bron, of `None` (niet gekoppeld, niet gevonden, offline).
-pub async fn open_github_pull_request(tokens: &[String], repo: &str, branch: &str) -> Option<String> {
-    let owner = repo.split('/').next()?;
+/// De pull requests van een branch op GitHub: de open (als die er is) en of een eerdere gemerged of gesloten is.
+pub async fn github_branch_pull_requests(tokens: &[String], repo: &str, branch: &str) -> (Option<String>, bool) {
+    let Some(owner) = repo.split('/').next() else { return (None, false) };
     let client = github_client();
     for token in tokens {
         let request = github(client.get(format!("https://api.github.com/repos/{repo}/pulls")), token).query(&[
-            ("state", "open"),
+            ("state", "all"),
             ("head", &format!("{owner}:{branch}")),
-            ("per_page", "1"),
+            ("per_page", "10"),
         ]);
         let Ok(response) = request.send().await else { continue };
         if response.status().as_u16() != 200 {
             continue;
         }
         let Ok(list) = response.json::<Vec<Value>>().await else { continue };
-        return list.first().and_then(|p| p.get("html_url")).and_then(Value::as_str).map(str::to_string);
+        let open = list
+            .iter()
+            .find(|p| p.get("state").and_then(Value::as_str) == Some("open"))
+            .and_then(|p| p.get("html_url"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let landed = open.is_none() && !list.is_empty();
+        return (open, landed);
     }
-    None
+    (None, false)
 }
 
 #[cfg(test)]
@@ -819,6 +913,48 @@ mod tests {
                 s.branch = None;
             })),
             Err(QuickReason::Detached)
+        );
+    }
+
+    #[test]
+    fn quick_action_after_a_merged_pull_request() {
+        let landed = |f: fn(&mut QuickState)| {
+            state(|s| {
+                s.pull_request_landed = true;
+                s.ahead_of_base = 3;
+                f(s);
+            })
+        };
+        assert_eq!(resolve(&landed(|s| s.has_changes = true)), Ok(QuickAction::BranchCommitPushPr));
+        assert_eq!(resolve(&landed(|s| s.ahead = 1)), Ok(QuickAction::BranchPushPr));
+        assert_eq!(resolve(&landed(|_| {})), Err(QuickReason::Landed), "een squash-gemergde branch nooit opnieuw voorstellen");
+        assert_eq!(
+            resolve(&landed(|s| {
+                s.has_changes = true;
+                s.has_open_pull_request = true;
+            })),
+            Ok(QuickAction::CommitPush)
+        );
+        assert!(destination(&landed(|s| s.has_changes = true), QuickAction::BranchCommitPushPr).is_some());
+        assert!(QuickAction::BranchCommitPushPr.commits() && QuickAction::BranchCommitPushPr.proposes());
+        assert!(!QuickAction::BranchPushPr.commits() && QuickAction::BranchPushPr.starts_branch());
+    }
+
+    #[test]
+    fn new_branch_beside_an_open_pull_request() {
+        let open = state(|s| {
+            s.has_changes = true;
+            s.has_open_pull_request = true;
+        });
+        assert_eq!(alternatives(&open), vec![QuickAction::BranchCommitPushPr]);
+        assert_eq!(destination(&open, QuickAction::CommitPush), Some("Komt bij de open pull request van deze branch."));
+        assert!(alternatives(&state(|s| s.has_changes = true)).is_empty());
+        assert_eq!(
+            alternatives(&state(|s| {
+                s.has_changes = true;
+                s.is_default_branch = true;
+            })),
+            vec![QuickAction::BranchCommitPushPr]
         );
     }
 
