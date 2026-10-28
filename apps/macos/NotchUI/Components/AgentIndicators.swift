@@ -64,24 +64,30 @@ struct ShimmerText: View {
     @Environment(\.nookAttended) private var attended
 
     var body: some View {
-        // perf: sized by its text, which a SeparateGraph cannot do; it shows only on the step that runs now.
-        TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
-            let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
-            Text(text)
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: NookTheme.textMuted, location: 0),
-                            .init(color: NookTheme.textMuted, location: max(0, phase - 0.15)),
-                            .init(color: NookTheme.paper, location: phase),
-                            .init(color: NookTheme.textMuted, location: min(1, phase + 0.15)),
-                            .init(color: NookTheme.textMuted, location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-        }
+        // The text itself stands still; only the light moves, in a graph of its own (`SeparateGraph`) cut to the text's
+        // shape. A timeline around the text laid out the whole window again on every frame, for as long as an agent works.
+        Text(text)
+            .foregroundStyle(NookTheme.textMuted)
+            .overlay {
+                SeparateGraph {
+                    TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended), paused: energy.plan.pace == .paused)) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
+                        LinearGradient(
+                            stops: [
+                                .init(color: NookTheme.paper.opacity(0), location: 0),
+                                .init(color: NookTheme.paper.opacity(0), location: max(0, phase - 0.15)),
+                                .init(color: NookTheme.paper, location: phase),
+                                .init(color: NookTheme.paper.opacity(0), location: min(1, phase + 0.15)),
+                                .init(color: NookTheme.paper.opacity(0), location: 1)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    }
+                }
+                .allowsHitTesting(false)
+                .mask { Text(text) }
+            }
     }
 }
 
