@@ -40,10 +40,9 @@ struct CommandConsolePanel: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
+                    .padding(.bottom, 10)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .cardBackground(NookTheme.notch, stroke: NookTheme.line2, radius: NookTheme.Radius.card, style: .continuous)
                 .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.output?.count ?? 0) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
                 .onChange(of: event.id) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
