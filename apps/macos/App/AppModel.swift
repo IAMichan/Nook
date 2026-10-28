@@ -105,7 +105,11 @@ final class AppModel: ObservableObject {
     /// Charts and mail drafts: attached to the message currently being streamed.
     private(set) lazy var chatTools: [ToolSpec] = ChatTools.specs(
         onChart: { [weak self] chart in self?.attachToReply { $0.charts.append(chart) } },
-        onMail: { [weak self] mail in self?.attachToReply { $0.mails.append(mail) } }
+        onMail: { [weak self] mail in
+            self?.attachToReply { $0.mails.append(mail) }
+            // "Maak hem korter": the new version takes the place of the draft that was still open.
+            self?.chat.supersedeMails(by: mail)
+        }
     )
 
     /// What Nook learned about the user, stored next to the open loops (see `AppModel+Memory`).
