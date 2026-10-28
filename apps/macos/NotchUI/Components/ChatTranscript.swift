@@ -181,13 +181,13 @@ struct ChatTranscript: View {
                 switch row.entry {
                 case .day(_, let label):
                     ChatDayDivider(label: label)
-                case .message(_, let first, _):
+                case .message(_, let first, let last):
                     if row.id == newFrom, row.id != top {
                         ChatNewDivider()
                             .padding(.top, NookTheme.Spacing.md)
                     }
                     if let bubble = byID[row.id] {
-                        ChatBubbleView(bubble: bubble, first: first, newest: bubble.id == bubbles.last?.id,
+                        ChatBubbleView(bubble: bubble, first: first, last: last, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),
                                        onVote: voteAction(bubble))
@@ -215,8 +215,9 @@ struct ChatTranscript: View {
                                     Button(tr("chat.delete"), role: .destructive) { onDelete(bubble) }
                                 }
                             }
-                            // A new run starts with room above it; the messages of one run sit close together.
-                            .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.md : NookTheme.Spacing.xxs))
+                            // A new run starts with room above it; the messages of one run sit close together, so who
+                            // said what reads at a glance.
+                            .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs))
                             .id(bubble.id)
                     }
                 }
@@ -253,18 +254,22 @@ struct ChatTranscript: View {
     }
 }
 
-/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct". Just the quiet word, centered, with room
-/// around it: the space marks the break, no pill needed.
+/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct". A small soft label in the middle with
+/// room around it, as chat apps mark the day: easy to find while scrolling, quiet while reading.
 private struct ChatDayDivider: View {
     let label: String
 
     var body: some View {
         Text(label)
             .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(NookTheme.textTertiary)
+            .foregroundStyle(NookTheme.textSecondary)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .background(Capsule().fill(NookTheme.surface))
+            .overlay(Capsule().strokeBorder(NookTheme.hairline, lineWidth: 1))
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.xl)
-            .padding(.bottom, NookTheme.Spacing.sm)
+            .padding(.bottom, NookTheme.Spacing.md)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -276,6 +281,9 @@ private struct ChatBubbleView: View, Equatable {
     let bubble: ChatBubble
     /// The first of a run by one person: their name above it (in a group) and the bubble's corner points at them.
     let first: Bool
+    /// The last of a run: it carries the time (and your ticks); the others show it under the pointer, so a run of
+    /// messages reads as one calm block.
+    let last: Bool
     let newest: Bool
     let onOpen: () -> Void
     let onZoom: () -> Void
@@ -296,7 +304,7 @@ private struct ChatBubbleView: View, Equatable {
 
     /// The actions only count by whether they are there: they do the same for the same bubble.
     static func == (a: ChatBubbleView, b: ChatBubbleView) -> Bool {
-        a.bubble == b.bubble && a.first == b.first && a.newest == b.newest
+        a.bubble == b.bubble && a.first == b.first && a.last == b.last && a.newest == b.newest
             && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
             && (a.onVote == nil) == (b.onVote == nil)
     }
@@ -311,6 +319,12 @@ private struct ChatBubbleView: View, Equatable {
     /// The start of a long message while it is folded: its first lines, its first 700 characters.
     private var folded: String {
         String(bubble.text.components(separatedBy: "\n").prefix(Self.foldedLines).joined(separator: "\n").prefix(700))
+    }
+
+    /// Whether this bubble shows its time: the last of a run, and your message that is still going out or failed (that
+    /// must stay in sight). The others say it under the pointer, as a tooltip, so nothing in the chat shifts.
+    private var showsStamp: Bool {
+        last || bubble.ticks == .pending || bubble.ticks == .failed
     }
 
     /// When it was sent, and for your own how far it got.
@@ -427,7 +441,7 @@ private struct ChatBubbleView: View, Equatable {
                     // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
                     VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
                         media(attachment)
-                        stamp
+                        if showsStamp { stamp }
                     }
                 } else {
                     media(attachment)
@@ -453,7 +467,7 @@ private struct ChatBubbleView: View, Equatable {
                             .foregroundStyle(NookTheme.blue)
                         }
                     }
-                    stamp
+                    if showsStamp { stamp }
                 }
             } else if bubble.attachment == nil {
                 // A poll or an empty message: the time under it, on the right.
@@ -463,11 +477,13 @@ private struct ChatBubbleView: View, Equatable {
         .padding(.horizontal, bare ? NookTheme.Spacing.xs : NookTheme.Spacing.lg)
         .padding(.vertical, bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
         .background(shape.fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.13) : NookTheme.smoke)))
+        .help(showsStamp ? "" : bubble.time)
     }
 
     /// Round, with the first bubble of a run pointing at its writer the way a chat app's tail does.
     private var shape: UnevenRoundedRectangle {
-        let round = NookTheme.Radius.sheet
+        // As round as the bubbles in Nook's own chat: one shape for every conversation.
+        let round = NookTheme.Radius.bubble
         let tail = NookTheme.Radius.chip
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,

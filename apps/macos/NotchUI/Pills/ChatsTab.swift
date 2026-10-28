@@ -1559,6 +1559,7 @@ private struct ChatsDetail: View {
                     copyForApp()
                 }
             })
+            .offersNookReplies(!entry.lastIsMine)
             .tray(entry.read.isUnread
                 ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
                                markReadInNook: { app.markChatReadInNook(entry) },
