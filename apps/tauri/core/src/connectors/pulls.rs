@@ -25,6 +25,17 @@ pub enum PullState {
     Merged,
 }
 
+/// What the reviewers decided so far (GitHub's `reviewDecision`); `None` when the repository asks for no review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ReviewDecision {
+    #[default]
+    None,
+    Approved,
+    ChangesRequested,
+    Required,
+}
+
 /// One pull request in the list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +52,32 @@ pub struct PullRequestItem {
     /// A list saved before states existed only held open pull requests.
     #[serde(default)]
     pub state: PullState,
+    #[serde(default)]
+    pub review: ReviewDecision,
+    /// Comments and reviews on the conversation.
+    #[serde(default)]
+    pub comments: i64,
+    #[serde(default)]
+    pub additions: i64,
+    #[serde(default)]
+    pub deletions: i64,
+    /// A merge conflict with the base branch.
+    #[serde(default)]
+    pub conflicting: bool,
+}
+
+/// One open issue assigned to you.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueItem {
+    pub repo: String,
+    pub number: i64,
+    pub title: String,
+    pub url: Option<String>,
+    pub updated: Option<DateTime<Utc>>,
+    pub author: String,
+    pub comments: i64,
+    pub labels: Vec<String>,
 }
 
 impl PullRequestItem {
@@ -60,6 +97,9 @@ pub struct AccountPullRequests {
     pub login: String,
     pub mine: Vec<PullRequestItem>,
     pub reviews: Vec<PullRequestItem>,
+    /// The open issues assigned to you.
+    #[serde(default)]
+    pub issues: Vec<IssueItem>,
     /// Set when this account could not be read (token rejected, no connection).
     pub error: Option<String>,
     pub error_kind: Option<ErrorKind>,
@@ -132,8 +172,17 @@ pub fn watch_search(entry: &str, closed: bool) -> String {
 
 // GraphQL
 
+const ISSUE_FRAGMENT: &str = "fragment issue on Issue {
+  number title url updatedAt
+  author { login }
+  repository { nameWithOwner }
+  comments { totalCount }
+  labels(first: 4) { nodes { name } }
+}";
+
 const ROW_FRAGMENT: &str = "fragment row on PullRequest {
-  number title url isDraft updatedAt state
+  number title url isDraft updatedAt state reviewDecision mergeable additions deletions
+  comments { totalCount }
   author { login }
   repository { nameWithOwner }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -143,20 +192,23 @@ const ROW_FRAGMENT: &str = "fragment row on PullRequest {
 /// reviewed once closed or merged. Each row carries its state and CI as the rolled-up state of its latest commit.
 pub fn graphql_body() -> Value {
     let query = format!(
-        "query NookPullRequests($mine: String!, $reviews: String!, $mineClosed: String!, $reviewsClosed: String!) {{
+        "query NookPullRequests($mine: String!, $reviews: String!, $mineClosed: String!, $reviewsClosed: String!, $issues: String!) {{
   viewer {{ login }}
   mine: search(query: $mine, type: ISSUE, first: 50) {{ nodes {{ ...row }} }}
   reviews: search(query: $reviews, type: ISSUE, first: 50) {{ nodes {{ ...row }} }}
   mineClosed: search(query: $mineClosed, type: ISSUE, first: 30) {{ nodes {{ ...row }} }}
   reviewsClosed: search(query: $reviewsClosed, type: ISSUE, first: 30) {{ nodes {{ ...row }} }}
+  issues: search(query: $issues, type: ISSUE, first: 30) {{ nodes {{ ...issue }} }}
 }}
-{ROW_FRAGMENT}"
+{ROW_FRAGMENT}
+{ISSUE_FRAGMENT}"
     );
     json!({"query": query, "variables": {
         "mine": "is:pr is:open archived:false author:@me sort:updated-desc",
         "reviews": "is:pr is:open archived:false review-requested:@me sort:updated-desc",
         "mineClosed": "is:pr is:closed archived:false author:@me sort:updated-desc",
-        "reviewsClosed": "is:pr is:closed archived:false reviewed-by:@me -author:@me sort:updated-desc"
+        "reviewsClosed": "is:pr is:closed archived:false reviewed-by:@me -author:@me sort:updated-desc",
+        "issues": "is:issue is:open archived:false assignee:@me sort:updated-desc"
     }})
 }
 
@@ -222,6 +274,38 @@ fn rows(search: &Value) -> Vec<PullRequestItem> {
                 author: n["author"]["login"].as_str().unwrap_or("").into(),
                 ci: rollup(list(&n["commits"]["nodes"]).last().and_then(|c| c["commit"]["statusCheckRollup"]["state"].as_str())),
                 state: pull_state(n["state"].as_str()),
+                review: review_decision(n["reviewDecision"].as_str()),
+                comments: int(&n["comments"]["totalCount"]).unwrap_or(0),
+                additions: int(&n["additions"]).unwrap_or(0),
+                deletions: int(&n["deletions"]).unwrap_or(0),
+                conflicting: n["mergeable"].as_str() == Some("CONFLICTING"),
+            })
+        })
+        .collect()
+}
+
+pub fn review_decision(value: Option<&str>) -> ReviewDecision {
+    match value {
+        Some("APPROVED") => ReviewDecision::Approved,
+        Some("CHANGES_REQUESTED") => ReviewDecision::ChangesRequested,
+        Some("REVIEW_REQUIRED") => ReviewDecision::Required,
+        _ => ReviewDecision::None,
+    }
+}
+
+fn issue_rows(search: &Value) -> Vec<IssueItem> {
+    list(&search["nodes"])
+        .iter()
+        .filter_map(|n| {
+            Some(IssueItem {
+                repo: n["repository"]["nameWithOwner"].as_str()?.to_string(),
+                number: int(&n["number"])?,
+                title: n["title"].as_str().unwrap_or("Untitled").into(),
+                url: link(n["url"].as_str()),
+                updated: date(&n["updatedAt"]),
+                author: n["author"]["login"].as_str().unwrap_or("").into(),
+                comments: int(&n["comments"]["totalCount"]).unwrap_or(0),
+                labels: list(&n["labels"]["nodes"]).iter().filter_map(|l| l["name"].as_str().map(String::from)).collect(),
             })
         })
         .collect()
@@ -229,13 +313,16 @@ fn rows(search: &Value) -> Vec<PullRequestItem> {
 
 /// Your login and both lists, open pull requests first, then the closed and merged ones. GitHub's own message when the
 /// query failed as a whole.
-pub fn parse_graphql(root: &Value) -> CResult<(String, Vec<PullRequestItem>, Vec<PullRequestItem>)> {
+/// Your login, your pull requests, the ones waiting for your review, and the issues assigned to you.
+type Overview = (String, Vec<PullRequestItem>, Vec<PullRequestItem>, Vec<IssueItem>);
+
+pub fn parse_graphql(root: &Value) -> CResult<Overview> {
     let data = payload(root)?;
     let mut mine = rows(&data["mine"]);
     mine.extend(rows(&data["mineClosed"]));
     let mut reviews = rows(&data["reviews"]);
     reviews.extend(rows(&data["reviewsClosed"]));
-    Ok((data["viewer"]["login"].as_str().unwrap_or("").to_string(), mine, reviews))
+    Ok((data["viewer"]["login"].as_str().unwrap_or("").to_string(), mine, reviews, issue_rows(&data["issues"])))
 }
 
 /// Open ones first, each part newest first, every pull request once.
@@ -324,12 +411,13 @@ async fn load_account(env: &Env, target: &Target, watching: &[String]) -> Accoun
         fetch_watched(env, &target.token, watching)
     );
     match list {
-        Ok((login, mine, reviews)) => AccountPullRequests {
+        Ok((login, mine, reviews, issues)) => AccountPullRequests {
             id: target.id.clone(),
             name: target.name.clone(),
             login: if login.is_empty() { target.login.clone() } else { login },
             mine,
             reviews,
+            issues,
             error: None,
             error_kind: None,
             watched: watched.0,
@@ -341,6 +429,7 @@ async fn load_account(env: &Env, target: &Target, watching: &[String]) -> Accoun
             login: target.login.clone(),
             mine: vec![],
             reviews: vec![],
+            issues: vec![],
             error: Some(e.message),
             error_kind: Some(e.kind),
             watched: vec![],
@@ -504,6 +593,15 @@ pub struct PullRequestDetail {
     pub methods: Vec<String>,
     /// Whether the account may push to the repository, and so merge. `None` when GitHub did not say.
     pub can_push: Option<bool>,
+    /// Your permission in the repository (GitHub's `viewerPermission`: ADMIN, MAINTAIN, WRITE, TRIAGE, READ).
+    #[serde(default)]
+    pub permission: Option<String>,
+    /// Whether you may merge although branch protection blocks it (an admin bypass). `None` when GitHub did not say.
+    #[serde(default)]
+    pub can_bypass: Option<bool>,
+    /// Auto-merge is on: it merges by itself once the requirements are met.
+    #[serde(default)]
+    pub auto_merge: bool,
     // Worked out by `finish`, for the view.
     pub is_open: bool,
     pub can_merge: bool,
@@ -534,6 +632,26 @@ impl PullRequestDetail {
         }
     }
 
+    /// Branch protection holds the merge back and this account may not bypass it: it has to wait for reviews or checks.
+    fn held_back(&self) -> bool {
+        self.merge_state == "blocked" && self.can_bypass == Some(false)
+    }
+
+    /// The facts only GraphQL knows reliably (REST leaves `permissions` out for some tokens): your permission here, and
+    /// whether branch protection lets you through.
+    pub fn apply_viewer(&mut self, repository: &Value) {
+        if let Some(permission) = repository["viewerPermission"].as_str() {
+            self.permission = Some(permission.to_string());
+            self.can_push = Some(matches!(permission, "ADMIN" | "MAINTAIN" | "WRITE"));
+        }
+        let pull = &repository["pullRequest"];
+        if let Some(status) = pull["mergeStateStatus"].as_str().filter(|s| *s != "UNKNOWN") {
+            self.merge_state = status.to_lowercase();
+        }
+        self.can_bypass = pull["viewerCanMergeAsAdmin"].as_bool();
+        self.auto_merge = pull["autoMergeRequest"].is_object();
+    }
+
     fn note(&self) -> Option<&'static str> {
         match self.state {
             DetailState::Merged => return Some("merged"),
@@ -548,7 +666,7 @@ impl PullRequestDetail {
             return Some("conflict");
         }
         match self.merge_state.as_str() {
-            "blocked" => return Some("blocked"),
+            "blocked" => return Some(if self.auto_merge { "auto" } else { "blocked" }),
             "behind" => return Some("behind"),
             "unstable" => return Some("unstable"),
             _ => {}
@@ -563,7 +681,7 @@ impl PullRequestDetail {
     /// bypass), so only what certainly fails holds the button back.
     pub fn finish(mut self) -> Self {
         self.is_open = matches!(self.state, DetailState::Open | DetailState::Draft);
-        self.can_merge = self.state == DetailState::Open && !self.conflicted() && self.can_push != Some(false) && !self.methods.is_empty();
+        self.can_merge = self.state == DetailState::Open && !self.conflicted() && self.can_push != Some(false) && !self.held_back() && !self.methods.is_empty();
         self.check_summary = self.summary();
         self.merge_note = self.note().map(str::to_string);
         self
@@ -623,6 +741,9 @@ pub fn parse_detail(pull: &Value, repository: Option<&Value>) -> Option<PullRequ
             files: vec![],
             methods,
             can_push,
+            permission: None,
+            can_bypass: None,
+            auto_merge: false,
             is_open: false,
             can_merge: false,
             check_summary: Ci::Unknown,
@@ -894,6 +1015,20 @@ pub fn merge_error(status: u16, object: &Value) -> ConnectorError {
 
 /// Reads one pull request completely, with the token of the account it was listed under. Only the pull request itself
 /// must load; a part that fails (no access to checks, say) stays empty instead of hiding the rest.
+/// Your permission in the repository and what branch protection means for you on this pull request; `None` when GraphQL
+/// would not say (the REST answer then stands).
+async fn viewer_facts(env: &Env, token: &str, repo: &str, number: i64) -> Option<Value> {
+    let (owner, name) = repo.split_once('/')?;
+    let body = json!({"query": "query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    viewerPermission
+    pullRequest(number: $number) { mergeStateStatus viewerCanMergeAsAdmin autoMergeRequest { enabledAt } }
+  }
+}", "variables": {"owner": owner, "name": name, "number": number}});
+    let root = post_graphql(env, token, &body).await.ok()?;
+    Some(root["data"]["repository"].clone()).filter(Value::is_object)
+}
+
 pub async fn load_detail(env: &Env, token: &str, repo: &str, number: i64) -> CResult<PullRequestDetail> {
     let base = format!("{}/repos/{repo}", api());
     let headers = super::github::headers(token);
@@ -929,7 +1064,11 @@ pub async fn load_detail(env: &Env, token: &str, repo: &str, number: i64) -> CRe
         all(format!("/issues/{number}/timeline"), 5),
     );
     let repository = repository.ok().filter(Value::is_object);
+    let viewer = viewer_facts(env, token, repo, number).await;
     let mut detail = parse_detail(&pull, repository.as_ref()).ok_or_else(|| ConnectorError::new("GitHub gaf een onverwacht antwoord."))?;
+    if let Some(facts) = &viewer {
+        detail.apply_viewer(facts);
+    }
     if !detail.head_sha.is_empty() {
         let sha = detail.head_sha.clone();
         let (runs, status) =
@@ -1104,12 +1243,18 @@ mod tests {
             author: "ada".into(),
             ci: Ci::Unknown,
             state,
+            review: ReviewDecision::None,
+            comments: 0,
+            additions: 0,
+            deletions: 0,
+            conflicting: false,
         }
     }
 
     fn node(number: i64, repo: &str, state: &str, updated: &str) -> Value {
         json!({"number": number, "title": "T", "url": format!("https://github.com/{repo}/pull/{number}"), "isDraft": false,
                "updatedAt": updated, "state": state, "author": {"login": "ada"}, "repository": {"nameWithOwner": repo},
+               "reviewDecision": "APPROVED", "mergeable": "CONFLICTING", "additions": 12, "deletions": 3, "comments": {"totalCount": 4},
                "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}})
     }
 
@@ -1154,8 +1299,13 @@ mod tests {
         let root = json!({"data": {"viewer": {"login": "ada"},
             "mine": {"nodes": [node(1, "a/b", "OPEN", "2026-10-18T12:00:00Z")]},
             "mineClosed": {"nodes": [node(2, "a/b", "MERGED", "2026-10-19T12:00:00Z")]},
-            "reviews": {"nodes": []}, "reviewsClosed": {"nodes": [node(3, "a/c", "CLOSED", "2026-10-17T12:00:00Z")]}}});
-        let (login, mine, reviews) = parse_graphql(&root).unwrap();
+            "reviews": {"nodes": []}, "reviewsClosed": {"nodes": [node(3, "a/c", "CLOSED", "2026-10-17T12:00:00Z")]},
+            "issues": {"nodes": [{"number": 9, "title": "Bug", "url": "https://github.com/a/b/issues/9", "updatedAt": "2026-10-18T12:00:00Z",
+                "author": {"login": "bob"}, "repository": {"nameWithOwner": "a/b"}, "comments": {"totalCount": 2},
+                "labels": {"nodes": [{"name": "bug"}]}}]}}});
+        let (login, mine, reviews, issues) = parse_graphql(&root).unwrap();
+        assert_eq!((issues[0].number, issues[0].comments, issues[0].labels.clone()), (9, 2, vec!["bug".to_string()]));
+        assert_eq!((mine[0].review, mine[0].comments, mine[0].additions, mine[0].conflicting), (ReviewDecision::Approved, 4, 12, true));
         assert_eq!(login, "ada");
         assert_eq!(mine.iter().map(|i| (i.number, i.state)).collect::<Vec<_>>(), vec![(1, PullState::Open), (2, PullState::Merged)]);
         assert_eq!(mine[0].ci, Ci::Passing);
@@ -1190,6 +1340,7 @@ mod tests {
             login: id.into(),
             mine,
             reviews: vec![],
+            issues: vec![],
             error: None,
             error_kind: None,
             watched,
@@ -1251,6 +1402,18 @@ mod tests {
         let read_only = parse_detail(&pull(json!({})), Some(&repository)).unwrap();
         assert_eq!(read_only.methods, vec!["squash", "rebase"]);
         assert_eq!((read_only.can_merge, read_only.merge_note.as_deref()), (false, Some("noAccess")));
+
+        let mut blocked = parse_detail(&pull(json!({"mergeable_state": "blocked"})), None).unwrap();
+        blocked.apply_viewer(&json!({"viewerPermission": "WRITE", "pullRequest": {"mergeStateStatus": "BLOCKED", "viewerCanMergeAsAdmin": false}}));
+        let blocked = blocked.finish();
+        assert_eq!((blocked.can_merge, blocked.merge_note.as_deref()), (false, Some("blocked")));
+        let mut admin = parse_detail(&pull(json!({"mergeable_state": "blocked"})), None).unwrap();
+        admin.apply_viewer(&json!({"viewerPermission": "ADMIN", "pullRequest": {"mergeStateStatus": "BLOCKED", "viewerCanMergeAsAdmin": true}}));
+        assert!(admin.finish().can_merge);
+        let mut triage = parse_detail(&pull(json!({})), None).unwrap();
+        triage.apply_viewer(&json!({"viewerPermission": "TRIAGE", "pullRequest": {"mergeStateStatus": "CLEAN"}}));
+        let triage = triage.finish();
+        assert_eq!((triage.can_merge, triage.merge_note.as_deref()), (false, Some("noAccess")));
 
         let mut failing = parse_detail(&pull(json!({})), None).unwrap();
         failing.checks = parse_checks(&[json!({"name": "ci", "status": "completed", "conclusion": "failure"})], &[]);

@@ -142,6 +142,7 @@ pub fn run() {
             commands::connectors::github_pull_request,
             commands::connectors::github_ci_log,
             commands::connectors::github_merge_pull_request,
+            commands::connectors::github_review_pull_request,
             commands::connectors::pull_watch_add,
             commands::connectors::pull_watch_remove,
             commands::connectors::mcp_paste,

@@ -3,23 +3,30 @@
   // apps (calendar, mail, GitHub, ...) show what Nook sees in them. A chip per app filters the list.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api } from "../lib/api";
-  import { connectorEvents, connectorsApi, type ConnectorInfo, type Overview, type WhatsAppConversation, type WhatsAppView } from "../lib/connectors";
+  import { connectorEvents, connectorsApi, type ConnectorInfo, type Overview, type PullRequestItem, type WhatsAppConversation, type WhatsAppView } from "../lib/connectors";
   import { tr } from "../lib/i18n.svelte";
+  import { itemId, laneCounts, triage } from "../lib/pulls";
+  import { pullRequests } from "../lib/pulls.svelte";
   import { time } from "../lib/whatsapp";
   import { whatsapp } from "../lib/whatsapp.svelte";
+  import PullRequestView from "./agents/pulls/PullRequestView.svelte";
   import Avatar from "./connectors/Avatar.svelte";
+  import GitHubPanel from "./connectors/GitHubPanel.svelte";
   import ServiceIcon from "./connectors/ServiceIcon.svelte";
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
 
   let { onnook }: { onnook: (nookId: string) => void } = $props();
 
   const WHATSAPP = "whatsapp";
+  const GITHUB = "github";
 
   let overview = $state<Overview | null>(null);
   let wa = $state<WhatsAppView | null>(null);
   let chats = $state<WhatsAppConversation[]>([]);
   let filter = $state<string>("all");
   let failed = $state(false);
+  /// The pull request open beside the GitHub dashboard, with the account it is listed under.
+  let gh = $state<{ account: string; item: PullRequestItem } | null>(null);
 
   async function load() {
     try {
@@ -77,10 +84,16 @@
   const whatsappOn = $derived(!!wa?.settings.enabled);
   const sorted = $derived([...chats].sort((a, b) => b.lastActivity.localeCompare(a.lastActivity)));
 
+  // What waits on you in GitHub (reviews asked, CI to fix) counts on its chip, not the number of rows in the status.
+  const githubCount = $derived.by(() => {
+    const counts = laneCounts(triage(pullRequests.accounts));
+    return counts.review + counts.fix;
+  });
+
   type Chip = { id: string; title: string; domain: string | null; count: number };
   const chips = $derived<Chip[]>([
     ...(whatsappOn ? [{ id: WHATSAPP, title: "WhatsApp", domain: "whatsapp.com", count: wa?.unread ?? 0 }] : []),
-    ...apps.map((c) => ({ id: c.id, title: c.title, domain: domainOf(c.id), count: c.status.items.length })),
+    ...apps.map((c) => ({ id: c.id, title: c.title, domain: domainOf(c.id), count: c.id === GITHUB ? githubCount : c.status.items.length })),
   ]);
   const shown = $derived(chips.filter((c) => filter === "all" || c.id === filter));
 
@@ -89,6 +102,7 @@
 
   // A chat Nook has no messages of yet (it only knows it from the phone) is fetched first, so its card has something to show.
   async function openChat(c: WhatsAppConversation) {
+    gh = null;
     if (!c.messages.length) await connectorsApi.whatsappCardLoad(c.id).catch(() => {});
     whatsapp.show(c.id);
   }
@@ -97,6 +111,11 @@
     if (!m) return "";
     const text = m.text || (m.media.kind !== "none" ? `[${m.media.kind}]` : "");
     return c.isGroup && !m.fromMe && m.senderName ? `${m.senderName}: ${text}` : m.fromMe ? `${tr("Jij", "You")}: ${text}` : text;
+  }
+
+  function openPull(account: string, item: PullRequestItem) {
+    whatsapp.dismiss();
+    gh = { account, item };
   }
 
   function item(info: ConnectorInfo, url: string | null) {
@@ -114,7 +133,7 @@
   }
 </script>
 
-<div class="chats" class:split={!!whatsapp.chat}>
+<div class="chats" class:split={!!whatsapp.chat || !!gh}>
   {#if failed && !overview}
     <p class="faint note">{tr("De gekoppelde apps konden niet worden geladen.", "The linked apps could not be loaded.")}</p>
   {:else if !overview}
@@ -168,6 +187,8 @@
                 {#if chat.unread}<span class="count">{chat.unread}</span>{/if}
               </button>
             {/each}
+          {:else if c.id === GITHUB}
+            <GitHubPanel active={gh ? `${gh.account} ${itemId(gh.item)}` : null} onopen={openPull} />
           {:else}
             {@const info = apps.find((a) => a.id === c.id)}
             {#if info}
@@ -189,7 +210,13 @@
       {/each}
     </div>
     </div>
-    {#if whatsapp.chat}
+    {#if gh}
+      <div class="detail pr">
+        {#key `${gh.account} ${itemId(gh.item)}`}
+          <PullRequestView accountId={gh.account} item={gh.item} onback={() => (gh = null)} />
+        {/key}
+      </div>
+    {:else if whatsapp.chat}
       <div class="detail"><WhatsAppCard inline {onnook} /></div>
     {/if}
   {/if}
@@ -199,8 +226,9 @@
   .chats { height: 100%; display: flex; min-height: 0; }
   /* The list of every chat, and beside it the open chat, so all your groups stay in view and scroll on their own. */
   .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-  .split .pane { flex: none; width: 250px; border-right: 1px solid var(--line); }
+  .split .pane { flex: none; width: 300px; border-right: 1px solid var(--line); }
   .detail { flex: 1; min-width: 0; min-height: 0; }
+  .detail.pr { padding: 12px; box-sizing: border-box; }
   .row.active { background: var(--smoke); border-color: var(--line2); }
   .split .chips { padding: 4px 10px 8px; }
   .split .list { padding: 0 6px 12px; }
