@@ -29,7 +29,11 @@ extension AppModel {
         let hidden = settings.privateSources
         guard !hidden.isEmpty else { return [] }
         let named = Set(SourceCatalog.mentions(in: text).flatMap { $0.ids })
-        return hidden.intersection(named.union(scope.focus).union(scope.mode == .only ? scope.included : []))
+        var focus = scope.focus
+        // Contacts only look up an address: a mail to an address the request gives itself never needed them, so
+        // there is nothing to warn about.
+        if text.range(of: #"[^\s@]+@[^\s@]+\.[^\s@]+"#, options: .regularExpression) != nil { focus.remove("contacts") }
+        return hidden.intersection(named.union(focus).union(scope.mode == .only ? scope.included : []))
     }
 
     /// Opens a cited source safely (https URL, local file inside user home, or mail URL).

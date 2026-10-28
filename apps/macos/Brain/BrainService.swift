@@ -612,7 +612,7 @@ final class BrainService {
         if names.contains("github_merge_prs") {
             lines.append("To merge several or all pull requests, first list them with github_overview (or github_search), then call github_merge_prs once with all of them.")
         }
-        if names.contains("compose_mail") { lines.append("To write an email, use compose_mail (look up the address with search_contacts if you only have a name).") }
+        if names.contains("compose_mail") { lines.append("To write an email, use compose_mail (look up the address with search_contacts if you only have a name), never take_over. To change a draft, call compose_mail again with the new version: it replaces the draft at once.") }
         if names.contains("use_source") { lines.append("If you need a connected source whose tools you do not have, call use_source first.") }
         if names.contains("remember") {
             lines.append("If the user asks you to remember something, or tells you a lasting fact about themselves or a preference, call remember with one short sentence. If they correct something under \"What Nook remembers\", call remember with replaces set to its id. If they ask you to forget something, call forget.")
