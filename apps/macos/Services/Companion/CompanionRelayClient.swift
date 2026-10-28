@@ -76,7 +76,7 @@ final class CompanionRelayClient: ObservableObject {
         address = UserDefaults.standard.string(forKey: Self.addressKey) ?? ""
         // A phone paired or removed, a pairing window opened: the rooms follow.
         watch = CompanionStore.shared.$devices.map { _ in () }
-            .merge(with: CompanionStore.shared.$pending.map { _ in () })
+            .merge(with: CompanionStore.shared.$pending.map { $0?.key }.removeDuplicates().map { _ in () })
             .sink { [weak self] _ in DispatchQueue.main.async { self?.apply() } }
         // After sleep the relay sockets are dead without knowing it: connect again at once instead of waiting for the
         // keep-alive to notice. The same after the Mac changed networks.
