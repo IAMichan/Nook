@@ -725,6 +725,7 @@ struct NewSessionComposer: View {
                 NewSessionDraft.saved = nil
                 ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
                 config.task = ""
+                images = []
                 pendingID = UUID()
                 starting = false
                 onStarted(id)
@@ -756,6 +757,7 @@ struct NewSessionComposer: View {
                 NewSessionDraft.saved = nil
                 ComposerDraftStore.shared.save(sessionID: Self.draftKey, text: "")
                 config.task = ""
+                images = []
                 comparing = []
                 pendingID = UUID()
                 if let leader = outcome.leader { onStarted(leader) }
