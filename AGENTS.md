@@ -39,6 +39,7 @@ scripts/       # CI test runner (core-tests.sh) and fine-tuning scripts
 
 - **Shared UI first:** Reuse the components listed in [`docs/UI-COMPONENTS.md`](docs/UI-COMPONENTS.md) instead of rebuilding them inline; add new shared views to `apps/macos/NotchUI/Components`.
 - **One design, from the theme:** Every view under `apps/macos/NotchUI` and `apps/macos/App` takes its colors, type, corner radii, and spacing from `NookTheme` (`NookTheme.TextStyle`, `font`/`mono`/`rounded`, `Radius`, `Spacing`, and the named colors). No inline `Font.system(size:)` or SwiftUI text style (`.caption`, `.callout`, `.headline`), no literal `Color(hex:)`/`Color(red:)`, no system `.red`/`.orange`/`.green`/`.secondary`, no corner radius written as a number. State colors keep their meaning: `iris` = Nook, `mint` = done, `amber` = waiting on you, `coral` = error, `violet` = merged. `UIConsistencyTests` and `scripts/ui-lint.sh` enforce this; a file that draws its own colors (a brand mark, a chart palette) is added to both allow-lists with a reason, never by loosening the rule.
+- **Idle costs nothing:** Nook runs all day next to everything else, so at rest its main thread is near 0% CPU. A subscription to published state (`store.$value … .sink`) drops repeats with `removeDuplicates`, `throttle`, or `debounce`: a `@Published` property publishes on every write, also of the same value, so a subscriber that writes back to what it watches loops forever. One that must see every write says why on the line above (`// perf: <reason>`). Write published state only when it changed. Animations that run on their own use a `.nookFrames` timeline that pauses with `EnergyMonitor`, never `.repeatForever`. `scripts/perf-lint.sh` enforces this; `scripts/idle-profile.sh` measures a running Nook (CPU of the process and its main thread, footprint, mapped models, and the Nook functions the main thread spends its time in).
 - **One layout:** The notch, the main window, and sheets all render the same `PanelView`; Settings is the single place for configuration. Change the panel once and every surface follows. Do not add a second window with its own layout, and open tasks inside the panel.
 - **`AppModel` is composition-only:** Put feature logic in dedicated services/types or modular `AppModel+….swift` extensions, never directly inside `AppModel.swift`.
 - **Single Brain Pipeline:** Chat, notch cards, and proactive suggestions (*Think Along*) must all route through `prepareRun`. Do not create separate LLM execution paths.
@@ -60,6 +61,13 @@ After touching anything under `apps/macos/NotchUI` or `apps/macos/App`, also run
 
 ```sh
 ./scripts/ui-lint.sh
+```
+
+After touching anything under `apps/macos`, run the performance check too, and when Nook feels busy, measure the running app instead of guessing:
+
+```sh
+./scripts/perf-lint.sh
+./scripts/idle-profile.sh
 ```
 
 How the CI workflows are organized, and how they avoid spending runner minutes on work that cannot tell us anything new, is described in [`docs/CI.md`](docs/CI.md).

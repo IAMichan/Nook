@@ -67,7 +67,9 @@ final class CompanionStore: ObservableObject {
 
     /// The pairing key, while its window is open.
     func activePending(now: Date = Date()) -> Data? {
-        guard let pending, pending.until > now else { self.pending = nil; return nil }
+        guard let pending else { return nil }
+        // Only clear a window that is still set: every write to `pending` publishes, and the relay re-applies on that.
+        guard pending.until > now else { self.pending = nil; return nil }
         return pending.key
     }
 

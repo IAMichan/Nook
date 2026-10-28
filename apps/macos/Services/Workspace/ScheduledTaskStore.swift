@@ -136,6 +136,8 @@ final class ScheduledTaskStore: ObservableObject {
         self.app = app
         // A session that ends (also while the notch is closed) ends the task run that started it.
         app.workspace.$runs
+            // `runs` publishes for every streamed token; a task run only ends when a session's status changes.
+            .removeDuplicates { $0.map(\.id) == $1.map(\.id) && $0.map(\.status) == $1.map(\.status) }
             .sink { [weak self] runs in
                 // `$runs` publishes before the change lands; look again on the next turn of the run loop.
                 DispatchQueue.main.async { self?.checkRuns(runs) }
@@ -144,6 +146,7 @@ final class ScheduledTaskStore: ObservableObject {
         let settings = WorkspaceSettings.shared
         settings.$scheduledTasksEnabled
             .combineLatest(settings.$scheduledWebhookPort)
+            .removeDuplicates(by: ==)
             .sink { [weak self] enabled, port in
                 DispatchQueue.main.async { self?.apply(enabled: enabled, port: port) }
             }

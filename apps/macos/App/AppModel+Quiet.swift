@@ -12,9 +12,9 @@ extension AppModel {
             Task { @MainActor in self?.quietTimerTick() }
         }
         // A changed choice applies right away, not on the next tick.
-        settings.$quietWhileSharing.map { _ in () }
-            .merge(with: settings.$quietInMeetings.map { _ in () }, settings.$quietUseCalendar.map { _ in () },
-                   settings.$hideFromCaptures.map { _ in () }, settings.$showInScreenshots.map { _ in () })
+        settings.$quietWhileSharing.removeDuplicates().map { _ in () }
+            .merge(with: settings.$quietInMeetings.removeDuplicates().map { _ in () }, settings.$quietUseCalendar.removeDuplicates().map { _ in () },
+                   settings.$hideFromCaptures.removeDuplicates().map { _ in () }, settings.$showInScreenshots.removeDuplicates().map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.quietTick() }
             .store(in: &bag)
