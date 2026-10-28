@@ -7,6 +7,7 @@
   import { nook } from "../lib/state.svelte";
   import Chat from "../components/Chat.svelte";
   import Orb from "../components/Orb.svelte";
+  import Icon from "../components/Icon.svelte";
   import Today from "./Today.svelte";
   import Agents from "./Agents.svelte";
   import Workspace from "./Workspace.svelte";
@@ -34,6 +35,7 @@
   let expanded = $state(false);
   let tab = $state<Tab>((localStorage.getItem("bar.tab") as Tab) || "nook");
   let pinnedOpen = $state(false);
+  let locked = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let inside = $state(false);
   let openedAt = 0;
@@ -120,10 +122,12 @@
       .map((n) => ({ id: n.id, label: n.title, state: n.status as "working" | "waiting" })),
   );
 
-  async function close() {
-    if (!expanded) return;
+  // Locked, the panel ignores a click elsewhere and a lost focus (handy while dragging attachments in from another window); only Esc closes it.
+  async function close(force = false) {
+    if (!expanded || (locked && !force)) return;
     expanded = false;
     pinnedOpen = false;
+    locked = false;
     await api.barExpand(false);
     services.asideShow();
   }
@@ -134,7 +138,7 @@
     if (resizing || pinnedOpen || nook.busy || agents.pending || agents.attention || whatsapp.chat) return;
     // Both the pointer and a notice that ran out call this; a second timer must not orphan the first.
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(close, 450);
+    closeTimer = setTimeout(() => close(), 450);
   }
 
   // The closed bar only opens on a click; it then stays open until Esc, a click elsewhere or the window loses focus.
@@ -342,7 +346,7 @@
     else if (whatsapp.chat) whatsapp.dismiss();
     else {
       if (agents.attention) dismissNotice();
-      close();
+      close(true);
     }
   }
 
@@ -411,6 +415,7 @@
         </nav>
         <span class="spacer"></span>
         <button class="ghost icon lang" title={tr("Taal: klik voor English", "Language: click for Nederlands")} onclick={toggleLanguage}>{english() ? "EN" : "NL"}</button>
+        <button class="ghost icon lock" class:on={locked} title={locked ? tr("Vergrendeld: klik om te ontgrendelen", "Locked: click to unlock") : tr("Houd Nook open als je wegklikt", "Keep Nook open when you click away")} onclick={() => { locked = !locked; if (locked) pinnedOpen = true; }}><Icon name={locked ? "lock" : "unlock"} size={14} /></button>
         <button class="ghost icon" title={tr("Open in venster", "Open in window")} onclick={() => api.showMain("chat")}>⧉</button>
         <button class="ghost icon" title={tr("Instellingen", "Settings")} onclick={() => api.showMain("settings")}>⚙</button>
       </header>
@@ -570,6 +575,7 @@
   .spacer { flex: 1; }
   .icon { padding: 4px 8px; }
   .icon.lang { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+  .icon.lock.on { color: var(--iris); }
   .body { flex: 1; min-height: 0; }
   .nooktab { display: grid; grid-template-columns: 1fr 220px; height: 100%; }
   .chatcol { min-height: 0; }
