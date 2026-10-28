@@ -462,7 +462,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let diskSaveInterval: TimeInterval = 10 * 60
     private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
     /// Raise when the parsing changes within a build number.
-    private static let diskFormat = 1
+    private static let diskFormat = 2
     private static var diskBuild: String {
         "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
     }
@@ -1257,8 +1257,8 @@ private final class HistoryScanner: @unchecked Sendable {
             }
         } else {
             if (object["isMeta"] as? Bool) == true || (object["isSidechain"] as? Bool) == true { return }
-            let text = Self.text(message["content"])
-            guard Self.isTypedPrompt(text) else { return }
+            // Without the blocks the agent put in front (the Claude app's worktree reminder before your first prompt).
+            guard let text = InjectedPrompt.prompt(Self.text(message["content"])) else { return }
             progress.session.prompts += 1
             progress.session.lastPrompt = text
             if progress.session.title.isEmpty { progress.session.title = text }
@@ -1267,12 +1267,6 @@ private final class HistoryScanner: @unchecked Sendable {
                 progress.firstPromptAt = (object["timestamp"] as? String) ?? ""
             }
         }
-    }
-
-    /// User-typed input, excluding what Claude Code injects automatically (commands, output, interrupts).
-    private static func isTypedPrompt(_ text: String) -> Bool {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        return !InjectedPrompt.isInjected(text)
     }
 
     /// ~/.claude.json: which account Claude Code is logged in with. When using a custom directory (CLAUDE_CONFIG_DIR),
@@ -1353,8 +1347,7 @@ private final class HistoryScanner: @unchecked Sendable {
         case "event_msg":
             switch payload["type"] as? String {
             case "user_message":
-                let text = (payload["message"] as? String) ?? ""
-                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !InjectedPrompt.isInjected(text) else { return }
+                guard let text = InjectedPrompt.prompt((payload["message"] as? String) ?? "") else { return }
                 state.session.prompts += 1
                 state.session.lastPrompt = text
                 if state.session.title.isEmpty { state.session.title = text }

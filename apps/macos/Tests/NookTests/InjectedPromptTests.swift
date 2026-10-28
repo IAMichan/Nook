@@ -54,4 +54,22 @@ final class InjectedPromptTests: XCTestCase {
         XCTAssertEqual(InjectedPrompt.typed("Fix the bug"), "Fix the bug")
         XCTAssertTrue(InjectedPrompt.isInjected(InjectedPrompt.typed("<system-reminder>only</system-reminder>")))
     }
+
+    func testPromptKeepsYourWordsAfterTheAgentsReminder() {
+        XCTAssertEqual(InjectedPrompt.prompt("<system-reminder>\nYou are operating in a git worktree.\n</system-reminder>\n\n\nFix the bug"),
+                       "Fix the bug")
+        XCTAssertNil(InjectedPrompt.prompt("<system-reminder>only</system-reminder>"))
+        XCTAssertNil(InjectedPrompt.prompt("  "))
+        XCTAssertEqual(InjectedPrompt.prompt("Fix the bug"), "Fix the bug")
+    }
+
+    /// The Claude app opens a worktree session's first message with a reminder block of its own: the prompt after it
+    /// is still the first message of the conversation.
+    func testFirstPromptAfterAReminderBlockIsShown() throws {
+        let line = #"{"type":"user","uuid":"u1","message":{"role":"user","content":["# + #"{"type":"text","text":"<system-reminder>\nYou are operating in a git worktree.\n</system-reminder>\n\n"},"# + #"{"type":"text","text":"Improve the agent connection"}]}}"#
+        let messages = AgentTranscript.jsonl(Data(line.utf8))
+        let first = try XCTUnwrap(messages.first)
+        XCTAssertEqual(first.kind, .user)
+        XCTAssertEqual(first.text, "Improve the agent connection")
+    }
 }

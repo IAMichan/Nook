@@ -700,8 +700,12 @@ enum AgentTranscript {
     /// `<system-reminder>` blocks before the prompt) are left out, so the prompt that started the chat still shows.
     private static func typedText(_ content: Any?) -> String {
         if let blocks = content as? [[String: Any]] {
-            return blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
-                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }.joined(separator: "\n")
+            // A block that is nothing but the agent's own (a reminder in front of your words) stays whole in `typed`:
+            // dropped here, or it would make the whole message look injected.
+            let texts = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                .map { InjectedPrompt.typed($0) }.filter { !$0.isEmpty }
+            let yours = texts.filter { !InjectedPrompt.isInjected($0) }
+            return (yours.isEmpty ? texts : yours).joined(separator: "\n")
         }
         return InjectedPrompt.typed(text(content))
     }
@@ -777,6 +781,14 @@ enum InjectedPrompt {
             rest = remainder
         }
         return rest
+    }
+
+    /// What you typed in a message, without the blocks the agent put in front of it (the Claude app opens the first
+    /// message of a worktree session with a `<system-reminder>`); nil when the whole message is the agent's own.
+    static func prompt(_ text: String) -> String? {
+        let typed = typed(text)
+        guard !typed.isEmpty, !isInjected(typed) else { return nil }
+        return typed
     }
 
     static func isInjected(_ text: String) -> Bool {

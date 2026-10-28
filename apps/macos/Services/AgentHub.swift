@@ -107,6 +107,8 @@ final class AgentHub: ObservableObject {
         var sessionID: String = ""
         var transcriptPath: String = ""
         var lastPrompt: String = ""
+        /// The first prompt Nook heard in this session: its title until the transcript names it, never replaced.
+        var firstPrompt: String = ""
         /// When Nook first heard of this session.
         var started = Date()
         /// When the current turn began (your last prompt); nil between turns.
@@ -276,6 +278,7 @@ final class AgentHub: ObservableObject {
         var sessionID: String
         var transcriptPath: String
         var lastPrompt: String
+        var firstPrompt: String?
         var linesAdded: Int
         var linesRemoved: Int
         var turnStarted: Date?
@@ -294,7 +297,7 @@ final class AgentHub: ObservableObject {
                         steps: r.steps.map { ["\($0.mark)", $0.text] }, file: r.file, lastMessage: r.lastMessage,
                         updated: r.updated, started: r.started, hostBundleID: r.hostBundleID, home: r.home,
                         sessionID: r.sessionID, transcriptPath: r.transcriptPath, lastPrompt: r.lastPrompt,
-                        linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted)
+                        firstPrompt: r.firstPrompt, linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, turnStarted: r.turnStarted)
         }
         // A burst of hook events becomes one write.
         saveWork = Task.detached(priority: .utility) {
@@ -337,6 +340,7 @@ final class AgentHub: ObservableObject {
             record.sessionID = item.sessionID
             record.transcriptPath = item.transcriptPath
             record.lastPrompt = item.lastPrompt
+            record.firstPrompt = item.firstPrompt ?? ""
             record.started = item.started
             record.turnStarted = status == .done ? nil : item.turnStarted
             restored[item.key] = record
@@ -685,8 +689,9 @@ final class AgentHub: ObservableObject {
             record.turnStarted = Date()
             record.diff = []
             // What the agent injects itself (a finished background task …) is not your last prompt.
-            if let prompt = event["prompt"] as? String, !InjectedPrompt.isInjected(prompt) {
+            if let prompt = (event["prompt"] as? String).flatMap(InjectedPrompt.prompt) {
                 record.lastPrompt = prompt
+                if record.firstPrompt.isEmpty { record.firstPrompt = prompt }
                 record.lastMessage = ""
                 Self.push(&record, .done, "prompt: " + Self.shorten(prompt, 60))
             }
@@ -977,6 +982,7 @@ final class AgentHub: ObservableObject {
                     sessionID: record.sessionID,
                     transcriptPath: record.transcriptPath,
                     lastPrompt: record.lastPrompt,
+                    firstPrompt: record.firstPrompt,
                     lastReply: record.lastMessage,
                     started: record.started,
                     turnStarted: record.turnStarted,

@@ -134,11 +134,13 @@ extension AppModel {
             fork = true
         }
         let profile = self.profile(for: session) ?? profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
-        let path = session.transcriptPath.isEmpty
-            ? (history.sessions.first { $0.isConversation(conversation) }?.path ?? "") : session.transcriptPath
+        let known = history.sessions.first { $0.isConversation(conversation) }
+        let path = session.transcriptPath.isEmpty ? (known?.path ?? "") : session.transcriptPath
         let earlier = await earlierConversation(path: path, prompt: session.lastPrompt, reply: session.lastReply)
+        // The title the conversation already has (from its first prompt), not the latest prompt.
+        let title = [known?.title ?? "", session.firstPrompt, session.lastPrompt].first { !$0.isEmpty } ?? session.project
         let id = try await workspace.adopt(provider: provider, sessionID: conversation, profileID: profile.id,
-                                           directory: session.cwd, title: session.lastPrompt.isEmpty ? session.project : session.lastPrompt,
+                                           directory: session.cwd, title: title,
                                            history: earlier, fork: fork)
         try applyChoice(choice, to: id)
         applySettings(settings, to: id)
