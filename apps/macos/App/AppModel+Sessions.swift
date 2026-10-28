@@ -202,6 +202,19 @@ extension AppModel {
             }
         }
     }
+
+    /// Sessions Nook took over before it knew their title were named after their folder ("macos"): they take the title
+    /// the agent gave the conversation (the Claude app names every session) or its first question, once history has it.
+    func nameSessionsAfterAgents() {
+        for run in workspace.runs where !run.archived && !run.isRemote {
+            guard let current = run.providerSessionID, !current.isEmpty,
+                  run.title == URL(fileURLWithPath: run.projectPath).lastPathComponent else { continue }
+            let agent = run.provider.displayName
+            guard let past = history.sessions.first(where: { $0.agent.name == agent && $0.isConversation(current) }),
+                  !past.title.isEmpty else { continue }
+            workspace.rename(run.id, to: past.title)
+        }
+    }
 }
 
 /// The merged session lists and the inputs they were worked out from (see `AppModel.sessionLists()`).

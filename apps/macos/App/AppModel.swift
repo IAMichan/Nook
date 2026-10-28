@@ -291,7 +291,10 @@ final class AppModel: ObservableObject {
             .store(in: &bag)
         // A chat that went on in the terminal after Nook last ran it: its new messages show up in the Nook session.
         history.$sessions.removeDuplicates().receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.followTerminalContinuations() }
+            .sink { [weak self] _ in
+                self?.followTerminalContinuations()
+                self?.nameSessionsAfterAgents()
+            }
             .store(in: &bag)
         // When accounts are added or removed, history immediately reloads from the correct directories.
         profiles.$all.removeDuplicates().sink { [weak self] all in

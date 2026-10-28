@@ -227,6 +227,8 @@ struct PastSession: Identifiable, Equatable, Codable {
     var firstPrompt = ""
     /// The tasks this session started for other sessions (`SpawnedSessions.key` of their prompts).
     var spawnedTasks: [String] = []
+    /// `title` is the name the agent gave the conversation (the Claude app, `/rename`, Codex's thread names), not its first prompt.
+    var titledByAgent = false
 
     /// Whether `id` names this conversation: its latest session id or an earlier one.
     func isConversation(_ id: String) -> Bool { sessionID == id || earlierIDs.contains(id) }
@@ -462,7 +464,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let diskSaveInterval: TimeInterval = 10 * 60
     private static var diskURL: URL { NookPaths.supportDirectory.appendingPathComponent("agent-history-cache.plist") }
     /// Raise when the parsing changes within a build number.
-    private static let diskFormat = 2
+    private static let diskFormat = 3
     private static var diskBuild: String {
         "\(diskFormat)|" + ((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "")
     }
@@ -618,7 +620,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
         let executables = locateExecutables()
         installed.formUnion(executables.keys)
-        return Result(sessions: sessions, accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
+        return Result(sessions: namedByCodex(sessions, homes: homes), accounts: accounts, usage: usage, ledger: ledger, installed: installed, executables: executables)
     }
 
     /// One session per conversation: the transcripts of a chat that was resumed into new files become one, under the
@@ -636,10 +638,50 @@ private final class HistoryScanner: @unchecked Sendable {
             let parts = group.map { listed[$0].session }
             let first = parts.min { $0.started < $1.started } ?? latest
             latest.started = first.started
-            if !first.title.isEmpty { latest.title = first.title }
+            // A name the agent gave the conversation wins over its first prompt; the latest name over an earlier one.
+            if let named = parts.first(where: \.titledByAgent) {
+                latest.title = named.title
+                latest.titledByAgent = true
+            } else if !first.title.isEmpty {
+                latest.title = first.title
+            }
             latest.prompts = parts.map(\.prompts).max() ?? latest.prompts
             latest.earlierIDs = parts.dropFirst().map(\.sessionID).filter { $0 != latest.sessionID }
             return latest
+        }
+    }
+
+    /// Codex names its threads (the Codex app, `/rename`) in `session_index.jsonl` next to the sessions, apart from the
+    /// transcripts: read on every scan (the file is small, and only again when it changed), the latest line per thread wins.
+    private func namedByCodex(_ sessions: [PastSession], homes: [ProfileHome]) -> [PastSession] {
+        var names: [String: String] = [:]
+        for home in homes where home.kind == .codex {
+            let url = home.url.appendingPathComponent("session_index.jsonl")
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, let known = codexThreadNames[url.path], known.modified == modified {
+                names.merge(known.names) { _, new in new }
+                continue
+            }
+            var read: [String: String] = [:]
+            if let data = try? Data(contentsOf: url) {
+                forEachLine(data) { line in
+                    guard let object = json(line), let id = object["id"] as? String,
+                          let name = (object["thread_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !name.isEmpty else { return }
+                    read[id] = name
+                }
+            }
+            codexThreadNames[url.path] = modified.map { (modified: $0, names: read) }
+            names.merge(read) { _, new in new }
+        }
+        guard !names.isEmpty else { return sessions }
+        return sessions.map { session in
+            guard session.agent == .codex,
+                  let name = ([session.sessionID] + session.earlierIDs).lazy.compactMap({ names[$0] }).first else { return session }
+            var named = session
+            named.title = Self.oneLine(name, 90)
+            named.titledByAgent = true
+            return named
         }
     }
 
@@ -1101,6 +1143,7 @@ private final class HistoryScanner: @unchecked Sendable {
     private static let claudeAssistant = Data(#""type":"assistant""#.utf8)
     private static let claudeUser = Data(#""type":"user""#.utf8)
     private static let claudeSummary = Data(#""type":"summary""#.utf8)
+    private static let claudeCustomTitle = Data(#""type":"custom-title""#.utf8)
     private static let claudeQueued = Data(#""queued_command""#.utf8)
     private static let spawnTask = Data("spawn_task".utf8)
     private static let toolResult = Data(#""tool_result""#.utf8)
@@ -1116,6 +1159,8 @@ private final class HistoryScanner: @unchecked Sendable {
     private struct ClaudeState {
         var session: PastSession
         var summaryTitle = ""
+        /// The title Claude gave the session itself (the Claude app names every session; `/rename` changes it): the latest wins.
+        var customTitle = ""
         var entries: [UsageEntry] = []
         var seenUsage = Set<String>()
         /// For `ResumedConversations`: the session ids the lines were written under, and the first and last message.
@@ -1134,6 +1179,8 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private var claudeProgress: [String: Progress<ClaudeState>] = [:]
+    /// Codex's thread names per `session_index.jsonl`, with when that file last changed.
+    private var codexThreadNames: [String: (modified: Date, names: [String: String])] = [:]
     private var codexProgress: [String: Progress<CodexState>] = [:]
     /// Only transcripts touched this recently keep their progress: older ones rarely grow, and this bounds the memory.
     private static let progressWindow: TimeInterval = 6 * 3600
@@ -1179,7 +1226,10 @@ private final class HistoryScanner: @unchecked Sendable {
         }
         var session = result.session
         guard session.ended > .distantPast else { return Parsed(session: nil, entries: result.entries) }
-        if !result.summaryTitle.isEmpty { session.title = result.summaryTitle }
+        if let named = [result.customTitle, result.summaryTitle].first(where: { !$0.isEmpty }) {
+            session.title = named
+            session.titledByAgent = true
+        }
         session.title = Self.oneLine(InjectedPrompt.title(session.title), 90)
         session.lastPrompt = Self.clip(session.lastPrompt, 4_000)
         session.lastReply = Self.clip(session.lastReply, 12_000)
@@ -1192,6 +1242,11 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private func claudeLine(_ line: Data, into progress: inout ClaudeState) {
+        if line.range(of: Self.claudeCustomTitle) != nil, let object = json(line), object["type"] as? String == "custom-title" {
+            let title = ((object["customTitle"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { progress.customTitle = title }
+            return
+        }
         if line.range(of: Self.claudeSummary) != nil, progress.summaryTitle.isEmpty,
            let object = json(line), object["type"] as? String == "summary" {
             progress.summaryTitle = (object["summary"] as? String) ?? ""
