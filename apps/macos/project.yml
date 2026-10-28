@@ -210,6 +210,7 @@ targets:
       - path: Core/I18n+Companion.swift
       - path: Core/I18n+Snapchat.swift
       - path: Core/I18n+MailSend.swift
+      - path: Core/I18n+FileViewer.swift
       - path: Brain/SourceScope.swift
       - path: Brain/LocalQuality.swift
       - path: Brain/MailStats.swift
@@ -376,6 +377,7 @@ targets:
       - path: Services/Workspace/ProjectScripts.swift
       - path: Services/Workspace/TerminalTitle.swift
       - path: Services/Workspace/FileLinks.swift
+      - path: Services/Workspace/FileViewing.swift
       - path: Services/Workspace/TerminalLinks.swift
       - path: Services/Workspace/WorktreeCleanup.swift
       - path: Services/Workspace/ComposerLists.swift

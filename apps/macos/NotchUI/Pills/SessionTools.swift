@@ -6,7 +6,7 @@ import SwiftUI
 /// what the agent produced: its plans, task list and the files it wrote (`outputs`).
 /// `picker` is the open side panel without a tool yet: it lists the tools to open.
 enum SessionTool: String {
-    case conversation, terminal, browser, changes, outputs, pullRequest, artifact, picker
+    case conversation, terminal, browser, changes, outputs, pullRequest, artifact, file, picker
 
     /// The tools the side panel can show, in the order its + menu and picker list them.
     static let panelTools: [SessionTool] = [.outputs, .terminal, .browser, .changes]
@@ -15,8 +15,8 @@ enum SessionTool: String {
     static let launchable: [SessionTool] = panelTools + [.pullRequest]
     /// Tabs beside a session: the tools, and a pull request opened from a link in it (the side panel only, never in the
     /// + menu, and not kept across launches). An artifact (a Claude artifact, a ChatGPT canvas) clicked in the conversation
-    /// opens the same way, in the signed-in web version of the app that made it.
-    static let sideTabs: [SessionTool] = panelTools + [.pullRequest, .artifact]
+    /// opens the same way, in the signed-in web version of the app that made it, and a file link in Nook's own viewer.
+    static let sideTabs: [SessionTool] = panelTools + [.pullRequest, .artifact, .file]
 
     var symbol: String {
         switch self {
@@ -27,13 +27,14 @@ enum SessionTool: String {
         case .outputs: return "list.bullet.clipboard"
         case .pullRequest: return PullRequestIcon.generic
         case .artifact: return "square.on.square"
+        case .file: return "doc.text"
         case .picker: return "square.grid.2x2"
         }
     }
 
     /// Whether the tool works for a session in `directory`: without a folder there is only the browser and the outputs.
     func available(in directory: String) -> Bool {
-        if self == .pullRequest || self == .outputs || self == .artifact { return true }
+        if self == .pullRequest || self == .outputs || self == .artifact || self == .file { return true }
         return directory.isEmpty ? self == .browser : Self.panelTools.contains(self)
     }
 
@@ -47,7 +48,7 @@ enum SessionTool: String {
         case .browser: return "b"
         case .changes: return "c"
         case .pullRequest: return "p"
-        case .conversation, .artifact, .picker: return " "
+        case .conversation, .artifact, .file, .picker: return " "
         }
     }
     /// What the icon in the session's header does.
@@ -527,6 +528,7 @@ private struct SessionToolPanel: View {
     let closeTab: (SessionTab) -> Void
     let close: () -> Void
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    @ObservedObject private var files = FileViewerStore.shared
     /// The open page's title for the browser's tab, once the browser was started (it is not started for it).
     @State private var browserTitle = ""
 
@@ -567,6 +569,8 @@ private struct SessionToolPanel: View {
                 case .artifact:
                     SessionArtifactPanel()
                         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
+                case .file:
+                    SessionFilePanel()
                 default:
                     BrowserView()
                         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.panel, style: .continuous))
@@ -617,7 +621,7 @@ private struct SessionToolPanel: View {
         }
     }
 
-    /// A tab with what it shows: the page's title in the browser, the name of a tool.
+    /// A tab with what it shows: the page's title in the browser, the file's name, the name of a tool.
     private func tabItem(_ item: SessionTool) -> SidePanelTabItem<SessionTab> {
         let fresh = item != tool && (item == .outputs ? outputsFresh : bridge.hasUnseen(directory, item.rawValue))
         switch item {
@@ -628,6 +632,11 @@ private struct SessionToolPanel: View {
         case .pullRequest:
             return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelPullRequestIcon(item: nil)),
                                     fresh: fresh, help: item.help)
+        case .file:
+            let path = files.target?.path
+            return SidePanelTabItem(value: .tool(item), title: path.map { ($0 as NSString).lastPathComponent } ?? item.title,
+                                    icon: AnyView(SidePanelSymbol(symbol: item.symbol)), fresh: fresh,
+                                    help: path.map(AgentPathFormat.tilde) ?? item.help)
         default:
             return SidePanelTabItem(value: .tool(item), title: item.title, icon: AnyView(SidePanelSymbol(symbol: item.symbol)),
                                     fresh: fresh, help: item.help)

@@ -219,8 +219,8 @@ struct SelectableProse: NSViewRepresentable {
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
             if let url, MarkdownBlock.isFileLink(url) {
-                let base = fileLinkBase
-                Task { @MainActor in _ = MarkdownBlock.openFileLink(url, base: base) }
+                let base = fileLinkBase, beside = pullRequestLinksBeside
+                Task { @MainActor in _ = MarkdownBlock.openFileLink(url, base: base, beside: beside) }
                 return true
             }
             guard let url, MarkdownBlock.isSafeLink(url) else { return true }
