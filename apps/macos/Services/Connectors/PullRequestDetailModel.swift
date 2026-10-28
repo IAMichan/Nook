@@ -145,6 +145,7 @@ final class PullRequestDetailModel: ObservableObject {
         fetchedAt = Date()
         Self.remember(fresh, key: key)
         PullRequestStore.shared.update(with: fresh)
+        PullRequestStatusStore.shared.record(fresh)
     }
 
     private func adoptCache() {

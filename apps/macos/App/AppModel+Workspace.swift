@@ -159,6 +159,8 @@ extension AppModel {
             if GitHubPullRequests.parse(url) != nil { return await GitHubPullRequests.snapshot(url: url) }
             return await GitLabMergeRequests.snapshot(url: url)
         }
+        // The tray above the composer reads its pull request with the same accounts, into the one shared status.
+        PullRequestStatusStore.shared.fetch = workspace.pullRequestSnapshot
         workspace.pullRequestLookup = { repo, branch in
             guard let found = await SourceForge.requests(repo: repo, branch: branch) else { return nil }
             return found.first { $0.state.isOpen }.flatMap { URL(string: $0.url) }

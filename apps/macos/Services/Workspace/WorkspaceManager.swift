@@ -1564,6 +1564,7 @@ final class WorkspaceManager: ObservableObject {
 
     private func pullRequestChanged(_ id: UUID, old: PullRequestWatch, new: PullRequestSnapshot) {
         let now = Date()
+        if let url = URL(string: old.url) { PullRequestStatusStore.shared.record(url: url, snapshot: new, at: now) }
         // The first look only sets what counts as seen.
         guard old.checkedAt != nil else {
             update(id) { $0.prWatch = PullRequestNews.updated(old, with: new, at: now) }

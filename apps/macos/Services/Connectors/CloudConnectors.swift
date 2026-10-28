@@ -2306,7 +2306,9 @@ enum GitHubPullRequests {
                     if let path = item["path"] as? String { text = path + ": " + text }
                     return PullRequestSnapshot.Note(author: author(item), verdict: "", text: text)
                 }
-            return PullRequestSnapshot(state: state, checks: checks, failedChecks: failed, reviews: reviews, comments: comments)
+            return PullRequestSnapshot(state: state, checks: checks, failedChecks: failed, reviews: reviews, comments: comments,
+                                       draft: (pull["draft"] as? Bool) ?? false,
+                                       conflicted: PullRequestMergeability.githubConflicted(pull))
         }
         return nil
     }

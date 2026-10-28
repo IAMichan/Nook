@@ -30,11 +30,13 @@ final class PullRequestSync: ObservableObject {
         }
     }
 
-    func badge(_ id: UUID) -> PullRequestBadge? { PullRequestBadge.text(links: links[id] ?? []) }
+    /// The badge with the newest status of each request (see `PullRequestStatusStore`): a look by a watch or the pull
+    /// request page since this sync's last round shows here too.
+    func badge(_ id: UUID) -> PullRequestBadge? { PullRequestBadge.text(links: PullRequestStatusStore.shared.current(links[id] ?? [])) }
 
     func badge(path: String, branch: String?) -> PullRequestBadge? {
         guard let branch else { return nil }
-        return PullRequestBadge.text(links: folderLinks[Self.folderKey(path: path, branch: branch)] ?? [])
+        return PullRequestBadge.text(links: PullRequestStatusStore.shared.current(folderLinks[Self.folderKey(path: path, branch: branch)] ?? []))
     }
 
     nonisolated static func folderKey(path: String, branch: String) -> String { path + "\n" + branch }
@@ -54,6 +56,7 @@ final class PullRequestSync: ObservableObject {
         }
         links = links.mapValues(settle)
         folderLinks = folderLinks.mapValues(settle)
+        PullRequestStatusStore.shared.record(key: PullRequestStatusStore.key(repo: repository, number: number), glyph: .merged, checks: nil)
         save()
     }
 
@@ -126,6 +129,7 @@ final class PullRequestSync: ObservableObject {
                     let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
                     guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
+                    PullRequestStatusStore.shared.record(found, at: now)
                     let next: [PullRequestLink]? = found.isEmpty ? nil : found
                     if links[id] != next {
                         links[id] = next
@@ -135,6 +139,7 @@ final class PullRequestSync: ObservableObject {
                     folderChecked[key] = now
                     guard let repo = await remote(path, read: { await Self.repository(path: path) }),
                           let found = await SourceForge.requests(repo: repo, branch: branch) else { continue }
+                    PullRequestStatusStore.shared.record(found, at: now)
                     let next: [PullRequestLink]? = found.isEmpty ? nil : found
                     if folderLinks[key] != next {
                         folderLinks[key] = next

@@ -197,8 +197,9 @@ struct PullRequestWatchStrip: View {
     var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
-    /// How the pull request looks while it is not watched (a watch brings its own), so state and checks show either way.
-    @State private var seen: PullRequestSnapshot?
+    /// State and checks come from the status every place shares (the row badge, the pull request page), not from the
+    /// watch's last look, so the tray never shows an older state than the rest of Nook.
+    @ObservedObject private var statuses = PullRequestStatusStore.shared
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
@@ -212,7 +213,7 @@ struct PullRequestWatchStrip: View {
             }
             // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
             Button(action: open) {
-                PullRequestStateBadge(glyph: PullRequestBadge.Glyph(rawValue: watch?.state ?? seen?.state ?? "open") ?? .open, number: number)
+                PullRequestLiveStateBadge(url: url, fallback: PullRequestBadge.Glyph(rawValue: watch?.state ?? "open") ?? .open)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -226,7 +227,7 @@ struct PullRequestWatchStrip: View {
                         Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
                     }
                     .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle((watch?.checks ?? seen?.checks) == "failure" ? NookTheme.coral : NookTheme.textTertiary)
+                    .foregroundStyle(checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -247,24 +248,18 @@ struct PullRequestWatchStrip: View {
             if watch != nil, let toggle { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
         }
         .foregroundStyle(NookTheme.textSecondary)
-        .task(id: url) {
-            while !Task.isCancelled {
-                if watch == nil { seen = await GitHubPullRequests.snapshot(url: url) }
-                try? await Task.sleep(for: .seconds(60))
-            }
-        }
     }
 
     private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
         ToolbarIconButton(symbol, label, height: 22, width: 22, action)
     }
 
-    /// "…/pull/12" or "…/-/merge_requests/12".
-    private var number: Int? { Int(url.lastPathComponent) }
+    /// The newest known checks; the watch's last look until a read has said.
+    private var checks: String { statuses.status(url)?.checks ?? watch?.checks ?? "" }
 
     /// The checks as the shared CI icon shows them, the same one the pull request rows and page use.
     private var ciOutcome: PullRequestCheck.Outcome? {
-        switch watch?.checks ?? seen?.checks ?? "" {
+        switch checks {
         case "success": return .passing
         case "failure": return .failing
         case "pending": return .pending
@@ -273,7 +268,7 @@ struct PullRequestWatchStrip: View {
     }
 
     private var ci: String? {
-        switch watch?.checks ?? seen?.checks ?? "" {
+        switch checks {
         case "success": return tr("ws.prwatch.ciPassed")
         case "failure": return tr("ws.prwatch.ciFailed")
         case "pending": return tr("ws.prwatch.ciPending")
