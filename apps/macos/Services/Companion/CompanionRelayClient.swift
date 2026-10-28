@@ -299,15 +299,19 @@ final class CompanionRelayClient: ObservableObject {
     }
 
     private func updateStatus() {
-        guard enabled, CompanionStore.shared.enabled else { status = .off; return }
+        let next: Status
         let all = Array(rooms.values)
-        if all.contains(where: \.connected) {
-            status = .connected
+        if !enabled || !CompanionStore.shared.enabled {
+            next = .off
+        } else if all.contains(where: \.connected) {
+            next = .connected
         } else if let problem = all.compactMap(\.lastError).first {
-            status = .failed(problem)
+            next = .failed(problem)
         } else {
-            status = all.isEmpty ? .off : .connecting
+            next = all.isEmpty ? .off : .connecting
         }
+        // Every room calls this on each change of its socket; a write publishes and redraws Settings, so only a new status.
+        if status != next { status = next }
     }
 }
 

@@ -124,11 +124,15 @@ final class NotchController {
 
         // The copies on the other screens follow in the same transaction as the real notch (no hop to the next run
         // loop pass), so every screen starts the same animation on the same frame.
+
+        // perf: `show` of the same state redraws the notch on purpose (idle hide, a new outfit); the mirrors follow every one.
         viewModel.$state
             .sink { [weak self] state in self?.syncMirrors(to: state) }
             .store(in: &cancellables)
 
         // A card with text input immediately requests keyboard focus so typing works without clicking.
+
+        // perf: the same state shown again also shows the notch again and takes the keyboard again.
         viewModel.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
@@ -142,21 +146,25 @@ final class NotchController {
         // Screen changed in settings, or idle hide toggled.
         AppSettings.shared.$screenChoice
             .dropFirst()
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screenChanged() }
             .store(in: &cancellables)
         AppSettings.shared.$placement
             .dropFirst()
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screenChanged() }
             .store(in: &cancellables)
         AppSettings.shared.$notchOnAllScreens
             .dropFirst()
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.screenChanged() }
             .store(in: &cancellables)
         AppSettings.shared.$hideWhenIdle
             .dropFirst()
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }

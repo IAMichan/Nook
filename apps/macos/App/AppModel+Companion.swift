@@ -552,6 +552,7 @@ extension AppModel {
             return VoiceService.locale(answerLanguage: self.settings.language, appLanguage: self.settings.appLanguage.rawValue)
         }
         notes.onFinished = { [weak self] note in self?.presentNote(note) }
+        // perf: the same problem twice is two failed recordings, and each gets its card.
         notes.$problem
             .compactMap { $0 }
             .receive(on: RunLoop.main)

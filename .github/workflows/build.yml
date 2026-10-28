@@ -7,6 +7,7 @@ on:
       - 'apps/macos/**'
       - 'packages/protocol/**'
       - 'scripts/ui-lint.sh'
+      - 'scripts/perf-lint.sh'
       - '.github/workflows/build.yml'
       - '.github/actions/**'
   pull_request:
@@ -39,13 +40,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Colors, type, and radii come from NookTheme
         run: scripts/ui-lint.sh
+      - name: No self-feeding subscriptions or endless animations
+        run: scripts/perf-lint.sh
       # Keep this list in sync with the paths filter above.
       - name: Already verified on these inputs?
         id: verified
         uses: ./.github/actions/verified-check
         with:
           name: macos
-          paths: apps/macos packages/protocol scripts/ui-lint.sh .github/workflows/build.yml .github/actions
+          paths: apps/macos packages/protocol scripts/ui-lint.sh scripts/perf-lint.sh .github/workflows/build.yml .github/actions
 
   build:
     # The macOS runner is the scarce one: only start it once the quick lint has passed, and not at all when a run of
