@@ -337,7 +337,8 @@ enum CodexStreamEvent: Equatable, Sendable {
     case commandStarted(id: String, command: String)
     case commandFinished(id: String, command: String, output: String, exitCode: Int?)
     case fileChanges(id: String, changes: [CodexFileChange])
-    case toolCall(id: String, name: String, detail: String, finished: Bool, failed: Bool)
+    /// A tool call (MCP, web search, a dynamic tool), with its arguments and what it returned when Codex says.
+    case toolCall(id: String, name: String, detail: String, finished: Bool, failed: Bool, input: JSONBox? = nil, output: String? = nil)
     /// An MCP tool call that finished with an app (`ui://` page) to show (codex app-server): arguments and result as JSON.
     case mcpApp(id: String, server: String, tool: String, arguments: String?, result: String?, resourceUri: String)
     case turnCompleted(TurnUsage)
@@ -449,7 +450,8 @@ enum CodexStreamParser {
                 detail = ((item["arguments"] as? [String: Any]).flatMap(BridgeTool.detail)).map { ToolSummary.oneLine($0, 120) } ?? ""
             }
             let failed = (item["status"] as? String) == "failed"
-            return [.toolCall(id: id, name: name, detail: detail, finished: finished, failed: failed)]
+            return [.toolCall(id: id, name: name, detail: detail, finished: finished, failed: failed,
+                              input: CodexToolResult.arguments(item), output: finished ? CodexToolResult.text(item) : nil)]
         case "error":
             return [.failed((item["message"] as? String) ?? "Codex reported an error.")]
         default:
@@ -458,9 +460,28 @@ enum CodexStreamParser {
     }
 }
 
+/// What a Codex tool call (exec or app-server) was given and returned, in the shape the timeline shows for every agent.
+enum CodexToolResult {
+    /// The call's arguments, when they are an object.
+    static func arguments(_ item: [String: Any]) -> JSONBox? {
+        (item["arguments"] as? [String: Any]).map { JSONBox($0) }
+    }
+
+    /// The result's text blocks, or the error's message; nil when the call says neither.
+    static func text(_ item: [String: Any]) -> String? {
+        if let error = item["error"] as? [String: Any], let message = error["message"] as? String, !message.isEmpty { return message }
+        if let error = item["error"] as? String, !error.isEmpty { return error }
+        guard let result = item["result"], !(result is NSNull) else { return nil }
+        let content = (result as? [String: Any])?["content"] ?? result
+        let text = ClaudeStreamParser.resultText(content)
+        return text.isEmpty ? nil : text
+    }
+}
+
 // MARK: Gemini CLI
 
-/// What Nook extracts from one line of Gemini CLI's `--output-format stream-json`.
+/// What Nook extracts from one line of Gemini CLI's `--output-format stream-json`. It has no thoughts: the stream does
+/// not carry them (the ACP mode does, see docs/INTEGRATIONS.md).
 enum GeminiStreamEvent: Equatable, Sendable {
     case initialized(sessionID: String, model: String?)
     /// An answer chunk (`delta: true`) or a whole answer.
