@@ -235,10 +235,12 @@ struct AgentRunPanel: View {
     /// "nook / Agents-pagina rustiger maken" (double-click the name to rename it) with the branch button on the right.
     private func header(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.md) {
+            // The folder keeps its name before the title gives way, but truncates too in a narrow conversation instead
+            // of pushing the header past it (under a wide side panel).
             Text(run.projectName)
                 .foregroundStyle(NookTheme.textTertiary)
                 .lineLimit(1)
-                .fixedSize()
+                .layoutPriority(1)
                 .help(AgentPathFormat.tilde(run.workingDirectory))
             Text("/").foregroundStyle(NookTheme.textTertiary)
             if renaming {
