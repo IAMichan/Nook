@@ -28,13 +28,13 @@ struct TimelineBlockView: View {
                     .padding(.leading, 18)
                 }
             }
-        case .fold(let id, let seconds, let blocks):
+        case .fold(let id, let seconds, let blocks, let checks):
             let key = "fold:" + id.uuidString
             VStack(alignment: .leading, spacing: 10) {
                 // What the turn's tests and builds came to stays in sight while its work is folded away.
                 TimelineSummaryRow(symbol: "checkmark.circle", text: tr("ws.fold.worked", AgentPathFormat.duration(seconds)),
                                    open: expanded.contains(key), tint: nil,
-                                   checks: Verification.checks(TimelinePresentation.events(blocks))) { toggle(key) }
+                                   checks: checks) { toggle(key) }
                 if expanded.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                         ForEach(blocks) { inner in

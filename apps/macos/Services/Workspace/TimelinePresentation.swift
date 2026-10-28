@@ -166,14 +166,15 @@ enum TimelineBlock: Identifiable, Equatable {
     case event(RunEvent)
     /// Two or more tool calls (and file changes) in a row.
     case tools(id: UUID, events: [RunEvent], tally: ToolTally)
-    /// A finished turn's work between your message and the answer, and the `seconds` it took.
-    case fold(id: UUID, seconds: Double, blocks: [TimelineBlock])
+    /// A finished turn's work between your message and the answer, the `seconds` it took, and the tests and builds it
+    /// ran (worked out once here, not on every redraw of the timeline).
+    case fold(id: UUID, seconds: Double, blocks: [TimelineBlock], checks: [VerificationCheck])
 
     var id: UUID {
         switch self {
         case .event(let event): return event.id
         case .tools(let id, _, _): return id
-        case .fold(let id, _, _): return id
+        case .fold(let id, _, _, _): return id
         }
     }
 }
@@ -234,7 +235,7 @@ enum TimelinePresentation {
             switch block {
             case .event(let event): return [event]
             case .tools(_, let events, _): return events
-            case .fold(_, _, let inner): return events(inner)
+            case .fold(_, _, let inner, _): return events(inner)
             }
         }
     }
@@ -279,7 +280,7 @@ enum TimelinePresentation {
         guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn) }
         let seconds = max(0, finished.date.timeIntervalSince(first.date))
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.
-        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work)),
+        return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work), checks: Verification.checks(work)),
                 .event(turn[answer]), .event(finished)]
     }
 
