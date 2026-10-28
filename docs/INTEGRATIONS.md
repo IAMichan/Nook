@@ -24,6 +24,12 @@ do the same for every other integration of that kind in the same change, or writ
 If the user asks for something "in WhatsApp", it still applies to every chat app. If they ask for something for Claude
 Code, it still applies to every coding agent. Mention any member you could not do in your summary to the user.
 
+`AgentParityTests` holds coding agents to this. A check for one agent by name (`provider == .claude`) fails the test
+when a file gets more of them than it has today. Give the feature a field in `ProviderCapabilities` or an exhaustive
+`switch` over `RunProvider`/`AgentKind` instead, so every agent has to answer for it. Only when another agent's app
+cannot offer it, raise that file's number in the test and write the gap in the feature matrix below. Every agent also
+needs a column in that matrix.
+
 ## Families
 
 | Family | Members | Shared shape (build features here) |
@@ -31,7 +37,7 @@ Code, it still applies to every coding agent. Mention any member you could not d
 | Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | `InboxMessage`/`InboxThread` (`ChatInbox.swift`), `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab` |
 | WhatsApp gateways | GOWA, OpenWA | `WhatsAppProvider` (`WhatsAppProvider.swift`), `WAWebhookEvent` (`WhatsAppGateway.swift`) |
 | Chat helper networks | every bridge in `apps/chatd` | `apps/chatd` (bridgev2 `MatrixAPI` in `matrix.go`, the `/v1` API, the `/v1/ws` live line) → `ChatServiceData` |
-| Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Copilot CLI, Muse Code, OpenCode, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
+| Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Grok, OpenCode, the ACP agents you add, Copilot CLI, Muse Code, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `ProviderCapabilities` (`WorkspaceModels.swift`), `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
 | Connectors | everything registered with `SourceCatalog.register` | `SourceCatalog` (metadata, tools, aliases, intents) |
 | AI providers | the providers behind the Brain | `AIProvider`, the single `prepareRun` pipeline |
 | Platforms | `apps/macos`, `apps/ios`, `apps/linux`, `apps/windows`, `apps/android`, `apps/tauri` | `packages/protocol`, the companion protocol ([`COMPANION.md`](COMPANION.md)) |
@@ -57,6 +63,33 @@ it was linked) shows only what those rules prove.
 
 While a WhatsApp chat is open in Nook, Nook tells WhatsApp this device is online, as WhatsApp Web does. Otherwise
 WhatsApp sends no typing updates. While it is online, the phone may hold back its own notifications.
+
+## Coding agent features
+
+What each coding agent can do in Nook. `✓` = works, `–` = the agent does not offer it (left out on purpose),
+`?` = not checked yet. A new feature for Claude Code adds a row here with every column filled in. A `?` is work to do:
+check the agent's protocol before you write `–`.
+
+| Feature | Claude Code | Codex | Gemini CLI | Antigravity | OpenCode | Cursor | Grok | ACP agents |
+|---|---|---|---|---|---|---|---|---|
+| Runs as a session in Nook | ✓ | ✓ (app-server) | ✓ (ACP) | ✓ (ACP) | ✓ (ACP) | ✓ (ACP) | ✓ (ACP) | ✓ |
+| Asks you for permission | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Plan mode | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| A message during a turn changes it | ✓ (native) | ✓ (`turn/steer`) | ✓ (interrupt and restart) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| Cost of a turn | ✓ | – | – | ✓ (when the agent sends it) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| Context window meter | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Fork keeps the conversation | ✓ (`--fork-session`) | – (from a summary) | – (from a summary) | – (same) | – (same) | – (same) | – (same) | – (same) |
+| Fork from an earlier turn | ✓ | – | – | – | – | – | – | – |
+| Going back also rolls back the conversation | ✓ | ✓ (`thread/rollback`) | – (only the files) | – (same) | – (same) | – (same) | – (same) | – (same) |
+| Effort level | ✓ (`--effort`) | ✓ | ? | ? | ? | ? | ? | ? |
+| The agent's own `/` commands (`/compact`, `/goal`) | ✓ | ✓ | ? (ACP `available_commands_update` is not read yet) | ? (same) | ? (same) | ? (same) | ? (same) | ? (same) |
+| Model list | ✓ | ✓ | ✓ | – (typed name) | – (typed name) | – (typed name) | – (typed name) | – (typed name) |
+| Nook's tools (bridge) | ✓ (`claude mcp add`) | ✓ (`codex mcp add`) | ✓ | ✓ (`session/new` `mcpServers`) | ✓ (same) | ✓ (same) | ✓ (same) | ✓ (same) |
+| Progress in the notch from a terminal (hooks) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (no hooks) | – (no hooks) |
+| Past sessions from disk | ✓ | ✓ | ✓ | ✓ | – (`session/load`) | – (same) | – (same) | – (same) |
+| Resume a past session | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`session/load`) |
+| Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | – (no home variable) | – (same) | – (same) | – (same) | – (same) | – (same) |
+| Subscription limits | ✓ | ✓ | – | ✓ | – | – | – | – |
 
 ## Coding agent timeline
 
@@ -104,5 +137,9 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 - **The GitHub dashboard in Chats (Tauri).** Pull requests and reviews sorted by what needs you, issues assigned to you,
   approving, commenting and asking for changes, and the merge rights check exist for GitHub only. GitLab merge requests
   are still only watched and opened in the browser; Nook has no GitLab review or merge actions yet.
+
+- **Coding agents over ACP: effort and the agent's own `/` commands.** Claude Code and Codex offer an effort level and
+  their `/compact` and `/goal` in the `/` list. ACP agents announce their commands in `available_commands_update` and
+  their options in the session's config options; `AcpMapper` reads neither yet.
 
 Add an item here when a change cannot reach every member yet.

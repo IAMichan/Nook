@@ -19,6 +19,7 @@ Please read and follow all rules in [AGENTS.md](AGENTS.md).
    - Run `./scripts/ui-lint.sh` after a UI change. `UIConsistencyTests` enforces the same rules in the test suite; when a file must draw its own colors, add it to the allow-list in both the test and the script with a reason.
 4. **Integration parity (one integration changed = all changed):**
    - A feature or fix for one integration goes to every integration of the same kind in the same change. This holds for chat apps (WhatsApp, Messages, Telegram, Slack, Teams, Signal, Instagram, Messenger…), coding agents (Claude Code, Codex, Gemini, Cursor…), connectors, AI providers, WhatsApp gateways, and the platform apps. It also holds when the user names only one of them.
+   - For coding agents: an improvement to Claude Code goes to Codex, Gemini CLI, Antigravity, OpenCode, Cursor, Grok and the ACP agents too. Build it on `ProviderCapabilities` or an exhaustive `switch`, not a `provider == .claude` check (`AgentParityTests` fails on new ones), and fill in its row in the coding agent feature matrix.
    - Build it in the family's shared type or view. Give each member only the translation from its app's data. Leave a member out only when its app does not say it, and record that in [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) and in your summary.
 5. **Verification:**
    - Run `./scripts/core-tests.sh` (which includes `I18nCoverageTests` and `UIConsistencyTests`) before creating a commit or pull request.
