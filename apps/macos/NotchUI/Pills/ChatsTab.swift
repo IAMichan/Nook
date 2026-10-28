@@ -186,8 +186,9 @@ extension ChatsEntry {
 }
 
 /// `ChatsEntry.all`, made once and asked many times: the tab asks for it a dozen times while it draws (the list, the
-/// filters, the counts, the open chat), and making it goes through every chat. Forgotten as soon as WhatsApp or the other
-/// chats change, and once the redraw is over, so it is never older than what it is made of.
+/// filters, the counts, the open chat), and making it goes through every chat. Kept across redraws and forgotten as soon
+/// as something it is made of changes (WhatsApp, the other chats, the chat helper's links, the language), so a redraw
+/// for anything else (the panel, contact photos, the app model) does not go through every chat again.
 @MainActor
 final class ChatsEntryMemo {
     private var entries: [ChatsEntry]?
@@ -196,14 +197,14 @@ final class ChatsEntryMemo {
     func entries(whatsApp: WhatsAppLink, capture: ChatCaptureService) -> [ChatsEntry] {
         if let entries { return entries }
         if watching.isEmpty {
-            watching = [
-                whatsApp.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
-                capture.objectWillChange.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } },
+            let changes: [ObservableObjectPublisher] = [
+                whatsApp.objectWillChange, capture.objectWillChange, ChatHelper.shared.objectWillChange,
+                ChatLinker.shared.objectWillChange, I18n.shared.objectWillChange,
             ]
+            watching = changes.map { $0.sink { [weak self] _ in MainActor.assumeIsolated { self?.entries = nil } } }
         }
         let made = ChatsEntry.all(whatsApp: whatsApp, capture: capture)
         entries = made
-        DispatchQueue.main.async { [weak self] in self?.entries = nil }
         return made
     }
 }

@@ -1029,7 +1029,7 @@ final class WhatsAppLink: ObservableObject {
         let readThere = readInWhatsApp[key] ?? .distantPast
         if let conversation = inbox.conversations[key], let last = conversation.messages.last {
             // OpenWA counts unread itself: a chat it says is read, as of this message or later, is read there.
-            if WhatsAppSettings.gateway == .openwa, let known = known(key), known.unread == 0, known.last >= last.date {
+            if gatewayCountsUnread, let known = known(key), known.unread == 0, known.last >= last.date {
                 return false
             }
             return !last.fromMe && last.date > readThere
@@ -1043,10 +1043,14 @@ final class WhatsAppLink: ObservableObject {
     /// from history loaded at launch shows no mark in the list rather than a wrong one.
     func readIsKnown(_ chat: String) -> Bool {
         let key = WAJID.normalized(chat)
-        if WhatsAppSettings.gateway == .openwa || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
+        if gatewayCountsUnread || readInNook[key] != nil || readInWhatsApp[key] != nil { return true }
         if inbox.conversations[key]?.messages.last?.fromMe == true { return true }
         return unread(key) > 0
     }
+
+    /// Whether the gateway counts unread messages itself (OpenWA). The running gateway's own kind when there is one: the
+    /// Chats tab asks this for every chat on each redraw, and a settings read per chat kept the main thread busy.
+    private var gatewayCountsUnread: Bool { (provider?.kind ?? WhatsAppSettings.gateway) == .openwa }
 
     /// The phone's entry for a chat (`jid` normalized), without going through the whole list.
     private func known(_ jid: String) -> WAChatInfo? {
