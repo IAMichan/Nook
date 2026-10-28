@@ -76,9 +76,11 @@ struct AgentRunPanel: View {
                     CommandConsolePanel(event: event) {
                         withAnimation(NookTheme.reveal) { self.consoleEventID = nil }
                     }
+                    // Like the side panel on the right: a line between it and the conversation, not a box around it.
+                    .padding(.trailing, NookTheme.Spacing.sm)
                     .resizablePanel(width: $consoleWidth, defaultWidth: PanelLayout.console, minimum: PanelLayout.minimumPanel,
                                     available: PanelLayout.room(totalWidth, besides: filePreview != nil ? outputsWidth : nil),
-                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing)
+                                    rest: PanelLayout.minimumConversation + PanelSplit.handle, edge: .trailing, divider: true)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
