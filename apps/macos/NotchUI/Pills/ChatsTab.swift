@@ -1202,8 +1202,8 @@ private struct ChatsDetail: View {
             header
                 .padding(.bottom, NookTheme.Spacing.md)
             NookDivider()
-            // The messages and the field as one centered column, as Nook's own chat has them: on a wide window the lines
-            // stay easy to read and the field sits under the messages it answers.
+            // The messages and the field take the whole width, as a chat app's do: theirs on the left edge, yours on the
+            // right. Each bubble stays narrow enough to read (`ChatBubbleView.maxWidth`), however wide the window is.
             VStack(spacing: 0) {
                 if bubbles.isEmpty { emptyChat }
                 ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
@@ -1219,7 +1219,6 @@ private struct ChatsDetail: View {
                 footer
                     .padding(.top, NookTheme.Spacing.sm)
             }
-            .frame(maxWidth: PanelLayout.readableChat)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
@@ -1567,7 +1566,6 @@ private struct ChatsDetail: View {
                     copyForApp()
                 }
             })
-            .offersNookReplies(!entry.lastIsMine)
             .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
             .tray(entry.read.isUnread
                 ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
