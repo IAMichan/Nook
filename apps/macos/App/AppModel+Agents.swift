@@ -134,12 +134,14 @@ extension AppModel {
             fork = true
         }
         let profile = self.profile(for: session) ?? profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
-        let known = history.sessions.first { $0.isConversation(conversation) }
+        // This account's record of the conversation: a copied history can hold the same id under another account.
+        let known = history.sessions.first { $0.agent == kind && $0.profileID == profile.id && $0.isConversation(conversation) }
+            ?? history.sessions.first { $0.agent == kind && $0.isConversation(conversation) }
         let path = session.transcriptPath.isEmpty ? (known?.path ?? "") : session.transcriptPath
         let earlier = await earlierConversation(path: path, prompt: session.lastPrompt, reply: session.lastReply)
-        // The agent's own title (the Claude app names every session), else the last question; never the folder, which
-        // `adopt` replaces with the first question and a written title.
-        let title = [known?.title ?? "", session.lastPrompt].first { !$0.isEmpty } ?? ""
+        // The title the conversation already has (the Claude app names every session, else its first prompt), not the
+        // latest prompt; never the folder, which `adopt` replaces with the first question and a written title.
+        let title = [known?.title ?? "", session.firstPrompt, session.lastPrompt].first { !$0.isEmpty } ?? ""
         let id = try await workspace.adopt(provider: provider, sessionID: conversation, profileID: profile.id,
                                            directory: session.cwd, title: title, history: earlier, fork: fork)
         try applyChoice(choice, to: id)

@@ -28,7 +28,7 @@ enum GitHubCILogs {
                 guard let job = try await get("/actions/jobs/\(jobID)") as? [String: Any] else {
                     throw NookError("GitHub returned an unexpected response.")
                 }
-                var log = CILog(steps: CILogParser.steps(job: job))
+                var log = CILogParser.log(job: job)
                 if let raw = await rawLog(repo: target.repo, jobID: jobID, token: token) {
                     let cleaned = CILogParser.clean(raw)
                     log.text = cleaned.text

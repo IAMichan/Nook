@@ -176,10 +176,19 @@ struct PullRequestReviewIcon: View {
 struct CheckOutcomeGlyph: View {
     let outcome: PullRequestCheck.Outcome
     var size: CGFloat = 12
+    /// A pending check or step that runs right now turns, so it reads apart from one that still waits.
+    var running = false
 
     var body: some View {
-        Image(systemName: PullRequestIcon.symbol(outcome))
-            .font(NookTheme.font(size, .medium))
-            .foregroundStyle(PullRequestIcon.tint(outcome))
+        if running && outcome == .pending {
+            Image(systemName: "circle.dashed")
+                .font(NookTheme.font(size, .semibold))
+                .foregroundStyle(NookTheme.paper)
+                .symbolEffect(.rotate, options: .repeating)
+        } else {
+            Image(systemName: PullRequestIcon.symbol(outcome))
+                .font(NookTheme.font(size, .medium))
+                .foregroundStyle(PullRequestIcon.tint(outcome))
+        }
     }
 }

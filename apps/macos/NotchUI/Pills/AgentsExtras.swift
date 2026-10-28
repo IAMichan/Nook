@@ -225,6 +225,7 @@ private struct TurningGlyph: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // perf: turns only for the second or two a refresh takes, and takes its color from the button around it.
         TimelineView(.nookFrames(fps: energy.plan.frameRate(energy.plan.ambientFrameRate, attended: attended),
                                  paused: !turning || reduceMotion || energy.plan.pace == .paused)) { context in
             let turn = turning ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) : 0

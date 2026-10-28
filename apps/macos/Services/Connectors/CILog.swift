@@ -7,6 +7,10 @@ struct CILog: Equatable, Sendable {
         let number: Int
         let name: String
         let outcome: PullRequestCheck.Outcome
+        var started: Date? = nil
+        var finished: Date? = nil
+        /// Runs right now (a pending step that has not started yet waits).
+        var running = false
     }
 
     /// One line of the log as it is read: what GitHub marked it as (`##[error]`, `##[group]`…) or what its words say.
@@ -21,6 +25,14 @@ struct CILog: Equatable, Sendable {
     var text: String?
     /// Lines left out at the top because the log was longer than Nook shows.
     var omittedLines = 0
+    /// When the job started and finished, for its clock; nil while it waits or runs.
+    var started: Date?
+    var finished: Date?
+
+    /// The step that runs now, if any.
+    var runningStep: Step? { steps.first(where: \.running) }
+    /// Steps that are done (passed, failed or skipped), for "step 8 of 15".
+    var doneSteps: Int { steps.filter { $0.outcome != .pending }.count }
 }
 
 enum CILogParser {
@@ -46,8 +58,32 @@ enum CILogParser {
             else if ["failure", "timed_out", "cancelled"].contains(conclusion) { outcome = .failing }
             else if ["skipped", "neutral"].contains(conclusion) { outcome = .skipped }
             else { outcome = .passing }
-            return CILog.Step(number: (step["number"] as? Int) ?? 0, name: (step["name"] as? String) ?? "?", outcome: outcome)
+            return CILog.Step(number: (step["number"] as? Int) ?? 0, name: (step["name"] as? String) ?? "?", outcome: outcome,
+                              started: PullRequestDetailParser.date(step["started_at"]),
+                              finished: status == "completed" ? PullRequestDetailParser.date(step["completed_at"]) : nil,
+                              running: status == "in_progress")
         }
+    }
+
+    /// A job's steps with its own start and end, from `GET /actions/jobs/{id}`.
+    static func log(job: [String: Any]) -> CILog {
+        var log = CILog(steps: steps(job: job))
+        log.started = PullRequestDetailParser.date(job["started_at"])
+        if (job["status"] as? String) == "completed" { log.finished = PullRequestDetailParser.date(job["completed_at"]) }
+        return log
+    }
+
+    /// A duration as a clock that reads the same in every language: "0:42", "3:12", "1:04:05".
+    static func clock(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded(.down)))
+        let hours = total / 3600, minutes = total / 60 % 60, rest = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
+
+    /// How long something ran: until it finished, or until `now` while it still runs. Nil before it started.
+    static func elapsed(started: Date?, finished: Date?, now: Date = Date()) -> TimeInterval? {
+        guard let started else { return nil }
+        return (finished ?? now).timeIntervalSince(started)
     }
 
     /// A raw job log as people read it: without the timestamp GitHub puts before every line and without terminal colour

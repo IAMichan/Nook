@@ -184,6 +184,12 @@ struct PullRequestCheck: Identifiable, Equatable, Sendable {
     /// The conclusion or state GitHub gave ("success", "failure", "in_progress"…), shown under the name.
     let detail: String
     let url: URL?
+    /// A check run (with GitHub's own status words in `detail`) rather than a commit status (with its own sentence).
+    var isCheckRun = false
+    /// Runs right now; a pending check that has not started yet is queued.
+    var running = false
+    var started: Date? = nil
+    var finished: Date? = nil
 
     var id: String { name + "|" + (url?.absoluteString ?? "") }
 }
@@ -345,7 +351,10 @@ enum PullRequestDetailParser {
             else { outcome = .passing }
             return PullRequestCheck(name: (run["name"] as? String) ?? "?", outcome: outcome,
                                     detail: status == "completed" ? conclusion : status,
-                                    url: ((run["html_url"] as? String) ?? (run["details_url"] as? String)).flatMap(URL.init(string:)))
+                                    url: ((run["html_url"] as? String) ?? (run["details_url"] as? String)).flatMap(URL.init(string:)),
+                                    isCheckRun: true, running: status == "in_progress",
+                                    started: date(run["started_at"]),
+                                    finished: status == "completed" ? date(run["completed_at"]) : nil)
         }
         // The combined status lists every context once, with its latest state.
         for status in statuses {

@@ -75,11 +75,12 @@ enum AgentFormat {
         return cachedWeekdayFormatter.string(from: date)
     }
 
-    /// A session title stripped of tags Claude Code sometimes prefixes ("<pasted_content …>").
-    /// A live session's title: what it was asked (its transcript's title, else the prompt of this turn), never the
-    /// agent's last answer, which only stands in while nothing else is known.
+    /// A live session's title: what it was first asked (its transcript's title, else the first prompt Nook heard), so a
+    /// new prompt never renames it. The latest prompt and then the agent's last answer only stand in while nothing else
+    /// is known.
     static func sessionTitle(_ session: AgentSession, known: PastSession?) -> String {
         if let known, !known.title.isEmpty { return title(known.title) }
+        if !session.firstPrompt.isEmpty { return title(session.firstPrompt) }
         if !session.lastPrompt.isEmpty { return title(session.lastPrompt) }
         if !session.summary.isEmpty { return title(session.summary) }
         return ""
