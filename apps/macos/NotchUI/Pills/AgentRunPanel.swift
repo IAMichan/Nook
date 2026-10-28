@@ -311,7 +311,7 @@ struct AgentRunPanel: View {
                 Button(tr("ws.action.retry")) { workspace.retry(runID) }
             }
             let finishKey = FinishedSessions.key(run: run)
-            let isFinished = finishedMarks.isFinished(key: finishKey, idle: !run.status.isActive, lastActive: run.updatedAt)
+            let isFinished = finishedMarks.contains(finishKey)
             Button(isFinished ? tr("agents.finish.reopen") : tr("agents.finish.mark")) {
                 if isFinished { finishedMarks.reopenByUser(finishKey) } else { finishedMarks.mark(finishKey) }
             }

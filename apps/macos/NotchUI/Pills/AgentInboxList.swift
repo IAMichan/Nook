@@ -47,12 +47,11 @@ struct AgentInboxList: View {
 
     private func row(_ item: AgentListItem) -> InboxRow {
         let isPast = item.id.hasPrefix("past:")
-        // A process Nook only sees (id "proc-…") runs in a terminal: it never settles by itself.
-        let idle = (item.status == .idle || item.status == .finished) && !item.id.hasPrefix("proc-")
         // A busy session settles only when you settled it during this busy spell (a turn that hangs).
         let settledBusy = item.isBusy && finishedMarks.isMarkedWhileBusy(item.finishKey)
-        let settled = isPast || settledBusy
-            || (!item.isBusy && finishedMarks.isFinished(key: item.finishKey, idle: idle, lastActive: item.started, now: now))
+        // Only you settle a chat (or the auto-settle rules you switched on): one that went quiet stays until you handled it,
+        // across a restart of Nook too.
+        let settled = isPast || settledBusy || (!item.isBusy && finishedMarks.contains(item.finishKey))
         return InboxRow(
             id: item.id, title: item.title, project: item.folder, attention: attention(item),
             pinned: store.state.pinned.contains(item.id), settled: settled,

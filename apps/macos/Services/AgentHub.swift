@@ -200,7 +200,7 @@ final class AgentHub: ObservableObject {
         Task {
             let found = await LocalAgentScanner.scan()
             processes = found
-            dropEndedRestored(found)
+            settleEndedRestored(found)
             await settleStale(found)
             // A hooked session covers one process of its agent and folder, not all of them: two sessions of the same agent in
             // the same folder stay two rows.
@@ -324,8 +324,7 @@ final class AgentHub: ObservableObject {
             case "done": status = .done
             default: status = .running
             }
-            // Same lifetime as `prune`.
-            guard age < (status == .done ? 4 : 12) * 3600 else { continue }
+            guard !SessionLiveness.isExpired(done: status == .done, age: age) else { continue }
             let marks: [String: AgentStep.Mark] = ["done": .done, "running": .running, "blocked": .blocked, "failed": .failed, "todo": .todo]
             var record = Record(agentID: item.agentID, agent: item.agent, project: Self.projectName(item.cwd), cwd: item.cwd,
                                 status: status, steps: item.steps.compactMap { pair in
@@ -346,9 +345,10 @@ final class AgentHub: ObservableObject {
         rebuild()
     }
 
-    /// A restored session whose agent has ended while Nook was closed is dropped once the process list shows it is gone.
-    /// Agents the scanner does not know (apps, custom tools) stay until the normal expiry.
-    private func dropEndedRestored(_ found: [DetectedAgent]) {
+    /// A restored session that still read as busy while its agent ended with Nook closed is settled as done, the way
+    /// `settleStale` settles one whose agent quits while Nook runs. It stays in the list: a restart never takes away a
+    /// chat you have not handled. Agents the scanner does not know (apps, custom tools) are left to `settleStale`.
+    private func settleEndedRestored(_ found: [DetectedAgent]) {
         guard !unconfirmed.isEmpty else { return }
         let scannable = Set(LocalAgentScanner.agentNames)
         var running: [String: Int] = [:]
@@ -356,13 +356,17 @@ final class AgentHub: ObservableObject {
         var changed = false
         for key in unconfirmed.sorted() {
             // A hook event since launch already proves the session is alive.
-            guard let record = records[key], record.updated < launchedAt else { continue }
-            guard scannable.contains(record.agent) else { continue }
+            guard var record = records[key], record.updated < launchedAt else { continue }
+            guard scannable.contains(record.agent), record.status == .running || record.status == .waiting else { continue }
             let id = "\(record.agent)|\(record.cwd)"
             if let count = running[id], count > 0 {
                 running[id] = count - 1
             } else {
-                records[key] = nil
+                record.status = .done
+                record.turnStarted = nil
+                Self.complete(&record, as: .done)
+                Self.push(&record, .done, "session closed")
+                records[key] = record
                 changed = true
             }
         }
@@ -930,8 +934,7 @@ final class AgentHub: ObservableObject {
         let now = Date()
         records = records.filter { key, record in
             if pendingApprovals.values.contains(where: { $0.request.sessionKey == key }) { return true }
-            let age = now.timeIntervalSince(record.updated)
-            return record.status == .done ? age < 4 * 3600 : age < 12 * 3600
+            return !SessionLiveness.isExpired(done: record.status == .done, age: now.timeIntervalSince(record.updated))
         }
         rebuild()
     }
