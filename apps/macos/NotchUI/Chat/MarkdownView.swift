@@ -166,13 +166,13 @@ extension MarkdownBlock {
         return FileLink.parse(url.absoluteString) != nil
     }
 
-    /// Opens a file link in your editor at its line (never in the file's own app). False when it is not a file link or
-    /// cannot be placed (a relative path without a folder).
+    /// Opens a file link in Nook's own viewer at its line (`AppModel.openFileInNook`), beside the session in an agent's
+    /// conversation. False when it is not a file link or cannot be placed (a relative path without a folder).
     @MainActor
-    static func openFileLink(_ url: URL, base: String?) -> Bool {
+    static func openFileLink(_ url: URL, base: String?, beside: Bool) -> Bool {
         guard isFileLink(url), let target = FileLink.parse(url.absoluteString),
               let resolved = FileLink.resolve(target, base: base) else { return false }
-        AppModel.shared.workspace.openFile(resolved)
+        AppModel.shared.openFileInNook(resolved, beside: beside)
         return true
     }
 }
@@ -205,7 +205,8 @@ struct MarkdownView: View {
         .textSelection(.enabled)
         .environment(\.openURL, OpenURLAction { [fileLinkBase, pullRequestLinksBeside] url in
             if MarkdownBlock.isFileLink(url) {
-                return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase) } ? .handled : .discarded
+                return MainActor.assumeIsolated { MarkdownBlock.openFileLink(url, base: fileLinkBase, beside: pullRequestLinksBeside) }
+                    ? .handled : .discarded
             }
             guard MarkdownBlock.isSafeLink(url) else { return .discarded }
             // A pull request opens in Nook: beside the session, or on the Pull requests page.

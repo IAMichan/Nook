@@ -13,7 +13,7 @@ copying it again.
 | `NookTheme.line`, `line2`, `hairline`, `fieldStroke`, `separator` | Hairlines and strokes; `separator` is the clearer line between the items of a list |
 | `NookTheme.blue` | Links, renamed files, and diff hunk headers |
 | `NookTheme.mint`, `amber`, `coral`, `violet`, `iris` | State: done, waiting on you, error, merged, Nook itself |
-| `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
+| `NookTheme.Syntax.keyword`, `string`, `comment`, `number`, `type`, `property`, `tag`, `attribute` | Syntax colors of code in a diff (`DiffText`, via `DiffSyntaxStyle`) and in the file viewer (`FileViewer`), muted under the diff's own tints; each has a dark and a light value. Only for code, never for state |
 | `NookTheme.rowRest`, `rowHover`, `rowSelected`, `rowFill(selected:hovering:rest:)` | List rows and cards at rest, under the pointer, and selected |
 | `NookTheme.TextStyle.caption`, `detail`, `label`, `body`, `strong`, `title`, `heading`, `display`, `code` | The type scale: the same kind of text is the same size everywhere. `detail` is the line under a title (a setting's explanation, a hint, an error); `heading` heads a sheet or a setup step. Never SwiftUI's own `.caption`, `.callout`, or `.headline` |
 | `NookTheme.font(_:_:)`, `mono(_:_:)`, `rounded(_:_:)` | A size the scale does not cover (an icon, a numeral); never `Font.system(size:)` inline |

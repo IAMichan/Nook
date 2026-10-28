@@ -99,6 +99,27 @@ extension AppModel {
         return true
     }
 
+    /// A file link opens in Nook's own viewer at its line: in the session's side panel when clicked in an agent's
+    /// conversation (`beside`), else in a window of its own. ⌘ or ⌃ held while clicking opens it in your editor
+    /// instead, and a folder shows in Finder. Nothing is handed to the file's own app.
+    func openFileInNook(_ target: FileTarget, beside: Bool) {
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isFolder) else {
+            ToastCenter.shared.info(tr("ws.file.missing", AgentPathFormat.tilde(target.path)))
+            return
+        }
+        if isFolder.boolValue {
+            workspace.revealInFinder(target.path)
+        } else if !NSEvent.modifierFlags.isDisjoint(with: [.command, .control]) {
+            workspace.openFile(target)
+        } else if beside {
+            FileViewerStore.shared.open(target)
+            viewModel.sessionTool = .file
+        } else {
+            FileViewerWindow.shared.show(target)
+        }
+    }
+
     /// A github.com pull request link opens in Nook, read with the account that lists it (else the first GitHub
     /// account): in the session's side panel when clicked in an agent's conversation (`beside`), else on the Pull
     /// requests page. Its top bar opens it on GitHub. Returns false when Nook cannot read it (another forge, GitHub
