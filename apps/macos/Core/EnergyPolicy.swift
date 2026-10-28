@@ -68,6 +68,16 @@ enum EnergyPace: Equatable {
     case paused
 }
 
+/// Whether anyone looks at the window an animation is in, as `EnergyPlan.frameRate` reads it.
+enum ViewAttention: Equatable {
+    /// The pointer is where it is: on the screen of its notch, or over its window.
+    case attended
+    /// On screen, but the pointer is elsewhere.
+    case unattended
+    /// Nothing of its window can be seen: covered by other windows, minimized, or on another Space.
+    case hidden
+}
+
 /// What the background work should do right now: the pace, why, and the knobs the workers read.
 struct EnergyPlan: Equatable {
     var pace: EnergyPace
@@ -139,12 +149,19 @@ struct EnergyPlan: Equatable {
     var ambientFrameRate: Double { pace == .full ? 30 : 15 }
 
     /// Frames per second of the animations that run on their own (Nook, his ring, the equalizer, working dots) on a
-    /// screen or in a window the pointer is not on: half the ambient rate, so they stay on the shared clock.
-    var unattendedFrameRate: Double { ambientFrameRate / 2 }
+    /// screen or in a window the pointer is not on. Every frame of them updates and lays out the window they are in, and
+    /// you see them from the corner of your eye at most: a quarter of the ambient rate at full speed, on the shared clock
+    /// (`NookFrames`), and never more than that.
+    var unattendedFrameRate: Double { 7.5 }
 
-    /// `fps` where the pointer is (`attended`), at most `unattendedFrameRate` elsewhere.
-    func frameRate(_ fps: Double, attended: Bool) -> Double {
-        attended ? fps : min(fps, unattendedFrameRate)
+    /// `fps` where the pointer is (`.attended`), at most `unattendedFrameRate` elsewhere on screen, and 0 (hold still)
+    /// where nothing of the window can be seen.
+    func frameRate(_ fps: Double, attended: ViewAttention) -> Double {
+        switch attended {
+        case .attended: return fps
+        case .unattended: return min(fps, unattendedFrameRate)
+        case .hidden: return 0
+        }
     }
 
     /// The first reason, for a short status line; nil at full speed.

@@ -17,10 +17,11 @@ struct NookFrames: TimelineSchedule {
     private let step: Int
     private let paused: Bool
 
-    /// Frames at about `fps` a second, on the shared grid; one frame only (the content as it is now) while `paused`.
+    /// Frames at about `fps` a second, on the shared grid; one frame only (the content as it is now) while `paused` or
+    /// when `fps` is 0 (`EnergyPlan.frameRate` for a window nobody can see).
     init(fps: Double, paused: Bool = false) {
         step = max(1, Int((Self.grid / max(1, fps)).rounded()))
-        self.paused = paused
+        self.paused = paused || fps <= 0
     }
 
     struct Entries: Sequence, IteratorProtocol {
@@ -131,14 +132,16 @@ final class PointerWhere: ObservableObject {
 }
 
 extension EnvironmentValues {
-    /// The pointer is where this view is: on the screen of its notch, or over its window. Elsewhere the animations that
-    /// run on their own draw at `EnergyPlan.unattendedFrameRate`.
-    @Entry var nookAttended = true
+    /// Whether the pointer is where this view is (on the screen of its notch, or over its window) and whether its window
+    /// can be seen at all. Elsewhere the animations that run on their own draw at `EnergyPlan.unattendedFrameRate`; in a
+    /// window nobody can see they hold still.
+    @Entry var nookAttended = ViewAttention.attended
 }
 
 extension View {
     /// Tells the views in this window whether the pointer is where they are (`nookAttended`): for a notch, on its screen;
-    /// for any other window, over it. Put on the root of each window.
+    /// for any other window, over it. A window that is covered, minimized or on another Space is `.hidden`. Put on the
+    /// root of each window.
     func nookAttention() -> some View {
         modifier(NookAttention())
     }
@@ -154,22 +157,56 @@ private struct NookAttention: ViewModifier {
             .background(WindowProbe(found: window))
     }
 
-    private var attended: Bool {
+    private var attended: ViewAttention {
         // Before the window is known (its first frame), as it was: at the full rate.
-        guard let window = window.window else { return true }
+        guard let window = window.window else { return .attended }
+        // Covered by other windows, minimized or on another Space: every frame would update and lay out the window for
+        // nothing.
+        guard self.window.visible else { return .hidden }
         if window is NotchPanel {
-            guard let screen = window.screen.flatMap(PointerWhere.displayID), let pointer = pointer.screen else { return true }
-            return screen == pointer
+            guard let screen = window.screen.flatMap(PointerWhere.displayID), let pointer = pointer.screen else { return .attended }
+            return screen == pointer ? .attended : .unattended
         }
-        return pointer.window == window.windowNumber
+        return pointer.window == window.windowNumber ? .attended : .unattended
     }
 }
 
-/// The window a view is in, held weakly, found once the view is in one; its views learn it at once.
+/// The window a view is in, held weakly, found once the view is in one; its views learn it at once. Also whether any of
+/// it can be seen, published only when that changes.
 @MainActor
 private final class WeakWindow: ObservableObject {
     weak var window: NSWindow? {
         willSet { if newValue !== window { objectWillChange.send() } }
+        didSet { if window !== oldValue { watchOcclusion() } }
+    }
+    @Published private(set) var visible = true
+    private var occlusion: NSObjectProtocol?
+
+    private func watchOcclusion() {
+        if let occlusion { NotificationCenter.default.removeObserver(occlusion) }
+        occlusion = nil
+        guard let window else { return update(true) }
+        occlusion = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                           object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateFromWindow() }
+        }
+        updateFromWindow()
+    }
+
+    private func updateFromWindow() {
+        // The notch floats above everything and is mostly transparent: the window server's idea of it being covered is
+        // not what you see there, so it always counts as seen.
+        guard let window, !(window is NotchPanel) else { return update(true) }
+        // Not on screen at all (not ordered in yet, or minimized) is not seen either; the notification comes when it is.
+        update(window.occlusionState.contains(.visible))
+    }
+
+    private func update(_ visible: Bool) {
+        if visible != self.visible { self.visible = visible }
+    }
+
+    deinit {
+        if let occlusion { NotificationCenter.default.removeObserver(occlusion) }
     }
 }
 
