@@ -5,6 +5,9 @@ import Foundation
 
 let chatMediaTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chat.media.location": "Locatie",
+        "chat.media.contact": "Contact",
+        "chat.media.attachment": "Bijlage",
         "chats.waitsInApp": "Nog ongelezen in %@",
         "chats.settings.reading": "Lezen",
         "chats.settings.readOnOpen": "Gelezen in Nook bij openen",
@@ -121,6 +124,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Geef Nook schijftoegang",
     ],
     .en: [
+        "chat.media.location": "Location",
+        "chat.media.contact": "Contact",
+        "chat.media.attachment": "Attachment",
         "chats.waitsInApp": "Still unread in %@",
         "chats.settings.reading": "Reading",
         "chats.settings.readOnOpen": "Read in Nook when opened",
@@ -237,6 +243,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Give Nook disk access",
     ],
     .de: [
+        "chat.media.location": "Standort",
+        "chat.media.contact": "Kontakt",
+        "chat.media.attachment": "Anhang",
         "chats.waitsInApp": "In %@ noch ungelesen",
         "chats.settings.reading": "Lesen",
         "chats.settings.readOnOpen": "Beim Öffnen in Nook gelesen",
@@ -353,6 +362,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Gib Nook Festplattenzugriff",
     ],
     .fr: [
+        "chat.media.location": "Position",
+        "chat.media.contact": "Contact",
+        "chat.media.attachment": "Pièce jointe",
         "chats.waitsInApp": "Toujours non lu dans %@",
         "chats.settings.reading": "Lecture",
         "chats.settings.readOnOpen": "Lu dans Nook à l’ouverture",
@@ -469,6 +481,9 @@ let chatMediaTranslations: [AppLanguage: [String: String]] = [
         "chats.own.messages.step": "Donnez à Nook l’accès au disque",
     ],
     .es: [
+        "chat.media.location": "Ubicación",
+        "chat.media.contact": "Contacto",
+        "chat.media.attachment": "Adjunto",
         "chats.waitsInApp": "Aún sin leer en %@",
         "chats.settings.reading": "Lectura",
         "chats.settings.readOnOpen": "Leído en Nook al abrir",

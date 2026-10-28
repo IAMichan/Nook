@@ -214,12 +214,14 @@ struct NookFilterChip: View {
 struct NookDivider: View {
     var vertical = false
     var inset: CGFloat = 0
+    /// A line that marks something (where the new messages start) takes that state's color.
+    var tint: Color = NookTheme.line2
 
     var body: some View {
         if vertical {
-            Rectangle().fill(NookTheme.line2).frame(width: 1)
+            Rectangle().fill(tint).frame(width: 1)
         } else {
-            Rectangle().fill(NookTheme.line2).frame(height: 1).padding(.leading, inset)
+            Rectangle().fill(tint).frame(height: 1).padding(.leading, inset)
         }
     }
 }

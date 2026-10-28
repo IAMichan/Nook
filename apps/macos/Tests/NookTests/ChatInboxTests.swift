@@ -341,6 +341,34 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads["x"]?.messages.map(\.text), ["Amen"], "kept from before: it goes")
     }
 
+    func testLinksInAMessageShowWhatTheyLeadTo() {
+        XCTAssertEqual(ChatFormat.firstLink("look at https://example.com/a, nice!"), URL(string: "https://example.com/a"),
+                       "the sentence's comma is no part of the address")
+        XCTAssertEqual(ChatFormat.firstLink("[here](https://x.com/p) and https://y.com"), URL(string: "https://x.com/p"))
+        XCTAssertNil(ChatFormat.firstLink("`https://code.example`"), "an address in code is code, not a link")
+        XCTAssertNil(ChatFormat.firstLink("no link at all"))
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/cat.GIF")!), .image)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/clip.mp4?x=1")!), .video)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/song.mp3")!), .audio)
+        XCTAssertEqual(ChatFormat.linkKind(URL(string: "https://a.com/news")!), .page)
+        XCTAssertTrue(ChatFormat.isVideoPage(URL(string: "https://youtu.be/abc")!))
+        XCTAssertTrue(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/reel/DevP29EPzQg/")!))
+        XCTAssertFalse(ChatFormat.isVideoPage(URL(string: "https://www.instagram.com/p/C1/")!))
+    }
+
+    func testChatMovedBeforeItsMessageIsReadAgain() {
+        let moved = Date(timeIntervalSince1970: 1_000)
+        let chat = ChatServiceData.Chat(id: "!i", app: "instagram", title: "Anna", isGroup: false, unread: 1, last: moved)
+        let older = InboxMessage(id: "1", text: "hi", date: moved.addingTimeInterval(-30))
+        XCTAssertTrue(ChatServiceData.isBehind([older], chat: chat), "the list moved on: the newest message is still coming")
+        let newest = InboxMessage(id: "2", text: "there", date: moved.addingTimeInterval(-0.4))
+        XCTAssertFalse(ChatServiceData.isBehind([older, newest], chat: chat), "within the rounding of the two times")
+        XCTAssertFalse(ChatServiceData.isBehind([], chat: chat), "nothing read is no message behind")
+        var undated = chat
+        undated.last = nil
+        XCTAssertFalse(ChatServiceData.isBehind([older], chat: undated))
+    }
+
     func testMessagesGoToTheirChat() {
         var inbox = ChatInbox()
         XCTAssertTrue(inbox.add(notice("Anna", "one"), id: "1"))
@@ -663,6 +691,15 @@ final class ChatInboxTests: XCTestCase {
                        "a web address stays whole")
         XCTAssertEqual(ChatFormat.spans("*_both_*"), [Span(text: "both", bold: true, italic: true)])
         XCTAssertEqual(ChatFormat.spans("*open"), [Span(text: "*open")], "an unclosed marker stays")
+        // A shared reel comes in as a Markdown link whose label is the address: it shows short, and still opens.
+        let reel = "https://www.instagram.com/reel/DevP29EPzQg/?id=401249_7643&is_sponsored=false"
+        XCTAssertEqual(ChatFormat.spans("[https://www.instagram.com/reel/DevP29EPzQg](\(reel))"),
+                       [Span(text: "instagram.com/reel/DevP29EPzQg", link: URL(string: reel))])
+        XCTAssertEqual(ChatFormat.spans("look [here](https://x.com/a) now"),
+                       [Span(text: "look "), Span(text: "here", link: URL(string: "https://x.com/a")), Span(text: " now")])
+        XCTAssertEqual(ChatFormat.spans("[not](a link)"), [Span(text: "[not](a link)")], "only a web address is a target")
+        XCTAssertEqual(ChatFormat.plain("[https://www.instagram.com/p/C1/](https://www.instagram.com/p/C1/)"),
+                       "instagram.com/p/C1", "a chat's line shows the short link, not the markup")
     }
 
     func testChatBlocks() {

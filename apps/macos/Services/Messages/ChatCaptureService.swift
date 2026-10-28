@@ -84,7 +84,6 @@ final class ChatCaptureService: ObservableObject {
     /// Quick reads still owed to a bridge after one of its app's notifications: the app's own server can list the
     /// message a few seconds after it notified, so one read right away may still miss it.
     private var bridgeNudges: [String: Int] = [:]
-    private var bridging = false
 
     /// How often the database is looked at. Only a database that changed is read, so looking is cheap; looking often
     /// matters because Slack and Teams take a notification back as soon as you read the message elsewhere.
@@ -293,13 +292,11 @@ final class ChatCaptureService: ObservableObject {
     }
 
     /// Reads every bridge that is due, of the apps that are on. Runs next to the notifications, also while those cannot
-    /// be read: Slack needs no disk access.
+    /// be read: Slack needs no disk access. Each bridge reads on its own: a slow one (a web service that takes seconds to
+    /// answer) never holds up the others, so a message in a quick one shows the moment it is there.
     func pollBridges() async {
-        guard enabled, !bridging else { return }
-        bridging = true
-        defer { bridging = false }
-        var changed = false
-        let before = inbox
+        guard enabled else { return }
+        var started: [Task<Void, Never>] = []
         for bridge in bridges {
             // Each write to these fires `objectWillChange`, which redraws every chat view: write only what changed, so a
             // quiet tick every second costs no redraw.
@@ -311,35 +308,63 @@ final class ChatCaptureService: ObservableObject {
                 if bridge === serviceBridge, !bridged.isDisjoint(with: serviceBridge.covered) { bridged.subtract(serviceBridge.covered) }
                 continue
             }
+            // One read per bridge at a time: the next waits until this one is done.
+            guard !reading.contains(bridge.app) else { continue }
             if let due = bridgeDue[bridge.app], due > Date() { continue }
             let nudges = bridgeNudges[bridge.app] ?? 0
             bridgeNudges[bridge.app] = nudges > 1 ? nudges - 1 : nil
             bridgeDue[bridge.app] = Date().addingTimeInterval(nudges > 1 ? min(bridge.interval, Self.nudgeGap) : bridge.interval)
-            do {
-                let chats = try await bridge.read()
-                // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
-                var merged = inbox
-                var mergedAny = false
-                for chat in chats where merged.merge(chat) { mergedAny = true }
-                if mergedAny {
-                    inbox = merged
-                    changed = true
-                }
-                if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
-                // The chat helper reads several apps: each one it brought in is bridged.
-                let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
-                if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
-            } catch {
-                let problem = error.localizedDescription
-                if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
-                // Try again in a minute, not every few seconds.
-                bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
+            reading.insert(bridge.app)
+            started.append(Task { await self.read(bridge) })
+        }
+        for task in started { await task.value }
+    }
+
+    /// The bridges reading now, by app.
+    private var reading: Set<String> = []
+
+    /// One read of one bridge, merged into the inbox as soon as it is there.
+    private func read(_ bridge: ChatBridge) async {
+        defer { reading.remove(bridge.app) }
+        let started = generation
+        do {
+            let chats = try await bridge.read()
+            guard started == generation else { return }
+            // Merged into a copy: a read that brings nothing new (most of them) then leaves the published inbox alone.
+            let before = inbox
+            var merged = inbox
+            var mergedAny = false
+            for chat in chats where merged.merge(chat) { mergedAny = true }
+            if mergedAny {
+                inbox = merged
+                save()
+                announce(since: before)
             }
+            if bridgeProblems[bridge.app] != nil { bridgeProblems[bridge.app] = nil }
+            // The chat helper reads several apps: each one it brought in is bridged.
+            let apps: Set<String> = bridge === serviceBridge ? serviceBridge.covered.union([bridge.app]) : [bridge.app]
+            if !apps.isSubset(of: bridged) { bridged.formUnion(apps) }
+        } catch {
+            guard started == generation else { return }
+            let problem = error.localizedDescription
+            if bridgeProblems[bridge.app] != problem { bridgeProblems[bridge.app] = problem }
+            // Try again in a minute, not every few seconds.
+            bridgeDue[bridge.app] = Date().addingTimeInterval(max(bridge.interval, 60))
         }
-        if changed {
-            save()
-            announce(since: before)
+    }
+
+    /// A chat you opened: its app is read now (the chat helper reads that very chat again), so it shows what the app
+    /// has at this moment, the same for every app Nook reads itself. A chat only notifications bring has nothing to ask.
+    func refresh(_ id: String) {
+        guard enabled, let thread = inbox.threads[id], thread.bridged == true else { return }
+        if serviceBridge.refresh(app: thread.app, name: thread.name) {
+            bridgeDue[serviceBridge.app] = nil
+        } else if bridge(for: thread.app) != nil {
+            bridgeDue[thread.app] = nil
+        } else {
+            return
         }
+        Task { await pollBridges() }
     }
 
     /// Tells about the chats someone wrote in since `before`, in the apps that are on.

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import UniformTypeIdentifiers
 
 /// A conversation as bubbles, oldest at the top: theirs on the left, yours on the right, the way a chat app shows it.
 /// A line marks where a new day starts; messages one person sends in a row sit close together under their name (each
@@ -33,11 +34,18 @@ struct ChatTranscript: View {
     var onLoadOlder: (() async -> Bool)? = nil
     /// Who is typing in the chat now ("Jan is typing…"), shown under its last message; nil while no one does.
     var typing: String? = nil
+    /// The first message that was new when the chat opened: a line above it says so, and it stays put while you read.
+    var newFrom: String? = nil
     @State private var loadingOlder = false
     /// The pointer or fingers moved the chat: only then does reaching the top load older messages, not the first layout.
     @State private var scrolledByUser = false
     /// The last fetch brought nothing: the chat's start is shown, so reaching the top again does not ask once more.
     @State private var reachedStart = false
+    /// The newest message is in view (or nearly): a new one glides in. Scrolled back to read, nothing moves the chat;
+    /// a button brings you back down instead.
+    @State private var atBottom = true
+    /// Messages from others that came in while you were scrolled back, counted on the button.
+    @State private var missed = 0
 
     var body: some View {
         if fills {
@@ -64,6 +72,16 @@ struct ChatTranscript: View {
             }
             .scrollIndicators(.never)
             .defaultScrollAnchor(.bottom)
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom, let last = bubbles.last?.id {
+                    ChatJumpButton(missed: missed) {
+                        withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
+                    }
+                    .padding(NookTheme.Spacing.md)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .animation(NookTheme.reveal, value: atBottom)
             // Scrolling up to the top loads the older messages by itself; the button stays for a click. Moving up while
             // the sizes stay the same can only be you (loading and new messages change the size), so a mouse wheel,
             // which reports no scroll phase, counts as well as the trackpad.
@@ -76,6 +94,10 @@ struct ChatTranscript: View {
                     scrolledByUser = true
                 }
                 if new.nearTop, scrolledByUser { loadOlder(proxy, automatic: true) }
+                if new.nearBottom != atBottom {
+                    atBottom = new.nearBottom
+                    if atBottom { missed = 0 }
+                }
             }
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting || phase == .decelerating { scrolledByUser = true }
@@ -86,6 +108,12 @@ struct ChatTranscript: View {
                 // at once, is not a new message: it is simply there, at its newest, without scrolling past everything.
                 let arrived = previous.map { old in bubbles.suffix(4).contains { $0.id == old } } ?? false
                 if arrived {
+                    // Reading back: the chat stays where you are, and the button counts what came in. Your own
+                    // message always brings you down to it.
+                    guard atBottom || bubbles.last?.fromMe == true else {
+                        missed += 1
+                        return
+                    }
                     withAnimation(NookTheme.scroll) { proxy.scrollTo(last, anchor: .bottom) }
                 } else {
                     var jump = Transaction()
@@ -102,6 +130,8 @@ struct ChatTranscript: View {
             .onChange(of: contact) {
                 scrolledByUser = false
                 reachedStart = false
+                atBottom = true
+                missed = 0
             }
         }
     }
@@ -154,11 +184,17 @@ struct ChatTranscript: View {
                 switch row.entry {
                 case .day(_, let label):
                     ChatDayDivider(label: label)
-                case .message(_, let first, _):
+                case .message(_, let first, let last):
+                    if row.id == newFrom, row.id != top {
+                        ChatNewDivider()
+                            .padding(.top, NookTheme.Spacing.md)
+                    }
                     if let bubble = byID[row.id] {
-                        ChatBubbleView(bubble: bubble, first: first, newest: bubble.id == bubbles.last?.id,
+                        ChatBubbleView(bubble: bubble, first: first, last: last, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),
+                                       onEdit: editAction(bubble), onDelete: deleteAction(bubble),
+                                       onCopyChat: { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) },
                                        onVote: voteAction(bubble))
                             .equatable()
                             .contextMenu {
@@ -184,8 +220,9 @@ struct ChatTranscript: View {
                                     Button(tr("chat.delete"), role: .destructive) { onDelete(bubble) }
                                 }
                             }
-                            // A new run starts with room above it; the messages of one run sit close together.
-                            .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.md : NookTheme.Spacing.xxs))
+                            // A new run starts with room above it; the messages of one run sit close together, so who
+                            // said what reads at a glance.
+                            .padding(.top, row.id == top ? 0 : (first ? NookTheme.Spacing.lg : NookTheme.Spacing.xxs))
                             .id(bubble.id)
                     }
                 }
@@ -211,6 +248,18 @@ struct ChatTranscript: View {
         return { onVote(bubble, $0) }
     }
 
+    /// Deleting your own message for everyone, where its app takes that (the host asks first).
+    private func deleteAction(_ bubble: ChatBubble) -> (() -> Void)? {
+        guard let onDelete, bubble.fromMe else { return nil }
+        return { onDelete(bubble) }
+    }
+
+    /// Changing your own message's text, where its app takes that: in the message's menu.
+    private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
+        guard let onEdit, bubble.fromMe, !bubble.text.isEmpty, bubble.poll == nil else { return nil }
+        return { onEdit(bubble) }
+    }
+
     private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
         guard let onReact else { return nil }
         return { onReact(bubble, $0) }
@@ -222,18 +271,22 @@ struct ChatTranscript: View {
     }
 }
 
-/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct". Just the quiet word, centered, with room
-/// around it: the space marks the break, no pill needed.
+/// Where a new day starts in a chat: "Today", "Yesterday", "Monday", "12 Oct". A small soft label in the middle with
+/// room around it, as chat apps mark the day: easy to find while scrolling, quiet while reading.
 private struct ChatDayDivider: View {
     let label: String
 
     var body: some View {
         Text(label)
             .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(NookTheme.textTertiary)
+            .foregroundStyle(NookTheme.textSecondary)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+            .background(Capsule().fill(NookTheme.surface))
+            .overlay(Capsule().strokeBorder(NookTheme.hairline, lineWidth: 1))
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.xl)
-            .padding(.bottom, NookTheme.Spacing.sm)
+            .padding(.bottom, NookTheme.Spacing.md)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -245,11 +298,17 @@ private struct ChatBubbleView: View, Equatable {
     let bubble: ChatBubble
     /// The first of a run by one person: their name above it (in a group) and the bubble's corner points at them.
     let first: Bool
+    /// The last of a run: it carries the time (and your ticks); the others show it under the pointer, so a run of
+    /// messages reads as one calm block.
+    let last: Bool
     let newest: Bool
     let onOpen: () -> Void
     let onZoom: () -> Void
     let onReply: (() -> Void)?
     let onReact: ((String) -> Void)?
+    let onEdit: (() -> Void)?
+    let onDelete: (() -> Void)?
+    let onCopyChat: () -> Void
     let onVote: (([String]) -> Void)?
     @State private var expanded = false
     @State private var hovering = false
@@ -260,11 +319,14 @@ private struct ChatBubbleView: View, Equatable {
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
+    /// The widest a bubble gets: a long message wraps into lines that are easy to read, however wide the chat is.
+    static let maxWidth: CGFloat = 560
 
     /// The actions only count by whether they are there: they do the same for the same bubble.
     static func == (a: ChatBubbleView, b: ChatBubbleView) -> Bool {
-        a.bubble == b.bubble && a.first == b.first && a.newest == b.newest
+        a.bubble == b.bubble && a.first == b.first && a.last == b.last && a.newest == b.newest
             && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
+            && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil)
     }
 
@@ -272,12 +334,45 @@ private struct ChatBubbleView: View, Equatable {
     /// A sticker stands on its own, as an emoji does: no bubble around it.
     private var bare: Bool {
         if case .sticker = bubble.media, bubble.text.isEmpty { return true }
-        return emojiOnly
+        return emojiOnly || mediaOnly
+    }
+
+    /// A photo, video or GIF without words: it stands on its own, without a bubble around it, with its time on the
+    /// picture, as chat apps show them.
+    private var mediaOnly: Bool {
+        guard bubble.text.isEmpty, bubble.quote == nil, bubble.poll == nil else { return false }
+        switch bubble.media {
+        case .photo where bubble.image != nil: return true
+        case .video, .gif: return true
+        default: return false
+        }
+    }
+
+    /// The time (and your ticks) on a picture: light on a dark capsule, so it reads on any photo.
+    private var mediaStamp: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            Text(bubble.time)
+                .font(NookTheme.TextStyle.caption)
+                .monospacedDigit()
+                .foregroundStyle(NookTheme.paper)
+            if let ticks = bubble.ticks { TicksView(ticks: ticks) }
+        }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.xxs)
+        .background(Capsule().fill(NookTheme.ink.opacity(0.55)))
+        .padding(NookTheme.Spacing.sm)
+        .allowsHitTesting(false)
     }
     private var long: Bool { bubble.text.count > 700 || bubble.text.filter { $0 == "\n" }.count >= Self.foldedLines }
     /// The start of a long message while it is folded: its first lines, its first 700 characters.
     private var folded: String {
         String(bubble.text.components(separatedBy: "\n").prefix(Self.foldedLines).joined(separator: "\n").prefix(700))
+    }
+
+    /// Whether this bubble shows its time: the last of a run, and your message that is still going out or failed (that
+    /// must stay in sight). The others say it under the pointer, as a tooltip, so nothing in the chat shifts.
+    private var showsStamp: Bool {
+        last || bubble.ticks == .pending || bubble.ticks == .failed
     }
 
     /// When it was sent, and for your own how far it got.
@@ -297,9 +392,6 @@ private struct ChatBubbleView: View, Equatable {
                         .pointerStyle(.link)
                         .help(tr("chat.info.title"))
                         .accessibilityLabel(tr("chat.info.title"))
-                        .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
-                            MessageInfoView(ticks: ticks, readers: bubble.readers)
-                        }
                 }
             }
         }
@@ -331,11 +423,25 @@ private struct ChatBubbleView: View, Equatable {
                 Spacer(minLength: 70)
                 actions
             }
-            VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
-                content
-                if !bubble.reactions.isEmpty {
-                    ReactionChips(reactions: bubble.reactions, onReact: onReact)
-                        .padding(.horizontal, NookTheme.Spacing.sm)
+            CappedWidth(maximum: Self.maxWidth) {
+                VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
+                    content
+                        .overlay(alignment: .topTrailing) {
+                            MessageMenuButton(bubble: bubble, onReply: onReply, onEdit: onEdit, onDelete: onDelete,
+                                              onInfo: bubble.fromMe && bubble.ticks != nil ? { showingInfo = true } : nil,
+                                              onCopyChat: onCopyChat, onPicture: bare)
+                                .padding(NookTheme.Spacing.xs)
+                                .opacity(hovering ? 1 : 0)
+                                .allowsHitTesting(hovering)
+                                .animation(NookTheme.hover, value: hovering)
+                        }
+                        .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
+                            if let ticks = bubble.ticks { MessageInfoView(ticks: ticks, readers: bubble.readers) }
+                        }
+                    if !bubble.reactions.isEmpty {
+                        ReactionChips(reactions: bubble.reactions, onReact: onReact)
+                            .padding(.horizontal, NookTheme.Spacing.sm)
+                    }
                 }
             }
             if !bubble.fromMe {
@@ -389,10 +495,15 @@ private struct ChatBubbleView: View, Equatable {
             }
             if let attachment = bubble.attachment {
                 if bubble.text.isEmpty {
-                    // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
-                    VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
+                    if mediaOnly {
                         media(attachment)
-                        stamp
+                            .overlay(alignment: .bottomTrailing) { if showsStamp { mediaStamp } }
+                    } else {
+                        // Without text the time sits under the file, inside its width: the bubble is as wide as the file.
+                        VStack(alignment: .trailing, spacing: NookTheme.Spacing.xs) {
+                            media(attachment)
+                            if showsStamp { stamp }
+                        }
                     }
                 } else {
                     media(attachment)
@@ -418,25 +529,159 @@ private struct ChatBubbleView: View, Equatable {
                             .foregroundStyle(NookTheme.blue)
                         }
                     }
-                    stamp
+                    if showsStamp { stamp }
                 }
-            } else if bubble.attachment == nil {
+            }
+            // A link shows what it leads to: the picture, video or sound itself, else the page's card.
+            if bubble.attachment == nil, bubble.poll == nil, let link = ChatFormat.firstLink(bubble.text) {
+                ChatLinkPreview(url: link, fromMe: bubble.fromMe)
+                    .padding(.top, NookTheme.Spacing.xxs)
+            }
+            if bubble.text.isEmpty, bubble.attachment == nil {
                 // A poll or an empty message: the time under it, on the right.
                 stamp.frame(maxWidth: bubble.poll == nil ? nil : CGFloat.infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, bare ? NookTheme.Spacing.xs : NookTheme.Spacing.lg)
-        .padding(.vertical, bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.md)
+        .padding(.horizontal, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xs : NookTheme.Spacing.lg))
+        .padding(.vertical, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.md))
         .background(shape.fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.13) : NookTheme.smoke)))
+        .help(showsStamp ? "" : bubble.time)
     }
 
     /// Round, with the first bubble of a run pointing at its writer the way a chat app's tail does.
     private var shape: UnevenRoundedRectangle {
-        let round = NookTheme.Radius.sheet
+        // As round as the bubbles in Nook's own chat: one shape for every conversation.
+        let round = NookTheme.Radius.bubble
         let tail = NookTheme.Radius.chip
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
                                       style: .continuous)
+    }
+}
+
+/// The small chevron in a message's top corner while the pointer is on it: its menu answers, copies, changes or deletes
+/// the message and shows its info (who has it, who read it), as far as the chat's app lets Nook. The same for every app.
+private struct MessageMenuButton: View {
+    let bubble: ChatBubble
+    let onReply: (() -> Void)?
+    let onEdit: (() -> Void)?
+    let onDelete: (() -> Void)?
+    let onInfo: (() -> Void)?
+    let onCopyChat: () -> Void
+    /// On a photo, a sticker or an emoji (no bubble): a dark disc, so it reads on any picture.
+    let onPicture: Bool
+    @State private var hovering = false
+
+    /// The bubble's own color under the chevron, so it covers the text beneath it cleanly.
+    @ViewBuilder
+    private var disc: some View {
+        if onPicture {
+            Circle().fill(NookTheme.ink.opacity(hovering ? 0.7 : 0.5))
+        } else if bubble.fromMe {
+            ZStack {
+                Circle().fill(NookTheme.canvas)
+                Circle().fill(NookTheme.mint.opacity(hovering ? 0.3 : 0.13))
+            }
+        } else {
+            Circle().fill(hovering ? NookTheme.rowSelected : NookTheme.smoke)
+        }
+    }
+
+    var body: some View {
+        Menu {
+            if let onReply {
+                Button { onReply() } label: { Label(tr("chat.reply"), systemImage: "arrowshape.turn.up.left") }
+            }
+            if !bubble.copyText.isEmpty {
+                Button { Pasteboard.copy(bubble.copyText) } label: { Label(tr("whatsapp.copy.message"), systemImage: "doc.on.doc") }
+            }
+            if let onEdit {
+                Button { onEdit() } label: { Label(tr("chat.edit"), systemImage: "pencil") }
+            }
+            if let onInfo {
+                Button { onInfo() } label: { Label(tr("chat.info.title"), systemImage: "info.circle") }
+            }
+            Button { onCopyChat() } label: { Label(tr("whatsapp.copy.chat"), systemImage: "text.bubble") }
+            if let onDelete {
+                Divider()
+                Button(role: .destructive) { onDelete() } label: { Label(tr("chat.delete"), systemImage: "trash") }
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(NookTheme.font(9, .bold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
+                .frame(width: 18, height: 18)
+                .background(disc)
+                .contentShape(Circle())
+        }
+        .composerMenu()
+        .onHover { hovering = $0 }
+        .help(tr("chat.moreActions"))
+        .accessibilityLabel(tr("chat.moreActions"))
+    }
+}
+
+/// Where what was new when the chat opened starts: a hairline on either side of "New messages".
+private struct ChatNewDivider: View {
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookDivider(tint: NookTheme.amber.opacity(0.35))
+            Text(tr("chat.newMessages"))
+                .font(NookTheme.TextStyle.caption)
+                .foregroundStyle(NookTheme.amber)
+                .fixedSize()
+            NookDivider(tint: NookTheme.amber.opacity(0.35))
+        }
+        .padding(.vertical, NookTheme.Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Back to the newest message, while you read further up: a round arrow, with how many came in meanwhile.
+private struct ChatJumpButton: View {
+    let missed: Int
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.down")
+                .font(NookTheme.font(12, .semibold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(hovering ? NookTheme.rowSelected : NookTheme.smoke))
+                .overlay(Circle().strokeBorder(NookTheme.separator, lineWidth: 1))
+                .overlay(alignment: .topTrailing) {
+                    if missed > 0 {
+                        NookCountBadge(count: missed)
+                            .background(Capsule().fill(NookTheme.canvas))
+                            .offset(x: NookTheme.Spacing.xs, y: -NookTheme.Spacing.xs)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
+        .help(tr("chat.jumpToNewest"))
+        .accessibilityLabel(tr("chat.jumpToNewest"))
+    }
+}
+
+/// Its content as wide as it wants to be, but never wider than `maximum`: unlike a frame with a largest width, a short
+/// bubble keeps its own width, so the buttons beside it stay right next to it.
+private struct CappedWidth: Layout {
+    let maximum: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let width = proposal.width.map { min($0, maximum) } ?? maximum
+        return content.sizeThatFits(ProposedViewSize(width: width, height: proposal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
     }
 }
 
@@ -728,15 +973,21 @@ struct TicksView: View {
 /// A video in a chat bubble: its first frame, whole, with a play button, and a click plays it right there with the
 /// system's controls (pause, scrub, volume). The enlarge button opens it big in a window of its
 /// own that goes full screen, carrying on where the bubble was.
-private struct VideoTile: View {
+struct VideoTile: View {
     let url: URL
     let poster: NSImage?
     let name: String
     @State private var player: AVPlayer?
     @State private var hovering = false
+    /// A frame of the video itself, when its app sent no picture of it: never a black box.
+    @State private var still: ChatVideoStills.Still?
+
+    private var picture: NSImage? { poster ?? still?.image }
 
     private var size: CGSize {
-        guard let poster, poster.size.width > 0, poster.size.height > 0 else { return CGSize(width: 240, height: 135) }
+        guard let poster = picture, poster.size.width > 0, poster.size.height > 0 else {
+            return CGSize(width: PhotoButton.maxWidth, height: PhotoButton.maxWidth * 9 / 16)
+        }
         let height = min(PhotoButton.maxHeight, PhotoButton.maxWidth * poster.size.height / poster.size.width)
         return CGSize(width: height * poster.size.width / poster.size.height, height: height)
     }
@@ -749,7 +1000,7 @@ private struct VideoTile: View {
                 Button { play() } label: {
                     ZStack {
                         Color.black
-                        if let poster {
+                        if let poster = picture {
                             Image(nsImage: poster)
                                 .resizable()
                                 .interpolation(.high)
@@ -782,10 +1033,25 @@ private struct VideoTile: View {
                 .accessibilityLabel("\(tr("card.video.enlarge")): \(name)")
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            // How long it lasts, on the picture, as a chat app shows it.
+            if player == nil, let seconds = still?.seconds, seconds > 0 {
+                Text(ChatAudioPlayer.clock(seconds))
+                    .font(NookTheme.TextStyle.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(NookTheme.paper)
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .padding(.vertical, NookTheme.Spacing.xxs)
+                    .background(Capsule().fill(NookTheme.ink.opacity(0.6)))
+                    .padding(NookTheme.Spacing.sm)
+                    .allowsHitTesting(false)
+            }
+        }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous))
         .onHover { hovering = $0 }
         .onDisappear { player?.pause() }
+        .task(id: url) { still = await ChatVideoStills.still(url) }
     }
 
     private func play() {
@@ -799,7 +1065,7 @@ private struct VideoTile: View {
         let time = player?.currentTime() ?? .zero
         player?.pause()
         player = nil
-        VideoWindow.shared.show(url, title: name, at: time, aspect: poster?.size)
+        VideoWindow.shared.show(url, title: name, at: time, aspect: picture?.size)
     }
 }
 
@@ -887,9 +1153,9 @@ struct ChatPhotoZoom: View {
 }
 
 /// A photo in a chat bubble, as it came: a click enlarges it in the card or chat.
-private struct PhotoButton: View {
-    static let maxWidth: CGFloat = 240
-    static let maxHeight: CGFloat = 180
+struct PhotoButton: View {
+    static let maxWidth: CGFloat = 300
+    static let maxHeight: CGFloat = 260
 
     let image: NSImage
     let name: String
@@ -920,7 +1186,7 @@ private struct PhotoButton: View {
     }
 }
 
-/// A file in a chat bubble: its first page (else an icon) and its name, and a click shows it.
+/// A file in a chat bubble: its first page (else its kind's icon), its name and kind, and a click shows it.
 private struct AttachmentButton: View {
     let name: String
     var preview: NSImage? = nil
@@ -937,17 +1203,28 @@ private struct AttachmentButton: View {
                         .frame(width: 36, height: 46)
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 } else {
-                    Image(systemName: "doc.fill")
-                        .font(NookTheme.font(14))
-                        .foregroundStyle(NookTheme.textSecondary)
+                    // The icon macOS gives this kind of file (a PDF, a spreadsheet, a zip), as Finder shows it.
+                    Image(nsImage: Self.icon(for: name))
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 34, height: 34)
                 }
-                Text(name)
-                    .font(NookTheme.TextStyle.strong)
-                    .foregroundStyle(NookTheme.paper)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                    Text(name)
+                        .font(NookTheme.TextStyle.strong)
+                        .foregroundStyle(NookTheme.paper)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                    if let kind = Self.kind(of: name) {
+                        Text(kind)
+                            .font(NookTheme.TextStyle.caption)
+                            .foregroundStyle(NookTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: NookTheme.Spacing.sm)
                 Text(tr("card.attachment.view"))
                     .font(NookTheme.TextStyle.label)
                     .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
@@ -962,6 +1239,24 @@ private struct AttachmentButton: View {
         .help(tr("card.attachment.view"))
         .accessibilityLabel("\(tr("card.attachment.view")): \(name)")
     }
+
+    /// The icon for a file of this name's kind, made once per kind.
+    private static var icons: [String: NSImage] = [:]
+
+    private static func icon(for name: String) -> NSImage {
+        let ext = (name as NSString).pathExtension.lowercased()
+        if let known = icons[ext] { return known }
+        let icon = NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .data)
+        icons[ext] = icon
+        return icon
+    }
+
+    /// The kind of file, as macOS names it ("PDF document"); nil for a name without an extension.
+    private static func kind(of name: String) -> String? {
+        let ext = (name as NSString).pathExtension
+        guard !ext.isEmpty else { return nil }
+        return UTType(filenameExtension: ext)?.localizedDescription ?? ext.uppercased()
+    }
 }
 
 /// Where the chat is scrolled to, and how big it and its messages are: enough to tell your own scrolling apart from
@@ -972,4 +1267,6 @@ private struct TranscriptScrollGeometry: Equatable {
     var content: Double
 
     var nearTop: Bool { offset <= 80 }
+    /// The newest message is in view, give or take a line.
+    var nearBottom: Bool { content <= container || offset + container >= content - 60 }
 }

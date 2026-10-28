@@ -214,7 +214,7 @@ struct CardView: View {
         }
     }
 
-    /// Every full card answers as the Chats tab does: Cmd+Return sends, "@" opens the menu, "@nook …" lets Nook write the
+    /// Every full card answers as the Chats tab does: Return sends, "@" opens the menu, "@nook …" lets Nook write the
     /// message into the field.
     private var chatField: some View {
         ChatReplyField(text: $reply, notice: $chatNotice, focus: $replyFocused,

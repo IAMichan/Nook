@@ -54,7 +54,16 @@ needs a column in that matrix.
 | Who is typing | ✓ (`chat_presence`, while a chat is open) | ✓ (`presence.update`, Baileys engine, while a chat is open) | – (not in the database) | ✓ (`updateChatAction`) | ✓ (bridgev2 `MarkTyping`) | – (only over a real-time socket Nook does not hold) | – (Graph does not say) | – (not read from the page yet) |
 | Photo caption in the chat list | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (the list shows a status, not the message) |
 | People by name, not by number | ✓ (your Contacts, then `/user/my/contacts`) | ✓ (your Contacts, then `/contacts`) | ✓ (Contacts) | ✓ (Telegram's names) | ✓ (the network's names) | ✓ | ✓ | ✓ (Snapchat's names) |
+| Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ |
+| Notch card follows its chat live | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Shared links shown short (`[url](url)` → `site/path`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Edit, delete and info from the message's ⌄ menu (↑ in an empty field edits) | ✓ (when the gateway can) | ✓ (when the gateway can) | – (Messages lets no other app edit) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) |
+| Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – | – |
+
+Every bridge reads on its own turn, side by side (`ChatCaptureService.pollBridges`): a slow web service never holds up
+a quick one. The chat helper reads a chat again when the chat list moved past the newest message it got
+(`ChatServiceData.isBehind`, up to three times), so a chat's row never shows an older message than the chat itself.
 
 Every app also gets what is certain from later messages (`ChatReceipts.filled` and `filledReaders`). Someone who read
 a later message of yours read the earlier ones too. In a private chat, their message after yours means yours reached

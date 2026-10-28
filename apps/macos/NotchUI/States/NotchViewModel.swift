@@ -474,14 +474,23 @@ final class NotchViewModel: ObservableObject {
         return false
     }
 
+    /// The ids of the cards on screen or waiting in line that start with `prefix`.
+    func cardIDs(prefix: String) -> [String] {
+        var ids = pending.map(\.id).filter { $0.hasPrefix(prefix) }
+        if case .card(let current) = state, current.id.hasPrefix(prefix) { ids.insert(current.id, at: 0) }
+        return ids
+    }
+
     /// Is this card currently visible or queued?
     func hasCard(id: String) -> Bool {
         if case .card(let current) = state, current.id == id { return true }
         return pending.contains { $0.id == id }
     }
 
-    /// Updates the currently visible card in-place (same dimensions, avoiding animation), e.g. while speaking.
+    /// Updates the currently visible card in-place (same dimensions, avoiding animation), e.g. while speaking. A card
+    /// still waiting in line is replaced too, so it comes up with what is true then, not with what it said when it came.
     func updateCard(_ card: NookCard) {
+        if let index = pending.firstIndex(where: { $0.id == card.id }) { pending[index] = card }
         guard case .card(let current) = state, current.id == card.id else { return }
         state = .card(card)
         // The card can grow (a chat whose history just arrived): the notch follows its new height.
