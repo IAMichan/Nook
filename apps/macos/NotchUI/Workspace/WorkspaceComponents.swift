@@ -168,6 +168,7 @@ struct WSEmptyState: View {
             Text(title)
                 .font(NookTheme.TextStyle.title)
                 .foregroundStyle(WS.text)
+                .multilineTextAlignment(.center)
             Text(message)
                 .font(NookTheme.TextStyle.body)
                 .foregroundStyle(WS.secondary)

@@ -184,10 +184,10 @@ struct FolderGitButton: View {
                         }
                         .buttonStyle(.plain)
                         .help(tr("agents.git.changes", model.changes.count))
+                        .fixedSize()
                     }
                 }
                 .toolbarGroup()
-                .fixedSize()
             }
         }
         .task(id: "\(model.directory)|\(docked)") {
@@ -210,7 +210,9 @@ struct FolderGitButton: View {
             } else {
                 Image(systemName: icon).font(NookTheme.font(10, .medium))
             }
-            Text(text).lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading)
+            // The branch truncates when a wide side panel leaves the header little room, instead of the button
+            // keeping its width and running on under the panel.
+            Text(text).lineLimit(1).truncationMode(.middle).frame(minWidth: 0, maxWidth: 150, alignment: .leading)
             Image(systemName: "chevron.down").font(NookTheme.font(7.5, .bold)).opacity(0.5)
         }
         .font(NookTheme.TextStyle.label)

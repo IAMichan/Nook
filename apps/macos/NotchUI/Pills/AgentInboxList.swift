@@ -117,16 +117,22 @@ struct AgentInboxList: View {
                     .foregroundStyle(NookTheme.amber)
                     .padding(.horizontal, NookTheme.Spacing.lg)
             }
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
-                        sectionView(section, sections: sections, byID: byID, shown: shown)
+            if sections.isEmpty && showsSetUp {
+                // No session at all, not even a settled one: a calm, centered invitation instead of a bare line.
+                WSEmptyState(symbol: "terminal", title: tr("agents.noneWorkingNow"), message: tr("agents.emptyListDetail"),
+                             action: (title: tr("onboarding.agents.setUp"), run: { app.startOnboarding(at: OnboardingView.agentsStep) }))
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                        ForEach(sections.filter { $0.kind != .settled }, id: \.kind) { section in
+                            sectionView(section, sections: sections, byID: byID, shown: shown)
+                        }
+                        // Only the docked settled shelf left (or nothing): say so instead of an empty space.
+                        if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
                     }
-                    // Only the docked settled shelf left (or nothing): say so instead of an empty space.
-                    if sections.allSatisfy({ $0.kind == .settled }) { emptyState }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
             // What you settled sits at the foot of the list, above the footer, and opens upwards.
             if let settled = sections.first(where: { $0.kind == .settled }) {
                 settledShelf(settled, sections: sections, byID: byID, shown: shown)
@@ -156,15 +162,14 @@ struct AgentInboxList: View {
         }
     }
 
+    /// Nothing here yet and nothing being searched or read: the coding agents step of the first-run flow installs or
+    /// signs in an agent and adds projects.
+    private var showsSetUp: Bool { store.query.isEmpty && !app.history.loading && !app.demoMode }
+
     @ViewBuilder
     private var emptyState: some View {
         ListEmptyNote(store.query.isEmpty ? (app.history.loading ? tr("agents.checking") : tr("agents.noneWorkingNow")) : tr("inbox.noResults"),
                       padding: NookTheme.Spacing.lg)
-        // Nothing here yet: the coding agents step of the first-run flow installs or signs in an agent and adds projects.
-        if store.query.isEmpty, !app.history.loading, !app.demoMode {
-            SmallGhostButton(title: tr("onboarding.agents.setUp")) { app.startOnboarding(at: OnboardingView.agentsStep) }
-                .padding(.horizontal, NookTheme.Spacing.lg)
-        }
     }
 
     // MARK: Search

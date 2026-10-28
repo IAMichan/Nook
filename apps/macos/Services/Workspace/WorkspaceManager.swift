@@ -137,9 +137,10 @@ final class WorkspaceManager: ObservableObject {
     @Published var openPullRequests: [UUID: URL] = [:]
     /// The same for sessions Nook only sees, by repository root.
     var folderPullRequests: [String: URL] = [:]
-    /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch, and opening one (nil
-    /// while GitHub is not connected: the git button then opens GitHub's compare page with title and description filled in).
-    var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> URL?)?
+    /// GitHub through Nook's connector, configured by AppModel: the open pull request of a branch (and whether an earlier
+    /// one was merged or closed), and opening one (nil while GitHub is not connected: the git button then opens GitHub's
+    /// compare page with title and description filled in).
+    var pullRequestLookup: ((_ repo: RemoteRepository, _ branch: String) async -> (open: URL?, landed: Bool))?
     var pullRequestCreate: ((_ repo: RemoteRepository, _ title: String, _ body: String, _ head: String, _ base: String) async throws -> URL?)?
     /// A watched pull request as it is now (GitHub, with your connected accounts).
     var pullRequestSnapshot: ((URL) async -> PullRequestSnapshot?)?
@@ -173,6 +174,8 @@ final class WorkspaceManager: ObservableObject {
     var pendingSendNow: [UUID: String] = [:]
     /// When GitHub was last asked about a branch's pull request ("owner/repo branch"), so it is asked once a minute at most.
     var pullRequestChecked: [String: Date] = [:]
+    /// Branches ("owner/repo branch") whose pull request was merged or closed, from the same lookups.
+    var pullRequestLanded: Set<String> = []
     /// Sessions whose Antigravity sign-in page already opened.
     var antigravitySignIns: Set<UUID> = []
     /// Antigravity sign-ins outside a session (when you link the account), per account: the server and what to call when done.

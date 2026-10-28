@@ -60,8 +60,9 @@ struct ChatTranscript: View {
 
     private var scroller: some View {
         ScrollViewReader { proxy in
-            // As a chat app's, the chat scrolls without a bar beside it.
-            ScrollView(showsIndicators: false) {
+            // As a chat app's, the chat scrolls without a bar beside it: `.never`, because `.hidden` still shows one when
+            // the system shows scroll bars always (a mouse connected).
+            ScrollView {
                 VStack(spacing: 0) {
                     if onLoadOlder != nil {
                         loadOlderButton { loadOlder(proxy) }
@@ -69,6 +70,7 @@ struct ChatTranscript: View {
                     stack
                 }
             }
+            .scrollIndicators(.never)
             .defaultScrollAnchor(.bottom)
             .overlay(alignment: .bottomTrailing) {
                 if !atBottom, let last = bubbles.last?.id {

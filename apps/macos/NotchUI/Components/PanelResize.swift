@@ -103,4 +103,12 @@ extension View {
         frame(maxWidth: PanelLayout.chatColumn, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
     }
+
+    /// Puts the composer (and what sits on it) over the bottom of a conversation's scroll view: the conversation goes on
+    /// behind it instead of stopping above a band of background, and its end scrolls up to `spacing` above the composer.
+    func composerInset<Bar: View>(spacing: CGFloat = NookTheme.Spacing.xxxl, @ViewBuilder _ bar: () -> Bar) -> some View {
+        safeAreaInset(edge: .bottom, spacing: 0) {
+            bar().padding(.top, spacing)
+        }
+    }
 }

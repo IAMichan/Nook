@@ -159,7 +159,7 @@ private struct TaskRingDrawing: View {
     let hovered: String?
     @ObservedObject var motion: NookMotion
     let reduceMotion: Bool
-    let attended: Bool
+    let attended: ViewAttention
 
     @StateObject private var spring = RingSpring()
     /// Published only when the plan changes: sets how often the ring redraws.

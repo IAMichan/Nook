@@ -7,7 +7,18 @@ import NaturalLanguage
 /// What the home screen shows (Today) and the Settings window.
 extension AppModel {
     var agentSessions: [AgentSession] {
-        demoMode ? DemoContent.agents : hub.sessions + hub.detected
+        if demoMode { return DemoContent.agents }
+        // A chat you continued in Nook is listed once, as the Nook session, not also as the session its app reported.
+        let runs = workspace.runs.filter { !$0.archived }.compactMap { run -> (agent: String, conversations: Set<String>)? in
+            guard let current = run.providerSessionID, !current.isEmpty else { return nil }
+            return (run.provider.displayName, Set([current] + (run.conversation?.earlierSessions ?? [])))
+        }
+        let hooked = runs.isEmpty ? hub.sessions : hub.sessions.filter { session in
+            let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
+            return !AgentSessionRegistry.isContinuedInNook(agent: session.name, conversation: session.ownConversationID,
+                                                           busy: busy, runs: runs)
+        }
+        return hooked + hub.detected
     }
 
     /// Connected agents actively working or awaiting approval/input.
@@ -120,7 +131,11 @@ extension AppModel {
         // Floating notch panel overlays all windows; dismiss it so clicks reach Settings.
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView().nookToastHost().nookAttention().environmentObject(self))
+            // Kept after closing, so its content goes while it is closed: else Settings redraws with every change in the app.
+            let root = WindowContent(presence: settingsPresence, background: NookTheme.canvas, minSize: CGSize(width: 720, height: 480)) {
+                SettingsView().nookToastHost()
+            }
+            let host = NSHostingController(rootView: root.nookAttention().environmentObject(self))
             host.sizingOptions = [.minSize]
             let window = NSWindow(contentViewController: host)
             window.title = "Nook"
@@ -134,8 +149,13 @@ extension AppModel {
             window.minSize = NSSize(width: 720, height: 480)
             window.isReleasedWhenClosed = false
             window.center()
+            settingsPresence.follow(window)
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.settingsPresence.shown = false }
+            }
             settingsWindow = window
         }
+        settingsPresence.shown = true
         if let settingsWindow { DockPresence.shared.track(settingsWindow) }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)

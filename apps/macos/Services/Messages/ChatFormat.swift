@@ -85,8 +85,23 @@ enum ChatFormat {
         }
     }
 
-    /// The message as plain text, without its markup: for a chat's line in a list and for what is copied.
+    /// The message as plain text, without its markup: for a chat's line in a list and for what is copied. Kept per text:
+    /// the Chats tab asks it for every chat's newest message each time it lists them.
     static func plain(_ text: String) -> String {
+        let key = text as NSString
+        if let kept = plainCache.object(forKey: key) { return kept as String }
+        let made = unstyled(text)
+        plainCache.setObject(made as NSString, forKey: key)
+        return made
+    }
+
+    private static let plainCache: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 2_000
+        return cache
+    }()
+
+    private static func unstyled(_ text: String) -> String {
         blocks(text).map { block in
             switch block {
             case .paragraph(let spans), .quote(let spans): return spans.map(\.text).joined()
