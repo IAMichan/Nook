@@ -39,7 +39,7 @@ final class WorkspaceWindowController {
     private var window: NSWindow?
     /// Whether the window's content is there. A closed window is kept to open again where it was, and its SwiftUI graph
     /// went on updating with every change to a session (the whole Agents tab, laid out at full size) while nothing showed.
-    private let presence = WorkspacePresence()
+    private let presence = WindowPresence()
     /// Quitting does not close the window: it is still open when Nook starts again.
     private var quitting = false
 
@@ -58,7 +58,9 @@ final class WorkspaceWindowController {
     /// `screen`: the window moves there first when it is on another one (the screen an update was started from).
     func show(app: AppModel, activate: Bool = true, on screen: NSScreen? = nil) {
         if window == nil {
-            let root = WorkspaceContent(presence: presence)
+            let root = WindowContent(presence: presence, background: NookTheme.notch, minSize: CGSize(width: 900, height: 580)) {
+                WorkspaceView()
+            }
                 .nookAttention()
                 .environmentObject(app)
                 .environmentObject(app.workspace)
@@ -92,13 +94,7 @@ final class WorkspaceWindowController {
                     self.presence.shown = false
                 }
             }
-            // Minimized, the window shows nothing either: its content goes until it comes back out of the Dock.
-            NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.presence.shown = false }
-            }
-            NotificationCenter.default.addObserver(forName: NSWindow.didDeminiaturizeNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.presence.shown = true }
-            }
+            presence.follow(window)
             NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.quitting = true }
             }
@@ -126,22 +122,37 @@ final class WorkspaceWindowController {
     }
 }
 
-/// Whether the main window shows its content (see `WorkspaceWindowController.presence`).
+/// Whether a window that is kept after closing (to open again where it was) shows its content. Its SwiftUI graph would
+/// otherwise go on updating with every change in the app while nothing shows.
 @MainActor
-final class WorkspacePresence: ObservableObject {
+final class WindowPresence: ObservableObject {
     @Published var shown = true
+
+    /// Minimized, the window shows nothing either: its content goes until it comes back out of the Dock. Closing is up to
+    /// the window's owner.
+    func follow(_ window: NSWindow) {
+        NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shown = false }
+        }
+        NotificationCenter.default.addObserver(forName: NSWindow.didDeminiaturizeNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.shown = true }
+        }
+    }
 }
 
-/// The main window's root: the workspace while the window is open, nothing while it is closed or minimized. Where you
-/// were (tab, session, sheet) lives in the view model, so the window opens again on it.
-private struct WorkspaceContent: View {
-    @ObservedObject var presence: WorkspacePresence
+/// A kept window's root: `content` while the window is open, its background alone while it is closed or minimized.
+/// Where you were lives outside the content (the view model, `settingsSection`), so the window opens again on it.
+struct WindowContent<Content: View>: View {
+    @ObservedObject var presence: WindowPresence
+    let background: Color
+    let minSize: CGSize
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
         if presence.shown {
-            WorkspaceView()
+            content()
         } else {
-            NookTheme.notch.frame(minWidth: 900, minHeight: 580)
+            background.frame(minWidth: minSize.width, minHeight: minSize.height)
         }
     }
 }

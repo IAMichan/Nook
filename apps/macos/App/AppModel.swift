@@ -538,6 +538,8 @@ final class AppModel: ObservableObject {
     @Published var onboardingStep = 0
     /// The Settings window (created on first use).
     var settingsWindow: NSWindow?
+    /// Whether the Settings window shows its content: not while it is closed or minimized.
+    let settingsPresence = WindowPresence()
     /// Tracks the message currently streaming per conversation, and its task. Multiple conversations can run concurrently.
     var replies: [UUID: UUID] = [:]
     var chatTasks: [UUID: Task<Void, Never>] = [:]
