@@ -102,20 +102,18 @@ extension ChatsEntry {
         // While the phone is linked every WhatsApp chat comes from the link, with its history: what notifications (or an
         // import) collected before stays out of the list, or each chat would show twice.
         // One chat, one card: an app that names the same chat twice (a chat without a topic is named after whoever wrote
-        // last) leaves two threads holding the same messages; the fuller one stays.
-        var newestSeen: [String: Int] = [:]
+        // last) leaves two threads holding the same messages. The one a bridge reads stays (it keeps getting the new
+        // messages and the app's own name), else the fuller one.
+        var keeper: [String: InboxThread] = [:]
         let threads = capture.inbox.sorted.filter { $0.app != "whatsapp" || !linkedWhatsApp }
         for thread in threads {
             guard let id = thread.messages.last?.id else { continue }
             let key = thread.app + "|" + id
-            newestSeen[key] = max(newestSeen[key] ?? 0, thread.messages.count)
+            if let kept = keeper[key], !ChatsEntry.isBetter(thread, than: kept) { continue }
+            keeper[key] = thread
         }
-        var shownNewest = Set<String>()
         for thread in threads where capture.sources.isOn(thread.app) {
-            if let id = thread.messages.last?.id {
-                let key = thread.app + "|" + id
-                guard thread.messages.count == newestSeen[key], shownNewest.insert(key).inserted else { continue }
-            }
+            if let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
             let preview = thread.messages.last.map(line) ?? ""
             let newest = thread.messages.last
             let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
@@ -126,6 +124,13 @@ extension ChatsEntry {
                                       members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
+    }
+
+    /// Of two threads holding the same newest message, the one to show: the one a bridge reads, else the fuller one.
+    static func isBetter(_ thread: InboxThread, than other: InboxThread) -> Bool {
+        let (bridged, otherBridged) = (thread.bridged == true, other.bridged == true)
+        if bridged != otherBridged { return bridged }
+        return thread.messages.count > other.messages.count
     }
 
     /// A WhatsApp message as one line in the list, with who wrote it in a group ("Jan: dinner?"; `sender` is empty in a
@@ -953,7 +958,7 @@ private struct ChatsRow: View {
     private var row: some View {
         Button(action: action) {
             HStack(spacing: NookTheme.Spacing.md) {
-                ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 34)
+                ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 40)
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     // One title line (who, when) and one line under it (the newest message); unread is said once, by
                     // the count at the end of the second line.
@@ -963,10 +968,11 @@ private struct ChatsRow: View {
                             .foregroundStyle(entry.read.isUnread ? NookTheme.paper : NookTheme.textStrong)
                             .lineLimit(1)
                         Spacer(minLength: NookTheme.Spacing.xs)
+                        // Something new: its time in the color of what waits on you, as the count under it.
                         Text(when)
                             .font(NookTheme.TextStyle.caption)
                             .monospacedDigit()
-                            .foregroundStyle(NookTheme.textTertiary)
+                            .foregroundStyle(entry.read.isUnread ? NookTheme.amber : NookTheme.textTertiary)
                             .fixedSize()
                             .opacity(hovering && rowAction != nil ? 0 : 1)
                     }
@@ -1134,17 +1140,25 @@ private struct ChatsDetail: View {
             header
                 .padding(.bottom, NookTheme.Spacing.md)
             NookDivider()
-            ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
-                           onOpen: { open($0) }, onZoom: { zoom($0) },
-                           onReply: abilities.reply ? quote : nil,
-                           onReact: abilities.react ? react : nil,
-                           onEdit: abilities.edit ? edit : nil,
-                           onDelete: abilities.delete ? { deleting = $0 } : nil,
-                           onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
-                           typing: typing.line(entry.id))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            footer
-                .padding(.top, NookTheme.Spacing.sm)
+            // The messages and the field as one centered column, as Nook's own chat has them: on a wide window the lines
+            // stay easy to read and the field sits under the messages it answers.
+            VStack(spacing: 0) {
+                if bubbles.isEmpty { emptyChat }
+                ChatTranscript(bubbles: bubbles, contact: entry.name, fills: true,
+                               onOpen: { open($0) }, onZoom: { zoom($0) },
+                               onReply: abilities.reply ? quote : nil,
+                               onReact: abilities.react ? react : nil,
+                               onEdit: abilities.edit ? edit : nil,
+                               onDelete: abilities.delete ? { deleting = $0 } : nil,
+                               onVote: canVote ? vote : nil, onLoadOlder: canLoadOlder ? loadOlder : nil,
+                               typing: typing.line(entry.id))
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                footer
+                    .padding(.top, NookTheme.Spacing.sm)
+            }
+            .frame(maxWidth: PanelLayout.readableChat)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
             if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
@@ -1156,7 +1170,11 @@ private struct ChatsDetail: View {
         }
         .confirmDelete($deleting, question: { _ in tr("chat.delete.question") }, detail: tr("chat.delete.detail", appName),
                        confirmTitle: tr("chat.delete")) { delete($0) }
-        .task(id: entry.id) { await loadWhatsApp() }
+        .task(id: entry.id) {
+            // Every app the same: an opened chat is read from its app now, so it shows the newest messages at once.
+            if case .captured(let id) = entry.origin { capture.refresh(id) }
+            await loadWhatsApp()
+        }
         // While a WhatsApp chat is open Nook is online there, as WhatsApp Web is: only then does WhatsApp say who types.
         .onAppear { WhatsAppLink.shared.setOnline(entry.whatsAppChat) }
         .onDisappear { WhatsAppLink.shared.setOnline(nil) }
@@ -1307,45 +1325,79 @@ private struct ChatsDetail: View {
         }
     }
 
+    /// A chat with no messages here yet (one its app lists, still loading): says so instead of an empty space.
+    private var emptyChat: some View {
+        VStack(spacing: NookTheme.Spacing.sm) {
+            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 56)
+            Text(entry.name)
+                .font(NookTheme.TextStyle.title)
+                .foregroundStyle(NookTheme.paper)
+            Text(tr("chats.detail.empty", appName))
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, NookTheme.Spacing.xxxl)
+    }
+
+    /// Who and where on top: the picture, the name, and under it the app, the group's people, someone typing, and where
+    /// the chat stands; opening the app and the rest of the actions on the right. The same for every app.
     private var header: some View {
         HStack(spacing: NookTheme.Spacing.md) {
-            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 32)
+            ChatsAvatar(name: entry.name, app: entry.app, photo: photo, size: 36)
             VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                 Text(entry.name)
                     .font(NookTheme.TextStyle.title)
                     .foregroundStyle(NookTheme.paper)
                     .lineLimit(1)
                 HStack(spacing: NookTheme.Spacing.xs) {
-                    // A chat a bridge reads is the app's own; any other is what its notifications showed.
-                    Text(route == nil && !capture.bridged.contains(entry.app)
-                         ? tr("chats.fromNotifications", appName) : appName)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.textTertiary)
-                        .lineLimit(1)
-                    // A group whose app lists its people: how many, and a click lists them.
-                    if let members = entry.members, !members.isEmpty {
-                        Text("·")
+                    if let typingLine = typing.line(entry.id) {
+                        // Someone typing says so where the chat's details are, as a chat app's header does.
+                        Text(typingLine)
                             .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .accessibilityHidden(true)
-                        ChatMembersButton(members: members)
-                    }
-                    // Read but not new: where it stands, small, instead of a strip above the answer field.
-                    if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
-                        Text("·")
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(NookTheme.textTertiary)
-                            .accessibilityHidden(true)
-                        ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
-                                       markReadInApp: { app.markChatReadInApp(entry) })
+                            .foregroundStyle(NookTheme.mint)
+                            .lineLimit(1)
+                            .transition(.opacity)
+                    } else {
+                        headerDetails
                     }
                 }
+                .animation(NookTheme.reveal, value: typing.line(entry.id))
             }
             Spacer(minLength: NookTheme.Spacing.sm)
             // Opening the app stays in sight; the rest waits in the "…" menu.
             ToolbarIconButton("arrow.up.forward.app", tr("chats.openApp", appName)) { app.openChatApp(entry.app) }
             moreMenu
         }
+    }
+
+    /// The app (and whether Nook reads it or only saw its notifications), the group's people, and where it stands.
+    @ViewBuilder
+    private var headerDetails: some View {
+        // A chat a bridge reads is the app's own; any other is what its notifications showed.
+        Text(route == nil && !capture.bridged.contains(entry.app) ? tr("chats.fromNotifications", appName) : appName)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+        // A group whose app lists its people: how many, and a click lists them.
+        if let members = entry.members, !members.isEmpty {
+            headerDot
+            ChatMembersButton(members: members)
+        }
+        // Read but not new: where it stands, small, instead of a strip above the answer field.
+        if !entry.read.isUnread && !entry.lastIsMine && !bubbles.isEmpty {
+            headerDot
+            ChatReadStatus(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                           markReadInApp: { app.markChatReadInApp(entry) })
+        }
+    }
+
+    private var headerDot: some View {
+        Text("·")
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .accessibilityHidden(true)
     }
 
     /// Read or unread by hand, the same for every chat (as its row's menu), what its app lets Nook do there, and removing

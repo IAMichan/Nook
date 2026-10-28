@@ -258,6 +258,8 @@ private struct ChatBubbleView: View, Equatable {
 
     /// Lines a long message shows until "Read more".
     private static let foldedLines = 12
+    /// The widest a bubble gets: a long message wraps into lines that are easy to read, however wide the chat is.
+    static let maxWidth: CGFloat = 560
 
     /// The actions only count by whether they are there: they do the same for the same bubble.
     static func == (a: ChatBubbleView, b: ChatBubbleView) -> Bool {
@@ -329,11 +331,13 @@ private struct ChatBubbleView: View, Equatable {
                 Spacer(minLength: 70)
                 actions
             }
-            VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
-                content
-                if !bubble.reactions.isEmpty {
-                    ReactionChips(reactions: bubble.reactions, onReact: onReact)
-                        .padding(.horizontal, NookTheme.Spacing.sm)
+            CappedWidth(maximum: Self.maxWidth) {
+                VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
+                    content
+                    if !bubble.reactions.isEmpty {
+                        ReactionChips(reactions: bubble.reactions, onReact: onReact)
+                            .padding(.horizontal, NookTheme.Spacing.sm)
+                    }
                 }
             }
             if !bubble.fromMe {
@@ -435,6 +439,22 @@ private struct ChatBubbleView: View, Equatable {
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
                                       style: .continuous)
+    }
+}
+
+/// Its content as wide as it wants to be, but never wider than `maximum`: unlike a frame with a largest width, a short
+/// bubble keeps its own width, so the buttons beside it stay right next to it.
+private struct CappedWidth: Layout {
+    let maximum: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let width = proposal.width.map { min($0, maximum) } ?? maximum
+        return content.sizeThatFits(ProposedViewSize(width: width, height: proposal.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
     }
 }
 

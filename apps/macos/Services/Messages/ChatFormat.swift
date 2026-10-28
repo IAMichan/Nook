@@ -2,7 +2,8 @@ import Foundation
 
 /// A chat message's own markup, read the way the chat apps show it, the same for every app: *bold*, _italic_,
 /// ~strikethrough~ and `code` (WhatsApp and Slack write them like this; **bold** and __italic__ as Markdown has them),
-/// ```code blocks```, quotes ("> …") and lists ("• …", "- …", "1. …"). Foundation only, so it can be tested anywhere;
+/// links written as Markdown ("[label](https://…)", as Instagram's shared reels and posts come in), ```code blocks```,
+/// quotes ("> …") and lists ("• …", "- …", "1. …"). Foundation only, so it can be tested anywhere;
 /// `ChatMessageText` draws it.
 enum ChatFormat {
     /// A piece of text with its style.
@@ -12,6 +13,9 @@ enum ChatFormat {
         var italic = false
         var strike = false
         var code = false
+        /// Where it leads, for a link written as Markdown: `text` is then what it shows (its label, or a short form of
+        /// the address when the label is the address itself).
+        var link: URL? = nil
     }
 
     /// One line or block of a message.
@@ -114,7 +118,12 @@ enum ChatFormat {
         var index = text.startIndex
         while index < text.endIndex {
             let rest = text[index...]
-            if rest.hasPrefix("http://") || rest.hasPrefix("https://") {
+            if rest.hasPrefix("["), let found = markdownLink(text, at: index) {
+                if !plain.isEmpty { result.append(Span(text: plain)) }
+                plain = ""
+                result.append(found.0)
+                index = found.1
+            } else if rest.hasPrefix("http://") || rest.hasPrefix("https://") {
                 let end = rest.firstIndex(where: \.isWhitespace) ?? text.endIndex
                 plain += text[index..<end]
                 index = end
@@ -130,6 +139,35 @@ enum ChatFormat {
         }
         if !plain.isEmpty { result.append(Span(text: plain)) }
         return result
+    }
+
+    /// A Markdown link that starts at `index` ("[label](https://…)"), as one span, and where it ends. Only a web or mail
+    /// address counts as its target; anything else stays the text it is.
+    private static func markdownLink(_ text: String, at index: String.Index) -> (Span, String.Index)? {
+        let rest = text[text.index(after: index)...]
+        guard let close = rest.range(of: "](")?.lowerBound else { return nil }
+        let label = rest[..<close]
+        guard !label.contains("\n"), !label.contains("[") else { return nil }
+        let target = rest[rest.index(close, offsetBy: 2)...]
+        guard let end = target.firstIndex(of: ")") else { return nil }
+        let address = String(target[..<end])
+        guard !address.contains(where: \.isWhitespace), let url = URL(string: address),
+              ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        let shown = label.trimmingCharacters(in: .whitespaces)
+        let isAddress = shown.isEmpty || shown.hasPrefix("http://") || shown.hasPrefix("https://")
+        return (Span(text: isAddress ? shortLink(url) : shown, link: url), text.index(after: end))
+    }
+
+    /// A web address as a chat shows it in a line: its site and path without "https://", "www." or the query, cut short
+    /// when long ("instagram.com/reel/DevP29EPzQg").
+    static func shortLink(_ url: URL) -> String {
+        guard url.scheme?.lowercased() != "mailto" else { return url.absoluteString.replacingOccurrences(of: "mailto:", with: "") }
+        var host = url.host ?? url.absoluteString
+        if host.hasPrefix("www.") { host = String(host.dropFirst(4)) }
+        var path = url.path
+        if path.hasSuffix("/") { path.removeLast() }
+        let full = host + path
+        return full.count > 48 ? String(full.prefix(47)) + "…" : full
     }
 
     /// The styled pieces that start at `index`, if a marker opens there, and where they end.

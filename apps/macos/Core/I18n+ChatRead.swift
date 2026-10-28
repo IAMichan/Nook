@@ -5,6 +5,7 @@ import Foundation
 
 let chatReadTranslations: [AppLanguage: [String: String]] = [
     .nl: [
+        "chats.detail.empty": "Nog geen berichten hier. Nieuwe berichten uit %@ komen vanzelf binnen.",
         "chats.view.all": "Alle chats",
         "chats.view.unread": "Nieuw",
         "chats.view.readInNook": "Alleen in Nook",
@@ -29,6 +30,7 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook kan %@ dit niet zelf laten weten: het opent de chat daar, zodat je hem daar leest.",
     ],
     .en: [
+        "chats.detail.empty": "No messages here yet. New ones from %@ come in by themselves.",
         "chats.view.all": "All chats",
         "chats.view.unread": "New",
         "chats.view.readInNook": "Only in Nook",
@@ -53,6 +55,7 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook can't tell %@ itself: it opens the chat there, so you read it there.",
     ],
     .de: [
+        "chats.detail.empty": "Noch keine Nachrichten hier. Neue aus %@ kommen von selbst.",
         "chats.view.all": "Alle Chats",
         "chats.view.unread": "Neu",
         "chats.view.readInNook": "Nur in Nook",
@@ -77,6 +80,7 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook kann %@ das nicht selbst sagen: Es öffnet den Chat dort, damit du ihn dort liest.",
     ],
     .fr: [
+        "chats.detail.empty": "Aucun message ici pour l’instant. Les nouveaux de %@ arrivent tout seuls.",
         "chats.view.all": "Toutes les discussions",
         "chats.view.unread": "Nouveau",
         "chats.view.readInNook": "Seulement dans Nook",
@@ -101,6 +105,7 @@ let chatReadTranslations: [AppLanguage: [String: String]] = [
         "chats.status.opensApp": "Nook ne peut pas le dire à %@ lui-même : il ouvre la discussion là-bas, pour que vous la lisiez là.",
     ],
     .es: [
+        "chats.detail.empty": "Aún no hay mensajes aquí. Los nuevos de %@ llegan solos.",
         "chats.view.all": "Todos los chats",
         "chats.view.unread": "Nuevo",
         "chats.view.readInNook": "Solo en Nook",

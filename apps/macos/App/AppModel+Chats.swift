@@ -9,7 +9,26 @@ extension AppModel {
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
         ChatCaptureService.shared.skips = { notice in notice.app == "whatsapp" && WhatsAppLink.shared.isConnected }
         ChatCaptureService.shared.onFresh = { [weak self] ids in ids.forEach { self?.presentCapturedChat($0) } }
+        // A chat's card follows its chat while it is up or waits in line, as WhatsApp's does: the newest message, your
+        // own answer and its ticks show in it, not only what was there when it came up.
+        ChatCaptureService.shared.$inbox
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { [weak self] inbox in self?.refreshCapturedChatCards(inbox) }
+            .store(in: &bag)
         ChatCaptureService.shared.start()
+    }
+
+    /// The chats whose card was drawn last, as they were then: a card is drawn again only when its chat changed.
+    private static var drawnChatCards: [String: InboxThread] = [:]
+
+    private func refreshCapturedChatCards(_ inbox: ChatInbox) {
+        let shown = viewModel.cardIDs(prefix: Self.chatCardPrefix)
+        Self.drawnChatCards = Self.drawnChatCards.filter { shown.contains(Self.chatCardPrefix + $0.key) }
+        for token in shown {
+            let id = String(token.dropFirst(Self.chatCardPrefix.count))
+            guard let thread = inbox.threads[id], Self.drawnChatCards[id] != thread else { continue }
+            showCapturedChatCard(id)
+        }
     }
 
     /// Someone wrote in a chat of another app (Telegram, Messages, Slack…): kept in the notice history, and shown the way
@@ -53,6 +72,7 @@ extension AppModel {
     /// answer field as the Chats tab ("@nook …" lets Nook write it; what you send is copied for the app).
     private func showCapturedChatCard(_ id: String) {
         guard let thread = ChatCaptureService.shared.inbox.threads[id] else { return }
+        Self.drawnChatCards[id] = thread
         let token = Self.chatCardPrefix + id
         let appName = MessagingApps.app(id: thread.app)?.name ?? thread.app
         let time = DateFormatter()

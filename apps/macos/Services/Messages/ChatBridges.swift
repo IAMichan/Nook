@@ -44,7 +44,8 @@ enum ChatHistory {
 @MainActor
 final class MessagesBridge: ChatHistoryBridge {
     let app = "messages"
-    let interval: TimeInterval = 5
+    /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
+    let interval: TimeInterval = 2
     private(set) var isWorking = false
     /// What goes besides text: every file as itself (a sticker as its picture, a voice message as an audio file), a
     /// place or a contact as text. Messages has no polls another app can send.
@@ -607,7 +608,8 @@ final class MessagesBridge: ChatHistoryBridge {
 @MainActor
 final class WhatsAppDesktopBridge: ChatHistoryBridge {
     let app = "whatsapp"
-    let interval: TimeInterval = 5
+    /// Often: a read first looks only at when the database changed, which costs nothing while it did not.
+    let interval: TimeInterval = 2
     private(set) var isWorking = false
 
     private static let chats = 30
@@ -899,6 +901,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     /// turn even when their newest activity looks the same. Kept apart from `seen`, so a change told while a read is
     /// under way is not lost when that read ends (Instagram tells of the message a moment after the chat moved).
     private var stale: Set<String> = []
+    /// How often in a row a chat was read before its newest message was there (see `ChatServiceData.isBehind`).
+    private var behind: [String: Int] = [:]
+    private static let behindRetries = 3
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
     /// The helper's id of every chat it brought in, by its app and its name in Nook: where what you send from Nook goes.
@@ -950,6 +955,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     func reset() {
         seen = [:]
         stale = []
+        behind = [:]
         covered = []
         isWorking = false
     }
@@ -987,6 +993,16 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                 }
                 let messages = await withFiles(ChatServiceData.messages(answer, chat: chat), token: token)
                 let deleted = ChatServiceData.deleted(answer, chat: chat)
+                // The chat moved to a message the answer does not hold yet (the app tells of a chat a moment before its
+                // message is there): read it again at the next turns, a few times, instead of waiting for the chat to
+                // move once more. Its row would show an older message than the chat until then.
+                if ChatServiceData.isBehind(messages, chat: chat), (behind[chat.id] ?? 0) < Self.behindRetries {
+                    behind[chat.id, default: 0] += 1
+                    stale.insert(chat.id)
+                    onChange()
+                } else {
+                    behind[chat.id] = nil
+                }
                 seen[chat.id] = chat.last ?? .distantPast
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
@@ -1053,6 +1069,15 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
               let local = (ChatJSON.object(answer.0)?["srcURL"] as? String).flatMap({ URL(string: $0) }), local.isFileURL else { return nil }
         downloaded[source] = local.path
         return local.path
+    }
+
+    /// A chat you opened in Nook: read again at the next turn, so it shows what the app has now, also what the live line
+    /// did not tell. False when the helper does not hold this chat.
+    @discardableResult
+    func refresh(app: String, name: String) -> Bool {
+        guard let id = chatID(app: app, name: name) else { return false }
+        stale.insert(id)
+        return true
     }
 
     // MARK: Sending

@@ -94,6 +94,13 @@ enum ChatServiceData {
         return nil
     }
 
+    /// Whether a chat's messages stop before its newest activity: the list says it moved later than the newest message
+    /// read (by more than a second, the rounding of the two), so that message is still on its way.
+    static func isBehind(_ messages: [InboxMessage], chat: Chat) -> Bool {
+        guard let last = chat.last, let newest = messages.last?.date else { return false }
+        return newest < last.addingTimeInterval(-1)
+    }
+
     /// The messages of /v1/chats/{id}/messages that were deleted, by their id in Nook.
     static func deleted(_ json: [String: Any], chat: Chat) -> [String] {
         (json["items"] as? [[String: Any]] ?? []).compactMap { message in
