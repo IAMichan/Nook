@@ -12,7 +12,7 @@ enum TimelineContainers {
                 case .tools(let id, let events, _):
                     let path = inside + ["group:" + id.uuidString]
                     for event in events { result[event.id] = path }
-                case .fold(let id, _, let inner):
+                case .fold(let id, _, let inner, _):
                     let path = inside + ["fold:" + id.uuidString]
                     for case .event(let event) in inner { result[event.id] = path }
                     for case .tools(let gid, let events, _) in inner {

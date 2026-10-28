@@ -24,12 +24,15 @@ final class TimelinePresentationTests: XCTestCase {
     func testFinishedTurnFoldsBetweenQuestionAndAnswer() throws {
         let blocks = TimelinePresentation.blocks(finishedTurn() + [event(.user, "Nog iets", at: 200)], active: false)
         XCTAssertEqual(blocks.count, 5)
-        guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner) = blocks[1],
+        guard case .event(let user) = blocks[0], case .fold(_, let seconds, let inner, let checks) = blocks[1],
               case .event(let answer) = blocks[2], case .event(let result) = blocks[3] else { return XCTFail("\(blocks)") }
         XCTAssertEqual(user.text, "Fix de test")
         XCTAssertEqual(answer.text, "Opgelost.")
         XCTAssertEqual(result.kind, .result)
         XCTAssertEqual(seconds, 133)
+        // The tests it ran stay on the fold's line, worked out with the blocks rather than on every redraw.
+        XCTAssertEqual(checks.map(\.kind), [.tests])
+        XCTAssertEqual(checks.first?.outcome, .passed)
         // Inside: the thinking, then the three tool calls as one group.
         XCTAssertEqual(inner.count, 2)
         guard case .tools(_, let tools, let tally) = inner[1] else { return XCTFail("\(inner)") }

@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     let calendar = CalendarService()
     let nowPlaying = NowPlayingService()
     let hub = AgentHub()
+    /// The merged session lists, kept until one of the lists they come from changes (see `AppModel+Sessions`).
+    var sessionListsCache: SessionListsCache?
     let voice = VoiceService()
     let screen = ScreenReader()
     let recap = RecapStore()
