@@ -442,6 +442,10 @@ struct PullRequestSnapshot: Equatable, Sendable {
     /// All reviews and comments, oldest first.
     var reviews: [Note]
     var comments: [Note]
+    /// Open but marked as a draft; `state` still says "open", which is what a watch compares.
+    var draft = false
+    /// Open and in conflict with its base branch.
+    var conflicted = false
 }
 
 /// What changed on a watched pull request since the last look: lines for the timeline, and the message for the agent.

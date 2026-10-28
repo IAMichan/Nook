@@ -146,3 +146,17 @@ struct PullRequestStateBadge: View {
     }
 }
 
+/// A pull request's state badge as it is now: read from `PullRequestStatusStore`, the one status every place in Nook
+/// shares, and read again while it shows, so it never lags behind the row badge or the pull request page.
+struct PullRequestLiveStateBadge: View {
+    let url: URL
+    /// What to show before any read has said (a watch's last look, say).
+    var fallback: PullRequestBadge.Glyph = .open
+    @ObservedObject private var statuses = PullRequestStatusStore.shared
+
+    var body: some View {
+        PullRequestStateBadge(glyph: statuses.status(url)?.glyph ?? fallback, number: Int(url.lastPathComponent))
+            .task(id: url) { await PullRequestStatusStore.follow(url) }
+    }
+}
+

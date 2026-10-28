@@ -11,6 +11,8 @@ struct AgentInboxList: View {
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var visits = SessionVisits.shared
     @ObservedObject private var pullRequests = PullRequestSync.shared
+    /// The badges show the newest status of each request, also one a watch or the pull request page read.
+    @ObservedObject private var pullRequestStatuses = PullRequestStatusStore.shared
     /// Sessions that are running or were, and earlier sessions (settled by nature).
     let items: [AgentListItem]
     let past: [AgentListItem]
