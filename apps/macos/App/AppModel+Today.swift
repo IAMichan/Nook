@@ -7,7 +7,18 @@ import NaturalLanguage
 /// What the home screen shows (Today) and the Settings window.
 extension AppModel {
     var agentSessions: [AgentSession] {
-        demoMode ? DemoContent.agents : hub.sessions + hub.detected
+        if demoMode { return DemoContent.agents }
+        // A chat you continued in Nook is listed once, as the Nook session, not also as the session its app reported.
+        let runs = workspace.runs.filter { !$0.archived }.compactMap { run -> (agent: String, conversations: Set<String>)? in
+            guard let current = run.providerSessionID, !current.isEmpty else { return nil }
+            return (run.provider.displayName, Set([current] + (run.conversation?.earlierSessions ?? [])))
+        }
+        let hooked = runs.isEmpty ? hub.sessions : hub.sessions.filter { session in
+            let busy = session.status == .running || session.status == .waiting || session.approvalID != nil
+            return !AgentSessionRegistry.isContinuedInNook(agent: session.name, conversation: session.ownConversationID,
+                                                           busy: busy, runs: runs)
+        }
+        return hooked + hub.detected
     }
 
     /// Connected agents actively working or awaiting approval/input.
