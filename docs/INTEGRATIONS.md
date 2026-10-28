@@ -51,7 +51,7 @@ Code, it still applies to every coding agent. Mention any member you could not d
 | Opened chat read from the app at once | ✓ (the chat's history) | ✓ (the chat's history) | ✓ | ✓ | ✓ (that chat read again) | ✓ | ✓ | ✓ |
 | Notch card follows its chat live | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Shared links shown short (`[url](url)` → `site/path`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Edit your message (pencil, ↑ in an empty field) | ✓ (when the gateway can) | ✓ (when the gateway can) | – (Messages lets no other app edit) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) |
+| Edit, delete and info from the message's ⌄ menu (↑ in an empty field edits) | ✓ (when the gateway can) | ✓ (when the gateway can) | – (Messages lets no other app edit) | ✓ | ✓ (where the network allows it) | ✓ | ✓ | – (the website takes only new text) |
 | Link previews and embeds (picture, video, sound, page card) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – | – |
 

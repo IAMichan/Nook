@@ -191,7 +191,9 @@ struct ChatTranscript: View {
                         ChatBubbleView(bubble: bubble, first: first, last: last, newest: bubble.id == bubbles.last?.id,
                                        onOpen: { onOpen(bubble) }, onZoom: { onZoom(bubble) },
                                        onReply: replyAction(bubble), onReact: reactAction(bubble),
-                                       onEdit: editAction(bubble), onVote: voteAction(bubble))
+                                       onEdit: editAction(bubble), onDelete: deleteAction(bubble),
+                                       onCopyChat: { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) },
+                                       onVote: voteAction(bubble))
                             .equatable()
                             .contextMenu {
                                 if let onReply {
@@ -244,7 +246,13 @@ struct ChatTranscript: View {
         return { onVote(bubble, $0) }
     }
 
-    /// Changing your own message's text, where its app takes that: a pencil beside it under the pointer.
+    /// Deleting your own message for everyone, where its app takes that (the host asks first).
+    private func deleteAction(_ bubble: ChatBubble) -> (() -> Void)? {
+        guard let onDelete, bubble.fromMe else { return nil }
+        return { onDelete(bubble) }
+    }
+
+    /// Changing your own message's text, where its app takes that: in the message's menu.
     private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
         guard let onEdit, bubble.fromMe, !bubble.text.isEmpty, bubble.poll == nil else { return nil }
         return { onEdit(bubble) }
@@ -297,6 +305,8 @@ private struct ChatBubbleView: View, Equatable {
     let onReply: (() -> Void)?
     let onReact: ((String) -> Void)?
     let onEdit: (() -> Void)?
+    let onDelete: (() -> Void)?
+    let onCopyChat: () -> Void
     let onVote: (([String]) -> Void)?
     @State private var expanded = false
     @State private var hovering = false
@@ -314,7 +324,7 @@ private struct ChatBubbleView: View, Equatable {
     static func == (a: ChatBubbleView, b: ChatBubbleView) -> Bool {
         a.bubble == b.bubble && a.first == b.first && a.last == b.last && a.newest == b.newest
             && (a.onReply == nil) == (b.onReply == nil) && (a.onReact == nil) == (b.onReact == nil)
-            && (a.onEdit == nil) == (b.onEdit == nil)
+            && (a.onEdit == nil) == (b.onEdit == nil) && (a.onDelete == nil) == (b.onDelete == nil)
             && (a.onVote == nil) == (b.onVote == nil)
     }
 
@@ -380,9 +390,6 @@ private struct ChatBubbleView: View, Equatable {
                         .pointerStyle(.link)
                         .help(tr("chat.info.title"))
                         .accessibilityLabel(tr("chat.info.title"))
-                        .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
-                            MessageInfoView(ticks: ticks, readers: bubble.readers)
-                        }
                 }
             }
         }
@@ -417,6 +424,18 @@ private struct ChatBubbleView: View, Equatable {
             CappedWidth(maximum: Self.maxWidth) {
                 VStack(alignment: bubble.fromMe ? .trailing : .leading, spacing: NookTheme.Spacing.xxs) {
                     content
+                        .overlay(alignment: .topTrailing) {
+                            MessageMenuButton(bubble: bubble, onReply: onReply, onEdit: onEdit, onDelete: onDelete,
+                                              onInfo: bubble.fromMe && bubble.ticks != nil ? { showingInfo = true } : nil,
+                                              onCopyChat: onCopyChat, onPicture: bare)
+                                .padding(NookTheme.Spacing.xs)
+                                .opacity(hovering ? 1 : 0)
+                                .allowsHitTesting(hovering)
+                                .animation(NookTheme.hover, value: hovering)
+                        }
+                        .popover(isPresented: $showingInfo, arrowEdge: .bottom) {
+                            if let ticks = bubble.ticks { MessageInfoView(ticks: ticks, readers: bubble.readers) }
+                        }
                     if !bubble.reactions.isEmpty {
                         ReactionChips(reactions: bubble.reactions, onReact: onReact)
                             .padding(.horizontal, NookTheme.Spacing.sm)
@@ -434,7 +453,7 @@ private struct ChatBubbleView: View, Equatable {
     /// Answer this message and react to it: shown while the pointer is on the bubble, where the chat can be answered.
     @ViewBuilder
     private var actions: some View {
-        if onReply != nil || onReact != nil || onEdit != nil {
+        if onReply != nil || onReact != nil {
             let shown = hovering || picking
             HStack(spacing: NookTheme.Spacing.xxs) {
                 if let onReact {
@@ -448,9 +467,6 @@ private struct ChatBubbleView: View, Equatable {
                 }
                 if let onReply {
                     BubbleActionButton(symbol: "arrowshape.turn.up.left", label: tr("chat.reply"), action: onReply)
-                }
-                if let onEdit {
-                    BubbleActionButton(symbol: "pencil", label: tr("chat.edit"), action: onEdit)
                 }
             }
             .opacity(shown ? 1 : 0)
@@ -538,6 +554,68 @@ private struct ChatBubbleView: View, Equatable {
         return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
                                       bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
                                       style: .continuous)
+    }
+}
+
+/// The small chevron in a message's top corner while the pointer is on it: its menu answers, copies, changes or deletes
+/// the message and shows its info (who has it, who read it), as far as the chat's app lets Nook. The same for every app.
+private struct MessageMenuButton: View {
+    let bubble: ChatBubble
+    let onReply: (() -> Void)?
+    let onEdit: (() -> Void)?
+    let onDelete: (() -> Void)?
+    let onInfo: (() -> Void)?
+    let onCopyChat: () -> Void
+    /// On a photo, a sticker or an emoji (no bubble): a dark disc, so it reads on any picture.
+    let onPicture: Bool
+    @State private var hovering = false
+
+    /// The bubble's own color under the chevron, so it covers the text beneath it cleanly.
+    @ViewBuilder
+    private var disc: some View {
+        if onPicture {
+            Circle().fill(NookTheme.ink.opacity(hovering ? 0.7 : 0.5))
+        } else if bubble.fromMe {
+            ZStack {
+                Circle().fill(NookTheme.canvas)
+                Circle().fill(NookTheme.mint.opacity(hovering ? 0.3 : 0.13))
+            }
+        } else {
+            Circle().fill(hovering ? NookTheme.rowSelected : NookTheme.smoke)
+        }
+    }
+
+    var body: some View {
+        Menu {
+            if let onReply {
+                Button { onReply() } label: { Label(tr("chat.reply"), systemImage: "arrowshape.turn.up.left") }
+            }
+            if !bubble.copyText.isEmpty {
+                Button { Pasteboard.copy(bubble.copyText) } label: { Label(tr("whatsapp.copy.message"), systemImage: "doc.on.doc") }
+            }
+            if let onEdit {
+                Button { onEdit() } label: { Label(tr("chat.edit"), systemImage: "pencil") }
+            }
+            if let onInfo {
+                Button { onInfo() } label: { Label(tr("chat.info.title"), systemImage: "info.circle") }
+            }
+            Button { onCopyChat() } label: { Label(tr("whatsapp.copy.chat"), systemImage: "text.bubble") }
+            if let onDelete {
+                Divider()
+                Button(role: .destructive) { onDelete() } label: { Label(tr("chat.delete"), systemImage: "trash") }
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(NookTheme.font(9, .bold))
+                .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textStrong)
+                .frame(width: 18, height: 18)
+                .background(disc)
+                .contentShape(Circle())
+        }
+        .composerMenu()
+        .onHover { hovering = $0 }
+        .help(tr("chat.moreActions"))
+        .accessibilityLabel(tr("chat.moreActions"))
     }
 }
 
