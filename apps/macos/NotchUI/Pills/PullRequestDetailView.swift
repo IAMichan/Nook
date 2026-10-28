@@ -1227,13 +1227,10 @@ struct PullRequestDetailView: View {
             }
         }) {
             HStack(spacing: NookTheme.Spacing.md) {
-                CheckOutcomeGlyph(outcome: check.outcome).frame(width: 16)
+                CheckOutcomeGlyph(outcome: check.outcome, running: check.running).frame(width: 16)
                 Text(check.name).font(NookTheme.TextStyle.body).foregroundStyle(NookTheme.paper).lineLimit(1)
                 Spacer(minLength: 4)
-                Text(check.detail.replacingOccurrences(of: "_", with: " "))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
+                CICheckStatusText(check: check)
                 if check.url != nil {
                     Image(systemName: readsHere ? "chevron.right" : "arrow.up.right")
                         .font(NookTheme.font(9, .semibold))

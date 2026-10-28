@@ -12,6 +12,12 @@ export interface PullRequestCheck {
   outcome: CheckOutcome;
   detail: string;
   url: string | null;
+  /// A check run (GitHub's status words in `detail`) rather than a commit status (its own sentence).
+  checkRun: boolean;
+  /// Runs right now; a pending check that has not started yet is queued.
+  running: boolean;
+  started: string | null;
+  finished: string | null;
 }
 
 /// One step of a GitHub Actions job.
@@ -19,6 +25,10 @@ export interface CiStep {
   number: number;
   name: string;
   outcome: CheckOutcome;
+  started: string | null;
+  finished: string | null;
+  /// Runs right now (a pending step that has not started yet waits).
+  running: boolean;
 }
 
 /// What a check shows when you open it in Nook (`CILog` on the Mac): its job's steps and the end of its log.
@@ -27,6 +37,45 @@ export interface CiLog {
   /// Null while GitHub has no log yet (the job still runs).
   text: string | null;
   omittedLines: number;
+  /// When the job started and finished, for its clock; null while it waits or runs.
+  started: string | null;
+  finished: string | null;
+}
+
+/// A duration as a clock that reads the same in every language: "0:42", "3:12", "1:04:05" (`CILogParser.clock` on the Mac).
+export function ciClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600), m = Math.floor(total / 60) % 60, s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+/// How long something ran in seconds: until it finished, or until `now` while it still runs. Null before it started.
+export function ciElapsed(started: string | null, finished: string | null, now: number = Date.now()): number | null {
+  if (!started) return null;
+  return ((finished ? Date.parse(finished) : now) - Date.parse(started)) / 1000;
+}
+
+/// The line under a check's name in words, with its clock: "Bezig · 3:12", "Mislukt na 4:05", "In de wachtrij"
+/// (`CICheckStatusText` on the Mac). A commit status from another app keeps its own sentence.
+export function ciStatusLine(check: PullRequestCheck, now: number = Date.now(), extra: string | null = null): string {
+  if (!check.checkRun) return check.detail.replaceAll("_", " ");
+  const seconds = ciElapsed(check.started, check.finished, now);
+  const clock = seconds === null ? null : ciClock(seconds);
+  switch (check.outcome) {
+    case "pending":
+      if (!check.running) return "In de wachtrij";
+      return ["Bezig", clock, extra].filter(Boolean).join(" · ");
+    case "skipped":
+      return "Overgeslagen";
+    default: {
+      const [word, after] =
+        check.detail === "cancelled" ? ["Geannuleerd", "Geannuleerd na"]
+        : check.detail === "timed_out" ? ["Time-out", "Time-out na"]
+        : check.outcome === "passing" ? ["Geslaagd", "Geslaagd in"] : ["Mislukt", "Mislukt na"];
+      return clock ? `${after} ${clock}` : word;
+    }
+  }
 }
 
 export type CiLineKind = "plain" | "group" | "command" | "error" | "warning" | "notice";

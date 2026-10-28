@@ -16,7 +16,7 @@ struct CIChecksPopover: View {
             Divider()
             detail.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .task { await loadChecks() }
+        .task { await followChecks() }
     }
 
     // MARK: Checks
@@ -29,12 +29,13 @@ struct CIChecksPopover: View {
             } else {
                 List(checks, selection: Binding<String?>(get: { chosen }, set: { pick($0) })) { check in
                     HStack(spacing: NookTheme.Spacing.sm) {
-                        CheckOutcomeGlyph(outcome: check.outcome).frame(width: 14)
+                        CheckOutcomeGlyph(outcome: check.outcome, running: check.running).frame(width: 14)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(check.name).font(NookTheme.TextStyle.label).lineLimit(1)
-                            Text(check.detail).font(NookTheme.TextStyle.caption).foregroundStyle(NookTheme.textSecondary).lineLimit(1)
+                            CICheckStatusText(check: check)
                         }
                     }
+                    .padding(.vertical, NookTheme.Spacing.xxs)
                     .tag(check.id)
                 }
             }
@@ -46,6 +47,17 @@ struct CIChecksPopover: View {
     }
 
     private var current: PullRequestCheck? { checks?.first { $0.id == chosen } }
+
+    /// Reads the checks, and again every few seconds while one still runs or waits, so a check turns passed or failed
+    /// in the list on its own.
+    private func followChecks() async {
+        await loadChecks()
+        while !Task.isCancelled, checks?.contains(where: { $0.outcome == .pending }) == true {
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard !Task.isCancelled else { return }
+            await loadChecks()
+        }
+    }
 
     private func loadChecks() async {
         // The checks read last time show at once; the fresh read replaces them when GitHub answers.
