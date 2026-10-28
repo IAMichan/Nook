@@ -74,6 +74,9 @@ pub struct SettingsChat {
     pub hidden: bool,
 }
 
+/// How many chats' pictures one request fetches, and how long a chat without one waits before it is asked again.
+const AVATAR_BATCH: usize = 60;
+const AVATAR_RETRY: Duration = Duration::from_secs(6 * 3600);
 /// How many of a chat's newest photos, videos and documents its card fetches to show.
 pub const PREVIEW_COUNT: usize = 6;
 /// How many fetched files stay at most; the oldest go first, from memory and from disk.
@@ -125,6 +128,10 @@ struct Inner {
     preview_order: VecDeque<String>,
     previews_loading: HashSet<String>,
     preview_failed: HashMap<String, Instant>,
+    /// Each chat's picture bytes (a person's profile photo, a group's), once fetched; the chats asked for and found
+    /// without one are asked again after [`AVATAR_RETRY`].
+    avatars: HashMap<String, Vec<u8>>,
+    avatar_asked: HashMap<String, Instant>,
 }
 
 /// Een chat die bij een zoekvraag past: id, naam en de berichten die passen.
@@ -312,6 +319,8 @@ impl WhatsAppLink {
             i.refreshing = false;
             i.polling = false;
             i.provider = None;
+            i.avatars.clear();
+            i.avatar_asked.clear();
             i.link = None;
             i.webhook = None;
             i.qr = None;
@@ -1062,6 +1071,45 @@ impl WhatsAppLink {
         let path = folder.join(name);
         std::fs::write(&path, &file.data).map_err(|e| ConnectorError::new(e.to_string()))?;
         Ok(path)
+    }
+
+    /// The pictures of these chats that the phone has, by chat: the gateway says where each one is on WhatsApp's own
+    /// picture server and only that server is asked for it. A chat without one is asked again after six hours.
+    pub async fn avatars(&self, chats: &[String]) -> HashMap<String, Vec<u8>> {
+        let Some((provider, gen)) = self.with(|i| i.provider.clone().map(|p| (p, i.generation))).filter(|_| self.is_connected()) else {
+            return HashMap::new();
+        };
+        let mut out = HashMap::new();
+        for chat in chats.iter().map(|c| jid::normalized(c)).take(AVATAR_BATCH) {
+            if jid::is_status(&chat) {
+                continue;
+            }
+            let (have, asked) = self.with(|i| (i.avatars.get(&chat).cloned(), i.avatar_asked.get(&chat).copied()));
+            if let Some(bytes) = have {
+                out.insert(chat, bytes);
+                continue;
+            }
+            if asked.is_some_and(|t| t.elapsed() < AVATAR_RETRY) {
+                continue;
+            }
+            let bytes = match provider.avatar(&chat).await {
+                Some(url) => super::provider::avatar::fetch(&url).await,
+                None => None,
+            };
+            if self.with(|i| i.generation) != gen {
+                return out;
+            }
+            self.with(|i| {
+                i.avatar_asked.insert(chat.clone(), Instant::now());
+                if let Some(b) = &bytes {
+                    i.avatars.insert(chat.clone(), b.clone());
+                }
+            });
+            if let Some(b) = bytes {
+                out.insert(chat, b);
+            }
+        }
+        out
     }
 
     /// Whether `path` is a file Nook itself fetched into its own folder (and nothing outside it, through a link or

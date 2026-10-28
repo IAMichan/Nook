@@ -5,8 +5,9 @@
   import { api } from "../lib/api";
   import { connectorEvents, connectorsApi, type ConnectorInfo, type Overview, type WhatsAppConversation, type WhatsAppView } from "../lib/connectors";
   import { tr } from "../lib/i18n.svelte";
-  import { initials, time } from "../lib/whatsapp";
+  import { time } from "../lib/whatsapp";
   import { whatsapp } from "../lib/whatsapp.svelte";
+  import Avatar from "./connectors/Avatar.svelte";
   import ServiceIcon from "./connectors/ServiceIcon.svelte";
   import WhatsAppCard from "./connectors/WhatsAppCard.svelte";
 
@@ -159,7 +160,7 @@
             {/if}
             {#each sorted.slice(0, 200) as chat (chat.id)}
               <button class="row" class:active={whatsapp.chat === chat.id} onclick={() => openChat(chat)}>
-                <span class="avatar">{initials(chat.name)}</span>
+                <Avatar chat={chat.id} name={chat.name} size={28} />
                 <span class="what">
                   <span class="line"><span class="title">{chat.name}</span><span class="when faint">{at(chat)}</span></span>
                   <span class="sub faint">{preview(chat)}</span>
@@ -217,7 +218,6 @@
   .note { margin: 4px 4px 8px; font-size: 11px; line-height: 1.5; }
   .row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px; margin-bottom: 2px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; }
   .row:hover { background: var(--row-hover); }
-  .avatar { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--smoke); color: var(--text2); font-size: 11px; font-weight: 600; }
   .what { min-width: 0; flex: 1; display: grid; gap: 2px; }
   .line { display: flex; align-items: baseline; gap: 8px; }
   .title { min-width: 0; flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

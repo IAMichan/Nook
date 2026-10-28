@@ -139,4 +139,35 @@ class WhatsAppCardState {
   }
 }
 
+/** Profile photos of chats (a person's, a group's), fetched a few at a time as the lists ask for them. A chat without
+ *  one keeps its initials. */
+class AvatarState {
+  photos = $state<Record<string, string>>({});
+  private asked = new Set<string>();
+  private queue = new Set<string>();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Asks for a chat's photo unless it is known or was asked for already. */
+  want(chat: string) {
+    if (!chat || chat in this.photos || this.asked.has(chat)) return;
+    this.asked.add(chat);
+    this.queue.add(chat);
+    this.timer ??= setTimeout(() => this.flush(), 60);
+  }
+
+  private async flush() {
+    this.timer = null;
+    const batch = [...this.queue].slice(0, 30);
+    batch.forEach((c) => this.queue.delete(c));
+    if (this.queue.size) this.timer = setTimeout(() => this.flush(), 60);
+    try {
+      const found = await connectorsApi.whatsappAvatars(batch);
+      if (Object.keys(found).length) this.photos = { ...this.photos, ...found };
+    } catch {
+      // Not connected (yet): the chats are asked for again the next time the app starts.
+    }
+  }
+}
+
 export const whatsapp = new WhatsAppCardState();
+export const avatars = new AvatarState();

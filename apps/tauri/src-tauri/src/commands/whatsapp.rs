@@ -154,6 +154,35 @@ pub async fn whatsapp_settings_chats(c: State<'_, Connectors>) -> Res<Vec<Settin
     Ok(c.whatsapp.chats_for_settings())
 }
 
+/// The profile photos of these chats (a person's, a group's) as small data URLs for the round avatars, by chat. A chat
+/// without a photo (or one the phone hides) is left out and keeps its initials.
+#[tauri::command]
+pub async fn whatsapp_avatars(c: State<'_, Connectors>, chats: Vec<String>) -> Res<HashMap<String, String>> {
+    let found = c.whatsapp.avatars(&chats).await;
+    Ok(found.into_iter().filter_map(|(chat, bytes)| avatar_image(&bytes).map(|image| (chat, image))).collect())
+}
+
+/// A picture as a 96 px square JPEG data URL (centered crop), so a list of hundreds stays light.
+#[cfg(desktop)]
+fn avatar_image(bytes: &[u8]) -> Option<String> {
+    use base64::Engine;
+    let image = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?.decode().ok()?;
+    let side = image.width().min(image.height());
+    let square = image.crop_imm((image.width() - side) / 2, (image.height() - side) / 2, side, side);
+    let small = image::DynamicImage::from(square.thumbnail(96, 96).to_rgb8());
+    let mut out = std::io::Cursor::new(vec![]);
+    small.write_to(&mut out, image::ImageFormat::Jpeg).ok()?;
+    Some(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(out.into_inner())))
+}
+
+/// Without an image decoder on the phone, WhatsApp's own small JPEG goes as it is.
+#[cfg(not(desktop))]
+fn avatar_image(bytes: &[u8]) -> Option<String> {
+    use base64::Engine;
+    (bytes.starts_with(&[0xFF, 0xD8]) && bytes.len() < 200_000)
+        .then(|| format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 /// A chat's name inside Nook's own prompt: one short line, never text that reads as more instructions.
 fn prompt_name(name: &str) -> String {
     let clean: String = name.chars().map(|c| if c.is_control() || c == '"' { ' ' } else { c }).collect();
