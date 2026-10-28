@@ -40,8 +40,10 @@ struct AgentsTab: View {
         // A process Nook only sees is shown when its conversation can be read; agents are linked in Settings › Agents.
         let live = app.agentSessions.filter { app.demoMode || !$0.isDetected || transcripts[$0.id] != nil }
         // Earlier sessions only of accounts that are still connected, so the list stays about what you actually use.
-        let past = app.demoMode ? [] : Array(lists.past
-            .filter { app.profile(for: $0).map(app.isConnected) ?? false }.prefix(60))
+        // Each account is checked once, and the list stops at the sixty it shows instead of going through every earlier session.
+        let connected = Set(app.profiles.all.filter(app.isConnected).map(\.id))
+        let past = app.demoMode ? [] : Array(lists.past.lazy
+            .filter { app.profile(for: $0).map { connected.contains($0.id) } ?? false }.prefix(60))
         let selection = resolve(live: live, past: past)
         // A session with its side panel open needs room for both: the list gives way first, so a narrow window keeps
         // the conversation and the panel side by side for as long as it can.

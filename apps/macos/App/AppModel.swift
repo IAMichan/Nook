@@ -367,9 +367,11 @@ final class AppModel: ObservableObject {
             }
         }
 
-        // Agent start/stop events update the idle notch indicator.
+        // Agent start/stop events update the idle notch indicator. In no particular order: the hub lists working sessions by
+        // their last event, so two agents at work swap places all the time, and each `show` redraws the notch and the main
+        // window with an animation.
         hub.$sessions
-            .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" } }
+            .map { sessions in sessions.map { "\($0.id)|\($0.status.label)|\($0.approvalID ?? "")" }.sorted() }
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -538,6 +540,8 @@ final class AppModel: ObservableObject {
     @Published var onboardingStep = 0
     /// The Settings window (created on first use).
     var settingsWindow: NSWindow?
+    /// Whether the Settings window shows its content: not while it is closed or minimized.
+    let settingsPresence = WindowPresence()
     /// Tracks the message currently streaming per conversation, and its task. Multiple conversations can run concurrently.
     var replies: [UUID: UUID] = [:]
     var chatTasks: [UUID: Task<Void, Never>] = [:]

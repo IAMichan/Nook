@@ -131,7 +131,11 @@ extension AppModel {
         // Floating notch panel overlays all windows; dismiss it so clicks reach Settings.
         if case .panel = viewModel.state { viewModel.show(.idle) }
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView().nookToastHost().nookAttention().environmentObject(self))
+            // Kept after closing, so its content goes while it is closed: else Settings redraws with every change in the app.
+            let root = WindowContent(presence: settingsPresence, background: NookTheme.canvas, minSize: CGSize(width: 720, height: 480)) {
+                SettingsView().nookToastHost()
+            }
+            let host = NSHostingController(rootView: root.nookAttention().environmentObject(self))
             host.sizingOptions = [.minSize]
             let window = NSWindow(contentViewController: host)
             window.title = "Nook"
@@ -145,8 +149,13 @@ extension AppModel {
             window.minSize = NSSize(width: 720, height: 480)
             window.isReleasedWhenClosed = false
             window.center()
+            settingsPresence.follow(window)
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.settingsPresence.shown = false }
+            }
             settingsWindow = window
         }
+        settingsPresence.shown = true
         if let settingsWindow { DockPresence.shared.track(settingsWindow) }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
