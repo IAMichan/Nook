@@ -69,13 +69,13 @@ struct NookChatView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if chat.isEmpty {
                         emptyState
+                        inputBar
+                            .padding(.top, NookTheme.Spacing.md)
                     } else {
                         header
                             .padding(.bottom, NookTheme.Spacing.xs)
                         thread
                     }
-                    inputBar
-                        .padding(.top, NookTheme.Spacing.md)
                 }
                 // In the main window the conversation keeps a readable width, centered in the room beside the list.
                 .frame(maxWidth: compact ? nil : PanelLayout.readableChat)
@@ -360,14 +360,13 @@ struct NookChatView: View {
             } action: { _, _ in
                 if scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            .overlay(alignment: .bottom) {
-                if scroll.mode == .free, !atEnd {
-                    TimelineToEndPill {
+            // The conversation scrolls on behind the composer; the pill back to the end rides on top of it.
+            .composerInset {
+                inputBar
+                    .toEndPill(scroll.mode == .free && !atEnd) {
                         scroll.jumpedToEnd()
                         withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
-                    .padding(.bottom, 8)
-                }
             }
             // A soft fade under the header, so text scrolls away instead of being cut off.
             .mask(

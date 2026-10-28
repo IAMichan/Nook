@@ -163,13 +163,20 @@ struct AgentSessionDetail: View {
 
             if app.demoMode {
                 Spacer(minLength: 0)
+                liveBottomBar(session, shown: shown)
             } else {
                 // Every agent Nook can answer (Antigravity too, through its agent API), not only the ones it takes over.
                 AgentConversation(session: shown, onReply: app.canReply(to: session) ? { answer in
                     perform { try await app.reply(to: session, message: answer) }
-                } : nil)
+                } : nil, bottomBar: AnyView(liveBottomBar(session, shown: shown)))
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 
+    /// What sits under a live session's conversation: an approval, or the composer with its error line and tray.
+    private func liveBottomBar(_ session: AgentSession, shown: AgentSession) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             if !app.demoMode, let id = session.approvalID, let request = app.hub.approval(id: id) {
                 let approval = ApprovalCenter.make(request)
                 ApprovalView(approval: approval) { app.approvals.decide(approval, $0) }
@@ -187,7 +194,6 @@ struct AgentSessionDetail: View {
                 .chatColumn()
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// A workspace request from an agent running in a terminal in this session's folder.
@@ -594,36 +600,42 @@ struct AgentSessionDetail: View {
                     perform { try await app.reply(to: session, message: answer) }
                 } : nil,
                 footer: tr("agents.past.meta", NookDates.ago(session.ended), AgentFormat.duration(session.duration), session.prompts),
+                bottomBar: AnyView(pastBottomBar(session, canContinue: canContinue, send: send)),
                 directory: session.cwd
             )
             .id("past:" + session.id)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
 
+    /// The composer under an earlier session's conversation, with its error line and pull request tray.
+    private func pastBottomBar(_ session: PastSession, canContinue: Bool, send: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
             errorLine
             VStack(spacing: 0) {
-            pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
-            SessionComposer(
-                text: $draft,
-                prompt: canContinue ? tr("agents.reply.resume")
-                    : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
-                canSend: canContinue,
-                sending: working,
-                onSend: send
-            ) {
-                // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
-                pastMenu(session, canContinue: app.canContinueInNook(session))
-                agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
-                          canSwitch: app.canContinueInNook(session))
-                if app.canContinueInNook(session) { turnControls(kind: session.agent) }
-            }
-            .rich(composerModel, composerConfig(folder: session.cwd))
-            .choicesBelowBox()
-            .images($images)
-            .trailing { ComposerMic(text: $draft) }
-            .zIndex(1)
+                pullRequestTray(pullRequest(cwd: session.cwd, branch: session.branch.isEmpty ? (GitHead.branch(for: session.cwd) ?? "") : session.branch, reply: session.lastReply))
+                SessionComposer(
+                    text: $draft,
+                    prompt: canContinue ? tr("agents.reply.resume")
+                        : (session.cwd.isEmpty ? tr("agents.nook.noFolder") : tr("agents.nook.unsupported", session.agent.name)),
+                    canSend: canContinue,
+                    sending: working,
+                    onSend: send
+                ) {
+                    // "Open in Nook" adopts the conversation: only for agents Nook runs itself (not Antigravity).
+                    pastMenu(session, canContinue: app.canContinueInNook(session))
+                    agentMenu(name: session.agent.name, kind: session.agent, profile: app.profile(for: session),
+                              canSwitch: app.canContinueInNook(session))
+                    if app.canContinueInNook(session) { turnControls(kind: session.agent) }
+                }
+                .rich(composerModel, composerConfig(folder: session.cwd))
+                .choicesBelowBox()
+                .images($images)
+                .trailing { ComposerMic(text: $draft) }
+                .zIndex(1)
             }
             .chatColumn()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// Without a readable transcript: the last prompt and reply the history scan kept.
