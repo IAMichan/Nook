@@ -296,6 +296,7 @@ struct AgentSessionDetail: View {
             perform {
                 try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
                 draft = ""
+                images = []
                 choice = nil
                 turnSettings = AgentTurnSettings()
             }
@@ -577,6 +578,7 @@ struct AgentSessionDetail: View {
             perform {
                 try await app.reply(to: session, message: outgoing, choice: picked, settings: settings)
                 draft = ""
+                images = []
                 choice = nil
                 turnSettings = AgentTurnSettings()
             }
