@@ -220,12 +220,14 @@ export interface UsageReport {
   days: { day: string; provider: RunProvider; tokens: number }[];
 }
 
-export type QuickAction = "commit" | "commitPush" | "commitPushPr" | "push" | "pushPr" | "createPr" | "pull";
+export type QuickAction = "commit" | "commitPush" | "commitPushPr" | "push" | "pushPr" | "createPr" | "pull" | "branchCommitPushPr" | "branchPushPr";
 export interface QuickView {
-  state: { branch: string | null; hasChanges: boolean; isDefaultBranch: boolean; hasUpstream: boolean; hasRemote: boolean; ahead: number; behind: number; aheadOfBase: number; hasOpenPullRequest: boolean };
+  state: { branch: string | null; hasChanges: boolean; isDefaultBranch: boolean; hasUpstream: boolean; hasRemote: boolean; ahead: number; behind: number; aheadOfBase: number; hasOpenPullRequest: boolean; pullRequestLanded: boolean };
   action: QuickAction | null;
   label: string | null;
   reason: string | null;
+  destination: string | null;
+  alternatives: QuickAction[];
   hostName: string | null;
   remote: string | null;
   base: string | null;
@@ -280,6 +282,8 @@ export const workspaceApi = {
   clone: (url: string, near: string | null) => invoke<string>("workspace_clone", { url, near }),
   quick: (id: string) => invoke<QuickView>("workspace_quick", { run: run(id) }),
   pull: (id: string) => invoke<void>("workspace_pull", { run: run(id) }),
+  startBranch: (id: string, topic: string) => invoke<{ branch: string; cut: string | null }>("workspace_start_branch", { run: run(id), topic }),
+  moveOntoBase: (id: string, cut: string) => invoke<boolean>("workspace_move_onto_base", { run: run(id), cut }),
   commitAll: (id: string, subject: string, body: string) => invoke<string>("workspace_commit_all", { run: run(id), subject, body }),
   pullRequestDraft: (id: string, base: string) => invoke<PullRequestDraft>("workspace_pull_request_draft", { run: run(id), base }),
   createPullRequest: (id: string, d: PullRequestDraft & { draft: boolean }) =>

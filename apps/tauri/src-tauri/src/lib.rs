@@ -318,6 +318,8 @@ pub fn run() {
             commands::workspace::workspace_quick,
             commands::workspace::workspace_clone,
             commands::workspace::workspace_pull,
+            commands::workspace::workspace_start_branch,
+            commands::workspace::workspace_move_onto_base,
             commands::workspace::workspace_commit_all,
             commands::workspace::workspace_pull_request_draft,
             commands::workspace::workspace_create_pull_request,

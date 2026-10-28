@@ -296,22 +296,31 @@ struct SessionPanel: View {
     /// terminal or the Claude desktop app) through its folder.
     private var commitRow: some View {
         let active = runID == nil ? agentWorking : run?.status.isActive == true
+        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
+        // The changes listed below count, also when the button's own read of the branch is a moment older.
+        let state = quick.map { var state = $0; state.hasChanges = state.hasChanges || !files.isEmpty; return state }
         let resolved: (action: GitQuickAction?, reason: String?)
-        switch quick.map(GitQuickResolver.resolve) {
+        switch state.map(GitQuickResolver.resolve) {
         case .success(let found)?: resolved = (found, nil)
         case .failure(let why)?: resolved = (nil, tr(why.key))
         case nil: resolved = (nil, tr("agents.git.noChanges"))
         }
         let action = resolved.action
         let reason = active ? tr("ws.error.busy") : resolved.reason
-        let files = runID.flatMap { workspace.git[$0]?.status?.files } ?? model.files
+        let destination = state.flatMap { state in action.flatMap { GitQuickResolver.destinationKey(state, action: $0) } }.map { tr($0) }
+        let alternatives = state.map(GitQuickResolver.alternatives) ?? []
         let behind = (quick?.behind ?? 0) > 0
         return PanelRow(icon: progress != nil ? AnyView(ProgressView().controlSize(.mini)) : symbol(action.map(Self.actionSymbol) ?? "checkmark.circle"),
                         title: progress ?? action.map { tr($0.labelKey) } ?? tr("ws.quick.commit"),
-                        detail: progress == nil && action == nil ? reason : nil,
+                        detail: progress == nil ? (action == nil ? reason : destination) : nil,
                         disabledReason: progress ?? (action == nil || active ? reason : nil),
                         action: { if let action { start(action) } },
                         menu: AnyView(Group {
+                            ForEach(alternatives, id: \.labelKey) { other in
+                                Button(tr(other.labelKey)) { start(other) }
+                                    .disabled(active || progress != nil)
+                            }
+                            if !alternatives.isEmpty { Divider() }
                             Button(tr("ws.git.commit")) { open(commit: true) }
                                 .disabled(files.isEmpty || active)
                             Button(tr("ws.git.push")) { push() }
@@ -343,12 +352,14 @@ struct SessionPanel: View {
         case .commit: return "checkmark.circle"
         case .commitPush, .push: return "arrow.up.circle"
         case .commitPushPR, .pushPR, .createPR: return PullRequestIcon.generic
+        case .branchCommitPushPR, .branchPushPR: return "arrow.triangle.branch"
         case .pull: return "arrow.down.circle"
         }
     }
 
     private func start(_ action: GitQuickAction) {
-        if quick?.isDefaultBranch == true && action.pushes { confirmDefault = action } else { perform(action) }
+        // A new branch never lands on the default one, so it needs no confirmation.
+        if quick?.isDefaultBranch == true && action.pushes && !action.startsBranch { confirmDefault = action } else { perform(action) }
     }
 
     private func perform(_ action: GitQuickAction) {

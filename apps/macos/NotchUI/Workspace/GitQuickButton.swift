@@ -25,6 +25,19 @@ struct GitQuickButton: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(progress != nil || active)
                     .help(active ? tr("ws.error.busy") : tr("ws.quick.help"))
+                    if progress == nil, let state {
+                        // The other way to go: a new branch and pull request of their own for these changes.
+                        ForEach(GitQuickResolver.alternatives(state), id: \.labelKey) { other in
+                            Button { start(other) } label: {
+                                HStack(spacing: NookTheme.Spacing.sm) {
+                                    NookSymbol(symbol(other))
+                                    Text(tr(other.labelKey))
+                                }
+                            }
+                            .disabled(active)
+                            .help(tr("ws.quick.newBranchHint"))
+                        }
+                    }
                 case .failure(let reason)?:
                     Text(tr(reason.key))
                         .font(NookTheme.TextStyle.detail)
@@ -33,6 +46,14 @@ struct GitQuickButton: View {
                 case nil:
                     EmptyView()
                 }
+            }
+            // Where the work goes: onto the open pull request, or a new branch once that one is merged.
+            if progress == nil, let state, case .success(let action) = GitQuickResolver.resolve(state),
+               let key = GitQuickResolver.destinationKey(state, action: action) {
+                Text(tr(key))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(WS.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .controlSize(.small)
@@ -55,12 +76,13 @@ struct GitQuickButton: View {
         case .commit: return "checkmark.circle"
         case .commitPush, .push: return "arrow.up.circle"
         case .commitPushPR, .pushPR, .createPR: return PullRequestIcon.generic
+        case .branchCommitPushPR, .branchPushPR: return "arrow.triangle.branch"
         case .pull: return "arrow.down.circle"
         }
     }
 
     private func start(_ action: GitQuickAction) {
-        if state?.isDefaultBranch == true && action.pushes {
+        if state?.isDefaultBranch == true && action.pushes && !action.startsBranch {
             confirmDefault = action
         } else {
             perform(action)
