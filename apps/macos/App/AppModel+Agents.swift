@@ -134,12 +134,14 @@ extension AppModel {
             fork = true
         }
         let profile = self.profile(for: session) ?? profiles.profile(id: kind.rawValue) ?? .defaultProfile(kind)
-        let path = session.transcriptPath.isEmpty
-            ? (history.sessions.first { $0.isConversation(conversation) }?.path ?? "") : session.transcriptPath
+        let known = history.sessions.first { $0.isConversation(conversation) }
+        let path = session.transcriptPath.isEmpty ? (known?.path ?? "") : session.transcriptPath
         let earlier = await earlierConversation(path: path, prompt: session.lastPrompt, reply: session.lastReply)
+        // The agent's own title (the Claude app names every session), else the last question; never the folder, which
+        // `adopt` replaces with the first question and a written title.
+        let title = [known?.title ?? "", session.lastPrompt].first { !$0.isEmpty } ?? ""
         let id = try await workspace.adopt(provider: provider, sessionID: conversation, profileID: profile.id,
-                                           directory: session.cwd, title: session.lastPrompt.isEmpty ? session.project : session.lastPrompt,
-                                           history: earlier, fork: fork)
+                                           directory: session.cwd, title: title, history: earlier, fork: fork)
         try applyChoice(choice, to: id)
         applySettings(settings, to: id)
         if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { workspace.send(id, text: message) }

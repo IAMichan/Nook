@@ -640,11 +640,14 @@ final class WorkspaceManager: ObservableObject {
         let id = UUID()
         let now = Date()
         let clean = InjectedPrompt.title(title)
+        // A conversation without a title of its own is named after its first question until an agent writes a better one.
+        let opening = history.first { $0.kind == .user }.map { InjectedPrompt.title($0.text) } ?? ""
+        let task = clean.isEmpty ? opening : clean
         let permission = settings.sessionDefaults(for: repoRoot ?? projectPath).permission(for: provider)
         let run = WorkspaceRun(
             id: id,
-            title: clean.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: clean),
-            task: clean,
+            title: task.isEmpty ? URL(fileURLWithPath: projectPath).lastPathComponent : WorktreeNaming.title(from: task),
+            task: task,
             provider: provider,
             profileID: profileID,
             model: "",
@@ -682,6 +685,7 @@ final class WorkspaceManager: ObservableObject {
         scheduleSave()
         // The starting point for what the next turns change.
         captureCheckpoint(id)
+        if clean.isEmpty, !opening.isEmpty { generateTitle(id) }
         return id
     }
 

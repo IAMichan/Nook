@@ -78,6 +78,12 @@ Sessions in a terminal are read from the agent's own transcript (`AgentTranscrip
 messages, thinking, steps with their outcome and output, compactions and errors. Gemini CLI's chat file gives messages,
 thoughts and its `toolCalls` as the same steps (with outcome, output and the lines an edit changed).
 
+A session's title is the name the agent gave it, when it gives one: Claude Code's `custom-title` lines (the Claude app
+names every session, `/rename` too), Codex's `thread_name` in `session_index.jsonl`, and Antigravity's
+`conversation_summaries.db`. Gemini CLI's chat files hold no name, so its sessions take their first prompt. A session Nook
+takes over without either is named after its first question and then gets a written title (`generateTitle`), never the
+folder name.
+
 ## Platforms and chats
 
 The iPhone companion is the only other app with the Chats tab. It gets the same things as the Mac over the companion
