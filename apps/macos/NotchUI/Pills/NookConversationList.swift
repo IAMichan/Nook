@@ -36,18 +36,19 @@ struct NookList: View {
                     }
                 }
             }
-            // No Nooks at all yet: the whole panel says so and offers the first one, instead of a lone line in a list.
-            if query.isEmpty && items.isEmpty && archived.isEmpty {
-                WSEmptyState(symbol: "bubble.left.and.text.bubble.right", title: tr("nooks.none"),
-                             message: tr("nooks.none.detail"), action: (tr("nooks.new"), { app.newChat() }))
-            } else {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    VStack(alignment: .leading, spacing: 2) {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                VStack(alignment: .leading, spacing: 2) {
+                    // No open Nooks yet: the panel says so and offers the first one, instead of a lone line in a list.
+                    // Archived ones still wait in the shelf below.
+                    if query.isEmpty && items.isEmpty && !showArchived {
+                        WSEmptyState(symbol: "bubble.left.and.text.bubble.right", title: tr("nooks.none"),
+                                     message: tr("nooks.none.detail"), action: (tr("nooks.new"), { app.newChat() }))
+                    } else {
                         ScrollView(showsIndicators: false) {
                             // Lazy: only the rows in view are built, and this list redraws while an answer streams in.
                             LazyVStack(alignment: .leading, spacing: 2) {
                                 if items.isEmpty && (archived.isEmpty || !showArchived) {
-                                    ListEmptyNote(query.isEmpty ? tr("nooks.none") : tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
+                                    ListEmptyNote(tr("nooks.noMatches"), padding: NookTheme.Spacing.lg)
                                 }
                                 if !pinned.isEmpty {
                                     sectionLabel(tr("nooks.section.pinned"))
@@ -60,10 +61,10 @@ struct NookList: View {
                             }
                         }
                         .frame(maxHeight: .infinity, alignment: .top)
-                        // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
-                        if !archived.isEmpty {
-                            archiveShelf(archived, now: context.date, shown: shown)
-                        }
+                    }
+                    // The archive sits at the foot of the list, as the settled sessions do in Agents, and opens upwards.
+                    if !archived.isEmpty {
+                        archiveShelf(archived, now: context.date, shown: shown)
                     }
                 }
             }
