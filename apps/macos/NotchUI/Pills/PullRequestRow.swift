@@ -27,6 +27,7 @@ struct PullRequestRow: View {
         }
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
             .fill(NookTheme.rowFill(selected: selected, hovering: hovering, rest: .clear)))
+        .selectionMark(selected)
         .onHover { hovering = $0 }
         // Resting on a row reads it ahead, so the click opens it at once.
         .task(id: hovering) {
