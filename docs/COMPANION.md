@@ -24,6 +24,25 @@ steers) or **After this turn** (in line); the choice is remembered (`CompanionRe
 read. The Agents list has search and a project filter, and touching and holding the app's icon offers New session, Ask
 Nook, Answer a chat and the two sessions that need you most (`AppShortcut`). These follow phone app.
 
+**Live conversation.** With a current Mac, an open session no longer asks every few seconds: the phone says which
+session is on screen (`CompanionOp.watch`), the Mac answers with its recent conversation and from then on sends only
+what changed after the last entry both have alike, over the live connection (`TimelineDelta`, `timelineAfter`). A phone
+that misses the entry an update builds on asks for the whole conversation once; after a reconnect the open session is
+watched again. An older Mac keeps the asking.
+
+**Review.** *Changes* in a session's header lists every file it changed in its folder, the most changed first, with its
+lines added and removed and its patch (`CompanionOp.diff`, cut to fit one answer). Tap a line, and another for a range,
+then *Comment*: the comment goes into the session's message as a `<review_comment>` with the lines quoted, the block the
+Mac's review sends.
+
+**Pictures and model.** The composer of a session and of a new session take up to two pictures (JPEGs made small
+enough on the phone, `CompanionImage`); the Mac saves them where its composer keeps pictures and gives the agent their
+paths below the words. A new session can pick its model from the Mac's composer menu for that agent; anything else
+falls back to your default.
+
+**Nothing lost.** A message the Mac refuses stays in the session with why (*Not sent*), to edit and send again with its
+pictures, or to discard.
+
 A notification that an agent's turn finished, failed or hit a limit has a **Reply** field: what you type goes to that
 session as a message (through the outbox), without opening the app.
 

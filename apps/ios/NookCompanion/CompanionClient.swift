@@ -41,6 +41,13 @@ final class CompanionClient: ObservableObject {
     @Published private(set) var launchOptions: LaunchOptions?
     /// The conversation of each session that was opened, by session id.
     @Published private(set) var timelines: [String: [TimelineEntry]] = [:]
+    /// The session on screen whose conversation follows live (`CompanionOp.watch`), kept across reconnects.
+    private(set) var watchedSession: String?
+    /// The changed files of a session (`CompanionOp.diff`).
+    @Published private(set) var diffs: [String: [DiffFileDigest]] = [:]
+    /// Messages your Mac refused, per session, to edit and send again or to drop (as restores a rejected
+    /// message into the composer instead of losing it).
+    @Published var rejected: [RejectedMessage] = []
     /// Nook's own chats, and the messages of each one that was opened.
     @Published private(set) var conversations: [ChatDigest] = []
     @Published private(set) var chatLines: [String: [ChatLine]] = [:]
@@ -491,6 +498,8 @@ final class CompanionClient: ObservableObject {
     }
 
     private func afterConnecting() async {
+        // A new connection has no session open on the Mac yet: the one on screen follows again.
+        if let session = watchedSession { await watchSession(session) }
         await LiveActivities.shared.reconcile(sessions)
         await drainOutbox()
         await refreshInbox()
@@ -616,8 +625,10 @@ final class CompanionClient: ObservableObject {
             if response.ok {
                 apply(response, to: request)
                 if response.message == "queued" { notice = String(localized: "Queued: the session is still busy.") }
-            } else if response.error == .unknownSession {
-                notice = String(localized: "This session is gone; your message was not sent.")
+            } else if let session = request.session, request.op == .send {
+                // Kept with why, in the session, to edit and send again: nothing you wrote is lost.
+                rejected.append(RejectedMessage(session: session, text: request.text ?? "", images: request.images ?? [],
+                                                reason: RejectedMessage.reason(response)))
             } else {
                 notice = String(localized: "Your Mac refused this.")
             }
@@ -684,15 +695,16 @@ final class CompanionClient: ObservableObject {
 
     /// A message to a session. With a Mac that answers repeats once (`CompanionFeature.retry`) it goes through the
     /// outbox: kept on the phone until the Mac took it, so it is not lost when the Mac cannot be reached right now.
-    func send(_ session: SessionDigest, text: String, steer: Bool = false) async {
-        await send(sessionID: session.id, text: text, steer: steer)
+    func send(_ session: SessionDigest, text: String, steer: Bool = false, images: [CompanionImage] = []) async {
+        await send(sessionID: session.id, text: text, steer: steer, images: images)
     }
 
     /// A message to a session by its id, as a reply typed in a notification sends it. `steer`: into the running turn now
     /// rather than after it (a Mac without `CompanionFeature.steer` puts it in line either way).
-    func send(sessionID: String, text: String, steer: Bool = false) async {
+    func send(sessionID: String, text: String, steer: Bool = false, images: [CompanionImage] = []) async {
         let request = CompanionRequest(op: .send, session: sessionID, text: text,
-                                       steer: steer && can(CompanionFeature.steer) ? true : nil)
+                                       steer: steer && can(CompanionFeature.steer) ? true : nil,
+                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images)
         guard can(CompanionFeature.retry), outbox.enqueue(request, now: Date()) else {
             await perform(request)
             return
@@ -731,8 +743,9 @@ final class CompanionClient: ObservableObject {
     }
 
     /// Starts a session on the Mac; the id of the new session, or nil when it did not start (the reason is in `notice`).
-    func start(_ launch: LaunchRequest) async -> String? {
-        await perform(CompanionRequest(op: .start, launch: launch))?.created
+    func start(_ launch: LaunchRequest, images: [CompanionImage] = []) async -> String? {
+        await perform(CompanionRequest(op: .start, launch: launch,
+                                       images: images.isEmpty || !can(CompanionFeature.images) ? nil : images))?.created
     }
 
     // MARK: A session's conversation
@@ -740,6 +753,38 @@ final class CompanionClient: ObservableObject {
     func loadTimeline(_ sessionID: String) async {
         guard await supports(CompanionFeature.timeline) else { return }
         await perform(CompanionRequest(op: .timeline, session: sessionID), quiet: true)
+    }
+
+    /// Opens a session's conversation live (`CompanionOp.watch`): the Mac answers with it whole, then sends what changes
+    /// by itself. False when this Mac cannot, and the screen asks every few seconds instead.
+    @discardableResult
+    func watchSession(_ sessionID: String) async -> Bool {
+        watchedSession = sessionID
+        guard await supports(CompanionFeature.liveTimeline), phase == .connected else { return false }
+        return await perform(CompanionRequest(op: .watch, session: sessionID), quiet: true)?.ok == true
+    }
+
+    /// The session left the screen: the Mac stops sending its conversation (unless another one opened meanwhile).
+    func unwatchSession(_ sessionID: String) async {
+        guard watchedSession == sessionID else { return }
+        watchedSession = nil
+        guard can(CompanionFeature.liveTimeline), phase == .connected else { return }
+        await perform(CompanionRequest(op: .watch), quiet: true)
+    }
+
+    /// Whether the open session follows live right now, so its screen need not ask.
+    var timelineIsLive: Bool { can(CompanionFeature.liveTimeline) && phase == .connected && channel != nil }
+
+    /// What a session changed in its folder (`CompanionOp.diff`).
+    func loadDiff(_ sessionID: String) async {
+        guard await supports(CompanionFeature.diff) else { return }
+        await perform(CompanionRequest(op: .diff, session: sessionID), quiet: true)
+    }
+
+    /// A refused message back in your hands: taken off the list, to put in the composer.
+    func takeRejected(_ message: RejectedMessage) -> RejectedMessage {
+        rejected.removeAll { $0.id == message.id }
+        return message
     }
 
     // MARK: Nook's own chats
@@ -952,7 +997,15 @@ final class CompanionClient: ObservableObject {
         }
         if req.op == .list || req.op == .hello { featuresKnown = true }
         if let options = response.launch, options != launchOptions { launchOptions = options }
-        if let timeline = response.timeline, let session = req.session, timelines[session] != timeline { timelines[session] = timeline }
+        if let timeline = response.timeline, let session = response.timelineSession ?? req.session {
+            // An update builds on the entry the phone already has; missing it, the whole conversation is asked for once.
+            if let merged = TimelineDelta.apply(timeline, after: response.timelineAfter, to: timelines[session]) {
+                if timelines[session] != merged { timelines[session] = merged }
+            } else {
+                Task { await loadTimeline(session) }
+            }
+        }
+        if let files = response.diff, let session = req.session, diffs[session] != files { diffs[session] = files }
         if let list = response.conversations, list != conversations { conversations = list }
         if let lines = response.messages, let conversation = response.created ?? req.conversation, chatLines[conversation] != lines {
             chatLines[conversation] = lines
@@ -1202,5 +1255,24 @@ enum Notifications {
 
     static func setBadge(_ count: Int) {
         UNUserNotificationCenter.current().setBadgeCount(count) { _ in }
+    }
+}
+
+/// A message your Mac refused (`CompanionClient.rejected`): what you wrote, the pictures with it, and why, in words.
+struct RejectedMessage: Identifiable, Equatable {
+    let id = UUID()
+    let session: String
+    let text: String
+    let images: [CompanionImage]
+    let reason: String
+
+    static func reason(_ response: CompanionResponse) -> String {
+        if let message = response.message, !message.isEmpty { return message }
+        switch response.error ?? .failed {
+        case .unknownSession: return String(localized: "This session is gone.")
+        case .badRequest: return String(localized: "The message was empty or too long, or a picture could not be read.")
+        case .notAllowedFromPhone: return String(localized: "Your Mac does not let this iPhone send that.")
+        default: return String(localized: "Your Mac refused this.")
+        }
     }
 }

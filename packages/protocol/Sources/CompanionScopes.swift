@@ -35,7 +35,7 @@ enum CompanionScopes {
     static let table: [CompanionOp: Requirement] = [
         .hello: .always, .list: .always, .subscribe: .always, .ping: .always,
         .register: .always, .unregister: .always, .liveActivity: .always, .requestUpdate: .always,
-        .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read),
+        .timeline: .scope(.read), .home: .scope(.read), .usage: .scope(.read), .watch: .scope(.read), .diff: .scope(.read),
         .decide: .scope(.approve), .answer: .scope(.approve),
         .send: .scope(.operate), .stop: .scope(.operate), .options: .scope(.operate), .start: .scope(.operate),
         .manage: .scope(.operate),
@@ -47,6 +47,7 @@ enum CompanionScopes {
     /// The scope each `CompanionFeature` belongs to; a feature not listed is about the connection and always offered.
     static let featureScopes: [String: CompanionScope] = [
         CompanionFeature.start: .operate, CompanionFeature.manage: .operate, CompanionFeature.steer: .operate,
+        CompanionFeature.images: .operate, CompanionFeature.liveTimeline: .read, CompanionFeature.diff: .read,
         CompanionFeature.timeline: .read, CompanionFeature.home: .read, CompanionFeature.usage: .read,
         CompanionFeature.liveActivity: .read,
         CompanionFeature.chat: .nookChat, CompanionFeature.music: .music, CompanionFeature.inbox: .chats,
