@@ -325,6 +325,17 @@ enum SessionBranches {
         rows.append(Row(branch: current, pullRequest: mine, isCurrent: true))
         return rows
     }
+
+    /// How many rows stay open when the list is folded: the newest earlier branch and the current one.
+    static let shownWhenFolded = 3
+
+    /// The rows the tray shows: all while `open` or while there are few, otherwise the newest `shownWhenFolded`, with the
+    /// count of the folded ones and of their pull requests.
+    static func folded(_ rows: [Row], open: Bool) -> (shown: [Row], hidden: Int, hiddenPullRequests: Int) {
+        guard !open, rows.count > shownWhenFolded + 1 else { return (rows, 0, 0) }
+        let hidden = rows.dropLast(shownWhenFolded)
+        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.filter { $0.pullRequest != nil }.count)
+    }
 }
 
 enum BranchPolicy {
