@@ -918,6 +918,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     private var stale: Set<String> = []
     /// How often in a row a chat was read before its newest message was there (see `ChatServiceData.isBehind`).
     private var behind: [String: Int] = [:]
+    /// Each chat's unread count as last passed on: a chat read on your phone (or in the app) changes only this, not its
+    /// newest message, and still goes to the inbox at once, so it is read in Nook too.
+    private var reportedUnread: [String: Int] = [:]
     private static let behindRetries = 3
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
@@ -971,6 +974,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         seen = [:]
         stale = []
         behind = [:]
+        reportedUnread = [:]
         covered = []
         isWorking = false
     }
@@ -996,6 +1000,12 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
+            for chat in listed where !(stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil))) {
+                // Nothing new in it, but read (or marked unread) somewhere else since: only its count goes.
+                guard let reported = reportedUnread[chat.id], reported != chat.unread else { continue }
+                reportedUnread[chat.id] = chat.unread
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread))
+            }
             for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
                 // Before the read: a change told while it runs marks the chat again, for the next turn.
                 stale.remove(chat.id)
@@ -1019,6 +1029,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     behind[chat.id] = nil
                 }
                 seen[chat.id] = chat.last ?? .distantPast
+                reportedUnread[chat.id] = chat.unread
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }

@@ -556,6 +556,7 @@ final class WhatsAppLink: ObservableObject {
         case .readElsewhere(let chat)?:
             let key = WAJID.normalized(chat)
             readInWhatsApp[key] = Date()
+            clearMarkedUnread(key)
             guard inbox.conversations[key] != nil else { return }
             inbox.markRead(key)
             onReadElsewhere?(key)

@@ -349,6 +349,8 @@ struct ChatsTab: View {
     @State private var shownMemo = ChatsShownMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
+    /// The apps Nook can link so that it writes in their chats: through its chat helper, or a bridge of its own.
+    static let linkableApps = ChatHelper.apps.union(["teams", "snapchat"])
 
     /// The chat you opened last, kept for the next time the tab opens.
     static var lastOpened: String? {
@@ -1174,6 +1176,19 @@ private struct ChatsDetail: View {
     /// Where what you send goes: WhatsApp, Telegram or Nook's chat helper; nil copies the text for the chat's own app.
     private var route: ChatRoute? { app.chatRoute(for: entry) }
 
+    /// The apps whose "Nook can only read this" line you put away, by id, comma-separated.
+    @AppStorage("nook.chats.limitsHidden") private var limitsHidden = ""
+
+    /// A chat Nook can only read says so above its field, with the step that lets Nook write in it; nil where Nook writes.
+    private func limitsLine(route: ChatRoute?) -> AnyView? {
+        guard route == nil, !limitsHidden.split(separator: ",").contains(Substring(entry.app)) else { return nil }
+        let id = entry.app
+        return AnyView(ChatLimitsLine(appName: appName, linkable: ChatsTab.linkableApps.contains(id),
+                                      link: { app.openSettings(section: .chats) },
+                                      openApp: { app.openChatApp(id) },
+                                      dismiss: { withAnimation(NookTheme.reveal) { limitsHidden += (limitsHidden.isEmpty ? "" : ",") + id } }))
+    }
+
     /// What Nook can do in this chat, the same list for every app.
     private var abilities: ChatAbilities { app.chatAbilities(route) }
 
@@ -1570,10 +1585,10 @@ private struct ChatsDetail: View {
             })
             .editsLastMessage(abilities.edit && route != nil ? editLastMessage : nil)
             .tray(entry.read.isUnread
-                ? ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
-                               markReadInNook: { app.markChatReadInNook(entry) },
-                               markReadInApp: { app.markChatReadInApp(entry) })
-                : nil)
+                ? AnyView(ChatReadLine(state: entry.read, appName: appName, handoff: app.chatReadHandoff(entry),
+                                       markReadInNook: { app.markChatReadInNook(entry) },
+                                       markReadInApp: { app.markChatReadInApp(entry) }))
+                : limitsLine(route: route))
         if sends.isEmpty {
             field
         } else {

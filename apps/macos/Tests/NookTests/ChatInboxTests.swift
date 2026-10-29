@@ -1169,6 +1169,26 @@ final class ChatInboxTests: XCTestCase {
                                             text: "Reageerde met 👍🏼 op Komt goed", date: now), id: "n2"), "shown once")
     }
 
+    func testAChatReadInItsAppIsReadInNook() {
+        let now = Date()
+        var inbox = ChatInbox()
+        let messages = [InboxMessage(id: "1", text: "Hoi", date: now.addingTimeInterval(-60), fromMe: false),
+                        InboxMessage(id: "2", text: "Ben je er?", date: now.addingTimeInterval(-30), fromMe: false)]
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: messages, unread: 2))
+        let key = ChatInbox.key(app: "instagram", chat: "Anna")
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(2))
+        // Read on the phone: the app's count drops, nothing new comes with it.
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0)))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+        // The same after Nook read it first.
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: messages + [
+            InboxMessage(id: "3", text: "Hallo?", date: now, fromMe: false)], unread: 1))
+        inbox.markRead(key)
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook)
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+    }
+
     // MARK: Calls
 
     func testCallLinesReadAsCalls() {
