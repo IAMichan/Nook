@@ -47,14 +47,16 @@ final class ChatInboxConnector: ContextSource {
 
     func contextLines() -> [String] {
         guard isActive, capture.status == .running else { return [] }
-        let unread = capture.inbox.sorted.filter { $0.unread > 0 }
+        let unread = capture.inbox.sorted.filter { $0.unread > 0 && capture.isShown($0) }
         var lines = ["Chats from the user's other chat apps (collected from their notifications on this Mac; Telegram, Instagram, Messenger, Signal and more): read one with chat_inbox, or find a message in all of them (the user's own sent ones too) with its query. Nook cannot answer in these apps."]
         if !unread.isEmpty { lines.append("Unread chats:\n" + ChatInbox.overview(unread, limit: 6)) }
         return lines
     }
 
+    /// Nook reads the chats it has whenever it has any: those it collects, and a linked phone's WhatsApp chats, which
+    /// come without collecting.
     var tools: [ToolSpec] {
-        guard isActive else { return [] }
+        guard isActive || WhatsAppAccounts.shared.isConnected else { return [] }
         return [
             ToolSpec(
                 name: "chat_inbox",
@@ -73,23 +75,26 @@ final class ChatInboxConnector: ContextSource {
                     return chat.isEmpty ? tr("chats.tool.overview") : tr("chats.tool.chat", chat)
                 },
                 tag: { _ in ("", .neutral) },
-                run: { [weak self] input in
-                    let inbox = ChatCaptureService.shared.inbox
+                run: { input in
+                    // Every chat that shows, the same way for every app (`ChatCaptureService.isShown`).
+                    let capture = ChatCaptureService.shared
+                    let inbox = capture.inbox
+                    let shown = inbox.sorted.filter(capture.isShown)
                     let app = AppData.string(input["app"]).trimmingCharacters(in: .whitespaces).lowercased()
                     let appID = app.isEmpty ? nil : (MessagingApps.app(named: app)?.id ?? app)
                     let query = AppData.string(input["query"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !query.isEmpty {
-                        let threads = (self?.everyChat() ?? inbox.sorted).filter { appID == nil || $0.app == appID }
+                        let threads = shown.filter { appID == nil || $0.app == appID }
                         let found = ChatInbox.search(threads, query: query)
                         return found.isEmpty ? "No message in the chats holds \"\(query)\"." : "Messages with \"\(query)\" (newest first):\n" + found
                     }
                     let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !chat.isEmpty else {
-                        let threads = inbox.sorted.filter { appID == nil || $0.app == appID }
+                        let threads = shown.filter { appID == nil || $0.app == appID }
                         return threads.isEmpty ? "No chats collected yet." : "Recent chats (newest first):\n" + ChatInbox.overview(threads, limit: 20)
                     }
-                    guard let thread = inbox.thread(named: chat, app: appID) else {
-                        let names = inbox.sorted.prefix(12).map(\.name).joined(separator: ", ")
+                    guard let thread = inbox.thread(named: chat, app: appID, among: capture.isShown) else {
+                        let names = shown.prefix(12).map(\.name).joined(separator: ", ")
                         return "No collected chat is called \"\(chat)\". Recent chats: \(names.isEmpty ? "none" : names)."
                     }
                     let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
@@ -98,23 +103,5 @@ final class ChatInboxConnector: ContextSource {
                 }
             )
         ]
-    }
-
-    /// Every chat Nook has, as the Chats tab lists them: the collected ones, and WhatsApp's through the linked phone
-    /// unless the chat helper links WhatsApp (then its chats are among the collected ones).
-    private func everyChat() -> [InboxThread] {
-        var threads = capture.inbox.sorted.filter { capture.sources.isOn($0.app) }
-        let link = WhatsAppLink.shared
-        guard link.isConnected, !ChatHelper.linked("whatsapp") else { return threads }
-        threads.removeAll { $0.app == "whatsapp" }
-        for conversation in link.inbox.sorted where !link.filters.ignored.contains(conversation.id) {
-            var names = link.memberIndex(conversation)
-            let messages = conversation.messages.map { message in
-                InboxMessage(id: message.id, sender: message.fromMe || !conversation.isGroup ? "" : names.name(message.sender),
-                             text: AppModel.whatsAppText(message), date: message.date, fromMe: message.fromMe)
-            }
-            threads.append(InboxThread(id: "wa|" + conversation.id, app: "whatsapp", name: conversation.name, messages: messages))
-        }
-        return threads
     }
 }

@@ -253,6 +253,7 @@ are not kept there.
 | `ServiceRowLayout`, `ServiceStatusLabel` | `ServiceRows.swift` | The one row shape of every connected service (icon, name with state, one line, actions) |
 | `ChatAccountRow` | `ServiceRows.swift` | One account of a chat app in its sheet (WhatsApp, Telegram, Teams, Slack, Messages, Snapchat, the chat service's apps): a `ServiceRowLayout` with the app's icon |
 | `ChatLinkedAccountRow` | `ServiceRows.swift` | A linked chat app's account in its sheet, built on `ChatAccountRow`, the same for every app: its state from one rule (`ChatAccountHealth`: reading, off in Nook, failing, signed out), "Sign in again" only when the sign-in is gone, and "Sign out" behind a confirmation. Never work out a chat account's state or its buttons by hand |
+| `ChatAppNoticeRows`, `ChatModeList` | `ChatNoticeRuleRows.swift` | What a chat app does in Nook, the same rows in every app's sheet: shown in Chats, its new messages in the notch, the kinds of chat that stay quiet, every chat automatic/always/never or hidden (shown again one by one), and whether answering reads the chat in the app. Never build an app's notice rules by hand |
 | `GalleryCard`, `GalleryGrid`, `ConnectMethodBadge` | `SettingsStyle.swift`, `ServiceRows.swift` | The one card shape of everything you can add; the badge says how (sign in, a key, MCP) |
 | `ServiceCategoryChips` | `ServiceRows.swift` | The category filter under the connections search field |
 | `OneClickServiceCard`, `GitHubSignInCard`, `MCPServiceRow` | `ServiceRows.swift` | Services that sign in on their own page |

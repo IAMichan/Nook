@@ -415,6 +415,22 @@ enum ChatIDMigration {
     static func current(_ id: String) -> String {
         id.hasPrefix("wa|") ? ChatInbox.key(app: "whatsapp", id: String(id.dropFirst(3))) : id
     }
+
+    /// The id a linked phone's chat had before, to find what was kept under it; nil for any other chat.
+    static func previous(_ id: String) -> String? {
+        let prefix = ChatInbox.key(app: "whatsapp", id: "")
+        return id.hasPrefix(prefix) ? "wa|" + id.dropFirst(prefix.count) : nil
+    }
+
+    /// Kept things by chat id, with ids from before moved to the ones now (what was kept under both is joined).
+    static func current<Value>(_ kept: [String: Value], merging: (Value, Value) -> Value) -> [String: Value] {
+        var moved: [String: Value] = [:]
+        for (id, value) in kept {
+            let now = current(id)
+            moved[now] = moved[now].map { merging($0, value) } ?? value
+        }
+        return moved
+    }
 }
 
 /// The kinds of chat an app may have, the same names for every app.
@@ -559,6 +575,8 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
         if let kind { return kind == .group }
         return (members?.count ?? 0) > 1 || messages.contains { !$0.sender.isEmpty }
     }
+    /// The kind the notice rules go by: what its app says, else a group when it looks like one, else a person's chat.
+    var noticeKind: ChatKind { kind ?? (isGroup ? .group : .person) }
     /// A private chat: someone else wrote in it without a sender of their own, and it has no list of people. What its
     /// app says comes first.
     var isPrivate: Bool {
@@ -925,6 +943,20 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// changed.
     @discardableResult
     mutating func merge(_ chat: BridgedChat, now: Date = Date()) -> Bool {
+        merge(chat, now: now, trimming: true)
+    }
+
+    /// Brings in everything one read of a bridge brought, at once: the quietest chats beyond `maxThreads` go once at
+    /// the end, not after each chat (a linked phone lists thousands). True when anything changed.
+    @discardableResult
+    mutating func merge(_ chats: [BridgedChat], now: Date = Date()) -> Bool {
+        var changed = false
+        for chat in chats where merge(chat, now: now, trimming: false) { changed = true }
+        if changed { dropQuietest(now: now) }
+        return changed
+    }
+
+    private mutating func merge(_ chat: BridgedChat, now: Date, trimming: Bool) -> Bool {
         let key = Self.key(of: chat)
         let known = threads[key]
         let gone = removed?[key]
@@ -1017,9 +1049,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
         if chat.listed, thread.listed.map({ now.timeIntervalSince($0) >= Self.listedRenewal }) ?? true { thread.listed = now }
         guard thread != before else { return false }
         threads[key] = thread
-        // A group that is new here takes back its messages that its notifications put in someone's chat.
-        if known == nil, Self.isClearlyGroup(thread) { regroup() }
-        dropQuietest()
+        // A group that is new here takes back its messages that its notifications put in someone's chat. A chat its app
+        // knows by an id is no notification's guess, and needs none of that.
+        if known == nil, thread.chatID == nil, Self.isClearlyGroup(thread) { regroup() }
+        if trimming { dropQuietest(now: now) }
         return true
     }
 
@@ -1304,10 +1337,10 @@ enum ChatTimeline {
 
 extension ChatInbox {
     /// The chat best matching a name (exactly, else the one starting with it, else containing it), in one app or any.
-    func thread(named name: String, app: String? = nil) -> InboxThread? {
+    func thread(named name: String, app: String? = nil, among shown: (InboxThread) -> Bool = { _ in true }) -> InboxThread? {
         let wanted = Self.key(app: "", chat: name).dropFirst()
         guard !wanted.isEmpty else { return nil }
-        let candidates = sorted.filter { app == nil || $0.app == app }
+        let candidates = sorted.filter { (app == nil || $0.app == app) && shown($0) }
         let folded = { (thread: InboxThread) in Self.key(app: "", chat: thread.name).dropFirst() }
         return candidates.first { folded($0) == wanted }
             ?? candidates.first { folded($0).hasPrefix(wanted) }

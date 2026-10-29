@@ -22,6 +22,30 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
     var modes: [String: ChatMode] = [:]
     /// Chats you hid (their ids in `ChatInbox`): never shown, never counted, never told, until you show them again.
     var hidden: Set<String> = []
+    /// Per app: whether answering one of its chats from Nook (and a chat card's Read) also tells the app you read it, so
+    /// the people who wrote see it. Absent means yes, as WhatsApp always did.
+    var readsOnReply: [String: Bool] = [:]
+
+    init(quietKinds: [String: Set<ChatKind>] = [:], modes: [String: ChatMode] = [:], hidden: Set<String> = [],
+         readsOnReply: [String: Bool] = [:]) {
+        self.quietKinds = quietKinds
+        self.modes = modes
+        self.hidden = hidden
+        self.readsOnReply = readsOnReply
+    }
+
+    /// Every part is optional when read back, so rules saved before a part existed still load as they were.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        quietKinds = try container.decodeIfPresent([String: Set<ChatKind>].self, forKey: .quietKinds) ?? [:]
+        modes = try container.decodeIfPresent([String: ChatMode].self, forKey: .modes) ?? [:]
+        hidden = try container.decodeIfPresent(Set<String>.self, forKey: .hidden) ?? []
+        readsOnReply = try container.decodeIfPresent([String: Bool].self, forKey: .readsOnReply) ?? [:]
+    }
+
+    func readsOnReply(_ app: String) -> Bool { readsOnReply[app] ?? true }
+
+    mutating func setReadsOnReply(_ on: Bool, app: String) { readsOnReply[app] = on }
 
     /// What each app does before you chose: WhatsApp keeps groups, status updates and channels quiet, as it always did;
     /// every other app tells you about every chat, as it always did.
@@ -51,6 +75,12 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
         if hide { hidden.insert(chat) } else { hidden.remove(chat) }
     }
 
+    /// The kinds of chat Settings offers a rule for in an app: WhatsApp says which chats are status updates and
+    /// channels; every app's groups are told apart (by the app, else by who writes in them).
+    static func kinds(of app: String) -> [ChatKind] {
+        app == "whatsapp" ? [.group, .status, .channel] : [.group]
+    }
+
     /// Whether a chat's kind keeps it quiet in its app, before any per-chat choice. A chat whose kind its app does not
     /// say is treated as a person's.
     func kindIsQuiet(_ kind: ChatKind?, app: String) -> Bool {
@@ -73,9 +103,10 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
     /// that mentioned you). As WhatsApp's own list did (`WAInbox.visible`).
     func isVisible(_ thread: InboxThread) -> Bool {
         guard !isHidden(thread.id) else { return false }
-        if !isQuiet(chat: thread.id, app: thread.app, kind: thread.kind) { return true }
+        let kind = thread.noticeKind
+        if !isQuiet(chat: thread.id, app: thread.app, kind: kind) { return true }
         return thread.messages.contains { message in
-            !message.isMine && !isQuiet(chat: thread.id, app: thread.app, kind: thread.kind, mentionsMe: message.mentionsMe == true)
+            !message.isMine && !isQuiet(chat: thread.id, app: thread.app, kind: kind, mentionsMe: message.mentionsMe == true)
         }
     }
 
@@ -83,8 +114,10 @@ struct ChatNoticeRules: Codable, Equatable, Sendable {
     /// its three kinds, its per-chat choices and its hidden chats, now by the chats' ids in `ChatInbox`. `ids` gives the
     /// ids a WhatsApp chat id has in Nook: one per linked account, since WhatsApp's choices held for all of them.
     static func migrated(from old: ChatNoticeRules = ChatNoticeRules(), muteGroups: Bool, muteStatus: Bool, muteChannels: Bool,
-                         ignored: Set<String>, modes: [String: String], ids: (String) -> [String]) -> ChatNoticeRules {
+                         ignored: Set<String>, modes: [String: String], readsOnReply: Bool = true,
+                         ids: (String) -> [String]) -> ChatNoticeRules {
         var rules = old
+        rules.readsOnReply["whatsapp"] = readsOnReply
         var kinds: Set<ChatKind> = []
         if muteGroups { kinds.insert(.group) }
         if muteStatus { kinds.insert(.status) }

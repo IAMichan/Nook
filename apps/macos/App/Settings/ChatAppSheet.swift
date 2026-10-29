@@ -537,33 +537,6 @@ struct ChatOwnAccounts: View {
     }
 }
 
-/// What a linked app does in Nook, the same for every app: its chats in the Chats tab, and its new messages in the
-/// notch. WhatsApp adds its own rules (per kind of chat, per chat, reading when you answer).
-struct ChatAppNoticeRows: View {
-    let app: String
-    let setCollecting: (Bool) -> Void
-    @ObservedObject private var capture = ChatCaptureService.shared
-    @ObservedObject private var settings = AppSettings.shared
-
-    private var name: String { MessagingApps.app(id: app)?.name ?? app }
-
-    var body: some View {
-        if app == "whatsapp" {
-            // A linked phone brings WhatsApp's chats by itself: only what reaches you is to choose.
-            WhatsAppNoticeRows()
-        } else {
-            SettingToggle(tr("chats.apps.showInChats", name), detail: tr("chats.manage.showDetail"),
-                          isOn: Binding(get: { capture.enabled && capture.sources.isOn(app) }, set: { on in
-                              capture.setSource(app, on: on)
-                              if on, !capture.enabled { setCollecting(true) }
-                          }))
-            SettingToggle(tr("chats.manage.notify"), detail: tr("chats.manage.notifyDetail", name),
-                          isOn: Binding(get: { settings.noticeRules.isOn(.chats, app: app) },
-                                        set: { settings.noticeRules.set(.chats, app: app, on: $0) }))
-        }
-    }
-}
-
 /// What a linked app has that is rarely needed, under Advanced: WhatsApp's gateway, Slack's token of an app of your own,
 /// Telegram's keys from my.telegram.org.
 struct ChatOwnAdvanced: View {

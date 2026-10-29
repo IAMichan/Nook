@@ -2,17 +2,13 @@
 import SwiftUI
 import Combine
 
-/// WhatsApp in the notch: a new message shows as a card with the chat so far (it scrolls back) and a field to answer.
-/// What you type there goes to that chat when you press Return or click the arrow (your own words, your own click);
-/// a photo shows in the bubble and a click enlarges it in the card, a document shows in Quick Look with a click, a
-/// video plays in the bubble; a message can be answered as a quote or get an emoji (your own click, logged like a send);
-/// "Let Nook answer" hands the chat to Nook, who proposes an answer as a plan you approve.
+/// WhatsApp through the linked phone: its chats are every chat app's (`WhatsAppGatewayBridge` brings them into the
+/// shared inbox), so a new message shows as the same chat card every app gets, answered the same way.
 extension AppModel {
-    static let whatsAppCardPrefix = "whatsapp-"
-    /// How many of a chat's newest photos, videos and documents its card fetches to show.
+    /// How many of a chat's newest photos, videos and documents an opened chat or card fetches to show.
     static let whatsAppPreviewCount = 6
 
-    /// A file the card shows by itself: a photo, a video or a document (a voice note stays a button).
+    /// A file a chat shows by itself once fetched: a photo, a video, a document, a sticker or a voice message.
     static func whatsAppPreviews(_ media: WAMedia) -> Bool {
         switch media {
         case .image, .video, .document, .sticker, .audio, .voice: return true
@@ -21,291 +17,11 @@ extension AppModel {
     }
 
     func startWhatsApp() {
-        // Every account the same: a chat goes by its key across accounts (`WAChatKey`).
-        let accounts = WhatsAppAccounts.shared
-        accounts.onMessage = { [weak self] chat in self?.presentWhatsApp(chat) }
-        // New ticks redraw the chat's card when it is on screen; they never bring one up by themselves.
-        accounts.onReceipt = { [weak self] chat in
-            guard let self, self.viewModel.hasCard(id: Self.whatsAppCardPrefix + chat) else { return }
-            self.presentWhatsApp(chat)
-        }
-        // Read on the phone: a card still waiting in line goes; the one on screen stays (you may be typing) and is redrawn.
-        accounts.onReadElsewhere = { [weak self] chat in
-            guard let self else { return }
-            let token = Self.whatsAppCardPrefix + chat
-            self.viewModel.removePending(id: token)
-            if self.viewModel.isShowing(card: token) { self.presentWhatsApp(chat) }
-        }
+        // The linked accounts' chats come into the shared inbox, and with them their news (`WhatsAppGatewayBridge`).
+        ChatCaptureService.shared.whatsAppGatewayBridge.start()
         // A WhatsApp that went through Beeper links in Nook's own way from now on.
         BeeperImporter.migrateSettings()
-        accounts.start()
-    }
-
-    /// A new message (or new ticks) in `chat`: a notice the way Settings › Notifications says for chats (its card with a
-    /// field to answer, one line, or a macOS notification), or the card on screen redrawn. Nothing is marked read by
-    /// showing it. `asked`: you opened the chat yourself ("@chat Jan"), so the card comes up now, whatever the rules.
-    /// `chat` is the chat's key across accounts (`WAChatKey`).
-    func presentWhatsApp(_ chat: String, asked opened: Bool = false) {
-        let (link, jid) = WhatsAppAccounts.shared.route(chat)
-        let token = Self.whatsAppCardPrefix + chat
-        let asked = opened || viewModel.hasCard(id: token)
-        let context = WhatsAppAccounts.shared.context(of: link)
-        guard let conversation = link.inbox.conversations[jid],
-              asked ? !conversation.messages.isEmpty : conversation.messages.contains(where: { !$0.fromMe }) else { return }
-        // In the notice history: the newest message from them, once (the card also updates for your own replies and ticks).
-        var line = ""
-        if !opened, let last = conversation.messages.last(where: { !$0.fromMe }) {
-            let file = Self.whatsAppFileLabel(last.media)
-            let text = file == nil ? Self.whatsAppText(last) : (last.text.isEmpty ? file ?? "" : last.text)
-            var names = link.memberIndex(conversation)
-            let who = conversation.isGroup ? names.name(last.sender) : ""
-            let sender = who.isEmpty ? "" : who + ": "
-            if NoticeHistory.shared.entries.first(where: { $0.key == token })?.detail != NoticeLog.detail(sender + text) {
-                line = sender + text
-                logNotice(.info, title: conversation.name, detail: line, context: context, target: .whatsApp(chat), key: token,
-                          source: .chats, app: "whatsapp")
-            }
-        }
-        guard !asked else {
-            showWhatsAppCard(chat, opened: opened)
-            return
-        }
-        // Nothing new from them (your own reply, new ticks): nothing to tell.
-        guard !line.isEmpty else { return }
-        let open: () -> Void = { [weak self] in self?.presentWhatsApp(chat, asked: true) }
-        deliverNotice(.chats, app: "whatsapp", id: token, title: conversation.name, subtitle: context, body: line,
-                      card: { [weak self] in self?.showWhatsAppCard(chat, opened: false) },
-                      strip: { [weak self] in
-                          self?.viewModel.notify(conversation.name + ": " + line, button: tr("notices.openChat"), action: open)
-                      },
-                      open: open,
-                      window: { [weak self] in self?.showChats(ChatsFocus(chat: "wa|" + chat)) })
-    }
-
-    /// The card of a WhatsApp chat (by its key across accounts), with a field to answer; redrawn when it is on screen
-    /// already.
-    private func showWhatsAppCard(_ chat: String, opened: Bool) {
-        let (link, jid) = WhatsAppAccounts.shared.route(chat)
-        let token = Self.whatsAppCardPrefix + chat
-        guard let conversation = link.inbox.conversations[jid], !conversation.messages.isEmpty else { return }
-        viewModel.register("\(token)#read") { link.markRead(jid) }
-        viewModel.register("\(token)#nook") { [weak self] in
-            guard let self else { return }
-            link.markRead(jid)
-            // Only this chat is read, and asking for a draft teaches memory nothing about the user.
-            self.ask(tr("whatsapp.card.nookPrompt", conversation.name),
-                     focus: [Prefetch.Call(tool: "whatsapp_live", input: ["chat": chat, "limit": 20])], reflects: false)
-        }
-        viewModel.register("\(token)#quiet") { link.mute(jid) }
-        viewModel.register("\(token)#mute") { link.ignore(jid) }
-
-        let messages = conversation.messages.suffix(WAInbox.keep)
-        let bubbles = Self.whatsAppBubbles(conversation, link: link)
-        let unread = conversation.unread > 1 ? " · \(tr("whatsapp.card.unread", conversation.unread))" : ""
-        let card = NookCard(
-            id: token,
-            mood: .remind,
-            context: WhatsAppAccounts.shared.context(of: link) + unread,
-            appIcon: "whatsapp",
-            title: conversation.name,
-            detail: .chat(bubbles),
-            primary: CardAction(label: tr("whatsapp.card.read"), outcome: .callback("\(token)#read", "")),
-            secondary: CardAction(label: tr("button.later"), outcome: .dismiss),
-            contentHeight: Self.whatsAppCardHeight(bubbles),
-            input: true,
-            inputPrompt: tr("whatsapp.card.answer", conversation.name),
-            // A new message never takes the keyboard from what you are doing; a chat you opened yourself does.
-            focusesInput: opened,
-            chatReply: true,
-            extra: [CardAction(label: tr("whatsapp.card.nook"), outcome: .callback("\(token)#nook", ""), symbol: "sparkles")],
-            more: [CardAction(label: tr("whatsapp.card.quiet"), outcome: .callback("\(token)#quiet", ""), symbol: "bell.slash"),
-                   CardAction(label: tr("whatsapp.card.mute"), outcome: .callback("\(token)#mute", ""), symbol: "eye.slash")],
-            escape: CardAction(label: "", outcome: .dismiss)
-        )
-        // A hidden notch (a full-screen app) keeps it in line until it shows again.
-        if opened, !viewModel.isShowing(card: token) {
-            // Asked for: in front now, ahead of the queue, instead of waiting behind the chat.
-            viewModel.removePending(id: token)
-            viewModel.presentUrgent(card)
-        } else if viewModel.hasCard(id: token) {
-            viewModel.updateCard(card)
-        } else {
-            viewModel.present(card)
-        }
-
-        // Older messages from the gateway, once per chat, so the card can scroll back further than what came in.
-        Task { @MainActor [weak self] in
-            guard await link.loadHistory(jid), let self, self.viewModel.hasCard(id: token) else { return }
-            self.presentWhatsApp(chat)
-        }
-        // The newest photos, videos and documents (a fixed few, so a redraw never reaches further back), fetched once
-        // each, then shown in their bubbles.
-        let wanted = messages.filter { Self.whatsAppPreviews($0.media) }.suffix(Self.whatsAppPreviewCount)
-            .filter { link.preview($0.id) == nil }.map(\.id)
-        if !wanted.isEmpty {
-            Task { @MainActor [weak self] in
-                guard await link.loadPreviews(wanted, chat: jid), let self, self.viewModel.hasCard(id: token) else { return }
-                self.presentWhatsApp(chat)
-            }
-        }
-    }
-
-    /// "14:05" under each bubble: one formatter for every redraw, not a new one each time.
-    private static let whatsAppBubbleTime: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
-
-    /// A chat as bubbles, the newest at the bottom; in a group each says who wrote it. Once fetched, a photo shows as
-    /// itself, a video plays in its bubble and a document shows its first page; until then a file is a button. `link` is
-    /// the account the chat is in.
-    static func whatsAppBubbles(_ conversation: WAConversation, link: WhatsAppLink = .shared) -> [ChatBubble] {
-        let time = whatsAppBubbleTime
-        let byID = Dictionary(conversation.messages.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var names = link.memberIndex(conversation)
-        // Every message of yours has its ticks, also the older ones the gateway's history says nothing of.
-        let shown = Array(conversation.messages.suffix(WAInbox.keep))
-        let receipts = ChatReceipts.filled(shown.map { ($0.fromMe, $0.receipt) }, private: WAJID.kind(conversation.id) == .person)
-        var bubbles = zip(shown, receipts).map { original, receipt in
-            var message = original
-            message.receipt = receipt
-            let file = Self.whatsAppFileLabel(message.media)
-            var bubble = ChatBubble(id: message.id, text: file == nil ? Self.whatsAppText(message) : message.text,
-                                    time: time.string(from: message.date), date: message.date,
-                                    sender: conversation.isGroup && !message.fromMe ? names.name(message.sender) : "",
-                                    fromMe: message.fromMe, attachment: file,
-                                    ticks: message.fromMe ? message.receipt.map(Self.bubbleTicks) : nil)
-            bubble.readers = Self.whatsAppReaders(message, in: conversation, names: &names)
-            bubble.quote = Self.whatsAppQuote(message, in: byID, conversation: conversation, names: &names)
-            bubble.poll = message.poll?.chatPoll { voter in
-                conversation.isGroup ? names.name(voter) : conversation.name
-            }
-            bubble.reactions = Self.bubbleReactions(message.reactions) { sender in
-                conversation.isGroup ? names.name(sender) : conversation.name
-            }
-            if let preview = link.preview(message.id) {
-                bubble.image = preview.image
-                switch message.media {
-                case .image: bubble.media = .photo(preview.file)
-                case .video: bubble.media = .video(preview.file)
-                case .sticker: bubble.media = .sticker(preview.file)
-                case .audio(let seconds), .voice(let seconds): bubble.media = .audio(preview.file, seconds: seconds.map(Double.init))
-                default: break
-                }
-                bubble.file = preview.file
-            }
-            return bubble
-        }
-        ChatBubble.fillReaders(&bubbles)
-        return bubbles
-    }
-
-    /// What a message answers, as its bubble quotes it: the message itself when Nook keeps it, else the text the
-    /// gateway quoted. Nil when it answers nothing, or nothing is known of what it answers.
-    static func whatsAppQuote(_ message: WAMessage, in byID: [String: WAMessage], conversation: WAConversation,
-                              names: inout WAMemberIndex) -> BubbleQuote? {
-        guard let id = message.replyTo else { return nil }
-        if let answered = byID[id] {
-            let sender = answered.fromMe ? tr("chat.you")
-                : (conversation.isGroup ? names.name(answered.sender) : conversation.name)
-            let file = Self.whatsAppFileLabel(answered.media)
-            let text = answered.text.isEmpty ? (file ?? Self.whatsAppText(answered)) : answered.text
-            return BubbleQuote(sender: sender, text: text, mine: answered.fromMe)
-        }
-        guard let quoted = message.quotedText, !quoted.isEmpty else { return nil }
-        return BubbleQuote(sender: "", text: quoted)
-    }
-
-    /// The emoji on a message, one chip each, the most used first (then in the order they came).
-    static func bubbleReactions(_ reactions: [WAReaction], name: (String) -> String = { _ in "" }) -> [BubbleReaction] {
-        var chips: [BubbleReaction] = []
-        for reaction in reactions where !reaction.emoji.isEmpty {
-            // Who put it there, by the name the chat knows them by; you are told apart by `mine`.
-            let person = reaction.fromMe ? "" : name(reaction.sender)
-            if let index = chips.firstIndex(where: { $0.emoji == reaction.emoji }) {
-                chips[index].count += 1
-                chips[index].mine = chips[index].mine || reaction.fromMe
-                if !person.isEmpty { chips[index].people.append(person) }
-            } else {
-                chips.append(BubbleReaction(emoji: reaction.emoji, count: 1, mine: reaction.fromMe,
-                                            people: person.isEmpty ? [] : [person]))
-            }
-        }
-        return chips.enumerated().sorted { a, b in
-            a.element.count != b.element.count ? a.element.count > b.element.count : a.offset < b.offset
-        }.map(\.element)
-    }
-
-    /// Return in a WhatsApp card's field: the text goes to that chat as typed, as an answer to its message `replyTo`
-    /// when one was quoted. The card shows it going out above its field; when that fails it says why and puts the text
-    /// back, so nothing typed is lost.
-    func replyWhatsApp(_ text: String, chat: String, replyTo: String? = nil) {
-        let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // "@nook …" is a request to Nook, never a message for the chat; the card's field lets Nook write it.
-        guard !reply.isEmpty, ChatDraft.instruction(in: reply) == nil else { return }
-        let token = Self.whatsAppCardPrefix + chat
-        editShownCard(token) { $0.notice = nil; $0.sending = reply; $0.draft = nil }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let name = try await WhatsAppAccounts.shared.send(reply, to: chat, replyTo: replyTo)
-                self.store.audit(tool: "whatsapp_send", args: name, result: "verstuurd")
-                self.viewModel.dismissCard(id: token)
-                self.viewModel.finish(tr("whatsapp.sent", name))
-            } catch {
-                let shown = self.editShownCard(token) {
-                    $0.sending = nil
-                    $0.notice = tr("whatsapp.card.notSent", error.localizedDescription)
-                    $0.draft = reply
-                }
-                if !shown { self.viewModel.present(self.errorCard(error.localizedDescription)) }
-            }
-        }
-    }
-
-    /// The field of a message card quoted one of its messages: the text goes to that chat as an answer to it.
-    func replyCardMessage(_ text: String, to bubble: ChatBubble, card: NookCard) {
-        guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return handleCardReply(text, card: card) }
-        replyWhatsApp(text, chat: String(card.id.dropFirst(Self.whatsAppCardPrefix.count)), replyTo: bubble.id)
-    }
-
-    /// An emoji on a message in a card's chat, after your own click: it goes to the chat (the same emoji again takes it
-    /// back) and is logged as a send is; the card redraws with it, or says why it could not.
-    func reactCardMessage(_ bubble: ChatBubble, _ emoji: String, card: NookCard) {
-        guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return }
-        let chat = String(card.id.dropFirst(Self.whatsAppCardPrefix.count))
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.reactWhatsApp(emoji, to: bubble.id, chat: chat)
-                if self.viewModel.hasCard(id: card.id) { self.presentWhatsApp(chat) }
-            } catch {
-                self.editShownCard(card.id) { $0.notice = error.localizedDescription }
-            }
-        }
-    }
-
-    /// A click on a file in a card's chat bubble: for WhatsApp, the file is fetched from the gateway (unless the card
-    /// already has it) and shows in Quick Look, else in the app the Mac uses for it. The card stays open and says what
-    /// happens.
-    func openCardAttachment(_ bubble: ChatBubble, card: NookCard) {
-        guard card.id.hasPrefix(Self.whatsAppCardPrefix) else { return }
-        let chat = String(card.id.dropFirst(Self.whatsAppCardPrefix.count))
-        editShownCard(card.id) { $0.notice = tr("whatsapp.file.opening", bubble.attachment ?? "") }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let (link, jid) = WhatsAppAccounts.shared.route(chat)
-                let url = try await link.download(message: bubble.id, chat: jid)
-                let shown = FilePreviewWindow.shared.show(url, title: bubble.attachment ?? url.lastPathComponent)
-                guard shown || NSWorkspace.shared.open(url) else { throw NookError(tr("whatsapp.file.noApp")) }
-                self.editShownCard(card.id) { $0.notice = nil }
-            } catch {
-                let shown = self.editShownCard(card.id) { $0.notice = error.localizedDescription }
-                if !shown { self.viewModel.present(self.errorCard(error.localizedDescription)) }
-            }
-        }
+        WhatsAppAccounts.shared.start()
     }
 
     /// Changes the card on screen in place, if it is still the one with this id. False when it is gone.
@@ -321,7 +37,7 @@ extension AppModel {
     /// characters per line and at most 12 lines (a longer one folds), a file adds a row, and so do a quoted message and
     /// the emoji under it. The bubbles always get room for a few messages, and what does not fit in their maximum height
     /// scrolls.
-    static func whatsAppCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
+    static func chatCardHeight(_ bubbles: [ChatBubble]) -> CGFloat {
         let chrome: CGFloat = 16 + 6 + 24 + 10 + 12 + 48 + 38 + 24
         let stack = bubbles.reduce(CGFloat(0)) { total, bubble in
             let lines = bubble.text.isEmpty ? 0 : min(12, max(1, (bubble.text.count + 47) / 48))
@@ -343,55 +59,6 @@ extension AppModel {
     static func photoHeight(_ image: NSImage) -> CGFloat {
         guard image.size.width > 0, image.size.height > 0 else { return 0 }
         return min(180, 240 * image.size.height / image.size.width)
-    }
-
-    static func bubbleTicks(_ receipt: WAReceipt) -> BubbleTicks {
-        BubbleTicks(receipt)
-    }
-
-    /// Your own message: in a group every member with how far it got with them, by the names the group knows them by;
-    /// in a private chat the other person, once it reached them, with when it did. Empty for theirs, and in a group
-    /// while no member answered and the members are not known either.
-    static func whatsAppReaders(_ message: WAMessage, in conversation: WAConversation,
-                                names: inout WAMemberIndex) -> [ChatReader] {
-        guard message.fromMe, message.receipt != nil else { return [] }
-        if WAJID.kind(conversation.id) == .person {
-            return ChatReceipts.person(conversation.name, receipt: message.receipt, date: message.readers.values.first?.date)
-        }
-        guard conversation.isGroup, !message.readers.isEmpty || conversation.members != nil else { return [] }
-        let named = message.readers.map { id, reader in
-            ChatReader(name: names.name(id), receipt: reader.receipt, date: reader.date, key: WAJID.normalized(id))
-        }
-        return ChatReceipts.everyone(named, members: names.all)
-    }
-
-    static func whatsAppText(_ message: WAMessage) -> String {
-        [whatsAppKind(message), message.poll?.chatPoll.line, message.text.isEmpty ? nil : message.text]
-            .compactMap { $0 }.joined(separator: " ")
-    }
-
-    /// What came with a message, in words for the person reading it ("📍 Location"), as every chat app's line says it.
-    /// Something WhatsApp sends without a kind of its own (a call, a system note) says only its text.
-    private static func whatsAppKind(_ message: WAMessage) -> String? {
-        switch message.media {
-        case .none: return nil
-        case .location: return "📍 " + tr("chat.media.location")
-        case .contact: return "👤 " + tr("chat.media.contact")
-        case .other: return message.text.isEmpty ? tr("chat.media.attachment") : nil
-        default: return whatsAppFileLabel(message.media)
-        }
-    }
-
-    /// What a bubble calls a file that can be opened: a document by its name, anything else by its kind.
-    static func whatsAppFileLabel(_ media: WAMedia) -> String? {
-        switch media {
-        case .document(let name): return name ?? tr("whatsapp.file.document")
-        case .image: return tr("whatsapp.file.photo")
-        case .video: return tr("whatsapp.file.video")
-        case .audio, .voice: return tr("whatsapp.file.voice")
-        case .sticker: return tr("chat.media.sticker")
-        default: return nil
-        }
     }
 }
 

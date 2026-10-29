@@ -145,48 +145,15 @@ extension AppModel {
         }
     }
 
-    /// Every chat in the Chats tab: WhatsApp's of every linked account, and the ones from other apps (Instagram,
+    /// Every chat in the Chats tab, the same way for every app (WhatsApp's of every linked account, Instagram,
     /// Telegram, Messenger, Messages, Slack…), each with every message Nook has of it and a group's people.
     private func searchChats() -> [SearchDocument] {
         var documents: [SearchDocument] = []
-        for link in WhatsAppAccounts.shared.connected {
-            let subtitle = WhatsAppAccounts.shared.context(of: link)
-            for conversation in link.inbox.sorted where !link.filters.ignored.contains(conversation.id) {
-                let unread = link.unread(conversation.id)
-                var flags: Set<String> = conversation.isGroup ? ["group"] : []
-                if unread > 0 { flags.insert("unread") }
-                // Who is who by your Contacts and the phone's, as the Chats tab names them.
-                var names = link.memberIndex(conversation)
-                let passages = conversation.messages.map { message in
-                    SearchPassage(text: Self.whatsAppText(message),
-                                  author: message.fromMe ? "me" : (conversation.isGroup ? names.name(message.sender) : conversation.name),
-                                  date: message.date, anchor: message.id)
-                }
-                var facets = ["app": "WhatsApp"]
-                if conversation.members != nil { facets["people"] = names.all.joined(separator: " ") }
-                documents.append(SearchDocument(id: "chat:wa|" + link.chatKey(conversation.id), kind: .chat, title: conversation.name, subtitle: subtitle,
-                                                date: conversation.lastActivity, facets: facets, flags: flags,
-                                                passages: passages, boost: unread > 0 ? 0.3 : 0,
-                                                icon: .chat(app: "whatsapp", name: conversation.name, avatar: link.avatars[conversation.id],
-                                                            handle: ChatsEntry.handle(conversation.id))))
-            }
-            // The phone's other chats, quiet since Nook was linked: found by their name, as the Chats tab lists them.
-            var listed = Set(documents.map(\.id))
-            for chat in link.knownChats where WAJID.kind(chat.jid) != .status && !link.filters.ignored.contains(chat.jid) {
-                let id = "chat:wa|" + link.chatKey(chat.jid)
-                guard listed.insert(id).inserted else { continue }
-                var flags: Set<String> = WAJID.kind(chat.jid) == .group ? ["group"] : []
-                if link.unread(chat.jid) > 0 { flags.insert("unread") }
-                let name = link.chatName(chat.jid, fallback: chat.name.isEmpty ? WAJID.displayNumber(chat.jid) : chat.name)
-                documents.append(SearchDocument(id: id, kind: .chat, title: name, subtitle: subtitle, date: chat.last,
-                                                facets: ["app": "WhatsApp"], flags: flags,
-                                                icon: .chat(app: "whatsapp", name: name, avatar: link.avatars[chat.jid],
-                                                            handle: ChatsEntry.handle(chat.jid))))
-            }
-        }
         let capture = ChatCaptureService.shared
-        for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
+        for thread in capture.inbox.sorted where capture.isShown(thread) {
             let app = MessagingApps.app(id: thread.app)?.name ?? thread.app
+            // The account too, while the app has more than one linked ("WhatsApp · Business").
+            let subtitle = thread.account.map { app + " · " + $0 } ?? app
             var flags: Set<String> = thread.isGroup ? ["group"] : []
             if thread.unread > 0 { flags.insert("unread") }
             let passages = thread.messages.map { message in
@@ -195,9 +162,9 @@ extension AppModel {
             }
             var facets = ["app": app]
             if let members = thread.members, !members.isEmpty { facets["people"] = members.joined(separator: " ") }
-            documents.append(SearchDocument(id: "chat:" + thread.id, kind: .chat, title: thread.name, subtitle: app, date: thread.last,
+            documents.append(SearchDocument(id: "chat:" + thread.id, kind: .chat, title: thread.name, subtitle: subtitle, date: thread.last,
                                             facets: facets, flags: flags, passages: passages, boost: thread.unread > 0 ? 0.3 : 0,
-                                            icon: .chat(app: thread.app, name: thread.name, avatar: thread.avatar, handle: nil)))
+                                            icon: .chat(app: thread.app, name: thread.name, avatar: thread.avatar, handle: thread.handle)))
         }
         return documents
     }
@@ -308,9 +275,6 @@ extension AppModel {
             case .conversation(let conversation):
                 if chat.conversation(conversation) != nil { chat.select(conversation) }
                 return .chat
-            case .whatsApp(let key):
-                viewModel.chatsFocus = ChatsFocus(chat: "wa|" + key)
-                return .inbox
             case .chat(let chatID):
                 viewModel.chatsFocus = ChatsFocus(chat: chatID)
                 return .inbox

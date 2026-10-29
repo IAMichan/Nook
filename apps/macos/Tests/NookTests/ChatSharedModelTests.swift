@@ -191,6 +191,20 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(rules.mode(for: "whatsapp#31600000002@s.whatsapp.net"), .muted)
         XCTAssertEqual(rules.modes.count, 4, "an unknown choice is left out")
         XCTAssertEqual(rules.quietKinds(for: "telegram"), [], "other apps keep their own")
+        XCTAssertTrue(rules.readsOnReply("whatsapp"))
+        let off = ChatNoticeRules.migrated(muteGroups: true, muteStatus: true, muteChannels: true, ignored: [], modes: [:],
+                                           readsOnReply: false, ids: ids)
+        XCTAssertFalse(off.readsOnReply("whatsapp"), "WhatsApp's own choice comes along")
+        XCTAssertTrue(off.readsOnReply("telegram"), "answering reads the chat in every app unless you choose otherwise")
+    }
+
+    func testRulesSavedBeforeAPartExistedStillLoad() throws {
+        let old = #"{"modes":{"telegram|anna":"muted"},"hidden":["slack|eva"]}"#
+        let rules = try JSONDecoder().decode(ChatNoticeRules.self, from: Data(old.utf8))
+        XCTAssertEqual(rules.mode(for: "telegram|anna"), .muted)
+        XCTAssertTrue(rules.isHidden("slack|eva"))
+        XCTAssertTrue(rules.readsOnReply("slack"))
+        XCTAssertEqual(rules.quietKinds(for: "whatsapp"), [.group, .status, .channel])
     }
 
     func testRulesSurviveARestart() throws {
@@ -302,5 +316,30 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertEqual(ChatIDMigration.current("wa|work~1@g.us"), "whatsapp#work~1@g.us")
         XCTAssertEqual(ChatIDMigration.current("telegram|anna"), "telegram|anna")
         XCTAssertEqual(ChatIDMigration.current("whatsapp#1@g.us"), "whatsapp#1@g.us")
+        XCTAssertEqual(ChatIDMigration.previous("whatsapp#work~1@g.us"), "wa|work~1@g.us")
+        XCTAssertNil(ChatIDMigration.previous("telegram|anna"))
+        let kept = ChatIDMigration.current(["wa|1@g.us": Set(["a"]), "whatsapp#1@g.us": Set(["b"]), "slack|eva": Set(["c"])]) {
+            $0.union($1)
+        }
+        XCTAssertEqual(kept, ["whatsapp#1@g.us": ["a", "b"], "slack|eva": ["c"]], "what was kept under both ids is joined")
+    }
+
+    func testEveryAppsGroupsCountAsGroupsForTheRules() {
+        var group = InboxThread(id: "telegram|club", app: "telegram", name: "Club")
+        group.members = ["Eva", "Tom"]
+        XCTAssertEqual(group.noticeKind, .group, "the app does not say: its people do")
+        var person = InboxThread(id: "telegram|anna", app: "telegram", name: "Anna")
+        person.messages = [message("1")]
+        XCTAssertEqual(person.noticeKind, .person)
+        var channel = InboxThread(id: "whatsapp#x@newsletter", app: "whatsapp", name: "News")
+        channel.kind = .channel
+        XCTAssertEqual(channel.noticeKind, .channel, "what the app says comes first")
+        var rules = ChatNoticeRules()
+        rules.setQuiet(true, kind: .group, app: "telegram")
+        group.messages = [message("2", sender: "Eva")]
+        group.unread = 1
+        XCTAssertFalse(rules.isVisible(group), "Telegram's groups can stay quiet too")
+        XCTAssertEqual(ChatNoticeRules.kinds(of: "whatsapp"), [.group, .status, .channel])
+        XCTAssertEqual(ChatNoticeRules.kinds(of: "telegram"), [.group])
     }
 }

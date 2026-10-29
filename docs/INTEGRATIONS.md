@@ -34,7 +34,7 @@ needs a column in that matrix.
 
 | Family | Members | Shared shape (build features here) |
 |---|---|---|
-| Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | `InboxMessage`/`InboxThread` (`ChatInbox.swift`), `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab` |
+| Chat apps | WhatsApp (phone link via GOWA or OpenWA, WhatsApp Desktop, chat helper), Messages (iMessage/SMS), Telegram, Slack, Teams, Snapchat (its website, `SnapchatBridge`), and the chat helper's networks (Signal, Instagram, Messenger, LinkedIn, X, Discord, Google Chat) | One shared inbox for every app: `InboxMessage`/`InboxThread`/`BridgedChat` (`ChatInbox.swift`) filled by a `ChatBridge` per app (WhatsApp's linked phone too: `WhatsAppGatewayBridge`), `ChatContract.swift` (abilities, actions), `ChatNoticeRules`, `ChatReceipts.swift`, `ChatTyping.swift`, `ChatBubble` + `ChatTranscript`, `ChatsEntry`/`ChatsTab`, one chat card (`AppModel+Chats.swift`) |
 | WhatsApp gateways | GOWA, OpenWA | `WhatsAppProvider` (`WhatsAppProvider.swift`), `WAWebhookEvent` (`WhatsAppGateway.swift`) |
 | Chat helper networks | every bridge in `apps/chatd` | `apps/chatd` (bridgev2 `MatrixAPI` in `matrix.go`, the `/v1` API, the `/v1/ws` live line) → `ChatServiceData` |
 | Coding agents | Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, Grok, OpenCode, the ACP agents you add, Copilot CLI, Muse Code, Amp, Hermes ([`AGENTS.md`](AGENTS.md)) | `ProviderCapabilities` (`WorkspaceModels.swift`), `AgentConfigInstaller`, the hook event protocol, the session rows in the notch; for sessions Nook runs, `AgentSignal`/`AgentTimeline` (`AgentTimeline.swift`); for sessions in a terminal, `AgentChatMessage`/`AgentToolStep` (`AgentTranscript.swift`) |
@@ -72,9 +72,30 @@ needs a column in that matrix.
 | Delete for me (any message; hidden in Nook on this Mac) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (also in Telegram, for you) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) |
 | Real ticks on older messages | ✓ for receipts Nook received (kept on this Mac, `WAReceiptStore`) | ✓ same | ✓ (the database) | ✓ ("read up to") | ✓ (kept per person in `apps/chatd`) | – | – | – |
 | More than one account (a business number, a second phone), its chats side by side and named by account | ✓ (a GOWA device per account, `WhatsAppAccounts`) | ✓ (an OpenWA session per account) | – (one Apple account on this Mac) | – (one TDLib login so far) | – (one login per network so far) | – (one workspace so far) | ✓ (every signed-in account) | – (one website session) |
+| Its card in the notch answered in place: the field sends to the chat, a message can be quoted and get an emoji, a file opens, Read, Let Nook answer, Quiet, Hide | ✓ | ✓ | ✓ (text; no quotes or emoji, which Messages takes from no app) | ✓ | ✓ | ✓ | ✓ (text, quotes, emoji) | ✓ (text) |
+| Notice rules: groups quiet unless they mention you, per chat automatic/always/never, hidden chats, a badge without quiet chats (`ChatNoticeRules`) | ✓ (also status updates and channels) | ✓ (same) | ✓ (groups; no mentions in the database) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups; mentions not read yet) | ✓ (groups) |
+| Answering (or Read on the card) also reads the chat in the app, a choice per app (`readsOnReply`) | ✓ | ✓ | – (Messages lets no other app mark read) | ✓ | ✓ | ✓ | ✓ | – (the website takes only new text) |
+| Read in the app drops the chat's card still waiting in line (`onReadElsewhere`) | ✓ | ✓ | ✓ | ✓ | ✓ (unread count) | – (Nook reads no unread count from Slack) | ✓ | ✓ |
+| A video's first frame and a document's first page in its bubble (`ChatFileThumbnails`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – (Nook fetches no files from Teams yet) | – (the website shows no files to Nook) |
+| "@chat Name" brings up the chat's card | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Vote on a poll (`ChatAbilities.vote`) | – (GOWA has no vote call yet) | ✓ | – (Messages has no polls another app can answer) | ✓ (`setPollAnswer`) | – (the helper has no vote call) | – (no polls) | – (no polls) | – (no polls) |
 | An action the app refused says why (under the field or as a toast), never a silent success | ✓ | ✓ | ✓ | ✓ (every request is tagged, `act`) | ✓ | ✓ | ✓ | ✓ |
 | A lost sign-in is told apart from a passing failure (reading waits, Settings asks to sign in again) | ✓ (the gateway's status) | ✓ (the gateway's status) | – (no sign-in; Full Disk Access) | ✓ (TDLib's state) | ✓ (the helper's status) | ✓ (`SlackData.signedOut`) | ✓ (`TeamsData.signInGone`, a passing refusal keeps the sign-in) | ✓ |
+
+### One inbox for every app
+
+Every chat Nook shows lives in one place, the shared inbox (`ChatInbox`), whichever app it is in: the Chats tab, the
+cards in the notch, search, the iPhone companion and what Nook reads (`chat_inbox`) all read it, and one rule says which
+chats show (`ChatCaptureService.isShown`: the app is on, you did not hide the chat, and WhatsApp comes from one place at
+a time). Each app's bridge only translates what its app keeps into it. WhatsApp through the linked phone is one of them
+(`WhatsAppGatewayBridge`): its link keeps WhatsApp's own state (the gateway, the JIDs, each person's emoji, each voter's
+choice, each member's ticks) and `WhatsAppExport` turns it into the shared shape. Its messages are kept in memory only, as
+they always were (`BridgedChat.ephemeral`: `chat-inbox.json` holds WhatsApp's chats without their messages), and the
+link tells which message is news (live, not history, not a catch-up after the Mac slept: `ChatNewsBridge`).
+
+A chat its app knows by an id of its own (`BridgedChat.chatID`, WhatsApp's chat key across accounts) is kept by it, so a
+new name never splits it and two chats with one name stay two. Ids from before (`wa|<key>`) are read as the new ones
+(`ChatIDMigration`) wherever something was kept under them (hidden messages, drafts, the chat opened last).
 
 ### One way for every action
 
@@ -95,6 +116,12 @@ An open chat is the same for every app too (`App/AppModel+ChatOpen.swift`): open
 pointer resting on it fetches what the click needs, scrolling back asks its app for older messages, a file opens from this
 Mac or its app, and the chat is online where its app needs that to say who types (WhatsApp). The Chats tab never asks
 where a chat came from.
+
+Which chats reach you is the same for every app (`ChatNoticeRules`, kept by `ChatNoticeRulesStore`, chosen in each app's
+sheet in Settings › Chats with `ChatAppNoticeRows`, and on a chat's card with Quiet and Hide): a kind of chat can stay
+quiet (groups, unless a message mentions you; WhatsApp's status updates and channels too), each chat can be automatic,
+always or never, and a hidden chat never shows, counts or reaches you until you show it again. The first launch took over
+what Settings › WhatsApp kept, for every linked account. WhatsApp's link sorts its gateway's messages by the same rules.
 
 In Settings › Chats every linked account is a `ChatLinkedAccountRow`: one rule (`ChatAccountHealth`) says whether it
 reads, is off in Nook, fails for a passing reason, or is signed out (`ChatCaptureService.bridgeSignedOut`, per account
@@ -212,5 +239,9 @@ open chat. The Linux, Windows, Android and Tauri apps have no chat inbox. If one
 - **Coding agents over ACP: effort and the agent's own `/` commands.** Claude Code and Codex offer an effort level and
   their `/compact` and `/goal` in the `/` list. ACP agents announce their commands in `available_commands_update` and
   their options in the session's config options; `AcpMapper` reads neither yet.
+
+- **Mentions outside WhatsApp.** "Groups quiet unless they mention you" knows a mention only where the app says it:
+  WhatsApp's gateways do (`mentionsMe`). Telegram (`contains_unread_mention`), Slack (`<@you>` in the text) and Teams
+  (a message's mentions) say it too, but their bridges do not read it yet, so a quiet group of theirs stays quiet.
 
 Add an item here when a change cannot reach every member yet.

@@ -77,10 +77,9 @@ extension AppModel {
             viewModel.show(.panel(.agents))
         case .conversation(let id):
             if chat.conversation(id) != nil { openConversation(id) } else { showChat() }
-        case .whatsApp(let chat):
-            presentWhatsApp(chat, asked: true)
         case .chat(let id):
-            showChats(ChatsFocus(chat: id))
+            // The chat's card, as it came up; the Chats tab for a chat Nook no longer holds.
+            if ChatCaptureService.shared.inbox.threads[id] != nil { presentChat(id, asked: true) } else { showChats(ChatsFocus(chat: id)) }
         case .nowhere:
             break
         }

@@ -94,6 +94,14 @@ enum WhatsAppExport {
         return [kind, message.text.isEmpty ? nil : message.text].compactMap { $0 }.joined(separator: " ")
     }
 
+    /// The messages a chat no longer holds that it held when it was last handed over, newer than its oldest now: deleted
+    /// (for everyone, from Nook or on the phone), not let go of because the chat keeps only its newest.
+    static func deleted(before: BridgedChat?, now: BridgedChat) -> [String] {
+        guard let before, let oldest = now.messages.first?.date else { return [] }
+        let kept = Set(now.messages.map(\.id))
+        return before.messages.filter { !kept.contains($0.id) && $0.date >= oldest }.map(\.id)
+    }
+
     /// The file that came with a message, the same for every app, from this Mac once the link fetched it (`path`).
     static func media(_ message: WAMessage, path: String?) -> ChatMedia? {
         switch message.media {

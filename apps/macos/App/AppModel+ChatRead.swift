@@ -15,9 +15,9 @@ enum ChatReadHandoff: Equatable {
 extension AppModel {
     /// Read in Nook: the badge goes, the app (and whoever wrote) hears nothing.
     func markChatReadInNook(_ entry: ChatsEntry) {
-        switch entry.origin {
-        case .captured(let thread): ChatCaptureService.shared.markRead(thread)
-        case .whatsApp(let key):
+        ChatCaptureService.shared.markRead(entry.id)
+        // WhatsApp's linked phone keeps its own count of what is new (it carries it across restarts): it hears it too.
+        if case .whatsApp(let key) = chatRoute(for: entry) {
             let (link, jid) = WhatsAppAccounts.shared.route(key)
             link.markReadInNook(jid)
         }
@@ -25,9 +25,8 @@ extension AppModel {
 
     /// Unread again, in Nook only: the badge comes back until you open the chat again.
     func markChatUnread(_ entry: ChatsEntry) {
-        switch entry.origin {
-        case .captured(let thread): ChatCaptureService.shared.markUnread(thread)
-        case .whatsApp(let key):
+        ChatCaptureService.shared.markUnread(entry.id)
+        if case .whatsApp(let key) = chatRoute(for: entry) {
             let (link, jid) = WhatsAppAccounts.shared.route(key)
             link.markUnread(jid)
         }
@@ -50,7 +49,8 @@ extension AppModel {
         let appName = MessagingApps.app(id: entry.app)?.name ?? entry.app
         guard let route = chatRoute(for: entry), chatAbilities(route).markRead else {
             openChatApp(entry.app)
-            if case .captured(let thread) = entry.origin { ChatCaptureService.shared.markReadInApp(thread) } else { markChatReadInNook(entry) }
+            markChatReadInNook(entry)
+            ChatCaptureService.shared.markReadInApp(entry.id)
             store.audit(tool: ChatAction.markRead.auditTool, args: "\(appName): \(entry.name)", result: "app geopend")
             return
         }
@@ -58,7 +58,7 @@ extension AppModel {
         Task {
             do {
                 try await self.markReadInChatApp(route, name: entry.name)
-                if case .captured(let thread) = entry.origin { ChatCaptureService.shared.markReadInApp(thread) }
+                ChatCaptureService.shared.markReadInApp(entry.id)
             } catch {
                 ToastCenter.shared.error(error.localizedDescription)
             }

@@ -15,25 +15,38 @@ enum ChatRoute: Equatable {
     case messages(String)
     case snapchat(String)
     case linked(String)
+
+    var isWhatsApp: Bool {
+        if case .whatsApp = self { return true }
+        return false
+    }
 }
 
 extension AppModel {
     /// Where the Chats tab sends for this chat; nil when Nook can only read it.
     func chatRoute(for entry: ChatsEntry) -> ChatRoute? {
-        switch entry.origin {
-        case .whatsApp(let key):
-            return .whatsApp(key)
-        case .captured:
-            let capture = ChatCaptureService.shared
-            let telegram = capture.telegramBridge
-            if entry.app == telegram.app, telegram.isReady, let id = telegram.chatID(named: entry.name) { return .telegram(id) }
-            if let id = capture.serviceBridge.chatID(app: entry.app, name: entry.name) { return .linked(id) }
-            if entry.app == capture.teamsBridge.app, capture.teamsBridge.canSend(name: entry.name) { return .teams(entry.name) }
-            if entry.app == capture.slackBridge.app, capture.slackBridge.canSend(name: entry.name) { return .slack(entry.name) }
-            if entry.app == capture.messagesBridge.app, capture.messagesBridge.canSend(name: entry.name) { return .messages(entry.name) }
-            if entry.app == capture.snapchatBridge.app, capture.snapchatBridge.canSend(name: entry.name) { return .snapchat(entry.name) }
-            return nil
-        }
+        chatRoute(app: entry.app, name: entry.name, chatID: entry.chatID)
+    }
+
+    /// Where a chat card, the companion or Nook sends for this chat; nil when Nook can only read it.
+    func chatRoute(for thread: InboxThread) -> ChatRoute? {
+        chatRoute(app: thread.app, name: thread.name, chatID: thread.chatID)
+    }
+
+    /// The route of a chat by its app, its name and its own id in its app (`InboxThread.chatID`).
+    func chatRoute(app: String, name: String, chatID: String?) -> ChatRoute? {
+        let capture = ChatCaptureService.shared
+        // A linked phone's WhatsApp chat goes through its gateway, by its key across accounts, while its account is linked.
+        let gateway = capture.whatsAppGatewayBridge
+        if app == gateway.app, let key = chatID { return gateway.isLinked(key) ? .whatsApp(key) : nil }
+        let telegram = capture.telegramBridge
+        if app == telegram.app, telegram.isReady, let id = telegram.chatID(named: name) { return .telegram(id) }
+        if let id = capture.serviceBridge.chatID(app: app, name: name) { return .linked(id) }
+        if app == capture.teamsBridge.app, capture.teamsBridge.canSend(name: name) { return .teams(name) }
+        if app == capture.slackBridge.app, capture.slackBridge.canSend(name: name) { return .slack(name) }
+        if app == capture.messagesBridge.app, capture.messagesBridge.canSend(name: name) { return .messages(name) }
+        if app == capture.snapchatBridge.app, capture.snapchatBridge.canSend(name: name) { return .snapchat(name) }
+        return nil
     }
 
     /// Everything Nook can do in the chat behind `route`. This list is also what every action checks before it goes
@@ -118,22 +131,40 @@ extension AppModel {
         }
     }
 
-    /// The app's name for the audit log ("Telegram"; the network's own for a chat the helper links).
-    private func chatAppName(_ route: ChatRoute) -> String {
+    /// The app a route's chat is in ("telegram"; the network's own for a chat the helper links).
+    private func chatAppID(_ route: ChatRoute) -> String {
         let capture = ChatCaptureService.shared
-        let id: String
         switch route {
-        case .whatsApp: id = "whatsapp"
-        case .linked(let chat): id = capture.serviceBridge.chats[chat]?.app ?? capture.serviceBridge.app
-        default: id = bridgeApp(route) ?? ""
+        case .whatsApp: return capture.whatsAppGatewayBridge.app
+        case .linked(let chat): return capture.serviceBridge.chats[chat]?.app ?? capture.serviceBridge.app
+        default: return bridgeApp(route) ?? ""
         }
+    }
+
+    /// The app's name for the audit log ("Telegram").
+    private func chatAppName(_ route: ChatRoute) -> String {
+        let id = chatAppID(route)
         return MessagingApps.app(id: id)?.name ?? id
+    }
+
+    /// You answered in a chat (`thread`, its id in the shared inbox; nil does nothing): it is read in Nook, and in its
+    /// app too where Settings › Chats says so for that app (on by default), so whoever wrote sees you read it. `told`:
+    /// the app heard it with the answer already (WhatsApp's link does that when it sends text). A failure there leaves
+    /// the answer sent.
+    func answeredInChat(_ route: ChatRoute, name: String, thread: String?, told: Bool = false) async {
+        // Without the chat's id this was one part of a send that reads the chat once, at its end.
+        guard let thread else { return }
+        ChatCaptureService.shared.markRead(thread)
+        guard !told, ChatNoticeRulesStore.shared.rules.readsOnReply(chatAppID(route)), chatAbilities(route).markRead else { return }
+        try? await markReadInChatApp(route, name: name)
     }
 
     // MARK: Sending
 
-    /// Your text from the Chats tab (as an answer to `replyTo` when set), after your own Return or click.
-    func sendChatText(_ text: String, route: ChatRoute, chat name: String, replyTo: String? = nil) async throws {
+    /// Your text from the Chats tab (as an answer to `replyTo` when set), after your own Return or click. `thread` is the
+    /// chat's id in the shared inbox: answering reads it (`answeredInChat`).
+    func sendChatText(_ text: String, route: ChatRoute, chat name: String, replyTo: String? = nil,
+                      thread: String? = nil) async throws {
         let capture = ChatCaptureService.shared
         let replyTo = chatAbilities(route).reply ? replyTo : nil
         try await runInChat(.send, route: route, name: name, text: text) {
@@ -147,11 +178,14 @@ extension AppModel {
             case .linked(let id): try await capture.serviceBridge.send(text: text, to: id, replyTo: replyTo)
             }
         }
+        // WhatsApp's link tells the phone itself, as it sends (`WhatsAppLink.send`).
+        await answeredInChat(route, name: name, thread: thread, told: route.isWhatsApp)
     }
 
     /// A file, a poll, a place or a contact card from the Chats tab, after your own click. A sticker or GIF you send is
-    /// kept for the sticker panel.
-    func sendChatItem(_ outgoing: ChatOutgoing, route: ChatRoute, chat name: String, replyTo: String? = nil) async throws {
+    /// kept for the sticker panel. Answering this way reads the chat too (`answeredInChat`).
+    func sendChatItem(_ outgoing: ChatOutgoing, route: ChatRoute, chat name: String, replyTo: String? = nil,
+                      thread: String? = nil) async throws {
         let capture = ChatCaptureService.shared
         let replyTo = chatAbilities(route).reply ? replyTo : nil
         try await runInChat(.sendItem(outgoing.kind), route: route, name: name) {
@@ -171,6 +205,7 @@ extension AppModel {
         if case .file(let file) = outgoing, file.kind == .sticker || file.kind == .gif {
             ChatStickers.remember(file.url, gif: file.kind == .gif)
         }
+        await answeredInChat(route, name: name, thread: thread)
     }
 }
 
@@ -221,7 +256,8 @@ extension AppModel {
             case .linked(let id): try await capture.serviceBridge.react(emoji, to: bubble.id, in: id, mine: mine)
             case .messages, .snapchat: throw NookError(tr(ChatAction.Refusal.unsupported.rawValue))
             }
-            if let thread { capture.toggleReaction(emoji, on: bubble.id, in: thread) }
+            // WhatsApp's link shows it in its chat itself, which the shared inbox then takes over.
+            if let thread, !route.isWhatsApp { capture.toggleReaction(emoji, on: bubble.id, in: thread) }
         }
     }
 

@@ -16,6 +16,17 @@ protocol ChatBridge: AnyObject {
     var interval: TimeInterval { get }
     /// The chats that changed since the last read (everything on the first), with their newest messages.
     func read() async throws -> [BridgedChat]
+    /// What the capture service keeps its turns, reads and failures under: the app's id, unless two bridges read one
+    /// app (WhatsApp on this Mac and WhatsApp through the linked phone), which then each have their own.
+    var bridgeID: String { get }
+    /// Reads also while collecting chats (Settings › Chats) is off: an app switched on on its own (WhatsApp through the
+    /// linked phone, which has its own switch and needs no Full Disk Access).
+    var alwaysOn: Bool { get }
+}
+
+extension ChatBridge {
+    var bridgeID: String { app }
+    var alwaysOn: Bool { false }
 }
 
 /// A bridge that scrolls back in a chat, as far as its app keeps the history: the batch of messages older than the
@@ -27,6 +38,24 @@ protocol ChatHistoryBridge: ChatBridge {
     /// The batch of messages of the chat `name` sent before `before` (the oldest one Nook shows, with its id in Nook
     /// when it came from this bridge), as a chat to merge, and whether the app has more before those.
     func older(name: String, before: Date, oldestID: String?) async throws -> (chat: BridgedChat?, hasMore: Bool)
+}
+
+/// A bridge whose chats its app knows by an id (`BridgedChat.chatID`), scrolling back in them by that id: WhatsApp
+/// through the linked phone, whose gateway brings each older batch.
+@MainActor
+protocol ChatKeyedHistoryBridge: ChatBridge {
+    /// Whether the chat with this id may have older messages in its app.
+    func canLoadOlder(chatID: String) -> Bool
+    /// The chat with its older messages, to merge, and whether the app has more before those.
+    func older(chatID: String) async throws -> (chat: BridgedChat?, hasMore: Bool)
+}
+
+/// A bridge whose app says itself which chats got news (WhatsApp's linked phone, which knows what came in live and what
+/// is a catch-up or history): those are told, instead of what the inbox makes of the read.
+@MainActor
+protocol ChatNewsBridge: ChatBridge {
+    /// The chats (their ids in `ChatInbox`) with news since the last time, once.
+    func takeNews() -> [String]
 }
 
 /// How many older messages one scroll back brings, for every bridge.

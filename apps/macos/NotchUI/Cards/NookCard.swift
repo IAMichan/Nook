@@ -227,6 +227,10 @@ struct NookCard: Equatable, Identifiable {
     /// A chat of an app Nook cannot write in (Telegram, Messages…), by that app's name: the field works as in the Chats
     /// tab, so what you type (or let Nook write) is copied and the app opens to paste it; no quotes or emoji.
     var replyCopiesTo: String? = nil
+    /// A chat card whose app takes an answer to one message (`ChatAbilities.reply`): its messages can be quoted.
+    var chatQuotes: Bool = true
+    /// A chat card whose app takes emoji from Nook (`ChatAbilities.react`): its messages can get one.
+    var chatReacts: Bool = true
     /// Only the field, with its send button inside it: a small card that asks one thing (the double tap's "what should
     /// Nook do?"). The title stays for VoiceOver and the buttons for Escape, but neither is drawn.
     var compact: Bool = false

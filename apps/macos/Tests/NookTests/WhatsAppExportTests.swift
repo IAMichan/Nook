@@ -201,4 +201,15 @@ final class WhatsAppExportTests: XCTestCase {
         XCTAssertEqual(inbox.threads.count, 1)
         XCTAssertEqual(inbox.threads[key]?.name, "Anna Smit")
     }
+
+    func testAMessageGoneFromTheChatIsDeletedNotLetGo() {
+        let messages = (1...4).map { InboxMessage(id: "m\($0)", text: "hi", date: Date(timeIntervalSince1970: Double($0))) }
+        let before = BridgedChat(app: "whatsapp", name: "Anna", messages: Array(messages.prefix(3)), unread: nil)
+        let now = BridgedChat(app: "whatsapp", name: "Anna", messages: [messages[1], messages[3]], unread: nil)
+        XCTAssertEqual(WhatsAppExport.deleted(before: before, now: now), ["m3"],
+                       "m1 fell off the front (the chat keeps its newest), m3 was deleted")
+        XCTAssertEqual(WhatsAppExport.deleted(before: nil, now: now), [])
+        XCTAssertEqual(WhatsAppExport.deleted(before: before, now: BridgedChat(app: "whatsapp", name: "Anna", messages: [], unread: nil)),
+                       [], "a chat that let go of everything deleted nothing")
+    }
 }
