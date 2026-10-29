@@ -1168,6 +1168,7 @@ struct AgentRunPanel: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(.leading, NookTheme.Spacing.xs)
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
         ForEach(folded.shown) { row in
@@ -1187,14 +1188,7 @@ struct AgentRunPanel: View {
                 workspace.watchPullRequest(runID, url: watched ? nil : url)
             } : nil)
         } else if let branch = row.branch {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                BranchTrayLabel(branch: branch, isCurrent: row.isCurrent, column: true)
-                Text(tr("ws.branches.noPullRequest"))
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: 22)
+            BranchTrayRow(branch: branch, isCurrent: row.isCurrent)
         }
     }
 
