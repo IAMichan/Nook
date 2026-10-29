@@ -48,12 +48,22 @@ extension WorkspaceManager {
                       },
                       switchedBranch: { [weak self] branch in
                           guard let self else { return }
-                          self.update(id) { $0.branch = branch }
-                          self.openPullRequests[id] = nil
+                          self.followBranch(id, to: branch)
                           // The merged pull request's watch makes way for the new one.
                           if self.run(id)?.prWatch != nil { self.watchPullRequest(id, url: nil) }
-                          PullRequestSync.shared.forget(id)
                       })
+    }
+
+    /// The session works on another branch now (a new one for a new pull request, or one the agent switched to): it is
+    /// the session's branch from here on, and the one it left stays listed above the composer with its pull request.
+    func followBranch(_ id: UUID, to branch: String) {
+        guard !branch.isEmpty, let run = run(id), run.branch != branch else { return }
+        update(id) {
+            $0.earlierBranches = SessionBranches.leaving($0.branch, for: branch, earlier: $0.earlierBranches, base: $0.baseBranch)
+            $0.branch = branch
+        }
+        openPullRequests[id] = nil
+        PullRequestSync.shared.forget(id)
     }
 
     /// Where the button stands for a session; nil outside a repository.
