@@ -174,6 +174,8 @@ enum CardDetail: Equatable {
     case none
     case event(top: String, big: String, line: String, subline: String)
     case command(String, note: String)
+    /// Text for people (a pull request, a brief) as Markdown, scrolled when long, with the note under it.
+    case prose(String, note: String)
     case waveform
     case steps([PlanStep])
     case choices(ChoiceSet)

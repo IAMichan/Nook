@@ -1666,7 +1666,11 @@ final class WorkspaceManager: ObservableObject {
                 guard let self else { return }
                 self.git[id] = GitSnapshot(status: result.status, divergence: result.divergence, error: result.problem,
                                            updated: Date(), loading: false)
-                if let status = result.status { self.update(id, save: false) { $0.changedFiles = status.files.count } }
+                if let status = result.status {
+                    self.update(id, save: false) { $0.changedFiles = status.files.count }
+                    // A branch the agent (or you) switched to becomes the session's own.
+                    if !status.detached, let branch = status.branch { self.followBranch(id, to: branch) }
+                }
             }
         }
     }

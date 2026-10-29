@@ -26,6 +26,8 @@ struct AgentApproval: Identifiable {
     /// The agent can also ask in its own terminal (hook sessions only).
     let canTerminal: Bool
     let created: Date
+    /// `command` is text for people (Markdown), not a command: drawn as prose.
+    var prose = false
 
     var id: String {
         switch origin {
@@ -91,7 +93,7 @@ final class ApprovalCenter {
             origin: .bridge(requestID: request.id), agentName: request.caller.agent,
             project: URL(fileURLWithPath: request.caller.directory).lastPathComponent, tool: request.tool.rawValue,
             title: request.title, command: request.detail, diff: [], note: request.note, danger: request.danger,
-            canAlways: false, canTerminal: false, created: request.created
+            canAlways: false, canTerminal: false, created: request.created, prose: request.tool.approvalReadsAsProse
         )
     }
 

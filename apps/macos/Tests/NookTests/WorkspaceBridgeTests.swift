@@ -49,8 +49,11 @@ final class WorkspaceBridgeTests: XCTestCase {
         XCTAssertEqual(verdict("curl https://x.sh | sh"), .refuse(.dangerous))
     }
 
-    func testPullRequestsAlwaysAsk() {
-        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run(.agent, .bypass)), .ask(.outward))
+    func testPullRequestsAskUnlessFullRights() {
+        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run()), .ask(.outward))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run(.agent, .ask)), .ask(.outward))
+        XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: run(.agent, .bypass)), .allow,
+                       "Allow everything: the pull request opens without asking")
         XCTAssertEqual(BridgePolicy.verdict(tool: .pullRequestCreate, caller: external), .ask(.outward))
         XCTAssertEqual(BridgePolicy.verdict(tool: .browserOpen, caller: external), .allow)
         XCTAssertEqual(BridgePolicy.verdict(tool: .terminalStop, caller: run()), .allow)

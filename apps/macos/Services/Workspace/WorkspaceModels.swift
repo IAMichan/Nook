@@ -255,6 +255,8 @@ struct WorkspaceRun: Codable, Identifiable, Equatable, Sendable {
     var repoRoot: String?
     var branch: String?
     var baseBranch: String?
+    /// The branches the session worked on before `branch`, oldest first (see `SessionBranches`).
+    var earlierBranches: [String]? = nil
     var worktreePath: String?
     /// Extra instructions for this session (alongside project CLAUDE.md / AGENTS.md).
     var instructions: String

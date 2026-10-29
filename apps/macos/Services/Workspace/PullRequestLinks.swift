@@ -280,6 +280,62 @@ enum PullRequestSettlement {
     }
 }
 
+/// The branches one session worked on, for the list above its composer: a branch the chat moved away from keeps its row
+/// with its pull request, so a chat that made several branches and pull requests shows the state of each.
+enum SessionBranches {
+    /// The session left `old` for `current`: `old` joins the earlier branches (oldest first) unless it is the default
+    /// branch, and `current` leaves them when the session goes back to it. Nil when there are none.
+    static func leaving(_ old: String?, for current: String, earlier: [String]?, base: String?) -> [String]? {
+        var list = (earlier ?? []).filter { $0 != current }
+        if let old, !old.isEmpty, old != current, !BranchPolicy.isDefaultBranch(old, detectedDefault: base) {
+            list.removeAll { $0 == old }
+            list.append(old)
+        }
+        return list.isEmpty ? nil : list
+    }
+
+    /// The pull requests of a branch the session left, added to the ones it left before (a newer read of the same
+    /// request replaces the older one).
+    static func keeping(_ left: [PullRequestLink], in earlier: [PullRequestLink]) -> [PullRequestLink] {
+        var list = earlier
+        for link in left where !link.url.isEmpty {
+            if let index = list.firstIndex(where: { $0.url == link.url }) { list[index] = link } else { list.append(link) }
+        }
+        return list
+    }
+
+    struct Row: Equatable, Sendable, Identifiable {
+        var branch: String?
+        var pullRequest: URL?
+        var isCurrent: Bool
+        var id: String { (branch ?? "") + "\n" + (pullRequest?.absoluteString ?? "") }
+    }
+
+    /// One row per branch, oldest first and the current one last, each with its newest pull request; a pull request of an
+    /// earlier branch whose name is not known gets a row of its own. Empty while the session has had one branch only:
+    /// its pull request then shows as before.
+    static func rows(earlier: [String], earlierLinks: [PullRequestLink], current: String?, currentPullRequest: URL?) -> [Row] {
+        func newest(_ branch: String) -> URL? {
+            earlierLinks.filter { $0.headBranch == branch }
+                .max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }
+                .flatMap { URL(string: $0.url) }
+        }
+        let names = earlier.filter { $0 != current }
+        var rows = names.map { Row(branch: $0, pullRequest: newest($0), isCurrent: false) }
+        for link in earlierLinks where link.headBranch.map({ !names.contains($0) && $0 != current }) ?? true {
+            guard !link.url.isEmpty, let url = URL(string: link.url), url != currentPullRequest,
+                  !rows.contains(where: { $0.pullRequest == url }) else { continue }
+            rows.append(Row(branch: link.headBranch, pullRequest: url, isCurrent: false))
+        }
+        guard !rows.isEmpty else { return [] }
+        // A pull request an earlier row already shows (one still watched after the switch) is not the current one.
+        let taken = Set(rows.compactMap(\.pullRequest))
+        let mine = [currentPullRequest, current.flatMap(newest)].compactMap { $0 }.first { !taken.contains($0) }
+        rows.append(Row(branch: current, pullRequest: mine, isCurrent: true))
+        return rows
+    }
+}
+
 enum BranchPolicy {
     enum FastForward: Equatable, Sendable { case fastForward, skipDirty, skipDiverged, upToDate }
 

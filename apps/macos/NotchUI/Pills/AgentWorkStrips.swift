@@ -193,6 +193,9 @@ struct PullRequestWatchStrip: View {
     let url: URL
     /// nil while the session's pull request is not watched.
     let watch: PullRequestWatch?
+    /// The branch the pull request is for, shown in front when a session lists several (see `SessionBranches`).
+    var branch: String? = nil
+    var isCurrent = true
     /// Nil for a session Nook does not run: it has nothing to watch with, so the strip only shows and opens the pull request.
     var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
@@ -203,6 +206,7 @@ struct PullRequestWatchStrip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
+            if let branch { BranchTrayLabel(branch: branch, isCurrent: isCurrent).layoutPriority(-1) }
             if let toggle {
                 Button(action: toggle) {
                     ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
@@ -297,6 +301,25 @@ struct PullRequestWatchStrip: View {
         if watch.reviewCount > 0 { parts.append(tr("ws.prwatch.reviews", watch.reviewCount)) }
         if watch.checkedAt == nil { parts.append(tr("ws.prwatch.loading")) }
         return parts.joined(separator: " · ")
+    }
+}
+
+/// A branch's name in the tray above the composer: the session's current branch bright, one it left dimmed.
+struct BranchTrayLabel: View {
+    let branch: String
+    var isCurrent = true
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            NookSymbol("arrow.triangle.branch", size: 10).font(NookTheme.font(10, .semibold))
+            Text(branch)
+                .font(NookTheme.mono(11))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(isCurrent ? NookTheme.textSecondary : NookTheme.textTertiary)
+        .frame(maxWidth: 220, alignment: .leading)
+        .help(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
     }
 }
 
