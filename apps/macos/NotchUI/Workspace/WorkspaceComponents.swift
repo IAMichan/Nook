@@ -188,7 +188,7 @@ struct WSEmptyState: View {
 /// A unified diff as a code review shows it: line numbers of the old and new file in a gutter, hunks as separators,
 /// added and removed lines tinted, and the changed words of an edited line highlighted. Long lines wrap. Code in a
 /// language `SyntaxTokenizer` knows shows plain first and gets its syntax colors once a background task has them.
-struct DiffText: View {
+struct DiffText: View, Equatable {
     /// Review comments on this file: shown under their line. With `onComment`, hovering a line
     /// offers a comment button.
     var comments: [ReviewComment] = []
@@ -219,10 +219,27 @@ struct DiffText: View {
         self.comments = comments
         self.onComment = onComment
         self.onRemoveComment = onRemoveComment
-        rows = UnifiedDiff.rows(text)
-        let largest = rows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
-        numberWidth = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
+        let parsed = Self.parsed.value(for: syntaxKey) ?? {
+            let rows = UnifiedDiff.rows(text)
+            let largest = rows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
+            let made = (rows: rows, numberWidth: CGFloat(max(String(largest).count, 2)) * 6.6 + 14)
+            Self.parsed.set(made, for: syntaxKey)
+            return made
+        }()
+        rows = parsed.rows
+        numberWidth = parsed.numberWidth
     }
+
+    /// Drawn again only when what it shows changed (with `.equatable()` where it is used): every line of a long diff is
+    /// a row of its own. The closures do the same for the same file.
+    static func == (a: DiffText, b: DiffText) -> Bool {
+        a.syntaxKey == b.syntaxKey && a.syntaxPath == b.syntaxPath && a.stacked == b.stacked && a.comments == b.comments
+            && (a.onComment == nil) == (b.onComment == nil) && (a.onRemoveComment == nil) == (b.onRemoveComment == nil)
+    }
+
+    /// The rows of the diffs shown lately: a diff is made again with each redraw of the view around it (a side panel
+    /// beside a session that streams redraws many times a second), and reading every line of it again is for nothing.
+    private static let parsed = BoundedCache<DiffSyntax.Key, (rows: [UnifiedDiff.Row], numberWidth: CGFloat)>(limit: 48)
 
     private static let codeColor = NookTheme.textStrong
     private static let hunkColor = NookTheme.blue
@@ -260,8 +277,11 @@ struct DiffText: View {
                     case .note: noteRow(row)
                     case .context, .add, .remove:
                         lineRow(row, index: index)
-                        ForEach(comments.filter { $0.code == row.raw && $0.line == row.new }) { comment in
-                            commentRow(comment)
+                        // Most diffs have no comments: no search through them for every line.
+                        if !comments.isEmpty {
+                            ForEach(comments.filter { $0.code == row.raw && $0.line == row.new }) { comment in
+                                commentRow(comment)
+                            }
                         }
                         if editing == index {
                             editor(line: row.new, code: row.raw)

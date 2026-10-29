@@ -56,6 +56,9 @@ struct ChangesSheet: View {
                                  workspace.addReviewComment(runID, ReviewComment(path: file.path, line: line, code: code, text: comment))
                              },
                              onRemoveComment: { workspace.removeReviewComment(runID, $0) }, stacked: true, path: file.path)
+                        // The sheet redraws with every change to the sessions (an agent streaming next to it); the diff
+                        // only when it or its comments changed.
+                        .equatable()
                         .sessionFileMenu(workspace, runID: runID, path: file.path)
                 }
             }
