@@ -208,9 +208,19 @@ enum EmbeddedAppCatalog {
 
     /// Everything the `@` list offers: the Mac apps on this Mac, then the web apps that are not installed as one.
     static func available(installed: [EmbeddedApp] = InstalledMacApps.all) -> [EmbeddedApp] {
+        // The chat's composer asks on every redraw, also while an answer streams in; the installed apps rarely change,
+        // and an unchanged list is the same array, which compares at once.
+        availableLock.lock()
+        defer { availableLock.unlock() }
+        if let lastAvailable, lastAvailable.installed == installed { return lastAvailable.apps }
         let shadowed = Set(installed.flatMap { $0.aliases.map(key) })
-        return installed + all.filter { !shadowed.contains(key($0.id)) }
+        let apps = installed + all.filter { !shadowed.contains(key($0.id)) }
+        lastAvailable = (installed, apps)
+        return apps
     }
+
+    private static let availableLock = NSLock()
+    nonisolated(unsafe) private static var lastAvailable: (installed: [EmbeddedApp], apps: [EmbeddedApp])?
 
     /// The apps whose name starts with (then contains) what was typed, for the `@` list.
     static func matching(_ query: String, in apps: [EmbeddedApp] = all) -> [EmbeddedApp] {

@@ -19,6 +19,8 @@ final class AppModel: ObservableObject {
     let hub = AgentHub()
     /// The merged session lists, kept until one of the lists they come from changes (see `AppModel+Sessions`).
     var sessionListsCache: SessionListsCache?
+    /// `agentSessions` and the lists it was made from (see there).
+    var agentSessionsCache: (runs: [WorkspaceRun], sessions: [AgentSession], detected: [AgentSession], value: [AgentSession])?
     let voice = VoiceService()
     let screen = ScreenReader()
     let recap = RecapStore()

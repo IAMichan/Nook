@@ -21,16 +21,20 @@ enum ConversationList {
 
     /// What to show: pinned first, then newest first. A search matches title and preview, ignoring case and accents.
     static func visible<Item: ConversationListItem>(_ items: [Item], query: String, showArchived: Bool) -> [Item] {
+        matching(items, query: query, showArchived: showArchived).sorted { a, b in
+            if a.pinned != b.pinned { return a.pinned }
+            return a.updated > b.updated
+        }
+    }
+
+    /// The items `visible` shows, in no particular order: enough to count them.
+    static func matching<Item: ConversationListItem>(_ items: [Item], query: String, showArchived: Bool) -> [Item] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        let matching = items.filter { item in
+        return items.filter { item in
             guard item.archived == showArchived else { return false }
             guard !words.isEmpty else { return true }
             let haystack = (item.title + " " + item.preview).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             return words.allSatisfy { haystack.contains($0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)) }
-        }
-        return matching.sorted { a, b in
-            if a.pinned != b.pinned { return a.pinned }
-            return a.updated > b.updated
         }
     }
 

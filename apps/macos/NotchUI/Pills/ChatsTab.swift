@@ -349,6 +349,8 @@ final class ChatsShownMemo {
 
     private var key: Key?
     private var value: [ChatsEntry] = []
+    /// `value` per group, in order, made with it.
+    private(set) var sections: [ChatsSection] = []
 
     func shown(all: [ChatsEntry], needle: String, view: ChatsView, filter: String?, account: String?, selection: String?,
                make: () -> [ChatsEntry]) -> [ChatsEntry] {
@@ -357,6 +359,34 @@ final class ChatsShownMemo {
         if key == wanted { return value }
         value = make()
         key = wanted
+        let now = Date()
+        sections = []
+        for entry in value {
+            let group = ChatsGroup.of(entry, now: now)
+            if sections.last?.group == group { sections[sections.count - 1].entries.append(entry) }
+            else { sections.append(ChatsSection(group: group, entries: [entry])) }
+        }
+        return value
+    }
+}
+
+/// The sidebar's counts (chats per view, new chats per app and per account), made again only when the chats or the
+/// chosen app or account changed: the tab redraws for much else (a photo that came in, the panel around it).
+@MainActor
+final class ChatsCountsMemo {
+    struct Counts {
+        var views: [ChatsView: Int]
+        var newByApp: [String: Int]
+        var newByAccount: [String: Int]
+    }
+
+    private var key: (all: [ChatsEntry], filter: String?, account: String?)?
+    private var value = Counts(views: [:], newByApp: [:], newByAccount: [:])
+
+    func counts(all: [ChatsEntry], filter: String?, account: String?, make: () -> Counts) -> Counts {
+        if let key, key.filter == filter, key.account == account, key.all == all { return value }
+        value = make()
+        key = (all, filter, account)
         return value
     }
 }
@@ -393,6 +423,7 @@ struct ChatsTab: View {
     @State private var totalWidth: Double = 0
     @State private var entriesMemo = ChatsEntryMemo()
     @State private var shownMemo = ChatsShownMemo()
+    @State private var countsMemo = ChatsCountsMemo()
 
     static let readOnOpenKey = "nook.chats.readOnOpen"
     /// The apps Nook can link so that it writes in their chats: through its chat helper, or a bridge of its own.
@@ -578,7 +609,15 @@ struct ChatsTab: View {
     private var shownAccount: String? { account.flatMap { accounts.contains($0) ? $0 : nil } }
 
     /// Chats with something new per account of the chosen app.
-    private var newByAccount: [String: Int] {
+    private var newByAccount: [String: Int] { counts.newByAccount }
+
+    private var counts: ChatsCountsMemo.Counts {
+        countsMemo.counts(all: all, filter: filter, account: shownAccount) {
+            ChatsCountsMemo.Counts(views: makeViewCounts(), newByApp: makeNewByApp(), newByAccount: makeNewByAccount())
+        }
+    }
+
+    private func makeNewByAccount() -> [String: Int] {
         guard let filter else { return [:] }
         let fresh = all.filter { $0.app == filter && $0.read.isUnread }
         return Dictionary(grouping: fresh.compactMap(\.account), by: { $0 }).mapValues(\.count)
@@ -607,14 +646,8 @@ struct ChatsTab: View {
 
     /// The shown chats per group, in order; empty groups left out.
     private var sections: [ChatsSection] {
-        let now = Date()
-        var result: [ChatsSection] = []
-        for entry in shown {
-            let group = ChatsGroup.of(entry, now: now)
-            if result.last?.group == group { result[result.count - 1].entries.append(entry) }
-            else { result.append(ChatsSection(group: group, entries: [entry])) }
-        }
-        return result
+        _ = shown
+        return shownMemo.sections
     }
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -626,14 +659,18 @@ struct ChatsTab: View {
     }
 
     /// How many chats each view holds, in the chosen app.
-    private var viewCounts: [ChatsView: Int] {
+    private var viewCounts: [ChatsView: Int] { counts.views }
+
+    private func makeViewCounts() -> [ChatsView: Int] {
         var counts: [ChatsView: Int] = [:]
         for item in ChatsView.allCases { counts[item] = inApp.filter { item.shows($0.read) }.count }
         return counts
     }
 
     /// Chats with something new, per app.
-    private var newByApp: [String: Int] {
+    private var newByApp: [String: Int] { counts.newByApp }
+
+    private func makeNewByApp() -> [String: Int] {
         Dictionary(grouping: all.filter { $0.read.isUnread }, by: \.app).mapValues(\.count)
     }
 

@@ -234,7 +234,9 @@ struct PanelApprovalBar: View {
     /// The task open over the tab, if any: the session behind it is not on screen.
     let sheet: NotchSheet?
     @ObservedObject var hub: AgentHub
-    @ObservedObject var workspace: WorkspaceManager
+    /// Not observed: it changes with every streamed token, and `AppModel` already redraws when a session it runs asks
+    /// for an approval or has a question.
+    let workspace: WorkspaceManager
     @ObservedObject private var bridge = WorkspaceBridge.shared
     @EnvironmentObject private var app: AppModel
 

@@ -8,15 +8,53 @@ struct SidePullRequestTab: Identifiable, Equatable {
     var request: PullRequestOpenRequest?
 }
 
+/// What only the notch itself draws: its state and size, the pointer on it, and the strip under it. Published apart from
+/// the rest of `NotchViewModel`, which the main window observes: a card, a notice, the pointer on the notch, or dictation
+/// updating its card several times a second redraws the notch, not the whole window as well. Read and written through
+/// the view model's properties of the same names.
 @MainActor
-final class NotchViewModel: ObservableObject {
-    @Published private(set) var state: NotchState = .idle
-    @Published private(set) var size: CGSize = CGSize(width: 290, height: 34)
+final class NotchSurface: ObservableObject {
+    @Published var state: NotchState = .idle
+    @Published var size = CGSize(width: 290, height: 34)
     /// The window the notch is drawn in: room for the largest state, but never more than its screen
     /// (`NotchController.canvas(for:)`); a copy on another screen only rests, so its window is smaller
     /// (`NotchController.mirrorSize`).
     @Published var canvas: CGSize = NotchController.panelSize
-    @Published private(set) var pointerInside = false
+    @Published var pointerInside = false
+    @Published var doneButtonTitle = tr("button.close")
+    /// What the confirmation strip says it is about: done (a check), waiting on you, or failed.
+    @Published var doneTone: DoneTone = .done
+    /// An agent notice in compact size: it stays in the notch's own row instead of a strip under it.
+    @Published var doneInline = false
+    /// A click on the step of a task opens the panel, which lists all its steps (Double Tap's `DoubleTapRunBar`).
+    @Published var workOpensPanel = false
+    /// New for every strip under the notch (a result, a suggestion, a moment), so its countdown starts over.
+    @Published var noticeStamp = UUID()
+    /// How long the strip showing now stays by itself, shown as the ring on its OK; nil while it waits for you (a
+    /// task's step with Stop).
+    @Published var noticeSeconds: TimeInterval?
+}
+
+@MainActor
+final class NotchViewModel: ObservableObject {
+    /// The notch's own shape and strips, published apart (see `NotchSurface`).
+    let surface = NotchSurface()
+    private(set) var state: NotchState {
+        get { surface.state }
+        set { surface.state = newValue }
+    }
+    private(set) var size: CGSize {
+        get { surface.size }
+        set { surface.size = newValue }
+    }
+    var canvas: CGSize {
+        get { surface.canvas }
+        set { surface.canvas = newValue }
+    }
+    private(set) var pointerInside: Bool {
+        get { surface.pointerInside }
+        set { surface.pointerInside = newValue }
+    }
     /// A notice that came in while the panel was open: shown in the panel's own bar instead of over it.
     @Published private(set) var panelNotice: PanelNotice?
     @Published var selectedAgentID: String = UserDefaults.standard.string(forKey: "notch.lastAgentPage") ?? "cc" {
@@ -191,21 +229,33 @@ final class NotchViewModel: ObservableObject {
         withAnimation(NookTheme.swap) { size = layoutSize(for: state) }
         scheduleAutoClose()
     }
-    @Published private(set) var doneButtonTitle = tr("button.close")
+    private(set) var doneButtonTitle: String {
+        get { surface.doneButtonTitle }
+        set { surface.doneButtonTitle = newValue }
+    }
     private var doneButtonAction: (() -> Void)?
-    /// What the confirmation strip says it is about: done (a check), waiting on you, or failed.
-    @Published private(set) var doneTone: DoneTone = .done
-    /// An agent notice in compact size: it stays in the notch's own row instead of a strip under it.
-    @Published private(set) var doneInline = false
-    /// A click on the step of a task opens the panel, which lists all its steps (Double Tap's `DoubleTapRunBar`).
-    @Published private(set) var workOpensPanel = false
+    private(set) var doneTone: DoneTone {
+        get { surface.doneTone }
+        set { surface.doneTone = newValue }
+    }
+    private(set) var doneInline: Bool {
+        get { surface.doneInline }
+        set { surface.doneInline = newValue }
+    }
+    private(set) var workOpensPanel: Bool {
+        get { surface.workOpensPanel }
+        set { surface.workOpensPanel = newValue }
+    }
     /// The strip's own button does something (View, Open, Stop); without one the strip only has its OK.
     var doneHasAction: Bool { doneButtonAction != nil }
-    /// New for every strip under the notch (a result, a suggestion, a moment), so its countdown starts over.
-    @Published private(set) var noticeStamp = UUID()
-    /// How long the strip showing now stays by itself, shown as the ring on its OK; nil while it waits for you (a
-    /// task's step with Stop).
-    @Published private(set) var noticeSeconds: TimeInterval?
+    private(set) var noticeStamp: UUID {
+        get { surface.noticeStamp }
+        set { surface.noticeStamp = newValue }
+    }
+    private(set) var noticeSeconds: TimeInterval? {
+        get { surface.noticeSeconds }
+        set { surface.noticeSeconds = newValue }
+    }
     /// How long the confirmation strip stays.
     nonisolated static let doneSeconds: TimeInterval = 4.2
     /// The clock of the strip showing now: it holds while the pointer is on the notch, like the ring on its OK.
