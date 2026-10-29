@@ -1201,6 +1201,27 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(inbox.threads[key]?.readState, .read)
     }
 
+    func testAChatSplitByMarksInItsNameIsOneAgain() throws {
+        let now = Date()
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Arjan den Hartog", messages: [
+            InboxMessage(id: "1", text: "Dat sowieso", date: now.addingTimeInterval(-600), fromMe: true)], unread: 0))
+        // As an earlier version stored it: the same chat under a key with the mark in it, holding a newer message.
+        let data = try JSONEncoder().encode(inbox)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var threads = try XCTUnwrap(json["threads"] as? [String: Any])
+        threads["whatsapp|\u{200E}arjan den hartog"] = [
+            "id": "whatsapp|\u{200E}arjan den hartog", "app": "whatsapp", "name": "\u{200E}Arjan den Hartog", "unread": 1,
+            "messages": [["id": "n1", "text": "nou gwn", "date": now.timeIntervalSinceReferenceDate, "sender": ""]],
+        ]
+        json["threads"] = threads
+        var split = try JSONDecoder().decode(ChatInbox.self, from: JSONSerialization.data(withJSONObject: json))
+        split.trim()
+        XCTAssertEqual(split.threads.count, 1, "one chat again")
+        XCTAssertEqual(split.threads[ChatInbox.key(app: "whatsapp", chat: "Arjan den Hartog")]?.messages.last?.text, "nou gwn",
+                       "with the newest message last, as its row shows it")
+    }
+
     // MARK: Calls
 
     func testCallLinesReadAsCalls() {
