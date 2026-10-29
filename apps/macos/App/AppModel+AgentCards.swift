@@ -202,6 +202,7 @@ extension AppModel {
                       title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
                       subtitle: session.project, body: session.summary,
                       sound: session.status == .done ? .done : .attention,
+                      kind: session.status == .done ? .success : (session.status == .failed ? .error : .warning),
                       card: { [weak self] in self?.showAgentNotice(session, compact: false) },
                       strip: { [weak self] in self?.showAgentNotice(session, compact: true) },
                       open: open)

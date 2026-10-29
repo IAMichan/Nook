@@ -611,8 +611,9 @@ final class AgentHub: ObservableObject {
             linesRemoved: 0
         )
         if !cwd.isEmpty {
-            record.cwd = cwd
-            record.project = Self.projectName(cwd)
+            // Not into a scratch folder outside its project: the branch and changes stay those of the project.
+            record.cwd = SessionFolder.follow(current: record.cwd, reported: cwd)
+            record.project = Self.projectName(record.cwd)
         }
         if let host = env["__CFBundleIdentifier"] as? String, !host.isEmpty {
             record.hostBundleID = host

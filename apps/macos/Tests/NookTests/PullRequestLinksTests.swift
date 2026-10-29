@@ -322,4 +322,19 @@ final class PullRequestLinksTests: XCTestCase {
         let rows = SessionBranches.rows(earlier: ["feat-a"], earlierLinks: [first], current: "feat-b", currentPullRequest: watched)
         XCTAssertEqual(rows.map(\.pullRequest), [watched, nil])
     }
+
+    func testManyBranchesFoldTheOlderOnes() {
+        let url = URL(string: "https://github.com/a/b/pull/1")!
+        let rows = [SessionBranches.Row(branch: "a", pullRequest: url, isCurrent: false),
+                    SessionBranches.Row(branch: "b", pullRequest: nil, isCurrent: false),
+                    SessionBranches.Row(branch: "c", pullRequest: nil, isCurrent: false),
+                    SessionBranches.Row(branch: "d", pullRequest: nil, isCurrent: false),
+                    SessionBranches.Row(branch: "e", pullRequest: nil, isCurrent: true)]
+        let folded = SessionBranches.folded(rows, open: false)
+        XCTAssertEqual(folded.shown.map(\.branch), ["c", "d", "e"])
+        XCTAssertEqual(folded.hidden, 2)
+        XCTAssertEqual(folded.hiddenPullRequests, 1)
+        XCTAssertEqual(SessionBranches.folded(rows, open: true).shown.count, 5)
+        XCTAssertEqual(SessionBranches.folded(Array(rows.suffix(4)), open: false).hidden, 0, "four rows stay open: folding one saves nothing")
+    }
 }

@@ -23,6 +23,8 @@ struct AgentRunPanel: View {
     @State private var confirmDelete = false
     @State private var renaming = false
     @State private var titleDraft = ""
+    /// The older branches of a session that worked on many, shown in the tray above the composer.
+    @State private var showsOlderBranches = false
     /// The `#` list needs the repository ("owner/repo") of the session's folder.
     @State private var repository: String?
     /// The agent's skills for `$`, read from its skill folders.
@@ -1110,7 +1112,7 @@ struct AgentRunPanel: View {
                         if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if !branches.isEmpty {
-                        ForEach(branches) { row in branchRow(row, watch: watch, canWatchCurrent: canWatch) }
+                        branchList(branches, watch: watch, canWatchCurrent: canWatch)
                     } else if let pullRequest {
                         PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
@@ -1143,19 +1145,56 @@ struct AgentRunPanel: View {
         }
     }
 
-    /// One of the session's branches in the tray: its pull request with state and checks (watched from here, one at a
-    /// time), or only its name while it has none.
+    /// The session's branches in the tray, oldest first and the current one last, their names in one column so the pull
+    /// requests line up. A chat with many keeps the newest ones open and folds the older ones behind one row.
     @ViewBuilder
-    /// `canWatchCurrent`: the current branch's pull request can still change (a merged or closed one is only shown).
-    private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?, canWatchCurrent: Bool) -> some View {
+    private func branchList(_ rows: [SessionBranches.Row], watch: PullRequestWatch?, canWatchCurrent: Bool) -> some View {
+        let folded = SessionBranches.folded(rows, open: showsOlderBranches)
+        let titles = Dictionary(((pullRequestSync.earlier[runID] ?? []) + (pullRequestSync.links[runID] ?? []))
+            .compactMap { link in link.title.map { (link.url, $0) } }, uniquingKeysWith: { _, newer in newer })
+        if folded.hidden > 0 || showsOlderBranches && rows.count > SessionBranches.shownWhenFolded {
+            Button {
+                withAnimation(NookTheme.reveal) { showsOlderBranches.toggle() }
+            } label: {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    Image(systemName: "chevron.up")
+                        .font(NookTheme.font(8.5, .bold))
+                        .rotationEffect(.degrees(showsOlderBranches ? 180 : 0))
+                    Text(showsOlderBranches ? tr("ws.branches.hideOlder")
+                                            : tr("ws.branches.showOlder", folded.hidden, folded.hiddenPullRequests))
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.textTertiary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, NookTheme.Spacing.xxs)
+        }
+        ForEach(folded.shown) { row in
+            branchRow(row, watch: watch, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
+        }
+    }
+
+    /// One of the session's branches in the tray: its pull request with state, title and checks (watched from here, one
+    /// at a time), or its name and "no pull request" while it has none. `canWatchCurrent`: the current branch's pull
+    /// request can still change (a merged or closed one is only shown).
+    @ViewBuilder
+    private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?, title: String?, canWatchCurrent: Bool) -> some View {
         if let url = row.pullRequest {
             let watched = watch.flatMap { URL(string: $0.url) } == url
             PullRequestWatchStrip(url: url, watch: watched ? watch : nil, branch: row.branch, isCurrent: row.isCurrent,
-                                  toggle: watched || !row.isCurrent || canWatchCurrent ? {
+                                  title: title, toggle: watched || !row.isCurrent || canWatchCurrent ? {
                 workspace.watchPullRequest(runID, url: watched ? nil : url)
             } : nil)
         } else if let branch = row.branch {
-            BranchTrayLabel(branch: branch, isCurrent: row.isCurrent)
+            HStack(spacing: NookTheme.Spacing.sm) {
+                BranchTrayLabel(branch: branch, isCurrent: row.isCurrent, column: true)
+                Text(tr("ws.branches.noPullRequest"))
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 22)
         }
     }
 

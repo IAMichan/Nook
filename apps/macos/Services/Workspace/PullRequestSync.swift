@@ -16,6 +16,8 @@ final class PullRequestSync: ObservableObject {
     @Published private(set) var earlier: [UUID: [PullRequestLink]] = [:]
     private var checked: [UUID: Date] = [:]
     private var folderChecked: [String: Date] = [:]
+    /// Keyed by `folderKey(path:branch:)` with the session's id as the path.
+    private var earlierChecked: [String: Date] = [:]
     private var running = false
     private let defaults = UserDefaults.standard
     private static let key = "agents.pullRequests.v1"
@@ -84,7 +86,13 @@ final class PullRequestSync: ObservableObject {
     private enum Job {
         case run(UUID, branch: String)
         case folder(key: String, path: String, branch: String)
+        /// A branch the session left before Nook saw its pull request (the agent opened it and moved on within a round):
+        /// asked until one turns up, so the list above the composer shows every pull request the chat made.
+        case earlier(UUID, branch: String)
     }
+
+    /// How often a branch the session left is asked about while no pull request of it is known.
+    private static let earlierInterval: TimeInterval = 300
 
     /// At most this many branches per round, so one round stays short and never holds up the next.
     private static let perRound = 8
@@ -123,6 +131,14 @@ final class PullRequestSync: ObservableObject {
             due.append((job: .run(run.id, branch: branch), open: PullRequestSettlement.anyOpen(links: known),
                         last: checked[run.id] ?? .distantPast))
         }
+        for run in workspace.runs where !run.archived {
+            let known = Set((earlier[run.id] ?? []).compactMap(\.headBranch))
+            for branch in run.earlierBranches ?? [] where !known.contains(branch) && branch != run.branch {
+                let key = Self.folderKey(path: run.id.uuidString, branch: branch)
+                guard PullRequestSettlement.needsSync(lastChecked: earlierChecked[key], now: now, interval: Self.earlierInterval) else { continue }
+                due.append((job: .earlier(run.id, branch: branch), open: false, last: earlierChecked[key] ?? .distantPast))
+            }
+        }
         var seen = Set<String>()
         for folder in folders {
             guard !folder.path.isEmpty, !folder.branch.isEmpty, !BranchPolicy.isDefaultBranch(folder.branch) else { continue }
@@ -158,6 +174,19 @@ final class PullRequestSync: ObservableObject {
                         links[id] = next
                         changed = true
                     }
+                case .earlier(let id, let branch):
+                    earlierChecked[Self.folderKey(path: id.uuidString, branch: branch)] = now
+                    let directory = workspace.run(id)?.workingDirectory ?? id.uuidString
+                    guard let repo = await remote(directory, read: { await workspace.remoteRepository(id) }),
+                          let found = await SourceForge.requests(repo: repo, branch: branch), !found.isEmpty else { continue }
+                    PullRequestStatusStore.shared.record(found, at: now)
+                    // The row finds them by branch name, so each carries the one it was asked for.
+                    let mine = found.map { link -> PullRequestLink in
+                        var link = link
+                        if link.headBranch == nil { link.headBranch = branch }
+                        return link
+                    }
+                    if retire(id, mine) { changed = true }
                 case .folder(let key, let path, let branch):
                     folderChecked[key] = now
                     guard let repo = await remote(path, read: { await Self.repository(path: path) }),
@@ -194,9 +223,12 @@ final class PullRequestSync: ObservableObject {
         }.value
     }
 
-    private func retire(_ id: UUID, _ left: [PullRequestLink]) {
+    @discardableResult
+    private func retire(_ id: UUID, _ left: [PullRequestLink]) -> Bool {
         let next = SessionBranches.keeping(left, in: earlier[id] ?? [])
-        if next != earlier[id] ?? [] { earlier[id] = next }
+        guard next != earlier[id] ?? [] else { return false }
+        earlier[id] = next
+        return true
     }
 
     private func save() {

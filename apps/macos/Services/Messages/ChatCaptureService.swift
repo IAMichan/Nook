@@ -217,7 +217,8 @@ final class ChatCaptureService: ObservableObject {
                         let placed = inbox.placed(notice)
                         if let reaction = ChatCapture.reaction(notice.text),
                            inbox.react(reaction, in: ChatInbox.key(app: notice.app, chat: placed.chat),
-                                       by: ChatCapture.unmarked(placed.sender.isEmpty ? placed.chat : placed.sender)) {
+                                       by: ChatCapture.unmarked(placed.sender.isEmpty ? placed.chat : placed.sender),
+                                       at: notice.date) {
                             changed = true
                         }
                         continue

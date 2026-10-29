@@ -934,6 +934,31 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertEqual(inbox.conversations[chat]?.messages.first?.replyTo, "0")
     }
 
+    /// Their emoji on your message is the chat's line until something newer comes; yours, or one on theirs, is not.
+    func testTheirReactionOnYourMessageIsTheChatsLine() {
+        let chat = "31600000001@s.whatsapp.net"
+        var inbox = WAInbox()
+        inbox.add(message("1", chat: chat, text: "Ja lijkt me sluw", fromMe: true), filters: WAFilters())
+        inbox.add(message("2", chat: chat, at: 1), filters: WAFilters())
+        let reacted = Date(timeIntervalSince1970: 1_800_000_010)
+        inbox.applyReaction("👍", message: "2", chat: chat, sender: "", fromMe: true, now: reacted)
+        inbox.applyReaction("😂", message: "2", chat: chat, sender: chat, fromMe: false, now: reacted)
+        XCTAssertNil(inbox.conversations[chat]?.newestReaction, "only an emoji on your own message")
+
+        inbox.applyReaction("👍", message: "1", chat: chat, sender: chat, fromMe: false, now: reacted)
+        let note = try! XCTUnwrap(inbox.conversations[chat]?.newestReaction)
+        XCTAssertEqual(note.emoji, "👍")
+        XCTAssertEqual(note.person, chat)
+        XCTAssertEqual(note.text, "Ja lijkt me sluw")
+
+        inbox.applyReaction("", message: "1", chat: chat, sender: chat, fromMe: false, now: reacted)
+        XCTAssertNil(inbox.conversations[chat]?.reaction, "taken back")
+
+        inbox.applyReaction("👍", message: "1", chat: chat, sender: chat, fromMe: false, now: reacted)
+        inbox.add(message("3", chat: chat, at: 20), filters: WAFilters())
+        XCTAssertNil(inbox.conversations[chat]?.newestReaction, "a newer message is the line again")
+    }
+
     // MARK: More than one account
 
     func testChatKeyLeavesTheFirstAccountsJIDAlone() {

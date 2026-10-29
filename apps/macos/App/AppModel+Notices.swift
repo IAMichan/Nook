@@ -19,14 +19,25 @@ extension AppModel {
     /// a click on its macOS notification brings up (the card when nil). Nothing pops up, and nothing sounds, for an app
     /// switched off, a source set to "only in the list", or while you are in a meeting or share your screen and chose
     /// quiet for it. Log the notice with `logNotice` first: the history keeps it whatever happens here.
+    ///
+    /// While the main window is open, a card or a strip is not drawn on the notch: the notice is a toast in the window,
+    /// as the result of something you did there ("Pull request merged"), and its button does what `open` does (the card
+    /// when nil). `kind` colors that toast; `window` replaces `open` there, when opening means something else in the
+    /// window than from a macOS notification.
     @discardableResult
     func deliverNotice(_ source: NoticeSource, app: String = "", id: String, title: String, subtitle: String = "",
-                       body: String = "", sound: NookSound? = nil, watching: Bool = false,
+                       body: String = "", sound: NookSound? = nil, watching: Bool = false, kind: NookToastKind = .info,
                        card: @escaping () -> Void, strip: @escaping () -> Void,
-                       open: (() -> Void)? = nil) -> NoticeDecision {
+                       open: (() -> Void)? = nil, window: (() -> Void)? = nil) -> NoticeDecision {
         let decision = settings.noticeRules.decide(source, app: app, quiet: quiet.silent, watching: watching)
         guard let style = decision.style else { return decision }
         if let sound { NookSound.play(sound) }
+        if style != .system, WorkspaceWindowController.shared.isOpen {
+            let detail = [subtitle, body].filter { !$0.isEmpty }.joined(separator: " · ")
+            ToastCenter.shared.show(title, detail: detail, kind: kind,
+                                    action: NookToastAction(title: tr("button.view"), perform: window ?? open ?? card))
+            return decision
+        }
         switch style {
         case .card, .off:
             card()

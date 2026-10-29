@@ -398,6 +398,16 @@ struct WAConversation: Identifiable, Equatable, Sendable {
     var lastActivity: Date
     /// A group's other members (you left out), once the gateway was asked; nil while that is not known.
     var members: [WAMember]? = nil
+    /// The newest emoji someone else put on one of your messages here (`person`: their id): the chat's line while
+    /// nothing newer was written.
+    var reaction: ChatReactionNote? = nil
+
+    /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
+    var newestReaction: ChatReactionNote? {
+        guard let reaction, reaction.date >= (messages.last?.date ?? .distantPast),
+              messages.contains(where: { $0.id == reaction.message }) else { return nil }
+        return reaction
+    }
 
     /// A member's name in this group: the one the gateway gives, else the name they wrote under here, else their number.
     func memberName(_ id: String) -> String {
@@ -953,7 +963,8 @@ struct WAInbox: Equatable, Sendable {
     /// Someone put `emoji` on a message (an empty one takes theirs back). The chat that changed, nil when Nook does not
     /// keep that message.
     @discardableResult
-    mutating func applyReaction(_ emoji: String, message id: String, chat: String, sender: String, fromMe: Bool) -> String? {
+    mutating func applyReaction(_ emoji: String, message id: String, chat: String, sender: String, fromMe: Bool,
+                                 now: Date = Date()) -> String? {
         let key = WAJID.normalized(chat)
         // As with receipts, the gateway can name the chat differently: then every chat is looked at.
         let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
@@ -962,6 +973,14 @@ struct WAInbox: Equatable, Sendable {
                   let index = conversation.messages.firstIndex(where: { $0.id == id }) else { continue }
             conversation.messages[index].reactions = conversation.messages[index].reactions
                 .applying(emoji, sender: sender, fromMe: fromMe)
+            let target = conversation.messages[index]
+            if !fromMe, !emoji.isEmpty, target.fromMe {
+                conversation.reaction = ChatReactionNote(emoji: emoji, person: sender, message: id, text: target.text, date: now)
+            } else if !fromMe, emoji.isEmpty, conversation.reaction?.message == id,
+                      conversation.reaction.map({ WAJID.sameReactor($0.person, sender) }) == true {
+                // The emoji the line shows was taken back.
+                conversation.reaction = nil
+            }
             conversations[chatKey] = conversation
             return chatKey
         }

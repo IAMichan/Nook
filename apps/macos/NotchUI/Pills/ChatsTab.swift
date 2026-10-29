@@ -81,14 +81,24 @@ extension ChatsEntry {
                 // Who is who by your Contacts and the phone's: names instead of numbers.
                 var names = conversation.isGroup ? whatsApp.memberIndex(conversation) : nil
                 let newest = hidden.visible(conversation.messages, in: "wa|" + key) { $0.id }.last
-                let preview = newest.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
+                // Someone's emoji on your message after it says more than the message itself.
+                let reacted = conversation.newestReaction.flatMap { note in
+                    conversation.messages.first { $0.id == note.message }.map { message -> String in
+                        var shown = note
+                        shown.text = text(message)
+                        return shown.line(who: conversation.isGroup ? shortSender(names?.name(note.person) ?? "") : "")
+                    }
+                }
+                let preview = reacted ?? newest.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
                                                    private: !conversation.isGroup)
                 let ticks = ChatReceipts.newest(receipts, ids: conversation.messages.map(\.id), shown: newest?.id)
                     .map(BubbleTicks.init)
                 entries.append(ChatsEntry(id: "wa|" + key, origin: .whatsApp(key), app: "whatsapp",
-                                          name: conversation.name, preview: preview, last: conversation.lastActivity,
-                                          read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
+                                          name: conversation.name, preview: preview,
+                                          last: max(conversation.lastActivity, conversation.newestReaction?.date ?? .distantPast),
+                                          read: whatsApp.readState(conversation.id),
+                                          lastIsMine: reacted == nil && newest?.fromMe ?? false,
                                           readKnown: whatsApp.readIsKnown(conversation.id),
                                           ticks: ticks, members: conversation.members == nil ? nil : names?.all,
                                           handle: handle(conversation.id), avatar: whatsApp.avatars[conversation.id],
@@ -125,12 +135,15 @@ extension ChatsEntry {
         for thread in threads where capture.sources.isOn(thread.app) {
             if let id = thread.messages.last?.id, keeper[thread.app + "|" + id]?.id != thread.id { continue }
             let newest = hidden.visible(thread.messages, in: thread.id) { $0.id }.last
-            let preview = newest.map(line) ?? ""
+            // Someone's emoji on a message after the newest one says more than that message itself.
+            let reaction = thread.newestReaction
+            let preview = reaction.map { $0.line(who: thread.isGroup ? shortSender($0.person) : "") } ?? newest.map(line) ?? ""
             let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
-            let ticks = ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
+            let ticks = reaction != nil ? nil
+                : ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
-                                      preview: preview, last: thread.last, read: thread.readState,
-                                      lastIsMine: newest?.isMine ?? false, ticks: ticks,
+                                      preview: preview, last: max(thread.last, reaction?.date ?? .distantPast),
+                                      read: thread.readState, lastIsMine: reaction == nil && newest?.isMine ?? false, ticks: ticks,
                                       members: thread.members, avatar: thread.avatar))
         }
         return entries.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }
@@ -148,13 +161,19 @@ extension ChatsEntry {
     /// document says what came with it: its caption when it has one ("You: on the beach"), else its kind ("You: Photo").
     @MainActor
     static func line(_ message: WAMessage, sender: String) -> String {
+        let text = text(message)
+        let who = message.fromMe ? tr("chat.you") : shortSender(sender)
+        return who.isEmpty ? text : "\(who): \(text)"
+    }
+
+    /// What a WhatsApp message says in the list, without who wrote it: its caption, else its kind, a call, or its text.
+    @MainActor
+    static func text(_ message: WAMessage) -> String {
         let caption = ChatFormat.plain(message.text)
         let file = AppModel.whatsAppFileLabel(message.media)
         let whole = AppModel.whatsAppText(message)
-        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption }
+        return file.map { ChatFormat.isBlank(caption) ? $0 : caption }
             ?? ChatFormat.call(whole).map { $0.summary(mine: message.fromMe) } ?? ChatFormat.plain(whole)
-        let who = message.fromMe ? tr("chat.you") : shortSender(sender)
-        return who.isEmpty ? text : "\(who): \(text)"
     }
 
     /// Who wrote in a group, as a chat list says it: the first name ("Henco" for "Henco Hendriksen"), so the message
@@ -281,6 +300,19 @@ final class ChatBubblesMemo {
     private var source: Source?
     private var language: AppLanguage?
     private var bubbles: [ChatBubble] = []
+
+    /// The memos of the chats opened last, so going back to one shows it at once instead of making its bubbles again.
+    private static var recent: [(chat: String, memo: ChatBubblesMemo)] = []
+    private static let recentCount = 8
+
+    /// The memo of `chat`, the one it had when it was open lately.
+    static func kept(for chat: String) -> ChatBubblesMemo {
+        let memo = recent.first { $0.chat == chat }?.memo ?? ChatBubblesMemo()
+        recent.removeAll { $0.chat == chat }
+        recent.insert((chat, memo), at: 0)
+        if recent.count > recentCount { recent.removeLast() }
+        return memo
+    }
 
     func whatsApp(_ conversation: WAConversation?, link: WhatsAppLink, previews: Int) -> [ChatBubble] {
         remembered(.whatsApp(conversation, previews: previews)) { conversation.map { AppModel.whatsAppBubbles($0, link: link) } ?? [] }
@@ -1185,7 +1217,9 @@ private struct ChatsDetail: View {
     @State private var deleting: ChatBubble?
     /// Messages you deleted for yourself, which this chat no longer shows.
     @ObservedObject private var hiddenMessages = ChatHiddenMessages.shared
-    @State private var bubblesMemo = ChatBubblesMemo()
+    @State private var bubblesMemo: ChatBubblesMemo
+    /// What you sent that its app has not shown back yet: it is in the chat at once.
+    @ObservedObject private var outbox = ChatOutbox.shared
     /// Who is typing in this chat, under its last message.
     @ObservedObject private var typing = ChatTypingCenter.shared
     /// The collected chat whose removal waits for a yes.
@@ -1208,6 +1242,7 @@ private struct ChatsDetail: View {
         self.onMarkUnread = onMarkUnread
         self.onClose = onClose
         _unreadAtOpen = State(initialValue: entry.unread)
+        _bubblesMemo = State(initialValue: ChatBubblesMemo.kept(for: entry.id))
     }
 
     /// Places "New messages" above the first of what was new, once the chat shows it.
@@ -1279,7 +1314,7 @@ private struct ChatsDetail: View {
                 thread.map { ChatBubble.bubbles($0) { Self.time.string(from: $0) } } ?? []
             }
         }
-        return hiddenMessages.visible(all, in: entry.id) { $0.id }
+        return outbox.bubbles(hiddenMessages.visible(all, in: entry.id) { $0.id }, chat: entry.id)
     }
 
     /// "For everyone" is offered for your own message in an app that takes it; "for me" for every message.
@@ -1460,7 +1495,7 @@ private struct ChatsDetail: View {
 
     /// ↑ in the empty field: your newest message with text goes into the field to change it.
     private func editLastMessage() -> Bool {
-        guard let mine = bubbles.last(where: { $0.fromMe && !$0.text.isEmpty && $0.poll == nil && $0.call == nil }) else { return false }
+        guard let mine = bubbles.last(where: { $0.fromMe && !$0.local && !$0.text.isEmpty && $0.poll == nil && $0.call == nil }) else { return false }
         edit(mine)
         return true
     }
@@ -1707,7 +1742,8 @@ private struct ChatsDetail: View {
     /// What waits goes to the chat (to the quoted message, when one is), after your own Return or click: the files
     /// first, the typed text as the caption of the first one that takes a caption, else as a message after them. It
     /// leaves the field at once and shows in the chat when the app has it, with no panel in between; when it fails the
-    /// text is back in the field, the files that did not go wait again, and the quote stays.
+    /// text is back in the field, the files that did not go wait again, and the quote stays. Text alone is in the chat
+    /// the moment you send it (`ChatOutbox`), with a clock until its app took it.
     private func send(via route: ChatRoute) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = composer.files
@@ -1718,6 +1754,11 @@ private struct ChatsDetail: View {
         withAnimation(NookTheme.reveal) { replyingTo = nil }
         for file in files { composer.sent(.file(file)) }
         replyFocused = true
+        let chat = entry.id
+        let shown = files.isEmpty
+            ? outbox.add(text, quote: quoted.flatMap { id in bubbles.first { $0.id == id } }?.quote(contact: entry.name),
+                         chat: chat, shown: bubbles)
+            : nil
         enqueue {
             // The text still to go: once it went as a caption, a failure later does not put it back to go twice.
             var caption = text
@@ -1735,7 +1776,9 @@ private struct ChatsDetail: View {
                 if !caption.isEmpty {
                     try await app.sendChatText(caption, route: route, chat: entry.name, replyTo: answers)
                 }
+                if let shown { outbox.sent(shown, chat: chat) }
             } catch {
+                if let shown { outbox.failed(shown, chat: chat) }
                 if !caption.isEmpty, reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { reply = caption }
                 composer.restore(waiting)
                 if let quoted, replyingTo == nil { replyingTo = bubbles.first { $0.id == quoted } }

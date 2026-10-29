@@ -289,6 +289,26 @@ enum PullRequestSettlement {
     }
 }
 
+/// When the pull request list is read again while its panel is closed, so it is current the moment you open it (and for
+/// the pickers and links that read it). Only the one quick request for the open ones per account; the slow searches for
+/// the closed and watched ones wait far longer. Nothing at all while nobody is at the Mac or its displays sleep.
+enum PullRequestBackgroundRefresh {
+    /// Between two quiet reads at full speed; the energy plan stretches it (twice as long when light, six times paused).
+    static let interval: TimeInterval = 600
+    /// The closed, merged and watched rows, read along with a quiet refresh at most this often.
+    static let slowInterval: TimeInterval = 1800
+
+    static func wait(plan: EnergyPlan) -> TimeInterval { interval * plan.slowdown }
+
+    /// Whether a quiet read is due: someone is at the Mac, and the list was not read (by the panel or a quiet read)
+    /// within the stretched interval. A clock that went backwards counts as due.
+    static func isDue(lastRead: Date, now: Date, plan: EnergyPlan, signals: EnergySignals) -> Bool {
+        guard !signals.away, !signals.displayAsleep else { return false }
+        let elapsed = now.timeIntervalSince(lastRead)
+        return elapsed < 0 || elapsed >= wait(plan: plan)
+    }
+}
+
 /// The branches one session worked on, for the list above its composer: a branch the chat moved away from keeps its row
 /// with its pull request, so a chat that made several branches and pull requests shows the state of each.
 enum SessionBranches {
@@ -342,6 +362,17 @@ enum SessionBranches {
         let mine = [currentPullRequest, current.flatMap(newest)].compactMap { $0 }.first { !taken.contains($0) }
         rows.append(Row(branch: current, pullRequest: mine, isCurrent: true))
         return rows
+    }
+
+    /// How many rows stay open when the list is folded: the newest earlier branch and the current one.
+    static let shownWhenFolded = 3
+
+    /// The rows the tray shows: all while `open` or while there are few, otherwise the newest `shownWhenFolded`, with the
+    /// count of the folded ones and of their pull requests.
+    static func folded(_ rows: [Row], open: Bool) -> (shown: [Row], hidden: Int, hiddenPullRequests: Int) {
+        guard !open, rows.count > shownWhenFolded + 1 else { return (rows, 0, 0) }
+        let hidden = rows.dropLast(shownWhenFolded)
+        return (Array(rows.suffix(shownWhenFolded)), hidden.count, hidden.filter { $0.pullRequest != nil }.count)
     }
 }
 

@@ -530,6 +530,23 @@ struct TranscriptPromptRail: View {
     private static let target: CGFloat = 16
 
     var body: some View {
+        ZStack {
+            // A fully transparent view is not hit-tested, so this layer keeps the hidden rail hoverable.
+            Color.clear.contentShape(Rectangle())
+            marksLayer.opacity(overRail ? 1 : 0)
+        }
+        .frame(width: Self.width)
+        .background(
+            RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
+                .fill(DropdownStyle.panel)
+                .opacity(overRail ? 0.92 : 0)
+        )
+        .onHover { overRail = $0 }
+        .animation(NookTheme.hover, value: hovered)
+        .animation(NookTheme.hover, value: overRail)
+    }
+
+    private var marksLayer: some View {
         GeometryReader { geometry in
             let travel = max(0, geometry.size.height - Self.target)
             ForEach(marks) { mark in
@@ -549,17 +566,6 @@ struct TranscriptPromptRail: View {
                 .position(x: Self.width / 2, y: Self.target / 2 + mark.position * travel)
             }
         }
-        .frame(width: Self.width)
-        .background(
-            RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous)
-                .fill(DropdownStyle.panel)
-                .opacity(overRail ? 0.92 : 0)
-        )
-        .opacity(overRail ? 1 : 0)
-        .contentShape(Rectangle())
-        .onHover { overRail = $0 }
-        .animation(NookTheme.hover, value: hovered)
-        .animation(NookTheme.hover, value: overRail)
     }
 
     /// What you wrote, without the pictures sent along, cut when it is too long for a card.
@@ -632,7 +638,9 @@ struct TranscriptUserBubble: View {
                             .foregroundStyle(NookTheme.textSecondary)
                         }
                     }
-                    .padding(NookTheme.Spacing.md)
+                    // Room enough that a second line keeps clear of the round corners.
+                    .padding(.horizontal, NookTheme.Spacing.xl)
+                    .padding(.vertical, NookTheme.Spacing.lg)
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.bubble, style: .continuous).fill(NookTheme.bubble))
                 }
             }
