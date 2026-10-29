@@ -170,13 +170,25 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     }
 
     var body: some View {
+        // On one line where it fits; in a narrow panel the emoji take a line of their own under it.
+        ViewThatFits(in: .horizontal) {
+            row(reactions: true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
+                row(reactions: false)
+                if !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
+            }
+        }
+        .onHover { hovering = $0 }
+    }
+
+    private func row(reactions: Bool) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             if showsAvatar { GitHubAvatar(login: event.author, size: 18) }
             Text("@" + event.author).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.paper).lineLimit(1)
             verdict
             accessory()
             Spacer(minLength: NookTheme.Spacing.xs)
-            if !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
+            if reactions, !event.reactions.isEmpty { PullRequestReactionBar(reactions: event.reactions) }
             if let date = event.date {
                 Text(AgentFormat.short(now.timeIntervalSince(date)))
                     .font(NookTheme.TextStyle.detail)
@@ -194,7 +206,6 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                 .allowsHitTesting(hovering)
             }
         }
-        .onHover { hovering = $0 }
     }
 
     @ViewBuilder

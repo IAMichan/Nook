@@ -87,36 +87,22 @@ extension PullRequestDetailView {
         return Text(letter).font(NookTheme.mono(11, .semibold)).foregroundStyle(color).frame(width: 14)
     }
 
+    /// One file's diff under its header. The header is one line where it fits; beside the list (a narrow panel) the
+    /// path keeps its own line and the counts and the buttons go under it, so the path is never squeezed to nothing.
     func fileDiff(_ file: PullRequestFile, detail: PullRequestDetail) -> some View {
         VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            HStack(spacing: NookTheme.Spacing.md) {
-                NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24) { openFile = nil }
-                fileGlyph(file.status)
-                VStack(alignment: .leading, spacing: 1) {
-                    filePath(file.path)
-                    if let previous = file.previousPath {
-                        Text(previous + " →").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.head)
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    fileTitle(file)
+                    Spacer(minLength: NookTheme.Spacing.sm)
+                    fileControls(file, detail: detail)
                 }
-                Spacer(minLength: NookTheme.Spacing.sm)
-                PullRequestLineCounts(additions: file.additions, deletions: file.deletions)
-                let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
-                viewedButton(file, key: key, seen: viewed.isViewed(file, in: key))
-                let ordered = orderedFiles(detail)
-                if let index = ordered.firstIndex(of: file) {
-                    Text("\(index + 1)/\(ordered.count)")
-                        .font(NookTheme.TextStyle.detail.monospacedDigit())
-                        .foregroundStyle(NookTheme.textTertiary)
-                    NookIconButton(systemName: "chevron.up", label: tr("agents.pr.files.previous"), size: 24) {
-                        openFile = ordered[index - 1].path
+                VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                    fileTitle(file)
+                    HStack(spacing: NookTheme.Spacing.md) {
+                        Spacer(minLength: 0)
+                        fileControls(file, detail: detail)
                     }
-                    .disabled(index == 0)
-                    .opacity(index == 0 ? 0.35 : 1)
-                    NookIconButton(systemName: "chevron.down", label: tr("agents.pr.files.next"), size: 24) {
-                        openFile = ordered[index + 1].path
-                    }
-                    .disabled(index + 1 >= ordered.count)
-                    .opacity(index + 1 >= ordered.count ? 0.35 : 1)
                 }
             }
             if let patch = file.patch, !patch.isEmpty {
@@ -128,5 +114,46 @@ extension PullRequestDetailView {
             }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    /// Back to the list, the file's kind and its path (and the one it had before a rename).
+    func fileTitle(_ file: PullRequestFile) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            NookIconButton(systemName: "chevron.left", label: tr("agents.pr.back"), size: 24) { openFile = nil }
+            fileGlyph(file.status)
+            VStack(alignment: .leading, spacing: 1) {
+                filePath(file.path)
+                if let previous = file.previousPath {
+                    Text(previous + " →").font(NookTheme.mono(11)).foregroundStyle(NookTheme.textTertiary).lineLimit(1).truncationMode(.head)
+                }
+            }
+        }
+    }
+
+    /// The file's lines added and removed, its viewed mark, and where it is among the files with the buttons to the
+    /// one before and after.
+    func fileControls(_ file: PullRequestFile, detail: PullRequestDetail) -> some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            PullRequestLineCounts(additions: file.additions, deletions: file.deletions)
+            let key = PullRequestViewedFiles.key(repo: detail.repo, number: detail.number)
+            viewedButton(file, key: key, seen: viewed.isViewed(file, in: key))
+            let ordered = orderedFiles(detail)
+            if let index = ordered.firstIndex(of: file) {
+                Text("\(index + 1)/\(ordered.count)")
+                    .font(NookTheme.TextStyle.detail.monospacedDigit())
+                    .foregroundStyle(NookTheme.textTertiary)
+                NookIconButton(systemName: "chevron.up", label: tr("agents.pr.files.previous"), size: 24) {
+                    openFile = ordered[index - 1].path
+                }
+                .disabled(index == 0)
+                .opacity(index == 0 ? 0.35 : 1)
+                NookIconButton(systemName: "chevron.down", label: tr("agents.pr.files.next"), size: 24) {
+                    openFile = ordered[index + 1].path
+                }
+                .disabled(index + 1 >= ordered.count)
+                .opacity(index + 1 >= ordered.count ? 0.35 : 1)
+            }
+        }
+        .fixedSize()
     }
 }

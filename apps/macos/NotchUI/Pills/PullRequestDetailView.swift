@@ -30,6 +30,10 @@ struct PullRequestDetailView: View {
 
     enum Tab: Hashable { case summary, guide, timeline, code }
 
+    /// The widest the page reads: beside the list it takes the room it has, but filling a wide window its top, tabs and
+    /// content stay one centered column, so lines stay readable and everything lines up under the title.
+    static let pageWidth: CGFloat = 960
+
     @StateObject var model: PullRequestDetailModel
     @State var tab: Tab = .summary
     @State var openFile: String?
@@ -105,20 +109,22 @@ struct PullRequestDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headerBlock
-            if confirmStackMerge || mergingStack { stackMergeBar.padding(.top, NookTheme.Spacing.sm) }
+            headerBlock.pullRequestPageColumn()
+            if confirmStackMerge || mergingStack { stackMergeBar.padding(.top, NookTheme.Spacing.sm).pullRequestPageColumn() }
             if let detail {
                 ZStack(alignment: .bottomTrailing) {
                     // The relative times in the timeline and the commits tick along, once a minute.
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         content(detail, now: context.date)
                     }
-                    if actions.panel != .write { writeButton(detail) }
+                    // At the column's corner, not the window's; the empty rest of its frame lets clicks through.
+                    if actions.panel != .write { writeButton(detail).pullRequestPageColumn(alignment: .trailing) }
                 }
                 .frame(maxHeight: .infinity)
                 if actions.panel != .none || actions.pending != nil || actions.error != nil {
                     PullRequestActionPanel(state: actions, model: model, accountID: accountID, detail: detail)
                         .padding(.top, NookTheme.Spacing.sm)
+                        .pullRequestPageColumn()
                         .transition(.opacity)
                 }
             } else if let error = model.error {
@@ -132,9 +138,10 @@ struct PullRequestDetailView: View {
                         .padding(.top, NookTheme.Spacing.xs)
                 }
                 .padding(.top, NookTheme.Spacing.lg)
+                .pullRequestPageColumn()
                 Spacer(minLength: 0)
             } else {
-                PullRequestDetailGhost().padding(.top, NookTheme.Spacing.lg)
+                PullRequestDetailGhost().padding(.top, NookTheme.Spacing.lg).pullRequestPageColumn()
                 Spacer(minLength: 0)
             }
         }
@@ -419,10 +426,33 @@ struct PullRequestDetailView: View {
         }
     }
 
-    /// The tab bar: the four tabs, and on the right what the open tab holds.
+    /// The tab bar: the four tabs, and on the right what the open tab holds. Where the page is too narrow for both on
+    /// one line (a side panel beside the list), what the tab holds moves to its own line under the tabs instead of
+    /// being squeezed or cut off.
     func tabs(_ detail: PullRequestDetail) -> some View {
-        HStack(spacing: NookTheme.Spacing.md) {
-            NookTabBar<Tab>(items: [
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: NookTheme.Spacing.md) {
+                tabBar
+                Spacer(minLength: 0)
+                tabAccessoryStyled(detail)
+            }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+                tabBar
+                tabAccessoryStyled(detail)
+            }
+        }
+    }
+
+    func tabAccessoryStyled(_ detail: PullRequestDetail) -> some View {
+        tabAccessory(detail)
+            .font(NookTheme.TextStyle.detail)
+            .foregroundStyle(NookTheme.textTertiary)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    var tabBar: some View {
+        NookTabBar<Tab>(items: [
                 .init(value: Tab.summary, title: tr("agents.pr.tab.summary")),
                 .init(value: Tab.guide, title: tr("agents.pr.tab.guide"), help: tr("agents.pr.guide.help")),
                 .init(value: Tab.timeline, title: tr("agents.pr.tab.timelinePlain")),
@@ -431,12 +461,6 @@ struct PullRequestDetailView: View {
                 switchTo(value)
             }, segmented: true)
             .fixedSize()
-            Spacer(minLength: 0)
-            tabAccessory(detail)
-                .font(NookTheme.TextStyle.detail)
-                .foregroundStyle(NookTheme.textTertiary)
-                .lineLimit(1)
-        }
     }
 
     @ViewBuilder
@@ -503,6 +527,7 @@ struct PullRequestDetailView: View {
                     DispatchQueue.main.async { revealChecks() }
                 }
                 .padding(.top, NookTheme.Spacing.md)
+                .pullRequestPageColumn()
                 .id(check.id)
             } else {
                 page { summary(detail, now: now) }
@@ -516,7 +541,7 @@ struct PullRequestDetailView: View {
         case .timeline:
             if detail.activityLoaded {
                 // One centered column at most 768 pt wide.
-                page { timeline(detail, now: now).frame(maxWidth: 768).frame(maxWidth: .infinity) }
+                page { timeline(detail, now: now) }
             } else {
                 activityLoading
             }
@@ -524,7 +549,7 @@ struct PullRequestDetailView: View {
             if !detail.activityLoaded {
                 activityLoading
             } else if let path = openFile, let file = detail.files.first(where: { $0.path == path }) {
-                fileDiff(file, detail: detail).padding(.top, NookTheme.Spacing.md)
+                fileDiff(file, detail: detail).padding(.top, NookTheme.Spacing.md).pullRequestPageColumn()
             } else {
                 page { files(detail) }
             }
@@ -542,6 +567,8 @@ struct PullRequestDetailView: View {
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, NookTheme.Spacing.md)
+                    // The column inside the scroll view, so the wheel scrolls beside it too.
+                    .pullRequestPageColumn()
                     // Room for the round write button over the end of the page.
                     .padding(.bottom, NookTheme.Spacing.xxxl + NookTheme.Spacing.xxl)
             }
@@ -577,7 +604,8 @@ struct PullRequestDetailView: View {
             Spacer(minLength: 0)
         }
         .padding(.top, NookTheme.Spacing.md)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: Self.pageWidth, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity)
     }
 
     func switchTo(_ value: Tab) {

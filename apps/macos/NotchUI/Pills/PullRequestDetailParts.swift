@@ -255,3 +255,12 @@ struct PullRequestDetailGhost: View {
         .accessibilityLabel(tr("agents.pr.loading"))
     }
 }
+
+extension View {
+    /// The pull request page's one column: the full width up to `PullRequestDetailView.pageWidth`, centered on a wider
+    /// window. `alignment` places the content inside it (`.trailing` for the write button in its corner).
+    func pullRequestPageColumn(alignment: Alignment = .leading) -> some View {
+        frame(maxWidth: PullRequestDetailView.pageWidth, alignment: alignment)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
