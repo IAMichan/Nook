@@ -496,6 +496,8 @@ final class AppModel: ObservableObject {
 
         // How much Nook does by himself right now: the battery, the heat, the load and your choice in Settings › General › Energy.
         EnergyMonitor.shared.start(settings: settings)
+        // The pull request list stays current with its panel closed: a quiet read now and then, slower when saving energy.
+        PullRequestStore.shared.followInBackground { [weak self] in !(self?.demoMode ?? true) }
 
         // Continuously index visible screen text locally so every query has immediate visual context.
         screenContext.enabled = { [weak self] in self?.settings.liveScreen ?? false }
