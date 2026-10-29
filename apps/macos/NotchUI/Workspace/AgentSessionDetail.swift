@@ -686,7 +686,7 @@ struct AgentSessionDetail: View {
         if !profile.label.isEmpty { return profile.label }
         let account = app.history.profileAccounts[profile.id]
         if let org = account?.organization, !org.isEmpty { return org }
-        if account?.name == "API-sleutel" { return account?.name ?? "" }
+        if account?.name == AgentAccount.apiKeyName { return account?.name ?? "" }
         return tr("agents.personal")
     }
 

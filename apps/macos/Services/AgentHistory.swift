@@ -284,6 +284,10 @@ struct PastSession: Identifiable, Equatable, Codable {
 
 /// Which account an agent is logged in with, from its own configuration.
 struct AgentAccount: Equatable {
+    /// The name of an account that signs in with a key, and of a Google sign-in without an address, in your language.
+    static var apiKeyName: String { tr("accounts.method.apiKey") }
+    static var googleAccountName: String { tr("accounts.googleAccount") }
+
     let agent: AgentKind
     /// Email address, or "API key" if there is no account.
     var name: String
@@ -717,7 +721,7 @@ private final class HistoryScanner: @unchecked Sendable {
             case .claude:
                 if home.apiKey {
                     // An API key takes precedence, even if an old login remains in the directory.
-                    accounts[home.id] = AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "API")
+                    accounts[home.id] = AgentAccount(agent: .claude, name: AgentAccount.apiKeyName, organization: "", plan: "API")
                 } else if let account = claudeAccount(home.url, isDefault: home.isDefault) {
                     accounts[home.id] = account
                 }
@@ -1368,7 +1372,7 @@ private final class HistoryScanner: @unchecked Sendable {
                 return AgentAccount(agent: .claude, name: email, organization: cleanOrg, plan: Self.claudePlan(account.plan))
             }
             if account.hasAPIKey {
-                return AgentAccount(agent: .claude, name: "API-sleutel", organization: "", plan: "")
+                return AgentAccount(agent: .claude, name: AgentAccount.apiKeyName, organization: "", plan: "")
             }
         }
         return nil
@@ -1473,7 +1477,7 @@ private final class HistoryScanner: @unchecked Sendable {
             return AgentAccount(agent: .codex, name: (claims["email"] as? String) ?? "ChatGPT-account", organization: "", plan: plan)
         }
         if let key = root["OPENAI_API_KEY"] as? String, !key.isEmpty {
-            return AgentAccount(agent: .codex, name: "API-sleutel", organization: "", plan: "")
+            return AgentAccount(agent: .codex, name: AgentAccount.apiKeyName, organization: "", plan: "")
         }
         return nil
     }
@@ -1489,7 +1493,7 @@ private final class HistoryScanner: @unchecked Sendable {
         if let google = geminiAccount(home) {
             return AgentAccount(agent: .antigravity, name: google.name, organization: "", plan: google.plan)
         }
-        return AgentAccount(agent: .antigravity, name: "Google-account", organization: "", plan: "")
+        return AgentAccount(agent: .antigravity, name: AgentAccount.googleAccountName, organization: "", plan: "")
     }
 
     private func geminiAccount(_ home: URL) -> AgentAccount? {
@@ -1500,10 +1504,10 @@ private final class HistoryScanner: @unchecked Sendable {
         let accounts = (try? Data(contentsOf: home.appendingPathComponent("google_accounts.json")))
             .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
         if let email = accounts["active"] as? String, !email.isEmpty {
-            return AgentAccount(agent: .gemini, name: email, organization: "", plan: auth == "vertex-ai" ? "Vertex AI" : "Google-account")
+            return AgentAccount(agent: .gemini, name: email, organization: "", plan: auth == "vertex-ai" ? "Vertex AI" : AgentAccount.googleAccountName)
         }
         switch auth {
-        case "gemini-api-key": return AgentAccount(agent: .gemini, name: "API-sleutel", organization: "", plan: "")
+        case "gemini-api-key": return AgentAccount(agent: .gemini, name: AgentAccount.apiKeyName, organization: "", plan: "")
         case "vertex-ai": return AgentAccount(agent: .gemini, name: "Vertex AI", organization: "", plan: "")
         default: return nil
         }
