@@ -209,9 +209,14 @@ struct DiffText: View, Equatable {
     @State private var editing: Int?
     @State private var commentDraft = ""
 
+    /// What the comment actions act on (a session and file): with the same diff in another session, the view is drawn
+    /// again so its actions are that session's.
+    private let scope: String?
+
     init(text: String, comments: [ReviewComment] = [],
          onComment: ((_ line: Int?, _ code: String, _ text: String) -> Void)? = nil,
-         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil) {
+         onRemoveComment: ((UUID) -> Void)? = nil, stacked: Bool = false, path: String? = nil, scope: String? = nil) {
+        self.scope = scope
         self.stacked = stacked
         self.text = text
         syntaxPath = path ?? DiffSyntax.firstPath(in: text)
@@ -235,9 +240,10 @@ struct DiffText: View, Equatable {
     }
 
     /// Drawn again only when what it shows changed (with `.equatable()` where it is used): every line of a long diff is
-    /// a row of its own. The closures do the same for the same file.
+    /// a row of its own. The closures do the same for the same `scope`.
     static func == (a: DiffText, b: DiffText) -> Bool {
-        a.syntaxKey == b.syntaxKey && a.syntaxPath == b.syntaxPath && a.stacked == b.stacked && a.comments == b.comments
+        a.syntaxKey == b.syntaxKey && a.syntaxPath == b.syntaxPath && a.stacked == b.stacked && a.scope == b.scope
+            && a.comments == b.comments
             && (a.onComment == nil) == (b.onComment == nil) && (a.onRemoveComment == nil) == (b.onRemoveComment == nil)
     }
 
