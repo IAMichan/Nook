@@ -397,6 +397,24 @@ struct BridgedChat: Equatable, Sendable {
     /// These messages come from the chat's history (fetched on opening it, or after the Mac slept), not as they
     /// arrived: none of them counts as new.
     var history: Bool = false
+    /// When the app says the chat last had a message, for a chat Nook holds no (newer) messages of: it sorts there, and
+    /// a read in Nook since then holds against the app's count.
+    var activity: Date? = nil
+    /// Whether the chat is still unread in the app itself, when the bridge knows that apart from how many messages are
+    /// new in Nook (WhatsApp through the linked phone); nil leaves it to the app's count.
+    var waitsInApp: Bool? = nil
+    /// The app keeps this chat's messages and Nook only shows them: they stay in memory and are never written to disk
+    /// (WhatsApp through the linked phone). What Nook knows of the chat itself (read, unread, its kind) is kept.
+    var ephemeral: Bool = false
+}
+
+/// Chat ids kept from before WhatsApp's chats joined the shared inbox: a linked phone's chat was "wa|<chat key>", and is
+/// "whatsapp#<chat key>" (`ChatInbox.key(app:id:)`) since. Whatever kept such an id (a hidden message, a draft, the chat
+/// opened last) reads it through here.
+enum ChatIDMigration {
+    static func current(_ id: String) -> String {
+        id.hasPrefix("wa|") ? ChatInbox.key(app: "whatsapp", id: String(id.dropFirst(3))) : id
+    }
 }
 
 /// The kinds of chat an app may have, the same names for every app.
@@ -510,6 +528,12 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     var readKnown: Bool? = nil
     /// False once its app has nothing older left to scroll back to (`BridgedChat.hasOlder`); nil: not known yet.
     var hasOlder: Bool? = nil
+    /// When its app says it last had a message (`BridgedChat.activity`), for a chat Nook holds no newer messages of.
+    var activity: Date? = nil
+    /// Still unread in the app itself, as its bridge says apart from the count (`BridgedChat.waitsInApp`).
+    var waitsInApp: Bool? = nil
+    /// Its messages are never written to disk (`BridgedChat.ephemeral`).
+    var ephemeral: Bool? = nil
 
     /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
     var newestReaction: ChatReactionNote? {
@@ -520,14 +544,14 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// How many messages it keeps.
     var keeps: Int { bridged == true ? max(capacity ?? 0, ChatInbox.keep) : ChatInbox.notificationKeep }
 
-    var last: Date { messages.last?.date ?? .distantPast }
+    var last: Date { max(messages.last?.date ?? .distantPast, activity ?? .distantPast) }
     /// The newest message from someone else: what "read" is about.
     var newestIncoming: Date? { messages.last { !$0.isMine }?.date }
 
     /// Read here, read in Nook only, or read in the app too: the same three states for every chat app.
     var readState: ChatReadState {
         ChatReadState.of(unread: unread, appUnread: appUnread, newestIncoming: newestIncoming,
-                         readInNook: readInNook, readInApp: readInApp)
+                         readInNook: readInNook, readInApp: readInApp, waitsInApp: waitsInApp)
     }
     /// Someone else than the chat itself wrote in it, or more than one other person is in it: a group. What its app
     /// says comes first.
@@ -558,8 +582,11 @@ enum ChatReadState: Equatable, Sendable {
 
     /// The state from what Nook knows of a chat. `appUnread` is the app's own count when it gives one; without it, a chat
     /// read in Nook after its newest message waits for the app until you tell the app (`readInApp`).
-    static func of(unread: Int, appUnread: Int?, newestIncoming: Date?, readInNook: Date?, readInApp: Date?) -> ChatReadState {
+    /// `waitsInApp`, when the bridge says it, decides on its own whether the app still holds the chat unread.
+    static func of(unread: Int, appUnread: Int?, newestIncoming: Date?, readInNook: Date?, readInApp: Date?,
+                   waitsInApp: Bool? = nil) -> ChatReadState {
         if unread > 0 { return .unread(unread) }
+        if let waitsInApp { return waitsInApp ? .readInNook : .read }
         guard let newest = newestIncoming else { return .read }
         if let readInApp, readInApp >= newest { return .read }
         if let appUnread { return appUnread > 0 ? .readInNook : .read }
@@ -908,6 +935,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
             (chat.account != nil && chat.account != known.account) || (chat.kind != nil && chat.kind != known.kind)
                 || (chat.handle != nil && chat.handle != known.handle) || (chat.readKnown != nil && chat.readKnown != known.readKnown)
                 || (chat.hasOlder != nil && chat.hasOlder != known.hasOlder) || (chat.chatID != nil && chat.name != known.name)
+                || (chat.activity != nil && chat.activity != known.activity) || (chat.waitsInApp != nil && chat.waitsInApp != known.waitsInApp)
         } ?? false
         guard !messages.isEmpty || (known != nil && (chat.unread != nil || chat.members != nil || chat.listed || !chat.deleted.isEmpty
                                                      || (chat.avatar != nil && chat.avatar != known?.avatar) || described))
@@ -963,11 +991,14 @@ struct ChatInbox: Codable, Equatable, Sendable {
             if chat.unread == nil, !chat.history, let newestBefore, !message.isMine, message.date > newestBefore { thread.unread += 1 }
         }
         if thread.messages.count > thread.keeps { thread.messages.removeFirst(thread.messages.count - thread.keeps) }
+        // Before the count: a read in Nook holds against it by when the chat last had a message.
+        if let activity = chat.activity, thread.activity.map({ activity > $0 }) ?? true { thread.activity = activity }
         if let unread = chat.unread {
             if let read = thread.readInNook {
-                // Read in Nook: only what came in after that is new here, never more than the app itself counts.
+                // Read in Nook: only what came in after that is new here, never more than the app itself counts. A chat
+                // Nook holds no messages of goes by when its app says it last had one.
                 let fresh = thread.messages.filter { !$0.isMine && $0.date > read }.count
-                thread.unread = min(unread, fresh)
+                thread.unread = thread.messages.isEmpty ? ((thread.activity ?? .distantPast) > read ? unread : 0) : min(unread, fresh)
             } else if unread != thread.appUnread {
                 thread.unread = unread
             }
@@ -981,6 +1012,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         if let handle = chat.handle { thread.handle = handle }
         if let readKnown = chat.readKnown { thread.readKnown = readKnown }
         if let hasOlder = chat.hasOlder { thread.hasOlder = hasOlder }
+        if let waitsInApp = chat.waitsInApp { thread.waitsInApp = waitsInApp }
+        if chat.ephemeral { thread.ephemeral = true }
         if chat.listed, thread.listed.map({ now.timeIntervalSince($0) >= Self.listedRenewal }) ?? true { thread.listed = now }
         guard thread != before else { return false }
         threads[key] = thread
@@ -1110,6 +1143,28 @@ struct ChatInbox: Codable, Equatable, Sendable {
         guard droppable.count > Self.maxThreads else { return }
         let quietest = droppable.sorted { $0.last != $1.last ? $0.last > $1.last : $0.id < $1.id }.dropFirst(Self.maxThreads)
         for thread in quietest { threads[thread.id] = nil }
+    }
+
+    /// The inbox as it is written to disk: a chat whose messages its app keeps (`ephemeral`, WhatsApp through the linked
+    /// phone) goes without them and without the emoji note that quotes one, so no message of it ever reaches the disk.
+    /// What Nook knows of the chat itself stays (read, unread, its kind), with when it last had a message, so it still
+    /// sorts in its place before its bridge brings the messages again.
+    var forDisk: ChatInbox {
+        var copy = self
+        copy.forgetMessages(of: Set(threads.values.filter { $0.ephemeral == true }.map(\.id)))
+        return copy
+    }
+
+    /// Lets go of the messages of these chats in memory too (their app was turned off): only what Nook knows of each
+    /// chat itself stays, as on disk.
+    mutating func forgetMessages(of ids: Set<String>) {
+        for id in ids {
+            guard var thread = threads[id] else { continue }
+            if thread.last > .distantPast { thread.activity = thread.last }
+            thread.messages = []
+            thread.reaction = nil
+            threads[id] = thread
+        }
     }
 
     /// Newest first.

@@ -211,4 +211,96 @@ final class ChatSharedModelTests: XCTestCase {
         XCTAssertNil(thread?.kind)
         XCTAssertNil(thread?.messages.first?.mentionsMe)
     }
+
+    // MARK: Where a chat stands, as its app says
+
+    func testWaitingInTheAppIsTheBridgesWord() {
+        let newest = Date(timeIntervalSince1970: 100)
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 0, newestIncoming: newest, readInNook: nil, readInApp: nil,
+                                        waitsInApp: true), .readInNook)
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: 3, newestIncoming: newest, readInNook: newest, readInApp: nil,
+                                        waitsInApp: false), .read, "read on the phone: read, whatever the count said")
+        XCTAssertEqual(ChatReadState.of(unread: 0, appUnread: nil, newestIncoming: nil, readInNook: nil, readInApp: nil,
+                                        waitsInApp: true), .readInNook, "also a chat Nook holds no messages of")
+        XCTAssertEqual(ChatReadState.of(unread: 2, appUnread: nil, newestIncoming: newest, readInNook: nil, readInApp: nil,
+                                        waitsInApp: false), .unread(2), "new in Nook comes first")
+    }
+
+    func testReadInNookHoldsAgainstTheAppsCount() {
+        var inbox = ChatInbox()
+        var first = chat("Anna", id: "a", [message("1")])
+        first.unread = 2
+        inbox.merge(first)
+        let key = ChatInbox.key(app: "whatsapp", id: "a")
+        XCTAssertEqual(inbox.threads[key]?.unread, 2)
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 2_000))
+        var later = chat("Anna", id: "a", [])
+        later.unread = 2
+        later.waitsInApp = true
+        inbox.merge(later)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "read in Nook stays read")
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook, "still unread on the phone")
+        var reply = chat("Anna", id: "a", [message("2", at: 2_000)])
+        reply.unread = 3
+        reply.waitsInApp = true
+        inbox.merge(reply)
+        XCTAssertEqual(inbox.threads[key]?.unread, 1, "only what came after the read is new")
+    }
+
+    func testAChatWithoutMessagesGoesByWhenItLastHadOne() {
+        var inbox = ChatInbox()
+        var listed = chat("Bob", id: "b", [])
+        listed.listed = true
+        listed.unread = 4
+        listed.activity = Date(timeIntervalSince1970: 500)
+        inbox.merge(listed)
+        let key = ChatInbox.key(app: "whatsapp", id: "b")
+        XCTAssertEqual(inbox.threads[key]?.unread, 4)
+        XCTAssertEqual(inbox.threads[key]?.last, Date(timeIntervalSince1970: 500), "it sorts where it last had a message")
+        inbox.markRead(key, at: Date(timeIntervalSince1970: 600))
+        inbox.merge(listed)
+        XCTAssertEqual(inbox.threads[key]?.unread, 0, "read in Nook after its last message")
+        listed.activity = Date(timeIntervalSince1970: 700)
+        listed.unread = 5
+        inbox.merge(listed)
+        XCTAssertEqual(inbox.threads[key]?.unread, 5, "a message after the read: the app's count again")
+    }
+
+    // MARK: Never on disk
+
+    func testAChatWhoseAppKeepsItsMessagesIsWrittenWithoutThem() throws {
+        var inbox = ChatInbox()
+        var whatsApp = chat("Anna", id: "a", [message("secret", "private words", at: 10)])
+        whatsApp.ephemeral = true
+        inbox.merge(whatsApp)
+        inbox.merge(chat("Anna", app: "telegram", [message("t", "kept", at: 10)]))
+        let key = ChatInbox.key(app: "whatsapp", id: "a")
+        inbox.markRead(key)
+        let data = try JSONEncoder().encode(inbox.forDisk)
+        let written = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(written.contains("private words"))
+        XCTAssertFalse(written.contains("secret"))
+        XCTAssertTrue(written.contains("kept"), "other apps' chats are kept as they always were")
+        let loaded = try JSONDecoder().decode(ChatInbox.self, from: data)
+        XCTAssertEqual(loaded.threads[key]?.messages, [])
+        XCTAssertNotNil(loaded.threads[key]?.readInNook, "what Nook knows of the chat stays")
+        XCTAssertEqual(loaded.threads[key]?.last, Date(timeIntervalSince1970: 1_010), "and where it sorts")
+        XCTAssertEqual(inbox.threads[key]?.messages.count, 1, "in memory the chat keeps its messages")
+    }
+
+    func testTurningAnAppOffLetsGoOfItsMessagesInMemory() {
+        var inbox = ChatInbox()
+        inbox.merge(chat("Anna", id: "a", [message("1", at: 10)]))
+        let key = ChatInbox.key(app: "whatsapp", id: "a")
+        inbox.forgetMessages(of: [key])
+        XCTAssertEqual(inbox.threads[key]?.messages, [])
+        XCTAssertEqual(inbox.threads[key]?.last, Date(timeIntervalSince1970: 1_010))
+    }
+
+    func testIdsFromBeforeTheSharedInboxStillFindTheirChat() {
+        XCTAssertEqual(ChatIDMigration.current("wa|31612345678@s.whatsapp.net"), ChatInbox.key(app: "whatsapp", id: "31612345678@s.whatsapp.net"))
+        XCTAssertEqual(ChatIDMigration.current("wa|work~1@g.us"), "whatsapp#work~1@g.us")
+        XCTAssertEqual(ChatIDMigration.current("telegram|anna"), "telegram|anna")
+        XCTAssertEqual(ChatIDMigration.current("whatsapp#1@g.us"), "whatsapp#1@g.us")
+    }
 }

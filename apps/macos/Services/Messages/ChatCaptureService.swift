@@ -582,7 +582,8 @@ final class ChatCaptureService: ObservableObject {
         let inbox = inbox
         let file = Self.file
         let write = {
-            guard let data = try? JSONEncoder().encode(inbox) else { return }
+            // A chat whose app keeps its messages (WhatsApp through the linked phone) is written without them.
+            guard let data = try? JSONEncoder().encode(inbox.forDisk) else { return }
             try? SafeStorage.write(data, to: file)
         }
         if wait { Self.saving.sync(execute: write) } else { Self.saving.async(execute: write) }
