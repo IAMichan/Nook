@@ -46,6 +46,8 @@ struct AgentRunPanel: View {
     @FocusState private var focused: Bool
     @ObservedObject private var finishedMarks = FinishedSessions.shared
     @ObservedObject private var bridge = WorkspaceBridge.shared
+    /// The pull requests of the session's branches, for the tray above the box.
+    @ObservedObject private var pullRequestSync = PullRequestSync.shared
     /// The outputs tab of the side panel around this session (`SessionWorkbench`), which shows what the agent produced.
     @Environment(\.sessionOutputs) private var outputsLink
     /// How wide the results and the terminal are: drag the line beside them, double-click it to reset. Remembered.
@@ -1089,19 +1091,26 @@ struct AgentRunPanel: View {
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
         // The watched pull request, or the session's open one you stopped watching (or never watched).
         let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchablePullRequest()
-        if pullRequest != nil || !waiting.isEmpty || !quotes.isEmpty {
+        // A session that worked on more than one branch lists each, with the state of its pull request.
+        let branches = workspace.run(runID).map { run in
+            SessionBranches.rows(earlier: run.earlierBranches ?? [], earlierLinks: pullRequestSync.earlier[runID] ?? [],
+                                 current: run.branch, currentPullRequest: pullRequest)
+        } ?? []
+        if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty || !quotes.isEmpty {
             ComposerTray(edge: .top) {
                 VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
                     if !quotes.isEmpty {
                         ComposerQuoteChips(quotes: quotes.items) { id in quotes.remove(id) }
-                        if pullRequest != nil || !waiting.isEmpty { ComposerTrayDivider() }
+                        if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty { ComposerTrayDivider() }
                     }
-                    if let pullRequest {
+                    if !branches.isEmpty {
+                        ForEach(branches) { row in branchRow(row, watch: watch) }
+                    } else if let pullRequest {
                         PullRequestWatchStrip(url: pullRequest, watch: watch) {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
                         }
                     }
-                    if pullRequest != nil && !waiting.isEmpty { ComposerTrayDivider() }
+                    if (pullRequest != nil || !branches.isEmpty) && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
                         QueuedMessagesStrip(
                             queue: waiting, editing: editingQueued,
@@ -1125,6 +1134,20 @@ struct AgentRunPanel: View {
                     }
                 }
             }
+        }
+    }
+
+    /// One of the session's branches in the tray: its pull request with state and checks (watched from here, one at a
+    /// time), or only its name while it has none.
+    @ViewBuilder
+    private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?) -> some View {
+        if let url = row.pullRequest {
+            let watched = watch.flatMap { URL(string: $0.url) } == url
+            PullRequestWatchStrip(url: url, watch: watched ? watch : nil, branch: row.branch, isCurrent: row.isCurrent) {
+                workspace.watchPullRequest(runID, url: watched ? nil : url)
+            }
+        } else if let branch = row.branch {
+            BranchTrayLabel(branch: branch, isCurrent: row.isCurrent)
         }
     }
 
