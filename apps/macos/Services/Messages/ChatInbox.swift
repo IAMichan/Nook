@@ -1141,9 +1141,32 @@ extension ChatInbox {
         thread.messages.suffix(limit).map { "[\(stamp($0.date))] " + line($0, in: thread) }.joined(separator: "\n")
     }
 
+    /// The messages that hold every word of `query` (ignoring case and accents), yours as well as theirs, newest first,
+    /// each with its app and chat: "- Telegram · Anna · 2026-10-20 12:04 · You: see you at eight". Empty when none does.
+    static func search(_ threads: [InboxThread], query: String, limit: Int = 30) -> String {
+        let words = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return "" }
+        var found: [(thread: InboxThread, message: InboxMessage)] = []
+        for thread in threads {
+            for message in thread.messages {
+                let haystack = fold(message.summary + " " + message.sender)
+                if words.allSatisfy(haystack.contains) { found.append((thread, message)) }
+            }
+        }
+        return found.sorted { $0.message.date > $1.message.date }.prefix(limit).map { hit in
+            let app = MessagingApps.app(id: hit.thread.app)?.name ?? hit.thread.app
+            return "- \(app) · \(hit.thread.name) · \(stamp(hit.message.date)) · " + line(hit.message, in: hit.thread)
+        }.joined(separator: "\n")
+    }
+
+    private static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
     private static func line(_ message: InboxMessage, in thread: InboxThread) -> String {
         let text = message.summary.count > 300 ? String(message.summary.prefix(300)) + "…" : message.summary
-        return "\(message.sender.isEmpty ? thread.name : message.sender): \(text)"
+        let who = message.isMine ? "You" : (message.sender.isEmpty ? thread.name : message.sender)
+        return "\(who): \(text)"
     }
 
     private static func stamp(_ date: Date) -> String {

@@ -223,7 +223,7 @@ Legend: ✅ supported & tested · ⚠️ supported with caveats · ❌ not built
 | MCP Servers | stdio or HTTP | ✅ server read tools | ✅ server write tools, always gated by approval |
 | Messages (iMessage & SMS) | On your Mac (Full Disk Access) | ✅ `search_messages`, `read_messages`, `messages_open_chats` | – |
 | WhatsApp | On your Mac (Full Disk Access) or local bridge | ✅ `search_whatsapp`, `read_whatsapp`, `whatsapp_open_chats`, `whatsapp_live` | ✅ `whatsapp_send` to existing chats (rate-limited to 6/min), or through WhatsApp Web beside the chat when no phone is linked |
-| Chats from other apps | On your Mac (Full Disk Access), off by default | ✅ `chat_inbox`: Telegram, Instagram, Messenger, Signal, Messages, Slack, Discord… as their notifications showed them | – (answer in the app itself) |
+| Chats from other apps | On your Mac (Full Disk Access), off by default | ✅ `chat_inbox`: WhatsApp, Telegram, Instagram, Messenger, Signal, Messages, Teams, Slack, Discord… as Nook has them; `query` searches every chat, your own sent messages included (only incoming ones for an app Nook knows from notifications alone) | – (answer in the app itself) |
 | Bear | On your Mac | ✅ `search_bear`, `read_bear` | – |
 | Things | On your Mac | ✅ `search_things` | – |
 | Files (Spotlight) | On your Mac | ✅ `search_files`, `read_file` (PDF, Word, RTF, plain text) | – |
