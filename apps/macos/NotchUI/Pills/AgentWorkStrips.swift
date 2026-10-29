@@ -196,6 +196,8 @@ struct PullRequestWatchStrip: View {
     /// The branch the pull request is for, shown in front when a session lists several (see `SessionBranches`).
     var branch: String? = nil
     var isCurrent = true
+    /// The pull request's title, shown after its state when the session lists several, so each row says what it was.
+    var title: String? = nil
     /// Nil for a session Nook does not run: it has nothing to watch with, so the strip only shows and opens the pull request.
     var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
@@ -206,7 +208,7 @@ struct PullRequestWatchStrip: View {
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.sm) {
-            if let branch { BranchTrayLabel(branch: branch, isCurrent: isCurrent).layoutPriority(-1) }
+            if let branch { BranchTrayLabel(branch: branch, isCurrent: isCurrent, column: true) }
             if let toggle {
                 Button(action: toggle) {
                     ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
@@ -222,6 +224,15 @@ struct PullRequestWatchStrip: View {
             }
             .buttonStyle(.plain)
             .help(tr("ws.prwatch.open"))
+            if let title, !title.isEmpty {
+                Text(title)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(isCurrent ? NookTheme.textSecondary : NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
+                    .help(title)
+            }
             if let ci {
                 // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
                 Button(action: openCI) {
@@ -308,6 +319,8 @@ struct PullRequestWatchStrip: View {
 struct BranchTrayLabel: View {
     let branch: String
     var isCurrent = true
+    /// In the list of a session's branches: one width for every name, so the pull requests after them line up.
+    var column = false
 
     var body: some View {
         HStack(spacing: NookTheme.Spacing.xs) {
@@ -318,6 +331,7 @@ struct BranchTrayLabel: View {
                 .truncationMode(.middle)
         }
         .foregroundStyle(isCurrent ? NookTheme.textSecondary : NookTheme.textTertiary)
+        .frame(width: column ? 200 : nil, alignment: .leading)
         .frame(maxWidth: 220, alignment: .leading)
         .help(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
     }
