@@ -499,9 +499,10 @@ struct AgentRunPanel: View {
     private func composerTrailing(_ run: WorkspaceRun) -> some View {
         HStack(spacing: NookTheme.Spacing.xxs) {
             if let window = run.usage.contextWindow, let used = run.usage.contextTokens, window > 0 {
+                // Every agent that compacts on `/compact` (Claude Code, Codex, an ACP agent that offers it) gets the button.
+                let compacts = AgentCommands.canCompact(run.provider, offered: workspace.acpCommands[runID] ?? [])
                 ComposerContextRing(used: used, window: window,
-                                    onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
-                                        : { workspace.send(runID, text: "/compact") })
+                                    onCompact: run.status.isActive || !compacts ? nil : { workspace.send(runID, text: "/compact") })
             }
             ComposerMic(text: $draft)
         }

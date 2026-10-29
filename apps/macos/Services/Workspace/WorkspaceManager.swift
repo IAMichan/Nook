@@ -771,6 +771,14 @@ final class WorkspaceManager: ObservableObject {
         return true
     }
 
+    /// Whether this turn goes to Codex over app-server (rather than `codex exec`, or another agent).
+    func usesCodexServer(_ run: WorkspaceRun, _ executable: String) -> Bool {
+        switch run.provider {
+        case .codex: return settings.codexAppServer && !codexExecOnly.contains(executable)
+        case .claude, .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        }
+    }
+
     /// False when the message could not be taken (empty, the session cannot continue, or a turn is running).
     @discardableResult
     private func send(_ id: UUID, text: String, shown: Bool) -> Bool {
@@ -804,8 +812,9 @@ final class WorkspaceManager: ObservableObject {
         // What the timeline shows: your words, without a handoff summary or the context envelope of references.
         let visible = ContextRefs.visible(clean)
         displayPrompt[id] = run.pendingHandoff == nil && visible == clean ? nil : visible
-        // What MCP apps told the agent goes with this turn: Codex takes it as context of its own, the others ahead of it.
-        let appContext = run.provider == .codex ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
+        // What MCP apps told the agent goes with this turn: Codex over app-server takes it as context of its own, every
+        // other agent (Codex over `codex exec` too) ahead of the message.
+        let appContext = usesCodexServer(run, executable) ? "" : McpApp.contextPreamble(takeMcpAppContexts(id))
         launchTurn(id, prompt: appContext + ContextHandoff.compose(handoff: run.pendingHandoff, message: clean), executable: executable,
                    showPrompt: !shown)
         return true
@@ -1033,7 +1042,7 @@ final class WorkspaceManager: ObservableObject {
         if let tasks = self.run(id)?.tasks, RunTasks.isFinished(tasks) { update(id) { $0.tasks = nil } }
         guard var run = run(id) else { return }
         // Codex speaks app-server when it can: approvals, questions, steering and live reasoning.
-        if run.provider == .codex, settings.codexAppServer, !codexExecOnly.contains(executable) {
+        if usesCodexServer(run, executable) {
             launchCodexServerTurn(id, prompt: prompt, executable: executable, showPrompt: showPrompt)
             return
         }

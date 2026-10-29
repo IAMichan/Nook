@@ -21,7 +21,7 @@ enum AgentCommands {
         if surface == .chat {
             list.append(ComposerCommand(name: "new", insertion: "", action: .new))
         }
-        if hasProject, provider == .claude || provider == .codex {
+        if hasProject, hasBuiltInCompactAndGoal(provider) {
             list.append(ComposerCommand(name: "compact", insertion: "/compact", action: .insert))
             list.append(ComposerCommand(name: "goal", insertion: "/goal ", action: .insert))
         }
@@ -36,6 +36,19 @@ enum AgentCommands {
     }
 
     static func descriptionKey(for command: ComposerCommand) -> String { "composer.command.\(command.name).description" }
+
+    /// Claude Code and Codex always take `/compact` and `/goal`; an ACP agent has the commands it announces.
+    static func hasBuiltInCompactAndGoal(_ provider: RunProvider) -> Bool {
+        switch provider {
+        case .claude, .codex: return true
+        case .gemini, .antigravity, .opencode, .cursor, .grok, .acp: return false
+        }
+    }
+
+    /// Whether the agent compacts its context on `/compact`: built in, or announced by the agent itself.
+    static func canCompact(_ provider: RunProvider, offered: [AgentSlashCommand]) -> Bool {
+        hasBuiltInCompactAndGoal(provider) || offered.contains { $0.name == "compact" }
+    }
 }
 
 /// A `/` command an agent offers itself (ACP `available_commands_update`): its name, what it does in the agent's words,
