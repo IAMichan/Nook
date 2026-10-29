@@ -24,6 +24,8 @@ enum AcpLaunch {
 /// What a session update or request becomes in Nook's timeline.
 enum AcpEvent: Equatable, Sendable {
     case messageChunk(String)
+    /// Your own words, as a loaded session replays them (`user_message_chunk`).
+    case userChunk(String)
     case thoughtChunk(String)
     case toolCall(AcpToolCall)
     case toolCallUpdate(AcpToolCall)
@@ -150,6 +152,11 @@ enum AcpRPC {
     /// The answer to a permission request the turn no longer waits for (Stop, a failed turn): the spec asks for one.
     static let cancelledOutcome: [String: Any] = ["outcome": ["outcome": "cancelled"]]
 
+    /// `session/list` params: one page, from `cursor` on.
+    static func listParams(cursor: String?) -> [String: Any] {
+        cursor.map { ["cursor": $0] } ?? [:]
+    }
+
     /// The sign-in methods `initialize` offers, in the agent's order.
     static func authMethodIDs(_ initialize: [String: Any]) -> [String] {
         ((initialize["authMethods"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }.filter { !$0.isEmpty }
@@ -219,6 +226,8 @@ enum AcpMapper {
         switch update["sessionUpdate"] as? String {
         case "agent_message_chunk":
             return text(update["content"]).map { [.messageChunk($0)] } ?? []
+        case "user_message_chunk":
+            return text(update["content"]).map { [.userChunk($0)] } ?? []
         case "agent_thought_chunk":
             return text(update["content"]).map { [.thoughtChunk($0)] } ?? []
         case "tool_call":
@@ -287,6 +296,57 @@ enum AcpMapper {
         guard let block = block as? [String: Any], (block["type"] as? String) == "text",
               let text = block["text"] as? String, !text.isEmpty else { return nil }
         return text
+    }
+}
+
+/// What an ACP agent can do with its sessions, from `initialize`: load one again with its history replayed
+/// (`agentCapabilities.loadSession`), list them (`sessionCapabilities.list`) and resume one without the replay
+/// (`sessionCapabilities.resume`).
+struct AcpSessionCapabilities: Equatable, Sendable {
+    var load = false
+    var list = false
+    var resume = false
+
+    init(load: Bool = false, list: Bool = false, resume: Bool = false) {
+        self.load = load
+        self.list = list
+        self.resume = resume
+    }
+
+    init(initialize: [String: Any]) {
+        let agent = (initialize["agentCapabilities"] as? [String: Any]) ?? [:]
+        let session = (agent["sessionCapabilities"] as? [String: Any]) ?? [:]
+        // A capability is offered by an object ({}), and not by null or its absence.
+        load = (agent["loadSession"] as? Bool) ?? false
+        list = session["list"] is [String: Any]
+        resume = session["resume"] is [String: Any]
+    }
+
+    /// An earlier conversation can be continued: resumed, or loaded again.
+    var continues: Bool { load || resume }
+    /// The method that continues one: `session/resume` when offered (no history replayed, Nook keeps it), else `session/load`.
+    var continueMethod: String { resume ? "session/resume" : "session/load" }
+}
+
+/// A session an ACP agent lists (`session/list`): its id, folder, title and when it last changed.
+struct AcpListedSession: Equatable, Sendable {
+    var id: String
+    var cwd: String
+    var title: String
+    var updated: Date?
+
+    /// One page of `session/list`, and the cursor of the next one. A session without id or folder is left out.
+    static func page(_ result: [String: Any]) -> (sessions: [AcpListedSession], next: String?) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        let sessions = ((result["sessions"] as? [[String: Any]]) ?? []).compactMap { entry -> AcpListedSession? in
+            guard let id = entry["sessionId"] as? String, !id.isEmpty, let cwd = entry["cwd"] as? String, !cwd.isEmpty else { return nil }
+            let updated = (entry["updatedAt"] as? String).flatMap { formatter.date(from: $0) ?? plain.date(from: $0) }
+            return AcpListedSession(id: id, cwd: cwd, title: (entry["title"] as? String) ?? "", updated: updated)
+        }
+        let next = (result["nextCursor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return (sessions, next)
     }
 }
 
@@ -459,15 +519,22 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _sessionID } }
         set { lock.withLock { _sessionID = newValue } }
     }
-    var canLoadSessions: Bool {
-        get { lock.withLock { _canLoad } }
-        set { lock.withLock { _canLoad = newValue } }
+    /// What the agent can do with its sessions (see `AcpSessionCapabilities`).
+    var sessionCapabilities: AcpSessionCapabilities {
+        get { lock.withLock { _capabilities } }
+        set { lock.withLock { _capabilities = newValue } }
     }
-    /// While `session/load` replays the conversation, its updates are not new: Nook already keeps the timeline.
+    /// While `session/load` replays the conversation, its updates are not new: Nook already keeps the timeline, unless
+    /// `keepsReplay` (a session Nook has no timeline of yet, which the replay then fills).
     var replaying: Bool {
         get { lock.withLock { _replaying } }
         set { lock.withLock { _replaying = newValue } }
     }
+    var keepsReplay: Bool {
+        get { lock.withLock { _keepsReplay } }
+        set { lock.withLock { _keepsReplay = newValue } }
+    }
+    private var _keepsReplay = false
     /// The session was just created: the next prompt carries the session instructions.
     var freshSession: Bool {
         get { lock.withLock { _fresh } }
@@ -515,7 +582,7 @@ final class AcpClient: @unchecked Sendable {
     private var _mode: String?
     private var _fresh = false
     private var _sessionID: String?
-    private var _canLoad = false
+    private var _capabilities = AcpSessionCapabilities()
     private var _replaying = false
 
     init(spec: LaunchSpec) {
@@ -583,7 +650,39 @@ final class AcpClient: @unchecked Sendable {
         }
         // Replayed history is dropped, except requests, which always need an answer, and what the session offers.
         let events = AcpMapper.events(message)
-        if replaying, case .notification = message, !events.allSatisfy(\.isSessionState) { return }
+        if replaying, !keepsReplay, case .notification = message, !events.allSatisfy(\.isSessionState) { return }
         onMessage?(message, events)
+    }
+}
+
+/// The conversation a loaded session replays, as messages for a timeline that has none yet: consecutive chunks of one
+/// side join into one message.
+struct AcpReplay: Equatable, Sendable {
+    enum Side: Equatable, Sendable { case user, agent }
+    private(set) var messages: [(side: Side, text: String)] = []
+
+    mutating func add(_ event: AcpEvent) {
+        switch event {
+        case .userChunk(let text): add(.user, text)
+        case .messageChunk(let text): add(.agent, text)
+        default: break
+        }
+    }
+
+    private mutating func add(_ side: Side, _ text: String) {
+        if let last = messages.last, last.side == side {
+            messages[messages.count - 1].text += text
+        } else {
+            messages.append((side, text))
+        }
+    }
+
+    /// The messages with text, trimmed.
+    var finished: [(side: Side, text: String)] {
+        messages.map { ($0.side, $0.text.trimmingCharacters(in: .whitespacesAndNewlines)) }.filter { !$0.text.isEmpty }
+    }
+
+    static func == (lhs: AcpReplay, rhs: AcpReplay) -> Bool {
+        lhs.messages.map(\.side) == rhs.messages.map(\.side) && lhs.messages.map(\.text) == rhs.messages.map(\.text)
     }
 }

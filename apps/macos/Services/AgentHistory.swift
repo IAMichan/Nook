@@ -282,6 +282,18 @@ struct PastSession: Identifiable, Equatable, Codable {
     }
 }
 
+extension PastSession {
+    /// A session an ACP agent listed itself: what the list says (folder, title, last change); its transcript stays with the
+    /// agent, which replays or resumes it when it continues in Nook.
+    init(listed: AcpListedSession, agent: AgentKind, profileID: String) {
+        let when = listed.updated ?? .distantPast
+        self.init(agent: agent, sessionID: listed.id, title: listed.title, cwd: listed.cwd, branch: "", model: "",
+                  started: when, ended: when, prompts: 1, tokens: TokenTally(), lastPrompt: "", lastReply: "")
+        self.profileID = profileID
+        titledByAgent = !listed.title.isEmpty
+    }
+}
+
 /// Which account an agent is logged in with, from its own configuration.
 struct AgentAccount: Equatable {
     /// The name of an account that signs in with a key, and of a Google sign-in without an address, in your language.
@@ -336,6 +348,24 @@ struct AgentUsageSummary: Equatable {
 @MainActor
 final class AgentHistory: ObservableObject {
     @Published private(set) var sessions: [PastSession] = []
+    /// The sessions read from transcripts on disk, and the ones agents listed themselves (ACP `session/list`) per account:
+    /// `sessions` holds both, each conversation once.
+    private var diskSessions: [PastSession] = []
+    private var listedSessions: [String: [PastSession]] = [:]
+
+    /// What an agent account listed itself (see `WorkspaceManager.listAgentSessions`), replacing what it listed before.
+    func setListedSessions(_ list: [PastSession], account: String) {
+        guard listedSessions[account] != list else { return }
+        listedSessions[account] = list
+        publishSessions()
+    }
+
+    private func publishSessions() {
+        var seen = Set(diskSessions.map(\.id))
+        let listed = listedSessions.keys.sorted().flatMap { listedSessions[$0] ?? [] }.filter { seen.insert($0.id).inserted }
+        let merged = listed.isEmpty ? diskSessions : (diskSessions + listed).sorted { $0.ended > $1.ended }
+        if sessions != merged { sessions = merged }
+    }
     /// Per account (`AgentProfile.id`): who is logged in.
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
     /// Per account: tokens and sessions for today and this week.
@@ -403,7 +433,8 @@ final class AgentHistory: ObservableObject {
                 guard let self else { return }
                 self.scanning = false
                 if self.loading { self.loading = false }
-                if self.sessions != result.sessions { self.sessions = result.sessions }
+                self.diskSessions = result.sessions
+                self.publishSessions()
                 if self.profileAccounts != result.accounts { self.profileAccounts = result.accounts }
                 if self.profileUsage != result.usage { self.profileUsage = result.usage }
                 if self.ledger != result.ledger { self.ledger = result.ledger }

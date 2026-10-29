@@ -72,7 +72,7 @@ extension WorkspaceManager {
             if provider == .codex {
                 probeCodexModels(executable, environment: environment)
             } else {
-                probeAcpModels(provider, executable, environment: environment)
+                probeAcpModels(provider, profileID: profileID)
             }
         }
     }
@@ -103,18 +103,69 @@ extension WorkspaceManager {
     }
 
     /// Only `initialize`: never `authenticate` or `session/new`.
-    private func probeAcpModels(_ provider: RunProvider, _ executable: String, environment: [String: String]) {
-        let spec = LaunchSpec(executable: executable, arguments: AcpLaunch.arguments(provider, permission: .ask),
-                              extraEnvironment: environment, workingDirectory: NSHomeDirectory(), initialInput: [], keepsInputOpen: true)
-        let client = AcpClient(spec: spec)
-        do { try client.start() } catch { return }
+    private func probeAcpModels(_ provider: RunProvider, profileID: String) {
+        guard let client = startAcpProbe(provider, profileID: profileID) else { return }
         client.request("initialize", AcpRPC.initializeParams()) { [weak self] result in
             client.stop()
             guard case .success(let response) = result else { return }
             let models = AgentModelCatalog.acp(response.dictionary)
-            Task { @MainActor in self?.learnModels(provider, models) }
+            Task { @MainActor in self?.learnModels(provider, models, profileID: profileID) }
         }
         closeProbe(after: 20) { client.stop() }
+    }
+
+    /// Starts an ACP agent for a short question outside a session (its models, its sessions), with the command line a
+    /// session of it uses: an agent you added runs its own. Nil when it cannot start. Antigravity, which needs its own
+    /// profile folder first, is asked only in its sessions.
+    func startAcpProbe(_ provider: RunProvider, profileID: String) -> AcpClient? {
+        guard let executable = executable(provider) else { return nil }
+        var input = AgentCommand.Input(provider: provider, executable: executable, prompt: "", model: "", mode: .agent, permission: .ask,
+                                       instructions: "", workingDirectory: NSHomeDirectory(), resumeSessionID: nil,
+                                       accountEnvironment: accountEnvironment(profileID), runID: UUID())
+        if provider == .acp {
+            guard let agent = CustomAgents.agent(for: profileID) else { return nil }
+            input.customAgent = agent
+        }
+        let client = AcpClient(spec: AgentCommand.acpSpec(input))
+        do { try client.start() } catch { return nil }
+        return client
+    }
+
+    // MARK: Sessions the agent lists
+
+    private static let sessionListSeconds: TimeInterval = 5 * 60
+    private static let sessionListLimit = 300
+
+    /// Asks an agent whose earlier sessions come from itself (`ProviderCapabilities.pastSessions`) for them over ACP
+    /// `session/list`, at most every five minutes per account, page by page up to a few hundred. Calls `done` on the main
+    /// actor with what it listed; not at all when the agent offers no list or cannot start.
+    func listAgentSessions(_ provider: RunProvider, profileID: String, done: @escaping @MainActor ([AcpListedSession]) -> Void) {
+        guard provider.capabilities.pastSessions == .agent, provider.usesACP else { return }
+        let key = Self.effortKey(provider, profileID: profileID) + "|" + profileID
+        if let last = sessionsListed[key], Date().timeIntervalSince(last) < Self.sessionListSeconds { return }
+        guard let client = startAcpProbe(provider, profileID: profileID) else { return }
+        sessionsListed[key] = Date()
+        var collected: [AcpListedSession] = []
+        func finish() {
+            client.stop()
+            let sessions = collected
+            Task { @MainActor in done(sessions) }
+        }
+        func page(_ cursor: String?) {
+            client.request("session/list", AcpRPC.listParams(cursor: cursor)) { result in
+                guard case .success(let response) = result else { return finish() }
+                let parsed = AcpListedSession.page(response.dictionary)
+                collected += parsed.sessions
+                if let next = parsed.next, collected.count < Self.sessionListLimit { return page(next) }
+                finish()
+            }
+        }
+        client.request("initialize", AcpRPC.initializeParams()) { result in
+            guard case .success(let response) = result,
+                  AcpSessionCapabilities(initialize: response.dictionary).list else { return client.stop() }
+            page(nil)
+        }
+        closeProbe(after: 30) { client.stop() }
     }
 
     private func closeProbe(after seconds: UInt64, _ stop: @escaping @Sendable () -> Void) {

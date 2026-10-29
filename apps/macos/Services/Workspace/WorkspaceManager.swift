@@ -116,6 +116,8 @@ final class WorkspaceManager: ObservableObject {
     var acpIdleClose: [UUID: Task<Void, Never>] = [:]
     /// ACP: what the agent sent after its turn ended, until it shows it is really working again (see wakeAcp).
     var acpWakeBuffer: [UUID: [AcpEvent]] = [:]
+    /// ACP: the conversation a loaded session replays into a timeline that has none yet (a session the agent listed).
+    var acpReplays: [UUID: AcpReplay] = [:]
     /// ACP: ends a turn the agent started by itself, once it has been quiet for a moment.
     var acpWakeFinish: [UUID: Task<Void, Never>] = [:]
     /// Sessions with work still running in the background: they stay open longer between turns (see BackgroundWork).
@@ -156,6 +158,8 @@ final class WorkspaceManager: ObservableObject {
     /// Comments on a session's diff, waiting to go to the agent together.
     @Published var reviewComments: [UUID: [ReviewComment]] = [:]
     var modelsRefreshed: [RunProvider: Date] = [:]
+    /// When each agent account was last asked for its sessions (see `listAgentSessions`).
+    var sessionsListed: [String: Date] = [:]
     /// The model manifest in use: the bundled one, or a newer valid copy from Nook's repository (see
     /// WorkspaceManager+ModelManifest).
     @Published var modelManifest: ModelManifest?

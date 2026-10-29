@@ -115,6 +115,23 @@ extension AppModel {
         })
         workspace.readAgentVersions(connectedProviders)
         workspace.refreshModelManifest()
+        refreshListedSessions()
+    }
+
+    /// Asks the agents whose earlier sessions come from themselves (OpenCode, Cursor, Grok, the ACP agents you added) for
+    /// them, every connected account, so they show with the sessions read from disk and continue in Nook. Sessions Nook
+    /// runs itself already have their place in the list.
+    func refreshListedSessions() {
+        for provider in connectedProviders where provider.capabilities.pastSessions == .agent {
+            for profile in connectedProfiles(for: provider) {
+                workspace.listAgentSessions(provider, profileID: profile.id) { [weak self] listed in
+                    guard let self else { return }
+                    let own = Set(self.workspace.runs.compactMap(\.providerSessionID))
+                    let sessions = listed.filter { !own.contains($0.id) }.map { PastSession(listed: $0, agent: provider.kind, profileID: profile.id) }
+                    self.history.setListedSessions(sessions, account: provider.rawValue + "|" + profile.id)
+                }
+            }
+        }
     }
 
     /// Resolves account profile for a running session, or nil if unknown.

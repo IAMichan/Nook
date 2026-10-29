@@ -286,6 +286,53 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertFalse(GeminiChatLog.isLog(path: "/Users/me/.claude/projects/x/abc.jsonl"))
     }
 
+    func testSessionCapabilities() {
+        let all = AcpSessionCapabilities(initialize: ["agentCapabilities": [
+            "loadSession": true, "sessionCapabilities": ["list": [String: Any](), "resume": [String: Any](), "fork": [String: Any]()]
+        ]])
+        XCTAssertEqual(all, AcpSessionCapabilities(load: true, list: true, resume: true))
+        XCTAssertEqual(all.continueMethod, "session/resume", "resume continues without replaying what Nook keeps")
+        let loadOnly = AcpSessionCapabilities(initialize: ["agentCapabilities": ["loadSession": true, "sessionCapabilities": ["list": NSNull()]]])
+        XCTAssertEqual(loadOnly, AcpSessionCapabilities(load: true), "null is not offered")
+        XCTAssertEqual(loadOnly.continueMethod, "session/load")
+        XCTAssertFalse(AcpSessionCapabilities(initialize: [:]).continues)
+    }
+
+    func testListedSessions() {
+        let page = AcpListedSession.page([
+            "sessions": [
+                ["sessionId": "ses_1", "cwd": "/Users/me/app", "title": "Fix login", "updatedAt": "2026-10-29T10:00:00.000Z"],
+                ["sessionId": "ses_2", "cwd": "/Users/me/web", "updatedAt": "2026-10-28T09:00:00Z"],
+                ["sessionId": "", "cwd": "/x"],
+                ["sessionId": "ses_3"]
+            ],
+            "nextCursor": "c2"
+        ])
+        XCTAssertEqual(page.sessions.map(\.id), ["ses_1", "ses_2"], "a session without id or folder is left out")
+        XCTAssertEqual(page.sessions.first?.title, "Fix login")
+        XCTAssertNotNil(page.sessions.first?.updated)
+        XCTAssertNotNil(page.sessions.last?.updated, "seconds without fractions read too")
+        XCTAssertEqual(page.next, "c2")
+        XCTAssertNil(AcpListedSession.page(["sessions": [], "nextCursor": ""]).next)
+        XCTAssertEqual(AcpRPC.listParams(cursor: nil).count, 0)
+        XCTAssertEqual(AcpRPC.listParams(cursor: "c2")["cursor"] as? String, "c2")
+    }
+
+    func testReplayBecomesMessages() {
+        func update(_ kind: String, _ text: String) -> [AcpEvent] {
+            AcpMapper.events(.notification(method: "session/update", params: JSONBox(["sessionId": "s", "update": [
+                "sessionUpdate": kind, "content": ["type": "text", "text": text]
+            ]])))
+        }
+        var replay = AcpReplay()
+        for event in update("user_message_chunk", "Fix ") + update("user_message_chunk", "the login")
+            + update("agent_message_chunk", "Done") + update("agent_message_chunk", ".") + update("agent_thought_chunk", "hm") {
+            replay.add(event)
+        }
+        XCTAssertEqual(replay.finished.map(\.text), ["Fix the login", "Done."])
+        XCTAssertEqual(replay.finished.map(\.side), [.user, .agent])
+    }
+
     func testAgentLogLinesKeepOnlyErrors() {
         let lines = [
             "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",

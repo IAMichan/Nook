@@ -50,11 +50,17 @@ enum RunProvider: String, Codable, CaseIterable, Identifiable, Sendable {
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: false, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
-        case .opencode, .cursor, .grok, .antigravity, .acp:
-            // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost.
+        case .antigravity:
+            // ACP, with its conversations on disk (~/.gemini/antigravity) like Gemini CLI's.
             return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
                                         reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
                                         policies: [.ask, .acceptEdits, .bypass])
+        case .opencode, .cursor, .grok, .acp:
+            // ACP: permission requests, cancel, streamed messages and thoughts, usage updates with context and cost. Their
+            // earlier sessions come from the agent itself (`session/list`).
+            return ProviderCapabilities(approvals: true, interrupt: true, streamingText: true, planMode: true,
+                                        reportsCost: true, reportsContextWindow: true, reportsCacheTokens: true,
+                                        policies: [.ask, .acceptEdits, .bypass], pastSessions: .agent)
         }
     }
 
@@ -97,6 +103,13 @@ struct ProviderCapabilities: Equatable, Sendable {
     /// Without native steering, a message sent during a turn can still change it: Nook interrupts the turn and sends the
     /// message as the next prompt. Needs `interrupt` and ordinary follow-up turns.
     var supportsSteeringByInterruptRestart = true
+    /// Where Nook finds the agent's earlier sessions: its transcripts on disk (`AgentHistory`), or the agent's own list
+    /// (ACP `session/list`, when the agent offers it).
+    var pastSessions: PastSessionSource = .disk
+}
+
+enum PastSessionSource: Equatable, Sendable {
+    case disk, agent
 }
 
 /// How a turn's end reaches Nook. Strong: the agent sends an explicit terminal message (Claude Code's `result`, Codex's

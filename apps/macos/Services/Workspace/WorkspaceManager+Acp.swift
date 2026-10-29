@@ -92,8 +92,7 @@ extension WorkspaceManager {
                 case .failure(let error):
                     self.acpFailed(id, client, error, prompt: prompt ?? self.warmPrompts[id], executable: executable)
                 case .success(let response):
-                    let capabilities = (response.dictionary["agentCapabilities"] as? [String: Any]) ?? [:]
-                    client.canLoadSessions = (capabilities["loadSession"] as? Bool) ?? false
+                    client.sessionCapabilities = AcpSessionCapabilities(initialize: response.dictionary)
                     client.authMethods = AcpRPC.authMethodIDs(response.dictionary)
                     self.learnModels(provider, AgentModelCatalog.acp(response.dictionary), profileID: profileID)
                     guard provider == .antigravity else {
@@ -115,22 +114,33 @@ extension WorkspaceManager {
         }
     }
 
-    /// A new session, or the earlier one loaded again (its replay is dropped: Nook keeps the timeline itself).
+    /// A new session, or the earlier one continued: resumed when the agent offers it, else loaded again (its replay is
+    /// dropped: Nook keeps the timeline itself).
     /// A session the agent does not know any more starts anew (said in the timeline), and one that needs you to sign in
     /// signs in through the agent's own method first; each once.
     private func openAcpSession(_ id: UUID, _ client: AcpClient, bridge: (command: String, args: [String], env: [String: String])?,
                                 prompt: String?, executable: String, signedIn: Bool = false) {
         guard let run = run(id) else { return }
-        let loadID = client.canLoadSessions ? run.providerSessionID : nil
+        let capabilities = client.sessionCapabilities
+        let loadID = capabilities.continues ? run.providerSessionID : nil
         if run.providerSessionID != nil, loadID == nil {
             append(id, RunEvent(kind: .system, text: tr("ws.acp.noLoad", run.provider.displayName)))
         }
-        client.replaying = loadID != nil
-        client.request(loadID == nil ? "session/new" : "session/load",
+        // A session Nook has no conversation of yet (one the agent listed) is loaded with its replay, which fills the
+        // timeline; otherwise it is resumed without one when the agent can.
+        let fillsTimeline = loadID != nil && capabilities.load
+            && !timeline(id).contains { $0.kind == .user || $0.kind == .assistant }
+        let method = loadID == nil ? "session/new" : fillsTimeline ? "session/load" : capabilities.continueMethod
+        client.replaying = method == "session/load"
+        client.keepsReplay = fillsTimeline
+        acpReplays[id] = fillsTimeline ? AcpReplay() : nil
+        client.request(method,
                        AcpRPC.sessionParams(cwd: run.workingDirectory, bridge: bridge, loadID: loadID)) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 client.replaying = false
+                client.keepsReplay = false
+                self.finishAcpReplay(id)
                 switch result {
                 case .failure(let error):
                     guard self.acpClients[id] === client, client.isRunning else {
@@ -168,6 +178,14 @@ extension WorkspaceManager {
                     }
                 }
             }
+        }
+    }
+
+    /// The replayed conversation becomes the timeline's first messages.
+    private func finishAcpReplay(_ id: UUID) {
+        guard let replay = acpReplays.removeValue(forKey: id) else { return }
+        for message in replay.finished {
+            append(id, RunEvent(kind: message.side == .user ? .user : .assistant, text: message.text, state: .done))
         }
     }
 
@@ -347,6 +365,7 @@ extension WorkspaceManager {
         acpIdleClose[id] = nil
         acpWakeFinish.removeValue(forKey: id)?.cancel()
         acpWakeBuffer[id] = nil
+        acpReplays[id] = nil
         cancelAcpRequests(id, acpClients[id])
         acpClients.removeValue(forKey: id)?.stop()
     }
@@ -367,6 +386,15 @@ extension WorkspaceManager {
 
     private func handleAcp(_ id: UUID, _ client: AcpClient, _ message: CodexRPCMessage, _ events: [AcpEvent]) {
         guard acpClients[id] === client, !events.isEmpty else { return }
+        // The conversation a loaded session replays into an empty timeline (see openAcpSession).
+        if acpReplays[id] != nil, client.replaying {
+            for event in events { acpReplays[id]?.add(event) }
+            for case .permission(let rpcID, _, _) in events { client.respond(rpcID, AcpRPC.cancelledOutcome) }
+            for case .unsupportedRequest(let rpcID) in events { client.respondError(rpcID, message: "Nook does not provide this to agents.") }
+            let settings = events.filter(\.isSessionState)
+            if !settings.isEmpty { applyAcp(id, client, settings) }
+            return
+        }
         // What the session offers counts at once, in a turn or not.
         let settings = events.filter(\.isSessionState)
         if !settings.isEmpty { applyAcp(id, client, settings) }
@@ -448,6 +476,9 @@ extension WorkspaceManager {
                 }
             case .unsupportedRequest(let rpcID):
                 client.respondError(rpcID, message: "Nook does not provide this to agents.")
+            case .userChunk:
+                // Only a replay carries your own words back (see openAcpSession).
+                break
             case .commands(let commands):
                 if acpCommands[id] != commands { acpCommands[id] = commands }
             case .configOptions(let options):
@@ -519,7 +550,7 @@ extension WorkspaceManager {
     /// a session stays open instead: closing it would lose the conversation.
     private func scheduleAcpIdleClose(_ id: UUID) {
         acpIdleClose[id]?.cancel()
-        if let client = acpClients[id], !client.canLoadSessions { return }
+        if let client = acpClients[id], !client.sessionCapabilities.continues { return }
         let seconds = idleSeconds(id, Self.acpIdleSeconds)
         acpIdleClose[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
