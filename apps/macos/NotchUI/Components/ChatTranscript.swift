@@ -279,11 +279,11 @@ private struct ChatDayDivider: View {
     var body: some View {
         Text(label)
             .font(NookTheme.TextStyle.caption)
-            .foregroundStyle(NookTheme.textSecondary)
-            .padding(.horizontal, NookTheme.Spacing.md)
-            .padding(.vertical, NookTheme.Spacing.xxs)
-            .background(Capsule().fill(NookTheme.surface))
-            .overlay(Capsule().strokeBorder(NookTheme.hairline, lineWidth: 1))
+            .fontWeight(.semibold)
+            .foregroundStyle(NookTheme.textStrong)
+            .padding(.horizontal, NookTheme.Spacing.lg)
+            .padding(.vertical, NookTheme.Spacing.xs)
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control, style: .continuous).fill(NookTheme.chatTheirs))
             .frame(maxWidth: .infinity)
             .padding(.top, NookTheme.Spacing.xl)
             .padding(.bottom, NookTheme.Spacing.md)
@@ -371,9 +371,7 @@ private struct ChatBubbleView: View, Equatable {
 
     /// Whether this bubble shows its time: the last of a run, and your message that is still going out or failed (that
     /// must stay in sight). The others say it under the pointer, as a tooltip, so nothing in the chat shifts.
-    private var showsStamp: Bool {
-        last || bubble.ticks == .pending || bubble.ticks == .failed
-    }
+    private var showsStamp: Bool { true }
 
     /// When it was sent, and for your own how far it got.
     private var stamp: some View {
@@ -381,7 +379,7 @@ private struct ChatBubbleView: View, Equatable {
             Text(bubble.time)
                 .font(NookTheme.TextStyle.caption)
                 .monospacedDigit()
-                .foregroundStyle(NookTheme.textTertiary)
+                .foregroundStyle(NookTheme.chatStamp)
             if let ticks = bubble.ticks {
                 if bubble.readers.isEmpty {
                     TicksView(ticks: ticks)
@@ -413,7 +411,7 @@ private struct ChatBubbleView: View, Equatable {
         case .audio(let url, let seconds):
             ChatAudioView(url: url, seconds: seconds, name: attachment, fromMe: bubble.fromMe)
         default:
-            AttachmentButton(name: attachment, preview: bubble.image, action: onOpen)
+            AttachmentButton(name: attachment, preview: bubble.image, file: bubble.file, action: onOpen)
         }
     }
 
@@ -548,20 +546,12 @@ private struct ChatBubbleView: View, Equatable {
                 stamp.frame(maxWidth: bubble.poll == nil ? nil : CGFloat.infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xs : NookTheme.Spacing.lg))
-        .padding(.vertical, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.md))
-        .background(shape.fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.mint.opacity(0.13) : NookTheme.smoke)))
-        .help(showsStamp ? "" : bubble.time)
-    }
-
-    /// Round, with the first bubble of a run pointing at its writer the way a chat app's tail does.
-    private var shape: UnevenRoundedRectangle {
-        // As round as the bubbles in Nook's own chat: one shape for every conversation.
-        let round = NookTheme.Radius.bubble
-        let tail = NookTheme.Radius.chip
-        return UnevenRoundedRectangle(topLeadingRadius: first && !bubble.fromMe ? tail : round, bottomLeadingRadius: round,
-                                      bottomTrailingRadius: round, topTrailingRadius: first && bubble.fromMe ? tail : round,
-                                      style: .continuous)
+        .padding(.horizontal, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xs : NookTheme.Spacing.md + NookTheme.Spacing.xxs))
+        .padding(.vertical, mediaOnly ? 0 : (bare ? NookTheme.Spacing.xxs : NookTheme.Spacing.sm))
+        // Room for the tail on its side, on every bubble of the run, so their edges line up.
+        .padding(bubble.fromMe ? .trailing : .leading, bare ? 0 : ChatBubbleShape.tail)
+        .background(ChatBubbleShape(mine: bubble.fromMe, tailed: first)
+            .fill(bare ? Color.clear : (bubble.fromMe ? NookTheme.chatMine : NookTheme.chatTheirs)))
     }
 }
 
@@ -584,12 +574,16 @@ private struct MessageMenuButton: View {
         if onPicture {
             Circle().fill(NookTheme.ink.opacity(hovering ? 0.7 : 0.5))
         } else if bubble.fromMe {
+            // The bubble's own color, a shade lighter under the pointer: it sits on the bubble's corner.
             ZStack {
-                Circle().fill(NookTheme.canvas)
-                Circle().fill(NookTheme.mint.opacity(hovering ? 0.3 : 0.13))
+                Circle().fill(NookTheme.chatMine)
+                Circle().fill(NookTheme.paper.opacity(hovering ? 0.12 : 0))
             }
         } else {
-            Circle().fill(hovering ? NookTheme.rowSelected : NookTheme.smoke)
+            ZStack {
+                Circle().fill(NookTheme.chatTheirs)
+                Circle().fill(NookTheme.paper.opacity(hovering ? 0.1 : 0))
+            }
         }
     }
 
@@ -706,10 +700,8 @@ struct ChatTypingBubble: View {
         }
         .padding(.horizontal, NookTheme.Spacing.lg)
         .padding(.vertical, NookTheme.Spacing.md)
-        .background(UnevenRoundedRectangle(topLeadingRadius: NookTheme.Radius.chip, bottomLeadingRadius: NookTheme.Radius.sheet,
-                                           bottomTrailingRadius: NookTheme.Radius.sheet, topTrailingRadius: NookTheme.Radius.sheet,
-                                           style: .continuous)
-            .fill(NookTheme.smoke))
+        .padding(.leading, ChatBubbleShape.tail)
+        .background(ChatBubbleShape(mine: false, tailed: true).fill(NookTheme.chatTheirs))
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
@@ -964,7 +956,7 @@ struct TicksView: View {
         case .read: return NookTheme.blue
         case .failed: return NookTheme.coral
         // Grey that still reads on your mint bubble; read is blue, as on the phone.
-        case .pending, .sent, .delivered: return NookTheme.textSecondary
+        case .pending, .sent, .delivered: return NookTheme.chatStamp
         }
     }
 
@@ -1199,6 +1191,8 @@ struct PhotoButton: View {
 private struct AttachmentButton: View {
     let name: String
     var preview: NSImage? = nil
+    /// The file on this Mac, once Nook has it: its size shows beside its kind.
+    var file: URL? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -1226,7 +1220,7 @@ private struct AttachmentButton: View {
                         .truncationMode(.middle)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
-                    if let kind = Self.kind(of: name) {
+                    if let kind = Self.detail(of: name, file: file) {
                         Text(kind)
                             .font(NookTheme.TextStyle.caption)
                             .foregroundStyle(NookTheme.textTertiary)
@@ -1234,13 +1228,10 @@ private struct AttachmentButton: View {
                     }
                 }
                 Spacer(minLength: NookTheme.Spacing.sm)
-                Text(tr("card.attachment.view"))
-                    .font(NookTheme.TextStyle.label)
-                    .foregroundStyle(hovering ? NookTheme.paper : NookTheme.textSecondary)
             }
             .padding(.horizontal, NookTheme.Spacing.md + NookTheme.Spacing.xxs)
             .padding(.vertical, NookTheme.Spacing.md)
-            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.paper.opacity(hovering ? 0.09 : 0.05)))
+            .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.ink.opacity(hovering ? 0.32 : 0.22)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1260,9 +1251,14 @@ private struct AttachmentButton: View {
         return icon
     }
 
-    /// The kind of file, as macOS names it ("PDF document"); nil for a name without an extension.
-    private static func kind(of name: String) -> String? {
+    /// Its size and kind, as a chat app shows them under a file's name ("233 kB · pdf"); only the kind ("PDF document")
+    /// while the file is not on this Mac, nil for a name without an extension and no file.
+    private static func detail(of name: String, file: URL?) -> String? {
         let ext = (name as NSString).pathExtension
+        if let file, let bytes = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize {
+            let size = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+            return ext.isEmpty ? size : "\(size) · \(ext.lowercased())"
+        }
         guard !ext.isEmpty else { return nil }
         return UTType(filenameExtension: ext)?.localizedDescription ?? ext.uppercased()
     }
@@ -1278,4 +1274,34 @@ private struct TranscriptScrollGeometry: Equatable {
     var nearTop: Bool { offset <= 80 }
     /// The newest message is in view, give or take a line.
     var nearBottom: Bool { content <= container || offset + container >= content - 60 }
+}
+
+/// A chat app's message bubble: a rounded box with, on the first message of a run, a small tail at its top corner
+/// pointing at who wrote it, as the chat apps draw them. The tail sits in `tail` points of room on that side, which
+/// every bubble keeps so a run's edges line up.
+struct ChatBubbleShape: Shape {
+    let mine: Bool
+    let tailed: Bool
+    static let tail: CGFloat = 7
+
+    func path(in rect: CGRect) -> Path {
+        let radius = NookTheme.Radius.chatBubble
+        let body = CGRect(x: mine ? rect.minX : rect.minX + Self.tail, y: rect.minY,
+                          width: max(0, rect.width - Self.tail), height: rect.height)
+        var path = Path(roundedRect: body, cornerRadii: RectangleCornerRadii(
+            topLeading: tailed && !mine ? 0 : radius, bottomLeading: radius, bottomTrailing: radius,
+            topTrailing: tailed && mine ? 0 : radius), style: .continuous)
+        guard tailed else { return path }
+        let edge = mine ? body.maxX : body.minX
+        let tip = mine ? rect.maxX : rect.minX
+        let depth = min(Self.tail * 1.6, body.height)
+        var tailPath = Path()
+        tailPath.move(to: CGPoint(x: edge, y: body.minY))
+        tailPath.addLine(to: CGPoint(x: tip - (mine ? 1 : -1), y: body.minY))
+        tailPath.addQuadCurve(to: CGPoint(x: tip - (mine ? 2 : -2), y: body.minY + 2), control: CGPoint(x: tip, y: body.minY))
+        tailPath.addLine(to: CGPoint(x: edge, y: body.minY + depth))
+        tailPath.closeSubpath()
+        path.addPath(tailPath)
+        return path
+    }
 }
