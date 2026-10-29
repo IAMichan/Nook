@@ -342,8 +342,42 @@ struct ChatOwnLinkSteps: View {
     private var usesOwnLink: Bool { WhatsAppSettings.gateway == .gowa }
     private var installed: Bool { !usesOwnLink || WhatsAppGOWAInstaller.isInstalled }
 
+    /// WhatsApp linked (or another account on its way): three parts, the accounts first, then what reaches you, then the
+    /// gateway folded away. Not linked yet: the two steps that link it, with the gateway folded away below them.
     @ViewBuilder
     private var whatsAppSteps: some View {
+        if whatsApp.isConnected || whatsAppAccounts.links.count > 1 {
+            whatsAppPart(tr("whatsapp.manage.accounts")) { WhatsAppAccountList() }
+            NookDivider()
+            whatsAppPart(tr("whatsapp.manage.notifications")) { WhatsAppNoticeRows() }
+            NookDivider()
+            whatsAppGateway
+        } else {
+            whatsAppLinkSteps
+            NookDivider()
+            whatsAppGateway
+        }
+    }
+
+    /// One part of the WhatsApp sheet: its name, then its rows.
+    private func whatsAppPart<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
+            NookSectionLabel(title, inset: 0)
+            content()
+        }
+    }
+
+    private var whatsAppGateway: some View {
+        DisclosureGroup(isExpanded: $whatsAppOptions) {
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) { WhatsAppGatewayRows() }
+                .padding(.top, NookTheme.Spacing.sm)
+        } label: {
+            SettingLabel(tr("whatsapp.manage.gateway"), detail: tr("whatsapp.manage.gatewayDetail"))
+        }
+    }
+
+    @ViewBuilder
+    private var whatsAppLinkSteps: some View {
         SetupStep(number: 1, title: tr("chats.own.whatsapp.install"), done: installed && !installer.busy) {
             if installed && !installer.busy {
                 detail(tr("chats.own.whatsapp.installed"))
@@ -361,10 +395,8 @@ struct ChatOwnLinkSteps: View {
                 if case .failed(let why) = installer.step { SettingNote(why, tone: .error) }
             }
         }
-        SetupStep(number: 2, title: tr("chats.own.whatsapp.scan"), done: whatsApp.isConnected) {
-            if whatsApp.isConnected {
-                detail(whatsApp.statusLine)
-            } else if !WhatsAppSettings.enabled {
+        SetupStep(number: 2, title: tr("chats.own.whatsapp.scan"), done: false) {
+            if !WhatsAppSettings.enabled {
                 detail(tr("chats.own.whatsapp.scanDetail"))
                 Button(tr("chats.own.whatsapp.showQR")) {
                     whatsAppAccounts.setEnabled(true)
@@ -384,24 +416,6 @@ struct ChatOwnLinkSteps: View {
                     Button(tr("whatsapp.settings.retry")) { whatsAppAccounts.settingsChanged() }
                 }
             }
-        }
-        // Another account (a business number, a second phone), once the first is linked; it can wait.
-        if whatsApp.isConnected {
-            SetupStep(number: 3, title: tr("whatsapp.accounts.step"), done: whatsAppAccounts.links.count > 1) {
-                detail(tr("whatsapp.accounts.stepDetail"))
-                Form { WhatsAppAccountRows() }
-                    .formStyle(.grouped)
-                    .scrollContentBackground(.hidden)
-            }
-        }
-        // The rest of WhatsApp's link: which notifications reach you, reading, another gateway.
-        DisclosureGroup(isExpanded: $whatsAppOptions) {
-            Form { WhatsAppLinkSection() }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-                .frame(height: 420)
-        } label: {
-            SettingLabel(tr("chats.own.whatsapp.options"), detail: tr("chats.own.whatsapp.optionsDetail"))
         }
     }
 

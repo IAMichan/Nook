@@ -436,10 +436,14 @@ struct ChatsTab: View {
         // The pictures of the WhatsApp chats in the list, newest first, as their app shows them.
         // Again once the list of chats on the phone (and its channels) came in.
         .task(id: whatsApp.connected.map { "\($0.account) \($0.knownChats.count)" }.joined(separator: ",")) {
-            // Each account asks its own gateway device for the pictures of its own chats.
-            let chats = all.filter { $0.app == "whatsapp" }.prefix(60).compactMap(\.whatsAppChat).map(WAChatKey.split)
-            for link in whatsApp.connected {
-                await link.loadAvatars(chats.filter { $0.account == link.account }.map(\.jid))
+            // Each account asks its own gateway device for the pictures of its own newest chats, all accounts at once:
+            // one account's chats never wait behind the other's, nor fall outside the newest of all of them.
+            let chats = all.compactMap(\.whatsAppChat).map(WAChatKey.split)
+            await withTaskGroup(of: Void.self) { group in
+                for link in whatsApp.connected {
+                    let own = Array(chats.filter { $0.account == link.account }.prefix(60).map(\.jid))
+                    group.addTask { await link.loadAvatars(own) }
+                }
             }
         }
         // ⌘⇧[ and ⌘⇧] go to the chat above or below in the list, as they go through sessions on Agents.
