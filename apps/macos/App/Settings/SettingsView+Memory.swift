@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings › Memory: what Nook remembers about you, how it learns, and bringing over the old MCP memory server.
+/// Settings › Assistant: what Nook remembers about you, how it learns, and bringing over the old MCP memory server.
 /// Memory is built in: nothing to install, nothing leaves the Mac except, with an external brain, the few memories
 /// that matter for a question (and never the ones kept on this Mac).
 struct MemorySettingsSection: View {

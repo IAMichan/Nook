@@ -33,7 +33,7 @@ struct MCPPreset: Identifiable {
         }
     }
 
-    // No memory server here: memory is built into Nook (Settings › Memory), without Node or npx.
+    // No memory server here: memory is built into Nook (Settings › Assistant), without Node or npx.
     // Computed, so the texts of the key fields follow the app language.
     static var all: [MCPPreset] {
         [
@@ -97,42 +97,6 @@ struct MCPPreset: Identifiable {
 }
 
 /// What the Add MCP sheet opens with: a preset, or nothing for a pasted command.
-struct MCPAddRequest: Identifiable {
-    let preset: MCPPreset?
-    var id: String { preset?.id ?? "custom" }
-}
-
-/// A preset in the catalogue of Settings › Connections: the same card as every other service, with the MCP badge.
-struct MCPPresetCard: View {
-    let preset: MCPPreset
-    var add: (MCPAddRequest) -> Void
-
-    var body: some View {
-        GalleryCard(title: preset.name, detail: preset.detail) {
-            ServiceTile(domain: preset.iconDomain, fallback: preset.fallbackIcon, tint: preset.tint, size: 34, source: preset.appSource)
-        } accessory: {
-            ConnectMethodBadge(method: .mcp)
-        } action: {
-            add(MCPAddRequest(preset: preset))
-        }
-    }
-}
-
-/// The last card of the catalogue: your own MCP server from a pasted command, config, or web address.
-struct MCPCustomCard: View {
-    var add: (MCPAddRequest) -> Void
-
-    var body: some View {
-        GalleryCard(title: tr("mcp.custom.button"), detail: tr("mcp.custom.detail")) {
-            ServiceTile(domain: nil, fallback: "puzzlepiece.extension.fill", tint: MCPPreset.genericTint, size: 34)
-        } accessory: {
-            ConnectMethodBadge(method: .mcp)
-        } action: {
-            add(MCPAddRequest(preset: nil))
-        }
-    }
-}
-
 /// A server you added yourself, in the shared row shape: icon, name with its state, one line, the switch and a menu.
 /// Clicking the row opens its details.
 struct MCPServerCardRow: View {

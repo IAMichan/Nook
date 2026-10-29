@@ -39,7 +39,7 @@ struct InboxListView: View {
                             if client.phase == .connected {
                                 if client.inboxStatus == "chatsoff" {
                                     EmptyState(symbol: "bubble.left.and.bubble.right", title: "Chats are off on your Mac",
-                                               message: "Link WhatsApp or turn on Chats in Nook › Settings › Chats to see every chat here.") {}
+                                               message: "Link WhatsApp or turn on Chats in Nook › Settings › Connections to see every chat here.") {}
                                 } else {
                                     EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet",
                                                message: "New messages from WhatsApp and your other chat apps on your Mac show up here.") {}

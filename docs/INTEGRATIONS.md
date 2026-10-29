@@ -82,7 +82,7 @@ a later message of yours read the earlier ones too. In a private chat, their mes
 them. Neither WhatsApp gateway keeps receipts. So a message whose receipts came while Nook was not running (or before
 it was linked) shows only what those rules prove.
 
-WhatsApp can link more than one account through the same gateway (Settings › Chats › WhatsApp › Add account): each
+WhatsApp can link more than one account through the same gateway (Settings › Connections › WhatsApp › Add account): each
 account is a `WhatsAppLink` of its own, on its own GOWA device or OpenWA session (named after its `WAAccount` id), with
 its own QR, webhook port (the first account's port plus its place in the list) and read marks. The rest of Nook knows a
 chat by its key across accounts (`WAChatKey`): the first account's chats by their JID alone, so nothing kept from before

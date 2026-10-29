@@ -13,26 +13,11 @@ enum CloudConnectorViews {
         return makeRow(config, capabilities: capabilities, onChange: onChange)
     }
 
-    /// A service that is not connected yet: a card in the gallery. Clicking opens the step-by-step setup.
-    static func card(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
-        guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
-        return makeCard(config, capabilities: capabilities, onChange: onChange)
-    }
-
-    /// A service that is not connected yet, as a calm row with a Connect button (opens the step-by-step setup).
-    static func linkRow(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
-        guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
-        return makeLinkRow(config, capabilities: capabilities, onChange: onChange)
-    }
-
-    /// The setup sheet on its own, for a row elsewhere that offers "Use a key instead".
+    /// The setup sheet on its own: the steps while not connected, its management once it is (the Add sheet, and a row
+    /// elsewhere that offers "Use a key instead").
     static func setupSheet(_ source: ContextSource, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
         guard let config = source as? any CloudConnectorConfig else { return AnyView(EmptyView()) }
         return makeSheet(config, capabilities: capabilities, onChange: onChange)
-    }
-
-    private static func makeLinkRow<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
-        AnyView(ServiceLinkRow(connector: connector, capabilities: capabilities, onChange: onChange))
     }
 
     private static func makeSheet<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
@@ -41,10 +26,6 @@ enum CloudConnectorViews {
 
     private static func makeRow<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
         AnyView(ServiceRow(connector: connector, capabilities: capabilities, onChange: onChange))
-    }
-
-    private static func makeCard<C: CloudConnectorConfig>(_ connector: C, capabilities: String, onChange: @escaping () -> Void) -> AnyView {
-        AnyView(ServiceCard(connector: connector, capabilities: capabilities, onChange: onChange))
     }
 }
 
@@ -127,47 +108,30 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         connector.id == "github" ? tr("connector.githubFinishLogin") : tr("connect.waiting", connector.title)
     }
 
+    /// The row's state in the words every row of Settings › Accounts & connections uses.
+    private var status: ServiceStatus { signingIn ? .connecting : health.status }
+
+    /// The same row as every other connection: icon, name with its state, one line, then Fix when it needs you, the
+    /// switch, and Manage (its sheet).
     var body: some View {
-        HStack(spacing: 12) {
-            Button { showSetup = true } label: {
-                HStack(spacing: 12) {
-                    ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 30, source: connector.id)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(connector.title)
-                        Text(signingIn ? signingInDetail : repairFailure ?? ServiceState.summary(of: connector, health: health))
-                            .font(NookTheme.TextStyle.detail)
-                            .foregroundStyle(health == .broken || repairFailure != nil ? ConnectionHealth.broken.color : NookTheme.textSecondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    if health != .broken && health != .needsYou {
-                        HealthPill(health: health)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(tr("settings2.service.manageHelp", connector.title))
-            if signingIn {
-                ProgressView().controlSize(.small)
-            } else if health == .broken || health == .needsYou {
-                Button { repair() } label: {
-                    Text(tr("settings2.fix"))
-                        .font(NookTheme.TextStyle.label)
-                        .foregroundStyle(NookTheme.ink)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(health.color))
-                }
-                .buttonStyle(.plain)
+        ServiceRowLayout(domain: connector.iconDomain, symbol: connector.symbol, tint: connector.accent, title: connector.title,
+                         detail: signingIn ? signingInDetail : repairFailure ?? ServiceState.summary(of: connector, health: health),
+                         status: status, detailIsError: health == .broken || repairFailure != nil, source: connector.id) {
+            if health == .broken || health == .needsYou, !signingIn {
+                Button(tr("settings2.fix")) { repair() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(health.color)
+                    .controlSize(.small)
             }
             Toggle(tr("music.on"), isOn: Binding(get: { isOn }, set: { setOn($0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .help(tr("settings2.service.toggleHelp"))
+            Button(tr("settings2.manage")) { showSetup = true }
+                .controlSize(.small)
+                .help(tr("settings2.service.manageHelp", connector.title))
         }
-        .padding(.vertical, 3)
         .onAppear { isOn = ConnectorToggle.isOn(connector.id) }
         .sheet(isPresented: $showSetup, onDismiss: {
             isOn = ConnectorToggle.isOn(connector.id)
@@ -236,50 +200,6 @@ private struct ServiceRow<C: CloudConnectorConfig>: View {
         Task { @MainActor in
             await target.refresh()
             done()
-        }
-    }
-}
-
-// MARK: - Link row (not connected yet)
-
-private struct ServiceLinkRow<C: CloudConnectorConfig>: View {
-    @ObservedObject var connector: C
-    let capabilities: String
-    let onChange: () -> Void
-    @State private var showSetup = false
-
-    var body: some View {
-        ServiceRowLayout(domain: connector.iconDomain, symbol: connector.symbol, tint: connector.accent, title: connector.title,
-                         detail: ServiceState.tagline(connector.id) + " · " + tr("connect.method.key"),
-                         status: .notLinked, source: connector.id) {
-            Button(tr("connect.connect")) { showSetup = true }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-        }
-        .sheet(isPresented: $showSetup, onDismiss: onChange) {
-            ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
-        }
-    }
-}
-
-// MARK: - Card (not connected yet)
-
-private struct ServiceCard<C: CloudConnectorConfig>: View {
-    @ObservedObject var connector: C
-    let capabilities: String
-    let onChange: () -> Void
-    @State private var showSetup = false
-
-    var body: some View {
-        GalleryCard(title: connector.title, detail: ServiceState.tagline(connector.id)) {
-            ServiceTile(domain: connector.iconDomain, fallback: connector.symbol, tint: connector.accent, size: 34, source: connector.id)
-        } accessory: {
-            ConnectMethodBadge(method: .key)
-        } action: {
-            showSetup = true
-        }
-        .sheet(isPresented: $showSetup, onDismiss: onChange) {
-            ServiceSetupSheet(connector: connector, capabilities: capabilities, onChange: onChange)
         }
     }
 }

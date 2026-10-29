@@ -445,7 +445,7 @@ final class AppSettings: ObservableObject {
     @Published var checkAnswers: Bool {
         didSet { UserDefaults.standard.set(checkAnswers, forKey: "checkAnswers") }
     }
-    /// Memory: what Nook learned about the user goes along with every question (Settings › Memory).
+    /// Memory: what Nook learned about the user goes along with every question (Settings › Assistant).
     @Published var useMemory: Bool {
         didSet { UserDefaults.standard.set(useMemory, forKey: "useMemory") }
     }

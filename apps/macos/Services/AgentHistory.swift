@@ -336,7 +336,7 @@ final class AgentHistory: ObservableObject {
     @Published private(set) var profileAccounts: [String: AgentAccount] = [:]
     /// Per account: tokens and sessions for today and this week.
     @Published private(set) var profileUsage: [String: AgentUsageSummary] = [:]
-    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Usage.
+    /// Every agent's tokens per hour and model over the last 90 days, for Settings › Coding agents.
     @Published private(set) var ledger = UsageLedger()
     /// Which agents are installed on this Mac (presence of ~/.claude or ~/.codex).
     @Published private(set) var installed: Set<AgentKind> = []
