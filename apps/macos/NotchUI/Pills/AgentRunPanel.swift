@@ -1005,9 +1005,10 @@ struct AgentRunPanel: View {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             // Return while a queued message is open in the box saves it instead of sending.
             if editingQueued != nil { saveQueuedEdit(); return }
-            guard !text.isEmpty, !active else { return }
+            guard composerModel.hasContent(text), !active else { return }
             let outgoing = composerModel.outgoing(text)
             draft = ""
+            images = []
             let message = quotes.message(outgoing.send)
             quotes.removeAll()
             workspace.send(runID, text: message)
@@ -1020,9 +1021,10 @@ struct AgentRunPanel: View {
             {
                 if editingQueued != nil { saveQueuedEdit(); return }
                 let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { return }
+                guard composerModel.hasContent(text) else { return }
                 let outgoing = composerModel.outgoing(text)
                 draft = ""
+                images = []
                 let message = quotes.message(outgoing.send)
                 quotes.removeAll()
                 if ComposerDispatch.resolve(busy: true, intent: intent, canSteer: canSteer) == .steer,
