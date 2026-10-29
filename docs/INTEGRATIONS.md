@@ -109,6 +109,7 @@ check the agent's protocol before you write `–`.
 | Resume a past session | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (`session/load`) |
 | Several accounts side by side | ✓ (`CLAUDE_CONFIG_DIR`) | ✓ (`CODEX_HOME`) | – (no home variable) | – (same) | – (same) | – (same) | – (same) | – (same) |
 | Subscription limits | ✓ | ✓ | – | ✓ | – | – | – | – |
+| A turn that failed on an expired login offers to sign in again (`AgentSignInFailure`) | ✓ (`claude /login`) | ✓ (`codex login`) | ✓ | ✓ (in your browser) | ✓ (`opencode auth login`) | ✓ (`cursor-agent login`) | ✓ | – (signs in itself, in its next session) |
 
 ## Coding agent timeline
 

@@ -351,6 +351,7 @@ targets:
       - path: Services/Workspace/SettingsResolver.swift
       - path: Services/Workspace/ProjectSettings.swift
       - path: Services/Workspace/AgentReadiness.swift
+      - path: Services/Workspace/AgentSignInFailure.swift
       - path: Services/Workspace/ModelComparison.swift
       - path: Services/Workspace/SyntaxTokenizer.swift
       - path: Services/Workspace/Keybindings.swift
