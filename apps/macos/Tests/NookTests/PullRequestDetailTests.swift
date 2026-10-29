@@ -193,6 +193,33 @@ final class PullRequestDetailTests: XCTestCase {
         XCTAssertEqual(detail.lineCommentCount, 0)
     }
 
+    func testParsesAssigneesMilestoneForkAndAutoMerge() throws {
+        let plain = try XCTUnwrap(PullRequestDetailParser.detail(pull: try json(pull)))
+        XCTAssertEqual(plain.assignees, [])
+        XCTAssertNil(plain.milestone)
+        XCTAssertNil(plain.headOwner)
+        XCTAssertNil(plain.autoMerge)
+
+        var object = try json(pull)
+        object["requested_reviewers"] = [["login": "bob"]]
+        object["requested_teams"] = [["name": "core"]]
+        object["assignees"] = [["login": "ada"], ["login": "zoe"]]
+        object["milestone"] = ["title": "v2.0"]
+        object["head"] = ["ref": "feature/merge", "sha": "abc1234def",
+                          "repo": ["full_name": "zoe/app", "owner": ["login": "zoe"]] as [String: Any]] as [String: Any]
+        object["auto_merge"] = ["merge_method": "squash", "enabled_by": ["login": "bob"]] as [String: Any]
+        let detail = try XCTUnwrap(PullRequestDetailParser.detail(pull: object))
+        XCTAssertEqual(detail.requestedTeams, ["core"])
+        XCTAssertEqual(detail.assignees, ["ada", "zoe"])
+        XCTAssertEqual(detail.milestone, "v2.0")
+        XCTAssertEqual(detail.headOwner, "zoe")
+        XCTAssertEqual(detail.autoMerge, PullRequestAutoMerge(method: .squash, enabledBy: "bob"))
+
+        // The same repository (in another case) is no fork.
+        object["head"] = ["ref": "feature/merge", "sha": "abc1234def", "repo": ["full_name": "ACME/app"]] as [String: Any]
+        XCTAssertNil(try XCTUnwrap(PullRequestDetailParser.detail(pull: object)).headOwner)
+    }
+
     func testReviewerCandidatesLeaveOutAuthorBotsAndThoseAsked() throws {
         var object = try json(pull)
         object["requested_reviewers"] = [["login": "Bob"]]

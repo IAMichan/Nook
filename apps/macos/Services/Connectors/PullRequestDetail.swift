@@ -37,6 +37,17 @@ struct PullRequestDetail: Equatable, Sendable {
     var canPush: Bool? = nil
     /// The people and teams asked for a review who have not answered yet, as GitHub lists them.
     var requestedReviewers: [String] = []
+    /// The teams among `requestedReviewers`: a team has no picture of its own, so the page draws it differently.
+    var requestedTeams: [String] = []
+    /// The people the pull request is assigned to.
+    var assignees: [String] = []
+    /// The milestone it belongs to, if any.
+    var milestone: String? = nil
+    /// The owner of the head branch's repository when the pull request comes from a fork ("ada" for `ada:feature`); nil
+    /// when head and base are the same repository, or the fork is gone.
+    var headOwner: String? = nil
+    /// Auto-merge, once someone turned it on: GitHub merges by itself when everything it waits for is in.
+    var autoMerge: PullRequestAutoMerge? = nil
     var labels: [String] = []
     /// Each label's color as six hex digits, as the list's rows have them.
     var labelColors: [String: String] = [:]
@@ -129,6 +140,13 @@ struct PullRequestDetail: Equatable, Sendable {
         if mergeable == nil { return "agents.pr.note.checking" }
         return checkSummary == .failing ? "agents.pr.note.unstable" : nil
     }
+}
+
+/// Auto-merge on a pull request: how GitHub will merge it, and who turned it on.
+struct PullRequestAutoMerge: Equatable, Sendable {
+    /// Nil when GitHub names a method Nook does not know.
+    let method: PullRequestMergeMethod?
+    let enabledBy: String
 }
 
 /// The part of a pull request that takes the most requests to read: the timeline, the commits and the files.
@@ -310,8 +328,22 @@ enum PullRequestDetailParser {
             headSHA: (head["sha"] as? String) ?? "", additions: int(pull["additions"]) ?? 0, deletions: int(pull["deletions"]) ?? 0,
             changedFiles: int(pull["changed_files"]) ?? 0, created: date(pull["created_at"]), updated: date(pull["updated_at"]),
             mergeable: pull["mergeable"] as? Bool, mergeState: ((pull["mergeable_state"] as? String) ?? "unknown").lowercased())
+        detail.requestedTeams = ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.requestedReviewers = ((pull["requested_reviewers"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
-            + ((pull["requested_teams"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+            + detail.requestedTeams
+        detail.assignees = ((pull["assignees"] as? [[String: Any]]) ?? []).compactMap { $0["login"] as? String }
+        detail.milestone = ((pull["milestone"] as? [String: Any])?["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // A fork's branch is named with its owner, as GitHub does ("ada:feature"); the fork may since have been deleted.
+        if let headRepo = head["repo"] as? [String: Any], let headName = headRepo["full_name"] as? String,
+           !repo.isEmpty, headName.lowercased() != repo.lowercased() {
+            detail.headOwner = ((headRepo["owner"] as? [String: Any])?["login"] as? String)
+                ?? headName.split(separator: "/").first.map(String.init)
+        }
+        if let auto = pull["auto_merge"] as? [String: Any] {
+            detail.autoMerge = PullRequestAutoMerge(
+                method: (auto["merge_method"] as? String).flatMap(PullRequestMergeMethod.init(rawValue:)),
+                enabledBy: login(auto["enabled_by"]))
+        }
         detail.labels = ((pull["labels"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
         detail.labelColors = PullRequestGraphQL.labelColors((pull["labels"] as? [[String: Any]]) ?? [])
         detail.nodeID = (pull["node_id"] as? String) ?? ""
