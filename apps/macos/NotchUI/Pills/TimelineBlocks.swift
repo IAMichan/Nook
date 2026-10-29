@@ -133,8 +133,10 @@ enum ToolTallyText {
         guard !parts.isEmpty else { return tr("ws.group.other.many", 0) }
         let named = parts.prefix(2).map { phrase($0.category, $0.count) }
         let rest = parts.dropFirst(2).reduce(0) { $0 + $1.count }
-        if rest > 0 { return tr("ws.group.more", named[0], named[1], rest) }
-        return named.count == 2 ? tr("ws.group.and", named[0], named[1]) : named[0]
+        let text = rest > 0 ? tr("ws.group.more", named[0], named[1], rest)
+            : (named.count == 2 ? tr("ws.group.and", named[0], named[1]) : named[0])
+        // "changed 2 files" opens a sentence of its own with a capital.
+        return text.prefix(1).uppercased() + text.dropFirst()
     }
 
     private static func phrase(_ category: ToolCategory, _ count: Int) -> String {

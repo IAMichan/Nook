@@ -135,7 +135,11 @@ extension CompanionServer {
         switch event.kind {
         case .user: kind = .user
         case .assistant: kind = .assistant
-        case .tool: kind = .tool
+        case .tool:
+            // What the step was about, as a terminal session's step says it ("npm test", not "Bash · npm test"), so the
+            // phone reads both alike.
+            kind = .tool
+            text = AgentToolStep(event: event).summary
         case .fileChange:
             kind = .change
             if text.isEmpty { text = event.detail ?? "" }
@@ -145,7 +149,8 @@ extension CompanionServer {
         case .thinking, .approval, .result: return nil
         }
         let clipped = CompanionPolicy.clip(text)
-        guard !clipped.isEmpty else { return nil }
+        // A step can be about nothing in particular (a task list): its tool alone says what it was.
+        guard !clipped.isEmpty || kind == .tool else { return nil }
         return TimelineEntry(id: event.id.uuidString, kind: kind, text: clipped, detail: detail.map { CompanionPolicy.clip($0, limit: 120) },
                              date: event.date.timeIntervalSince1970, failed: event.state == .failed)
     }

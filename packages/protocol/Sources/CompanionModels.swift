@@ -332,10 +332,14 @@ struct TimelineEntry: Codable, Equatable, Identifiable, Sendable {
     var id: String
     var kind: Kind
     var text: String
-    /// The tool's name, or the file of a change.
+    /// The tool's name, or the file of a change; `compacted` on the note that the agent's context was compacted.
     var detail: String?
     var date: Double
     var failed: Bool
+
+    /// The `detail` of a compaction note, which the phone shows as a quiet word across the conversation rather than as
+    /// a line of the work.
+    static let compacted = "compacted"
 }
 
 /// One of Nook's own chats in the list.

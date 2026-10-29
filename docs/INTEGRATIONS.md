@@ -148,7 +148,11 @@ and whether Nook or a terminal runs it: messages are `TranscriptUserMessage` and
 (`TranscriptMessage.swift`), the work between them `TranscriptWorkLine`, `TranscriptThought`, `TranscriptStepDetail`,
 `TranscriptWorkGroup`, `TranscriptFold`, `TranscriptWorkingLine` and `TranscriptLiveLine` (`TranscriptWork.swift`). A
 session Nook runs translates a tool call into the transcript's step with `AgentToolStep(event:)`; a new kind of row is
-added to those views, never drawn by one side alone.
+added to those views, never drawn by one side alone. The iPhone companion draws its conversations with the same rows
+(`TranscriptViews.swift`): the Mac sends a session Nook runs and one in a terminal as the same `TimelineEntry`s (a step's
+summary without its tool's name, a compaction marked `TimelineEntry.compacted`), and the phone groups steps under the
+Mac's sentence ("Ran 3 commands and read 2 files"). The phone gets no thinking and no tool output, for either kind of
+session.
 
 A session's title is the name the agent gave it, when it gives one: Claude Code's `custom-title` lines (the Claude app
 names every session, `/rename` too), Codex's `thread_name` in `session_index.jsonl`, and Antigravity's
