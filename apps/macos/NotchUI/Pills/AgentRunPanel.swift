@@ -692,7 +692,7 @@ struct AgentRunPanel: View {
             .onChange(of: events.count) { _, _ in
                 if scroll.shouldFollowEnd { withAnimation(NookTheme.scroll) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
-            .onChange(of: events.last?.text.count ?? 0) { _, _ in
+            .onChange(of: events.last?.text.utf8.count ?? 0) { _, _ in
                 if run.status.isActive, scroll.shouldFollowEnd { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             // You sent something: it is the newest thing and follows again.
@@ -1254,20 +1254,44 @@ private final class RunTimelineDerived {
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
+    /// The pull request the events before the last one link, so a streamed answer only has to look at itself.
+    private var pullRequestBeforeLast: URL?
+
     @discardableResult
     func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
         let active = run.status.isActive
-        if let key, key.active == active, key.directory == run.workingDirectory, key.tasks == run.tasks, key.all == all {
-            return self
-        }
+        let sameRun = key.map { $0.active == active && $0.directory == run.workingDirectory && $0.tasks == run.tasks } ?? false
+        if sameRun, let key, key.all == all { return self }
+        // While the agent writes, only the text of its last answer grows, many times a second. The blocks show that text;
+        // the turns, outputs, running command and earlier links do not read it, and each walks the whole session (an edit's
+        // diff, every tool's input as JSON), so they stay as they are.
+        let streamed = sameRun && key.map { Self.onlyStreamed(from: $0.all, to: all) } == true
         key = (all, active, run.tasks, run.workingDirectory)
         events = all.filter { !($0.kind == .system && $0.tool == "launch") }
         blocks = TimelinePresentation.blocks(events, active: active)
+        if streamed, let last = all.last {
+            createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast
+            return self
+        }
         turns = TurnDiff.collect(events: all)
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
-        createdPullRequest = RunPullRequestLinks.last(in: all)
+        pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
+        createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
         return self
+    }
+
+    /// Whether `new` is `old` with only more (or other) text in its last answer or thinking: the same events, the last one
+    /// the same apart from its text, already written to, and not a plan (whose text is an output) nor turning into a
+    /// background notice.
+    private static func onlyStreamed(from old: [RunEvent], to new: [RunEvent]) -> Bool {
+        guard old.count == new.count, var before = old.last, let after = new.last, before.id == after.id,
+              before.kind == .assistant || before.kind == .thinking, before.tool != "plan",
+              // The first words make an answer of an empty event: the turns read which event answers.
+              !before.text.isEmpty else { return false }
+        let wasNotice = BackgroundWork.isNotice(before)
+        before.text = after.text
+        return before == after && wasNotice == BackgroundWork.isNotice(after) && old.dropLast().elementsEqual(new.dropLast())
     }
 }
 
@@ -1291,7 +1315,7 @@ final class RunPullRequestLinks {
 
     /// The last pull request link an event carries: the agent's words, or what a tool that made or showed one printed
     /// (`gh pr create` prints its link, and the agent does not always repeat it).
-    private nonisolated static func pullRequest(in event: RunEvent) -> URL? {
+    nonisolated static func pullRequest(in event: RunEvent) -> URL? {
         switch event.kind {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)

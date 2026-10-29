@@ -134,12 +134,13 @@ struct AgentsTab: View {
             app.adoptAccounts()
             app.history.refresh()
         }
-        // Keep sessions and usage up to date while the tab remains open.
+        // Keep sessions and usage up to date while the tab remains open. Without the loading state: a refresh in the
+        // background that flips it redraws the whole window twice for a list that is already there.
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
                 app.adoptAccounts()
-                app.history.refresh()
+                app.history.refresh(showsProgress: false)
             }
         }
     }

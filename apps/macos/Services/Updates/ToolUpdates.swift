@@ -19,8 +19,12 @@ final class ToolUpdates {
 
     func start() {
         guard timer == nil else { return }
-        // Downloads an earlier update replaced, now that nothing runs from them.
-        AcpInstaller.prune(keeping: CustomAgents.load().compactMap(\.installedAt))
+        // Downloads an earlier update replaced, now that nothing runs from them. Removing one is a whole node tree: in
+        // the background, not while Nook starts.
+        let stale = AcpInstaller.stale(keeping: CustomAgents.load().compactMap(\.installedAt))
+        if !stale.isEmpty {
+            Task.detached(priority: .background) { stale.forEach(AcpInstaller.uninstall) }
+        }
         Task { [weak self] in
             try? await Task.sleep(for: Self.firstCheck)
             await self?.check()

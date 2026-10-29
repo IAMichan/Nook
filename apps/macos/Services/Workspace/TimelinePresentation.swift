@@ -425,8 +425,8 @@ enum BackgroundWork {
     /// after each command it leaves running ("task-148 has been launched in the background. I will wait for it to
     /// complete before proceeding."): a quiet line among the commands, not an answer. Empty for any other text.
     static func notice(_ text: String) -> [String] {
-        let pattern = #"\s*([\w.-]+) has been (?:launched|started) in the background\.?(?:\s*I will wait for it to (?:complete|finish) before proceeding\.?)?\s*"#
-        guard !text.isEmpty, text.count <= 2_000, let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        // Most answers are longer than a notice: their size alone rules them out, before counting characters.
+        guard !text.isEmpty, text.utf8.count <= 8_000, text.count <= 2_000, let regex = noticePattern else { return [] }
         var tasks: [String] = []
         var end = text.startIndex
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
@@ -436,6 +436,11 @@ enum BackgroundWork {
         }
         return end == text.endIndex ? tasks : []
     }
+
+    /// Compiled once: every assistant message of a session is checked against it each time its timeline is laid out.
+    private static let noticePattern = try? NSRegularExpression(
+        pattern: #"\s*([\w.-]+) has been (?:launched|started) in the background\.?(?:\s*I will wait for it to (?:complete|finish) before proceeding\.?)?\s*"#,
+        options: [.caseInsensitive])
 
     static func isNotice(_ event: RunEvent) -> Bool {
         event.kind == .assistant && !notice(event.text).isEmpty

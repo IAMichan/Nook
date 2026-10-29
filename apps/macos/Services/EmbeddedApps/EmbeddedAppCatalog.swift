@@ -472,15 +472,32 @@ enum InstalledMacApps {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cached: (apps: [EmbeddedApp], at: Date)?
+    nonisolated(unsafe) private static var refreshing = false
 
-    /// Scanned again at most once a minute, so an app installed meanwhile shows up.
+    /// Scanned again at most once a minute, so an app installed meanwhile shows up. Only the first scan makes the caller
+    /// wait: after that the list it has is returned at once and a new scan runs in the background, as the chat's composer
+    /// asks for it on every redraw (also while an answer streams in) and a scan reads five folders.
     static var all: [EmbeddedApp] {
         lock.lock()
         defer { lock.unlock() }
-        if let cached, Date().timeIntervalSince(cached.at) < 60 { return cached.apps }
+        if let cached {
+            if Date().timeIntervalSince(cached.at) >= 60, !refreshing {
+                refreshing = true
+                DispatchQueue.global(qos: .utility).async { refresh() }
+            }
+            return cached.apps
+        }
         let apps = make(paths: scan())
         cached = (apps, Date())
         return apps
+    }
+
+    private static func refresh() {
+        let apps = make(paths: scan())
+        lock.lock()
+        cached = (apps, Date())
+        refreshing = false
+        lock.unlock()
     }
 
     /// The `.app` bundles in `folders`, and one folder deeper in /Applications ("/Applications/Microsoft Office/…").
