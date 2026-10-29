@@ -398,6 +398,47 @@ struct InboxReaction: Codable, Equatable, Sendable {
     var people: [String]? = nil
 }
 
+/// Someone else's emoji on a message in a chat, as it came in. While nothing newer was written there, the chat's line in
+/// the list says it ("Reacted with 👍 to “See you”") instead of the newest message, the same for every chat app.
+struct ChatReactionNote: Codable, Equatable, Sendable {
+    var emoji: String
+    /// Who put it there, as the app names them (WhatsApp: their id, named when shown); empty when the app does not say.
+    var person: String = ""
+    /// The message it is on, by its id in Nook.
+    var message: String
+    /// That message as one line (`InboxMessage.summary`).
+    var text: String
+    var date: Date
+
+    /// The longest bit of the message the line quotes: the list cuts the rest anyway, and the emoji must stay visible.
+    static let quoteLength = 40
+
+    /// The line in the chat list. In a group it says who (`who`, their name as the list shows it); in a private chat
+    /// the chat's name already does.
+    func line(who: String) -> String {
+        let plain = ChatFormat.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let quote = plain.count > Self.quoteLength ? String(plain.prefix(Self.quoteLength)) + "…" : plain
+        return who.isEmpty ? tr("chats.row.reacted", emoji, quote) : tr("chats.row.reactedBy", who, emoji, quote)
+    }
+
+    /// The newest emoji someone else put on one of your messages between `old` and `new` (the same message, read
+    /// again), dated `date`: the one whose count went up, with who when the app names them. Nil when none came.
+    static func added(on new: InboxMessage, before old: [InboxReaction]?, at date: Date) -> ChatReactionNote? {
+        guard new.isMine, let chips = new.reactions else { return nil }
+        let earlier = old ?? []
+        for chip in chips.reversed() {
+            let was = earlier.first { $0.emoji == chip.emoji }
+            // Yours on it does not count: only someone else's emoji is news.
+            let others = chip.count - (chip.mine ? 1 : 0)
+            let othersBefore = was.map { $0.count - ($0.mine ? 1 : 0) } ?? 0
+            guard others > othersBefore else { continue }
+            let person = (chip.people ?? []).first { !(was?.people ?? []).contains($0) } ?? ""
+            return ChatReactionNote(emoji: chip.emoji, person: person, message: new.id, text: new.summary, date: date)
+        }
+        return nil
+    }
+}
+
 /// One chat in one app, with its newest messages.
 struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// The app and the chat's name, folded: "telegram|familie".
@@ -428,6 +469,14 @@ struct InboxThread: Codable, Equatable, Identifiable, Sendable {
     /// A bridge reads this chat from its app (`ChatInbox.merge`), which keeps its whole history: Nook keeps the newest
     /// and scrolls back there. A chat only notifications bring has nowhere else to come from, so it keeps every message.
     var bridged: Bool? = nil
+    /// The newest emoji someone else put on a message here: the chat's line while nothing newer was written.
+    var reaction: ChatReactionNote? = nil
+
+    /// The emoji the chat's line shows instead of its newest message: one that came after it, on a message still here.
+    var newestReaction: ChatReactionNote? {
+        guard let reaction, reaction.date >= last, messages.contains(where: { $0.id == reaction.message }) else { return nil }
+        return reaction
+    }
 
     /// How many messages it keeps.
     var keeps: Int { bridged == true ? max(capacity ?? 0, ChatInbox.keep) : ChatInbox.notificationKeep }
@@ -669,7 +718,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
         // Someone's emoji on a message goes on that message, not into the chat as a message of its own.
         // Who: the group member the notification names, else the person of the private chat.
         if let reaction = ChatCapture.reaction(notice.text) {
-            return react(reaction, in: key, by: ChatCapture.unmarked(notice.sender.isEmpty ? notice.chat : notice.sender))
+            return react(reaction, in: key, by: ChatCapture.unmarked(notice.sender.isEmpty ? notice.chat : notice.sender),
+                         at: notice.date)
         }
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
@@ -690,7 +740,8 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     /// Puts someone's emoji from a notification on the message it is on: the one whose text it quotes, else your newest
     /// (what people react to). False when the chat has no such message or already shows that emoji there.
-    mutating func react(_ reaction: (emoji: String, target: String?), in key: String, by person: String = "") -> Bool {
+    mutating func react(_ reaction: (emoji: String, target: String?), in key: String, by person: String = "",
+                        at date: Date = Date()) -> Bool {
         guard let messages = threads[key]?.messages else { return false }
         let target = reaction.target.map { ChatFormat.plain($0).trimmingCharacters(in: CharacterSet(charactersIn: "…. ")) }
         let index = target.flatMap { target in
@@ -704,6 +755,9 @@ struct ChatInbox: Codable, Equatable, Sendable {
         guard !chips.contains(where: { $0.emoji == reaction.emoji }) else { return false }
         chips.append(InboxReaction(emoji: reaction.emoji, count: 1, mine: false, people: person.isEmpty ? nil : [person]))
         threads[key]?.messages[index].reactions = chips
+        // A notification only ever says what someone else did, so it is news whichever message it is on.
+        threads[key]?.reaction = ChatReactionNote(emoji: reaction.emoji, person: person, message: messages[index].id,
+                                                  text: messages[index].summary, date: date)
         return true
     }
 
@@ -819,7 +873,15 @@ struct ChatInbox: Codable, Equatable, Sendable {
             }
             if let readers = message.readers, thread.messages[index].readers != readers { thread.messages[index].readers = readers }
             if let reactions = message.reactions, thread.messages[index].reactions != reactions {
+                let old = thread.messages[index].reactions
                 thread.messages[index].reactions = reactions
+                if let note = ChatReactionNote.added(on: thread.messages[index], before: old, at: now) {
+                    thread.reaction = note
+                } else if thread.reaction?.message == message.id,
+                          !(reactions.contains { $0.emoji == thread.reaction?.emoji && $0.count > ($0.mine ? 1 : 0) }) {
+                    // The emoji the line shows was taken back.
+                    thread.reaction = nil
+                }
             }
         }
         if !chat.deleted.isEmpty { thread.messages.removeAll { chat.deleted.contains($0.id) } }
