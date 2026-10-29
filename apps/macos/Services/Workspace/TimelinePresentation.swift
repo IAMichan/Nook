@@ -179,6 +179,21 @@ enum TimelineBlock: Identifiable, Equatable {
     }
 }
 
+/// The blocks of each turn of the last layout, to make the next one from (`TimelinePresentation.blocks(_:active:cache:)`).
+struct TimelineBlockCache {
+    struct Turn {
+        var events: [RunEvent]
+        var open: Bool
+        var blocks: [TimelineBlock]
+    }
+
+    fileprivate(set) var turns: [Turn] = []
+    /// The tool groups of the last turn, by id, with the calls they were counted from.
+    fileprivate var tallies: [UUID: (events: [RunEvent], tally: ToolTally)] = [:]
+
+    init() {}
+}
+
 /// What the agent is doing right now: the running (or last) tool and the headline of its latest thinking.
 struct LiveActivity: Equatable, Sendable {
     var tool: String?
@@ -189,13 +204,56 @@ enum TimelinePresentation {
     /// Groups the events of a session into blocks. `active`: the last turn is still running. Once it finished, the last
     /// turn folds like the earlier ones.
     static func blocks(_ events: [RunEvent], active: Bool) -> [TimelineBlock] {
-        let turns = split(visible(events, active: active))
+        var cache = TimelineBlockCache()
+        return blocks(events, active: active, cache: &cache)
+    }
+
+    /// The same blocks, made only for the turns that changed since `cache` was filled: while the agent works only its
+    /// last turn does, many times a second, and presenting a turn reads every edit's diff and every command's input.
+    static func blocks(_ events: [RunEvent], active: Bool, cache: inout TimelineBlockCache) -> [TimelineBlock] {
+        // The turns as `visible` splits them: what it hides is never a message of yours nor a wake, so hiding per turn
+        // keeps the same turns.
+        let turns = split(events)
+        var kept: [TimelineBlockCache.Turn] = []
+        kept.reserveCapacity(turns.count)
         var blocks: [TimelineBlock] = []
         for (index, turn) in turns.enumerated() {
-            let isLast = index == turns.count - 1
-            blocks += present(turn, open: isLast && active)
+            let open = index == turns.count - 1 && active
+            if index < cache.turns.count, cache.turns[index].open == open, cache.turns[index].events == turn {
+                kept.append(cache.turns[index])
+            } else {
+                let tallies = cache.tallies
+                let made = present(visible(turn: turn, hidingRunning: open), open: open) { run in
+                    if let known = tallies[run[0].id], known.events == run { return known.tally }
+                    return ToolTally(run)
+                }
+                kept.append(TimelineBlockCache.Turn(events: turn, open: open, blocks: made))
+            }
+            blocks += kept[index].blocks
         }
+        cache.turns = kept
+        // The groups' tallies, for a group that grew by a call in the open turn: the next layout counts it again, and any
+        // other group comes back as it was.
+        cache.tallies = [:]
+        for case .tools(let id, let events, let tally) in kept.last?.blocks ?? [] { cache.tallies[id] = (events, tally) }
         return blocks
+    }
+
+    /// `visible` for one turn: the approvals that let a call of the turn through, and the running tool when it is the
+    /// last turn and still at work.
+    private static func visible(turn: [RunEvent], hidingRunning: Bool) -> [RunEvent] {
+        var hidden: Set<UUID> = []
+        if turn.contains(where: { $0.kind == .approval && $0.state == .allowed }) {
+            let calls = Set(turn.filter { $0.kind == .tool }.map { key($0.tool, $0.text) })
+            for approval in turn where approval.kind == .approval && approval.state == .allowed
+                && calls.contains(key(approval.tool, approval.text)) {
+                hidden.insert(approval.id)
+            }
+        }
+        if hidingRunning, let running = turn.last(where: { $0.kind == .tool && $0.state == .running }) {
+            hidden.insert(running.id)
+        }
+        return hidden.isEmpty ? turn : turn.filter { !hidden.contains($0.id) }
     }
 
     /// One line per command: an approval you gave says nothing the tool call it let through does not, and the tool that
@@ -258,6 +316,13 @@ enum TimelinePresentation {
 
     /// A turn starts at each message of yours, and where the agent woke up by itself after background work; anything
     /// before the first one is a turn of its own.
+    /// The last of `split`'s turns, found from the end: what the live line, the running command and the subagents read,
+    /// without splitting the whole session for it.
+    static func lastTurn(_ events: [RunEvent]) -> [RunEvent] {
+        guard let start = events.lastIndex(where: { $0.kind == .user || $0.kind == .system && $0.tool == "wake" }) else { return events }
+        return Array(events[start...])
+    }
+
     static func split(_ events: [RunEvent]) -> [[RunEvent]] {
         var turns: [[RunEvent]] = []
         for event in events {
@@ -266,7 +331,8 @@ enum TimelinePresentation {
         return turns
     }
 
-    private static func present(_ turn: [RunEvent], open: Bool) -> [TimelineBlock] {
+    private static func present(_ turn: [RunEvent], open: Bool,
+                                tally: ([RunEvent]) -> ToolTally = { ToolTally($0) }) -> [TimelineBlock] {
         guard let first = turn.first else { return [] }
         let finished = turn.last { $0.kind == .result }
         let troubled = turn.contains { $0.kind == .error || $0.kind == .approval && $0.state == .pending }
@@ -274,10 +340,10 @@ enum TimelinePresentation {
         // Fold only a turn that ended well: its answer stays, the work in between folds away.
         guard !open, first.kind == .user, let finished, !troubled,
               let answer = turn.lastIndex(where: { $0.kind == .assistant && !BackgroundWork.isNotice($0) }) else {
-            return group(turn)
+            return group(turn, tally: tally)
         }
         let work = turn.enumerated().filter { $0.offset != 0 && $0.offset != answer && $0.element.kind != .result }.map(\.element)
-        guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn) }
+        guard work.contains(where: { $0.kind != .assistant || BackgroundWork.isNotice($0) }) else { return group(turn, tally: tally) }
         let seconds = max(0, finished.date.timeIntervalSince(first.date))
         // The fold takes the id of the first work it hides: never the same as a block shown next to it.
         return [.event(first), .fold(id: work[0].id, seconds: seconds, blocks: group(work), checks: Verification.checks(work)),
@@ -287,7 +353,7 @@ enum TimelinePresentation {
     /// Two or more tool calls in a row become one block, also across the agent's thinking between them and its notes
     /// that it started work in the background (see BackgroundWork.notice): those open with the block. Thinking before the first call or after the last stays on its own, and errors and
     /// approvals are never hidden inside a group.
-    static func group(_ events: [RunEvent]) -> [TimelineBlock] {
+    static func group(_ events: [RunEvent], tally: ([RunEvent]) -> ToolTally = { ToolTally($0) }) -> [TimelineBlock] {
         var blocks: [TimelineBlock] = []
         var run: [RunEvent] = []
         func isWork(_ event: RunEvent) -> Bool { event.kind == .tool || event.kind == .fileChange }
@@ -299,7 +365,7 @@ enum TimelinePresentation {
             while let last = run.last, !isWork(last) { trailing.insert(run.removeLast(), at: 0) }
             blocks += leading.map { TimelineBlock.event($0) }
             if run.filter(isWork).count >= 2 {
-                blocks.append(.tools(id: run[0].id, events: run, tally: ToolTally(run)))
+                blocks.append(.tools(id: run[0].id, events: run, tally: tally(run)))
             } else {
                 blocks += run.map { TimelineBlock.event($0) }
             }

@@ -573,8 +573,11 @@ struct AgentRunPanel: View {
         let events = memo.events
         let blocks = memo.blocks
         let cards = Dictionary(turnDiffs(run).compactMap { turn in turn.answerID.map { ($0, turn) } }, uniquingKeysWith: { first, _ in first })
-        let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
+        let found = finding ? memo.search(findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
+        let context = TimelineRowContext(structure: memo.revision, status: run.status,
+                                         directory: run.isRemote ? nil : run.workingDirectory, highlighted: current,
+                                         openEvents: expanded, shownFile: filePreview, counted: countedLines)
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -585,7 +588,7 @@ struct AgentRunPanel: View {
                     ForEach(blocks) { block in
                         VStack(alignment: .leading, spacing: 14) {
                             if block.id == newSince { TimelineNewDivider() }
-                            TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
+                            TimelineBlockView(block: block, expanded: openBlocks, context: context, toggle: toggleBlock) { event in
                                 AnyView(
                                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                                         eventRow(event)
@@ -601,6 +604,8 @@ struct AgentRunPanel: View {
                                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
                                 )
                             }
+                            // While the agent writes, only the block it writes into is drawn again.
+                            .equatable()
                         }
                         .id(block.id)
                     }
@@ -609,12 +614,13 @@ struct AgentRunPanel: View {
                         if TaskChecklist.showsInline(run.tasks, active: true), let tasks = run.tasks {
                             TaskChecklistCard(steps: tasks)
                         }
-                        LiveActivityRow(live: TimelinePresentation.live(events), activity: AgentActivity.current(events),
+                        let turn = TimelinePresentation.lastTurn(events)
+                        LiveActivityRow(live: TimelinePresentation.live(turn), activity: AgentActivity.current(turn),
                                         step: run.tasks.flatMap(TaskChecklist.activeStep),
                                         since: run.turnStartedAt,
                                         waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
                                         accent: NookTheme.textSecondary,
-                                        openConsole: CommandConsole.running(events).map { command -> () -> Void in
+                                        openConsole: CommandConsole.running(turn).map { command -> () -> Void in
                                             { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
                                         })
                     }
@@ -660,7 +666,7 @@ struct AgentRunPanel: View {
             }
             // A mark per message of yours, to jump through a long session.
             .overlay(alignment: .topTrailing) {
-                let turns = events.filter { $0.kind == .user }
+                let turns = memo.userTurns
                 if turns.count >= 4, !finding {
                     TurnMinimap(turns: turns) { id in
                         scroll.userScrolled()
@@ -709,6 +715,10 @@ struct AgentRunPanel: View {
 
     /// The timeline's blocks in order with their times, as `timeline(_:)` shows them.
     private func visitRows(_ id: UUID) -> [TimelineLanding.Row] {
+        // The session on screen: its blocks are already made (this runs as it opens and as you leave it).
+        if id == runID, let run = workspace.run(id) {
+            return derived.update(workspace.timeline(id), run: run).blocks.map { ($0.id.uuidString, $0.visitDate) }
+        }
         let events = workspace.timeline(id).filter { !($0.kind == .system && $0.tool == "launch") }
         return TimelinePresentation.blocks(events, active: workspace.run(id)?.status.isActive ?? false)
             .map { ($0.id.uuidString, $0.visitDate) }
@@ -1042,7 +1052,7 @@ struct AgentRunPanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             UsageLimitBanner(run: run)
             // The subagents the agent started this turn, and its task list.
-            let subagents = active ? Subagents.latest(workspace.timeline(runID)) : []
+            let subagents = active ? Subagents.latest(TimelinePresentation.lastTurn(workspace.timeline(runID))) : []
             if !subagents.isEmpty { SubagentBar(agents: subagents) }
             // While the agent works its list shows in the timeline; one it left unfinished waits here.
             if let tasks = run.tasks, !tasks.isEmpty, !TaskChecklist.showsInline(tasks, active: run.status.isActive) {
@@ -1254,8 +1264,24 @@ private final class RunTimelineDerived {
     /// The last pull request the agent reported with `<pr-created>`, for the tray above the composer.
     private(set) var createdPullRequest: URL?
 
+    /// Counts the changes to the events other than more text in the answer being written (`TimelineRowContext`).
+    private(set) var revision = 0
+    /// Your messages, for the marks beside a long session.
+    private(set) var userTurns: [RunEvent] = []
     /// The pull request the events before the last one link, so a streamed answer only has to look at itself.
     private var pullRequestBeforeLast: URL?
+    /// Each turn's blocks, so only the turn that changed is laid out again.
+    private var blockCache = TimelineBlockCache()
+    /// The last search in the find bar, for the events it searched.
+    private var found: (query: String, events: [RunEvent], result: TimelineSearchResult)?
+
+    /// The find bar's matches, searched again only when the query or the events changed.
+    func search(_ query: String) -> TimelineSearchResult {
+        if let found, found.query == query, found.events == events { return found.result }
+        let result = TimelineSearch.search(events, query: query)
+        found = (query, events, result)
+        return result
+    }
 
     @discardableResult
     func update(_ all: [RunEvent], run: WorkspaceRun) -> RunTimelineDerived {
@@ -1268,14 +1294,16 @@ private final class RunTimelineDerived {
         let streamed = sameRun && key.map { Self.onlyStreamed(from: $0.all, to: all) } == true
         key = (all, active, run.tasks, run.workingDirectory)
         events = all.filter { !($0.kind == .system && $0.tool == "launch") }
-        blocks = TimelinePresentation.blocks(events, active: active)
+        blocks = TimelinePresentation.blocks(events, active: active, cache: &blockCache)
         if streamed, let last = all.last {
             createdPullRequest = RunPullRequestLinks.pullRequest(in: last) ?? pullRequestBeforeLast
             return self
         }
+        revision &+= 1
         turns = TurnDiff.collect(events: all)
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
-        runningCommand = CommandConsole.running(all)?.id
+        runningCommand = CommandConsole.running(TimelinePresentation.lastTurn(all))?.id
+        userTurns = events.filter { $0.kind == .user }
         pullRequestBeforeLast = RunPullRequestLinks.last(in: Array(all.dropLast()))
         createdPullRequest = all.last.flatMap(RunPullRequestLinks.pullRequest(in:)) ?? pullRequestBeforeLast
         return self

@@ -4,11 +4,22 @@ import UniformTypeIdentifiers
 
 /// One block of a session's timeline (see TimelinePresentation): a single event, a group of tool calls behind one
 /// sentence, or a finished turn folded into "Worked for 2m 13s". Groups and folds open in place.
-struct TimelineBlockView: View {
+struct TimelineBlockView: View, Equatable {
     let block: TimelineBlock
     let expanded: Set<String>
+    /// Everything else its rows show (the session's status, what is open, the find bar's match…). With it, a block that
+    /// did not change is not drawn again while the agent writes into the last one (see `.equatable()` where it is used);
+    /// without it, it always is.
+    var context: TimelineRowContext? = nil
     let toggle: (String) -> Void
     let eventRow: (RunEvent) -> AnyView
+
+    /// The closures are made again on every redraw of the session and read the panel's current state when they run, so
+    /// they do not count.
+    static func == (lhs: TimelineBlockView, rhs: TimelineBlockView) -> Bool {
+        guard let context = lhs.context else { return false }
+        return context == rhs.context && lhs.expanded == rhs.expanded && lhs.block == rhs.block
+    }
 
     var body: some View {
         switch block {
@@ -38,7 +49,7 @@ struct TimelineBlockView: View {
                 if expanded.contains(key) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                         ForEach(blocks) { inner in
-                            TimelineBlockView(block: inner, expanded: expanded, toggle: toggle, eventRow: eventRow)
+                            TimelineBlockView(block: inner, expanded: expanded, context: context, toggle: toggle, eventRow: eventRow)
                         }
                     }
                     .padding(.leading, NookTheme.Spacing.lg)
@@ -58,6 +69,23 @@ struct TimelineBlockView: View {
         default: return "wrench.and.screwdriver"
         }
     }
+}
+
+/// What a session's timeline rows show besides their block: each change draws every block again.
+struct TimelineRowContext: Equatable {
+    /// Bumped when the session's events changed in any way but more text in the answer being written: the plan card,
+    /// the turn cards and the menus of your messages read the whole session.
+    var structure: Int
+    var status: RunStatus
+    var directory: String?
+    /// The event the find bar is on.
+    var highlighted: UUID?
+    /// The events whose details are open.
+    var openEvents: Set<UUID>
+    /// The file open beside the conversation.
+    var shownFile: String?
+    /// The lines git counted per turn and file.
+    var counted: [String: [String: EditLines]]
 }
 
 /// A quiet, clickable line that opens what it summarizes.

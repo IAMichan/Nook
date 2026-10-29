@@ -21,6 +21,36 @@ final class TimelinePresentationTests: XCTestCase {
         ]
     }
 
+    /// Built from the turns of the last layout, the blocks are the same as built from scratch, at every step of a session
+    /// that streams, runs tools that need approval, finishes and starts a next turn.
+    func testCachedBlocksMatchFreshOnesWhileASessionGoesOn() {
+        var events: [RunEvent] = []
+        var cache = TimelineBlockCache()
+        func check(active: Bool, _ step: String) {
+            XCTAssertEqual(TimelinePresentation.blocks(events, active: active, cache: &cache),
+                           TimelinePresentation.blocks(events, active: active), step)
+        }
+        events = finishedTurn()
+        check(active: false, "a finished turn")
+        events.append(event(.user, "Nog iets", at: 200))
+        check(active: true, "a new message")
+        events.append(event(.approval, "Bash · swift build", tool: "Bash", state: .pending, at: 201))
+        check(active: true, "an approval asked")
+        events[events.count - 1].state = .allowed
+        events.append(event(.tool, "Bash · swift build", tool: "Bash", state: .running, at: 202))
+        check(active: true, "the approved call runs")
+        events[events.count - 1].state = .done
+        events.append(event(.tool, "Edit · App.swift", tool: "Edit", detail: #"{"file_path":"/p/App.swift"}"#, state: .done, at: 210))
+        check(active: true, "the group grows")
+        events.append(event(.assistant, "Klaar", at: 220))
+        check(active: true, "the answer starts")
+        events[events.count - 1].text += " met de build."
+        check(active: true, "the answer streams")
+        events.append(event(.result, "20s", state: .done, at: 222))
+        check(active: false, "the turn is done")
+        XCTAssertEqual(cache.turns.count, 2)
+    }
+
     func testFinishedTurnFoldsBetweenQuestionAndAnswer() throws {
         let blocks = TimelinePresentation.blocks(finishedTurn() + [event(.user, "Nog iets", at: 200)], active: false)
         XCTAssertEqual(blocks.count, 5)
