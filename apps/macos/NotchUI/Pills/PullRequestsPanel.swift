@@ -102,16 +102,22 @@ struct PullRequestsPanel: View {
 
     /// The open pull requests as tabs with, beside the list, the buttons that make the panel fill the page and close
     /// it on the same line; under them the one you read. In its place (a narrow page) it has a back arrow instead.
+    /// With one pull request open there are no tabs to choose from: the page's own top line (repository and number)
+    /// already says which one it is and carries those buttons, so no second line sits above it.
     private func detail(_ opened: OpenPullRequest, split: Bool) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-            HStack(spacing: NookTheme.Spacing.xs) {
-                PullRequestTabStrip(tabs: tabs, active: activeTab, select: { activeTab = $0 }, close: closeTabs)
-                if split {
-                    ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                                      tr(maximized ? "agents.pulls.panel.restore" : "agents.pulls.panel.maximize")) {
-                        withAnimation(NookTheme.reveal) { maximized.toggle() }
+        let tabbed = tabs.count > 1
+        let toggleMaximized: () -> Void = { withAnimation(NookTheme.reveal) { maximized.toggle() } }
+        // Beside the list the tab line closes the panel; without one the page does.
+        let close: (() -> Void)? = split && tabbed ? nil : { activeTab = nil }
+        return VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
+            if tabbed {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    PullRequestTabStrip(tabs: tabs, active: activeTab, select: { activeTab = $0 }, close: closeTabs)
+                    if split {
+                        ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                          tr(maximized ? "agents.pulls.panel.restore" : "agents.pulls.panel.maximize"), toggleMaximized)
+                        ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel")) { activeTab = nil }
                     }
-                    ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel")) { activeTab = nil }
                 }
             }
             PullRequestDetailView(accountID: opened.account, item: opened.item, inline: split,
@@ -120,7 +126,9 @@ struct PullRequestsPanel: View {
                                   onUpdate: { updated in
                                       if let index = tabs.firstIndex(where: { $0.id == opened.id }) { tabs[index].item = updated }
                                   },
-                                  onBack: split ? nil : { activeTab = nil })
+                                  onBack: close,
+                                  onMaximize: split && !tabbed ? toggleMaximized : nil,
+                                  maximized: maximized)
                 .id(opened.id)
         }
     }

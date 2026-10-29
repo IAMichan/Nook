@@ -160,6 +160,7 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
     let now: Date
     var showsAvatar = true
     @ViewBuilder var accessory: () -> Accessory
+    @State private var hovering = false
 
     init(event: PullRequestEvent, now: Date, showsAvatar: Bool = true, @ViewBuilder accessory: @escaping () -> Accessory) {
         self.event = event
@@ -184,11 +185,16 @@ private struct PullRequestCommentHeader<Accessory: View>: View {
                     .help(date.formatted(date: .abbreviated, time: .shortened))
             }
             if let url = event.url {
+                // Under the pointer only: ten comments should not mean ten buttons at rest. It keeps its room, so the
+                // time beside it does not jump.
                 ToolbarIconButton("arrow.up.right", tr("agents.pulls.open"), height: 20, width: 20) {
                     NSWorkspace.shared.open(url)
                 }
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
             }
         }
+        .onHover { hovering = $0 }
     }
 
     @ViewBuilder

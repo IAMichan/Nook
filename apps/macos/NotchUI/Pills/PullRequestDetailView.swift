@@ -23,6 +23,10 @@ struct PullRequestDetailView: View {
     let inline: Bool
     /// Nil beside a session, where the side panel's tab closes it instead.
     let onBack: (() -> Void)?
+    /// Beside the list with no other pull request open: the button that makes the side panel fill the page sits on the
+    /// page's own top line, so there is no second line above it just for that. Nil leaves it out.
+    let onMaximize: (() -> Void)?
+    let maximized: Bool
 
     enum Tab: Hashable { case summary, guide, timeline, code }
 
@@ -78,7 +82,7 @@ struct PullRequestDetailView: View {
 
     init(accountID: String, item: PullRequestItem, inline: Bool = false, stack: [PullRequestItem] = [],
          onOpenPullRequest: ((PullRequestItem) -> Void)? = nil, onUpdate: ((PullRequestItem) -> Void)? = nil,
-         onBack: (() -> Void)? = nil) {
+         onBack: (() -> Void)? = nil, onMaximize: (() -> Void)? = nil, maximized: Bool = false) {
         self.accountID = accountID
         self.item = item
         self.inline = inline
@@ -86,6 +90,8 @@ struct PullRequestDetailView: View {
         self.onOpenPullRequest = onOpenPullRequest
         self.onUpdate = onUpdate
         self.onBack = onBack
+        self.onMaximize = onMaximize
+        self.maximized = maximized
         _model = StateObject(wrappedValue: PullRequestDetailModel(accountID: accountID, item: item))
     }
 
@@ -193,6 +199,10 @@ struct PullRequestDetailView: View {
                 }
             } else if model.loading {
                 ProgressView().controlSize(.small)
+            }
+            if let onMaximize {
+                ToolbarIconButton(maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                  tr(maximized ? "agents.pulls.panel.restore" : "agents.pulls.panel.maximize"), onMaximize)
             }
             if let onBack, inline {
                 ToolbarIconButton("sidebar.right", tr("agents.pr.closePanel"), onBack)
