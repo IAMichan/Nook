@@ -12,10 +12,9 @@ extension AppModel {
     /// (its terminal). A notice that waits on you always reaches you (`NoticePacer`).
     func deliverAgentNotice(_ notice: AgentStatusNotice, app: String, target: NoticeEntry.Target, watching: Bool = false,
                             open: @escaping () -> Void, openApp: (title: String, action: () -> Void)? = nil) {
-        logNotice(Self.noticeKind(notice.state), title: notice.headline,
-                  detail: notice.summary.isEmpty ? AgentStatusNotice.short(notice.topic) : notice.summary, context: notice.project,
-                  target: target, source: .agents, app: app)
-        deliverNotice(.agents, app: app, id: "agentstatus-" + UUID().uuidString, pace: notice.pace,
+        logNotice(Self.noticeKind(notice.state), title: notice.headline, detail: notice.historyDetail,
+                  context: notice.project, target: target, source: .agents, app: app)
+        deliverNotice(.agents, app: app, id: notice.cardID, pace: notice.pace,
                       urgent: notice.state == .waiting, title: notice.headline, subtitle: notice.project,
                       body: notice.summary, sound: Self.noticeSound(notice.state), watching: watching,
                       kind: Self.toastKind(notice.state),
@@ -29,7 +28,10 @@ extension AppModel {
     private func showAgentNotice(_ notice: AgentStatusNotice, open: @escaping () -> Void,
                                  openApp: (title: String, action: () -> Void)?) {
         guard notchFreeForNotice else { return }
-        let token = "agentstatus-" + UUID().uuidString
+        // One card per session: a newer notice redraws it and keeps its countdown running.
+        let token = notice.cardID
+        var redraw = false
+        if case .card(let shown) = viewModel.state { redraw = shown.id == token }
         viewModel.register("\(token)#view", open)
         if let openApp { viewModel.register("\(token)#app", openApp.action) }
         // OK: gone at once instead of waiting out the timeout; a queued card comes next.
@@ -56,15 +58,14 @@ extension AppModel {
             status: CardStatus(text: tr("card.status.\(notice.state.rawValue)"), tone: tone),
             changes: notice.hasChanges ? LineChanges(added: notice.added, removed: notice.removed) : nil
         )))
-        dismissAgentCardLater(token)
+        if !redraw { dismissAgentCardLater(token) }
     }
 
-    /// One line in the notch's own row: the agent's logo with its state as a badge, the headline and the project, View
-    /// and OK. What it said waits in the session.
+    /// One line in the notch's own row: the agent's logo with its state as a badge, the headline and which session,
+    /// View and OK. What it said waits in the session.
     private func showAgentStrip(_ notice: AgentStatusNotice, open: @escaping () -> Void) {
         guard notchFreeForNotice else { return }
-        let message = notice.project.isEmpty ? notice.headline : notice.headline + " · " + notice.project
-        viewModel.finish(message, button: tr("button.view"), tone: Self.doneTone(notice.state), inline: true,
+        viewModel.finish(notice.stripLine, button: tr("button.view"), tone: Self.doneTone(notice.state), inline: true,
                          agent: notice.agent, action: open)
     }
 

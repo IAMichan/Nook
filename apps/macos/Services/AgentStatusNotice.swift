@@ -51,6 +51,22 @@ struct AgentStatusNotice: Equatable, Sendable {
 
     var hasChanges: Bool { added + removed > 0 }
 
+    /// The card's id: one per session, so a newer notice from the same session redraws its card instead of counting as
+    /// a new pop-up (`AppModel.deliverNotice`).
+    var cardID: String { "agentstatus-" + pace }
+
+    /// The one line of the compact strip: the headline and which session, by what it is about (or its folder when it
+    /// has no topic), so two sessions in one folder tell apart.
+    var stripLine: String {
+        let which = Self.short(topic).isEmpty ? project : Self.short(topic)
+        return which.isEmpty ? headline : headline + " · " + which
+    }
+
+    /// The line under the headline in the history under the bell: which session, and what the agent said last.
+    var historyDetail: String {
+        [Self.short(topic), summary].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     /// One line of at most `topicLimit` characters, cut at a word with an ellipsis.
     static func short(_ text: String) -> String {
         let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""

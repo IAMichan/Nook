@@ -32,6 +32,18 @@ final class AgentStatusNoticeTests: XCTestCase {
         XCTAssertEqual(AgentStatusNotice.short("Only the first line\nnot this"), "Only the first line")
     }
 
+    func testTheStripAndTheHistoryNameTheSession() {
+        let notice = AgentStatusNotice(agent: "Codex", project: "nook", topic: "Fix the login bug",
+                                       summary: "Done.", state: .done, pace: "agent:run:1")
+        XCTAssertEqual(notice.stripLine, notice.headline + " · Fix the login bug")
+        XCTAssertEqual(notice.historyDetail, "Fix the login bug · Done.")
+        XCTAssertEqual(notice.cardID, "agentstatus-agent:run:1")
+
+        let untitled = AgentStatusNotice(agent: "Codex", project: "nook", state: .done, pace: "agent:2")
+        XCTAssertEqual(untitled.stripLine, untitled.headline + " · nook")
+        XCTAssertEqual(untitled.historyDetail, "")
+    }
+
     func testChangedLinesShowOnlyWhenThereAreAny() {
         XCTAssertFalse(AgentStatusNotice(agent: "Cursor", state: .done, pace: "a").hasChanges)
         XCTAssertTrue(AgentStatusNotice(agent: "Cursor", state: .done, added: 3, pace: "a").hasChanges)

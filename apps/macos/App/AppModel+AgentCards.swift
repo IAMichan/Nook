@@ -28,6 +28,8 @@ extension AppModel {
                              waiting: Int = 0) {
         logNotice(.waiting, title: approval.title, detail: approval.command, context: context,
                   target: noticeTarget(approval), key: approval.cardToken)
+        // It always shows, but counts once, card or macOS notification: the notices after it keep their distance too.
+        noticePacer.record(key: Self.urgentPace)
         guard settings.noticeRules.decide(.agents, urgent: true) == .show(.system) else {
             showApprovalCard(approval, context: context, open: open, waiting: waiting)
             return
@@ -92,8 +94,6 @@ extension AppModel {
                                tone: approval.danger ? .failed : .waiting)
         )
         viewModel.presentUrgent(card, keepPanel: true)
-        // It always shows, but counts: the notices after it keep their distance from it too.
-        noticePacer.record(key: Self.urgentPace)
         if sound { NookSound.play(.attention) }
     }
 
@@ -110,6 +110,8 @@ extension AppModel {
             CompanionNotifier.shared.question(request)
             logNotice(.waiting, title: item.question, context: "\(request.agentName) · \(request.project)",
                       target: .agent(request.sessionKey), key: token)
+            // Like a permission request: it always shows, and counts once for the notices after it.
+            noticePacer.record(key: Self.urgentPace)
         }
         // As a macOS notification: the choices do not fit on a banner, so a click brings up the card. Like a permission
         // request, a question always reaches you.
@@ -164,7 +166,6 @@ extension AppModel {
         if index == 0 {
             // An open panel stays: it asks in its own compact bar (see `PanelApprovalBar`).
             viewModel.presentUrgent(card, keepPanel: true)
-            noticePacer.record(key: Self.urgentPace)
             NookSound.play(.attention)
         } else {
             viewModel.show(.card(card))
