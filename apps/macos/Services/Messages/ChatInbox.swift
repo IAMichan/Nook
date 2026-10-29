@@ -923,6 +923,28 @@ struct ChatInbox: Codable, Equatable, Sendable {
     /// Drops chats with nothing new for `maxAge`, then the quietest beyond `maxThreads`. A chat its app still lists
     /// stays either way.
     mutating func trim(now: Date = Date()) {
+        // A chat an earlier version split in two, by invisible marks in its name: one chat again, with the messages of both,
+        // so its newest message is the one its row and card show.
+        for (key, thread) in threads {
+            let home = Self.key(app: thread.app, chat: thread.name)
+            guard home != key, ChatCapture.unmarked(key) == home else { continue }
+            threads[key] = nil
+            guard var target = threads[home] else {
+                var moved = thread
+                moved.id = home
+                moved.name = ChatCapture.unmarked(thread.name)
+                threads[home] = moved
+                continue
+            }
+            for message in thread.messages where !target.messages.contains(where: {
+                $0.id == message.id || ($0.isMine == message.isMine && $0.text == message.text
+                                        && abs($0.date.timeIntervalSince(message.date)) < Self.sameMessageWindow)
+            }) {
+                let index = target.messages.lastIndex { $0.date <= message.date }.map { $0 + 1 } ?? 0
+                target.messages.insert(message, at: index)
+            }
+            threads[home] = target
+        }
         // A reaction an earlier version kept as a message goes on the message it is on, in the chat it belongs to (its
         // name without the marks that kept it apart).
         for (key, thread) in threads {
