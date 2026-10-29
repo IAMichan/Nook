@@ -46,6 +46,45 @@ struct ChatTranscript: View {
     @State private var atBottom = true
     /// Messages from others that came in while you were scrolled back, counted on the button.
     @State private var missed = 0
+    /// The oldest message drawn once you scrolled (nil: the newest `page`), or every message once older ones were
+    /// fetched. A chat opens with only its newest messages laid out, so opening or switching chats stays quick however
+    /// long the chat is; scrolling back to the top draws the ones before them.
+    @State private var drawnFrom: String?
+    @State private var drawsAll = false
+
+    /// How many messages a chat lays out when it opens, and how many more each time you reach the top.
+    static let page = 60
+
+    /// The messages laid out: the newest `page` (from the first new one, when that is further back), or from `drawnFrom`.
+    /// A card, which does not scroll back, draws them all.
+    private var drawn: [ChatBubble] {
+        guard fills, !drawsAll else { return bubbles }
+        if let drawnFrom, let index = bubbles.firstIndex(where: { $0.id == drawnFrom }) { return Array(bubbles[index...]) }
+        var start = max(bubbles.count - Self.page, 0)
+        if let newFrom, let index = bubbles.firstIndex(where: { $0.id == newFrom }) { start = min(start, max(index - 3, 0)) }
+        return start == 0 ? bubbles : Array(bubbles[start...])
+    }
+
+    /// You moved the chat: what is drawn stays put from now on, so a new message does not push the oldest one out above
+    /// what you read.
+    private func userScrolled() {
+        scrolledByUser = true
+        if drawnFrom == nil, !drawsAll, fills { drawnFrom = drawn.first?.id }
+    }
+
+    /// Draws the `page` messages before the oldest drawn one, keeping that one where it was. False when all are drawn.
+    private func drawOlder(_ proxy: ScrollViewProxy) -> Bool {
+        let shown = drawn
+        guard shown.count < bubbles.count, let top = shown.first?.id,
+              let index = bubbles.firstIndex(where: { $0.id == top }) else { return false }
+        drawnFrom = bubbles[max(index - Self.page, 0)].id
+        DispatchQueue.main.async {
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { proxy.scrollTo(top, anchor: .top) }
+        }
+        return true
+    }
 
     var body: some View {
         if fills {
@@ -64,7 +103,7 @@ struct ChatTranscript: View {
             // the system shows scroll bars always (a mouse connected).
             ScrollView {
                 VStack(spacing: 0) {
-                    if onLoadOlder != nil {
+                    if onLoadOlder != nil || drawn.count < bubbles.count {
                         loadOlderButton { loadOlder(proxy) }
                     }
                     stack
@@ -91,7 +130,7 @@ struct ChatTranscript: View {
                                          content: geometry.contentSize.height)
             } action: { old, new in
                 if new.offset < old.offset - 0.5, new.content == old.content, new.container == old.container {
-                    scrolledByUser = true
+                    userScrolled()
                 }
                 if new.nearTop, scrolledByUser { loadOlder(proxy, automatic: true) }
                 if new.nearBottom != atBottom {
@@ -100,7 +139,7 @@ struct ChatTranscript: View {
                 }
             }
             .onScrollPhaseChange { _, phase in
-                if phase == .interacting || phase == .decelerating { scrolledByUser = true }
+                if phase == .interacting || phase == .decelerating, !scrolledByUser { userScrolled() }
             }
             .onChange(of: bubbles.last?.id) { previous, last in
                 guard let last else { return }
@@ -132,6 +171,8 @@ struct ChatTranscript: View {
                 reachedStart = false
                 atBottom = true
                 missed = 0
+                drawnFrom = nil
+                drawsAll = false
             }
         }
     }
@@ -139,11 +180,15 @@ struct ChatTranscript: View {
     /// Loads the older messages once at a time; the message that was on top stays where it was, with the older ones
     /// above it.
     private func loadOlder(_ proxy: ScrollViewProxy, automatic: Bool = false) {
-        guard let onLoadOlder, !loadingOlder, !(automatic && reachedStart) else { return }
+        guard !loadingOlder else { return }
+        // What this Mac already has is drawn first; only then is the chat's app asked for more.
+        if drawOlder(proxy) { return }
+        guard let onLoadOlder, !(automatic && reachedStart) else { return }
         loadingOlder = true
         let anchor = bubbles.first?.id
         Task { @MainActor in
             let loaded = await onLoadOlder()
+            if loaded { drawsAll = true }
             if loaded, let anchor { proxy.scrollTo(anchor, anchor: .top) }
             reachedStart = !loaded
             loadingOlder = false
@@ -170,14 +215,15 @@ struct ChatTranscript: View {
         .accessibilityLabel(tr("chat.loadOlder"))
     }
 
-    private var entries: [ChatTimeline.Entry] {
+    private func entries(_ bubbles: [ChatBubble]) -> [ChatTimeline.Entry] {
         let items = bubbles.map { ChatTimeline.Item(id: $0.id, author: $0.fromMe ? "\u{1}me" : $0.sender, date: $0.date) }
         return ChatTimeline.entries(items, locale: Locale(identifier: I18n.shared.currentLanguage.rawValue))
     }
 
     private var stack: some View {
-        let byID = Dictionary(bubbles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let rows = entries.map { Row(id: ChatTimeline.id(of: $0), entry: $0) }
+        let shown = drawn
+        let byID = Dictionary(shown.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let rows = entries(shown).map { Row(id: ChatTimeline.id(of: $0), entry: $0) }
         let top = rows.first?.id
         return VStack(spacing: 0) {
             ForEach(rows) { row in
@@ -198,26 +244,26 @@ struct ChatTranscript: View {
                                        onVote: voteAction(bubble))
                             .equatable()
                             .contextMenu {
-                                if let onReply {
-                                    Button(tr("chat.reply")) { onReply(bubble) }
+                                if let reply = replyAction(bubble) {
+                                    Button(tr("chat.reply")) { reply() }
                                 }
-                                if let onReact {
+                                if let react = reactAction(bubble) {
                                     Menu(tr("chat.react")) {
                                         ForEach(ChatReactions.quick, id: \.self) { emoji in
-                                            Button(emoji) { onReact(bubble, emoji) }
+                                            Button(emoji) { react(emoji) }
                                         }
                                     }
                                 }
-                                if bubble.fromMe, let onEdit, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil {
-                                    Button(tr("chat.edit")) { onEdit(bubble) }
+                                if let edit = editAction(bubble) {
+                                    Button(tr("chat.edit")) { edit() }
                                 }
                                 if !bubble.copyText.isEmpty {
                                     Button(tr("whatsapp.copy.message")) { Pasteboard.copy(bubble.copyText) }
                                 }
                                 Button(tr("whatsapp.copy.chat")) { Pasteboard.copy(ChatBubble.transcript(bubbles, contact: contact)) }
-                                if let onDelete {
+                                if let delete = deleteAction(bubble) {
                                     Divider()
-                                    Button(tr("chat.deleteMessage"), role: .destructive) { onDelete(bubble) }
+                                    Button(tr("chat.deleteMessage"), role: .destructive) { delete() }
                                 }
                             }
                             // A new run starts with room above it; the messages of one run sit close together, so who
@@ -238,30 +284,32 @@ struct ChatTranscript: View {
         .frame(maxWidth: .infinity)
     }
 
+    // A message still on its way (`ChatBubble.local`) has nothing to answer, react to, change or delete yet.
+
     private func replyAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onReply else { return nil }
+        guard let onReply, !bubble.local else { return nil }
         return { onReply(bubble) }
     }
 
     private func voteAction(_ bubble: ChatBubble) -> (([String]) -> Void)? {
-        guard let onVote, bubble.poll != nil else { return nil }
+        guard let onVote, bubble.poll != nil, !bubble.local else { return nil }
         return { onVote(bubble, $0) }
     }
 
     /// Deleting a message: the host asks how (for you, or for everyone where it is yours and its app takes that).
     private func deleteAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onDelete else { return nil }
+        guard let onDelete, !bubble.local else { return nil }
         return { onDelete(bubble) }
     }
 
     /// Changing your own message's text, where its app takes that: in the message's menu.
     private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onEdit, bubble.fromMe, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
+        guard let onEdit, bubble.fromMe, !bubble.local, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
         return { onEdit(bubble) }
     }
 
     private func reactAction(_ bubble: ChatBubble) -> ((String) -> Void)? {
-        guard let onReact else { return nil }
+        guard let onReact, !bubble.local else { return nil }
         return { onReact(bubble, $0) }
     }
 

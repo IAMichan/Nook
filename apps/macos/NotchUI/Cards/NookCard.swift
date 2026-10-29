@@ -83,6 +83,8 @@ struct ChatBubble: Equatable, Identifiable {
     var reactions: [BubbleReaction] = []
     /// A poll this message asks, with the votes so far.
     var poll: ChatPoll? = nil
+    /// A message you just sent that Nook shows before its app has it back (`ChatOutbox`): it can be copied, nothing else.
+    var local = false
 }
 
 /// The message a bubble answers, as a chat app shows it above the answer: who wrote it and the start of its text.
