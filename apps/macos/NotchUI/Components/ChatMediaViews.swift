@@ -81,8 +81,9 @@ extension ChatBubble {
         self.file = url
         switch file.kind {
         case .photo:
+            // Not readable yet (the app may still be writing it): the bubble loads it itself (`ChatPhotoLoader`).
             image = ChatMediaImages.image(url)
-            media = image == nil ? .file : .photo(url)
+            media = .photo(url)
         case .video:
             media = .video(url)
         case .gif:

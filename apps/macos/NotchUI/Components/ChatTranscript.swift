@@ -342,7 +342,7 @@ private struct ChatBubbleView: View, Equatable {
     private var mediaOnly: Bool {
         guard bubble.text.isEmpty, bubble.quote == nil, bubble.poll == nil else { return false }
         switch bubble.media {
-        case .photo where bubble.image != nil: return true
+        case .photo: return true
         case .video, .gif: return true
         default: return false
         }
@@ -400,8 +400,12 @@ private struct ChatBubbleView: View, Equatable {
     @ViewBuilder
     private func media(_ attachment: String) -> some View {
         switch bubble.media {
-        case .photo where bubble.image != nil:
-            PhotoButton(image: bubble.image!, name: attachment, action: onZoom)
+        case .photo(let url):
+            if let image = bubble.image {
+                PhotoButton(image: image, name: attachment, action: onZoom)
+            } else {
+                ChatPhotoLoader(url: url, name: attachment, onZoom: onZoom, onOpen: onOpen)
+            }
         case .video(let url):
             VideoTile(url: url, poster: bubble.image, name: attachment)
         case .gif(let url):
@@ -1259,6 +1263,53 @@ struct ChatPhotoZoom: View {
 }
 
 /// A photo in a chat bubble, as it came: a click enlarges it in the card or chat.
+/// A photo that was not readable yet when its bubble was made (its app was still writing it, or fetching it): read
+/// again in the background, a few times over a while, with a quiet placeholder meanwhile; then shown as any photo. One
+/// that never becomes readable shows as a file that opens in its app.
+struct ChatPhotoLoader: View {
+    let url: URL
+    let name: String
+    let onZoom: () -> Void
+    let onOpen: () -> Void
+    @State private var image: NSImage?
+    @State private var failed = false
+
+    private static let tries = 12
+    private static let pause: Duration = .seconds(2)
+
+    var body: some View {
+        Group {
+            if let image {
+                PhotoButton(image: image, name: name, action: onZoom)
+            } else if failed {
+                AttachmentButton(name: name, file: url, action: onOpen)
+            } else {
+                RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous)
+                    .fill(NookTheme.ink.opacity(0.3))
+                    .frame(width: PhotoButton.maxWidth, height: PhotoButton.maxHeight * 0.75)
+                    .overlay {
+                        Image(systemName: "photo")
+                            .font(NookTheme.font(22))
+                            .foregroundStyle(NookTheme.textTertiary)
+                    }
+                    .accessibilityLabel(name)
+            }
+        }
+        .task(id: url) {
+            for attempt in 0..<Self.tries {
+                let url = url
+                if let loaded = await Task.detached(priority: .utility, operation: { ChatMediaImages.image(url) }).value {
+                    image = loaded
+                    return
+                }
+                if attempt < Self.tries - 1 { try? await Task.sleep(for: Self.pause) }
+                if Task.isCancelled { return }
+            }
+            failed = true
+        }
+    }
+}
+
 struct PhotoButton: View {
     static let maxWidth: CGFloat = 300
     static let maxHeight: CGFloat = 260
@@ -1293,7 +1344,7 @@ struct PhotoButton: View {
 }
 
 /// A file in a chat bubble: its first page (else its kind's icon), its name and kind, and a click shows it.
-private struct AttachmentButton: View {
+struct AttachmentButton: View {
     let name: String
     var preview: NSImage? = nil
     /// The file on this Mac, once Nook has it: its size shows beside its kind.
