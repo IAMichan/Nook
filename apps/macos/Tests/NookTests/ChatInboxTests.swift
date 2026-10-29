@@ -1153,6 +1153,111 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TelegramData.request(["@type": "getMe"]), #"{"@type":"getMe"}"#)
     }
 
+    // MARK: Reactions from notifications
+
+    func testReactionNoticesGoOnTheirMessage() {
+        XCTAssertEqual(ChatCapture.reaction("\u{200E}Reageerde met 👍🏼 op Komt gord")?.emoji, "👍🏼")
+        XCTAssertEqual(ChatCapture.reaction("Reageerde met 👍🏼 op Komt gord")?.target, "Komt gord")
+        XCTAssertEqual(ChatCapture.reaction("Reacted ❤️ to: “See you at eight”")?.target, "See you at eight")
+        XCTAssertEqual(ChatCapture.reaction("Hat mit 😂 auf „Bis dann“ reagiert")?.target, "Bis dann")
+        XCTAssertNil(ChatCapture.reaction("Reacted 😂 to your message")?.target)
+        XCTAssertNil(ChatCapture.reaction("I reacted 😂 to that"), "a message about reacting is a message")
+        XCTAssertNil(ChatCapture.reaction("Reageerde snel"), "no emoji, no reaction")
+        XCTAssertEqual(ChatInbox.key(app: "whatsapp", chat: "\u{200E}Mijn Schat❤️"), ChatInbox.key(app: "whatsapp", chat: "Mijn Schat❤️"))
+
+        let now = Date()
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Mijn Schat", messages: [
+            InboxMessage(id: "1", text: "Komt goed", date: now.addingTimeInterval(-60), fromMe: true),
+            InboxMessage(id: "2", text: "Top", date: now.addingTimeInterval(-30), fromMe: true),
+        ], unread: 0))
+        let key = ChatInbox.key(app: "whatsapp", chat: "Mijn Schat")
+        XCTAssertTrue(inbox.add(ChatNotice(app: "whatsapp", chat: "\u{200E}Mijn Schat", sender: "",
+                                           text: "\u{200E}Reageerde met 👍🏼 op Komt goed", date: now), id: "n1"))
+        XCTAssertEqual(inbox.threads.count, 1, "the reaction makes no chat of its own")
+        XCTAssertEqual(inbox.threads[key]?.messages.count, 2, "nor a message")
+        XCTAssertEqual(inbox.threads[key]?.messages.first?.reactions, [InboxReaction(emoji: "👍🏼", count: 1, mine: false)])
+        XCTAssertFalse(inbox.add(ChatNotice(app: "whatsapp", chat: "Mijn Schat", sender: "",
+                                            text: "Reageerde met 👍🏼 op Komt goed", date: now), id: "n2"), "shown once")
+    }
+
+    func testAChatReadInItsAppIsReadInNook() {
+        let now = Date()
+        var inbox = ChatInbox()
+        let messages = [InboxMessage(id: "1", text: "Hoi", date: now.addingTimeInterval(-60), fromMe: false),
+                        InboxMessage(id: "2", text: "Ben je er?", date: now.addingTimeInterval(-30), fromMe: false)]
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: messages, unread: 2))
+        let key = ChatInbox.key(app: "instagram", chat: "Anna")
+        XCTAssertEqual(inbox.threads[key]?.readState, .unread(2))
+        // Read on the phone: the app's count drops, nothing new comes with it.
+        XCTAssertTrue(inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0)))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+        // The same after Nook read it first.
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: messages + [
+            InboxMessage(id: "3", text: "Hallo?", date: now, fromMe: false)], unread: 1))
+        inbox.markRead(key)
+        XCTAssertEqual(inbox.threads[key]?.readState, .readInNook)
+        inbox.merge(BridgedChat(app: "instagram", name: "Anna", messages: [], unread: 0))
+        XCTAssertEqual(inbox.threads[key]?.readState, .read)
+    }
+
+    func testAChatSplitByMarksInItsNameIsOneAgain() throws {
+        let now = Date()
+        var inbox = ChatInbox()
+        inbox.merge(BridgedChat(app: "whatsapp", name: "Arjan den Hartog", messages: [
+            InboxMessage(id: "1", text: "Dat sowieso", date: now.addingTimeInterval(-600), fromMe: true)], unread: 0))
+        // As an earlier version stored it: the same chat under a key with the mark in it, holding a newer message.
+        let data = try JSONEncoder().encode(inbox)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var threads = try XCTUnwrap(json["threads"] as? [String: Any])
+        threads["whatsapp|\u{200E}arjan den hartog"] = [
+            "id": "whatsapp|\u{200E}arjan den hartog", "app": "whatsapp", "name": "\u{200E}Arjan den Hartog", "unread": 1,
+            "messages": [["id": "n1", "text": "nou gwn", "date": now.timeIntervalSinceReferenceDate, "sender": ""]],
+        ]
+        json["threads"] = threads
+        var split = try JSONDecoder().decode(ChatInbox.self, from: JSONSerialization.data(withJSONObject: json))
+        split.trim()
+        XCTAssertEqual(split.threads.count, 1, "one chat again")
+        XCTAssertEqual(split.threads[ChatInbox.key(app: "whatsapp", chat: "Arjan den Hartog")]?.messages.last?.text, "nou gwn",
+                       "with the newest message last, as its row shows it")
+    }
+
+    // MARK: Calls
+
+    func testCallLinesReadAsCalls() {
+        XCTAssertEqual(ChatFormat.call("Incoming call"), ChatCall(outgoing: false))
+        XCTAssertEqual(ChatFormat.call("Missed video call"), ChatCall(video: true, missed: true))
+        XCTAssertEqual(ChatFormat.call("📞 Outgoing voice call (2:13)"), ChatCall(outgoing: true, seconds: 133))
+        XCTAssertEqual(ChatFormat.call("Gemiste spraakoproep"), ChatCall(missed: true))
+        XCTAssertEqual(ChatFormat.call("Verpasster Videoanruf")?.video, true)
+        XCTAssertEqual(ChatFormat.call("Appel vocal manqué")?.missed, true)
+        XCTAssertEqual(ChatFormat.call("Videollamada")?.video, true)
+        XCTAssertEqual(ChatFormat.call("Voice call · 5 min")?.seconds, 300)
+        XCTAssertNil(ChatFormat.call("call me?"), "a question about calling is a message")
+        XCTAssertNil(ChatFormat.call("bel me over 5 min goed"))
+        XCTAssertNil(ChatFormat.call("Call"), "one word alone says too little")
+        XCTAssertNil(ChatFormat.call("FaceTime"))
+        // Telegram's call reads back the same way, and every line of one is a call again.
+        let line = TelegramData.text(["@type": "messageCall", "is_video": true, "duration": 75,
+                                      "discard_reason": ["@type": "callDiscardReasonHungUp"]])
+        XCTAssertEqual(line.flatMap(ChatFormat.call), ChatCall(video: true, seconds: 75))
+        let missed = TelegramData.text(["@type": "messageCall", "discard_reason": ["@type": "callDiscardReasonMissed"]])
+        XCTAssertEqual(missed.flatMap(ChatFormat.call), ChatCall(missed: true))
+        for call in [ChatCall(), ChatCall(video: true), ChatCall(missed: true), ChatCall(video: true, missed: true)] {
+            XCTAssertEqual(ChatFormat.call(call.title(mine: false))?.video, call.video)
+        }
+    }
+
+    func testCallsSayWhatTheyWere() {
+        let missed = ChatCall(missed: true)
+        XCTAssertEqual(missed.title(mine: false), tr("chat.call.missedVoice"))
+        XCTAssertEqual(missed.title(mine: true), tr("chat.call.voice"), "a call nobody picked up at the other end is no missed call of yours")
+        XCTAssertEqual(missed.detail(mine: true), tr("chat.call.outgoing") + " · " + tr("chat.call.noAnswer"))
+        XCTAssertEqual(ChatCall(video: true, seconds: 3725).detail(mine: false), tr("chat.call.incoming") + " · 1:02:05")
+        let message = InboxMessage(id: "1", text: "Missed voice call", date: Date())
+        XCTAssertEqual(message.summary, "📞 " + tr("chat.call.missedVoice"))
+    }
+
     // MARK: Teams
 
     func testTeamsSignInAnswers() {
@@ -1453,6 +1558,8 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(filled, [.read, nil, .read, .read, .read, .delivered, .failed, .sent],
                        "older ones go as far as a later one did; theirs have none; a red mark stays; the newest unknown has one tick")
         XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, nil)]), [.pending, .sent], "a clock stays a clock")
+        XCTAssertEqual(ChatReceipts.filled([(true, .pending), (true, .read)]), [.read, .read],
+                       "a clock before a message that went out is one its app never took back")
     }
 
     func testAMemberWhoWroteLaterHasReadYourMessage() {

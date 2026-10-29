@@ -220,7 +220,13 @@ final class WhatsAppLink: ObservableObject {
     }
     /// What the next launch starts from, as last written.
     private var keptUnread: [String: WAUnreadCarry]?
+    /// Chats you marked unread by hand while Nook holds none of their messages (a chat known only from the phone's
+    /// list): they count one new message until you read them. Kept across launches, as the read marks are.
+    @Published private(set) var markedUnread = WhatsAppSettings.readMarks(WhatsAppLink.markedUnreadKey) {
+        didSet { WhatsAppSettings.setReadMarks(markedUnread, Self.markedUnreadKey) }
+    }
     private static let readInNookKey = "whatsappReadInNook"
+    private static let markedUnreadKey = "whatsappMarkedUnread"
     private static let readInWhatsAppKey = "whatsappReadInWhatsApp"
     /// Each chat's picture on this Mac (a person's profile photo, a group's), by its JID, once fetched.
     @Published private(set) var avatars: [String: String] = [:]
@@ -550,6 +556,7 @@ final class WhatsAppLink: ObservableObject {
         case .readElsewhere(let chat)?:
             let key = WAJID.normalized(chat)
             readInWhatsApp[key] = Date()
+            clearMarkedUnread(key)
             guard inbox.conversations[key] != nil else { return }
             inbox.markRead(key)
             onReadElsewhere?(key)
@@ -1016,6 +1023,12 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         inbox.markRead(key)
         readInNook[key] = Date()
+        clearMarkedUnread(key)
+    }
+
+    /// Takes back a "Mark as unread" once the chat is read.
+    private func clearMarkedUnread(_ key: String) {
+        if markedUnread[key] != nil { markedUnread[key] = nil }
     }
 
     /// Whether a chat is still unread in WhatsApp itself: its newest message is someone else's and WhatsApp did not say
@@ -1071,6 +1084,7 @@ final class WhatsAppLink: ObservableObject {
         readInNook[key] = Date()
         readInWhatsApp[key] = Date()
         inbox.markRead(key)
+        clearMarkedUnread(key)
         guard let provider, isConnected else { return }
         let last = inbox.conversations[key]?.messages.last { !$0.fromMe }?.id
         Task { try? await provider.markRead(chat: key, lastIncoming: last) }
@@ -1082,6 +1096,7 @@ final class WhatsAppLink: ObservableObject {
         let key = WAJID.normalized(chat)
         let counted = (inbox.conversations[key]?.unread ?? 0) + carried(key)
         if counted > 0 { return counted }
+        if markedUnread[key] != nil { return 1 }
         guard let known = known(key), known.unread > 0 else { return 0 }
         if let read = readInNook[key], known.last <= read { return 0 }
         return known.unread
@@ -1118,15 +1133,18 @@ final class WhatsAppLink: ObservableObject {
 
     /// Marks the chat unread in Nook (WhatsApp itself keeps it as it is).
     func markUnread(_ chat: String) {
-        carriedUnread[WAJID.normalized(chat)] = nil
-        readInNook[WAJID.normalized(chat)] = nil
-        inbox.markUnread(chat)
+        let key = WAJID.normalized(chat)
+        carriedUnread[key] = nil
+        readInNook[key] = nil
+        // A chat Nook has no messages of yet has no count to raise: the mark stands in for one.
+        if inbox.conversations[key] == nil { markedUnread[key] = Date() } else { inbox.markUnread(key) }
     }
 
     func markRead(_ chat: String) {
         let key = WAJID.normalized(chat)
         let hadUnread = (inbox.conversations[key]?.unread ?? 0) + carried(key) > 0
         readInNook[key] = Date()
+        clearMarkedUnread(key)
         guard let provider, let conversation = inbox.conversations[key] else { return }
         inbox.markRead(key)
         guard hadUnread, WhatsAppSettings.markReadOnReply else { return }

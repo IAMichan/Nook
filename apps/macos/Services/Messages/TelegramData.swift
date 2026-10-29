@@ -378,6 +378,13 @@ enum TelegramData {
         case "messageSticker":
             return ((content["sticker"] as? [String: Any])?["emoji"] as? String) ?? "🙂"
         case "messageLocation", "messageVenue": return "📍"
+        case "messageCall":
+            // Its line as `ChatFormat.call` reads it back: the chat shows it as a call, in your language.
+            let reason = type(content["discard_reason"] as? [String: Any] ?? [:])
+            let seconds = Double(int64(content["duration"]) ?? 0)
+            return ChatCall(video: content["is_video"] as? Bool == true,
+                            missed: reason == "callDiscardReasonMissed" || reason == "callDiscardReasonDeclined",
+                            seconds: seconds > 0 ? seconds : nil).line
         case "messageContact": return "👤"
         case "messagePoll":
             // A plain string in older TDLib, formatted text since 1.8.33.

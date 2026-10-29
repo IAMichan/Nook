@@ -44,7 +44,7 @@ struct CardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay {
-            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image {
+            if let zoomed, case .photo(let url) = zoomed.media, let image = zoomed.image ?? ChatMediaImages.image(url) {
                 ChatPhotoZoom(url: url, preview: image, name: zoomed.attachment ?? "",
                               onClose: { withAnimation(NookTheme.reveal) { self.zoomed = nil } },
                               onOpen: { self.zoomed = nil; onOpen(zoomed) })

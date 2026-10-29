@@ -397,3 +397,50 @@ struct ChatMarkButton: View {
         }
     }
 }
+
+/// In the tray above the answer field of a chat Nook can only read, the same for every app: what is missing here and
+/// the one step that brings it. An app Nook can link (WhatsApp, Telegram, Instagram, Slack, Teams…) gets a button to
+/// Settings › Chats; one it can only see through notifications says so and opens the app. A cross puts it away for
+/// that app.
+struct ChatLimitsLine: View {
+    let appName: String
+    /// Nook can link this app fully (through its chat helper or a bridge of its own).
+    let linkable: Bool
+    let link: () -> Void
+    let openApp: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Image(systemName: "eye")
+                .font(NookTheme.font(11, .semibold))
+                .foregroundStyle(NookTheme.amber)
+                .frame(minWidth: 16)
+                .accessibilityHidden(true)
+            Text(tr(linkable ? "chats.limits.linkable" : "chats.limits.notifications", appName))
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: NookTheme.Spacing.sm)
+            if linkable {
+                SmallGhostButton(title: tr("chats.limits.link", appName), action: link)
+            } else {
+                SmallGhostButton(title: tr("chats.openApp", appName), action: openApp)
+            }
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(NookTheme.font(10, .semibold))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(tr("chats.limits.hide"))
+            .accessibilityLabel(tr("chats.limits.hide"))
+        }
+        // The same row as the read line and the queued messages' header (see `ChatReadLine`).
+        .padding(.horizontal, NookTheme.Spacing.md)
+        .padding(.vertical, 3)
+    }
+}

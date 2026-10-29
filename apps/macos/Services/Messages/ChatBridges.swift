@@ -620,6 +620,11 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
 
     private var lastRow: Int64?
     private var lastChange: Date?
+    /// New rows that had nothing to show yet, with when Nook first saw them: WhatsApp writes a message's row before its
+    /// text is decrypted, and fills it in a moment later. They are read again until they say something, so a message
+    /// shows as soon as it is there, not only when its chat is opened. Given up after `waitingFor`.
+    private var waiting: [Int64: Date] = [:]
+    private static let waitingFor: TimeInterval = 600
     /// Every chat read so far by its row, with its name in Nook, for the unread counts.
     private var names: [String: String] = [:]
     /// Whether the group member table can be joined (it is not in every version of the app).
@@ -650,9 +655,14 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
         let contacts = await ContactDirectory.names()
         // Private chats (0) and groups (1); not broadcast lists or status updates.
         let kinds = "s.ZSESSIONTYPE IN (0, 1)"
-        let rows: [[String: Any]]
+        var rows: [[String: Any]]
         if let lastRow {
             rows = try await select("WHERE m.Z_PK > \(lastRow) AND \(kinds) ORDER BY m.Z_PK")
+            waiting = waiting.filter { Date().timeIntervalSince($0.value) < Self.waitingFor }
+            if !waiting.isEmpty {
+                let ids = waiting.keys.sorted().map(String.init).joined(separator: ",")
+                rows = try await select("WHERE m.Z_PK IN (\(ids)) AND \(kinds) ORDER BY m.Z_PK") + rows
+            }
         } else {
             rows = try await select("""
             WHERE \(kinds) AND m.ZCHATSESSION IN (
@@ -670,7 +680,12 @@ final class WhatsAppDesktopBridge: ChatHistoryBridge {
             if name.isEmpty { name = contacts[AppData.key(AppData.string(row["jid"]))] ?? WAJID.displayNumber(AppData.string(row["jid"])) }
             names[chat] = name
             if group { groups.insert(chat) }
-            guard let message = Self.message(row, contacts: contacts) else { continue }
+            guard let message = Self.message(row, contacts: contacts) else {
+                // Read again at the next look, until WhatsApp filled it in (see `waiting`).
+                if lastRow != nil, waiting[id] == nil, waiting.count < 200 { waiting[id] = Date() }
+                continue
+            }
+            waiting[id] = nil
             if message.isMine { self.mine[id] = (chat, message) }
             messages[chat, default: []].append(message)
         }
@@ -903,6 +918,9 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
     private var stale: Set<String> = []
     /// How often in a row a chat was read before its newest message was there (see `ChatServiceData.isBehind`).
     private var behind: [String: Int] = [:]
+    /// Each chat's unread count as last passed on: a chat read on your phone (or in the app) changes only this, not its
+    /// newest message, and still goes to the inbox at once, so it is read in Nook too.
+    private var reportedUnread: [String: Int] = [:]
     private static let behindRetries = 3
     /// Files the helper downloaded for Nook, by their `mxc://` address.
     private var downloaded: [String: String] = [:]
@@ -956,6 +974,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
         seen = [:]
         stale = []
         behind = [:]
+        reportedUnread = [:]
         covered = []
         isWorking = false
     }
@@ -981,6 +1000,12 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
             let byID = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             if byID != chats { chats = byID }
             var result: [BridgedChat] = []
+            for chat in listed where !(stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil))) {
+                // Nothing new in it, but read (or marked unread) somewhere else since: only its count goes.
+                guard let reported = reportedUnread[chat.id], reported != chat.unread else { continue }
+                reportedUnread[chat.id] = chat.unread
+                result.append(BridgedChat(app: chat.app, name: chat.title, messages: [], unread: chat.unread))
+            }
             for chat in listed where stale.contains(chat.id) || (chat.last.map({ seen[chat.id] != $0 }) ?? (seen[chat.id] == nil)) {
                 // Before the read: a change told while it runs marks the chat again, for the next turn.
                 stale.remove(chat.id)
@@ -1004,6 +1029,7 @@ final class ChatServiceBridge: ObservableObject, ChatBridge {
                     behind[chat.id] = nil
                 }
                 seen[chat.id] = chat.last ?? .distantPast
+                reportedUnread[chat.id] = chat.unread
                 covered.insert(chat.app)
                 chatIDs[chat.app + "|" + chat.title] = chat.id
                 guard !messages.isEmpty || !deleted.isEmpty else { continue }

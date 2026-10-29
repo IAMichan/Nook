@@ -276,3 +276,95 @@ enum ChatFormat {
         return nil
     }
 }
+
+/// A call as a chat notes it among the messages: voice or video, missed or not, who rang and how long it lasted, as far
+/// as its app says. Every app's call reads the same way (`ChatFormat.call`) and shows as the same row in the chat.
+struct ChatCall: Equatable, Sendable {
+    var video = false
+    /// Nobody answered (or it was declined).
+    var missed = false
+    /// You rang; nil when the app's line does not say, and the side of the message tells.
+    var outgoing: Bool? = nil
+    /// How long it lasted, when the app says.
+    var seconds: Double? = nil
+
+    /// What the chat calls it: "Video call", or "Missed voice call" for one you did not answer.
+    func title(mine: Bool) -> String {
+        if missed, !(outgoing ?? mine) { return tr(video ? "chat.call.missedVideo" : "chat.call.missedVoice") }
+        return tr(video ? "chat.call.video" : "chat.call.voice")
+    }
+
+    /// The line under it: who rang, and how long it lasted or that nobody answered ("Incoming · 2:13").
+    func detail(mine: Bool) -> String {
+        let way = tr((outgoing ?? mine) ? "chat.call.outgoing" : "chat.call.incoming")
+        if let seconds, seconds > 0, !missed { return "\(way) · \(Self.clock(seconds))" }
+        if missed, outgoing ?? mine { return "\(way) · \(tr("chat.call.noAnswer"))" }
+        return way
+    }
+
+    /// One line for the chat list and for Nook: "📞 Missed voice call".
+    func summary(mine: Bool) -> String { "📞 " + title(mine: mine) }
+
+    /// "0:42", "1:02:05".
+    static func clock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let (hours, minutes, rest) = (total / 3600, total % 3600 / 60, total % 60)
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
+
+    /// The line an app's call reads as when it brings no words of its own (Telegram): `ChatFormat.call` reads it back.
+    var line: String {
+        var words = [missed ? "Missed" : (outgoing == true ? "Outgoing" : outgoing == false ? "Incoming" : ""),
+                     video ? "video call" : "voice call"].filter { !$0.isEmpty }.joined(separator: " ")
+        if let seconds, seconds > 0, !missed { words += " (\(Self.clock(seconds)))" }
+        return words
+    }
+}
+
+extension ChatFormat {
+    /// A message that is a call: the line an app puts in the chat for one ("Incoming call", "Missed video call",
+    /// "Gemiste spraakoproep", "Appel vocal (2:13)"), in English, Dutch, German, French and Spanish. Nil for anything
+    /// else, also a sentence that only talks about calling ("Call me?").
+    static func call(_ text: String) -> ChatCall? {
+        guard text.count <= 60, !text.contains("?"), !text.contains("\n") else { return nil }
+        let lower = text.lowercased()
+        var call = ChatCall()
+        if let clock = lower.range(of: #"\d{1,2}:\d{2}(:\d{2})?"#, options: .regularExpression) {
+            let parts = lower[clock].split(separator: ":").compactMap { Double($0) }
+            call.seconds = parts.reduce(0) { $0 * 60 + $1 }
+        } else if let minutes = lower.range(of: #"\d+\s*min"#, options: .regularExpression) {
+            call.seconds = Double(lower[minutes].prefix { $0.isNumber }).map { $0 * 60 }
+        }
+        let words = lower.split { !$0.isLetter }.map(String.init)
+            .filter { !Self.callUnits.contains($0) }
+        guard !words.isEmpty, words.contains(where: Self.callWords.contains),
+              words.allSatisfy({ Self.callWords.contains($0) || Self.callModifiers.contains($0) }),
+              words.contains(where: Self.callModifiers.contains) || call.seconds != nil else { return nil }
+        call.video = words.contains { $0.hasPrefix("video") || $0.hasPrefix("vidéo") }
+        call.missed = words.contains(where: Self.missedWords.contains)
+        if words.contains(where: Self.incomingWords.contains) { call.outgoing = false }
+        if words.contains(where: Self.outgoingWords.contains) { call.outgoing = true }
+        return call
+    }
+
+    private static let callWords: Set<String> = [
+        "call", "anruf", "sprachanruf", "videoanruf", "gruppenanruf", "oproep", "spraakoproep", "videooproep",
+        "groepsoproep", "gesprek", "videogesprek", "spraakgesprek", "appel", "llamada", "videollamada", "facetime",
+    ]
+    private static let missedWords: Set<String> = [
+        "missed", "declined", "gemiste", "gemist", "geweigerde", "geweigerd", "verpasster", "verpasst", "abgelehnter",
+        "abgelehnt", "manqué", "refusé", "perdida", "rechazada",
+    ]
+    private static let incomingWords: Set<String> = ["incoming", "inkomende", "inkomend", "eingehender", "eingehend", "entrant", "entrante"]
+    private static let outgoingWords: Set<String> = ["outgoing", "uitgaande", "uitgaand", "ausgehender", "ausgehend", "sortant", "saliente"]
+    private static let callModifiers: Set<String> = missedWords.union(incomingWords).union(outgoingWords).union([
+        "voice", "audio", "video", "group", "spraak", "groeps", "vocal", "vidéo", "de", "voz", "grupal",
+        // One word that already says which kind of call it is ("Videoanruf", "Spraakoproep").
+        "sprachanruf", "videoanruf", "spraakoproep", "videooproep", "videogesprek", "spraakgesprek", "videollamada",
+    ])
+    /// The words of a duration ("2 min", "45 sec"), left out before the rest is read.
+    private static let callUnits: Set<String> = [
+        "min", "mins", "minute", "minutes", "minuut", "minuten", "minuto", "minutos", "sec", "secs", "s", "second",
+        "seconds", "seconde", "seconden", "sekunde", "sekunden", "secondes", "segundo", "segundos", "h", "hr", "uur", "std",
+    ]
+}

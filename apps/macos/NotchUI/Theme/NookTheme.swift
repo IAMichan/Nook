@@ -93,6 +93,12 @@ enum NookTheme {
     /// Your own message in a conversation: a soft fill about 4 % lighter than the canvas, no edge (the agent's answer has
     /// no bubble at all).
     static let bubble = Color(hex: 0x171717)
+    /// A chat app's message bubbles in the Chats tab and chat cards: yours a deep green of Nook's mint, theirs a grey a
+    /// step above the canvas. Solid, so who said what reads at a glance, as in the chat apps themselves.
+    static let chatMine = Color(hex: 0x17493A)
+    static let chatTheirs = Color(hex: 0x232525)
+    /// The time and grey ticks inside those bubbles: soft, yet readable on both fills.
+    static let chatStamp = Color(hex: 0xA3B0AB)
 
     /// Syntax colors for code in diffs (`SyntaxToken.Kind`). Muted on purpose: the diff's own + and − tints stay the
     /// loudest thing, and plain code keeps `textStrong`. Each has a dark and a light value; Nook's windows are dark, so the
@@ -141,6 +147,10 @@ enum NookTheme {
         static let sheet: CGFloat = 14
         /// Your own message's bubble in a conversation.
         static let bubble: CGFloat = 18
+        /// A chat app's message bubble: tighter than Nook's own, so long runs of messages stay compact.
+        static let chatBubble: CGFloat = 10
+        /// Where two bubbles of one run meet, on the writer's side: nearly square, so the run stacks as one column.
+        static let chatJoin: CGFloat = 3
         /// Pills and the notch's own corners.
         static let pill: CGFloat = 20
         /// The composer box: round enough that its one-line form, with the 32 pt send button 8 pt from the edge, is a

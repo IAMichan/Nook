@@ -104,6 +104,9 @@ struct BubbleReaction: Equatable, Identifiable {
 }
 
 extension ChatBubble {
+    /// A call its app noted in the chat: it shows as a call row instead of its line.
+    var call: ChatCall? { attachment == nil && poll == nil ? ChatFormat.call(text) : nil }
+
     /// A conversation as plain text for the pasteboard, one message per line: "[12:04] Anna: See you at eight".
     /// `contact` names the other side of a private chat, where the bubbles carry no sender.
     static func transcript(_ bubbles: [ChatBubble], contact: String) -> String {

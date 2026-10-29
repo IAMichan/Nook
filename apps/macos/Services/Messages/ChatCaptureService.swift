@@ -212,6 +212,12 @@ final class ChatCaptureService: ObservableObject {
                     // A bridged app's notification says its bridge has something new: read it now, not at its next turn.
                     if isBridged(notice.app) {
                         if !replaying { nudge(notice.app) }
+                        // An app whose bridge reads no emoji (WhatsApp on this Mac) still says them in its notification:
+                        // they go on the message. A bridge that reads them puts what the app says over it at its next read.
+                        if let reaction = ChatCapture.reaction(notice.text),
+                           inbox.react(reaction, in: ChatInbox.key(app: notice.app, chat: inbox.placed(notice).chat)) {
+                            changed = true
+                        }
                         continue
                     }
                     guard inbox.add(notice, id: "n\(notification.record)") else { continue }
