@@ -156,7 +156,7 @@ extension PullRequestDetailView {
     }
 
     /// What may still hold the merge back, in its own mark and a few words ("Branch protection", "Behind main",
-    /// "Checks failing"); a click shows GitHub's whole reason, and for a branch that is behind the button that updates it.
+    /// "Checks failing"); a click shows GitHub's whole reason.
     func mergeBlocker(_ note: String, detail: PullRequestDetail) -> some View {
         let reason = String(note.split(separator: ".").last ?? "")
         let look: (symbol: String, color: Color, label: String) = switch reason {
@@ -189,13 +189,7 @@ extension PullRequestDetailView {
                     .font(NookTheme.TextStyle.body)
                     .foregroundStyle(NookTheme.paper)
                     .fixedSize(horizontal: false, vertical: true)
-                if reason == "behind" {
-                    SmallGhostButton(title: tr("agents.pr.action.updateBranch")) {
-                        showBlocker = false
-                        actions.close()
-                        actions.pending = .updateBranch(headSHA: detail.headSHA)
-                    }
-                }
+                // Updating a branch that is behind is on the Summary's Status line and in the ⋯ menu, not here too.
             }
             .padding(NookTheme.Spacing.lg)
             .frame(width: 280, alignment: .leading)

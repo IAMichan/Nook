@@ -321,8 +321,8 @@ struct PullRequestDetailView: View {
         return PullRequestBadge.Glyph(detail.state, conflicted: detail.conflicted)
     }
 
-    /// "main ← feature" in mono (a click on the head copies it), the update button when the branch is behind, and on
-    /// the right how many files and lines changed.
+    /// "main ← feature" in mono (a click on the head copies it), and on the right how many files and lines changed. A
+    /// branch that is behind is updated from the Summary's Status line (or the ⋯ menu), not from here.
     func branchLine(_ detail: PullRequestDetail) -> some View {
         HStack(spacing: NookTheme.Spacing.sm) {
             HStack(spacing: NookTheme.Spacing.sm) {
@@ -340,21 +340,6 @@ struct PullRequestDetailView: View {
             }
             .font(NookTheme.mono(11.5))
             .foregroundStyle(NookTheme.textMuted)
-            if detail.isOpen && detail.mergeState == "behind" {
-                Button {
-                    actions.close()
-                    actions.pending = .updateBranch(headSHA: detail.headSHA)
-                } label: {
-                    HStack(spacing: NookTheme.Spacing.xxs) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text(tr("agents.pr.behind"))
-                    }
-                    .font(NookTheme.TextStyle.caption)
-                    .foregroundStyle(NookTheme.amber)
-                }
-                .buttonStyle(.plain)
-                .help(tr("agents.pr.action.updateBranch"))
-            }
             Spacer(minLength: NookTheme.Spacing.sm)
             diffStat(detail)
         }
