@@ -5,6 +5,7 @@ import AppKit
 /// messages in the notch, answer them and send messages after your OK.
 struct WhatsAppLinkSection: View {
     @ObservedObject private var link = WhatsAppLink.shared
+    @ObservedObject private var accounts = WhatsAppAccounts.shared
     @ObservedObject private var installer = WhatsAppGOWAInstaller.shared
     @State private var enabled = WhatsAppSettings.enabled
     @State private var gateway = WhatsAppSettings.gateway
@@ -23,12 +24,14 @@ struct WhatsAppLinkSection: View {
     var body: some View {
         Section {
             SettingToggle(tr("whatsapp.settings.enable"), detail: tr("whatsapp.settings.enableDetail"), isOn: $enabled)
-                .onChange(of: enabled) { _, on in link.setEnabled(on) }
+                .onChange(of: enabled) { _, on in accounts.setEnabled(on) }
 
             if enabled {
-                StatusRow(title: "WhatsApp", detail: link.statusLine, state: state) {
+                // With more accounts the first one goes by its name too.
+                StatusRow(title: accounts.links.count > 1 ? accounts.name(of: link) : "WhatsApp", detail: link.statusLine,
+                          state: link.statusState) {
                     if link.link == .unreachable || link.link == .unauthorized {
-                        Button(tr("whatsapp.settings.retry")) { link.settingsChanged() }
+                        Button(tr("whatsapp.settings.retry")) { accounts.settingsChanged() }
                     }
                 }
 
@@ -47,6 +50,11 @@ struct WhatsAppLinkSection: View {
                     .padding(.vertical, NookTheme.Spacing.xs)
                 }
 
+                // A business number or a second phone, each linked with a QR of its own.
+                if link.isConnected || accounts.links.count > 1 {
+                    WhatsAppAccountRows()
+                }
+
                 DisclosureGroup(tr("whatsapp.settings.advanced")) {
                     SettingToggle(tr("whatsapp.settings.markRead"), detail: tr("whatsapp.settings.markReadDetail"), isOn: $markRead)
                         .onChange(of: markRead) { _, value in WhatsAppSettings.markReadOnReply = value }
@@ -56,15 +64,15 @@ struct WhatsAppLinkSection: View {
                     .onChange(of: gateway) { _, kind in
                         WhatsAppSettings.gateway = kind
                         address = WhatsAppSettings.url
-                        link.settingsChanged()
+                        accounts.settingsChanged()
                     }
                     TextField(tr("whatsapp.settings.address"), text: $address, prompt: Text(gateway.defaultURL))
-                        .onSubmit { WhatsAppSettings.url = address; link.settingsChanged() }
+                        .onSubmit { WhatsAppSettings.url = address; accounts.settingsChanged() }
                     SecureField(credentialLabel, text: $credential)
-                        .onSubmit { WhatsAppSettings.setCredential(credential); link.settingsChanged() }
+                        .onSubmit { WhatsAppSettings.setCredential(credential); accounts.settingsChanged() }
                     if gateway == .gowa, WhatsAppGOWAInstaller.isInstalled {
                         Toggle(tr("whatsapp.settings.autoStart"), isOn: $autoStart)
-                            .onChange(of: autoStart) { _, on in WhatsAppGOWAProcess.autoStart = on; link.settingsChanged() }
+                            .onChange(of: autoStart) { _, on in WhatsAppGOWAProcess.autoStart = on; accounts.settingsChanged() }
                         // Nook installs GOWA once; a newer one (polls need 9.3) comes from here.
                         if !installer.busy {
                             HStack(spacing: NookTheme.Spacing.md) {
@@ -85,8 +93,8 @@ struct WhatsAppLinkSection: View {
         }
 
         // Once linked, what reaches you gets a section of its own: the main switch, the rule per kind of chat, then
-        // every chat on its own (louder or quieter than its kind).
-        if enabled, link.isConnected {
+        // every chat on its own (louder or quieter than its kind). The choices hold in every account.
+        if enabled, accounts.isConnected {
             Section {
                 SettingToggle(tr("whatsapp.settings.notify"), detail: tr("whatsapp.settings.notifyDetail"), isOn: notify)
                 if notify.wrappedValue {
@@ -106,15 +114,6 @@ struct WhatsAppLinkSection: View {
         switch gateway {
         case .gowa: return tr("whatsapp.settings.basicAuth")
         case .openwa: return tr("whatsapp.settings.apiKey")
-        }
-    }
-
-    private var state: StatusState {
-        switch link.link {
-        case .connected: return .done
-        case .off, .connecting, .needsQR: return .todo
-        case .unreachable: return .warning
-        case .unauthorized, .failed: return .error
         }
     }
 
@@ -161,26 +160,27 @@ struct WhatsAppLinkSection: View {
 }
 
 /// Every chat with its own choice: automatic (the rule of its kind), always, or never. Hidden chats can come back
-/// one by one.
+/// one by one. The chats of every linked account, and the choices hold in each.
 struct WhatsAppChatModeList: View {
     @ObservedObject private var link = WhatsAppLink.shared
+    @ObservedObject private var accounts = WhatsAppAccounts.shared
     @State private var query = ""
     @State private var open = false
 
     private var chats: [(jid: String, name: String)] {
         let needle = query.trimmingCharacters(in: .whitespaces)
-        return link.chatsForSettings.filter { !link.filters.ignored.contains($0.jid) }
+        return accounts.chatsForSettings.filter { !link.filters.ignored.contains($0.jid) }
             .filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) }
     }
 
     private var hidden: [(jid: String, name: String)] {
-        let names = Dictionary(link.chatsForSettings.map { ($0.jid, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let names = Dictionary(accounts.chatsForSettings.map { ($0.jid, $0.name) }, uniquingKeysWith: { first, _ in first })
         return link.filters.ignored.sorted().map { ($0, names[$0] ?? WAJID.displayNumber($0)) }
     }
 
     var body: some View {
         DisclosureGroup(isExpanded: $open) {
-            if link.chatsForSettings.isEmpty {
+            if accounts.chatsForSettings.isEmpty {
                 SettingNote(tr("whatsapp.settings.noChats"))
             } else {
                 NookSearchField(prompt: tr("whatsapp.settings.chatSearch"), text: $query, style: .inline)
@@ -242,5 +242,111 @@ struct WhatsAppChatModeList: View {
             .fill(NookTheme.smoke)
             .overlay(Text(WAJID.initials(name)).font(NookTheme.font(9, .semibold)).foregroundStyle(NookTheme.textSecondary))
             .frame(width: 22, height: 22)
+    }
+}
+
+extension WhatsAppLink {
+    /// The link as a status row shows it.
+    var statusState: StatusState {
+        switch link {
+        case .connected: return .done
+        case .off, .connecting, .needsQR: return .todo
+        case .unreachable: return .warning
+        case .unauthorized, .failed: return .error
+        }
+    }
+}
+
+/// Every WhatsApp account besides the first, and adding another (a business number, a second phone): each links with a
+/// QR of its own, scanned with the phone of that account, on the same gateway. The first account can get a name too, so
+/// the Chats tab says which account a chat is in.
+struct WhatsAppAccountRows: View {
+    @ObservedObject private var accounts = WhatsAppAccounts.shared
+    @State private var adding = false
+    @State private var newName = ""
+    @State private var mainName = WhatsAppSettings.mainName
+    @State private var removing: WAAccount?
+
+    var body: some View {
+        if accounts.links.count > 1 {
+            TextField(tr("whatsapp.accounts.mainName"), text: $mainName, prompt: Text(tr("whatsapp.accounts.mainPrompt")))
+                .onSubmit { accounts.rename("", to: mainName) }
+        }
+        ForEach(accounts.accounts) { account in
+            if let link = accounts.links.first(where: { $0.account == account.id }) {
+                WhatsAppAccountRow(link: link, account: account, remove: { removing = account })
+            }
+        }
+        Group {
+            if adding {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    TextField(tr("whatsapp.accounts.name"), text: $newName, prompt: Text(tr("whatsapp.accounts.namePrompt")))
+                        .onSubmit(add)
+                    Button(tr("whatsapp.accounts.link"), action: add)
+                        .buttonStyle(.borderedProminent)
+                    Button(tr("button.cancel")) { adding = false; newName = "" }
+                }
+            } else {
+                HStack(spacing: NookTheme.Spacing.md) {
+                    SettingLabel(tr("whatsapp.accounts.add"), detail: tr("whatsapp.accounts.addDetail"))
+                    Spacer()
+                    Button(tr("whatsapp.accounts.addButton")) { adding = true }
+                }
+            }
+        }
+            .confirmationDialog(tr("whatsapp.accounts.removeTitle", removing?.name ?? ""),
+                                isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                                titleVisibility: .visible, presenting: removing) { account in
+                Button(tr("whatsapp.accounts.remove"), role: .destructive) { accounts.remove(account.id) }
+                Button(tr("button.cancel"), role: .cancel) {}
+            } message: { _ in
+                Text(tr("whatsapp.accounts.removeDetail"))
+            }
+    }
+
+    private func add() {
+        accounts.add(name: newName)
+        newName = ""
+        adding = false
+    }
+}
+
+/// One account besides the first: its name (a click changes it), where its link stands, its QR until it is linked, and
+/// Remove.
+private struct WhatsAppAccountRow: View {
+    @ObservedObject var link: WhatsAppLink
+    let account: WAAccount
+    let remove: () -> Void
+    @State private var name: String
+
+    init(link: WhatsAppLink, account: WAAccount, remove: @escaping () -> Void) {
+        self.link = link
+        self.account = account
+        self.remove = remove
+        _name = State(initialValue: account.name)
+    }
+
+    var body: some View {
+        StatusRow(title: WhatsAppAccounts.shared.name(of: link), detail: link.statusLine, state: link.statusState) {
+            if link.link == .unreachable || link.link == .unauthorized {
+                Button(tr("whatsapp.settings.retry")) { link.settingsChanged() }
+            }
+            Button(tr("whatsapp.accounts.remove"), role: .destructive, action: remove)
+        }
+        TextField(tr("whatsapp.accounts.name"), text: $name, prompt: Text(tr("whatsapp.accounts.namePrompt")))
+            .onSubmit { WhatsAppAccounts.shared.rename(account.id, to: name) }
+        if link.link == .needsQR, let data = link.qrPNG, let image = NSImage(data: data) {
+            HStack(alignment: .top, spacing: NookTheme.Spacing.xl) {
+                QRCodeView(image: image, side: 160, label: tr("chats.link.qr"))
+                Text(tr("whatsapp.accounts.scan"))
+                    .font(NookTheme.TextStyle.body)
+                    .foregroundStyle(NookTheme.textStrong)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, NookTheme.Spacing.xs)
+        }
+        if link.webhook == .portBusy, let port = link.webhookPort {
+            SettingNote(tr("whatsapp.webhook.portBusy", port), tone: .warning)
+        }
     }
 }

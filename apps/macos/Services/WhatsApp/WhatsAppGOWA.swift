@@ -264,7 +264,7 @@ final class WhatsAppGOWAInstaller: ObservableObject {
             }
             WhatsAppGOWAProcess.binaryPath = Self.binaryURL.path
             WhatsAppGOWAProcess.shared.stopNow()                     // an older one gives way
-            WhatsAppLink.shared.settingsChanged()              // starts it; the QR follows
+            WhatsAppAccounts.shared.settingsChanged()          // starts it; the QR follows
             step = .done(version: version)
             Log.connectors.info("WhatsApp: GOWA \(version) \(update ? "updated" : "installed") (\(Self.arch))")
         } catch let failure as Failure {

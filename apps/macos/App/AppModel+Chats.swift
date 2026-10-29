@@ -7,7 +7,7 @@ import SwiftUI
 extension AppModel {
     func startChats() {
         // A linked phone brings WhatsApp in live, your own messages included: its notifications would only repeat it.
-        ChatCaptureService.shared.skips = { notice in notice.app == "whatsapp" && WhatsAppLink.shared.isConnected }
+        ChatCaptureService.shared.skips = { notice in notice.app == "whatsapp" && WhatsAppAccounts.shared.isConnected }
         ChatCaptureService.shared.onFresh = { [weak self] ids in ids.forEach { self?.presentCapturedChat($0) } }
         // A chat's card follows its chat while it is up or waits in line, as WhatsApp's does: the newest message, your
         // own answer and its ticks show in it, not only what was there when it came up.
@@ -131,22 +131,24 @@ extension AppModel {
     /// and your own click, as in the chat's card, and logged the same way. Returns the chat's name.
     @discardableResult
     func sendWhatsAppFromChats(_ text: String, chat: String, replyTo: String? = nil) async throws -> String {
-        let name = try await WhatsAppLink.shared.send(text, to: chat, replyTo: replyTo)
+        let name = try await WhatsAppAccounts.shared.send(text, to: chat, replyTo: replyTo)
         store.audit(tool: "whatsapp_send", args: name, result: "verstuurd")
         return name
     }
 
     /// An emoji on a message of a WhatsApp chat, after your own click in its card or the Chats tab (the same emoji again
-    /// takes it back), logged as a send is.
+    /// takes it back), logged as a send is. `chat` is the chat's key across accounts (`WAChatKey`).
     func reactWhatsApp(_ emoji: String, to message: String, chat: String) async throws {
-        let name = try await WhatsAppLink.shared.react(emoji, to: message, chat: chat)
+        let (link, jid) = WhatsAppAccounts.shared.route(chat)
+        let name = try await link.react(emoji, to: message, chat: jid)
         store.audit(tool: "whatsapp_react", args: "\(name): \(emoji)", result: "verstuurd")
     }
 
     /// A file in a WhatsApp chat in the Chats tab: fetched from the gateway and shown in Quick Look, else in the app the
     /// Mac uses for it.
     func openWhatsAppFile(_ bubble: ChatBubble, chat: String) async throws {
-        let url = try await WhatsAppLink.shared.download(message: bubble.id, chat: chat)
+        let (link, jid) = WhatsAppAccounts.shared.route(chat)
+        let url = try await link.download(message: bubble.id, chat: jid)
         let shown = FilePreviewWindow.shared.show(url, title: bubble.attachment ?? url.lastPathComponent)
         guard shown || NSWorkspace.shared.open(url) else { throw NookError(tr("whatsapp.file.noApp")) }
     }
@@ -165,11 +167,12 @@ extension AppModel {
         viewModel.show(.panel(.inbox))
     }
 
-    /// The Chats tab's id of the chat with this name: a WhatsApp chat of the linked phone, else a collected one.
+    /// The Chats tab's id of the chat with this name: a WhatsApp chat of a linked account, else a collected one.
     func chatsEntryID(named name: String) -> String? {
-        let link = WhatsAppLink.shared
-        if link.isConnected, let target = link.resolve(name), link.inbox.conversations[target.jid] != nil {
-            return "wa|" + target.jid
+        let accounts = WhatsAppAccounts.shared
+        if let target = accounts.resolve(name) {
+            let (link, jid) = accounts.route(target.key)
+            if link.inbox.conversations[jid] != nil { return "wa|" + target.key }
         }
         let capture = ChatCaptureService.shared
         guard let thread = capture.inbox.thread(named: name), capture.sources.isOn(thread.app) else { return nil }
@@ -179,7 +182,8 @@ extension AppModel {
     /// The chats "@chat …" offers, newest first: WhatsApp's (with a linked phone or not), then the ones collected
     /// from the other apps, each with its app and how many are new.
     func chatChoices() -> [(name: String, detail: String)] {
-        var choices = WhatsAppLink.shared.chatChoices()
+        var choices = WhatsAppAccounts.shared.connected.flatMap { $0.chatChoices() }
+        if choices.isEmpty { choices = WhatsAppLink.shared.chatChoices() }
         let capture = ChatCaptureService.shared
         for thread in capture.inbox.sorted where capture.sources.isOn(thread.app) {
             let app = MessagingApps.app(id: thread.app)?.name ?? thread.app

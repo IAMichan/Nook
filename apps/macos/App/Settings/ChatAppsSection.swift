@@ -40,7 +40,7 @@ struct ChatAppsSection: View {
     @ObservedObject private var capture = ChatCaptureService.shared
     @ObservedObject private var linker = ChatLinker.shared
     @ObservedObject private var linked = ChatCaptureService.shared.serviceBridge
-    @ObservedObject private var whatsApp = WhatsAppLink.shared
+    @ObservedObject private var whatsApp = WhatsAppAccounts.shared
     @ObservedObject private var telegram = ChatCaptureService.shared.telegramBridge
     @ObservedObject private var teams = ChatCaptureService.shared.teamsBridge
     @State private var open: ChatAppSheetItem?
@@ -169,11 +169,12 @@ enum ChatAppStates {
         let capture = ChatCaptureService.shared
         let telegram = capture.telegramBridge
         let teams = capture.teamsBridge
-        let whatsApp = WhatsAppLink.shared
+        let whatsApp = WhatsAppAccounts.shared
         switch id {
         case "whatsapp":
             guard WhatsAppSettings.enabled, whatsApp.isConnected else { return nil }
-            return tr("chats.apps.own.whatsapp")
+            let linked = whatsApp.connected.count
+            return linked > 1 ? tr("chats.apps.accounts", linked) : tr("chats.apps.own.whatsapp")
         case telegram.app:
             return telegram.isReady ? tr("chats.apps.as", telegram.account ?? "Telegram") : nil
         case teams.app:

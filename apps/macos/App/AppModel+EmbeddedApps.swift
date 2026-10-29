@@ -24,7 +24,7 @@ extension AppModel {
             chat.append(ChatMessage(role: .nook, text: title.map { tr("embedded.closed", $0) } ?? tr("embedded.nothingOpen")))
         case .chat(let name):
             // A chat from another app (Telegram, LinkedIn…) has no card: it opens in the Chats tab.
-            if !WhatsAppLink.shared.isConnected || WhatsAppLink.shared.resolve(name) == nil,
+            if WhatsAppAccounts.shared.resolve(name) == nil,
                let id = chatsEntryID(named: name), let thread = ChatCaptureService.shared.inbox.threads[id] {
                 chat.append(ChatMessage(role: .nook, text: tr("chats.openedChat", thread.name)))
                 showChats(ChatsFocus(chat: id))
@@ -148,12 +148,13 @@ extension AppModel {
     /// with Jan's chat in it: in WhatsApp Web Nook searches the chat and clicks it, and in the Mac app you pick it there
     /// yourself. Nothing is typed or marked read.
     func openWhatsAppChat(_ name: String) {
-        // A linked phone knows the chat's exact name and number; without one the name goes as typed.
-        let target = WhatsAppLink.shared.resolve(name)
-        if let target, WhatsAppLink.shared.isConnected {
-            openWhatsAppCard(target.jid, name: target.name)
+        // A linked phone knows the chat's exact name and number (in whichever account it is); without one the name goes
+        // as typed.
+        if let found = WhatsAppAccounts.shared.resolve(name) {
+            openWhatsAppCard(found.key, name: found.name)
             return
         }
+        let target = WhatsAppLink.shared.resolve(name)
         guard let whatsApp = EmbeddedAppCatalog.find("whatsapp") else { return }
         let shown = target?.name ?? name
         let opened = openEmbeddedApp(whatsApp)
@@ -183,12 +184,12 @@ extension AppModel {
     }
 
     /// The card for one chat, asked for: its messages from the phone first (a chat that never wrote since Nook started
-    /// has none here yet), then the card in front of the chat.
-    private func openWhatsAppCard(_ jid: String, name: String) {
+    /// has none here yet), then the card in front of the chat. `key` is the chat's key across accounts (`WAChatKey`).
+    private func openWhatsAppCard(_ key: String, name: String) {
+        let (link, jid) = WhatsAppAccounts.shared.route(key)
         let chat = WAJID.normalized(jid)
         self.chat.append(ChatMessage(role: .nook, text: tr("whatsapp.open.card", name)))
         Task { @MainActor [weak self] in
-            let link = WhatsAppLink.shared
             _ = await link.loadHistory(chat)
             if link.inbox.conversations[chat]?.messages.isEmpty ?? true {
                 _ = try? await link.messages(of: chat, limit: WAInbox.keep)

@@ -83,6 +83,8 @@ protocol WhatsAppProvider: Sendable {
     /// Says this device is online while `chat` is open in Nook, or no longer: WhatsApp only says who is typing to a
     /// device that is, and OpenWA only for a chat it was asked to watch.
     func setOnline(_ online: Bool, chat: String?) async
+    /// An account you removed in Settings (not the first one): the gateway lets go of its device or session.
+    func removeAccount() async
 }
 
 extension WhatsAppProvider {
@@ -91,6 +93,7 @@ extension WhatsAppProvider {
     func groupMembers(_ chat: String) async -> [WAMember] { [] }
     func channels() async -> [WAChannel] { [] }
     func setOnline(_ online: Bool, chat: String?) async {}
+    func removeAccount() async {}
     func contacts() async -> [WAContact] { [] }
     var canVote: Bool { false }
     func vote(chat: String, poll: String, choice: [String]) async throws { throw WAError.refused("vote") }
@@ -216,19 +219,26 @@ final class WAHTTP: Sendable {
 // MARK: - GOWA
 
 /// go-whatsapp-web-multidevice, `./whatsapp rest` (port 3000). Auth: HTTP basic `user:pass`
-/// when the gateway was started with `--basic-auth`. Nook works on one device (the one
-/// already logged in, else a new one named "nook"), named in `X-Device-Id`.
+/// when the gateway was started with `--basic-auth`. Nook works on one device per account: the first account on the
+/// one already logged in (else a new one named "nook"), each other account (`WAAccount`) on the device named after it,
+/// made when missing. The device goes in `device_id`.
 actor GOWAProvider: WhatsAppProvider {
     nonisolated let kind = WAGatewayKind.gowa
     private let http: WAHTTP
     private var deviceId: String?
+    /// The device of another account; nil for the first account.
+    private let account: String?
+    /// The devices of the other accounts, which the first account leaves alone.
+    private let others: Set<String>
 
-    init(base: URL, basicAuth: String?) {
+    init(base: URL, basicAuth: String?, account: String? = nil, others: Set<String> = []) {
         var headers: [String: String] = [:]
         if let auth = basicAuth, auth.contains(":") {
             headers["Authorization"] = "Basic " + Data(auth.utf8).base64EncodedString()
         }
         http = WAHTTP(base: base, headers: headers)
+        self.account = account
+        self.others = others
     }
 
     private func check(_ data: Data, _ code: Int) throws {
@@ -239,18 +249,25 @@ actor GOWAProvider: WhatsAppProvider {
         }
     }
 
-    /// The device to work on; created ("nook") when the gateway has none.
+    /// The device to work on; created ("nook", or the account's own) when the gateway has none.
     private func device() async throws -> (id: String, status: WAStatus) {
         let (data, code) = try await http.call("GET", "/devices")
         try check(data, code)
-        if let found = WAGOWA.device(data) {
+        if let found = WAGOWA.device(data, id: account, excluding: others) {
             deviceId = found.id
             return found
         }
-        let (made, madeCode) = try await http.call("POST", "/devices", json: ["device_id": "nook"])
+        let id = account ?? "nook"
+        let (made, madeCode) = try await http.call("POST", "/devices", json: ["device_id": id])
         try check(made, madeCode)
-        deviceId = "nook"
-        return ("nook", WAStatus(link: .needsQR, me: nil))
+        deviceId = id
+        return (id, WAStatus(link: .needsQR, me: nil))
+    }
+
+    /// An account you removed: its device goes from the gateway, which unlinks it from the phone.
+    func removeAccount() async {
+        guard let id = account else { return }
+        _ = try? await http.call("DELETE", "/devices/\(WAHTTP.pathComponent(id))")
     }
 
     private func scoped(_ method: String, _ path: String, query: [URLQueryItem] = [], json: [String: any Sendable]? = nil,
@@ -492,17 +509,24 @@ actor GOWAProvider: WhatsAppProvider {
 
 // MARK: - OpenWA
 
-/// OpenWA (port 2785, every route under /api). Auth: `X-API-Key`. Nook works on one session
-/// (the one ready, else one named "nook", created and started when missing).
+/// OpenWA (port 2785, every route under /api). Auth: `X-API-Key`. Nook works on one session per account: the first
+/// account on the one ready (else one named "nook"), each other account (`WAAccount`) on the session named after it;
+/// created and started when missing.
 actor OpenWAProvider: WhatsAppProvider {
     nonisolated let kind = WAGatewayKind.openwa
     private let http: WAHTTP
     private var sessionId: String?
+    /// The session name of another account; nil for the first account.
+    private let account: String?
+    /// The session names of the other accounts, which the first account leaves alone.
+    private let others: Set<String>
 
-    init(base: URL, apiKey: String?) {
+    init(base: URL, apiKey: String?, account: String? = nil, others: Set<String> = []) {
         var headers: [String: String] = [:]
         if let apiKey, !apiKey.isEmpty { headers["X-API-Key"] = apiKey }
         http = WAHTTP(base: base, headers: headers)
+        self.account = account
+        self.others = others
     }
 
     private func check(_ data: Data, _ code: Int) throws {
@@ -515,10 +539,18 @@ actor OpenWAProvider: WhatsAppProvider {
     private func session() async throws -> (id: String, status: String, phone: String?) {
         let (data, code) = try await http.call("GET", "/api/sessions")
         try check(data, code)
-        let all = ((try? JSONSerialization.jsonObject(with: data)) as? [Any] ?? []).compactMap(WAOpenWA.session)
-        let pick = all.first { $0.status == "ready" }
-            ?? all.first { ($0.id == sessionId) }
-            ?? named("nook", in: data) ?? all.first
+        let listed = (try? JSONSerialization.jsonObject(with: data)) as? [Any] ?? []
+        let pick: (id: String, status: String, phone: String?)?
+        if let account {
+            pick = named(account, in: data)
+        } else {
+            // Another account's session is never the first account's.
+            let all = listed.filter { !others.contains(($0 as? [String: Any])?["name"] as? String ?? "") }
+                .compactMap(WAOpenWA.session)
+            pick = all.first { $0.status == "ready" }
+                ?? all.first { ($0.id == sessionId) }
+                ?? named("nook", in: data) ?? all.first
+        }
         if var s = pick {
             sessionId = s.id
             if WAOpenWA.needsStart(s.status) {
@@ -528,7 +560,7 @@ actor OpenWAProvider: WhatsAppProvider {
             }
             return s
         }
-        let (made, madeCode) = try await http.call("POST", "/api/sessions", json: ["name": "nook"])
+        let (made, madeCode) = try await http.call("POST", "/api/sessions", json: ["name": account ?? "nook"])
         try check(made, madeCode)
         guard let s = WAOpenWA.session(try? JSONSerialization.jsonObject(with: made)) else { throw WAError.refused("session") }
         sessionId = s.id
@@ -541,6 +573,12 @@ actor OpenWAProvider: WhatsAppProvider {
         guard let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
               let s = list.first(where: { $0["name"] as? String == name }) else { return nil }
         return WAOpenWA.session(s)
+    }
+
+    /// An account you removed: its session goes from the gateway, which unlinks it from the phone.
+    func removeAccount() async {
+        guard account != nil, let id = try? await sid() else { return }
+        _ = try? await http.call("DELETE", "/api/sessions/\(WAHTTP.pathComponent(id))")
     }
 
     private func sid() async throws -> String {

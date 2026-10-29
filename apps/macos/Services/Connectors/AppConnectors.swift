@@ -435,7 +435,7 @@ final class WhatsAppConnector: AppDatabaseConnector {
             guard let known = Self.shown.withLock({ $0[wanted] }) else { return (wanted, []) }
             return (known.jid, [(known.jid, known.name)])
         }
-        guard !wanted.isEmpty, super.isActive, WhatsAppLink.shared.resolve(wanted) == nil else { return (wanted, []) }
+        guard !wanted.isEmpty, super.isActive, WhatsAppAccounts.shared.resolve(wanted) == nil else { return (wanted, []) }
         let words = Research.words(of: wanted).isEmpty ? [wanted] : Research.words(of: wanted)
         guard let rows = try? await run("""
         SELECT COALESCE(ZCONTACTJID, '') AS jid, COALESCE(ZPARTNERNAME, '') AS chatname FROM ZWACHATSESSION
@@ -444,25 +444,64 @@ final class WhatsAppConnector: AppDatabaseConnector {
         return (wanted, rows.map { (AppData.string($0["jid"]), AppData.string($0["chatname"])) })
     }
 
-    /// WhatsApp counts as on when its data on this Mac can be read, or when the phone is linked through the gateway.
-    override var isActive: Bool { super.isActive || WhatsAppLink.shared.isConnected }
+    /// WhatsApp counts as on when its data on this Mac can be read, or when a phone is linked through the gateway.
+    override var isActive: Bool { super.isActive || WhatsAppAccounts.shared.isConnected }
 
     override func contextLines() -> [String] {
-        let link = WhatsAppLink.shared
-        guard link.isConnected else { return [] }
+        let accounts = WhatsAppAccounts.shared
+        guard accounts.isConnected else { return [] }
         var lines = ["WhatsApp is linked live (the user's phone through a local gateway): read chats with whatsapp_live, send with whatsapp_send (the user approves first)."]
-        let unread = link.inbox.visible(filters: link.filters).filter { $0.unread > 0 }
-        if !unread.isEmpty {
-            lines.append("Unread WhatsApp chats:\n" + WhatsAppRecipients.overview(unread, limit: 6))
+        if accounts.showsAccounts {
+            let names = accounts.connected.map { "\"\(accounts.name(of: $0))\"" }.joined(separator: ", ")
+            lines.append("The user linked more than one WhatsApp account: \(names). Pass `account` to whatsapp_live and whatsapp_send when the user names one (\"my business WhatsApp\").")
+        }
+        for link in accounts.connected {
+            let unread = link.inbox.visible(filters: link.filters).filter { $0.unread > 0 }
+            guard !unread.isEmpty else { continue }
+            let title = accounts.showsAccounts ? "Unread WhatsApp chats (\(accounts.name(of: link))):" : "Unread WhatsApp chats:"
+            lines.append(title + "\n" + WhatsAppRecipients.overview(unread, limit: 6))
         }
         return lines
     }
 
     override var tools: [ToolSpec] {
-        let live = WhatsAppLink.shared.isConnected ? liveTools : []
+        let linked = WhatsAppAccounts.shared.isConnected
+        let live = linked ? liveTools : []
         // Without access to WhatsApp's data on this Mac only the linked phone is there.
-        return super.isActive || !WhatsAppLink.shared.isConnected ? databaseTools + live : live
+        return super.isActive || !linked ? databaseTools + live : live
     }
+
+    /// The linked accounts a tool call is about: the one it names (by what the user calls it or its number), else all
+    /// of them, the first account first.
+    private static func accounts(named name: String) -> [WhatsAppLink] {
+        let accounts = WhatsAppAccounts.shared
+        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return accounts.connected }
+        let named = accounts.connected.filter { link in
+            accounts.name(of: link).localizedCaseInsensitiveContains(wanted)
+                || link.me.map(WAJID.displayNumber)?.filter(\.isNumber).contains(wanted.filter(\.isNumber)) == true && wanted.contains { $0.isNumber }
+        }
+        return named.isEmpty ? accounts.connected : named
+    }
+
+    /// The chat a tool call names, in the account it names: by its key (from whatsapp_live), else by name or number in
+    /// the first of those accounts that has it.
+    private static func liveChat(_ chat: String, account: String, also: [(jid: String, name: String)])
+        -> (link: WhatsAppLink, jid: String, name: String)? {
+        if chat.contains(WAChatKey.separator) {
+            let (link, jid) = WhatsAppAccounts.shared.route(chat)
+            return link.resolve(jid).map { (link, $0.jid, $0.name) }
+        }
+        for link in accounts(named: account) {
+            if let found = link.resolve(chat, also: link === WhatsAppLink.shared ? also : []) { return (link, found.jid, found.name) }
+        }
+        return nil
+    }
+
+    private static let accountProperty: [String: Any] = [
+        "type": "string",
+        "description": "Which of the user's linked WhatsApp accounts (its name, such as \"Business\", or its number), when they have more than one. Leave empty for any.",
+    ]
 
     private var liveTools: [ToolSpec] {
         // WhatsApp on this Mac is the other place a chat can be read, when Nook may read it.
@@ -473,7 +512,8 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 description: "WhatsApp through the user's linked phone (live, includes what arrived a minute ago). Without chat: the recent conversations with unread counts and the newest message. With chat (a name, number or chat id): the newest messages of that chat.",
                 schema: ["type": "object", "properties": [
                     "chat": ["type": "string", "description": "Name, phone number or chat id. Leave empty for the overview."],
-                    "limit": ["type": "integer", "description": "How many messages of the chat (default 20, at most 50)."]
+                    "limit": ["type": "integer", "description": "How many messages of the chat (default 20, at most 50)."],
+                    "account": Self.accountProperty,
                 ]],
                 kind: .read,
                 summarize: { input in
@@ -482,26 +522,33 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 },
                 tag: { _ in ("", .neutral) },
                 run: { [weak self] input in
-                    let link = WhatsAppLink.shared
+                    let accounts = WhatsAppAccounts.shared
+                    let account = AppData.string(input["account"])
                     let chat = AppData.string(input["chat"]).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !chat.isEmpty else {
-                        let conversations = link.inbox.visible(filters: link.filters)
-                        if conversations.isEmpty {
-                            let names = link.knownChats.prefix(15).map(\.name).filter { !$0.isEmpty }
-                            return names.isEmpty ? "No recent WhatsApp messages in the last 12 hours."
-                                : "No new WhatsApp messages in the last 12 hours. Recent chats: " + names.joined(separator: ", ") + "."
-                        }
-                        return "Recent WhatsApp conversations (newest first):\n" + WhatsAppRecipients.overview(conversations)
+                        // Every account (or the one asked for), each under its name when there is more than one.
+                        return Self.accounts(named: account).map { link in
+                            let title = accounts.showsAccounts ? " (account \"\(accounts.name(of: link))\")" : ""
+                            let conversations = link.inbox.visible(filters: link.filters)
+                            if conversations.isEmpty {
+                                let names = link.knownChats.prefix(15).map(\.name).filter { !$0.isEmpty }
+                                return names.isEmpty ? "No recent WhatsApp messages\(title) in the last 12 hours."
+                                    : "No new WhatsApp messages\(title) in the last 12 hours. Recent chats: " + names.joined(separator: ", ") + "."
+                            }
+                            return "Recent WhatsApp conversations\(title) (newest first):\n" + WhatsAppRecipients.overview(conversations)
+                        }.joined(separator: "\n\n")
                     }
                     let found = await self?.recipient(chat)
-                    guard let target = link.resolve(found?.wanted ?? chat, also: found?.also ?? []) else {
-                        throw NookError(tr("whatsapp.reply.unknown", chat, link.knownChats.prefix(12).map(\.name).joined(separator: ", ")))
+                    guard let target = Self.liveChat(found?.wanted ?? chat, account: account, also: found?.also ?? []) else {
+                        throw NookError(tr("whatsapp.reply.unknown", chat, accounts.chatNames().prefix(12).joined(separator: ", ")))
                     }
                     let limit = min(max(Int(AppData.number(input["limit"]) ?? 20), 1), 50)
-                    let messages = try await link.messages(of: target.jid, limit: limit)
+                    let messages = try await target.link.messages(of: target.jid, limit: limit)
                     guard let newest = messages.map(\.date).max() else { return "No messages found in the WhatsApp chat with \(target.name)." }
                     let other = readsMac ? "search_whatsapp / read_whatsapp (WhatsApp on this Mac)" : nil
-                    return "WhatsApp chat with \(target.name) (chat id \(target.jid)):\n" + WhatsAppRecipients.lines(messages, chatName: target.name)
+                    let place = accounts.showsAccounts ? ", account \"\(accounts.name(of: target.link))\"" : ""
+                    return "WhatsApp chat with \(target.name) (chat id \(target.link.chatKey(target.jid))\(place)):\n"
+                        + WhatsAppRecipients.lines(messages, chatName: target.name)
                         + "\n" + AppData.freshness(newest: newest, other: other)
                 }
             ),
@@ -510,7 +557,8 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 description: "Sends a WhatsApp message from the user's own account to an existing chat (a contact or group on their phone), through the linked phone. Use when the user asks to app, WhatsApp or message someone on WhatsApp. Write the message as the user would, in their language and tone, without a signature. A reply answers the chat's newest messages: read the chat first, and when its newest message is days old, tell the user so instead of answering it as if it were new. The user sees the exact text and recipient and approves before anything is sent.",
                 schema: ["type": "object", "properties": [
                     "to": ["type": "string", "description": "The chat: a contact or group name exactly as WhatsApp shows it, a phone number, or a chat id from whatsapp_live, search_whatsapp or whatsapp_open_chats."],
-                    "message": ["type": "string", "description": "The full text to send."]
+                    "message": ["type": "string", "description": "The full text to send."],
+                    "account": Self.accountProperty,
                 ], "required": ["to", "message"]],
                 kind: .action,
                 summarize: { input in
@@ -521,8 +569,13 @@ final class WhatsAppConnector: AppDatabaseConnector {
                 run: { [weak self] input in
                     let chat = AppData.string(input["to"])
                     let found = await self?.recipient(chat)
-                    let name = try await WhatsAppLink.shared.send(AppData.string(input["message"]), to: found?.wanted ?? chat,
-                                                                  also: found?.also ?? [])
+                    let wanted = found?.wanted ?? chat
+                    // Sent from the account the chat is in (the one asked for first); one not found is the first
+                    // account's to explain.
+                    let target = Self.liveChat(wanted, account: AppData.string(input["account"]), also: found?.also ?? [])
+                    let link = target?.link ?? WhatsAppLink.shared
+                    let name = try await link.send(AppData.string(input["message"]), to: target?.jid ?? wanted,
+                                                   also: link === WhatsAppLink.shared ? found?.also ?? [] : [])
                     return "WhatsApp message sent to \(name)."
                 }
             )
@@ -604,7 +657,7 @@ final class WhatsAppConnector: AppDatabaseConnector {
                     let messages = AppData.messages(rows, names: await ContactDirectory.names())
                     guard !messages.isEmpty else { throw NookError("Deze chat is niet gevonden of heeft geen tekst.") }
                     return AppData.formatThread(messages, terms: Research.Terms(words: Research.words(of: AppData.string(input["query"]))), app: "WhatsApp",
-                                                other: WhatsAppLink.shared.isConnected ? "whatsapp_live (the linked phone)" : nil)
+                                                other: WhatsAppAccounts.shared.isConnected ? "whatsapp_live (the linked phone)" : nil)
                 }
             )
         ]
