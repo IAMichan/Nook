@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import Combine
 
 /// A session that Nook runs itself, inside the Agents tab: the whole conversation, approvals, stop, follow-up
 /// messages, and the settings for the next turn (mode, permissions, model). Everything you would otherwise do in a
@@ -11,8 +12,9 @@ struct AgentRunPanel: View {
     let runID: UUID
     /// The terminal and browser icons, next to the branch button.
     var headerAccessory: AnyView? = nil
-    @State private var draft = ""
-    @State private var images: [ImageAttachment] = []
+    /// What you are writing: held, not observed, so a keystroke redraws the composer (`Observing` around it) and not the
+    /// conversation above it. Read and written through `draft`, `images`, `quotes` and `editingQueued` below.
+    @State private var composerState = RunComposerState()
     @State private var expanded: Set<UUID> = []
     /// Opened groups and folded turns ("group:<id>", "fold:<id>").
     @State private var openBlocks: Set<String> = []
@@ -29,8 +31,6 @@ struct AgentRunPanel: View {
     @State private var repository: String?
     /// The agent's skills for `$`, read from its skill folders.
     @State private var skills: [Skill] = []
-    /// A queued message that is being edited in the composer, and the draft that waits behind it.
-    @State private var editingQueued: UUID?
     @State private var scroll = ScrollModel()
     @State private var atEnd = true
     /// The blocks on screen, for where you left the session; not state, so scrolling does not redraw it.
@@ -39,8 +39,6 @@ struct AgentRunPanel: View {
     @State private var visit: TimelineVisit?
     /// The block the "New since your last visit" line sits above; decided as the session opens.
     @State private var newSince: UUID?
-    /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
-    @State private var quotes = ComposerQuotes()
     @State private var finding = false
     @State private var findQuery = ""
     @State private var findIndex: Int?
@@ -68,6 +66,23 @@ struct AgentRunPanel: View {
     @State private var countedLines: [String: [String: EditLines]] = [:]
     /// The timeline's blocks, turns and outputs, made again only when the events change (not on every keystroke).
     @State private var derived = RunTimelineDerived()
+
+    private var draft: String {
+        get { composerState.draft }
+        nonmutating set { composerState.draft = newValue }
+    }
+    private var images: [ImageAttachment] {
+        get { composerState.images }
+        nonmutating set { composerState.images = newValue }
+    }
+    private var quotes: ComposerQuotes {
+        get { composerState.quotes }
+        nonmutating set { composerState.quotes = newValue }
+    }
+    private var editingQueued: UUID? {
+        get { composerState.editingQueued }
+        nonmutating set { composerState.editingQueued = newValue }
+    }
 
     var body: some View {
         if let run = workspace.run(runID) {
@@ -159,7 +174,10 @@ struct AgentRunPanel: View {
                 Task { repository = await workspace.githubRepository(runID) }
                 loadComposerState(run)
             }
-            .onChange(of: draft) { _, new in ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new) }
+            // The panel does not observe the draft (see `composerState`): its changes come in here.
+            .onReceive(composerState.$draft.dropFirst().removeDuplicates()) { new in
+                ComposerDraftStore.shared.save(sessionID: runID.uuidString, text: new)
+            }
             .onDisappear { rememberVisit(runID) }
             .onChange(of: runID) { previous, _ in
                 rememberVisit(previous)
@@ -500,7 +518,7 @@ struct AgentRunPanel: View {
                                     onCompact: run.status.isActive || !(run.provider == .claude || run.provider == .codex) ? nil
                                         : { workspace.send(runID, text: "/compact") })
             }
-            ComposerMic(text: $draft)
+            ComposerMic(text: $composerState.draft)
         }
     }
 
@@ -564,7 +582,8 @@ struct AgentRunPanel: View {
             .id(question.id)
             .chatColumn()
         } else {
-            composer(run).chatColumn()
+            // Redrawn on its own with every keystroke, without the conversation above it.
+            Observing(composerState) { composer(run) }.chatColumn()
         }
     }
 
@@ -1063,7 +1082,7 @@ struct AgentRunPanel: View {
             VStack(spacing: 0) {
                 aboveBox(watch: run.prWatch, waiting: workspace.queued[runID] ?? MessageQueue())
                 SessionComposer(
-                    text: $draft,
+                    text: $composerState.draft,
                     prompt: active ? (steers ? tr("agents.run.steerPrompt", run.provider.kind.shortName)
                                              : tr("agents.run.busyPrompt", run.provider.kind.shortName)) : tr("agents.run.prompt"),
                     canSend: !active,
@@ -1088,7 +1107,7 @@ struct AgentRunPanel: View {
                           alternate: active ? deliver(preferred == .steer ? .queue : .steer) : nil,
                           label: steers ? tr("compose.steer") : tr("compose.queue"),
                           symbol: steers ? "arrow.turn.down.right" : "text.append")
-                .images($images)
+                .images($composerState.images)
                 .zIndex(1)
             }
             // ⇧⌘Return while it works: the first message waiting in line goes in now, as the queue's own button does.
@@ -1246,6 +1265,32 @@ struct AgentRunPanel: View {
         .disabled(run.mode == .plan)
         .help(run.permission.help(for: run.provider))
     }
+}
+
+/// What you are writing in a session's composer: the text, its pictures, the passages quoted into it, and the queued
+/// message open in it. `AgentRunPanel` holds it without observing it.
+@MainActor
+final class RunComposerState: ObservableObject {
+    @Published var draft = ""
+    @Published var images: [ImageAttachment] = []
+    /// Passages of answers picked for the next message (Quote / Ask about this), as chips above the composer.
+    @Published var quotes = ComposerQuotes()
+    /// A queued message that is being edited in the composer, and the draft that waits behind it.
+    @Published var editingQueued: UUID?
+}
+
+/// Draws `content` again whenever `object` changes, without the view around it: that view can hold the object without
+/// observing it.
+struct Observing<Object: ObservableObject, Content: View>: View {
+    @ObservedObject var object: Object
+    @ViewBuilder let content: () -> Content
+
+    init(_ object: Object, @ViewBuilder content: @escaping () -> Content) {
+        self.object = object
+        self.content = content
+    }
+
+    var body: some View { content() }
 }
 
 /// What `AgentRunPanel` draws from a session's events: the shown events, their blocks, the turns that changed files, the
