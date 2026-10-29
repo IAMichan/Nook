@@ -313,7 +313,7 @@ extension AppModel {
         let show: () -> Void = { [weak self] in
             self?.viewModel.notify(message, button: tr("ws.notice.open")) { [weak self] in self?.openWorkspace(run: runID) }
         }
-        deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, title: message,
+        deliverNotice(.agents, app: run.provider.rawValue, id: "wsquestion-" + runID.uuidString, urgent: true, title: message,
                       sound: .attention, kind: .warning, card: show, strip: show, open: { [weak self] in self?.openWorkspace(run: runID) })
     }
 
@@ -335,7 +335,8 @@ extension AppModel {
         logNotice(failed ? .failed : .done, title: title, detail: failed ? (run.statusDetail ?? "") : "", context: context,
                   target: .run(run.id), source: .agents, app: run.provider.rawValue)
         let runID = run.id
-        deliverNotice(.agents, app: run.provider.rawValue, id: "agentstatus-ws-" + UUID().uuidString, title: title,
+        deliverNotice(.agents, app: run.provider.rawValue, id: "agentstatus-ws-" + UUID().uuidString,
+                      pace: Self.agentPace("run:" + runID.uuidString, failed: failed), title: title,
                       subtitle: context, body: failed ? (run.statusDetail ?? "") : "", sound: failed ? .error : .done,
                       kind: failed ? .error : .success,
                       card: { [weak self] in self?.showTurnNotice(run, compact: false) },

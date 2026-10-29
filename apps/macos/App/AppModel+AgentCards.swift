@@ -199,6 +199,8 @@ extension AppModel {
             self?.viewModel.show(.panel(.agents))
         }
         deliverNotice(.agents, app: Self.agentApp(session.name), id: "agentstatus-" + UUID().uuidString,
+                      pace: Self.agentPace(session.id, failed: session.status == .failed),
+                      urgent: session.status != .done && session.status != .failed,
                       title: tr("agentNotice.compact.\(Self.noticeKey(session.status))", session.name),
                       subtitle: session.project, body: session.summary,
                       sound: session.status == .done ? .done : .attention,
@@ -206,6 +208,12 @@ extension AppModel {
                       card: { [weak self] in self?.showAgentNotice(session, compact: false) },
                       strip: { [weak self] in self?.showAgentNotice(session, compact: true) },
                       open: open)
+    }
+
+    /// What an agent notice is about for `NoticePacer`: its session, and a failure apart, so a session that ends in an
+    /// error right after a finished turn still tells you.
+    static func agentPace(_ id: String, failed: Bool) -> String {
+        "agent:" + id + (failed ? ":failed" : "")
     }
 
     /// The key an agent is switched on or off under in Settings › Notifications: "claude" for "Claude Code" in a

@@ -281,6 +281,7 @@ targets:
       - path: Services/SessionFocus.swift
       - path: Services/NoticeLog.swift
       - path: Services/NoticeRules.swift
+      - path: Services/NoticePacer.swift
       - path: Core/NookError.swift
       - path: Core/NookPaths.swift
       - path: Core/SafeStorage.swift
