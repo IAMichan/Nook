@@ -787,18 +787,20 @@ private struct ReactionChips: View {
             ForEach(reactions) { reaction in
                 Button { onReact?(reaction.emoji) } label: {
                     HStack(spacing: NookTheme.Spacing.xxs) {
-                        Text(reaction.emoji).font(NookTheme.font(12.5))
+                        Text(reaction.emoji).font(NookTheme.font(15))
                         if reaction.count > 1 {
                             Text("\(reaction.count)")
-                                .font(NookTheme.TextStyle.caption)
+                                .font(NookTheme.TextStyle.label)
                                 .monospacedDigit()
-                                .foregroundStyle(NookTheme.textSecondary)
+                                .foregroundStyle(reaction.mine ? NookTheme.mint : NookTheme.textStrong)
                         }
                     }
                     .padding(.horizontal, NookTheme.Spacing.sm)
                     .padding(.vertical, NookTheme.Spacing.xxs)
-                    // Yours is tinted; the others are a plain soft chip, no edge, so a row of them stays quiet.
-                    .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.18) : NookTheme.graphite))
+                    // An edge of its own, so it reads on the chat beside any bubble; yours in mint.
+                    .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.22) : NookTheme.smoke))
+                    .overlay(Capsule().strokeBorder(reaction.mine ? NookTheme.mint.opacity(0.45) : NookTheme.separator,
+                                                    lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -934,17 +936,17 @@ struct TicksView: View {
         Group {
             switch ticks {
             case .pending:
-                Image(systemName: "clock").font(NookTheme.font(9, .semibold))
+                Image(systemName: "clock").font(NookTheme.font(10.5, .semibold))
             case .sent:
                 check
             case .delivered, .read:
                 // The second tick overlaps the first, as on the phone.
                 ZStack(alignment: .leading) {
                     check
-                    check.padding(.leading, 4)
+                    check.padding(.leading, 5)
                 }
             case .failed:
-                Image(systemName: "exclamationmark.circle.fill").font(NookTheme.font(10, .semibold))
+                Image(systemName: "exclamationmark.circle.fill").font(NookTheme.font(11.5, .semibold))
             }
         }
         .foregroundStyle(color)
@@ -954,14 +956,15 @@ struct TicksView: View {
     }
 
     private var check: some View {
-        Image(systemName: "checkmark").font(NookTheme.font(9, .bold))
+        Image(systemName: "checkmark").font(NookTheme.font(10.5, .bold))
     }
 
     private var color: Color {
         switch ticks {
         case .read: return NookTheme.blue
         case .failed: return NookTheme.coral
-        case .pending, .sent, .delivered: return NookTheme.textTertiary
+        // Grey that still reads on your mint bubble; read is blue, as on the phone.
+        case .pending, .sent, .delivered: return NookTheme.textSecondary
         }
     }
 
