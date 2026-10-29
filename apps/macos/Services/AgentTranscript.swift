@@ -138,7 +138,8 @@ enum AgentTranscript {
     private static var cache: [String: CacheEntry] = [:]
 
     static func recent(path: String, limit: Int = fullLimit) -> [AgentChatMessage] {
-        let isGemini = path.hasSuffix(".json")
+        // Gemini CLI writes one JSON file per chat, or (0.33 and newer) a JSONL log of changes to it.
+        let isGemini = path.hasSuffix(".json") || GeminiChatLog.isLog(path: path)
         guard path.hasSuffix(".jsonl") || isGemini else { return [] }
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let attrSize = (attrs?[.size] as? NSNumber)?.uint64Value
@@ -398,10 +399,10 @@ enum AgentTranscript {
         return messages
     }
 
-    /// Gemini CLI: `{"messages": [{"type": "user" | "gemini", "content": …, "thoughts": [{"subject", "description"}]}]}`.
+    /// Gemini CLI: `{"messages": [{"type": "user" | "gemini", "content": …, "thoughts": [{"subject", "description"}]}]}`,
+    /// or the JSONL log newer versions write (see `GeminiChatLog`).
     static func gemini(_ data: Data) -> [AgentChatMessage] {
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let list = root["messages"] as? [[String: Any]] else { return [] }
+        guard let list = GeminiChatLog.read(data)?.messages else { return [] }
         var messages: [AgentChatMessage] = []
         for (index, message) in list.enumerated() {
             let id = (message["id"] as? String) ?? "gemini-\(index)"
@@ -823,5 +824,104 @@ enum InjectedPrompt {
     private static func replacing(_ regex: NSRegularExpression?, in text: String, with template: String) -> String {
         guard let regex else { return text }
         return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text), withTemplate: template)
+    }
+}
+
+/// A Gemini CLI chat as messages and metadata. Up to 0.32 a chat is one JSON object (`{sessionId, startTime, lastUpdated,
+/// messages}`); from 0.33 on it is `chats/session-<time>-<id>.jsonl`, a log: a metadata line (`sessionId`, `projectHash`),
+/// then messages (by `id`), `{"$patch": …}` (a message's content or tool results changed, messages removed or reordered),
+/// `{"$set": …}` (metadata, or all messages at once) and `{"$rewindTo": id}` (that message and everything after it are gone).
+/// Read the way Gemini CLI reads it (packages/core/src/services/chatRecordingService.ts).
+enum GeminiChatLog {
+    struct Chat {
+        var metadata: [String: Any]
+        var messages: [[String: Any]]
+    }
+
+    /// A chat log of Gemini CLI: `…/.gemini/tmp/<project>/chats/….jsonl`.
+    static func isLog(path: String) -> Bool {
+        path.hasSuffix(".jsonl") && path.contains("/.gemini/tmp/") && path.contains("/chats/")
+    }
+
+    /// The chat in `data`, either form; nil when it is neither.
+    static func read(_ data: Data) -> Chat? {
+        if let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let messages = root["messages"] as? [[String: Any]] {
+            return Chat(metadata: root, messages: messages)
+        }
+        var metadata: [String: Any] = [:]
+        var order: [String] = []
+        var byID: [String: [String: Any]] = [:]
+        var sawLine = false
+        func set(_ messages: [[String: Any]]) {
+            order = []
+            byID = [:]
+            for message in messages { if let id = message["id"] as? String { add(id, message) } }
+        }
+        func add(_ id: String, _ message: [String: Any]) {
+            if byID[id] == nil { order.append(id) }
+            byID[id] = message
+        }
+        func patch(_ change: [String: Any]) {
+            guard let id = change["id"] as? String, var message = byID[id] else { return }
+            if let content = change["content"] { message["content"] = content }
+            if let results = change["toolCalls"] as? [[String: Any]], var calls = message["toolCalls"] as? [[String: Any]] {
+                for result in results {
+                    guard let index = calls.firstIndex(where: { ($0["id"] as? String) == (result["id"] as? String) }),
+                          let value = result["result"] else { continue }
+                    calls[index]["result"] = value
+                }
+                message["toolCalls"] = calls
+            }
+            byID[id] = message
+        }
+        for line in data.split(separator: UInt8(ascii: "\n")) where !line.isEmpty {
+            guard let record = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else { continue }
+            sawLine = true
+            if let rewind = record["$rewindTo"] as? String {
+                if let index = order.firstIndex(of: rewind) {
+                    for id in order[index...] { byID[id] = nil }
+                    order.removeSubrange(index...)
+                } else {
+                    set([])
+                }
+            } else if let change = record["$patch"] as? [String: Any] {
+                patch(change)
+                for update in (change["updates"] as? [[String: Any]]) ?? [] { patch(update) }
+                for id in (change["removeIds"] as? [String]) ?? [] where byID[id] != nil {
+                    byID[id] = nil
+                    order.removeAll { $0 == id }
+                }
+                if let ids = change["orderIds"] as? [String] {
+                    let moved = ids.filter { byID[$0] != nil }
+                    let movedSet = Set(moved)
+                    order = order.filter { !movedSet.contains($0) } + moved
+                }
+            } else if let id = record["id"] as? String {
+                add(id, record)
+            } else if let values = record["$set"] as? [String: Any] {
+                if let messages = values["messages"] as? [[String: Any]] { set(messages) }
+                metadata.merge(values.filter { $0.key != "messages" }) { $1 }
+            } else if record["sessionId"] is String {
+                if let messages = record["messages"] as? [[String: Any]] { set(messages) }
+                metadata.merge(record.filter { $0.key != "messages" }) { $1 }
+            }
+        }
+        guard sawLine else { return nil }
+        return Chat(metadata: metadata, messages: order.compactMap { byID[$0] })
+    }
+
+    /// The folder a chat belongs to: its own `directories`, else the `.project_root` next to the chats, else the project
+    /// whose short name (`projects.json`, `{"projects": {path: name}}`) is the chat's folder.
+    static func folder(chat: Chat, file: URL, runtimeDirectory: URL) -> String {
+        if let first = (chat.metadata["directories"] as? [String])?.first, !first.isEmpty { return first }
+        let project = file.deletingLastPathComponent().deletingLastPathComponent()
+        if let root = (try? String(contentsOf: project.appendingPathComponent(".project_root"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines), root.hasPrefix("/") {
+            return root
+        }
+        let registry = runtimeDirectory.appendingPathComponent("projects.json")
+        guard let data = try? Data(contentsOf: registry),
+              let projects = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["projects"] as? [String: String] else { return "" }
+        return projects.first { $0.value == project.lastPathComponent }?.key ?? ""
     }
 }

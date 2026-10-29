@@ -255,6 +255,37 @@ final class AcpAgentTests: XCTestCase {
         XCTAssertEqual((AcpRPC.cancelledOutcome["outcome"] as? [String: String])?["outcome"], "cancelled")
     }
 
+    func testGeminiChatLogReadsTheJsonlForm() throws {
+        let lines = [
+            #"{"sessionId":"s1","projectHash":"abc","startTime":"2026-10-29T10:00:00.000Z","lastUpdated":"2026-10-29T10:00:00.000Z","kind":"main"}"#,
+            #"{"id":"u1","timestamp":"2026-10-29T10:00:01.000Z","type":"user","content":[{"text":"Fix the login"}]}"#,
+            #"{"id":"g1","timestamp":"2026-10-29T10:00:02.000Z","type":"gemini","content":"","model":"gemini-3-pro","toolCalls":[{"id":"t1","name":"read_file","args":{}}]}"#,
+            #"{"$patch":{"id":"g1","content":"Done.","toolCalls":[{"id":"t1","result":[{"text":"ok"}]}]}}"#,
+            #"{"id":"u2","type":"user","content":"and the logout"}"#,
+            #"{"id":"g2","type":"gemini","content":"Working"}"#,
+            #"{"$rewindTo":"u2"}"#,
+            #"{"$set":{"lastUpdated":"2026-10-29T10:05:00.000Z","directories":["/Users/me/app"]}}"#
+        ]
+        let chat = try XCTUnwrap(GeminiChatLog.read(Data(lines.joined(separator: "\n").utf8)))
+        XCTAssertEqual(chat.messages.compactMap { $0["id"] as? String }, ["u1", "g1"], "a rewind drops that message and what follows")
+        XCTAssertEqual(chat.messages[1]["content"] as? String, "Done.", "a patch fills in the content")
+        XCTAssertNotNil((chat.messages[1]["toolCalls"] as? [[String: Any]])?.first?["result"])
+        XCTAssertEqual(chat.metadata["sessionId"] as? String, "s1")
+        XCTAssertEqual(chat.metadata["lastUpdated"] as? String, "2026-10-29T10:05:00.000Z")
+        XCTAssertEqual(GeminiChatLog.folder(chat: chat, file: URL(fileURLWithPath: "/x/.gemini/tmp/app/chats/a.jsonl"),
+                                            runtimeDirectory: URL(fileURLWithPath: "/x/.gemini")), "/Users/me/app")
+        let messages = AgentTranscript.gemini(Data(lines.joined(separator: "\n").utf8))
+        XCTAssertEqual(messages.first?.text, "Fix the login")
+    }
+
+    func testGeminiChatLogStillReadsTheJsonForm() throws {
+        let json = #"{"sessionId":"s0","messages":[{"id":"a","type":"user","content":"hi"}]}"#
+        XCTAssertEqual(try XCTUnwrap(GeminiChatLog.read(Data(json.utf8))).messages.count, 1)
+        XCTAssertNil(GeminiChatLog.read(Data("not json".utf8)))
+        XCTAssertTrue(GeminiChatLog.isLog(path: "/Users/me/.gemini/tmp/app/chats/session-2026-10-29T10-00-abcd1234.jsonl"))
+        XCTAssertFalse(GeminiChatLog.isLog(path: "/Users/me/.claude/projects/x/abc.jsonl"))
+    }
+
     func testAgentLogLinesKeepOnlyErrors() {
         let lines = [
             "I1029 16:35:47.481079 8387203840 agent.py:109] Starting connection and creating conversation...",

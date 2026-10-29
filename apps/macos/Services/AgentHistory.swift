@@ -957,7 +957,7 @@ private final class HistoryScanner: @unchecked Sendable {
 
     // MARK: Gemini CLI
 
-    /// ~/.gemini/tmp/<project>/chats/session-*.json
+    /// ~/.gemini/tmp/<project>/chats/session-*.json (up to Gemini CLI 0.32) or session-*.jsonl
     private func geminiFiles(_ home: URL, since: Date) -> [(url: URL, key: CacheKey)] {
         let fm = FileManager.default
         let root = home.appendingPathComponent("tmp", isDirectory: true)
@@ -966,7 +966,8 @@ private final class HistoryScanner: @unchecked Sendable {
         for project in projects {
             let chats = root.appendingPathComponent(project, isDirectory: true).appendingPathComponent("chats", isDirectory: true)
             guard let names = try? fm.contentsOfDirectory(atPath: chats.path) else { continue }
-            for name in names where name.hasSuffix(".json") {
+            // One JSON file per chat, or from Gemini CLI 0.33 on a JSONL log of it.
+            for name in names where name.hasSuffix(".json") || name.hasSuffix(".jsonl") {
                 let url = chats.appendingPathComponent(name)
                 if let key = attributes(url), key.modified >= since { result.append((url, key)) }
             }
@@ -975,12 +976,12 @@ private final class HistoryScanner: @unchecked Sendable {
     }
 
     private func parseGemini(_ url: URL) -> Parsed {
-        guard let data = try? Data(contentsOf: url),
-              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let messages = root["messages"] as? [[String: Any]] else { return Parsed(session: nil, entries: []) }
-        // The folder is not in the chat file; newer versions keep it next to the chats in `.project_root`.
-        let projectRoot = url.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent(".project_root")
-        let cwd = (try? String(contentsOf: projectRoot, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let data = try? Data(contentsOf: url), let chat = GeminiChatLog.read(data) else { return Parsed(session: nil, entries: []) }
+        let root = chat.metadata
+        let messages = chat.messages
+        // The folder is not in the chat file itself (see GeminiChatLog.folder); ~/.gemini holds tmp/<project>/chats.
+        let runtime = url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let cwd = GeminiChatLog.folder(chat: chat, file: url, runtimeDirectory: runtime)
         let modified = attributes(url)?.modified ?? Date()
         var session = PastSession(
             agent: .gemini, sessionID: (root["sessionId"] as? String) ?? url.deletingPathExtension().lastPathComponent,
