@@ -76,9 +76,28 @@ struct AgentInboxList: View {
     }
 
     /// The state of the pull request the agent opened from its branch: a session Nook runs by id, any other by folder.
+    /// Until that sync has found one, the pull request the chat itself shows: the same one as the tray above its composer.
     private func pullRequestBadge(_ item: AgentListItem) -> PullRequestBadge? {
-        if let id = runID(item) { return pullRequests.badge(id) }
-        return pullRequests.badge(path: item.path, branch: item.branch)
+        if let id = runID(item) { return pullRequests.badge(id) ?? knownPullRequest(run: id).flatMap(linkBadge) }
+        if let badge = pullRequests.badge(path: item.path, branch: item.branch) { return badge }
+        let reply = item.id.hasPrefix("past:")
+            ? app.history.sessions.first { "past:" + $0.id == item.id }?.lastReply
+            : app.hub.sessions.first { $0.id == item.id }?.lastReply
+        return reply.flatMap(MarkdownBlock.lastGitHubPullRequest(in:)).flatMap(linkBadge)
+    }
+
+    /// The watched pull request, the one Nook opened, else the last one the conversation links. Only a conversation
+    /// already in memory is read: a row never loads one from disk.
+    private func knownPullRequest(run id: UUID) -> URL? {
+        let workspace = app.workspace
+        if let watched = workspace.run(id)?.prWatch.flatMap({ URL(string: $0.url) }) { return watched }
+        if let opened = workspace.openPullRequests[id] { return opened }
+        guard let events = workspace.events[id], !events.isEmpty else { return nil }
+        return RunPullRequestLinks.shared.url(id, events: events)
+    }
+
+    private func linkBadge(_ url: URL) -> PullRequestBadge? {
+        PullRequestBadge.link(url, glyph: pullRequestStatuses.status(url)?.glyph)
     }
 
     /// Folder and branch of every agent Nook did not start, for `PullRequestSync`: the ones running now and the earlier

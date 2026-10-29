@@ -253,6 +253,27 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertEqual(BranchPolicy.suggestBranchName(task: "", id: id, prefix: "wt/", existing: []), "wt/sessie-3fa2")
     }
 
+    func testShownPullRequestPrefersOpenThenNewestLanded() {
+        let old = PullRequestLink(host: .github, repository: "o/r", number: 3, url: "https://github.com/o/r/pull/3",
+                                  state: .closed, updatedAt: Date(timeIntervalSince1970: 100))
+        let merged = PullRequestLink(host: .github, repository: "o/r", number: 7, url: "https://github.com/o/r/pull/7",
+                                     state: .merged, updatedAt: Date(timeIntervalSince1970: 200))
+        let open = PullRequestLink(host: .gitlab, repository: "o/r", number: 9, url: "https://gitlab.com/o/r/-/merge_requests/9")
+        let other = PullRequestLink(host: .bitbucket, repository: "o/r", number: 11, url: "https://bitbucket.org/o/r/pull-requests/11")
+        XCTAssertEqual(PullRequestLink.shown(in: [old, merged, open])?.absoluteString, open.url)
+        XCTAssertEqual(PullRequestLink.shown(in: [merged, old])?.absoluteString, merged.url)
+        XCTAssertNil(PullRequestLink.shown(in: [other]))
+        XCTAssertNil(PullRequestLink.shown(in: []))
+    }
+
+    func testBadgeFromALinkAlone() {
+        let url = URL(string: "https://github.com/o/r/pull/3265")!
+        XCTAssertEqual(PullRequestBadge.link(url, glyph: nil), PullRequestBadge(glyph: .open, label: .number(3265)))
+        XCTAssertEqual(PullRequestBadge.link(url, glyph: .merged)?.glyph, .merged)
+        XCTAssertEqual(PullRequestBadge.link(URL(string: "https://gitlab.com/o/r/-/merge_requests/9")!, glyph: nil)?.label, .number(9))
+        XCTAssertNil(PullRequestBadge.link(URL(string: "https://github.com/o/r")!, glyph: nil))
+    }
+
     func testFastForwardDecision() {
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 0, behind: 0, dirty: false), .upToDate)
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 2, behind: 0, dirty: true), .upToDate)

@@ -1094,8 +1094,11 @@ struct AgentRunPanel: View {
     /// The tray above the box, when there is something to show in it.
     @ViewBuilder
     private func aboveBox(watch: PullRequestWatch?, waiting: MessageQueue) -> some View {
-        // The watched pull request, or the session's open one you stopped watching (or never watched).
-        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchablePullRequest()
+        // The watched pull request, the session's open one you stopped watching (or never watched), else the one that
+        // merged or closed: its state stays in view. Only one that can still change can be watched.
+        let watchable = watchablePullRequest()
+        let pullRequest = watch.flatMap { URL(string: $0.url) } ?? watchable ?? PullRequestLink.shown(in: pullRequestSync.links[runID] ?? [])
+        let canWatch = watch != nil || watchable != nil
         // A session that worked on more than one branch lists each, with the state of its pull request.
         let branches = workspace.run(runID).map { run in
             SessionBranches.rows(earlier: run.earlierBranches ?? [], earlierLinks: pullRequestSync.earlier[runID] ?? [],
@@ -1109,11 +1112,11 @@ struct AgentRunPanel: View {
                         if pullRequest != nil || !branches.isEmpty || !waiting.isEmpty { ComposerTrayDivider() }
                     }
                     if !branches.isEmpty {
-                        branchList(branches, watch: watch)
+                        branchList(branches, watch: watch, canWatchCurrent: canWatch)
                     } else if let pullRequest {
-                        PullRequestWatchStrip(url: pullRequest, watch: watch) {
+                        PullRequestWatchStrip(url: pullRequest, watch: watch, toggle: canWatch ? {
                             workspace.watchPullRequest(runID, url: watch == nil ? pullRequest : nil)
-                        }
+                        } : nil)
                     }
                     if (pullRequest != nil || !branches.isEmpty) && !waiting.isEmpty { ComposerTrayDivider() }
                     if !waiting.isEmpty {
@@ -1145,7 +1148,7 @@ struct AgentRunPanel: View {
     /// The session's branches in the tray, oldest first and the current one last, their names in one column so the pull
     /// requests line up. A chat with many keeps the newest ones open and folds the older ones behind one row.
     @ViewBuilder
-    private func branchList(_ rows: [SessionBranches.Row], watch: PullRequestWatch?) -> some View {
+    private func branchList(_ rows: [SessionBranches.Row], watch: PullRequestWatch?, canWatchCurrent: Bool) -> some View {
         let folded = SessionBranches.folded(rows, open: showsOlderBranches)
         let titles = Dictionary(((pullRequestSync.earlier[runID] ?? []) + (pullRequestSync.links[runID] ?? []))
             .compactMap { link in link.title.map { (link.url, $0) } }, uniquingKeysWith: { _, newer in newer })
@@ -1168,20 +1171,21 @@ struct AgentRunPanel: View {
             .padding(.vertical, NookTheme.Spacing.xxs)
         }
         ForEach(folded.shown) { row in
-            branchRow(row, watch: watch, title: row.pullRequest.flatMap { titles[$0.absoluteString] })
+            branchRow(row, watch: watch, title: row.pullRequest.flatMap { titles[$0.absoluteString] }, canWatchCurrent: canWatchCurrent)
         }
     }
 
     /// One of the session's branches in the tray: its pull request with state, title and checks (watched from here, one
-    /// at a time), or its name and "no pull request" while it has none.
+    /// at a time), or its name and "no pull request" while it has none. `canWatchCurrent`: the current branch's pull
+    /// request can still change (a merged or closed one is only shown).
     @ViewBuilder
-    private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?, title: String?) -> some View {
+    private func branchRow(_ row: SessionBranches.Row, watch: PullRequestWatch?, title: String?, canWatchCurrent: Bool) -> some View {
         if let url = row.pullRequest {
             let watched = watch.flatMap { URL(string: $0.url) } == url
             PullRequestWatchStrip(url: url, watch: watched ? watch : nil, branch: row.branch, isCurrent: row.isCurrent,
-                                  title: title) {
+                                  title: title, toggle: watched || !row.isCurrent || canWatchCurrent ? {
                 workspace.watchPullRequest(runID, url: watched ? nil : url)
-            }
+            } : nil)
         } else if let branch = row.branch {
             HStack(spacing: NookTheme.Spacing.sm) {
                 BranchTrayLabel(branch: branch, isCurrent: row.isCurrent, column: true)
@@ -1268,8 +1272,43 @@ private final class RunTimelineDerived {
         turns = TurnDiff.collect(events: all)
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
-        createdPullRequest = all.last { $0.kind == .assistant && $0.text.contains("/pull/") }
-            .flatMap { MarkdownBlock.lastGitHubPullRequest(in: $0.text) }
+        createdPullRequest = RunPullRequestLinks.last(in: all)
         return self
+    }
+}
+
+/// The last pull request a run's conversation links, for the tray above its composer and the badge on its row. Kept per
+/// run and read again only when the conversation changed, as every row of the list asks on each redraw.
+@MainActor
+final class RunPullRequestLinks {
+    static let shared = RunPullRequestLinks()
+    private var memo: [UUID: (count: Int, last: UUID?, url: URL?)] = [:]
+
+    func url(_ id: UUID, events: [RunEvent]) -> URL? {
+        if let hit = memo[id], hit.count == events.count, hit.last == events.last?.id { return hit.url }
+        let url = Self.last(in: events)
+        memo[id] = (events.count, events.last?.id, url)
+        return url
+    }
+
+    nonisolated static func last(in events: [RunEvent]) -> URL? {
+        events.reversed().lazy.compactMap(pullRequest(in:)).first
+    }
+
+    /// The last pull request link an event carries: the agent's words, or what a tool that made or showed one printed
+    /// (`gh pr create` prints its link, and the agent does not always repeat it).
+    private nonisolated static func pullRequest(in event: RunEvent) -> URL? {
+        switch event.kind {
+        case .assistant:
+            return MarkdownBlock.lastGitHubPullRequest(in: event.text)
+        case .tool:
+            guard let output = event.output else { return nil }
+            let call = [event.tool, event.text, event.detail].compactMap { $0 }.joined(separator: " ").lowercased()
+            guard call.contains("pr create") || call.contains("pr view") || call.contains("pull_request")
+                    || call.contains("pullrequest") else { return nil }
+            return MarkdownBlock.lastGitHubPullRequest(in: output)
+        default:
+            return nil
+        }
     }
 }

@@ -266,14 +266,13 @@ struct AgentSessionDetail: View {
         .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(NookTheme.well))
     }
 
-    /// The pull request of a session Nook does not run: the one for its folder and branch, else the last one its reply
-    /// links. Shown in a tray above the composer, as for a session Nook runs.
+    /// The pull request of a session Nook does not run: the open one for its folder and branch, else the last one its
+    /// reply links, else the branch's one that merged or closed. Shown in a tray above the composer, as for a session
+    /// Nook runs.
     private func pullRequest(cwd: String, branch: String, reply: String) -> URL? {
-        if !cwd.isEmpty, !branch.isEmpty,
-           let link = PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: cwd, branch: branch)]?
-            .first(where: { ($0.state == .open || $0.state == .draft) && ($0.host == .github || $0.host == .gitlab) }),
-           let url = URL(string: link.url) { return url }
-        return MarkdownBlock.lastGitHubPullRequest(in: reply)
+        let links = cwd.isEmpty || branch.isEmpty ? [] : PullRequestSync.shared.folderLinks[PullRequestSync.folderKey(path: cwd, branch: branch)] ?? []
+        if let open = PullRequestLink.shown(in: links.filter(\.state.isOpen)) { return open }
+        return MarkdownBlock.lastGitHubPullRequest(in: reply) ?? PullRequestLink.shown(in: links)
     }
 
     /// What a live session said, for a pull request link: its last reply, and for an agent whose conversation Nook cannot

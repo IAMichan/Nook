@@ -574,10 +574,7 @@ struct AgentListRow: View {
             }
 
             HStack(spacing: NookTheme.Spacing.sm) {
-                Text(contextLine)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(AgentPathFormat.tilde(item.path))
+                contextLine
                 if let pullRequest { PullRequestPill(badge: pullRequest, compact: true) }
                 Spacer(minLength: NookTheme.Spacing.sm)
                 AgentMark(agent: item.agent, account: item.account, size: 14, dimmed: dimmed, ring: background,
@@ -589,10 +586,25 @@ struct AgentListRow: View {
         }
     }
 
-    /// "nook · feature/calm-ui": the folder, and the branch when there is one.
-    private var contextLine: String {
-        guard let branch = item.branch, !branch.isEmpty else { return item.folder }
-        return item.folder + " · " + branch
+    /// "[folder] nook  [branch] feature/calm-ui": the folder, and the branch when there is one. The folder stays whole
+    /// and goes first: a long branch gives way, cut in the middle.
+    private var contextLine: some View {
+        HStack(spacing: NookTheme.Spacing.xs) {
+            NookSymbol("folder", size: 10).font(NookTheme.font(9.5, .semibold))
+            Text(item.folder)
+                .foregroundStyle(NookTheme.textSecondary)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if let branch = item.branch, !branch.isEmpty, branch != item.folder {
+                NookSymbol("arrow.triangle.branch", size: 10).font(NookTheme.font(9.5, .semibold))
+                    .padding(.leading, NookTheme.Spacing.xs)
+                Text(branch)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .help(AgentPathFormat.tilde(item.path))
+        .accessibilityElement(children: .combine)
     }
 
     private var slimBody: some View {

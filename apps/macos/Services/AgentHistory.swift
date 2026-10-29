@@ -249,7 +249,8 @@ struct PastSession: Identifiable, Equatable, Codable {
 
     var project: String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
-        return cwd.isEmpty || name.isEmpty || name == "/" ? "no folder" : name
+        guard !(cwd.isEmpty || name.isEmpty || name == "/") else { return "no folder" }
+        return WorktreeOrigin.repositoryName(of: cwd) ?? name
     }
 
     /// Where to continue: the folder the session ended in, unless that is gone or off limits (then the one it started in).

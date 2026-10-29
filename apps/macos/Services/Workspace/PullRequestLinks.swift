@@ -142,6 +142,15 @@ struct PullRequestLink: Codable, Equatable, Sendable, Identifiable {
     var hasConflict: Bool { state.isOpen && conflicted }
 
     var id: String { "\(host.key)/\(repository.lowercased())#\(number)" }
+
+    /// The pull request the tray above a session's composer shows from a branch's list: an open one first, else the
+    /// newest one that merged or closed, so its state stays in view after it lands. GitHub and GitLab only.
+    static func shown(in links: [PullRequestLink]) -> URL? {
+        let usable = links.filter { $0.host == .github || $0.host == .gitlab }
+        let pick = usable.first(where: { $0.state.isOpen })
+            ?? usable.max { ($0.updatedAt ?? .distantPast, $0.number) < ($1.updatedAt ?? .distantPast, $1.number) }
+        return pick.flatMap { URL(string: $0.url) }
+    }
 }
 
 enum PullRequestStack {
@@ -225,6 +234,15 @@ struct PullRequestBadge: Equatable, Sendable {
         return links.max {
             (rank($0), $0.updatedAt ?? .distantPast, $0.number) < (rank($1), $1.updatedAt ?? .distantPast, $1.number)
         }!
+    }
+}
+
+extension PullRequestBadge {
+    /// The badge of one pull request a chat knows only by its link (the watched one, the one Nook opened, one the agent
+    /// printed) while the branch sync has not found it; open until a read says otherwise. Nil for a link to no request.
+    static func link(_ url: URL, glyph: Glyph?) -> PullRequestBadge? {
+        guard let number = PullRequestRef.parse(url.absoluteString)?.number else { return nil }
+        return PullRequestBadge(glyph: glyph ?? .open, label: .number(number))
     }
 }
 
