@@ -208,7 +208,7 @@ struct ChatTranscript: View {
                                         }
                                     }
                                 }
-                                if bubble.fromMe, let onEdit, !bubble.text.isEmpty, bubble.poll == nil {
+                                if bubble.fromMe, let onEdit, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil {
                                     Button(tr("chat.edit")) { onEdit(bubble) }
                                 }
                                 if !bubble.copyText.isEmpty {
@@ -256,7 +256,7 @@ struct ChatTranscript: View {
 
     /// Changing your own message's text, where its app takes that: in the message's menu.
     private func editAction(_ bubble: ChatBubble) -> (() -> Void)? {
-        guard let onEdit, bubble.fromMe, !bubble.text.isEmpty, bubble.poll == nil else { return nil }
+        guard let onEdit, bubble.fromMe, !bubble.text.isEmpty, bubble.poll == nil, bubble.call == nil else { return nil }
         return { onEdit(bubble) }
     }
 
@@ -509,7 +509,13 @@ private struct ChatBubbleView: View, Equatable {
                     media(attachment)
                 }
             }
-            if !bubble.text.isEmpty {
+            if let call = bubble.call {
+                // A call its app noted: what kind, who rang and how long, with the time beside it.
+                HStack(alignment: .bottom, spacing: NookTheme.Spacing.md) {
+                    ChatCallRow(call: call, fromMe: bubble.fromMe)
+                    if showsStamp { stamp }
+                }
+            } else if !bubble.text.isEmpty {
                 HStack(alignment: .lastTextBaseline, spacing: NookTheme.Spacing.md) {
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
                         if emojiOnly {
@@ -533,7 +539,7 @@ private struct ChatBubbleView: View, Equatable {
                 }
             }
             // A link shows what it leads to: the picture, video or sound itself, else the page's card.
-            if bubble.attachment == nil, bubble.poll == nil, let link = ChatFormat.firstLink(bubble.text) {
+            if bubble.attachment == nil, bubble.poll == nil, bubble.call == nil, let link = ChatFormat.firstLink(bubble.text) {
                 ChatLinkPreview(url: link, fromMe: bubble.fromMe)
                     .padding(.top, NookTheme.Spacing.xxs)
             }

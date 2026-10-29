@@ -140,7 +140,9 @@ extension ChatsEntry {
     static func line(_ message: WAMessage, sender: String) -> String {
         let caption = ChatFormat.plain(message.text)
         let file = AppModel.whatsAppFileLabel(message.media)
-        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption } ?? ChatFormat.plain(AppModel.whatsAppText(message))
+        let whole = AppModel.whatsAppText(message)
+        let text = file.map { ChatFormat.isBlank(caption) ? $0 : caption }
+            ?? ChatFormat.call(whole).map { $0.summary(mine: message.fromMe) } ?? ChatFormat.plain(whole)
         let who = message.fromMe ? tr("chat.you") : shortSender(sender)
         return who.isEmpty ? text : "\(who): \(text)"
     }
@@ -1349,7 +1351,7 @@ private struct ChatsDetail: View {
 
     /// ↑ in the empty field: your newest message with text goes into the field to change it.
     private func editLastMessage() -> Bool {
-        guard let mine = bubbles.last(where: { $0.fromMe && !$0.text.isEmpty && $0.poll == nil }) else { return false }
+        guard let mine = bubbles.last(where: { $0.fromMe && !$0.text.isEmpty && $0.poll == nil && $0.call == nil }) else { return false }
         edit(mine)
         return true
     }

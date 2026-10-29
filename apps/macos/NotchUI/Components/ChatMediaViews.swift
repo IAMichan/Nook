@@ -406,3 +406,47 @@ final class ChatAudioPlayer: ObservableObject {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
+
+/// A call in a chat, the same for every app: a round mark with its kind (an arrow in or out, a camera for video, a
+/// hung-up phone in coral for one you missed), what it was ("Missed voice call") and under it who rang and how long it
+/// lasted ("Incoming · 2:13").
+struct ChatCallRow: View {
+    let call: ChatCall
+    let fromMe: Bool
+
+    private var mine: Bool { call.outgoing ?? fromMe }
+    /// A call you did not answer stands out; one nobody picked up at the other end does not.
+    private var missedHere: Bool { call.missed && !mine }
+
+    private var symbol: String {
+        if missedHere { return call.video ? "video.slash.fill" : "phone.down.fill" }
+        if call.video { return "video.fill" }
+        return mine ? "phone.arrow.up.right.fill" : "phone.arrow.down.left.fill"
+    }
+
+    private var tint: Color { missedHere ? NookTheme.coral : (call.missed ? NookTheme.textSecondary : NookTheme.mint) }
+
+    var body: some View {
+        HStack(spacing: NookTheme.Spacing.md) {
+            Image(systemName: symbol)
+                .font(NookTheme.font(14, .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(tint.opacity(0.16)))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                Text(call.title(mine: fromMe))
+                    .font(NookTheme.TextStyle.strong)
+                    .foregroundStyle(missedHere ? NookTheme.coral : NookTheme.paper)
+                    .lineLimit(1)
+                Text(call.detail(mine: fromMe))
+                    .font(NookTheme.TextStyle.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+    }
+}

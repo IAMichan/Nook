@@ -1141,6 +1141,42 @@ final class ChatInboxTests: XCTestCase {
         XCTAssertEqual(TelegramData.request(["@type": "getMe"]), #"{"@type":"getMe"}"#)
     }
 
+    // MARK: Calls
+
+    func testCallLinesReadAsCalls() {
+        XCTAssertEqual(ChatFormat.call("Incoming call"), ChatCall(outgoing: false))
+        XCTAssertEqual(ChatFormat.call("Missed video call"), ChatCall(video: true, missed: true))
+        XCTAssertEqual(ChatFormat.call("📞 Outgoing voice call (2:13)"), ChatCall(outgoing: true, seconds: 133))
+        XCTAssertEqual(ChatFormat.call("Gemiste spraakoproep"), ChatCall(missed: true))
+        XCTAssertEqual(ChatFormat.call("Verpasster Videoanruf")?.video, true)
+        XCTAssertEqual(ChatFormat.call("Appel vocal manqué")?.missed, true)
+        XCTAssertEqual(ChatFormat.call("Videollamada")?.video, true)
+        XCTAssertEqual(ChatFormat.call("Voice call · 5 min")?.seconds, 300)
+        XCTAssertNil(ChatFormat.call("call me?"), "a question about calling is a message")
+        XCTAssertNil(ChatFormat.call("bel me over 5 min goed"))
+        XCTAssertNil(ChatFormat.call("Call"), "one word alone says too little")
+        XCTAssertNil(ChatFormat.call("FaceTime"))
+        // Telegram's call reads back the same way, and every line of one is a call again.
+        let line = TelegramData.text(["@type": "messageCall", "is_video": true, "duration": 75,
+                                      "discard_reason": ["@type": "callDiscardReasonHungUp"]])
+        XCTAssertEqual(line.flatMap(ChatFormat.call), ChatCall(video: true, seconds: 75))
+        let missed = TelegramData.text(["@type": "messageCall", "discard_reason": ["@type": "callDiscardReasonMissed"]])
+        XCTAssertEqual(missed.flatMap(ChatFormat.call), ChatCall(missed: true))
+        for call in [ChatCall(), ChatCall(video: true), ChatCall(missed: true), ChatCall(video: true, missed: true)] {
+            XCTAssertEqual(ChatFormat.call(call.title(mine: false))?.video, call.video)
+        }
+    }
+
+    func testCallsSayWhatTheyWere() {
+        let missed = ChatCall(missed: true)
+        XCTAssertEqual(missed.title(mine: false), tr("chat.call.missedVoice"))
+        XCTAssertEqual(missed.title(mine: true), tr("chat.call.voice"), "a call nobody picked up at the other end is no missed call of yours")
+        XCTAssertEqual(missed.detail(mine: true), tr("chat.call.outgoing") + " · " + tr("chat.call.noAnswer"))
+        XCTAssertEqual(ChatCall(video: true, seconds: 3725).detail(mine: false), tr("chat.call.incoming") + " · 1:02:05")
+        let message = InboxMessage(id: "1", text: "Missed voice call", date: Date())
+        XCTAssertEqual(message.summary, "📞 " + tr("chat.call.missedVoice"))
+    }
+
     // MARK: Teams
 
     func testTeamsSignInAnswers() {

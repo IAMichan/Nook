@@ -344,9 +344,13 @@ struct InboxMessage: Codable, Equatable, Identifiable, Sendable {
 
     var isMine: Bool { fromMe == true }
 
+    /// A call its app noted in the chat ("Missed voice call"), read from its line the same way for every app.
+    var call: ChatCall? { media == nil && poll == nil ? ChatFormat.call(text) : nil }
+
     /// One line for lists and for Nook: the text, with what came with it ("Photo: on the beach", "Sticker").
     var summary: String {
         if let poll { return poll.line }
+        if let call { return call.summary(mine: isMine) }
         let plain = ChatFormat.plain(text)
         guard let media else { return plain }
         return plain.isEmpty ? media.label : "\(media.label): \(plain)"
