@@ -184,13 +184,18 @@ struct PullRequestsPanel: View {
                 NookIconButton(systemName: "arrow.clockwise", label: tr("agents.pulls.refresh"), size: 28) { Task { await store.refresh(force: true) } }
             }
 
-            if store.loaded && !store.available && accounts.isEmpty {
+            if !store.loaded {
+                // The very first read, with no list kept from before: a patient spinner, not "No pull requests".
+                PatientSpinner()
+            } else if !store.available && accounts.isEmpty {
                 empty(title: tr("agents.pulls.notConnected"), detail: tr("agents.pulls.notConnectedDetail"), action: (tr("agents.pulls.connect"), {
                     app.openSettings(section: .connections)
                 }))
-            } else if store.loaded && accounts.allSatisfy({ $0.isEmpty && $0.error == nil }) {
+            } else if accounts.allSatisfy({ $0.isEmpty && $0.error == nil }) {
                 empty(title: tr("agents.pulls.none"), detail: tr("agents.pulls.noneDetail"), action: nil)
             } else {
+                // Filtered once per redraw: the empty check, the count and the rows below all read this.
+                let shown = self.shown
                 searchRow
                 if !unreadable.isEmpty { unreadableNote }
                 if shown.allSatisfy({ $0.isEmpty && $0.error == nil }) {
@@ -204,8 +209,10 @@ struct PullRequestsPanel: View {
                     }
                 } else {
                     ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.xl) {
-                            if filter.isActive { matchCount }
+                        // Lazy, and flat: the headings and rows of every group are its direct children, so only the
+                        // rows in sight are built, however many pull requests you watch.
+                        LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                            if filter.isActive { matchCount(shown).padding(.bottom, NookTheme.Spacing.sm) }
                             ForEach(shown) { account in
                                 // An account without matches stays out of a filtered list, unless it has an error to show.
                                 if !filter.isActive || !account.isEmpty || account.error != nil {
@@ -214,6 +221,7 @@ struct PullRequestsPanel: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, NookTheme.Spacing.lg)
                     }
                 }
             }
@@ -253,7 +261,7 @@ struct PullRequestsPanel: View {
     }
 
     /// "12 of 40 shown · Clear", while something narrows the list.
-    private var matchCount: some View {
+    private func matchCount(_ shown: [AccountPullRequests]) -> some View {
         let all = Set(accounts.flatMap { $0.mine + $0.reviews + $0.watched }.map(\.id)).count
         let shownCount = Set(shown.flatMap { $0.mine + $0.reviews + $0.watched }.map(\.id)).count
         return HStack(spacing: NookTheme.Spacing.sm) {
@@ -293,42 +301,54 @@ struct PullRequestsPanel: View {
         .padding(.top, NookTheme.Spacing.md)
     }
 
+    /// An account's part of the list: its name (with more than one account), an error if reading it failed, then its
+    /// groups. No stack of its own: the rows are children of the list's lazy stack, so only the ones in sight are built.
     @ViewBuilder
     private func accountSection(_ account: AccountPullRequests, showName: Bool, selected: String?) -> some View {
-        VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-            if showName {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: "person.crop.circle").font(NookTheme.font(12))
-                    Text(account.name).font(NookTheme.TextStyle.strong)
-                    if !account.login.isEmpty { Text("@" + account.login).font(NookTheme.TextStyle.detail) }
-                }
-                .foregroundStyle(NookTheme.textSecondary)
-            }
-            if let error = account.error {
-                if account.errorKind == .auth {
-                    expiredCard
+        // Where each row stands in a stack, worked out once for the whole account instead of once per row.
+        let stacks = PullRequestStack.positions(in: items(of: account.id))
+        if showName {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                if account.login.isEmpty {
+                    Image(systemName: "person.crop.circle").font(NookTheme.font(14)).foregroundStyle(NookTheme.textTertiary)
                 } else {
-                    Text(error)
-                        .font(NookTheme.TextStyle.detail)
-                        .foregroundStyle(NookTheme.coralSoft)
-                        .fixedSize(horizontal: false, vertical: true)
+                    GitHubAvatar(login: account.login, size: 16)
+                }
+                Text(account.name).font(NookTheme.TextStyle.strong).foregroundStyle(NookTheme.textStrong)
+                if !account.login.isEmpty, account.login != account.name {
+                    Text("@" + account.login).font(NookTheme.TextStyle.detail).foregroundStyle(NookTheme.textTertiary)
                 }
             }
-            switch grouping {
-            case .involvement:
-                // The ones waiting for you first, then yours, then the rest of what you watch.
-                ForEach(account.byRole(sort: sort)) { group in
-                    rowGroup(key: account.id + " role:" + group.role.rawValue, symbol: Self.symbol(group.role),
-                             title: tr("agents.pulls.group." + group.role.rawValue), rows: group.rows, account: account.id,
-                             showRepo: true, selected: selected)
-                }
-            case .repository:
-                // Every pull request of a repository together, whatever brought it into the list; the heading counts
-                // the ones waiting for your review.
-                ForEach(account.byRepo(sort: sort)) { repo in
-                    rowGroup(key: account.id + " " + repo.repo, symbol: "folder", title: repo.repo, rows: repo.rows,
-                             account: account.id, showRepo: false, waiting: repo.waiting, selected: selected)
-                }
+            .lineLimit(1)
+            .padding(.horizontal, NookTheme.Spacing.xs)
+            .padding(.top, NookTheme.Spacing.lg)
+        }
+        if let error = account.error {
+            if account.errorKind == .auth {
+                expiredCard.padding(.top, NookTheme.Spacing.sm)
+            } else {
+                Text(error)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(NookTheme.coralSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, NookTheme.Spacing.xs)
+                    .padding(.top, NookTheme.Spacing.sm)
+            }
+        }
+        switch grouping {
+        case .involvement:
+            // The ones waiting for you first, then yours, then the rest of what you watch.
+            ForEach(account.byRole(sort: sort)) { group in
+                rowGroup(key: account.id + " role:" + group.role.rawValue, symbol: Self.symbol(group.role),
+                         title: tr("agents.pulls.group." + group.role.rawValue), rows: group.rows, account: account.id,
+                         showRepo: true, stacks: stacks, selected: selected)
+            }
+        case .repository:
+            // Every pull request of a repository together, whatever brought it into the list; the heading counts
+            // the ones waiting for your review.
+            ForEach(account.byRepo(sort: sort)) { repo in
+                rowGroup(key: account.id + " " + repo.repo, symbol: "folder", title: repo.repo, rows: repo.rows,
+                         account: account.id, showRepo: false, waiting: repo.waiting, stacks: stacks, selected: selected)
             }
         }
     }
@@ -369,42 +389,43 @@ struct PullRequestsPanel: View {
         }
     }
 
-    /// A group of rows under a heading: a symbol, the name, the count and a line to the edge; a click folds it
-    /// shut. The rows stand on the page itself, each with a soft fill under the pointer or while open.
+    /// A group of rows under a heading: a symbol, the name and the count, and a chevron at the end; a click folds it
+    /// shut. The rows stand on the page itself, each with a soft fill under the pointer or while open. Heading and rows
+    /// are siblings in the list's lazy stack, so a long group is built only as far as you scroll.
+    @ViewBuilder
     private func rowGroup(key: String, symbol: String, title: String, rows: [PullRequestRepoGroup.Row], account: String,
-                          showRepo: Bool, waiting: Int = 0, selected: String?) -> some View {
+                          showRepo: Bool, waiting: Int = 0, stacks: [String: (index: Int, count: Int)],
+                          selected: String?) -> some View {
         let open = !collapsedRepos.split(separator: "\n").contains(Substring(key))
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            Button {
-                withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
-            } label: {
-                HStack(spacing: NookTheme.Spacing.sm) {
-                    Image(systemName: symbol).font(NookTheme.TextStyle.detail).frame(width: 14)
-                    Text(title).font(NookTheme.TextStyle.label).lineLimit(1).truncationMode(.middle)
-                    Text("\(rows.count)").font(NookTheme.TextStyle.detail).monospacedDigit().foregroundStyle(NookTheme.textMuted)
-                    if waiting > 0 { PullRequestTag(text: tr("agents.pulls.toReview", waiting), color: NookTheme.amber) }
-                    NookDivider().frame(minWidth: NookTheme.Spacing.sm)
-                    Image(systemName: "chevron.down")
-                        .font(NookTheme.font(8.5, .bold))
-                        .rotationEffect(.degrees(open ? 0 : -90))
-                        .frame(width: 10)
-                }
-                .foregroundStyle(NookTheme.textTertiary)
-                .padding(.horizontal, NookTheme.Spacing.md)
-                .padding(.bottom, NookTheme.Spacing.xxs)
-                .contentShape(Rectangle())
+        Button {
+            withAnimation(NookTheme.reveal) { toggleRepo(key, open: open) }
+        } label: {
+            HStack(spacing: NookTheme.Spacing.sm) {
+                Image(systemName: symbol).font(NookTheme.TextStyle.detail).frame(width: 14)
+                Text(title).font(NookTheme.TextStyle.label).foregroundStyle(NookTheme.textSecondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Text("\(rows.count)").font(NookTheme.TextStyle.caption).monospacedDigit().foregroundStyle(NookTheme.textMuted)
+                if waiting > 0 { PullRequestTag(text: tr("agents.pulls.toReview", waiting), color: NookTheme.amber) }
+                Spacer(minLength: NookTheme.Spacing.sm)
+                Image(systemName: "chevron.down")
+                    .font(NookTheme.font(8.5, .bold))
+                    .rotationEffect(.degrees(open ? 0 : -90))
+                    .frame(width: 10)
             }
-            .buttonStyle(.plain)
-            .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
-            .accessibilityValue(open ? tr("compose.queue.expanded") : "")
-            if open {
-                let all = items(of: account)
-                ForEach(rows) { row in
-                    PullRequestRow(item: row.item, role: row.role, showRepo: showRepo, accountID: account,
-                                   selected: selected == row.item.id,
-                                   stack: PullRequestStack.position(of: row.item, in: all)) {
-                        self.open(account, row.item)
-                    }
+            .foregroundStyle(NookTheme.textTertiary)
+            .padding(.horizontal, NookTheme.Spacing.md)
+            .padding(.top, NookTheme.Spacing.md)
+            .padding(.bottom, NookTheme.Spacing.xs)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tr(open ? "agents.pulls.collapseRepo" : "agents.pulls.expandRepo"))
+        .accessibilityValue(open ? tr("compose.queue.expanded") : "")
+        if open {
+            ForEach(rows) { row in
+                PullRequestRow(item: row.item, role: row.role, showRepo: showRepo, accountID: account,
+                               selected: selected == row.item.id, stack: stacks[row.item.id]) {
+                    self.open(account, row.item)
                 }
             }
         }
