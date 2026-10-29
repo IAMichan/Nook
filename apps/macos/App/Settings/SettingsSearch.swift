@@ -30,6 +30,7 @@ enum SettingsSearch {
         ("settings.notch.allScreens", .general),
         ("settings.notch.hideWhenIdle", .general),
         ("settings.notch.openOnHover", .general),
+        ("settings.window.openAtLaunch", .general),
         ("settings.notch.demoData", .general),
         ("settings.energy.title", .general),
         ("settings.energy.mode", .general),

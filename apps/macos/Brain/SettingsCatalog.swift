@@ -33,6 +33,7 @@ enum SettingsCatalog {
         Entry(id: "notch_on_all_screens", kind: .toggle, section: "general", about: "A notch on every connected screen."),
         Entry(id: "hide_when_idle", kind: .toggle, section: "general", about: "Hide Nook when there is nothing to show."),
         Entry(id: "open_on_hover", kind: .toggle, section: "general", about: "Open the panel when pointing at the notch."),
+        Entry(id: "open_window_at_launch", kind: .toggle, section: "general", about: "Open the main window every time Nook starts."),
         Entry(id: "energy_mode", kind: .choice(["automatic", "saver", "full"]), section: "general",
               about: "How much Nook does by himself on battery or a busy Mac: automatic (steps back when needed), saver (always light) or full (never slows down)."),
         Entry(id: "web_search", kind: .toggle, section: "assistant", about: "Search the web when a question needs it."),

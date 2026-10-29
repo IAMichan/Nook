@@ -126,6 +126,7 @@ extension AppModel {
         case "notch_on_all_screens": return SettingsCatalog.value(settings.notchOnAllScreens)
         case "hide_when_idle": return SettingsCatalog.value(settings.hideWhenIdle)
         case "open_on_hover": return SettingsCatalog.value(viewModel.openOnHover)
+        case "open_window_at_launch": return SettingsCatalog.value(settings.openWindowAtLaunch)
         case "energy_mode": return settings.energyMode.rawValue
         case "web_search": return SettingsCatalog.value(settings.webSearch)
         case "think_along": return SettingsCatalog.value(settings.autoWatch)
@@ -156,6 +157,7 @@ extension AppModel {
         case "notch_on_all_screens": settings.notchOnAllScreens = on
         case "hide_when_idle": settings.hideWhenIdle = on
         case "open_on_hover": viewModel.openOnHover = on
+        case "open_window_at_launch": settings.openWindowAtLaunch = on
         case "energy_mode": if let mode = EnergyMode(rawValue: value) { settings.energyMode = mode }
         case "web_search": settings.webSearch = on
         case "think_along": settings.autoWatch = on
