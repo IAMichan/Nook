@@ -186,87 +186,126 @@ struct SubagentBar: View {
     }
 }
 
-/// "Watching PR [#12 · Open] CI passed · 2 reviews" with a way to open it and to stop: a row of the tray above the composer,
-/// in the same pills as the tray under a new session's box. Stopped, it stays as "Not watching PR [#12]": a click on the
-/// pill watches it again, as a click while watching stops.
+/// One pull request in the tray above the composer, as one quiet line: its state, what it is (title, then its branch
+/// dimmed) and on the right small marks for CI, reviews and watching. Only what needs you gets words (failing CI); the
+/// rest says itself on hover. The state badge opens it, as the arrow on hover does; the eye watches it (CI, reviews and
+/// comments wake the agent) or stops.
 struct PullRequestWatchStrip: View {
     let url: URL
     /// nil while the session's pull request is not watched.
     let watch: PullRequestWatch?
-    /// The branch the pull request is for, shown in front when a session lists several (see `SessionBranches`).
+    /// The branch the pull request is for, shown dimmed after its title when a session lists several (see `SessionBranches`).
     var branch: String? = nil
     var isCurrent = true
-    /// The pull request's title, shown after its state when the session lists several, so each row says what it was.
+    /// The pull request's title, so each row says what it was.
     var title: String? = nil
-    /// Nil for a session Nook does not run: it has nothing to watch with, so the strip only shows and opens the pull request.
+    /// Nil for a session Nook does not run (or a request that landed): nothing to watch, so the row only shows and opens it.
     var toggle: (() -> Void)?
     @Environment(\.pullRequestLinksBeside) private var pullRequestLinksBeside
     @State private var showsCI = false
+    @State private var hovering = false
     /// State and checks come from the status every place shares (the row badge, the pull request page), not from the
     /// watch's last look, so the tray never shows an older state than the rest of Nook.
     @ObservedObject private var statuses = PullRequestStatusStore.shared
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.sm) {
-            if let branch { BranchTrayLabel(branch: branch, isCurrent: isCurrent, column: true) }
-            if let toggle {
-                Button(action: toggle) {
-                    ComposerPill(symbol: watch == nil ? "eye.slash" : "eye", dot: nil,
-                                 text: tr(watch == nil ? "ws.prwatch.notWatching" : "ws.prwatch.watching"), showsChevron: false)
-                }
-                .buttonStyle(.plain)
-                .help(tr(watch == nil ? "ws.prwatch.startHelp" : "ws.prwatch.stop"))
-            }
-            // The state in the same badge as on the pull request page; CI and reviews after it. A click opens it.
+        HStack(spacing: NookTheme.Spacing.md) {
             Button(action: open) {
                 PullRequestLiveStateBadge(url: url, fallback: PullRequestBadge.Glyph(rawValue: watch?.state ?? "open") ?? .open)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(tr("ws.prwatch.open"))
-            if let title, !title.isEmpty {
-                Text(title)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(isCurrent ? NookTheme.textSecondary : NookTheme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(-1)
-                    .help(title)
-            }
-            if let ci {
-                // A click shows the checks and their logs (GitHub), or the pipelines page (GitLab).
-                Button(action: openCI) {
-                    HStack(spacing: NookTheme.Spacing.xs) {
-                        if let ciOutcome { CheckOutcomeGlyph(outcome: ciOutcome) }
-                        Text(ci)
-                        Image(systemName: "text.alignleft").font(NookTheme.font(9.5, .semibold))
-                    }
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(checks == "failure" ? NookTheme.coral : NookTheme.textTertiary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(tr("ws.prwatch.ciHelp"))
-                .popover(isPresented: $showsCI, arrowEdge: .top) {
-                    CIChecksPopover(pullRequest: url).frame(width: 680, height: 440)
-                }
-            }
+            // In a list of branches the states share one column, so the titles after them line up.
+            .frame(minWidth: branch == nil ? nil : Self.stateColumn, alignment: .leading)
+            identity
+            Spacer(minLength: NookTheme.Spacing.sm)
             if !summary.isEmpty {
                 Text(summary)
                     .font(NookTheme.TextStyle.detail)
                     .foregroundStyle(NookTheme.textTertiary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
+                    .fixedSize()
             }
-            Spacer(minLength: 6)
-            trayButton("arrow.up.right.square", tr("ws.prwatch.open"), action: open)
-            if watch != nil, let toggle { trayButton("xmark", tr("ws.prwatch.stop"), action: toggle) }
+            ciMark
+            if let toggle { watchMark(toggle) }
+            ToolbarIconButton("arrow.up.right", tr("ws.prwatch.open"), height: 22, width: 22, open)
+                .opacity(hovering ? 1 : 0)
         }
-        .foregroundStyle(NookTheme.textSecondary)
+        .padding(.leading, NookTheme.Spacing.xs)
+        .frame(minHeight: 26)
+        .background(RoundedRectangle(cornerRadius: NookTheme.Radius.chip, style: .continuous)
+            .fill(hovering ? NookTheme.rowHover : Color.clear))
+        .opacity(isCurrent ? 1 : 0.72)
+        .onHover { hovering = $0 }
+        .animation(NookTheme.hover, value: hovering)
     }
 
-    private func trayButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        ToolbarIconButton(symbol, label, height: 22, width: 22, action)
+    /// The width of the state column when a session lists several branches (`BranchTrayRow` uses it too).
+    static let stateColumn: CGFloat = 124
+
+    /// The title in the row's own voice, its branch after it in the quiet monospace of a name.
+    @ViewBuilder
+    private var identity: some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            if let title, !title.isEmpty {
+                Text(title)
+                    .font(NookTheme.TextStyle.detail)
+                    .foregroundStyle(isCurrent ? NookTheme.textStrong : NookTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(title)
+            }
+            if let branch {
+                Text(branch)
+                    .font(NookTheme.mono(10.5))
+                    .foregroundStyle(NookTheme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+                    .help(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
+            }
+        }
+    }
+
+    /// The checks as one mark; failing ones also say so. A click shows the checks and their logs (GitHub), or the
+    /// pipelines page (GitLab).
+    @ViewBuilder
+    private var ciMark: some View {
+        if let ci, let ciOutcome {
+            Button(action: openCI) {
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    CheckOutcomeGlyph(outcome: ciOutcome, size: 11, running: ciOutcome == .pending)
+                    if ciOutcome == .failing { Text(ci) }
+                }
+                .font(NookTheme.TextStyle.detail)
+                .foregroundStyle(NookTheme.coral)
+                .frame(minWidth: 22, minHeight: 22)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(ci + " · " + tr("ws.prwatch.ciHelp"))
+            .accessibilityLabel(ci)
+            .popover(isPresented: $showsCI, arrowEdge: .top) {
+                CIChecksPopover(pullRequest: url).frame(width: 680, height: 440)
+            }
+        }
+    }
+
+    /// An open eye while the agent watches the request, a dim crossed one (brighter on hover) while it does not.
+    private func watchMark(_ toggle: @escaping () -> Void) -> some View {
+        let watching = watch != nil
+        let label = tr(watching ? "ws.prwatch.watching" : "ws.prwatch.notWatching")
+        return Button(action: toggle) {
+            Image(systemName: watching ? "eye.fill" : "eye.slash")
+                .font(NookTheme.font(11, .medium))
+                .foregroundStyle(watching ? NookTheme.mint : (hovering ? NookTheme.textSecondary : NookTheme.textTertiary))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label + " · " + tr(watching ? "ws.prwatch.stop" : "ws.prwatch.startHelp"))
+        .accessibilityLabel(label)
     }
 
     /// The newest known checks; the watch's last look until a read has said.
@@ -315,24 +354,31 @@ struct PullRequestWatchStrip: View {
     }
 }
 
-/// A branch's name in the tray above the composer: the session's current branch bright, one it left dimmed.
-struct BranchTrayLabel: View {
+/// A branch of the session without a pull request, in the same columns as one with: "No PR" where the state would be,
+/// its name where the title would be.
+struct BranchTrayRow: View {
     let branch: String
     var isCurrent = true
-    /// In the list of a session's branches: one width for every name, so the pull requests after them line up.
-    var column = false
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            NookSymbol("arrow.triangle.branch", size: 10).font(NookTheme.font(10, .semibold))
+        HStack(spacing: NookTheme.Spacing.md) {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                NookSymbol("arrow.triangle.branch", size: 10).font(NookTheme.font(10, .semibold))
+                Text(tr("ws.branches.noPullRequest"))
+                    .font(NookTheme.TextStyle.detail)
+            }
+            .padding(.leading, 5)
+            .frame(minWidth: PullRequestWatchStrip.stateColumn, alignment: .leading)
             Text(branch)
-                .font(NookTheme.mono(11))
+                .font(NookTheme.mono(10.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            Spacer(minLength: NookTheme.Spacing.sm)
         }
-        .foregroundStyle(isCurrent ? NookTheme.textSecondary : NookTheme.textTertiary)
-        .frame(width: column ? 200 : nil, alignment: .leading)
-        .frame(maxWidth: 220, alignment: .leading)
+        .foregroundStyle(NookTheme.textTertiary)
+        .padding(.leading, NookTheme.Spacing.xs)
+        .frame(minHeight: 26)
+        .opacity(isCurrent ? 1 : 0.72)
         .help(tr(isCurrent ? "ws.branches.current" : "ws.branches.earlier", branch))
     }
 }
