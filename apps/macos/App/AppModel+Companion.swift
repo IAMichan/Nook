@@ -175,7 +175,9 @@ extension AppModel {
             bubble.poll = message.poll?.chatPoll { voter in
                 conversation.isGroup ? names.name(voter) : conversation.name
             }
-            bubble.reactions = Self.bubbleReactions(message.reactions)
+            bubble.reactions = Self.bubbleReactions(message.reactions) { sender in
+                conversation.isGroup ? names.name(sender) : conversation.name
+            }
             if let preview = link.preview(message.id) {
                 bubble.image = preview.image
                 switch message.media {
@@ -210,14 +212,18 @@ extension AppModel {
     }
 
     /// The emoji on a message, one chip each, the most used first (then in the order they came).
-    static func bubbleReactions(_ reactions: [WAReaction]) -> [BubbleReaction] {
+    static func bubbleReactions(_ reactions: [WAReaction], name: (String) -> String = { _ in "" }) -> [BubbleReaction] {
         var chips: [BubbleReaction] = []
         for reaction in reactions where !reaction.emoji.isEmpty {
+            // Who put it there, by the name the chat knows them by; you are told apart by `mine`.
+            let person = reaction.fromMe ? "" : name(reaction.sender)
             if let index = chips.firstIndex(where: { $0.emoji == reaction.emoji }) {
                 chips[index].count += 1
                 chips[index].mine = chips[index].mine || reaction.fromMe
+                if !person.isEmpty { chips[index].people.append(person) }
             } else {
-                chips.append(BubbleReaction(emoji: reaction.emoji, count: 1, mine: reaction.fromMe))
+                chips.append(BubbleReaction(emoji: reaction.emoji, count: 1, mine: reaction.fromMe,
+                                            people: person.isEmpty ? [] : [person]))
             }
         }
         return chips.enumerated().sorted { a, b in

@@ -330,8 +330,8 @@ final class MessagesBridge: ChatHistoryBridge {
             rows = try await query("""
             SELECT m.associated_message_guid AS target, m.associated_message_type AS type,
                    \(customTapbacks ? "m.associated_message_emoji" : "NULL") AS emoji, m.is_from_me AS me,
-                   COALESCE(m.handle_id, 0) AS sender
-            FROM message m
+                   COALESCE(h.id, '') AS sender
+            FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id
             WHERE m.ROWID > \(first) AND m.associated_message_type BETWEEN 2000 AND 3999
                 AND m.associated_message_guid IN (\(pointers))
             ORDER BY m.ROWID
@@ -347,7 +347,12 @@ final class MessagesBridge: ChatHistoryBridge {
                                    emoji: AppData.string(tapback["emoji"]), sender: mine ? "me" : AppData.string(tapback["sender"]),
                                    mine: mine)
         }
-        return AppData.Tapback.reactions(tapbacks)
+        // Who put each emoji there, by their name in Contacts (else their number or address).
+        let contacts = await ContactDirectory.names()
+        return AppData.Tapback.reactions(tapbacks) { handle in
+            let clean = AppData.cleanHandle(handle)
+            return clean.isEmpty ? nil : contacts[AppData.key(clean)] ?? clean
+        }
     }
 
     /// The messages read earlier (by guid) that got a tapback, or lost one, since the last look. The first read only

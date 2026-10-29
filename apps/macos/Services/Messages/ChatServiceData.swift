@@ -110,16 +110,21 @@ enum ChatServiceData {
     }
 
     /// The emoji on a message, the most used first; yours are those of `me`.
-    static func reactions(_ message: [String: Any], me: String?) -> [InboxReaction] {
-        var counts: [String: (count: Int, mine: Bool, first: Int)] = [:]
+    static func reactions(_ message: [String: Any], me: String?, people: [String: String] = [:]) -> [InboxReaction] {
+        var counts: [String: (count: Int, mine: Bool, first: Int, names: [String])] = [:]
         for (index, reaction) in (message["reactions"] as? [[String: Any]] ?? []).enumerated() {
             guard let key = reaction["reactionKey"] as? String, !key.isEmpty else { continue }
-            let mine = me != nil && reaction["participantID"] as? String == me
-            let known = counts[key] ?? (0, false, index)
-            counts[key] = (known.count + 1, known.mine || mine, known.first)
+            let person = reaction["participantID"] as? String
+            let mine = me != nil && person == me
+            var known = counts[key] ?? (0, false, index, [])
+            known.count += 1
+            known.mine = known.mine || mine
+            if !mine, let person, let name = people[person], !name.isEmpty { known.names.append(name) }
+            counts[key] = known
         }
         return counts.sorted { $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.value.first < $1.value.first }
-            .map { InboxReaction(emoji: $0.key, count: $0.value.count, mine: $0.value.mine) }
+            .map { InboxReaction(emoji: $0.key, count: $0.value.count, mine: $0.value.mine,
+                                 people: $0.value.names.isEmpty ? nil : $0.value.names) }
     }
 
     /// How far your message got: its send status, then whether it was delivered or seen.
@@ -253,7 +258,7 @@ enum ChatServiceData {
                 inbox.readers = readers(message, chat: chat)
             }
             // An empty list too: the last emoji taken back leaves none.
-            inbox.reactions = reactions(message, me: chat.me)
+            inbox.reactions = reactions(message, me: chat.me, people: chat.people)
             // The message it answers, by the service's id ("linkedMessageID"; "replyToMessageID" as Nook sends it).
             if let answered = ((message["linkedMessageID"] as? String) ?? (message["replyToMessageID"] as? String)), !answered.isEmpty {
                 inbox.quote = InboxQuote(id: messageID(answered, chat: chat.id))

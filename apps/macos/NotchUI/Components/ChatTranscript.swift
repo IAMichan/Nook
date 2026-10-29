@@ -773,34 +773,139 @@ private struct QuotedMessage: View {
 private struct ReactionChips: View {
     let reactions: [BubbleReaction]
     let onReact: ((String) -> Void)?
+    /// Who reacted is open under the emoji.
+    @State private var showingPeople = false
 
     var body: some View {
-        HStack(spacing: NookTheme.Spacing.xs) {
-            ForEach(reactions) { reaction in
-                Button { onReact?(reaction.emoji) } label: {
-                    HStack(spacing: NookTheme.Spacing.xxs) {
-                        Text(reaction.emoji).font(NookTheme.font(15))
-                        if reaction.count > 1 {
-                            Text("\(reaction.count)")
-                                .font(NookTheme.TextStyle.label)
-                                .monospacedDigit()
-                                .foregroundStyle(reaction.mine ? NookTheme.mint : NookTheme.textStrong)
-                        }
-                    }
-                    .padding(.horizontal, NookTheme.Spacing.sm)
-                    .padding(.vertical, NookTheme.Spacing.xxs)
-                    // An edge of its own, so it reads on the chat beside any bubble; yours in mint.
-                    .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.22) : NookTheme.smoke))
-                    .overlay(Capsule().strokeBorder(reaction.mine ? NookTheme.mint.opacity(0.45) : NookTheme.separator,
-                                                    lineWidth: 1))
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(onReact == nil)
-                .help(reaction.mine ? tr("chat.react.takeBack") : tr("chat.react"))
-                .accessibilityLabel(tr("chat.reactions", reaction.emoji, reaction.count))
+        // A click shows who put which emoji there, as the chat apps do; there yours can be taken back or another added.
+        Button { showingPeople = true } label: {
+            HStack(spacing: NookTheme.Spacing.xs) {
+                ForEach(reactions) { reaction in chip(reaction) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help(Self.summary(reactions))
+        .accessibilityLabel(Self.summary(reactions))
+        .popover(isPresented: $showingPeople, arrowEdge: .bottom) {
+            ReactionPeopleView(reactions: reactions, onReact: onReact.map { react in
+                { emoji in showingPeople = false; react(emoji) }
+            })
+        }
+    }
+
+    private func chip(_ reaction: BubbleReaction) -> some View {
+        HStack(spacing: NookTheme.Spacing.xxs) {
+            Text(reaction.emoji).font(NookTheme.font(15))
+            if reaction.count > 1 {
+                Text("\(reaction.count)")
+                    .font(NookTheme.TextStyle.label)
+                    .monospacedDigit()
+                    .foregroundStyle(reaction.mine ? NookTheme.mint : NookTheme.textStrong)
             }
         }
+        .padding(.horizontal, NookTheme.Spacing.sm)
+        .padding(.vertical, NookTheme.Spacing.xxs)
+        // An edge of its own, so it reads on the chat beside any bubble; yours in mint.
+        .background(Capsule().fill(reaction.mine ? NookTheme.mint.opacity(0.22) : NookTheme.smoke))
+        .overlay(Capsule().strokeBorder(reaction.mine ? NookTheme.mint.opacity(0.45) : NookTheme.separator, lineWidth: 1))
+    }
+
+    /// Who put each emoji there, in one line for the tooltip: "👍 Anna, You · ❤️ Jan".
+    static func summary(_ reactions: [BubbleReaction]) -> String {
+        reactions.map { reaction in
+            let names = ReactionPeopleView.names(reaction)
+            return names.isEmpty ? "\(reaction.emoji) \(reaction.count)" : "\(reaction.emoji) " + names.joined(separator: ", ")
+        }.joined(separator: " · ")
+    }
+}
+
+/// Who reacted to a message, the same for every chat app: one row per person with their emoji, you first, and the
+/// people the app does not name counted ("2 others"). Where the chat can be answered, your row takes your emoji back and
+/// another's adds the same one from you.
+private struct ReactionPeopleView: View {
+    let reactions: [BubbleReaction]
+    let onReact: ((String) -> Void)?
+
+    /// The names on one emoji, you first; people the app counted but did not name are left out here.
+    static func names(_ reaction: BubbleReaction) -> [String] {
+        (reaction.mine ? [tr("chat.you")] : []) + reaction.people
+    }
+
+    private struct Row: Identifiable {
+        let id: String
+        let name: String
+        let emoji: String
+        let mine: Bool
+    }
+
+    private var rows: [Row] {
+        var rows: [Row] = []
+        for reaction in reactions {
+            if reaction.mine { rows.append(Row(id: "me" + reaction.emoji, name: tr("chat.you"), emoji: reaction.emoji, mine: true)) }
+            for (index, person) in reaction.people.enumerated() {
+                rows.append(Row(id: "\(reaction.emoji)\(index)\(person)", name: person, emoji: reaction.emoji, mine: false))
+            }
+            let unnamed = reaction.count - reaction.people.count - (reaction.mine ? 1 : 0)
+            if unnamed > 0 {
+                rows.append(Row(id: "rest" + reaction.emoji, name: tr("chat.reactions.others", unnamed), emoji: reaction.emoji, mine: false))
+            }
+        }
+        return rows.sorted { $0.mine && !$1.mine }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(tr("chat.reactions.title"))
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.textSecondary)
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.top, NookTheme.Spacing.md)
+                .padding(.bottom, NookTheme.Spacing.xs)
+            ForEach(rows) { row in
+                HStack(spacing: NookTheme.Spacing.md) {
+                    ChatPersonBadge(name: row.name, size: 26)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(row.name)
+                            .font(NookTheme.TextStyle.strong)
+                            .foregroundStyle(NookTheme.paper)
+                            .lineLimit(1)
+                        if row.mine, onReact != nil {
+                            Text(tr("chat.react.takeBack"))
+                                .font(NookTheme.TextStyle.caption)
+                                .foregroundStyle(NookTheme.textTertiary)
+                        }
+                    }
+                    Spacer(minLength: NookTheme.Spacing.lg)
+                    Text(row.emoji).font(NookTheme.font(18))
+                }
+                .padding(.horizontal, NookTheme.Spacing.lg)
+                .padding(.vertical, NookTheme.Spacing.sm)
+                .contentShape(Rectangle())
+                .onTapGesture { if row.mine { onReact?(row.emoji) } }
+                .accessibilityElement(children: .combine)
+            }
+            if let onReact {
+                NookDivider()
+                    .padding(.top, NookTheme.Spacing.xs)
+                // Add one of the emoji already there, from you too.
+                HStack(spacing: NookTheme.Spacing.xs) {
+                    ForEach(reactions.filter { !$0.mine }) { reaction in
+                        Button { onReact(reaction.emoji) } label: {
+                            Text(reaction.emoji).font(NookTheme.font(16))
+                                .frame(width: 30, height: 30)
+                                .background(Circle().fill(NookTheme.smoke))
+                        }
+                        .buttonStyle(.plain)
+                        .help(tr("chat.react"))
+                    }
+                }
+                .padding(NookTheme.Spacing.md)
+            }
+        }
+        .frame(minWidth: 220, alignment: .leading)
+        .padding(.bottom, NookTheme.Spacing.xs)
     }
 }
 

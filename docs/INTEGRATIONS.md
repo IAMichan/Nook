@@ -64,6 +64,7 @@ needs a column in that matrix.
 | Read in the app or on the phone → read in Nook at once | ✓ (`readElsewhere`) | ✓ (`readElsewhere`) | ✓ (unread count) | ✓ (unread count) | ✓ (unread count, also without a new message) | – (Nook reads no unread count from Slack) | ✓ (`readUntil`) | ✓ (the list's unread mark) |
 | A chat Nook can only read says what is missing and links it (`ChatLimitsLine`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Emoji on messages | ✓ | ✓ | ✓ (tapbacks) | ✓ | ✓ | ✓ | ✓ | – (the website does not show them) |
+| Who put each emoji there (tooltip, and a list on click) | ✓ (the chat's names) | ✓ (the chat's names) | ✓ (Contacts) | ✓ (`recent_sender_ids`, the last few) | ✓ (the chat's people) | ✓ | ✓ (Graph `displayName`; the web app by the names in the chat) | – (the website does not show emoji) |
 | Emoji that only a notification says ("Reacted 👍 to …"), put on that message | ✓ (WhatsApp on this Mac, whose database Nook does not read them from) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | A message the app writes before its text (WhatsApp on this Mac) read again until it says something | ✓ (`waiting`, 10 minutes) | – | – | – | – | – | – | – |
 | Delete for me (any message; hidden in Nook on this Mac) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (also in Telegram, for you) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) | ✓ (Nook only) |

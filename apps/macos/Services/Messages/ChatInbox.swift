@@ -393,6 +393,9 @@ struct InboxReaction: Codable, Equatable, Sendable {
     var emoji: String
     var count: Int
     var mine: Bool
+    /// Who else put it there, by name, as far as the app says; nil when it does not (only the count is known). You are
+    /// never in it: `mine` says that.
+    var people: [String]? = nil
 }
 
 /// One chat in one app, with its newest messages.
@@ -664,7 +667,10 @@ struct ChatInbox: Codable, Equatable, Sendable {
         // A chat you removed comes back with what is newer, not with the notifications it already had.
         if let gone = removed?[key], notice.date <= gone { return false }
         // Someone's emoji on a message goes on that message, not into the chat as a message of its own.
-        if let reaction = ChatCapture.reaction(notice.text) { return react(reaction, in: key) }
+        // Who: the group member the notification names, else the person of the private chat.
+        if let reaction = ChatCapture.reaction(notice.text) {
+            return react(reaction, in: key, by: ChatCapture.unmarked(notice.sender.isEmpty ? notice.chat : notice.sender))
+        }
         var thread = threads[key] ?? InboxThread(id: key, app: notice.app, name: notice.chat)
         if thread.messages.contains(where: {
             $0.id == id || (!$0.isMine && $0.text == notice.text && abs($0.date.timeIntervalSince(notice.date)) < Self.sameMessageWindow)
@@ -684,7 +690,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
 
     /// Puts someone's emoji from a notification on the message it is on: the one whose text it quotes, else your newest
     /// (what people react to). False when the chat has no such message or already shows that emoji there.
-    mutating func react(_ reaction: (emoji: String, target: String?), in key: String) -> Bool {
+    mutating func react(_ reaction: (emoji: String, target: String?), in key: String, by person: String = "") -> Bool {
         guard let messages = threads[key]?.messages else { return false }
         let target = reaction.target.map { ChatFormat.plain($0).trimmingCharacters(in: CharacterSet(charactersIn: "…. ")) }
         let index = target.flatMap { target in
@@ -696,7 +702,7 @@ struct ChatInbox: Codable, Equatable, Sendable {
         guard let index else { return false }
         var chips = messages[index].reactions ?? []
         guard !chips.contains(where: { $0.emoji == reaction.emoji }) else { return false }
-        chips.append(InboxReaction(emoji: reaction.emoji, count: 1, mine: false))
+        chips.append(InboxReaction(emoji: reaction.emoji, count: 1, mine: false, people: person.isEmpty ? nil : [person]))
         threads[key]?.messages[index].reactions = chips
         return true
     }
