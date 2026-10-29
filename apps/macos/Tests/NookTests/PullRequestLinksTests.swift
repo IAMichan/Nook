@@ -266,6 +266,14 @@ final class PullRequestLinksTests: XCTestCase {
         XCTAssertNil(PullRequestLink.shown(in: []))
     }
 
+    func testBadgeFromALinkAlone() {
+        let url = URL(string: "https://github.com/o/r/pull/3265")!
+        XCTAssertEqual(PullRequestBadge.link(url, glyph: nil), PullRequestBadge(glyph: .open, label: .number(3265)))
+        XCTAssertEqual(PullRequestBadge.link(url, glyph: .merged)?.glyph, .merged)
+        XCTAssertEqual(PullRequestBadge.link(URL(string: "https://gitlab.com/o/r/-/merge_requests/9")!, glyph: nil)?.label, .number(9))
+        XCTAssertNil(PullRequestBadge.link(URL(string: "https://github.com/o/r")!, glyph: nil))
+    }
+
     func testFastForwardDecision() {
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 0, behind: 0, dirty: false), .upToDate)
         XCTAssertEqual(BranchPolicy.shouldFastForward(ahead: 2, behind: 0, dirty: true), .upToDate)

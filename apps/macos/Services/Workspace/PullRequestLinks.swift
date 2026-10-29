@@ -237,6 +237,15 @@ struct PullRequestBadge: Equatable, Sendable {
     }
 }
 
+extension PullRequestBadge {
+    /// The badge of one pull request a chat knows only by its link (the watched one, the one Nook opened, one the agent
+    /// printed) while the branch sync has not found it; open until a read says otherwise. Nil for a link to no request.
+    static func link(_ url: URL, glyph: Glyph?) -> PullRequestBadge? {
+        guard let number = PullRequestRef.parse(url.absoluteString)?.number else { return nil }
+        return PullRequestBadge(glyph: glyph ?? .open, label: .number(number))
+    }
+}
+
 /// The `#` list in the composer.
 enum PullRequestMatch {
     static let limit = 6

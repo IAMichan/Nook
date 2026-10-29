@@ -1233,13 +1233,32 @@ private final class RunTimelineDerived {
         turns = TurnDiff.collect(events: all)
         outputs = SessionOutputs.collect(all, tasks: run.tasks, directory: run.workingDirectory)
         runningCommand = CommandConsole.running(all)?.id
-        createdPullRequest = all.reversed().lazy.compactMap(Self.pullRequest(in:)).first
+        createdPullRequest = RunPullRequestLinks.last(in: all)
         return self
+    }
+}
+
+/// The last pull request a run's conversation links, for the tray above its composer and the badge on its row. Kept per
+/// run and read again only when the conversation changed, as every row of the list asks on each redraw.
+@MainActor
+final class RunPullRequestLinks {
+    static let shared = RunPullRequestLinks()
+    private var memo: [UUID: (count: Int, last: UUID?, url: URL?)] = [:]
+
+    func url(_ id: UUID, events: [RunEvent]) -> URL? {
+        if let hit = memo[id], hit.count == events.count, hit.last == events.last?.id { return hit.url }
+        let url = Self.last(in: events)
+        memo[id] = (events.count, events.last?.id, url)
+        return url
+    }
+
+    nonisolated static func last(in events: [RunEvent]) -> URL? {
+        events.reversed().lazy.compactMap(pullRequest(in:)).first
     }
 
     /// The last pull request link an event carries: the agent's words, or what a tool that made or showed one printed
     /// (`gh pr create` prints its link, and the agent does not always repeat it).
-    private static func pullRequest(in event: RunEvent) -> URL? {
+    private nonisolated static func pullRequest(in event: RunEvent) -> URL? {
         switch event.kind {
         case .assistant:
             return MarkdownBlock.lastGitHubPullRequest(in: event.text)
