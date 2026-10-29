@@ -737,6 +737,32 @@ final class WhatsAppTests: XCTestCase {
         XCTAssertNil(ticks("old"))
     }
 
+    func testHistoryCatchesUpOnTicksMissedWhileTheWebhookWasDown() {
+        var inbox = WAInbox()
+        let chat = "31600000001@s.whatsapp.net"
+        inbox.add(message("out", chat: chat, fromMe: true), filters: WAFilters())
+        var again = message("out", chat: chat, fromMe: true)
+        again.receipt = .read
+        inbox.add(again, filters: WAFilters(), history: true)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.receipt, .read)
+        XCTAssertEqual(inbox.receiptLedger.entries["out"]?.receipt, .read, "kept across a restart too")
+        // History that says less never takes ticks back.
+        again.receipt = .sent
+        inbox.add(again, filters: WAFilters(), history: true)
+        XCTAssertEqual(inbox.conversations[chat]?.messages.first?.receipt, .read)
+    }
+
+    func testAReceiptFindsItsMessageUnderThePersonsOtherID() {
+        var inbox = WAInbox()
+        let number = "31600000001@s.whatsapp.net"
+        let lid = "123456789012345@lid"
+        inbox.add(message("out", chat: number, fromMe: true), filters: WAFilters())
+        inbox.add(message("in", chat: lid, at: 1), filters: WAFilters())
+        // The gateway names the person by their @lid, while your message is in the chat under their number.
+        XCTAssertEqual(inbox.applyReceipt(.read, ids: ["out"], chat: lid), number)
+        XCTAssertEqual(inbox.conversations[number]?.messages.first?.receipt, .read)
+    }
+
     func testAGroupsTicksWaitForEveryMember() {
         var inbox = WAInbox()
         let group = "1203630@g.us"

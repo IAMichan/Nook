@@ -805,8 +805,10 @@ struct WAInbox: Equatable, Sendable {
     @discardableResult
     mutating func applyReceipt(_ status: WAReceipt, ids: [String], chat: String, at date: Date = Date()) -> String? {
         let key = WAJID.normalized(chat)
-        // The gateway can name the chat differently (a person's @lid against their number): then every chat is looked at.
-        let keys = conversations[key] != nil ? [key] : Array(conversations.keys)
+        // The gateway can name a person's chat differently (their @lid against their number), and Nook can keep both: the
+        // named chat first, then every other one for what it does not hold. A group's id is always the same.
+        let others = WAJID.kind(key) == .group && conversations[key] != nil ? [] : conversations.keys.filter { $0 != key }
+        let keys = (conversations[key] != nil ? [key] : []) + others
         var pending = Set(ids)
         var changed: String?
         for chatKey in keys {
@@ -860,12 +862,17 @@ struct WAInbox: Equatable, Sendable {
     }
 
     /// A message Nook already keeps, as the gateway shows it again (a chat's history): its reactions as they stand now,
-    /// and what it answers when that was not known yet.
+    /// your message's ticks when the history says more (a receipt that came while the webhook was down), and what it
+    /// answers when that was not known yet.
     private mutating func refresh(_ message: WAMessage, in chat: String) {
         guard var conversation = conversations[chat],
               let index = conversation.messages.firstIndex(where: { $0.id == message.id }) else { return }
         var kept = conversation.messages[index]
         if !message.reactions.isEmpty { kept.reactions = message.reactions }
+        if kept.fromMe, let receipt = message.receipt {
+            kept.receipt = kept.receipt.map { $0.advanced(to: receipt) } ?? receipt
+            receiptLedger.record(kept)
+        }
         if kept.replyTo == nil { kept.replyTo = message.replyTo }
         if kept.quotedText == nil { kept.quotedText = message.quotedText }
         if kept.poll == nil, var poll = message.poll {

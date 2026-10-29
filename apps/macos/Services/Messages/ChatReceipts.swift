@@ -90,6 +90,13 @@ enum ChatReceipts {
         return out
     }
 
+    /// The ticks a chat list shows: those of the newest message it shows (`shown`, by id), not of one you hid after it.
+    /// `receipts` and `ids` are the chat's messages, oldest first, as `filled` gives them. Nil when that message is theirs.
+    static func newest(_ receipts: [ChatReceipt?], ids: [String], shown: String?) -> ChatReceipt? {
+        guard let shown, let index = ids.lastIndex(of: shown), receipts.indices.contains(index) else { return nil }
+        return receipts[index]
+    }
+
     /// Every message's info with what a later one says, oldest first (one list per message, empty for theirs): someone
     /// who has or read a later message of yours has the earlier ones too, since reading a chat reads what came before.
     /// A step that comes from a later message has no time of its own (when they read the earlier one is not known).

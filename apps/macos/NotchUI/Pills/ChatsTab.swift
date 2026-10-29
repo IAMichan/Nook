@@ -84,7 +84,8 @@ extension ChatsEntry {
                 let preview = newest.map { line($0, sender: $0.fromMe ? "" : names?.name($0.sender) ?? "") } ?? ""
                 let receipts = ChatReceipts.filled(conversation.messages.map { ($0.fromMe, $0.receipt) },
                                                    private: !conversation.isGroup)
-                let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
+                let ticks = ChatReceipts.newest(receipts, ids: conversation.messages.map(\.id), shown: newest?.id)
+                    .map(BubbleTicks.init)
                 entries.append(ChatsEntry(id: "wa|" + key, origin: .whatsApp(key), app: "whatsapp",
                                           name: conversation.name, preview: preview, last: conversation.lastActivity,
                                           read: whatsApp.readState(conversation.id), lastIsMine: newest?.fromMe ?? false,
@@ -126,7 +127,7 @@ extension ChatsEntry {
             let newest = hidden.visible(thread.messages, in: thread.id) { $0.id }.last
             let preview = newest.map(line) ?? ""
             let receipts = ChatReceipts.filled(thread.messages.map { ($0.isMine, $0.receipt) }, private: thread.isPrivate)
-            let ticks = receipts.last.flatMap { $0 }.map(BubbleTicks.init)
+            let ticks = ChatReceipts.newest(receipts, ids: thread.messages.map(\.id), shown: newest?.id).map(BubbleTicks.init)
             entries.append(ChatsEntry(id: thread.id, origin: .captured(thread.id), app: thread.app, name: thread.name,
                                       preview: preview, last: thread.last, read: thread.readState,
                                       lastIsMine: newest?.isMine ?? false, ticks: ticks,

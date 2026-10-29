@@ -1595,6 +1595,15 @@ final class ChatInboxTests: XCTestCase {
                        "a clock before a message that went out is one its app never took back")
     }
 
+    func testAChatListShowsTheTicksOfTheMessageItShows() {
+        let receipts = ChatReceipts.filled([(true, .delivered), (true, .read), (false, nil)])
+        let ids = ["mine", "hidden", "theirs"]
+        XCTAssertEqual(ChatReceipts.newest(receipts, ids: ids, shown: "mine"), .read,
+                       "a message you hid after yours: the list shows your message's own ticks")
+        XCTAssertNil(ChatReceipts.newest(receipts, ids: ids, shown: "theirs"), "their message has none")
+        XCTAssertNil(ChatReceipts.newest(receipts, ids: ids, shown: nil), "an empty chat has none")
+    }
+
     func testAMemberWhoWroteLaterHasReadYourMessage() {
         let anna = ChatReader(name: "Anna", receipt: .sent)
         let bo = ChatReader(name: "Bo", receipt: .delivered)
