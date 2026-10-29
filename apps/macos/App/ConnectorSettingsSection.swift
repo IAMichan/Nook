@@ -385,9 +385,11 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
 
     // MARK: Manage
 
+    /// The same parts, in the same order, as every sheet for something already linked: how it is doing, how it signs
+    /// in, then its other accounts.
     @ViewBuilder
     private var manageContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        SheetPart(tr("sheet.part.status")) {
             HStack(spacing: 10) {
                 HealthPill(health: health)
                 Spacer()
@@ -400,10 +402,9 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
                 .toggleStyle(.switch)
         }
 
-        Divider()
+        NookDivider()
 
-        VStack(alignment: .leading, spacing: 10) {
-            Text(tr("settings2.service.keyTitle")).font(NookTheme.TextStyle.strong)
+        SheetPart(tr("settings2.service.keyTitle")) {
             if replacing && isGitHub {
                 if GitHubSignIn.isAvailable { gitHubSignInButton } else { ghCLIButton }
                 DisclosureGroup(isExpanded: $showKeySteps) {
@@ -424,7 +425,10 @@ private struct ServiceSetupSheet<C: CloudConnectorConfig>: View {
         }
 
         if isGitHub {
-            ExtraAccountsView(service: "github", field: "token", placeholder: "ghp_… / github_pat_…") { refreshNow() }
+            NookDivider()
+            SheetPart(tr("chats.manage.accounts")) {
+                ExtraAccountsView(service: "github", field: "token", placeholder: "ghp_… / github_pat_…") { refreshNow() }
+            }
         }
     }
 

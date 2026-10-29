@@ -17,7 +17,7 @@ enum SettingsSearch {
         ("settings.start.glance", .start),
         ("settings.overview.appLanguage", .general),
         ("settings.brain.answerLanguage", .general),
-        ("flow.settings.translate", .general),
+        ("flow.settings.translate", .autocomplete),
         ("settings.display.accent", .appearance),
         ("settings.display.look", .appearance),
         ("settings.display.eyes", .appearance),

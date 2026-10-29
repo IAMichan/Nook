@@ -1,39 +1,37 @@
 import SwiftUI
 
-/// Agent accounts in Settings: sign-in method, re-login, API key, default, remove, and adding a new account.
-/// Designed to be crystal clear, intuitive, and child-simple.
+/// Agent accounts in Settings › Agents: one list of every account, each opening its sheet (sign-in method, re-login,
+/// API key, default, remove), and one button to add another.
 struct AccountsSettingsSection: View {
     @EnvironmentObject private var app: AppModel
     @State private var adding: AgentKind?
     @State private var editingProfile: AgentProfile?
 
+    /// Every account of every agent in one list, its agent's logo on each row, and one Add button for another account.
+    /// ACP agents you added follow in a section of their own (pick from the registry, or enter a command).
     var body: some View {
-        // ACP agents you added have a section of their own (pick from the registry, or enter a command).
-        AcpAgentsSection()
-        ForEach(AgentKind.allCases.filter { $0 != .acp }) { kind in
-            Section {
-                let profiles = app.profiles.profiles(for: kind)
-                ForEach(profiles) { profile in
+        let kinds = AgentKind.allCases.filter { $0 != .acp }
+        Section {
+            ForEach(kinds) { kind in
+                ForEach(app.profiles.profiles(for: kind)) { profile in
                     AgentAccountCardRow(profile: profile) {
                         editingProfile = profile
                     }
                 }
-
-                if kind == .gemini || kind == .antigravity {
-                    SettingNote(tr(kind == .gemini ? "accounts.geminiSingle" : "accounts.antigravitySingle"))
-                } else if kind.supportsProfiles {
-                    Button {
-                        adding = kind
-                    } label: {
-                        Label(tr("accounts.add"), systemImage: "plus")
-                    }
-                }
-            } header: {
-                HStack(spacing: 8) {
-                    AgentLogo(kind, size: 16)
-                    Text(kind.name)
-                }
             }
+            Menu {
+                ForEach(kinds.filter { $0.supportsProfiles && $0 != .gemini && $0 != .antigravity }) { kind in
+                    Button(kind.name) { adding = kind }
+                }
+            } label: {
+                Label(tr("accounts.add"), systemImage: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } header: {
+            // Gemini CLI and Antigravity hold one account each; that is said behind the ⓘ instead of under each.
+            SettingsSectionTitle(tr("settings.agents.accounts"),
+                                 info: tr("accounts.geminiSingle") + "\n\n" + tr("accounts.antigravitySingle"))
         }
         .sheet(item: $adding) { kind in
             AddAccountSheet(kind: kind)
@@ -43,6 +41,7 @@ struct AccountsSettingsSection: View {
                 editingProfile = nil
             }
         }
+        AcpAgentsSection()
     }
 }
 

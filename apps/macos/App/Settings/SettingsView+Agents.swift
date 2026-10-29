@@ -9,6 +9,9 @@ extension SettingsView {
 
     var agentsSection: some View {
         Group {
+            // First who you are signed in as with each agent (and the agents that speak ACP), then which agents show
+            // their progress in the notch, then what they used.
+            AccountsSettingsSection()
             Section {
                 ForEach(AgentConfigInstaller.Target.allCases) { target in
                     agentRow(target)
@@ -16,8 +19,6 @@ extension SettingsView {
             } header: {
                 Text(tr("settings.agents.linkAgents"))
             }
-            // Accounts per agent (personal, work…), and agents that speak ACP.
-            AccountsSettingsSection()
             // What they used: plan limits per account, tokens and costs. The week recap lives here only, so the menu bar
             // stays calm.
             Section {
@@ -36,9 +37,6 @@ extension SettingsView {
     // MARK: Workspace
 
     var workspaceSection: some View {
-        Group {
-            WorkspaceSettingsSection()
-            RemoteMachinesSection()
-        }
+        WorkspaceSettingsSection()
     }
 }

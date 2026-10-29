@@ -7,7 +7,6 @@ extension SettingsView {
 
     enum BrainKind: Hashable { case local, external }
     enum LocalRuntime: Hashable { case builtIn, ollama, lmstudio }
-    enum ExternalKind: Hashable { case claude, other }
 
     /// Local first: the built-in model, Ollama and LM Studio all keep everything on the Mac. External is a deliberate choice.
     var brainKind: Binding<BrainKind> {
@@ -42,16 +41,15 @@ extension SettingsView {
         )
     }
 
-    var externalKind: Binding<ExternalKind> {
+    /// The online AI in one choice: Claude with a key or your subscription, or any other service. No second picker.
+    var externalProvider: Binding<AIProvider> {
         Binding(
-            get: { [.claude, .claudeCode].contains(settings.provider) ? .claude : .other },
-            set: { kind in
+            get: { settings.provider.isLocalServer ? .claude : settings.provider },
+            set: { provider in
+                guard provider != settings.provider else { return }
                 testResult = nil
                 fetchedModels = []
-                switch kind {
-                case .claude: if settings.provider != .claudeCode { settings.provider = .claude }
-                case .other: if [.claude, .claudeCode].contains(settings.provider) || settings.provider.isLocalServer { settings.provider = .openai }
-                }
+                settings.provider = provider
             }
         )
     }
@@ -74,6 +72,7 @@ extension SettingsView {
                 }
             }
 
+            // Step 1: on this Mac, or an online service. Each step below follows from the one before it.
             Section {
                 Picker(tr("settings.brain.where"), selection: brainKind) {
                     Text(tr("settings.brain.localChoice")).tag(BrainKind.local)
@@ -81,6 +80,8 @@ extension SettingsView {
                 }
                 .pickerStyle(.segmented)
                 .help(tr("settings.brain.localDefault"))
+            } header: {
+                stepTitle(1, tr("brain.step.where"))
             } footer: {
                 // Local needs no warning (its explanation is on hover); leaving the Mac is said out loud.
                 if !settings.isLocalBrain {
@@ -89,25 +90,50 @@ extension SettingsView {
             }
 
             if settings.isLocalBrain {
-                Section(tr("brain.advice.title")) { adviceRows }
+                // Step 2: the models Nook advises for this Mac; every other model and runtime is folded away.
                 Section {
-                    Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
-                        Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
-                        Text("Ollama").tag(LocalRuntime.ollama)
-                        Text("LM Studio").tag(LocalRuntime.lmstudio)
+                    adviceRows
+                    DisclosureGroup(tr("brain.local.all")) {
+                        Picker(tr("settings.brain.localRuntime"), selection: localRuntime) {
+                            Text(tr("settings.brain.builtIn")).tag(LocalRuntime.builtIn)
+                            Text("Ollama").tag(LocalRuntime.ollama)
+                            Text("LM Studio").tag(LocalRuntime.lmstudio)
+                        }
+                        .pickerStyle(.segmented)
+                        if settings.useLocal {
+                            localFields
+                        } else {
+                            providerSignIn
+                            providerModel
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    if settings.useLocal { localFields } else { providerFields }
+                } header: {
+                    stepTitle(2, tr("brain.step.model"))
                 }
             } else {
+                // Step 2: which service, step 3: signing in to it, step 4: its model.
                 Section {
-                    Picker(tr("settings.brain.thinksWith"), selection: externalKind) {
-                        Text(tr("settings.brain.claude")).tag(ExternalKind.claude)
-                        Text(tr("settings.brain.otherAI")).tag(ExternalKind.other)
+                    Picker(tr("settings.brain.provider"), selection: externalProvider) {
+                        Text(tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")).tag(AIProvider.claude)
+                        Text(tr("settings.brain.claude") + " · " + tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
+                        Divider()
+                        ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { provider in
+                            Label { Text(provider.title) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }.tag(provider)
+                        }
                     }
-                    .pickerStyle(.segmented)
                     .help(brainExplanation)
-                    providerFields
+                } header: {
+                    stepTitle(2, tr("brain.step.service"))
+                }
+                Section {
+                    providerSignIn
+                } header: {
+                    stepTitle(3, tr("brain.step.signIn"))
+                }
+                Section {
+                    providerModel
+                } header: {
+                    stepTitle(4, tr("brain.step.model"))
                 }
                 ScreenBrainSection(settings: settings)
             }
@@ -180,29 +206,21 @@ extension SettingsView {
         return tr("settings.brain.otherExplanation")
     }
 
-    var providerFields: some View {
-        Group {
-            if settings.provider.isLocalServer {
-                EmptyView()
-            } else if [.claude, .claudeCode].contains(settings.provider) {
-                Picker(tr("settings.brain.connectVia"), selection: $settings.provider) {
-                    Text(tr("settings.brain.apiKey")).tag(AIProvider.claude)
-                    Text(tr("settings.brain.claudeCodeSub")).tag(AIProvider.claudeCode)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: settings.provider) { _, _ in testResult = nil }
-            } else {
-                Picker(tr("settings.brain.provider"), selection: $settings.provider) {
-                    ForEach(AIProvider.allCases.filter { $0 != .claude && $0 != .claudeCode && !$0.isLocalServer }) { provider in
-                        Label { Text(provider.title) } icon: { LogoImage.brand(BrandLogo.forProvider(provider)) }.tag(provider)
-                    }
-                }
-                .onChange(of: settings.provider) { _, _ in
-                    fetchedModels = []
-                    testResult = nil
-                }
-            }
+    /// A section header with its step number: "2  Service".
+    func stepTitle(_ number: Int, _ title: String) -> some View {
+        HStack(spacing: NookTheme.Spacing.sm) {
+            Text("\(number)")
+                .font(NookTheme.TextStyle.label)
+                .foregroundStyle(NookTheme.onIris)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(NookTheme.iris))
+            Text(title)
+        }
+    }
 
+    /// Signing in to the chosen service: the subscription found on this Mac, a key, or the app that must run.
+    var providerSignIn: some View {
+        Group {
             if settings.provider == .claudeCode {
                 claudeCodeStatus
             } else if settings.provider.needsKey {
@@ -238,7 +256,12 @@ extension SettingsView {
                     Link(tr("button.download"), destination: url).font(NookTheme.TextStyle.detail)
                 }
             }
+        }
+    }
 
+    /// The model of the chosen service: typed, or picked from what the service offers.
+    var providerModel: some View {
+        Group {
             HStack {
                 TextField(tr("settings.brain.model"), text: Binding(
                     get: { settings.activeProviderModel },

@@ -96,7 +96,6 @@ struct MCPPreset: Identifiable {
     }
 }
 
-/// What the Add MCP sheet opens with: a preset, or nothing for a pasted command.
 /// A server you added yourself, in the shared row shape: icon, name with its state, one line, the switch and a menu.
 /// Clicking the row opens its details.
 struct MCPServerCardRow: View {
@@ -335,36 +334,14 @@ struct AddMCPServerWizardSheet: View {
                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card).fill(Color(hex: 0x5ED6EE).opacity(0.1)))
                 }
 
-                // Step 1: Name
-                SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                // Step 2: Command or URL
-                SetupStep(number: 2, title: isRemote ? tr("mcp.address") : tr("mcp.command"), done: !commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField(
-                            isRemote ? "https://..." : "npx -y ...",
-                            text: $commandOrURL,
-                            prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
-                        )
-                        .textFieldStyle(.roundedBorder)
-
-                        if preset == nil {
-                            Picker("", selection: $isRemote) {
-                                Text(tr("mcp.kind.local")).tag(false)
-                                Text(tr("mcp.kind.remote")).tag(true)
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                        }
-                    }
+                // A preset fills in its name and command: only its keys are left to you, the rest is folded away.
+                if preset == nil {
+                    nameAndCommand
                 }
 
                 // Step 3: API keys / environment variables if needed
                 if let preset, !preset.requiredEnv.isEmpty {
-                    SetupStep(number: 3, title: tr("mcp.wizard.stepKeys"), done: allRequiredEnvFilled) {
+                    SetupStep(number: 1, title: tr("mcp.wizard.stepKeys"), done: allRequiredEnvFilled) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(preset.requiredEnv, id: \.self) { key in
                                 VStack(alignment: .leading, spacing: 2) {
@@ -407,6 +384,16 @@ struct AddMCPServerWizardSheet: View {
                     }
                 }
 
+                if preset != nil {
+                    if preset?.requiredEnv.isEmpty == true {
+                        SettingNote(tr("mcp.wizard.ready"), tone: .success)
+                    }
+                    DisclosureGroup(tr("settings.display.advanced")) {
+                        VStack(alignment: .leading, spacing: 18) { nameAndCommand }
+                            .padding(.top, NookTheme.Spacing.sm)
+                    }
+                }
+
                 if !problem.isEmpty {
                     Label(problem, systemImage: "exclamationmark.triangle.fill")
                         .font(NookTheme.TextStyle.body)
@@ -428,6 +415,35 @@ struct AddMCPServerWizardSheet: View {
                 name = preset.name
                 commandOrURL = preset.defaultCommand
                 isRemote = preset.isRemote
+            }
+        }
+    }
+
+    /// The server's name and its command or address: the steps of a server of your own, the folded details of a preset.
+    @ViewBuilder
+    private var nameAndCommand: some View {
+        SetupStep(number: 1, title: tr("mcp.wizard.stepName"), done: !name.trimmingCharacters(in: .whitespaces).isEmpty) {
+            TextField(tr("mcp.name"), text: $name, prompt: Text(tr("mcp.wizard.namePrompt")))
+                .textFieldStyle(.roundedBorder)
+        }
+
+        SetupStep(number: 2, title: isRemote ? tr("mcp.address") : tr("mcp.command"), done: !commandOrURL.trimmingCharacters(in: .whitespaces).isEmpty) {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(
+                    isRemote ? "https://..." : "npx -y ...",
+                    text: $commandOrURL,
+                    prompt: Text(isRemote ? "https://mcp.example.com/mcp" : "npx -y @modelcontextprotocol/server-github")
+                )
+                .textFieldStyle(.roundedBorder)
+
+                if preset == nil {
+                    Picker("", selection: $isRemote) {
+                        Text(tr("mcp.kind.local")).tag(false)
+                        Text(tr("mcp.kind.remote")).tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
             }
         }
     }

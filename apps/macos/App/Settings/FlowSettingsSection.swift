@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Settings › Typing & dictation and voice › Dictate anywhere (Flow). The key is set under Shortcuts, the language under General.
+/// Settings › Typing & dictation › Dictate anywhere (Flow): turning it on, how it writes (and the language it translates
+/// to), and what it remembers. The key is set under Shortcuts.
 struct FlowSettingsSection: View {
     @ObservedObject private var store = FlowStore.shared
     @ObservedObject private var flow = FlowDictation.shared
@@ -34,6 +35,11 @@ struct FlowSettingsSection: View {
                 Section {
                     SettingToggle(tr("flow.settings.cleanup"), detail: tr("flow.settings.cleanupDetail"), isOn: $store.cleanup)
                     SettingToggle(tr("flow.settings.prompt"), detail: tr("flow.settings.promptDetail"), isOn: $store.promptMode)
+                    Picker(tr("flow.settings.translate"), selection: $store.translateTo) {
+                        Text(tr("flow.settings.asSpoken")).tag("")
+                        // The stored choice is the language's own name, as `AppLanguage.displayName` writes it.
+                        ForEach(AppLanguage.allCases) { lang in Text(lang.displayName).tag(lang.displayName) }
+                    }
                     VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                         Text(tr("flow.settings.dictionary"))
                         TextEditor(text: $dictionary)

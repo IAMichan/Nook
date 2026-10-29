@@ -70,6 +70,8 @@ struct SettingsView: View {
     @State var recommendations: [ModelAdvisor.Recommendation] = []
     /// What is typed in the search field above the sidebar.
     @State var searchQuery = ""
+    /// The part of Typing & dictation on screen: completing (0) or dictation and voice (1).
+    @AppStorage("settings.typingPart") var typingPart = 0
     /// The mood the large preview under Appearance shows.
     @State var lookPreviewMood: NookMood = .rest
     @ObservedObject var flowStore = FlowStore.shared
@@ -176,14 +178,27 @@ struct SettingsView: View {
         case .shortcuts: shortcutsSection
         case .notifications: notificationsSection
         case .brain: brainSection
-        // What Nook does and what it remembers of it, on one page.
+        // What Nook does, what it remembers of it, and Nook as a friend, on one page.
         case .assistant:
             assistantSection
             MemorySettingsSection()
-        // Everything you type and say: completing as you type, then dictating and reading aloud.
+            buddySection
+        // Everything you type and say, in two parts: completing as you type, and dictating and talking to Nook.
         case .autocomplete:
-            AutocompleteSettingsSection()
-            dictationSection
+            Section {
+                Picker("", selection: $typingPart) {
+                    Text(tr("typing.part.complete")).tag(0)
+                    Text(tr("typing.part.dictate")).tag(1)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .listRowBackground(Color.clear)
+            if typingPart == 0 {
+                AutocompleteSettingsSection()
+            } else {
+                dictationSection
+            }
         case .connections: ConnectionsPage()
         case .agents: agentsSection
         case .workspace: workspaceSection

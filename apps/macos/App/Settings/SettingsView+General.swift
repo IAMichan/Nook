@@ -71,7 +71,7 @@ extension SettingsView {
         if AutocompleteController.shared.needsAttention {
             items.append(AttentionItem(id: "autocomplete", title: SettingsSection.autocomplete.title,
                                        detail: tr("hub.overview.autocomplete"), state: .warning,
-                                       button: tr("button.view")) { app.settingsSection = .autocomplete })
+                                       button: tr("button.view")) { typingPart = 0; app.settingsSection = .autocomplete })
         }
         return items
     }
