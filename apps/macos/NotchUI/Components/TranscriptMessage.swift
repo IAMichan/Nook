@@ -19,6 +19,10 @@ enum TranscriptStyle {
     static let foldLines = 8
     /// How tall a folded message of yours is.
     static let foldedHeight: CGFloat = 176
+    /// The column a work line's icon sits in, and how far what a line opens to (a thought, a command's output) is
+    /// indented: to the words of the line above it.
+    static let workIcon: CGFloat = 24
+    static let workIndent: CGFloat = workIcon + NookTheme.Spacing.sm
 }
 
 /// What you wrote: pictures above a soft bubble on the right, a long message folded to its first lines, and on hover

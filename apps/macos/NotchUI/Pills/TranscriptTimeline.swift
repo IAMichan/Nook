@@ -236,19 +236,10 @@ struct TranscriptConversation: View {
     @ViewBuilder
     private func row(_ row: TranscriptRow, answerable: String?, cards: [String: TurnDiff], ruled: Bool = true) -> some View {
         if case let (key, text, inner)? = Self.fold(row) {
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                TranscriptFoldLine(text: text,
-                                   open: open.contains(key),
-                                   checks: derived.foldChecks[row.id] ?? [],
-                                   ruled: ruled) { toggle(key) }
-                if open.contains(key) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
-                        ForEach(inner) { flatRow($0, answerable: nil, cards: cards).id($0.id) }
-                    }
-                    .padding(.bottom, NookTheme.Spacing.xs)
-                }
+            TranscriptFold(text: text, open: open.contains(key), checks: derived.foldChecks[row.id] ?? [], ruled: ruled,
+                           toggle: { toggle(key) }) {
+                ForEach(inner) { flatRow($0, answerable: nil, cards: cards).id($0.id) }
             }
-            .padding(.bottom, NookTheme.Spacing.xxs)
         } else {
             flatRow(row, answerable: answerable, cards: cards)
         }
@@ -303,18 +294,11 @@ struct TranscriptConversation: View {
         case .live(let step, let thought):
             // The agent's task list, live, then why it does what it does now (the thought right before it) and what it
             // does in words rather than a bare "Thinking…".
-            let tasks = TranscriptPresentation.tasks(shown)
             let activity = step.map { AgentActivity.of($0) }
                 ?? (thought == nil ? TranscriptPresentation.activity(shown) : .thinking(""))
-            VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                if let tasks { TaskChecklistCard(steps: tasks) }
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                    if let thought { thinking(thought) }
-                    TranscriptWorkLine(symbol: AgentActivityText.symbol(activity),
-                                       label: AgentActivityText.headline(activity, step: tasks.flatMap(TaskChecklist.activeStep)),
-                                       live: true)
-                        .help(step.map(Self.label) ?? "")
-                }
+            VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
+                if let thought { thinking(thought) }
+                TranscriptLiveLine(activity: activity, tasks: TranscriptPresentation.tasks(shown), help: step.map(Self.label))
             }
         case .interrupted(_, let seconds):
             TranscriptWorkLine(symbol: "stop.circle",
@@ -327,22 +311,10 @@ struct TranscriptConversation: View {
     private func group(id: String, steps: [AgentToolStep], thoughts: [String: [AgentChatMessage]]) -> some View {
         let key = "group:" + id
         let tally = ToolTally(steps: steps)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-            TranscriptWorkLine(symbol: TranscriptSymbols.symbol(tally), label: ToolTallyText.sentence(tally),
-                               failed: tally.failed, checks: tally.checks, open: open.contains(key)) { toggle(key) }
-            if open.contains(key) {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
-                        ForEach(steps) { step in
-                            ForEach(thoughts[step.id] ?? []) { thinking($0) }
-                            stepLine(step)
-                        }
-                    }
-                }
-                // A step that joins the group during a live turn stays in view at the end of the short scroll.
-                .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                .frame(maxHeight: 288)
-                .fixedSize(horizontal: false, vertical: true)
+        return TranscriptWorkGroup(tally: tally, open: open.contains(key), toggle: { toggle(key) }) {
+            ForEach(steps) { step in
+                ForEach(thoughts[step.id] ?? []) { thinking($0) }
+                stepLine(step)
             }
         }
     }
@@ -360,7 +332,6 @@ struct TranscriptConversation: View {
         let output = tasks == nil && file == nil ? step.output : nil
         let opens = tasks != nil || command != nil || output != nil
         let text = TranscriptStepText.parts(step)
-        let error = step.state == .failed ? step.error : nil
         return VStack(alignment: .leading, spacing: NookTheme.Spacing.xxs) {
             TranscriptWorkLine(symbol: TranscriptSymbols.symbol(step.name), label: text.verb, detail: text.detail, mono: text.mono,
                                failed: step.state == .failed, checks: Verification.check(step).map { [$0] } ?? [],
@@ -368,57 +339,16 @@ struct TranscriptConversation: View {
                 if let file { show(file) } else { toggle(key) }
             }
             .help(file.map { tr("ws.file.show") + " · " + AgentPathFormat.tilde($0) } ?? Self.label(step))
-            // Why it failed, right under it: what the agent ran into before it tried something else.
-            if let error {
-                Text(error)
-                    .font(NookTheme.TextStyle.detail)
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
-                    .padding(.bottom, NookTheme.Spacing.xxs)
-                    .help(error)
-            }
-            if command != nil || output != nil, open.contains(key) {
-                VStack(alignment: .leading, spacing: NookTheme.Spacing.md) {
-                    if let command { CodeBlock(title: tr("ws.tool.input"), text: command) }
-                    if let output { CodeBlock(title: tr("ws.tool.output"), text: output, failed: step.state == .failed) }
-                }
-                .padding(.leading, NookTheme.Spacing.xxl + NookTheme.Spacing.sm)
-                .padding(.bottom, NookTheme.Spacing.xs)
-            }
-            if let tasks, open.contains(key) {
-                TaskListRows(steps: tasks)
-                    .padding(NookTheme.Spacing.md + NookTheme.Spacing.xxs)
-                    .background(RoundedRectangle(cornerRadius: NookTheme.Radius.card, style: .continuous).fill(NookTheme.field))
-                    .padding(.leading, 26)
-                    .padding(.bottom, NookTheme.Spacing.xs)
-            }
+            // Why it failed, right under it, then what it opens to.
+            TranscriptStepDetail(error: step.state == .failed ? step.error : nil, open: open.contains(key), command: command,
+                                 output: output, failed: step.state == .failed, tasks: tasks)
         }
     }
 
     /// The agent's reasoning on one line, the whole of it a click away.
     private func thinking(_ message: AgentChatMessage) -> some View {
         let key = "think:" + message.id
-        let headline = TranscriptPresentation.headline(message.text)
-        let more = headline != message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(alignment: .leading, spacing: NookTheme.Spacing.xs) {
-            TranscriptWorkLine(symbol: "brain", label: headline.isEmpty ? tr("agents.thought") : headline,
-                               open: more ? open.contains(key) : nil) { if more { toggle(key) } }
-            if more, open.contains(key) {
-                Text(message.text)
-                    .font(NookTheme.TextStyle.body)
-                    .foregroundStyle(NookTheme.textSecondary)
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 26)
-                    .padding(.bottom, NookTheme.Spacing.xs)
-            }
-        }
+        return TranscriptThought(text: message.text, open: open.contains(key)) { toggle(key) }
     }
 
     /// "Ran  npm test": what the agent did, then what it did that to.
@@ -599,90 +529,8 @@ private struct PromptCard: View {
 
 // MARK: Work
 
-/// One line of the agent's work: an icon, what it did in muted text, and a chevron when it opens. The line that runs now
-/// shimmers.
-struct TranscriptWorkLine: View {
-    let symbol: String
-    let label: String
-    /// What the work was done to (a command, a file, a pattern), after the label in quieter text; in monospace with `mono`.
-    var detail: String? = nil
-    var mono = false
-    var failed = false
-    var live = false
-    /// The tests, builds and linters it stands for, and how they went.
-    var checks: [VerificationCheck] = []
-    /// The lines its edits added and removed.
-    var lines: EditLines? = nil
-    /// Nil: the line does not open.
-    var open: Bool? = nil
-    /// Nil: the line has no file to show; true while its file is open in the side panel.
-    var reveals: Bool? = nil
-    /// The chevron shows under the pointer only (and while open), as a tool call's does: a single step keeps its line
-    /// bare at rest.
-    var quietChevron = false
-    var action: (() -> Void)? = nil
-    @State private var hovering = false
-
-    private var clickable: Bool { open != nil || reveals != nil }
-
-    /// The label, then its detail on the same line, so a long command or path truncates as one sentence.
-    private var labelText: Text {
-        let color = reveals == true ? NookTheme.paper : hovering && clickable ? NookTheme.textSecondary : NookTheme.textTertiary
-        let head = Text(label).foregroundStyle(color)
-        guard let detail, !detail.isEmpty else { return head }
-        return head + Text(" ") + Text(detail)
-            .font(mono ? NookTheme.mono(12) : NookTheme.TextStyle.body)
-            .foregroundStyle(color)
-    }
-
-    var body: some View {
-        let content = HStack(spacing: NookTheme.Spacing.sm) {
-            Image(systemName: failed ? "exclamationmark.circle" : symbol)
-                .font(NookTheme.TextStyle.body)
-                .foregroundStyle(failed ? NookTheme.coral.opacity(0.6) : NookTheme.textTertiary)
-                .frame(width: 24)
-            if live {
-                ShimmerText(text: label)
-                    .lineLimit(1)
-            } else {
-                labelText
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            if let open {
-                Image(systemName: "chevron.right")
-                    .font(NookTheme.font(9, .bold))
-                    .foregroundStyle(NookTheme.textTertiary.opacity(0.7))
-                    .rotationEffect(.degrees(open ? 90 : 0))
-                    .opacity(!quietChevron || open || hovering ? 1 : 0)
-            }
-            if failed {
-                Image(systemName: "xmark").font(NookTheme.font(9, .bold)).foregroundStyle(NookTheme.coral.opacity(0.6))
-            }
-            if let reveals {
-                Image(systemName: "sidebar.right")
-                    .font(NookTheme.font(9.5, .medium))
-                    .foregroundStyle(NookTheme.textTertiary)
-                    .opacity(reveals || hovering ? 1 : 0)
-            }
-            if let lines { EditLinesLabel(lines: lines, size: 11) }
-            if !checks.isEmpty { VerificationChips(checks: checks) }
-            Spacer(minLength: 0)
-        }
-        .font(NookTheme.TextStyle.body)
-        .frame(minHeight: 24)
-        .contentShape(Rectangle())
-
-        if let action, clickable {
-            Button(action: action) { content }
-                .buttonStyle(.plain)
-                .onHover { hovering = $0 }
-                .accessibilityAddTraits(open == true || reveals == true ? .isSelected : [])
-        } else {
-            content
-        }
-    }
-}
+// The lines of the agent's work are the shared views in NotchUI/Components/TranscriptWork.swift, the same as in a
+// session Nook runs.
 
 /// Something that happened to the conversation, in sight also when its turn folds. A compaction is a quiet word across
 /// the column with room around it, as a new day is in a chat ("Context compacted from 167k tokens"); an error or a usage
@@ -714,130 +562,6 @@ struct TranscriptNotice: View {
                 .padding(.vertical, NookTheme.Spacing.xs)
         case nil:
             EmptyView()
-        }
-    }
-}
-
-/// A finished turn's work, folded: "Worked for 1m 3s ›" over a hairline.
-struct TranscriptFoldLine: View {
-    let text: String
-    let open: Bool
-    /// What the turn's tests and builds came to, in sight while its work is folded.
-    var checks: [VerificationCheck] = []
-    /// The hairline under the line; off when another rule follows right away.
-    var ruled = true
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: NookTheme.Spacing.sm) {
-                Text(text)
-                Image(systemName: "chevron.right")
-                    .font(NookTheme.font(9, .bold))
-                    .rotationEffect(.degrees(open ? 90 : 0))
-                if !checks.isEmpty { VerificationChips(checks: checks) }
-                Spacer(minLength: 0)
-            }
-            .font(NookTheme.TextStyle.body)
-            .foregroundStyle(hovering ? NookTheme.paper.opacity(0.85) : NookTheme.textTertiary)
-            .padding(.top, NookTheme.Spacing.xxs)
-            .padding(.bottom, NookTheme.Spacing.md)
-            .overlay(alignment: .bottom) { if ruled { NookDivider() } }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityAddTraits(open ? .isSelected : [])
-    }
-}
-
-/// Right under your message while the agent works: "Working for 12s", ticking, over a hairline.
-struct TranscriptWorkingLine: View {
-    let since: Date?
-
-    var body: some View {
-        Group {
-            if let since {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(tr("agents.timeline.workingFor", AgentPathFormat.duration(max(0, context.date.timeIntervalSince(since)))))
-                        .monospacedDigit()
-                }
-            } else {
-                Text(tr("ws.timeline.working"))
-            }
-        }
-        .font(NookTheme.TextStyle.body)
-        .foregroundStyle(NookTheme.textTertiary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, NookTheme.Spacing.xxs)
-        .padding(.bottom, NookTheme.Spacing.md)
-        .overlay(alignment: .bottom) { NookDivider() }
-    }
-}
-
-/// How a step reads: what the agent did as a verb ("Ran", "Edited"), then what it did that to, instead of the bare
-/// name of the tool. A tool Nook does not know keeps its own name.
-enum TranscriptStepText {
-    /// `detail` is the command, file, pattern or task; `mono` when it is code or a path rather than words.
-    static func parts(_ step: AgentToolStep) -> (verb: String, detail: String, mono: Bool) {
-        let summary = step.summary
-        switch step.name {
-        case "Task", "Agent": return (tr("agents.step.delegated"), summary, false)
-        case "TodoWrite", "Plan", "update_plan": return (tr("agents.step.tasks"), "", false)
-        case "ExitPlanMode": return (tr("agents.step.plan"), "", false)
-        case "WebSearch", "web_search", "google_web_search": return (tr("agents.step.searchedWeb"), summary, false)
-        case "WebFetch", "web_fetch": return (tr("agents.step.fetched"), summary, true)
-        case "Skill": return (tr("agents.step.skill"), summary, true)
-        default: break
-        }
-        let name = step.name.lowercased()
-        switch ToolCategory.of(tool: step.name) {
-        case .command:
-            // A description says in words what the command does; without one the command line itself shows.
-            let described = step.command.map { $0 != summary } ?? false
-            return (tr("agents.step.ran"), summary, !described)
-        case .edit:
-            return (tr(["write", "write_file"].contains(name) ? "agents.step.wrote" : "agents.step.edited"), summary, true)
-        case .read:
-            return (tr(["ls", "list_directory"].contains(name) ? "agents.step.listed" : "agents.step.read"), summary, true)
-        case .search:
-            return (tr("agents.step.searched"), summary, true)
-        case .other:
-            return (step.name, summary, false)
-        }
-    }
-}
-
-/// The icon of a step, after the kind of work it does.
-enum TranscriptSymbols {
-    static func symbol(_ tool: String) -> String {
-        switch tool {
-        case "Task", "Agent": return "person.2"
-        case "TodoWrite", "Plan", "update_plan", "ExitPlanMode": return "checklist"
-        case "WebSearch", "WebFetch", "web_search", "web_fetch", "google_web_search": return "globe"
-        case "Skill": return "sparkles"
-        default:
-            switch ToolCategory.of(tool: tool) {
-            case .command: return "terminal"
-            case .edit: return "square.and.pencil"
-            case .read: return "eye"
-            case .search: return "magnifyingglass"
-            case .other: return "wrench"
-            }
-        }
-    }
-
-    /// One kind of work keeps its own icon; mixed work gets a hammer.
-    static func symbol(_ tally: ToolTally) -> String {
-        let parts = tally.parts
-        guard parts.count == 1, let category = parts.first?.category else { return "hammer" }
-        switch category {
-        case .command: return "terminal"
-        case .edit: return "square.and.pencil"
-        case .read: return "eye"
-        case .search: return "magnifyingglass"
-        case .other: return "wrench"
         }
     }
 }

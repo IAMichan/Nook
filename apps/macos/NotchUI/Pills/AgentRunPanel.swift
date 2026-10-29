@@ -575,18 +575,24 @@ struct AgentRunPanel: View {
         let cards = memo.cards
         let found = finding ? TimelineSearch.search(events, query: findQuery) : .idle
         let current = findIndex.flatMap { found.matches.indices.contains($0) ? found.matches[$0].eventID : nil }
+        // While the agent works, as in an agent's own transcript: "Working for …" right under your message, and the step
+        // that runs now only in the live line at the end, not also in the list above it.
+        let active = run.status.isActive
+        let workingUnder = active ? events.last(where: { $0.kind == .user })?.id : nil
+        let liveStep = active ? events.last.flatMap { $0.kind == .tool && $0.state == .running ? $0.id : nil } : nil
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                LazyVStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                     if events.isEmpty {
                         ListEmptyNote(tr("agents.run.empty"))
                     }
                     // Finished turns fold to "Worked for …", tool calls in a row to one sentence.
                     ForEach(blocks) { block in
-                        VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
+                        VStack(alignment: .leading, spacing: NookTheme.Spacing.sm) {
                             if block.id == newSince { TimelineNewDivider() }
                             TimelineBlockView(block: block, expanded: openBlocks, toggle: toggleBlock) { event in
-                                AnyView(
+                                if event.id == liveStep { return AnyView(EmptyView()) }
+                                return AnyView(
                                     VStack(alignment: .leading, spacing: NookTheme.Spacing.lg) {
                                         // What the turn changed (its card): under the final answer, inside it, as in an
                                         // agent's own transcript; a file or Open diff opens the diff beside it.
@@ -600,6 +606,7 @@ struct AgentRunPanel: View {
                                         eventRow(event, final: memo.finalAnswers.contains(event.id),
                                                  extras: inReply ? card : nil, answerable: memo.answerable == event.id)
                                         if !inReply, let card { card }
+                                        if event.id == workingUnder { TranscriptWorkingLine(since: run.turnStartedAt) }
                                     }
                                     .padding(.vertical, current == event.id ? 4 : 0)
                                     .background(RoundedRectangle(cornerRadius: NookTheme.Radius.control).fill(NookTheme.iris.opacity(current == event.id ? 0.16 : 0)))
@@ -608,19 +615,17 @@ struct AgentRunPanel: View {
                         }
                         .id(block.id)
                     }
-                    if run.status.isActive {
-                        // The agent's task list, live, right above what it does now.
-                        if TaskChecklist.showsInline(run.tasks, active: true), let tasks = run.tasks {
-                            TaskChecklistCard(steps: tasks)
-                        }
-                        LiveActivityRow(live: TimelinePresentation.live(events), activity: AgentActivity.current(events),
-                                        step: run.tasks.flatMap(TaskChecklist.activeStep),
-                                        since: run.turnStartedAt,
-                                        waiting: run.status == .waitingApproval, asking: workspace.questions[runID] != nil,
-                                        accent: NookTheme.textSecondary,
-                                        openConsole: CommandConsole.running(events).map { command -> () -> Void in
-                                            { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
-                                        })
+                    if active {
+                        // The agent's task list, live, right above what it does now: the same live line as in an agent's
+                        // own transcript.
+                        TranscriptLiveLine(activity: AgentActivity.current(events),
+                                           tasks: TaskChecklist.showsInline(run.tasks, active: true) ? run.tasks : nil,
+                                           waiting: run.status == .waitingApproval || workspace.questions[runID] != nil,
+                                           asking: workspace.questions[runID] != nil,
+                                           openConsole: CommandConsole.running(events).map { command -> () -> Void in
+                                               { withAnimation(NookTheme.reveal) { consoleEventID = consoleEventID == command.id ? nil : command.id } }
+                                           },
+                                           help: TimelinePresentation.live(events).tool)
                     }
                     if run.status == .failed || run.status == .stopped {
                         recovery(run, events: events, blocks: blocks, proxy: proxy)
