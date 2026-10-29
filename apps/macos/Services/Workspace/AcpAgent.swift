@@ -261,6 +261,98 @@ enum AcpMapper {
     }
 }
 
+/// What an agent wrote to stderr, without its own log. Lines in glog's form ("I1029 16:35:47.481079 8387 agent.py:109]
+/// Starting…", as Antigravity's server writes) are that log, not the error: info and warnings are dropped, an error
+/// keeps only its message.
+enum AgentLogLines {
+    static func withoutLog(_ lines: [String]) -> [String] {
+        lines.compactMap { line in
+            guard let regex = glogRegex,
+                  let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line)),
+                  let level = Range(match.range(at: 1), in: line), let message = Range(match.range(at: 2), in: line) else { return line }
+            guard line[level] == "E" || line[level] == "F" else { return nil }
+            let text = line[message].trimmingCharacters(in: .whitespaces)
+            return text.isEmpty ? nil : text
+        }
+    }
+
+    private static let glogRegex = try? NSRegularExpression(pattern: #"^([IWEF])\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+[^\]\s]+:\d+\]\s?(.*)$"#)
+}
+
+/// The requests that bring an ACP session's model and mode in line with the run, sent one after the other and answered
+/// before the prompt goes. Antigravity restarts its agent session to switch models: a prompt sent before that is done
+/// ends at once without a word.
+enum AcpSessionSettings {
+    enum Target: Equatable, Sendable {
+        case model(String)
+        case mode(String)
+    }
+
+    struct Step: Equatable, Sendable {
+        var method: String
+        var params: [String: String]
+        var target: Target
+    }
+
+    /// The model first, then the mode; only what differs from what the session already uses.
+    static func steps(session: String, info: [String: Any], model: String, appliedModel: String?,
+                      mode: String?, appliedMode: String?) -> [Step] {
+        var steps: [Step] = []
+        let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty, model != appliedModel {
+            if let option = AgentModelCatalog.acpModelOptionID(info) {
+                steps.append(Step(method: "session/set_config_option", params: ["sessionId": session, "configId": option, "value": model],
+                                  target: .model(model)))
+            } else {
+                steps.append(Step(method: "session/set_model", params: ["sessionId": session, "modelId": model], target: .model(model)))
+            }
+        }
+        if let mode, mode != appliedMode {
+            if let option = modeOption(info), let configID = option["id"] as? String {
+                let values = values(option)
+                if values.isEmpty || values.contains(mode) {
+                    steps.append(Step(method: "session/set_config_option", params: ["sessionId": session, "configId": configID, "value": mode],
+                                      target: .mode(mode)))
+                }
+            } else if modeIDs(info).contains(mode) {
+                steps.append(Step(method: "session/set_mode", params: ["sessionId": session, "modeId": mode], target: .mode(mode)))
+            }
+        }
+        return steps
+    }
+
+    /// The model the session started with.
+    static func currentModel(_ info: [String: Any]) -> String? {
+        AgentModelCatalog.acp(info).first(where: \.isDefault)?.id
+    }
+
+    /// The mode the session started with: the mode config option's value, else `modes.currentModeId`.
+    static func currentMode(_ info: [String: Any]) -> String? {
+        (modeOption(info)?["currentValue"] as? String) ?? ((info["modes"] as? [String: Any])?["currentModeId"] as? String)
+    }
+
+    /// The mode for a run that is not Antigravity's (whose modes follow its rights): the agent's plan mode in Plan mode,
+    /// otherwise the mode the session started with.
+    static func mode(plan: Bool, info: [String: Any]) -> String? {
+        guard plan else { return currentMode(info) }
+        return (values(modeOption(info) ?? [:]) + modeIDs(info)).first { $0.lowercased().contains("plan") }
+    }
+
+    private static func modeOption(_ info: [String: Any]) -> [String: Any]? {
+        ((info["configOptions"] as? [[String: Any]]) ?? [])
+            .first { ($0["category"] as? String) == "mode" && ($0["type"] as? String ?? "select") == "select" }
+    }
+
+    private static func values(_ option: [String: Any]) -> [String] {
+        ((option["options"] as? [[String: Any]]) ?? []).flatMap { ($0["options"] as? [[String: Any]]) ?? [$0] }
+            .compactMap { $0["value"] as? String }
+    }
+
+    private static func modeIDs(_ info: [String: Any]) -> [String] {
+        (((info["modes"] as? [String: Any])?["availableModes"] as? [[String: Any]]) ?? []).compactMap { $0["id"] as? String }
+    }
+}
+
 /// One ACP agent process: requests with replies, session updates and the agent's requests, on the process's queue.
 final class AcpClient: @unchecked Sendable {
     let process: AgentProcess
@@ -290,6 +382,23 @@ final class AcpClient: @unchecked Sendable {
         get { lock.withLock { _fresh } }
         set { lock.withLock { _fresh = newValue } }
     }
+    /// What `session/new` or `session/load` answered (its modes, models and config options), and the model and mode Nook
+    /// set on the session since: a change in the run is sent before the next prompt.
+    var sessionInfo: [String: Any] {
+        get { lock.withLock { _info } }
+        set { lock.withLock { _info = newValue } }
+    }
+    var appliedModel: String? {
+        get { lock.withLock { _model } }
+        set { lock.withLock { _model = newValue } }
+    }
+    var appliedMode: String? {
+        get { lock.withLock { _mode } }
+        set { lock.withLock { _mode = newValue } }
+    }
+    private var _info: [String: Any] = [:]
+    private var _model: String?
+    private var _mode: String?
     private var _fresh = false
     private var _sessionID: String?
     private var _canLoad = false

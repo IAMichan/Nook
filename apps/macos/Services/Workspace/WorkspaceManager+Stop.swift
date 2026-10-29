@@ -38,6 +38,9 @@ extension WorkspaceManager {
                     process.closeInput()
                     process.stop(grace: 1)
                 }
+                // An ACP agent that does not answer the cancel is closed; its exit ends the turn as stopped and the
+                // next message loads the session again.
+                if turns[id]?.stopping == true, let client = acpClients[id] { client.stop() }
             case .forceFinalize:
                 forceFinalizeStop(id)
             case .sendInterrupt, .cancelPending:
