@@ -129,14 +129,15 @@ enum AgentKind: String, CaseIterable, Identifiable, Codable {
     }
 
     /// Arguments for a login that opens your browser by itself and quits once you signed in, so Nook runs it without a
-    /// Terminal window. Nil for agents whose login only works in their interactive screen (Gemini CLI, OpenCode, Grok)
-    /// and for Antigravity, which Nook signs in over ACP.
+    /// Terminal window. Nil for agents whose login only works in their interactive screen (Gemini CLI, OpenCode) and for
+    /// Antigravity, which Nook signs in over ACP. Grok's `grok login` opens auth.x.ai in the browser.
     var browserLoginArguments: [String]? {
         switch self {
         case .claude: return ["auth", "login"]
         case .codex: return ["login"]
         case .cursor: return ["login"]
-        case .gemini, .antigravity, .opencode, .grok, .acp: return nil
+        case .grok: return ["login"]
+        case .gemini, .antigravity, .opencode, .acp: return nil
         }
     }
 

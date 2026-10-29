@@ -1,27 +1,72 @@
 import Foundation
 
-/// Reasoning through the coding agent you are already signed in to, with your own subscription instead of an API key:
-/// Codex with your ChatGPT account (`codex exec`), Gemini CLI with your Google account (`gemini -p`). Claude Code, the
-/// third member of this family, has its own `ClaudeCodeBrain` because it resumes sessions.
+/// Reasoning through the coding agent you are already signed in to, with your own subscription or account instead of an
+/// API key: Codex with your ChatGPT account (`codex exec`), Gemini CLI with your Google account (`gemini -p`), Grok with
+/// your xAI account (`grok -p`), Kimi Code with your Kimi account (`kimi -p`) and Mistral Vibe with your Mistral account
+/// (`vibe -p`). Claude Code, the first member of this family, has its own `ClaudeCodeBrain` because it resumes sessions.
 ///
-/// Both run locked down, as Claude Code does: no shell, no file reading or writing, no extensions, plugins or MCP servers
-/// of your own, and web search only when the Web source is allowed for the request. They run in an empty folder of their
+/// All run locked down, as Claude Code does: no shell, no file reading or writing, no extensions, plugins, sub-agents or
+/// MCP servers of your own, and web search only when the Web source is allowed for the request (Kimi and Vibe never
+/// search: their search tools are not named in their documentation, so every tool stays off). They run in an empty folder of their
 /// own, never Nook's support folder. Nook's own tools go through the same JSON text protocol as with Claude Code, and the
 /// whole conversation is sent again each round, so nothing is kept on disk between calls.
 @MainActor
 enum SubscriptionBrain {
-    /// The agent's program on this Mac, as the Agents page finds it.
+    /// The agent's program on this Mac: as the Agents page finds it for the agents Nook runs, else searched once.
     static func executable(_ provider: AIProvider) -> String? {
-        guard let kind = provider.subscriptionAgent else { return nil }
+        guard let command = provider.cliCommand else { return nil }
         if provider == .claudeCode { return ClaudeCodeBrain.executable }
-        return AppModel.shared.history.executables[kind]
+        if let kind = provider.subscriptionAgent, let path = AppModel.shared.history.executables[kind] { return path }
+        if let cached = located[command] { return cached }
+        let found = locate(command)
+        located[command] = .some(found)
+        return found
     }
 
-    /// Signed in with the agent's own login: the account the Agents page reads from its files.
+    /// Search again, e.g. after installing an agent.
+    static func resetLocations() { located = [:] }
+
+    private static var located: [String: String?] = [:]
+
+    private static func locate(_ command: String) -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let folders = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.npm-global/bin", "\(home)/.bun/bin",
+                       "\(home)/.volta/bin", "\(home)/.cargo/bin", "\(home)/.kimi-code/bin", "\(home)/.grok/bin"]
+        if let hit = folders.map({ "\($0)/\(command)" }).first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return hit
+        }
+        // Via the user's shell, for environments managed by nvm, asdf, uv and the like.
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        if let output = try? SystemControl.runProcess(shell, ["-lc", "command -v \(command)"]) {
+            let path = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).last ?? ""
+            if path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) { return path }
+        }
+        return nil
+    }
+
+    /// Signed in with the agent's own login: the account the Agents page reads from its files, Vibe's saved sign-in, or
+    /// for Kimi Code (which documents no way to tell) being installed.
     static func isSignedIn(_ provider: AIProvider) -> Bool {
-        guard let kind = provider.subscriptionAgent else { return false }
-        let app = AppModel.shared
-        return app.history.profileAccounts[app.profiles.preferredProfile(kind).id] != nil
+        if let kind = provider.subscriptionAgent {
+            let app = AppModel.shared
+            return app.history.profileAccounts[app.profiles.preferredProfile(kind).id] != nil
+        }
+        switch provider {
+        case .vibeCLI:
+            let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".vibe/.env")
+            return ((try? String(contentsOf: file, encoding: .utf8)) ?? "").contains("MISTRAL_API_KEY=")
+        default:
+            return executable(provider) != nil
+        }
+    }
+
+    /// The command that signs in, in the Terminal, for the agents Nook does not run itself.
+    static func loginCommand(_ provider: AIProvider) -> String? {
+        switch provider {
+        case .kimiCLI: return "kimi login"
+        case .vibeCLI: return "vibe --setup"
+        default: return nil
+        }
     }
 
     static func conversation(provider: AIProvider, model: String, system: String, prompt: String,
@@ -51,15 +96,15 @@ enum SubscriptionBrain {
             guard let path = SubscriptionBrain.executable(provider) else {
                 throw NookError(tr("brain.cli.notInstalled", provider.title))
             }
-            guard let kind = provider.subscriptionAgent else { throw NookError(tr("brain.cli.notInstalled", provider.title)) }
-            let fullSystem = system + "\n\n" + SubscriptionBrain.protocolText(tools, allowWebSearch: allowWebSearch)
-            let profile = AppModel.shared.profiles.preferredProfile(kind)
-            var environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: path,
-                                                        extra: profile.environment)
+            let searches = allowWebSearch && provider.cliSearchesWeb
+            let fullSystem = system + "\n\n" + SubscriptionBrain.protocolText(tools, allowWebSearch: searches)
+            // The account chosen as default under Settings › Agents, for the agents Nook runs.
+            let extra = provider.subscriptionAgent.map { AppModel.shared.profiles.preferredProfile($0).environment } ?? [:]
+            var environment = AgentCommand.environment(base: ProcessInfo.processInfo.environment, executable: path, extra: extra)
             // Nook's own thinking: the agent's hooks, if any, leave it out of the notch.
             environment["NOOK_INTERNAL"] = "1"
             let text = try await SubscriptionBrain.call(provider: provider, path: path, environment: environment, model: model,
-                                                        system: fullSystem, message: transcript, allowWebSearch: allowWebSearch,
+                                                        system: fullSystem, message: transcript, allowWebSearch: searches,
                                                         images: images)
             images = []
             transcript += "\n\nAssistant:\n" + text
@@ -155,6 +200,59 @@ enum SubscriptionBrain {
         ]
     }
 
+    // MARK: Grok
+
+    /// `grok -p` that only answers: no built-in tool but web search (and that one off unless allowed), every shell, file
+    /// and MCP call denied as well, no sub-agents, plan mode or memory, and Nook's instructions as the whole system prompt.
+    nonisolated static func grokArguments(model: String, system: String, prompt: String, allowWebSearch: Bool) -> [String] {
+        var arguments = ["-p", prompt, "--output-format", "json", "--system-prompt-override", system,
+                         "--tools", "web_search", "--disallowed-tools", "Agent", "--no-subagents", "--no-plan",
+                         "--max-turns", "4", "--no-auto-update"]
+        for rule in ["Bash", "Read", "Edit", "Write", "Grep", "MCPTool"] { arguments += ["--deny", rule] }
+        if !allowWebSearch { arguments.append("--disable-web-search") }
+        if !model.isEmpty { arguments += ["-m", model] }
+        return arguments
+    }
+
+    // MARK: Kimi Code
+
+    /// The agent file Kimi Code runs as: no tools and no sub-agents at all; its body is the whole system prompt.
+    nonisolated static func kimiAgentFile(system: String) -> String {
+        "---\nname: nook-brain\ndescription: Nook's brain, which only answers.\ntools: []\nsubagents: []\n---\n\n" + system + "\n"
+    }
+
+    nonisolated static func kimiArguments(model: String, prompt: String, agentFile: String) -> [String] {
+        var arguments = ["-p", prompt, "--agent-file", agentFile, "--output-format", "stream-json"]
+        if !model.isEmpty { arguments += ["-m", model] }
+        return arguments
+    }
+
+    /// The last assistant message without tool calls in Kimi Code's stream-json lines.
+    nonisolated static func kimiAnswer(_ output: String) -> String? {
+        var answer: String?
+        for line in output.split(separator: "\n") {
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
+                  (object["role"] as? String) == "assistant",
+                  ((object["tool_calls"] as? [Any]) ?? []).isEmpty else { continue }
+            if let text = object["content"] as? String, !text.isEmpty {
+                answer = text
+            } else if let parts = object["content"] as? [[String: Any]] {
+                let text = parts.compactMap { $0["text"] as? String }.joined()
+                if !text.isEmpty { answer = text }
+            }
+        }
+        return answer
+    }
+
+    // MARK: Mistral Vibe
+
+    /// `vibe -p` that only answers: only a tool that does not exist is enabled, which in programmatic mode switches every
+    /// other tool off. Vibe has no system prompt flag, so Nook's instructions lead the prompt.
+    nonisolated static func vibeArguments(system: String, prompt: String) -> [String] {
+        ["-p", "<instructions>\n" + system + "\n</instructions>\n\n" + prompt, "--enabled-tools", "nook_no_tools",
+         "--max-turns", "3", "--output", "text"]
+    }
+
     // MARK: Running
 
     private static func call(provider: AIProvider, path: String, environment: [String: String], model: String, system: String,
@@ -168,6 +266,15 @@ enum SubscriptionBrain {
         var stdin: Data?
         let answerFile = run.appendingPathComponent("answer.txt")
         switch provider {
+        case .grokCLI:
+            environment["GROK_MEMORY"] = "0"
+            arguments = grokArguments(model: model, system: system, prompt: message, allowWebSearch: allowWebSearch)
+        case .kimiCLI:
+            let agentFile = run.appendingPathComponent("nook-brain.md")
+            try Data(kimiAgentFile(system: system).utf8).write(to: agentFile)
+            arguments = kimiArguments(model: model, prompt: message, agentFile: agentFile.path)
+        case .vibeCLI:
+            arguments = vibeArguments(system: system, prompt: message)
         case .geminiCLI:
             let settingsFile = run.appendingPathComponent("settings.json")
             let systemFile = run.appendingPathComponent("system.md")
@@ -191,9 +298,20 @@ enum SubscriptionBrain {
         }
         let output = try await execute(path, arguments, environment: environment, directory: run, stdin: stdin)
         let answer: String
-        if provider == .geminiCLI {
+        switch provider {
+        case .geminiCLI:
             answer = try geminiAnswer(output, provider: provider)
-        } else {
+        case .grokCLI:
+            answer = try grokAnswer(output, provider: provider)
+        case .kimiCLI:
+            guard let text = kimiAnswer(output.stdout) else { throw failure(output, provider: provider) }
+            answer = text
+        case .vibeCLI:
+            answer = output.stdout
+            if output.status != 0 || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw failure(output, provider: provider)
+            }
+        default:
             answer = (try? String(contentsOf: answerFile, encoding: .utf8)) ?? ""
             if answer.isEmpty { throw failure(output, provider: provider) }
         }
@@ -210,6 +328,17 @@ enum SubscriptionBrain {
         if let response = object["response"] as? String, !response.isEmpty { return response }
         let error = (object["error"] as? [String: Any])?["message"] as? String
         throw NookError(tr("brain.cli.failed", provider.title, String((error ?? output.stderr).prefix(240))))
+    }
+
+    /// Grok's JSON reply: `text` holds the answer.
+    private static func grokAnswer(_ output: ProcessOutput, provider: AIProvider) throws -> String {
+        let text = output.stdout
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end,
+              let object = (try? JSONSerialization.jsonObject(with: Data(text[start...end].utf8))) as? [String: Any],
+              let answer = (object["text"] as? String) ?? (object["result"] as? String), !answer.isEmpty else {
+            throw failure(output, provider: provider)
+        }
+        return answer
     }
 
     /// What went wrong, in words: not signed in, a limit, a program too old for the safety flags, or its own message.
@@ -287,6 +416,28 @@ enum SubscriptionBrain {
                                                              stdout: String(decoding: data, as: UTF8.self),
                                                              stderr: String(decoding: errorData.data, as: UTF8.self)))
             }
+        }
+    }
+}
+
+extension AIProvider {
+    /// The coding agent Nook already knows (and runs) whose own login this provider thinks with; nil for the APIs and for
+    /// Kimi Code and Mistral Vibe, which Nook only uses as a brain.
+    var subscriptionAgent: AgentKind? {
+        switch self {
+        case .claudeCode: return .claude
+        case .codexCLI: return .codex
+        case .geminiCLI: return .gemini
+        case .grokCLI: return .grok
+        default: return nil
+        }
+    }
+
+    /// Whether the agent may search the web for Nook when the Web source is allowed.
+    var cliSearchesWeb: Bool {
+        switch self {
+        case .claudeCode, .codexCLI, .geminiCLI, .grokCLI: return true
+        default: return false
         }
     }
 }

@@ -538,7 +538,8 @@ final class AppSettings: ObservableObject {
         case .claude: return hasAPIKey
         case .claudeCode: return ClaudeCodeBrain.executable != nil
         // Your subscription through the agent: ready once it is installed and signed in.
-        case .codexCLI, .geminiCLI: return SubscriptionBrain.executable(provider) != nil && SubscriptionBrain.isSignedIn(provider)
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
+            return SubscriptionBrain.executable(provider) != nil && SubscriptionBrain.isSignedIn(provider)
         case .ollama, .lmstudio: return !activeProviderModel.isEmpty || provider == .lmstudio
         default: return hasProviderKey && !activeProviderModel.isEmpty
         }

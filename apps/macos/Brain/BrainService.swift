@@ -365,7 +365,7 @@ final class BrainService {
             conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: system,
                                                         prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
                                                         allowWebSearch: webAllowed)
-        case .codexCLI, .geminiCLI:
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
             conversation = SubscriptionBrain.conversation(provider: selection.provider, model: settings.activeProviderModel,
                                                           system: system,
                                                           prompt: Self.historyPrefix(history, limit: 12, length: 1500) + prompt,
@@ -518,7 +518,7 @@ final class BrainService {
         switch settings.provider {
         case .claudeCode:
             conversation = ClaudeCodeBrain.conversation(model: settings.activeProviderModel, system: "You are a test.", prompt: probe, allowWebSearch: false)
-        case .codexCLI, .geminiCLI:
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI:
             conversation = SubscriptionBrain.conversation(provider: settings.provider, model: settings.activeProviderModel,
                                                           system: "You are a test.", prompt: probe, allowWebSearch: false)
         case .ollama:

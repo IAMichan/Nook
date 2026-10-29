@@ -363,6 +363,9 @@ extension SettingsView {
         case .claudeCode: return tr("settings.brain.claude") + " · " + tr("settings.brain.claudeCodeSub")
         case .codexCLI: return tr("brain.sub.chatgpt")
         case .geminiCLI: return tr("brain.sub.gemini")
+        case .grokCLI: return tr("brain.sub.grok")
+        case .kimiCLI: return tr("brain.sub.kimi")
+        case .vibeCLI: return tr("brain.sub.mistral")
         case .claude: return tr("settings.brain.claude") + " · " + tr("settings.brain.apiKey")
         default: return provider.title
         }
@@ -374,6 +377,9 @@ extension SettingsView {
         case .claudeCode: return "Claude"
         case .codexCLI: return "ChatGPT"
         case .geminiCLI: return "Google"
+        case .grokCLI: return "xAI"
+        case .kimiCLI: return "Kimi"
+        case .vibeCLI: return "Mistral"
         default: return provider.title
         }
     }
@@ -421,6 +427,41 @@ extension SettingsView {
                     .buttonStyle(.borderedProminent)
                 }
             }
+        } else if let command = settings.provider.cliCommand {
+            // Kimi Code and Mistral Vibe: Nook only thinks through them, so they sign in with their own command.
+            let path = SubscriptionBrain.executable(settings.provider)
+            let signedIn = SubscriptionBrain.isSignedIn(settings.provider)
+            if path == nil {
+                StatusRow(title: tr("brain.sub.notInstalled", command), detail: tr("brain.sub.installYourself", command),
+                          state: .warning) {
+                    if let url = settings.provider.keyURL { Link(tr("brain.sub.more", command), destination: url) }
+                }
+                Button(tr("button.searchAgain")) {
+                    SubscriptionBrain.resetLocations()
+                    refreshTick += 1
+                    settings.objectWillChange.send()
+                }
+            } else {
+                StatusRow(title: signedIn ? tr("brain.sub.signedIn", accountBrand(settings.provider))
+                                          : tr("brain.sub.signedOut", accountBrand(settings.provider)),
+                          detail: tr("brain.sub.terminalLogin", command), state: signedIn ? .done : .todo) {
+                    Button(signedIn ? tr("connect.reauthorize") : tr("hub.signIn.button", accountBrand(settings.provider))) {
+                        signInWithCommand(settings.provider)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    /// Opens the agent's own sign-in in a Terminal window you can see (it asks for a code or opens your browser).
+    func signInWithCommand(_ provider: AIProvider) {
+        guard let command = SubscriptionBrain.loginCommand(provider) else { return }
+        do {
+            try app.runVisibly(command, in: FileManager.default.homeDirectoryForCurrentUser.path,
+                               name: "nook-signin-\(provider.rawValue)", title: tr("brain.sub.terminalTitle", accountBrand(provider)))
+        } catch {
+            ToastCenter.shared.error(tr("accounts.terminalFailed", error.localizedDescription))
         }
     }
 

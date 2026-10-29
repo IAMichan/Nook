@@ -3,7 +3,7 @@ import Foundation
 /// The brain provider Nook reasons with. Claude is default; other providers speak the OpenAI protocol
 /// (chat/completions with function calling), so a single client covers them all. Ollama and LM Studio run locally on your Mac.
 enum AIProvider: String, CaseIterable, Identifiable {
-    case claude, claudeCode, codexCLI, geminiCLI, openai, gemini, grok, mistral, groq, openrouter, deepseek, qwen, moonshot, ollama, lmstudio
+    case claude, claudeCode, codexCLI, geminiCLI, grokCLI, kimiCLI, vibeCLI, openai, gemini, grok, mistral, groq, openrouter, deepseek, qwen, moonshot, ollama, lmstudio
 
     var id: String { rawValue }
 
@@ -13,6 +13,9 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .claudeCode: return "Claude Code (je abonnement)"
         case .codexCLI: return "ChatGPT (je abonnement, via Codex)"
         case .geminiCLI: return "Gemini (je Google-account, via Gemini CLI)"
+        case .grokCLI: return "Grok (je xAI-account, via Grok)"
+        case .kimiCLI: return "Kimi (je Kimi-account, via Kimi Code)"
+        case .vibeCLI: return "Mistral (je Mistral-account, via Vibe)"
         case .openai: return "OpenAI"
         case .gemini: return "Google Gemini"
         case .grok: return "Grok (xAI)"
@@ -31,19 +34,23 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var isLocalServer: Bool { self == .ollama || self == .lmstudio }
     var needsKey: Bool { !isLocalServer && !isSubscription }
 
-    /// The coding agent whose own login this provider thinks with (your subscription, no key); nil for the APIs.
-    var subscriptionAgent: AgentKind? {
+    /// The command of the coding agent whose own login this provider thinks with (your subscription or account, no key);
+    /// nil for the APIs. The agent itself, where Nook knows it, is `subscriptionAgent` (app only).
+    var cliCommand: String? {
         switch self {
-        case .claudeCode: return .claude
-        case .codexCLI: return .codex
-        case .geminiCLI: return .gemini
+        case .claudeCode: return "claude"
+        case .codexCLI: return "codex"
+        case .geminiCLI: return "gemini"
+        case .grokCLI: return "grok"
+        case .kimiCLI: return "kimi"
+        case .vibeCLI: return "vibe"
         case .claude, .openai, .gemini, .grok, .mistral, .groq, .openrouter, .deepseek, .qwen, .moonshot, .ollama, .lmstudio:
             return nil
         }
     }
 
     /// Thinks through a coding agent you are signed in to, instead of an API with a key.
-    var isSubscription: Bool { subscriptionAgent != nil }
+    var isSubscription: Bool { cliCommand != nil }
 
     /// Whether pictures can go along with the prompt through the agent: Codex takes them; Claude Code and Gemini CLI read
     /// them only as files, which stays off.
@@ -68,7 +75,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .deepseek: return "DeepSeek API-sleutel"
         case .qwen: return "DashScope API-sleutel"
         case .moonshot: return "Moonshot API-sleutel"
-        case .ollama, .lmstudio, .claudeCode, .codexCLI, .geminiCLI: return ""
+        case .ollama, .lmstudio, .claudeCode, .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI: return ""
         }
     }
 
@@ -78,6 +85,9 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .claudeCode: return URL(string: "https://claude.com/product/claude-code")
         case .codexCLI: return URL(string: "https://github.com/openai/codex")
         case .geminiCLI: return URL(string: "https://github.com/google-gemini/gemini-cli")
+        case .grokCLI: return URL(string: "https://github.com/xai-org/grok-build")
+        case .kimiCLI: return URL(string: "https://github.com/MoonshotAI/kimi-code")
+        case .vibeCLI: return URL(string: "https://github.com/mistralai/mistral-vibe")
         case .openai: return URL(string: "https://platform.openai.com/api-keys")
         case .gemini: return URL(string: "https://aistudio.google.com/apikey")
         case .grok: return URL(string: "https://console.x.ai")
@@ -98,13 +108,13 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .claude, .claudeCode: return "https://api.anthropic.com/v1"
         case .openai, .codexCLI: return "https://api.openai.com/v1"
         case .gemini, .geminiCLI: return "https://generativelanguage.googleapis.com/v1beta/openai"
-        case .grok: return "https://api.x.ai/v1"
-        case .mistral: return "https://api.mistral.ai/v1"
+        case .grok, .grokCLI: return "https://api.x.ai/v1"
+        case .mistral, .vibeCLI: return "https://api.mistral.ai/v1"
         case .groq: return "https://api.groq.com/openai/v1"
         case .openrouter: return "https://openrouter.ai/api/v1"
         case .deepseek: return "https://api.deepseek.com/v1"
         case .qwen: return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        case .moonshot: return "https://api.moonshot.ai/v1"
+        case .moonshot, .kimiCLI: return "https://api.moonshot.ai/v1"
         case .ollama: return "http://localhost:11434/v1"
         case .lmstudio: return "http://localhost:1234/v1"
         }
@@ -116,7 +126,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .claude: return "claude-haiku-5-5"
         case .claudeCode: return "haiku"
         // Empty: the agent's own default for your account.
-        case .codexCLI, .geminiCLI: return ""
+        case .codexCLI, .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI: return ""
         case .openai: return "gpt-4.1-mini"
         case .gemini: return "gemini-2.5-flash"
         case .grok: return "grok-3-mini"
@@ -136,7 +146,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
         switch self {
         case .claude: return ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
         case .claudeCode: return ["haiku", "sonnet", "opus"]
-        case .codexCLI: return []
+        case .codexCLI, .grokCLI, .kimiCLI, .vibeCLI: return []
         case .geminiCLI: return ["gemini-2.5-flash", "gemini-2.5-pro"]
         case .openai: return ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"]
         case .gemini: return ["gemini-2.5-flash", "gemini-2.5-pro"]
@@ -194,7 +204,7 @@ extension AIProvider {
         func has(_ parts: String...) -> Bool { parts.contains { name.contains($0) } }
         switch self {
         case .claude, .claudeCode, .gemini, .codexCLI: return true
-        case .geminiCLI: return false
+        case .geminiCLI, .grokCLI, .kimiCLI, .vibeCLI: return false
         case .openai: return !has("gpt-3", "o1-mini", "o3-mini", "instruct")
         case .grok: return has("vision", "grok-4", "grok-2-image")
         case .mistral: return has("pixtral", "small", "medium", "large")
