@@ -215,19 +215,22 @@ struct DiffText: View, Equatable {
         self.stacked = stacked
         self.text = text
         syntaxPath = path ?? DiffSyntax.firstPath(in: text)
-        syntaxKey = DiffSyntax.Key(path: syntaxPath, text: text)
+        let key = DiffSyntax.Key(path: syntaxPath, text: text)
+        syntaxKey = key
         self.comments = comments
         self.onComment = onComment
         self.onRemoveComment = onRemoveComment
-        let parsed = Self.parsed.value(for: syntaxKey) ?? {
-            let rows = UnifiedDiff.rows(text)
-            let largest = rows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
-            let made = (rows: rows, numberWidth: CGFloat(max(String(largest).count, 2)) * 6.6 + 14)
-            Self.parsed.set(made, for: syntaxKey)
-            return made
-        }()
-        rows = parsed.rows
-        numberWidth = parsed.numberWidth
+        if let parsed = Self.parsed.value(for: key) {
+            rows = parsed.rows
+            numberWidth = parsed.numberWidth
+        } else {
+            let parsedRows = UnifiedDiff.rows(text)
+            let largest = parsedRows.reduce(0) { max($0, $1.old ?? 0, $1.new ?? 0) }
+            let width = CGFloat(max(String(largest).count, 2)) * 6.6 + 14
+            Self.parsed.set((rows: parsedRows, numberWidth: width), for: key)
+            rows = parsedRows
+            numberWidth = width
+        }
     }
 
     /// Drawn again only when what it shows changed (with `.equatable()` where it is used): every line of a long diff is
